@@ -1,34 +1,31 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
     <defs>
-        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#4F46E5"/>
-            <stop offset="1" stop-color="#7C3AED"/>
+        <linearGradient id="stroke" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#818CF8"/>
+            <stop offset="0.55" stop-color="#C084FC"/>
+            <stop offset="1" stop-color="#F472B6"/>
         </linearGradient>
+        <radialGradient id="tint" cx="0.5" cy="0.35" r="0.75">
+            <stop offset="0" stop-color="#6D28D9" stop-opacity="0.55"/>
+            <stop offset="1" stop-color="#6D28D9" stop-opacity="0"/>
+        </radialGradient>
+        <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="7" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
     </defs>
-    <!-- rounded-square badge -->
-    <rect x="0" y="0" width="256" height="256" rx="58" fill="url(#bg)"/>
-    <!-- speech bubble with tail -->
-    <path d="M74 52
-             h108
-             a30 30 0 0 1 30 30
-             v58
-             a30 30 0 0 1 -30 30
-             h-66
-             l-46 36
-             q-6 5 -6 -4
-             v-32
-             a30 30 0 0 1 -20 -28.3
-             v-59.7
-             a30 30 0 0 1 30 -30
-             z"
-          fill="#ffffff"/>
-    <!-- mini dataflow graph inside the bubble -->
-    <g stroke="#4F46E5" stroke-width="11" stroke-linecap="round">
-        <line x1="88" y1="112" x2="148" y2="86"/>
-        <line x1="88" y1="112" x2="166" y2="138"/>
-        <line x1="148" y1="86" x2="166" y2="138"/>
+    <rect width="256" height="256" rx="58" fill="#0D1117"/>
+    <rect width="256" height="256" rx="58" fill="url(#tint)"/>
+    <path d="M78 54 h100 a32 32 0 0 1 32 32 v52 a32 32 0 0 1 -32 32 h-58 l-40 32 q-8 6 -8 -4 v-30 a32 32 0 0 1 -26 -31.4 v-50.6 a32 32 0 0 1 32 -32 z"
+          fill="#141A26" stroke="url(#stroke)" stroke-width="9" stroke-linejoin="round"/>
+    <g filter="url(#glow)">
+        <g stroke="#8B93F8" stroke-width="9" stroke-linecap="round" opacity="0.9">
+            <line x1="94" y1="118" x2="146" y2="92"/>
+            <line x1="94" y1="118" x2="162" y2="138"/>
+            <line x1="146" y1="92" x2="162" y2="138"/>
+        </g>
+        <circle cx="94" cy="118" r="13" fill="#818CF8"/>
+        <circle cx="146" cy="92" r="13" fill="#C084FC"/>
+        <circle cx="162" cy="138" r="13" fill="#F472B6"/>
     </g>
-    <circle cx="88" cy="112" r="15" fill="#4F46E5"/>
-    <circle cx="148" cy="86" r="15" fill="#7C3AED"/>
-    <circle cx="166" cy="138" r="15" fill="#4F46E5"/>
 </svg>
