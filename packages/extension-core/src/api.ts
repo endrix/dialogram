@@ -25,11 +25,19 @@ import type {
 
 export type { DiagramClientAssets } from '@dialogram/shared';
 
+import type {
+    ChatCommandContribution,
+    ChatCommandContext,
+    ChatCommandResult
+} from './extension/chat/slash-commands';
+
+export type { ChatCommandContribution, ChatCommandContext, ChatCommandResult };
+
 /**
  * Semver of the API contract. Consumers must check the major version on
  * activation and fail with an actionable message on mismatch.
  */
-export const DIALOGRAM_API_VERSION = '0.2.0';
+export const DIALOGRAM_API_VERSION = '0.3.0';
 
 /** The extension id consumers pass to `vscode.extensions.getExtension`. */
 export const DIALOGRAM_EXTENSION_ID = 'ebezati.dialogram';
@@ -136,7 +144,7 @@ export type DiagramRunDriverFactory = (
 
 /**
  * v2 diagram profile — the complete activation contract at
- * `DIALOGRAM_API_VERSION` 0.2.0. It carries everything the platform needs to
+ * `DIALOGRAM_API_VERSION` 0.3.0. It carries everything the platform needs to
  * activate a diagram for one consumer; NO external-tool/product vocabulary appears
  * here. External-tool-backed consumers assemble one with the toolkit's profile
  * builder.
@@ -284,7 +292,15 @@ export interface InProcessChatTool {
     handler(file: string, args: Record<string, unknown>): string | Promise<string>;
 }
 
-/** A `/command` suggestion surfaced in the chat composer's slash menu. */
+/**
+ * A `/command` suggestion surfaced in the chat composer's slash menu.
+ *
+ * @deprecated Since 0.3.0 use {@link ChatCommandContribution}, which is a
+ * superset (adds optional `modes` and a host-side `handler`). This 0.2.0 shape
+ * remains exported and is structurally a subset of `ChatCommandContribution`,
+ * so existing `slashCommands` literals keep compiling — a contribution without a
+ * handler is still a pass-through suggestion whose raw text goes to the agent.
+ */
 export interface ChatSlashCommand {
     command: string;
     description: string;
@@ -320,8 +336,13 @@ export interface ChatProfile {
     selectionContext?: false | { render?: (file: string, selectedNodeIds: string[]) => string };
     /** In-process MCP tools served over loopback HTTP. */
     tools?: InProcessChatTool[];
-    /** Slash-command suggestions for the composer's `/` menu (pass-through text). */
-    slashCommands?: ChatSlashCommand[];
+    /**
+     * Slash commands for the composer's '/' menu. A contribution without a
+     * handler is a pass-through suggestion (the raw text goes to the agent) —
+     * the 0.2.0 `ChatSlashCommand` shape remains valid. A handler makes the
+     * command execute host-side and post a system confirmation.
+     */
+    slashCommands?: ChatCommandContribution[];
 }
 
 /**

@@ -172,6 +172,43 @@ describe('slash contributions', () => {
     });
 });
 
+describe('optimistic-concurrency cache (checkSourceRevision enabled)', () => {
+    it('threads the source revision across edits: empty→undefined, success caches, conflict updates', async () => {
+        // getChatSetting reads the neutral `dialogram.chat` config section; the vscode
+        // mock's getConfiguration exposes only `get` (no `inspect`), so getChatSetting
+        // returns whatever `get` yields. Stub it to enable the revision check.
+        const configSpy = vi.spyOn(vscode.workspace, 'getConfiguration').mockReturnValue({
+            get: (key: string, defaultValue?: unknown) =>
+                key === 'checkSourceRevision' ? true : defaultValue
+        } as any);
+        try {
+            const applyNamedEdit = vi
+                .fn()
+                .mockResolvedValueOnce({ ok: true, revision: 'r2' })
+                .mockResolvedValueOnce({ ok: false, conflict: { actualRevision: 'r9' } })
+                .mockResolvedValue({ ok: true, revision: 'r10' });
+            const { capability, backend } = makeCapability(makeBackend({ applyNamedEdit }));
+            const create = findCmd(capability, 'create-task');
+
+            // (1) cache empty → expectedRevision undefined; backend returns r2 (cached).
+            await create.handler({ _positional: ['a'] }, CTX);
+            // (2) cache hit → expectedRevision r2; backend returns a conflict → cache becomes r9.
+            await create.handler({ _positional: ['b'] }, CTX);
+            // (3) conflict-updated cache → expectedRevision r9.
+            await create.handler({ _positional: ['c'] }, CTX);
+
+            const revisions = backend.applyNamedEdit.mock.calls.map((c: any[]) => c[3]);
+            expect(revisions).toEqual([
+                { expectedRevision: undefined },
+                { expectedRevision: 'r2' },
+                { expectedRevision: 'r9' }
+            ]);
+        } finally {
+            configSpy.mockRestore();
+        }
+    });
+});
+
 describe('postTurnHook (keyword view-ops)', () => {
     it('runs matched ops in stable order after the settle delay', async () => {
         vi.useFakeTimers();
