@@ -76,5 +76,6 @@
         "chat",
         "platform",
         "sprotty"
-    ]
+    ],
+    "icon": "resources/icon.png"
 }
