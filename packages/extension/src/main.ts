@@ -6,7 +6,7 @@
  * call `activateDiagramProfile(theirContext, theirProfile)`.
  *
  * INSTANCE MODEL: the platform module is loaded once. All state is per-profile:
- * ChatRuntime, ChatBackend, and GlspIntegrationHandle are created fresh
+ * ChatRuntime and GlspIntegrationHandle are created fresh
  * for each profile. This gives consumers (wfpy, calpy, ...) complete isolation
  * without requiring fresh module loads per profile.
  */
@@ -58,7 +58,7 @@ export function activate(context: vscode.ExtensionContext): DialogramApi & Sidec
     const nodeRequire = createRequire(__filename);
     const platformPath = path.join(context.extensionPath, 'dist', 'platform.cjs');
     // One shared platform module: all state is per-profile instances
-    // (ChatBackend, ChatRuntime, GlspIntegrationHandle), so consumers
+    // (ChatRuntime, GlspIntegrationHandle), so consumers
     // no longer need isolated module copies.
     const platform = nodeRequire(platformPath) as PlatformModule;
 

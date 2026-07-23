@@ -72,6 +72,11 @@ export function createGlspChatTransport(opts: {
         }
         messenger = connector.messenger;
         messenger.onNotification(ChatToHost, (env, sender) => {
+            // The messenger API discards the listener's Disposable by design, so
+            // it can't be unregistered — ignore inbound messages after dispose().
+            if (disposed) {
+                return;
+            }
             const uri = typeof env?.data?.workflowUri === 'string' && env.data.workflowUri.length > 0
                 ? env.data.workflowUri
                 : fallbackUri();

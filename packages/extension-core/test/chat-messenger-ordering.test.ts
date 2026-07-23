@@ -5,8 +5,12 @@
  * immediately still reaches the runtime. Replies are routed per-URI to the
  * panel that owns the document, not to "whoever spoke last".
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createGlspChatTransport } from '../src/extension/chat/glsp-chat-transport';
+
+afterEach(() => {
+    vi.useRealTimers();
+});
 
 function makeMessenger() {
     const handlers = new Map<string, (env: any, sender: any) => void>();

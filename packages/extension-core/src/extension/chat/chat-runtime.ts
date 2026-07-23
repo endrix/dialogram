@@ -707,6 +707,11 @@ export class ChatRuntime {
 
     // --- diagnostics -------------------------------------------------------
 
+    /** Append a line to this runtime's output channel (used by transport/capability). */
+    logLine(message: string): void {
+        this.output.appendLine(message);
+    }
+
     showLog(): void {
         this.output.show(true);
     }

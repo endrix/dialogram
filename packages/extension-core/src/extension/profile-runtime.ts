@@ -3,7 +3,7 @@
  * `DialogramApi.activateDiagramProfile`.
  *
  * NOTE ON ISOLATION: all state lives in per-profile instances
- * (ChatRuntime, ChatBackend, GlspIntegrationHandle). The platform
+ * (ChatRuntime, GlspIntegrationHandle). The platform
  * module is shared across profiles, loaded once by the host (see main.ts).
  * Each profile gets its own runtime instances, providing complete isolation.
  *
@@ -15,8 +15,9 @@
 import type * as vscode from 'vscode';
 import type { ChatMessageSink, ChatProfile, ChatProfileHandle, DiagramProfile, DiagramProfileHandle } from '../api';
 import { activateGlspIntegration } from './diagram/glsp-activation';
-import { ChatBackend } from './chat/chat-backend';
 import { ChatRuntime, type ChatRuntimeConfig } from './chat/chat-runtime';
+import { createEditChatCapability, type EditChatCapability } from './chat/edit-capability';
+import { createGlspChatTransport, type GlspChatTransport } from './chat/glsp-chat-transport';
 
 export async function activateProfileRuntime(
     context: vscode.ExtensionContext,
@@ -32,28 +33,50 @@ export async function activateProfileRuntime(
         context.subscriptions.push(newSourceDisposable);
     }
 
-    // Chat activates only when the profile carries an edit backend (the chat
-    // mutation seam). Read-only profiles skip it and expose no-op diagnostics.
-    let chatBackend: ChatBackend | undefined;
-    if (profile.editBackend) {
-        chatBackend = new ChatBackend(
-            context,
-            profile,
-            {
-                getConnector: () => glsp.connector,
+    // Chat activates when the profile carries a chat config; the edit-backed
+    // features (slash ops, graph context, stdio MCP, view-op hook) additionally
+    // require an edit backend. Read-only profiles get pass-through chat only.
+    let chatRuntime: ChatRuntime | undefined;
+    let transport: GlspChatTransport | undefined;
+    let capability: EditChatCapability | undefined;
+    if (profile.chat) {
+        const log = (message: string) => chatRuntime?.logLine(message);
+        transport = createGlspChatTransport({ getConnector: () => glsp.connector, log: m => log(m) });
+        if (profile.editBackend) {
+            capability = createEditChatCapability({
+                profile,
+                editBackend: profile.editBackend,
                 getEditorProvider: () => glsp.editorProvider,
-                editBackend: profile.editBackend
-            },
-            assetsUri
-        );
-        await chatBackend.initialize();
+                getAssetsPath: () => (assetsUri ?? context.extensionUri).fsPath,
+                log: m => log(m)
+            });
+        }
+        const config: ChatRuntimeConfig = {
+            key: profile.key,
+            displayName: profile.chat.fullName ?? profile.displayName,
+            settingsSection: `${profile.settingsNamespace}.chat`,
+            skill: profile.chat.skill,
+            sourceMimeType: profile.chat.sourceMimeType,
+            graphContextProvider: capability ? f => capability!.graphContextProvider(f) : undefined,
+            stdioMcpServers: capability ? f => capability!.stdioMcpServers(f) : undefined,
+            slashCommands: capability?.slashCommands ?? [],
+            postTurnHook: capability ? (f, t) => capability!.postTurnHook(f, t) : undefined
+        };
+        chatRuntime = new ChatRuntime(context, config, transport.sink);
+        transport.connect(chatRuntime);
+        context.subscriptions.push(chatRuntime, {
+            dispose: () => {
+                transport?.dispose();
+                capability?.dispose();
+            }
+        });
     }
 
     return {
         dispose: () => glsp.dispose(),
         chat: {
-            runDiagnostics: () => chatBackend?.runDiagnostics(),
-            showLog: () => chatBackend?.showLog()
+            runDiagnostics: () => chatRuntime?.runDiagnostics(),
+            showLog: () => chatRuntime?.showLog()
         },
         // Host→client seams for library consumers (e.g. mlir cursor-sync / markers).
         // Both delegate to the editor provider, which owns per-URI client/panel tracking.
