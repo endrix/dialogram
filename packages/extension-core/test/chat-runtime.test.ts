@@ -177,6 +177,26 @@ describe('unified runtime absorbed features', () => {
         expect(handler).toHaveBeenCalledWith({}, expect.objectContaining({ selectedNodeIds: ['n1', 'n2'] }));
     });
 
+    it('unknown /command errors with a /help hint and never reaches the agent (chat-only pass-through config)', async () => {
+        // Chat-only profiles contribute pass-through suggestions (no handler);
+        // an unknown /command must resolve to the error + /help hint on ALL
+        // profiles rather than being forwarded to the agent.
+        const { runtime, posts, acp } = makeRuntime({
+            slashCommands: [{ command: 'render', description: 'render the doc', modes: ['build'] }]
+        });
+        acp.sendPrompt = vi.fn(async () => undefined);
+        await runtime.handleMessage('file:///ws/wf.py', {
+            type: 'chat.sendMessage',
+            data: { text: '/definitely-not-a-command', mode: 'build' }
+        });
+        const sys = posts.find(
+            p => p.payload.type === 'chat.message' && p.payload.data.role === 'system'
+        );
+        expect(sys!.payload.data.content).toMatch(/^Error: Unknown command: definitely-not-a-command/);
+        expect(sys!.payload.data.content).toContain('/help');
+        expect(acp.sendPrompt).not.toHaveBeenCalled();
+    });
+
     it('chat.log lands in the output channel without erroring', async () => {
         const { runtime } = makeRuntime({});
         await expect(

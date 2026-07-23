@@ -25,8 +25,9 @@ import { existsSync } from 'node:fs';
 import * as path from 'node:path';
 
 /**
- * Read a required environment variable. The spawner (chat-backend) always sets
- * MCP_SIDECAR_CMD and MCP_OP_PREFIX; a missing value is a misconfiguration, so
+ * Read a required environment variable. The spawner (the chat runtime that
+ * launches this server) always sets MCP_SIDECAR_CMD and MCP_OP_PREFIX; a
+ * missing value is a misconfiguration, so
  * fail loudly rather than silently impersonating a specific runtime.
  */
 function requireEnv(name: string): string {

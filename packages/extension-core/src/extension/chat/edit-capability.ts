@@ -1,7 +1,7 @@
 /**
- * The diagram-profile chat contribution: everything the legacy ChatBackend
- * wired around the edit backend, re-expressed as data the unified ChatRuntime
- * consumes — slash commands mapping to real edit-backend ops (with capability
+ * The diagram-profile chat contribution: the data the unified ChatRuntime
+ * consumes to drive chat around the edit backend — slash commands mapping to
+ * real edit-backend ops (with capability
  * gating, optimistic concurrency and diagram refresh), the graph context
  * provider, the stdio MCP descriptors, the keyword view-ops post-turn hook
  * and the debounced auto-layout.
@@ -251,7 +251,7 @@ export function createEditChatCapability(deps: EditChatCapabilityDeps): EditChat
                     } else {
                         deps.log('backend capabilities: unavailable (pre-v2 backend) — gating disabled');
                     }
-                });
+                }).catch(() => undefined);
                 const graph = await editBackend.exportGraph(uri);
                 if (graph) {
                     deps.log(`workflow graph exported for context (${file})`);

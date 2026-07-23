@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { SlashCommandRegistry, type ChatCommandContribution } from '../src/extension/chat/slash-commands';
 
 const noopCtx = {
