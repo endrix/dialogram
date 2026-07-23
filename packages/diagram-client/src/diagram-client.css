@@ -3736,6 +3736,8 @@ details[open] > summary .agent-chat-expand-arrow {
   padding: 8px 12px 10px;
 }
 
+.chat-selection-hint { display: flex; align-items: center; gap: 4px; padding: 2px 10px; font-size: 11px; opacity: 0.75; }
+
 .chat-composer {
   display: flex;
   flex-direction: column;

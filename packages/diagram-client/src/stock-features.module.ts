@@ -62,6 +62,8 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     // its floating toggle button would never be created.
     bind(ChatPanel).toSelf().inSingletonScope();
     bind(TYPES.IDiagramStartup).toService(ChatPanel);
+    // Track the live diagram selection and mirror it into the chat runtime.
+    bind(TYPES.ISelectionListener).toService(ChatPanel);
 
     // Double-click navigation into nested networks.
     bindAsService(context, TYPES.MouseListener, WorkflowNetworkNavigationMouseListener);
