@@ -1,0 +1,23 @@
+{
+    "name": "@dialogram/sidecar-toolkit",
+    "version": "0.0.1",
+    "description": "Shared sidecar client/protocol toolkit for Dialogram extensions",
+    "type": "module",
+    "private": true,
+    "main": "src/index.ts",
+    "types": "src/index.ts",
+    "scripts": {
+        "clean": "echo 'No clean step'",
+        "build": "echo 'No build step'",
+        "test": "vitest run"
+    },
+    "dependencies": {
+        "@dialogram/shared": "*",
+        "@dialogram/diagram-server": "*",
+        "vscode-uri": "^3.0.8"
+    },
+    "devDependencies": {
+        "@types/vscode": "~1.67.0",
+        "vitest": "^3.2.4"
+    }
+}

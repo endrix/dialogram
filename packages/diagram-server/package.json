@@ -1,0 +1,33 @@
+{
+    "name": "@dialogram/diagram-server",
+    "version": "0.0.1",
+    "description": "GLSP diagram server for workflow diagrams (runs in VS Code extension host)",
+    "type": "module",
+    "private": true,
+    "main": "src/index.ts",
+    "types": "src/index.ts",
+    "exports": {
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts"
+    },
+    "scripts": {
+        "clean": "echo 'No clean step'",
+        "build": "echo 'No build step'",
+        "test": "vitest run"
+    },
+    "dependencies": {
+        "@eclipse-glsp/protocol": "~2.5.0",
+        "@eclipse-glsp/server": "~2.5.0",
+        "@eclipse-glsp/vscode-integration": "~2.5.0",
+        "@dialogram/shared": "*",
+        "elkjs": "^0.9.3",
+        "inversify": "^6.0.2",
+        "mathjs": "^15.1.0",
+        "reflect-metadata": "^0.2.2",
+        "vscode-uri": "^3.0.8"
+    },
+    "devDependencies": {
+        "@types/vscode": "~1.67.0",
+        "vitest": "^3.2.4"
+    }
+}

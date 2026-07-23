@@ -1,0 +1,17 @@
+{
+    "name": "@dialogram/shared",
+    "version": "0.0.1",
+    "description": "Shared types and constants for workflow diagram server and client",
+    "type": "module",
+    "private": true,
+    "main": "src/index.ts",
+    "types": "src/index.ts",
+    "scripts": {
+        "clean": "echo 'No clean step'",
+        "build": "echo 'No build step'"
+    },
+    "dependencies": {
+        "@eclipse-glsp/protocol": "~2.5.0",
+        "@eclipse-glsp/server": "~2.5.0"
+    }
+}

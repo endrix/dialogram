@@ -1,0 +1,27 @@
+{
+    "extends": "../../tsconfig.json",
+    "compilerOptions": {
+        "noEmit": true,
+        "composite": false,
+        "lib": ["ES2020"],
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "strict": true,
+        "paths": {
+            "@dialogram/extension-core/api": ["packages/extension-core/src/api.ts"],
+            "@dialogram/extension-core": ["packages/extension-core/src/index.ts"]
+        }
+    },
+    "include": [
+        "src/**/*.ts"
+    ],
+    // platform-entry.ts is the esbuild entry for platform.cjs ONLY. main.ts
+    // require()s the built bundle at runtime and never statically imports it, so
+    // excluding it here keeps tsc from pulling the decorator-heavy core+toolkit
+    // runtime graph into this shell's strict program (those packages are checked
+    // by their own tsconfigs / the consumer shells, and esbuild emits their
+    // decorator metadata per-package). esbuild bundles the file regardless.
+    "exclude": [
+        "src/platform-entry.ts"
+    ]
+}

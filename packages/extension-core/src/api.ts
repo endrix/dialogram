@@ -1,0 +1,419 @@
+/**
+ * The Dialogram public API contract.
+ *
+ * This module is the compile-time surface consumers import
+ * (`@dialogram/extension-core/api`) — types plus the version constant only,
+ * no runtime platform code — so bundling it into a consumer stays trivial.
+ * The runtime object is obtained from the running Dialogram extension:
+ *
+ *     const base = vscode.extensions.getExtension<DialogramApi>('ebezati.dialogram');
+ *     const api = await base.activate();
+ *     api.activateDiagramProfile(context, MY_PROFILE);
+ *
+ * It will eventually be published as the standalone `@dialogram/api` package.
+ */
+import type * as vscode from 'vscode';
+import type {
+    EditStrategy,
+    DiagramNavigationProvider,
+    DiagramModelSource,
+    DiagramEditBackend,
+    DiagramOpenabilityCheck,
+    DiagramClientAssets,
+    ExecutionOverlaySink
+} from '@dialogram/shared';
+
+export type { DiagramClientAssets } from '@dialogram/shared';
+
+/**
+ * Semver of the API contract. Consumers must check the major version on
+ * activation and fail with an actionable message on mismatch.
+ */
+export const DIALOGRAM_API_VERSION = '0.2.0';
+
+/** The extension id consumers pass to `vscode.extensions.getExtension`. */
+export const DIALOGRAM_EXTENSION_ID = 'ebezati.dialogram';
+
+/**
+ * The command ids a diagram profile owns. Members are consumer-owned strings so
+ * two installed consumers never collide. Neutral successor of the pre-0.2.0
+ * per-extension command-ids type.
+ */
+export interface DiagramCommandIds {
+    openDiagram: string;
+    openDiagramSplit: string;
+    layoutDiagram: string;
+    refreshDiagramModel: string;
+    renameEntityByName: string;
+    undo: string;
+    redo: string;
+    fitToScreen: string;
+    center: string;
+    exportSvg: string;
+    toggleGrid: string;
+    setQueueTraceVisible: string;
+    stopWorkflow: string;
+    runWorkflow: string;
+    layoutDiagramIfNeeded: string;
+    setAgentToolConfig: string;
+    getAgentToolConfig: string;
+    createAgentToolPolicyFile: string;
+    chatAddViewerEditor: string;
+    chatAddViewerTask: string;
+    createNewContainer: string;
+}
+
+/** Port operation-kind strings surfaced to the diagram client. Neutral
+ *  successor of the pre-0.2.0 per-extension operation-kinds type. */
+export interface DiagramOperationKinds {
+    createEntityPort: string;
+    deleteEntityPort: string;
+}
+
+/**
+ * Neutral storage runtime options core forwards to the diagram server: the
+ * settings namespace, the operation-prefix surfaced to the client, and the
+ * palette selector. Values are supplied by the consumer (the toolkit's
+ * the toolkit's profile builder builds them for external-tool-backed profiles).
+ */
+export interface DiagramStorageOptions {
+    settingsNamespace: string;
+    operationPrefix: string;
+    useAlternateEntityPalette?: boolean;
+}
+
+/**
+ * Chat carry-over: everything the diagram chat backend + intent resolver need
+ * that is not already on the profile root. `operationPrefix` is the internal
+ * namespace the chat's operation dispatcher routes under; `nodeCommands` are the
+ * runtime's node-creation slash commands; `skill` is the domain primer injected
+ * into each session's context.
+ */
+export interface DiagramChatConfig {
+    name: string;
+    fullName: string;
+    /** Internal op-dispatcher namespace shared by the chat backend and intent resolver. */
+    operationPrefix: string;
+    skill?: string;
+    nodeCommands?: Array<{ command: string; nodeType: string; description: string }>;
+    /** MIME type for the source file attached to each session's agent context (opaque, consumer-owned). */
+    sourceMimeType?: string;
+}
+
+/**
+ * The live-overlay signature source a run driver exposes so the editor provider
+ * can drive live-execution glow. Structural twin of the editor provider's
+ * `LiveOverlaySignatureSource` and the toolkit driver's live-overlay APIs.
+ */
+export interface DiagramLiveOverlaySource {
+    watch(sourceUri: vscode.Uri): { dispose(): void };
+    onSignature(listener: (sourceUri: string, signature: string | undefined) => void): { dispose(): void };
+}
+
+/**
+ * The host core builds and hands to a profile's {@link DiagramRunDriverFactory}:
+ * the neutral execution-overlay sink, the diagram-refresh dispatch (the driver
+ * never holds the connector), the run output channel, and a hook to register the
+ * driver's live-overlay signature source with the editor provider.
+ */
+export interface DiagramRunHost {
+    overlay: ExecutionOverlaySink;
+    requestRefresh(sourceUri: string, kind: 'full' | 'agentContextOnly', networkName?: string): void;
+    output: vscode.OutputChannel;
+    useLiveOverlaySignatureSource(source: DiagramLiveOverlaySource): void;
+}
+
+/**
+ * Consumer-supplied run driver factory. Core calls it with the caller's
+ * ExtensionContext (the driver reads `context.workspaceState` for persisted
+ * per-entity overrides) and the {@link DiagramRunHost} it builds; the returned
+ * disposable tears the driver down.
+ */
+export type DiagramRunDriverFactory = (
+    context: vscode.ExtensionContext,
+    host: DiagramRunHost
+) => vscode.Disposable;
+
+/**
+ * v2 diagram profile — the complete activation contract at
+ * `DIALOGRAM_API_VERSION` 0.2.0. It carries everything the platform needs to
+ * activate a diagram for one consumer; NO external-tool/product vocabulary appears
+ * here. External-tool-backed consumers assemble one with the toolkit's profile
+ * builder.
+ */
+/**
+ * Neutral, behavior-named client capability flags a consumer injects into the
+ * diagram webview via `window.diagramIdentifier`. Each field names a client
+ * behavior; the consumer supplies the per-product truth value. Core/client code
+ * consults these flags instead of comparing a product-identity string.
+ */
+export interface DiagramClientBehavior {
+    /** Cross-file drill-down navigation resolves through the graph source model. */
+    graphSourceNavigation?: boolean;
+    /** Property panel renders the network-model sections and labels. */
+    networkPropertySections?: boolean;
+    /** Cross-file navigation UI uses the network entity vocabulary. */
+    networkNavigationLabels?: boolean;
+    /** Sentinel option value/default for the agent CLI-tools "none" selection. */
+    noneSentinel?: string;
+    /** Node `cmd` values (lower-case) that render with the script-tool icon. */
+    scriptInterpreterCommands?: string[];
+}
+
+export interface DiagramProfile {
+    key: string;
+    displayName: string;
+    settingsNamespace: string;
+    customEditorViewType: string;
+    glspClientId: string;
+    glspClientName: string;
+    /** Consumer-owned command ids. */
+    commands: DiagramCommandIds;
+    /** Port operation-kind strings injected into the diagram client. */
+    operationKinds?: DiagramOperationKinds;
+    /** Neutral behavior flags forwarded into the diagram webview. */
+    clientBehavior?: DiagramClientBehavior;
+    /** Consumer-supplied webview bundle (script/style/resource-roots). When absent,
+     *  the provider serves its stock `dist/webview/*` bundle. DATA ONLY — path/URI
+     *  strings, never code objects. */
+    clientAssets?: DiagramClientAssets;
+    /** Edit strategy: `'read-only'` disables writes; an editable strategy carries the
+     *  consumer-supplied operation modules registered on the diagram server. */
+    edits: EditStrategy;
+    /** Factory for the graph model source (core ships no implementation). */
+    modelSource?: () => DiagramModelSource;
+    /**
+     * Consumer's GLSP `DiagramModule` factory — BUILD-TIME LIBRARY consumption
+     * only. When supplied it REPLACES the stock diagram module on the server
+     * (threaded to `createWorkflowServerModules`'s `diagramModuleFactory`),
+     * letting a consumer (e.g. mlir-viewer) run its own server-side DI classes.
+     *
+     * REALM LAW (SP2c bundle-boundary): the returned module and every
+     * `ContainerModule`/DI-decorated class it pulls in carry the inversify/Symbol
+     * identity of the realm they were CONSTRUCTED in. They resolve correctly ONLY
+     * when the platform runtime and this module share ONE esbuild bundle — i.e.
+     * the consumer bundles `@dialogram/extension-core` and calls
+     * `activateProfileRuntime` directly. This field MUST NOT cross the
+     * cross-extension `DialogramApi.activateDiagramProfile` boundary: the platform
+     * would resolve it in a foreign realm with no injection metadata. That path
+     * asserts the field is absent and throws a clear error (see
+     * {@link assertProfileCrossesPlatformApiSafely}). Returns `unknown` because
+     * `shared` must stay browser-safe and cannot name GLSP server types.
+     */
+    serverDiagramModule?: () => unknown;
+    /**
+     * Inbound webview-message hook. The editor provider forwards every message
+     * NOT already consumed by its built-in debug / `dialogram.ui.*` handlers to
+     * this hook; returning `true` (or a promise resolving to `true`) marks the
+     * message consumed. When absent, unhandled messages are ignored exactly as
+     * before (byte-identical parity). `ctx.postToWebview` posts back to the same
+     * webview; `ctx.revealRange` opens a source URI and selects the range.
+     */
+    onWebviewMessage?: (
+        uri: string,
+        message: unknown,
+        ctx: {
+            postToWebview(msg: unknown): void;
+            revealRange(uriStr: string, range?: { startLine: number; startColumn?: number }): Promise<void>;
+        }
+    ) => boolean | Promise<boolean>;
+    /** Extra DI container modules contributed to the diagram server. */
+    serverModules?: unknown[];
+    /** Neutral storage runtime options forwarded to the diagram server. */
+    storageOptions?: DiagramStorageOptions;
+    watch?: { globs: string[] };
+    /** Cross-file navigation provider. */
+    navigation?: DiagramNavigationProvider;
+    /** Openability predicate; `undefined` = always openable. */
+    canOpenSource?: DiagramOpenabilityCheck;
+    /** Chat mutation seam; chat features degrade gracefully when absent. */
+    editBackend?: DiagramEditBackend;
+    /** Chat carry-overs; when absent the chat backend is not activated. */
+    chat?: DiagramChatConfig;
+    /** Run driver factory; when absent no run/stop commands or live glow are wired. */
+    runDriver?: DiagramRunDriverFactory;
+    /** Registers the new-source-file (and any edit-backend) commands; returns their disposable. */
+    newSourceFile?: (context: vscode.ExtensionContext) => vscode.Disposable;
+}
+
+/**
+ * Handle returned by `activateDiagramProfile`. Disposing it tears down the
+ * GLSP integration for that profile. The `chat` accessors back the consumer's
+ * own diagnostic commands (command ids stay consumer-owned so two consumers
+ * never collide).
+ */
+export interface DiagramProfileHandle extends vscode.Disposable {
+    chat: {
+        runDiagnostics(): Promise<void> | void;
+        showLog(): void;
+    };
+    /**
+     * Dispatch a host→client action to the webview owning `uri`, over the ungated
+     * `sendMessageToClient` overlay-bridge path — it reaches the client even for
+     * kinds the client did not advertise in `clientActions`. No-op when no diagram
+     * client is registered for the URI.
+     */
+    dispatchToWebview(uri: string, action: { kind: string } & Record<string, unknown>): void;
+    /**
+     * Post a raw message straight to the webview panel owning `uri`
+     * (`webview.postMessage`), for the consumer's own cursor-sync / graph-era
+     * channel. No-op when no panel is registered for the URI.
+     */
+    postToWebview(uri: string, message: unknown): void;
+}
+
+/** A `{ type, data }` message exchanged with a consumer-owned chat webview. */
+export interface ChatPayload {
+    type: string;
+    data?: any;
+}
+
+/** Delivers a chat payload to the panel owned by the given document URI. */
+export type ChatMessageSink = (uri: string, payload: ChatPayload) => void;
+
+/**
+ * An MCP tool served in-process over loopback HTTP. The handler receives the
+ * absolute path of the file the session is scoped to and the tool arguments,
+ * and returns the tool's text result — it can read live host-side state
+ * (e.g. an in-memory graph store) directly.
+ */
+export interface InProcessChatTool {
+    name: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+    handler(file: string, args: Record<string, unknown>): string | Promise<string>;
+}
+
+/** A `/command` suggestion surfaced in the chat composer's slash menu. */
+export interface ChatSlashCommand {
+    command: string;
+    description: string;
+    usage?: string;
+}
+
+/**
+ * A chat-only profile: everything project-specific the chat runtime needs.
+ * The consumer keeps its own webview UI and forwards `chat.*` payloads to the
+ * returned handle; the platform runs ACP/opencode, sessions, revert, context
+ * injection (file + graph + per-turn selection) and the in-process MCP tools.
+ */
+export interface ChatProfile {
+    /** Short unique key, e.g. 'mlir' — names the MCP server and log scope. */
+    key: string;
+    /** Human-readable name, used for the output channel ("<name> Chat"). */
+    displayName: string;
+    /** Settings section read for `opencodePath` and `enableMcpTools`, e.g. 'mlir.chat'. */
+    settingsSection: string;
+    /** Domain primer injected into each session's context. */
+    skill?: string;
+    /** Compact graph/structure rendering, injected with the file (mtime-deduped). */
+    graphContextProvider?: (file: string) => Promise<string | undefined> | string | undefined;
+    /**
+     * Extra ACP content blocks injected on EVERY turn (unlike the mtime-deduped
+     * file/graph context). Receives the current diagram selection.
+     */
+    turnContextProvider?: (file: string, selectedNodeIds: string[]) => Promise<any[]> | any[];
+    /**
+     * Per-turn selection injection. Enabled by default (set `false` to disable);
+     * pass an object with `render` to customize the injected text.
+     */
+    selectionContext?: false | { render?: (file: string, selectedNodeIds: string[]) => string };
+    /** In-process MCP tools served over loopback HTTP. */
+    tools?: InProcessChatTool[];
+    /** Slash-command suggestions for the composer's `/` menu (pass-through text). */
+    slashCommands?: ChatSlashCommand[];
+}
+
+/**
+ * Handle returned by `activateChatProfile`. The consumer forwards webview
+ * payloads (with the owning document URI) into `handleMessage`; replies and
+ * streamed events come back through the sink passed at activation.
+ */
+export interface ChatProfileHandle extends vscode.Disposable {
+    handleMessage(uri: string, payload: ChatPayload): Promise<void>;
+    /** Push the current diagram selection for a file (alternative to the
+     *  `chat.selection` webview message). */
+    setSelection(uri: string, selectedNodeIds: string[]): void;
+}
+
+export interface DialogramApi {
+    apiVersion: string;
+    /**
+     * Activate the full diagram platform (custom editor + GLSP server +
+     * webview client + chat backend) for one profile. Registers everything
+     * against the CALLER's ExtensionContext, so disposables die with the
+     * consumer extension. Webview/MCP assets are served from the Dialogram
+     * extension's own install directory.
+     */
+    activateDiagramProfile(
+        context: vscode.ExtensionContext,
+        profile: DiagramProfile
+    ): Promise<DiagramProfileHandle>;
+    /**
+     * Activate the chat runtime alone, for consumers with their own diagram
+     * stack (the mlir-viewer path). The consumer owns the webview UI and the
+     * transport; the platform owns ACP/opencode, sessions and tools.
+     */
+    activateChatProfile(
+        context: vscode.ExtensionContext,
+        profile: ChatProfile,
+        postToWebview: ChatMessageSink
+    ): Promise<ChatProfileHandle>;
+}
+
+/**
+ * Guard the cross-extension platform-API path: {@link DiagramProfile.serverDiagramModule}
+ * is a build-time library-only field (see its JSDoc — the realm law). A consumer
+ * reaching `DialogramApi.activateDiagramProfile` with it set would have its GLSP
+ * DiagramModule resolved in the platform bundle's FOREIGN inversify realm with no
+ * injection metadata (the SP2c cross-bundle failure). Throw a clear, actionable
+ * error instead. Library consumers that call `activateProfileRuntime` directly
+ * never pass through here and are unaffected.
+ */
+/**
+ * Brand key stamped (via `Symbol.for`, so any bundle sees the same key) on profiles
+ * ASSEMBLED INSIDE the platform bundle (the api's profile assembler). Branded
+ * profiles may legitimately carry DI-holding fields back across the cross-extension
+ * API: those objects were constructed in the platform's own realm and merely round-trip
+ * through the consumer.
+ */
+export const PLATFORM_ASSEMBLED_PROFILE = Symbol.for('dialogram.platformAssembledProfile');
+
+export function assertProfileCrossesPlatformApiSafely(profile: DiagramProfile): void {
+    const realmError = (field: string): Error =>
+        new Error(
+            `DiagramProfile.${field} cannot be supplied over the cross-extension ` +
+                'DialogramApi.activateDiagramProfile boundary: DI objects constructed in the ' +
+                "consumer's bundle would resolve in the platform bundle's foreign inversify realm with no " +
+                'injection metadata. Either assemble the profile platform-side ' +
+                '(the platform api\'s profile assembler) or consume the platform as a build-time library — ' +
+                'bundle @dialogram/extension-core and call activateProfileRuntime directly.'
+        );
+    if (profile.serverDiagramModule) {
+        // Never legal over the API, branded or not: the toolkit assembler never sets it.
+        throw realmError('serverDiagramModule');
+    }
+    if ((profile as unknown as Record<PropertyKey, unknown>)[PLATFORM_ASSEMBLED_PROFILE] === true) {
+        return; // platform-realm objects round-tripping through the consumer — safe.
+    }
+    if (profile.serverModules && profile.serverModules.length > 0) {
+        throw realmError('serverModules');
+    }
+    if (profile.edits !== 'read-only' && profile.edits?.operationModules?.length) {
+        throw realmError('edits.operationModules');
+    }
+}
+
+/** True when the base's API version satisfies the consumer's expectation. */
+export function isApiVersionCompatible(baseVersion: string, expected: string = DIALOGRAM_API_VERSION): boolean {
+    const majorOf = (v: string): string => v.split('.')[0] ?? '';
+    const major = majorOf(baseVersion);
+    if (major !== majorOf(expected)) {
+        return false;
+    }
+    // Pre-1.0: minor bumps may break too, so require an exact major.minor match.
+    if (major === '0') {
+        return baseVersion.split('.')[1] === expected.split('.')[1];
+    }
+    return true;
+}

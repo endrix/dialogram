@@ -1,0 +1,358 @@
+[
+    {
+        "handler": "RunAgentStreamActionHandler",
+        "kind": "dialogram.executionOverlay",
+        "op": "actionHandler"
+    },
+    {
+        "handler": "WorkflowEditAnnotationsActionHandler",
+        "kind": "dialogram.editAnnotations",
+        "op": "actionHandler"
+    },
+    {
+        "handler": "WorkflowEditParametersActionHandler",
+        "kind": "dialogram.editParameters",
+        "op": "actionHandler"
+    },
+    {
+        "handler": "WorkflowElkLiveDragRouter",
+        "kind": "move",
+        "op": "actionHandler"
+    },
+    {
+        "handler": "WorkflowPromptLabelEditActionHandler",
+        "kind": "dialogram.promptLabelEdit",
+        "op": "actionHandler"
+    },
+    {
+        "handler": "WorkflowPromptRenameEntityActionHandler",
+        "kind": "dialogram.promptRenameEntity",
+        "op": "actionHandler"
+    },
+    {
+        "handler": "WorkflowShowAgentSkillsActionHandler",
+        "kind": "dialogram.showAgentSkills",
+        "op": "actionHandler"
+    },
+    {
+        "handler": "WorkflowShowClaudeAgentsActionHandler",
+        "kind": "dialogram.showClaudeAgents",
+        "op": "actionHandler"
+    },
+    {
+        "handler": "WorkflowShowWorkspaceEntitiesActionHandler",
+        "kind": "dialogram.showWorkspaceEntities",
+        "op": "actionHandler"
+    },
+    {
+        "handler": "WorkflowToggleGridActionHandler",
+        "kind": "dialogram.toggleGrid",
+        "op": "actionHandler"
+    },
+    {
+        "id": "ChatPanel",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "id": "ExecutionOverlayMessageBridge",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "id": "InitialViewportService",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "id": "PostEditSelectionService",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "id": "PropertyPanel",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "id": "RunningAgentsBar",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "id": "SetModelCommand",
+        "op": "rebind",
+        "to": "ViewportPreservingSetModelCommand"
+    },
+    {
+        "id": "Symbol(stub.ICopyPasteHandler)",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "WorkflowCopyPasteHandler"
+    },
+    {
+        "id": "Symbol(stub.IDiagramStartup)",
+        "op": "bind",
+        "to": "service:ChatPanel"
+    },
+    {
+        "id": "Symbol(stub.IDiagramStartup)",
+        "op": "bind",
+        "to": "service:ExecutionOverlayMessageBridge"
+    },
+    {
+        "id": "Symbol(stub.IDiagramStartup)",
+        "op": "bind",
+        "to": "service:RunningAgentsBar"
+    },
+    {
+        "id": "Symbol(stub.IGModelRootListener)",
+        "op": "bind",
+        "to": "service:PropertyPanel"
+    },
+    {
+        "id": "Symbol(stub.ILogger)",
+        "op": "rebind",
+        "scope": "singleton",
+        "to": "ConsoleLogger"
+    },
+    {
+        "id": "Symbol(stub.ISelectionListener)",
+        "op": "bind",
+        "to": "service:PropertyPanel"
+    },
+    {
+        "id": "Symbol(stub.LogLevel)",
+        "op": "rebind",
+        "to": "const:2"
+    },
+    {
+        "id": "WorkflowNavigationUi",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "impl": "EdgeOpenMouseListener",
+        "op": "bindAsService",
+        "service": "Symbol(stub.MouseListener)"
+    },
+    {
+        "impl": "ViewerMouseListener",
+        "op": "bindAsService",
+        "service": "Symbol(stub.MouseListener)"
+    },
+    {
+        "impl": "WhitespaceRootPropertiesMouseListener",
+        "op": "bindAsService",
+        "service": "Symbol(stub.MouseListener)"
+    },
+    {
+        "impl": "WorkflowGridStartup",
+        "op": "bindAsService",
+        "service": "Symbol(stub.IDiagramStartup)"
+    },
+    {
+        "impl": "WorkflowNetworkNavigationMouseListener",
+        "op": "bindAsService",
+        "service": "Symbol(stub.MouseListener)"
+    },
+    {
+        "model": "ActorNode",
+        "op": "modelElement",
+        "typeId": "node:actor",
+        "view": "ActorNodeView"
+    },
+    {
+        "model": "BoundaryEditableLabel",
+        "op": "modelElement",
+        "typeId": "label:boundary:name",
+        "view": "WorkflowLabelView"
+    },
+    {
+        "model": "BoundaryEditableLabel",
+        "op": "modelElement",
+        "typeId": "label:boundary:type",
+        "view": "WorkflowLabelView"
+    },
+    {
+        "model": "BoundaryInputNode",
+        "op": "modelElement",
+        "typeId": "node:boundary:input",
+        "view": "BoundaryInputNodeView"
+    },
+    {
+        "model": "BoundaryOutputNode",
+        "op": "modelElement",
+        "typeId": "node:boundary:output",
+        "view": "BoundaryOutputNodeView"
+    },
+    {
+        "model": "CollapsedArrayNode",
+        "op": "modelElement",
+        "typeId": "node:collapsed:array",
+        "view": "CollapsedArrayNodeView"
+    },
+    {
+        "model": "CollapsedConditionalNode",
+        "op": "modelElement",
+        "typeId": "node:collapsed:conditional",
+        "view": "CollapsedConditionalNodeView"
+    },
+    {
+        "model": "ExternalActorNode",
+        "op": "modelElement",
+        "typeId": "node:external-actor",
+        "view": "ExternalActorNodeView"
+    },
+    {
+        "model": "GCompartment",
+        "op": "modelElement",
+        "typeId": "comp:port-row",
+        "view": "GCompartmentView"
+    },
+    {
+        "model": "GGraph",
+        "op": "modelElement",
+        "typeId": "graph",
+        "view": "GGraphView"
+    },
+    {
+        "model": "GIssueMarker",
+        "op": "modelElement",
+        "typeId": "marker",
+        "view": "WorkflowIssueMarkerView"
+    },
+    {
+        "model": "GRoutingHandle",
+        "op": "modelElement",
+        "typeId": "routing-point",
+        "view": "GRoutingHandleView"
+    },
+    {
+        "model": "GRoutingHandle",
+        "op": "modelElement",
+        "typeId": "volatile-routing-point",
+        "view": "GRoutingHandleView"
+    },
+    {
+        "model": "HeaderCompartment",
+        "op": "modelElement",
+        "typeId": "comp:header",
+        "view": "HeaderCompartmentView"
+    },
+    {
+        "model": "InlineIfNode",
+        "op": "modelElement",
+        "typeId": "node:structure:if:inline",
+        "view": "InlineIfNodeView"
+    },
+    {
+        "model": "NetworkNode",
+        "op": "modelElement",
+        "typeId": "node:network",
+        "view": "NetworkNodeView"
+    },
+    {
+        "model": "PortsCompartment",
+        "op": "modelElement",
+        "typeId": "comp:ports",
+        "view": "GCompartmentView"
+    },
+    {
+        "model": "ProxyNode",
+        "op": "modelElement",
+        "typeId": "node:proxy",
+        "view": "ProxyNodeView"
+    },
+    {
+        "model": "StructureForeachJoinNode",
+        "op": "modelElement",
+        "typeId": "node:structure:foreach:join",
+        "view": "StructureForeachJoinNodeView"
+    },
+    {
+        "model": "StructureForeachNode",
+        "op": "modelElement",
+        "typeId": "node:structure:foreach",
+        "view": "StructureForeachNodeView"
+    },
+    {
+        "model": "StructureIfBranchNode",
+        "op": "modelElement",
+        "typeId": "node:structure:if:branch",
+        "view": "StructureIfBranchNodeView"
+    },
+    {
+        "model": "StructureIfJoinNode",
+        "op": "modelElement",
+        "typeId": "node:structure:if:join",
+        "view": "StructureIfJoinNodeView"
+    },
+    {
+        "model": "StructureIfNode",
+        "op": "modelElement",
+        "typeId": "node:structure:if",
+        "view": "StructureIfNodeView"
+    },
+    {
+        "model": "WorkflowEdge",
+        "op": "modelElement",
+        "typeId": "edge:connection",
+        "view": "WorkflowEdgeView"
+    },
+    {
+        "model": "WorkflowEdge",
+        "op": "modelElement",
+        "typeId": "edge:connection:no-arrow",
+        "view": "WorkflowNoArrowEdgeView"
+    },
+    {
+        "model": "WorkflowEdge",
+        "op": "modelElement",
+        "typeId": "edge:virtual",
+        "view": "WorkflowVirtualEdgeView"
+    },
+    {
+        "model": "WorkflowInputPort",
+        "op": "modelElement",
+        "typeId": "port:input",
+        "view": "WorkflowInputPortView"
+    },
+    {
+        "model": "WorkflowLabel",
+        "op": "modelElement",
+        "typeId": "label:badge",
+        "view": "GLabelView"
+    },
+    {
+        "model": "WorkflowLabel",
+        "op": "modelElement",
+        "typeId": "label:name",
+        "view": "GLabelView"
+    },
+    {
+        "model": "WorkflowLabel",
+        "op": "modelElement",
+        "typeId": "label:port",
+        "view": "WorkflowLabelView"
+    },
+    {
+        "model": "WorkflowLabel",
+        "op": "modelElement",
+        "typeId": "label:type",
+        "view": "GLabelView"
+    },
+    {
+        "model": "WorkflowOutputPort",
+        "op": "modelElement",
+        "typeId": "port:output",
+        "view": "WorkflowOutputPortView"
+    }
+]

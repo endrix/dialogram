@@ -1,0 +1,61 @@
+{
+    "name": "dialogram",
+    "description": "Dialogram — talk to your diagrams. GLSP diagram platform with integrated agent chat, consumed by other extensions through its exported API.",
+    "version": "0.1.0",
+    "displayName": "Dialogram",
+    "publisher": "ebezati",
+    "author": "Endri Bezati",
+    "type": "module",
+    "engines": {
+        "vscode": "^1.67.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "contributes": {
+        "configuration": {
+            "title": "Dialogram",
+            "properties": {
+                "workflow.chat.enableMcpTools": {
+                    "type": "boolean",
+                    "description": "Expose diagram MCP tools (create_node, connect, validate, ...) to the chat agent.",
+                    "default": true
+                },
+                "dialogram.chat.autoLayoutAfterEdits": {
+                    "type": "boolean",
+                    "description": "Automatically re-run layout after the chat agent edits the diagram.",
+                    "default": false
+                },
+                "dialogram.chat.checkSourceRevision": {
+                    "type": "boolean",
+                    "description": "Reject chat edits when the source file changed since the last read (optimistic concurrency).",
+                    "default": false
+                }
+            }
+        }
+    },
+    "activationEvents": [],
+    "main": "./out/main.cjs",
+    "scripts": {
+        "clean": "shx rm -fr *.tsbuildinfo out dist",
+        "vscode:prepublish": "npm run build",
+        "package": "vsce package --no-dependencies -o ../../",
+        "build": "tsc -b tsconfig.json && node esbuild.mjs",
+        "build:clean": "npm run clean && npm run build",
+        "watch": "node esbuild.mjs --watch"
+    },
+    "dependencies": {
+        "@dialogram/diagram-client": "*",
+        "@dialogram/diagram-server": "*",
+        "@dialogram/extension-core": "*",
+        "@dialogram/shared": "*",
+        "reflect-metadata": "^0.2.2",
+        "vscode-uri": "^3.0.8"
+    },
+    "devDependencies": {
+        "@types/vscode": "~1.67.0",
+        "@vscode/vsce": "^3.9.2",
+        "concurrently": "~8.2.1",
+        "esbuild": "~0.25.5"
+    }
+}

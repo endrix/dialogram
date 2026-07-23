@@ -1,0 +1,21 @@
+/**
+ * Neutral runtime options the source-model storage (and tool palette) need.
+ *
+ * These are the only product-shaped values core still reads directly: the VS Code settings
+ * namespace to look configuration up under, and the operation-prefix string carried to the client
+ * on the graph model (so the client can tell which language runtime produced the diagram). Both are
+ * supplied as plain data by the consuming extension — core hardcodes NO product literals.
+ */
+export interface StorageRuntimeOptions {
+    /** VS Code settings namespace (e.g. the `xxxLang` configuration section). */
+    settingsNamespace: string;
+    /** Operation-prefix identifier surfaced to the client on the graph model root args. */
+    operationPrefix: string;
+    /**
+     * Selects the alternate entity-palette layout (a reduced entity vocabulary) instead of the
+     * default one. Supplied by the consuming extension; core hardcodes no product discriminator.
+     */
+    useAlternateEntityPalette?: boolean;
+}
+
+export const STORAGE_RUNTIME_OPTIONS = Symbol('StorageRuntimeOptions');

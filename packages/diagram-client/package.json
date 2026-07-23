@@ -1,0 +1,36 @@
+{
+    "name": "@dialogram/diagram-client",
+    "version": "0.0.1",
+    "description": "GLSP diagram client webview for workflow diagrams (runs in VS Code webview)",
+    "type": "module",
+    "private": true,
+    "main": "src/index.ts",
+    "types": "src/index.ts",
+    "scripts": {
+        "clean": "echo 'No clean step'",
+        "build": "echo 'No build step'",
+        "test": "vitest run"
+    },
+    "dependencies": {
+        "@eclipse-glsp/client": "~2.5.0",
+        "@eclipse-glsp/layout-elk": "~2.5.0",
+        "@eclipse-glsp/protocol": "~2.5.0",
+        "@eclipse-glsp/sprotty": "~2.5.0",
+        "@eclipse-glsp/vscode-integration-webview": "~2.5.0",
+        "@vscode-elements/elements": "^2.5.1",
+        "@vscode/codicons": "^0.0.44",
+        "@dialogram/shared": "*",
+        "dompurify": "^3.4.10",
+        "elkjs": "^0.9.3",
+        "inversify": "^6.0.2",
+        "lit": 
+        "^3.3.3",
+        "markdown-it": "^14.2.0",
+        "reflect-metadata": "^0.2.2",
+        "vscode-messenger-common": "^0.4.5",
+        "vscode-messenger-webview": "^0.4.5"
+    },
+    "devDependencies": {
+        "@types/markdown-it": "^14.1.2"
+    }
+}

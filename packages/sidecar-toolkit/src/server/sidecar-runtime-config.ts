@@ -1,0 +1,192 @@
+/**
+ * Sidecar runtime configuration.
+ *
+ * All product values a sidecar-backed model source needs, supplied by the consuming extension
+ * (extension-core's diagram-profile adapter) as configuration. NO product defaults here — the
+ * toolkit stays product-neutral; the concrete product values live in the adapter.
+ */
+
+import { inject, injectable } from 'inversify';
+
+/** The kinds of definition create-node can produce. */
+export type CreateNodeTypeKind = 'workflow' | 'task' | 'tool' | 'agent' | 'viewer';
+
+/**
+ * User-visible vocabulary/messages for the create-node flow. Product-supplied — the toolkit
+ * carries NO branded text; the consuming extension provides the exact strings per product.
+ */
+export interface CreateNodeStrings {
+    /** Prompt shown when naming a brand-new top-level definition (varies by kind for some products). */
+    newTypeNamePrompt: (kind: CreateNodeTypeKind) => string;
+    /** Human label for a kind in pickers and error messages (e.g. 'workflow'/'task' vs 'network'/'actor'). */
+    typeLabel: (kind: CreateNodeTypeKind) => string;
+    /** Placeholder class name shown in the new-type input box (e.g. 'MyWorkflow' vs 'MyNetwork'). */
+    classNamePlaceholder: (kind: CreateNodeTypeKind) => string;
+    /** Display name of the sidecar used in failure messages (product-supplied, e.g. a 'Foo sidecar' label). */
+    sidecarDisplayName: string;
+    /** Shown when a capabilities probe response is malformed. */
+    invalidCapabilitiesResponse: string;
+    /** Shown when required sidecar operations are missing, given the missing op names. */
+    missingCapabilities: (missingOps: string[]) => string;
+    /** Shown when a list response is malformed, given the attempted action and the missing field. */
+    invalidListResponse: (action: string, field: string) => string;
+}
+
+/**
+ * Behavior axes the create-node flow branches on. Product-supplied booleans replace the old
+ * product-profile checks — the toolkit no longer knows the product, only the behavior.
+ */
+export interface CreateNodeBehavior {
+    /** Probe `getCapabilities` and validate `supportedOps` before creating a node. */
+    capabilityProbeBeforeCreate: boolean;
+    /** Merge locally source-scanned project type names into the sidecar-provided type list. */
+    mergeProjectDiscoveredTypes: boolean;
+    /** Surface sidecar list failures / malformed responses as errors (vs silently tolerating them). */
+    surfaceSidecarListErrors: boolean;
+}
+
+/** All product values a sidecar-backed server needs. NO product defaults here. */
+export interface SidecarRuntimeConfig {
+    settingsNamespace: string;
+    sidecarOperationPrefix: string;
+    sidecarCommandSettingKey: string;
+    sidecarCommandDefault: string;
+    cliCommandSettingKey: string;
+    cliCommandDefault: string;
+    cliPythonModule?: string;
+    operationKinds: { createEntityPort: string; deleteEntityPort: string };
+    /** Op prefixes this runtime accepts when rewriting foreign-prefixed ops
+     *  (replaces the hardcoded product-prefix literal check). */
+    acceptedOperationPrefixes: string[];
+    /** Graph acquisition strategy: 'sidecar-export' or 'cli-plan'. */
+    graphAcquisition: 'sidecar-export' | 'cli-plan';
+    /** argv builder for the 'cli-plan' path, e.g. (file) => ['plan', file, '--format', 'graph', '--best-effort']. */
+    cliGraphArgs?: (file: string, requestedWorkflow?: string) => string[];
+    /** Product-specific label prefix for the sidecar-export failure message (the toolkit carries no
+     *  product literal); defaults to a neutral 'Graph export failed' when unset. */
+    graphExportFailureLabel?: string;
+    /** Undo/redo command-label suffix appended by every operation handler (the value your
+     *  extension profile supplies, such as a ' (product)' tag). Product-branded, so the toolkit carries none. */
+    undoLabelSuffix: string;
+    /** User-visible create-node vocabulary/messages; product-supplied (no toolkit defaults). */
+    createNodeStrings: CreateNodeStrings;
+    /** Create-node behavior axes; product-supplied (replaces the old product-profile branches). */
+    createNodeBehavior: CreateNodeBehavior;
+}
+
+export const SIDECAR_RUNTIME_CONFIG = Symbol('SidecarRuntimeConfig');
+
+function toNonEmptyString(value: string | undefined, fallback: string): string {
+    const next = String(value ?? '').trim();
+    return next === '' ? fallback : next;
+}
+
+function isPythonInterpreterCommand(command: string): boolean {
+    return /(^|\/)python(?:\d+(?:\.\d+)*)?$/i.test(command.trim());
+}
+
+/** `<prefix>.<opName>` — the fully-qualified sidecar op name for this runtime. */
+export function sidecarOp(cfg: SidecarRuntimeConfig, opName: string): string {
+    return `${cfg.sidecarOperationPrefix}.${opName}`;
+}
+
+/** Resolve the configured sidecar command from VS Code settings (falling back to the default). */
+export function getSidecarCommand(
+    cfg: SidecarRuntimeConfig,
+    vscodeModule: typeof import('vscode'),
+    scopeUri?: import('vscode').Uri
+): string {
+    const config = vscodeModule.workspace.getConfiguration(cfg.settingsNamespace, scopeUri);
+    const configured = config.get<string>(cfg.sidecarCommandSettingKey, cfg.sidecarCommandDefault);
+    return toNonEmptyString(configured, cfg.sidecarCommandDefault);
+}
+
+/** Resolve the CLI command from VS Code settings (falling back to the default). */
+export function getCliCommand(
+    cfg: SidecarRuntimeConfig,
+    vscodeModule: typeof import('vscode'),
+    scopeUri?: import('vscode').Uri
+): string {
+    const config = vscodeModule.workspace.getConfiguration(cfg.settingsNamespace, scopeUri);
+    const configured = config.get<string>(cfg.cliCommandSettingKey, cfg.cliCommandDefault);
+    return toNonEmptyString(configured, cfg.cliCommandDefault);
+}
+
+/** Resolve the CLI command + args-prefix (e.g. `python -m <module>` vs a bare binary). */
+export function getCliInvocation(
+    cfg: SidecarRuntimeConfig,
+    vscodeModule: typeof import('vscode'),
+    scopeUri?: import('vscode').Uri
+): { cmd: string; argsPrefix: string[] } {
+    const cmd = getCliCommand(cfg, vscodeModule, scopeUri);
+    if (cfg.cliPythonModule && isPythonInterpreterCommand(cmd)) {
+        return { cmd, argsPrefix: ['-m', cfg.cliPythonModule] };
+    }
+    return { cmd, argsPrefix: [] };
+}
+
+/**
+ * Injectable façade over a {@link SidecarRuntimeConfig}. Was `DiagramServerRuntimeProfileService`
+ * in diagram-server; its logic moved here verbatim, driven by the config instead of an injected
+ * product profile. `rewriteSidecarOperation` accepts any prefix listed in
+ * `cfg.acceptedOperationPrefixes` (the old hardcoded product-prefix literal check is gone).
+ */
+@injectable()
+export class SidecarRuntimeService {
+    constructor(
+        @inject(SIDECAR_RUNTIME_CONFIG)
+        private readonly cfg: SidecarRuntimeConfig
+    ) {}
+
+    get settingsNamespace(): string {
+        return this.cfg.settingsNamespace;
+    }
+
+    get operationKinds(): { createEntityPort: string; deleteEntityPort: string } {
+        return this.cfg.operationKinds;
+    }
+
+    get undoLabelSuffix(): string {
+        return this.cfg.undoLabelSuffix;
+    }
+
+    get createNodeStrings(): CreateNodeStrings {
+        return this.cfg.createNodeStrings;
+    }
+
+    get createNodeBehavior(): CreateNodeBehavior {
+        return this.cfg.createNodeBehavior;
+    }
+
+    sidecarOp(opName: string): string {
+        return sidecarOp(this.cfg, opName);
+    }
+
+    rewriteSidecarOperation(operation: string): string {
+        const dot = operation.indexOf('.');
+        if (dot <= 0) {
+            return operation;
+        }
+        const prefix = operation.slice(0, dot);
+        if (!this.cfg.acceptedOperationPrefixes.includes(prefix)) {
+            return operation;
+        }
+        const suffix = operation.slice(dot + 1);
+        return this.sidecarOp(suffix);
+    }
+
+    getSidecarCommand(vscodeModule: typeof import('vscode'), scopeUri?: import('vscode').Uri): string {
+        return getSidecarCommand(this.cfg, vscodeModule, scopeUri);
+    }
+
+    getCliCommand(vscodeModule: typeof import('vscode'), scopeUri?: import('vscode').Uri): string {
+        return getCliCommand(this.cfg, vscodeModule, scopeUri);
+    }
+
+    getCliInvocation(
+        vscodeModule: typeof import('vscode'),
+        scopeUri?: import('vscode').Uri
+    ): { cmd: string; argsPrefix: string[] } {
+        return getCliInvocation(this.cfg, vscodeModule, scopeUri);
+    }
+}

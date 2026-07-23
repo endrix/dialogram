@@ -1,0 +1,34 @@
+{
+    "name": "dialogram",
+    "description": "Dialogram — talk to your diagrams. General-purpose GLSP diagram platform with an integrated agent chat (ACP/opencode) for VS Code extensions.",
+    "version": "0.1.0",
+    "author": "Endri Bezati",
+    "type": "module",
+    "private": true,
+    "scripts": {
+        "clean": "npm run clean --workspaces",
+        "build": "npm run build --workspace packages/extension",
+        "test": "npm run test --workspaces --if-present",
+        "check:neutrality": "bash scripts/check-neutrality.sh",
+        "watch": "npm run watch --workspace packages/extension",
+        "package": "npm run package --workspace packages/extension"
+    },
+    "devDependencies": {
+        "@types/node": "~20.17.48",
+        "@vscode/vsce": "^3.9.2",
+        "shx": "~0.4.0",
+        "typescript": "~5.8.3"
+    },
+    "volta": {
+        "node": "20.19.2",
+        "npm": "10.8.2"
+    },
+    "workspaces": [
+        "packages/shared",
+        "packages/diagram-server",
+        "packages/diagram-client",
+        "packages/extension-core",
+        "packages/sidecar-toolkit",
+        "packages/extension"
+    ]
+}

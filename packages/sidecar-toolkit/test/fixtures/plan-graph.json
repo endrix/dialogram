@@ -1,0 +1,31 @@
+{
+    "version": "1",
+    "graph": {
+        "id": "wf_char_fixture",
+        "nodes": [
+            {
+                "id": "n1",
+                "label": "n1",
+                "kind": "task",
+                "scope": "scope:root",
+                "ports": [{ "id": "n1.out", "name": "out", "direction": "out" }],
+                "meta": { "parameters": [{ "name": "count", "value": "3" }] }
+            },
+            {
+                "id": "n2",
+                "label": "n2",
+                "kind": "task",
+                "scope": "scope:root",
+                "ports": [{ "id": "n2.in", "name": "in", "direction": "in" }],
+                "meta": {}
+            }
+        ],
+        "edges": [
+            { "id": "e1", "from": "n1.out", "to": "n2.in", "scope": "scope:root" }
+        ],
+        "subgraphs": [],
+        "meta": { "workflow": "char_fixture" }
+    },
+    "partial": false,
+    "errors": []
+}
