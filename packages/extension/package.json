@@ -1,7 +1,7 @@
 {
     "name": "dialogram",
-    "description": "Dialogram — talk to your diagrams. GLSP diagram platform with integrated agent chat, consumed by other extensions through its exported API.",
-    "version": "0.1.0",
+    "description": "Dialogram \u2014 talk to your diagrams. GLSP diagram platform with integrated agent chat, consumed by other extensions through its exported API.",
+    "version": "0.2.0",
     "displayName": "Dialogram",
     "publisher": "ebezati",
     "author": "Endri Bezati",
@@ -10,6 +10,7 @@
         "vscode": "^1.67.0"
     },
     "categories": [
+        "Visualization",
         "Other"
     ],
     "contributes": {
@@ -57,5 +58,23 @@
         "@vscode/vsce": "^3.9.2",
         "concurrently": "~8.2.1",
         "esbuild": "~0.25.5"
-    }
+    },
+    "license": "Apache-2.0",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/endrix/dialogram"
+    },
+    "homepage": "https://github.com/endrix/dialogram#readme",
+    "bugs": {
+        "url": "https://github.com/endrix/dialogram/issues"
+    },
+    "keywords": [
+        "diagram",
+        "glsp",
+        "dataflow",
+        "agent",
+        "chat",
+        "platform",
+        "sprotty"
+    ]
 }
