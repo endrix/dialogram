@@ -1,24 +1,68 @@
 /**
- * Chat-only runtime: bridges the ACP/opencode client to a consumer-owned
- * webview chat panel over a postMessage-style transport, without the GLSP
- * diagram platform. This is the implementation behind
- * `DialogramApi.activateChatProfile` (the mlir-viewer path).
+ * The unified chat runtime: bridges the ACP/opencode client to a consumer-owned
+ * webview chat panel over a postMessage-style transport, without requiring the
+ * GLSP diagram platform. This is the single runtime behind both
+ * `DialogramApi.activateChatProfile` (the mlir-viewer path) and the diagram
+ * profile's chat (the former legacy ChatBackend), driven entirely by a
+ * {@link ChatRuntimeConfig}.
  *
  * Messages arrive as `{ type, data }` payloads (the consumer forwards them
  * with the owning document URI) and replies go back through the consumer's
  * `postToWebview(uri, payload)` sink. Sessions are per-file. MCP tools are
- * served in-process over loopback HTTP (see McpHttpServer), reading live
- * host-side state through the profile's tool handlers.
+ * served in-process over loopback HTTP (see McpHttpServer) and/or as
+ * config-supplied stdio servers, reading live host-side state through the
+ * config's tool handlers.
  */
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { ACPClientService } from '../acp-client.js';
 import { SessionManager } from '../session-manager.js';
-import type { ChatProfile, ChatMessageSink, ChatPayload } from '../../api';
+import type { ChatMessageSink, ChatPayload, InProcessChatTool } from '../../api';
+import { SlashCommandRegistry, type ChatCommandContribution } from './slash-commands';
+import { attachAcpEventForwarding } from './acp-event-forwarding';
+import type { StdioMcpDescriptor } from './edit-capability';
+import { LEGACY_KEYS, readStateWithFallback } from '../legacy-settings-compat';
 
-export class ChatProfileRuntime {
+/**
+ * Everything project-specific the unified chat runtime needs. Both the chat-only
+ * (mlir) profile and the diagram profile's chat contribution are expressed as
+ * this data — the runtime carries no product/tool vocabulary of its own.
+ */
+export interface ChatRuntimeConfig {
+    /** Short unique key, e.g. 'mlir' — names the MCP server and log scope. */
+    key: string;
+    /** Human-readable name, used for the output channel ("<name> Chat"). */
+    displayName: string;
+    /** Settings section read for `opencodePath` and `enableMcpTools`. */
+    settingsSection: string;
+    /** Domain primer injected into each session's context. */
+    skill?: string;
+    /** MIME type of the edited source, forwarded to the agent for context. */
+    sourceMimeType?: string;
+    /** Compact graph/structure rendering, injected with the file (mtime-deduped). */
+    graphContextProvider?: (file: string) => Promise<string | undefined> | string | undefined;
+    /** Extra ACP content blocks injected on EVERY turn (receives the selection). */
+    turnContextProvider?: (file: string, selectedNodeIds: string[]) => Promise<any[]> | any[];
+    /**
+     * Per-turn selection injection. Enabled by default (`false` disables it);
+     * pass an object with `render` to customize the injected text.
+     */
+    selectionContext?: false | { render?: (file: string, selectedNodeIds: string[]) => string };
+    /** In-process MCP tools served over loopback HTTP. */
+    tools?: InProcessChatTool[];
+    /** stdio MCP servers (arrive pre-gated from the edit backend). */
+    stdioMcpServers?: (file: string) => StdioMcpDescriptor[];
+    /** Slash commands contributed to the registry (with optional handlers). */
+    slashCommands?: ChatCommandContribution[];
+    /** Runs after a free-text turn (e.g. diagram VIEW ops the prompt asked for). */
+    postTurnHook?: (file: string, text: string) => Promise<void>;
+}
+
+export class ChatRuntime {
     private readonly acp = new ACPClientService();
     private readonly sessions: SessionManager;
+    private readonly registry: SlashCommandRegistry;
+    private context: vscode.ExtensionContext;
     private started = false;
     private startPromise: Promise<void> | undefined;
     /** In-process HTTP MCP server (started lazily when the tools are enabled). */
@@ -34,28 +78,35 @@ export class ChatProfileRuntime {
     /** Latest diagram selection (node ids) per file, fed to the turn context. */
     private readonly selectionByFile = new Map<string, string[]>();
     private readonly output: vscode.OutputChannel;
+    /** Tears down the ACP -> webview event forwarding registered in the ctor. */
+    private readonly acpForwardingDisposer: () => void;
 
     constructor(
         context: vscode.ExtensionContext,
-        private readonly profile: ChatProfile,
+        private readonly config: ChatRuntimeConfig,
         private readonly postToWebview: ChatMessageSink
     ) {
+        this.context = context;
+        this.registry = new SlashCommandRegistry(config.slashCommands ?? []);
         this.sessions = new SessionManager(this.acp, context.workspaceState);
         // Restore persisted sessions so the picker is populated across reloads.
         void this.sessions.initialize();
 
-        if (profile.skill) {
-            this.acp.setChatSkill(profile.skill);
+        if (config.skill) {
+            this.acp.setChatSkill(config.skill);
         }
-        if (profile.graphContextProvider) {
-            this.acp.setWorkflowGraphProvider(file => Promise.resolve(profile.graphContextProvider!(file)));
+        if (config.sourceMimeType) {
+            this.acp.setSourceMimeType(config.sourceMimeType);
+        }
+        if (config.graphContextProvider) {
+            this.acp.setWorkflowGraphProvider(file => Promise.resolve(config.graphContextProvider!(file)));
         }
         this.acp.setTurnContextBlocksProvider(async file => {
             const blocks: any[] = [];
-            if (file && this.profile.selectionContext !== false) {
+            if (file && this.config.selectionContext !== false) {
                 const selected = this.selectionByFile.get(file) ?? [];
                 if (selected.length > 0) {
-                    const rendered = this.profile.selectionContext?.render?.(file, selected);
+                    const rendered = this.config.selectionContext?.render?.(file, selected);
                     blocks.push({
                         type: 'text',
                         text:
@@ -66,9 +117,9 @@ export class ChatProfileRuntime {
                     });
                 }
             }
-            if (file && this.profile.turnContextProvider) {
+            if (file && this.config.turnContextProvider) {
                 try {
-                    const extra = await this.profile.turnContextProvider(file, this.selectionByFile.get(file) ?? []);
+                    const extra = await this.config.turnContextProvider(file, this.selectionByFile.get(file) ?? []);
                     if (Array.isArray(extra)) blocks.push(...extra);
                 } catch {
                     // Best-effort.
@@ -77,17 +128,33 @@ export class ChatProfileRuntime {
             return blocks;
         });
 
-        this.output = vscode.window.createOutputChannel(`${profile.displayName} Chat`);
+        this.output = vscode.window.createOutputChannel(`${config.displayName} Chat`);
         // Surface a per-profile setting for the opencode binary path; the ACP
         // client resolves it from the env var (then ~/.opencode/bin, PATH, …).
         const override = vscode.workspace
-            .getConfiguration(profile.settingsSection)
+            .getConfiguration(config.settingsSection)
             .get<string>('opencodePath');
         if (override) {
             process.env.WORKFLOW_OPENCODE_PATH = override;
         }
         this.setupMcpProvider();
-        this.forwardAcpEvents();
+        this.acpForwardingDisposer = attachAcpEventForwarding(this.acp, {
+            postToSession: (sessionId, payload) => this.post(sessionId, payload),
+            broadcast: payload => this.broadcast(payload),
+            onTurnComplete: ({ sessionId, text, thinking, model }) => {
+                this.sessions.addMessageToSession(sessionId, {
+                    role: 'assistant',
+                    content: text ?? '',
+                    timestamp: Date.now(),
+                    thinking,
+                    provider: model
+                });
+                this.post(sessionId, { type: 'chat.turnEnd', data: { sessionId } });
+                // Resolve the just-sent user message's opencode id so its revert
+                // affordance appears without rebuilding the timeline.
+                void this.postLiveMessageIds(sessionId);
+            }
+        });
     }
 
     // --- lifecycle ---------------------------------------------------------
@@ -113,7 +180,7 @@ export class ChatProfileRuntime {
 
     private mcpEnabled(): boolean {
         return vscode.workspace
-            .getConfiguration(this.profile.settingsSection)
+            .getConfiguration(this.config.settingsSection)
             .get<boolean>('enableMcpTools', true);
     }
 
@@ -124,11 +191,11 @@ export class ChatProfileRuntime {
      * and the chat still works.
      */
     private async ensureMcpServer(): Promise<void> {
-        const tools = this.profile.tools ?? [];
+        const tools = this.config.tools ?? [];
         if (tools.length === 0 || !this.mcpEnabled() || this.mcpHttp) return;
         try {
             const { McpHttpServer } = await import('./mcp-http-server.js');
-            const server = new McpHttpServer(this.profile.key, tools);
+            const server = new McpHttpServer(this.config.key, tools);
             await server.start();
             this.mcpHttp = server;
         } catch (err) {
@@ -138,15 +205,15 @@ export class ChatProfileRuntime {
 
     private setupMcpProvider(): void {
         this.acp.setMcpServersProvider((file?: string) => {
-            if (!file || !this.mcpEnabled() || !this.mcpHttp) return [];
-            return [
-                {
-                    type: 'http',
-                    name: this.profile.key,
-                    url: this.mcpHttp.urlFor(file),
-                    headers: []
-                } as any
-            ];
+            if (!file) return [];
+            const servers: any[] = [];
+            if (this.mcpEnabled() && this.mcpHttp) {
+                servers.push({ type: 'http', name: this.config.key, url: this.mcpHttp.urlFor(file), headers: [] } as any);
+            }
+            for (const d of this.config.stdioMcpServers?.(file) ?? []) {
+                servers.push({ name: d.name, command: d.command, args: d.args, env: d.env });
+            }
+            return servers;
         });
     }
 
@@ -155,43 +222,6 @@ export class ChatProfileRuntime {
     private post(sessionId: string, payload: ChatPayload): void {
         const uri = this.sessionUri.get(sessionId);
         if (uri) this.postToWebview(uri, payload);
-    }
-
-    private forwardAcpEvents(): void {
-        this.acp.on('sessionUpdate', notification => {
-            const sessionId = (notification as any)?.sessionId;
-            if (sessionId)
-                this.post(sessionId, { type: 'chat.sessionUpdate', data: { notification } });
-        });
-        this.acp.on('turnComplete', ({ sessionId, text, thinking, model }) => {
-            this.sessions.addMessageToSession(sessionId, {
-                role: 'assistant',
-                content: text,
-                timestamp: Date.now(),
-                thinking,
-                provider: model
-            });
-            this.post(sessionId, { type: 'chat.turnEnd', data: { sessionId } });
-            // Resolve the just-sent user message's opencode id so its revert
-            // affordance appears without rebuilding the timeline.
-            void this.postLiveMessageIds(sessionId);
-        });
-        this.acp.on('permissionRequest', data => {
-            // permissionRequest isn't session-scoped in the event; broadcast to all panels.
-            this.broadcast({ type: 'chat.permissionRequest', data });
-        });
-        this.acp.on('modeChanged', ({ sessionId, mode }) =>
-            this.post(sessionId, { type: 'chat.modeChanged', data: { sessionId, mode } })
-        );
-        this.acp.on('connected', () =>
-            this.broadcast({ type: 'chat.connectionStatus', data: { connected: true } })
-        );
-        this.acp.on('disconnected', () =>
-            this.broadcast({ type: 'chat.connectionStatus', data: { connected: false } })
-        );
-        this.acp.on('error', err =>
-            this.broadcast({ type: 'chat.error', data: { message: err.message } })
-        );
     }
 
     private broadcast(payload: ChatPayload): void {
@@ -221,8 +251,10 @@ export class ChatProfileRuntime {
     /** Start opencode (once per runtime) and report the outcome to the
      *  requesting panel. Errors surface instead of a silent "Disconnected". */
     private async connectAndReport(uri: string, cwd: string): Promise<boolean> {
+        // Already connected: the immediate `chat.ready` status and the ACP
+        // 'connected' event already inform the panel — re-posting here would
+        // double the handshake and loop the panel's status-triggered refetch.
         if (this.acp.isClientConnected()) {
-            this.postToWebview(uri, { type: 'chat.connectionStatus', data: { connected: true } });
             return true;
         }
         try {
@@ -267,12 +299,21 @@ export class ChatProfileRuntime {
         switch (type) {
             case 'chat.ready':
             case 'chat.getStatus': {
+                // Post the current status immediately: the integrated panel's 5 s
+                // handshake must not wait out an opencode spawn.
+                this.postToWebview(uri, {
+                    type: 'chat.connectionStatus',
+                    data: { connected: this.acp.isClientConnected() }
+                });
                 this.sendSessions(uri, file);
                 // Eagerly connect on panel open so the panel shows Connected
                 // without needing a first message.
                 await this.connectAndSendModels(uri, cwd);
                 return;
             }
+            case 'chat.log':
+                this.output.appendLine(`webview: ${String(data?.message ?? '')}`);
+                return;
             case 'chat.getSessions':
                 this.sendSessions(uri, file);
                 return;
@@ -287,12 +328,14 @@ export class ChatProfileRuntime {
                     await this.connectAndSendModels(uri, cwd);
                 }
                 return;
-            case 'chat.getCommands':
+            case 'chat.getCommands': {
+                const mode: 'plan' | 'build' = data?.mode === 'plan' ? 'plan' : 'build';
                 this.postToWebview(uri, {
                     type: 'chat.commands',
-                    data: { mode: data?.mode, commands: this.profile.slashCommands ?? [] }
+                    data: { mode, commands: this.registry.listForMode(mode) }
                 });
                 return;
+            }
             case 'chat.createSession': {
                 await this.ensureStarted(cwd);
                 // Collect the name via a native input box (webview prompt() is
@@ -444,7 +487,54 @@ export class ChatProfileRuntime {
                     timestamp: Date.now(),
                     mode: data.mode
                 });
+                const mode: 'plan' | 'build' = data.mode === 'plan' ? 'plan' : 'build';
+                let resolved: { contribution: ChatCommandContribution; args: Record<string, any> } | null = null;
+                try {
+                    resolved = this.registry.resolve(String(data.text ?? ''), mode);
+                } catch (err) {
+                    this.postToWebview(uri, {
+                        type: 'chat.message',
+                        data: {
+                            role: 'system',
+                            content: `Error: ${err instanceof Error ? err.message : String(err)}`,
+                            timestamp: Date.now(),
+                            mode
+                        }
+                    });
+                    return;
+                }
+                if (resolved && resolved.contribution.handler) {
+                    const ctx = {
+                        file,
+                        uri,
+                        sessionId,
+                        selectedNodeIds: this.selectionByFile.get(file) ?? [],
+                        mode
+                    };
+                    let result: { success: boolean; error?: string; info?: string };
+                    try {
+                        result = await resolved.contribution.handler(resolved.args, ctx);
+                    } catch (err) {
+                        result = { success: false, error: err instanceof Error ? err.message : String(err) };
+                    }
+                    this.postToWebview(uri, {
+                        type: 'chat.message',
+                        data: {
+                            role: 'system',
+                            content: result.success
+                                ? (result.info ?? `✓ Executed: /${resolved.contribution.command}`)
+                                : `Error: ${result.error}`,
+                            timestamp: Date.now(),
+                            mode
+                        }
+                    });
+                    return;
+                }
+                // Pass-through slash suggestions and natural language both go to the agent.
                 await this.acp.sendPrompt(sessionId, data.text);
+                if (this.config.postTurnHook) {
+                    await this.config.postTurnHook(file, String(data.text ?? '')).catch(() => undefined);
+                }
                 return;
             }
             case 'chat.cancel':
@@ -469,6 +559,8 @@ export class ChatProfileRuntime {
                     return;
                 }
                 await this.acp.setProvider(data.sessionId, modelId);
+                // Persist the choice as the preferred model for future sessions.
+                void this.context.workspaceState.update(LEGACY_KEYS.preferredModel.current, modelId);
                 this.postToWebview(uri, {
                     type: 'chat.providerChanged',
                     data: { provider: modelId }
@@ -483,8 +575,23 @@ export class ChatProfileRuntime {
         }
     }
 
-    /** Apply any pre-session mode/model the user picked before this session existed. */
+    /** The last model the user explicitly chose (migrated from the legacy key). */
+    private getPreferredModel(): string | undefined {
+        return readStateWithFallback<string | undefined>(
+            this.context.workspaceState,
+            LEGACY_KEYS.preferredModel.current,
+            LEGACY_KEYS.preferredModel.legacy,
+            undefined
+        );
+    }
+
+    /** Apply the preferred model first, then any pre-session mode/model the user
+     *  picked before this session existed (an explicit pre-session choice wins). */
     private async applyPending(sessionId: string): Promise<void> {
+        const preferred = this.getPreferredModel();
+        if (preferred) {
+            await this.acp.setProvider(sessionId, preferred).catch(() => undefined);
+        }
         if (this.pendingMode) {
             await this.acp.setSessionMode(sessionId, this.pendingMode).catch(() => undefined);
         }
@@ -598,7 +705,40 @@ export class ChatProfileRuntime {
         });
     }
 
+    // --- diagnostics -------------------------------------------------------
+
+    showLog(): void {
+        this.output.show(true);
+    }
+
+    async runDiagnostics(): Promise<void> {
+        this.showLog();
+        this.output.appendLine('──────── DIAGNOSTICS ────────');
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        this.output.appendLine(`workspace folder: ${workspaceRoot ?? '(none — open a folder)'}`);
+        this.output.appendLine(`PATH: ${process.env.PATH ?? '(unset)'}`);
+        this.output.appendLine(`acp connected: ${this.acp.isClientConnected()}`);
+        if (!workspaceRoot) {
+            this.output.appendLine('Cannot probe: no workspace folder open.');
+            return;
+        }
+        try {
+            await this.ensureStarted(workspaceRoot);
+            const sessionId = await this.acp.createSession(workspaceRoot, 'diagnostic-probe', 'build');
+            this.output.appendLine(`Probe session created: ${sessionId}`);
+            const models = await this.acp.listProviders();
+            this.output.appendLine(
+                `Models available: ${models.length}` +
+                    (models.length ? ` (e.g. ${models.slice(0, 3).map((m: any) => m.id).join(', ')})` : '')
+            );
+            this.output.appendLine('✅ Backend is functional. If the panel still shows "Connecting", the webview↔extension messages are not reaching it.');
+        } catch (e) {
+            this.output.appendLine(`Probe FAILED: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    }
+
     dispose(): void {
+        this.acpForwardingDisposer();
         this.acp.stop();
         this.mcpHttp?.stop();
         this.output.dispose();

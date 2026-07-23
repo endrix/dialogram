@@ -17,6 +17,8 @@ export interface ChatCommandContext {
     sessionId: string;
     /** Live diagram selection for the file (empty when nothing selected). */
     selectedNodeIds: string[];
+    /** Chat mode the command was invoked in; drives mode-aware `/help`. */
+    mode: 'plan' | 'build';
 }
 
 export interface ChatCommandResult {
@@ -69,15 +71,10 @@ export class SlashCommandRegistry {
                 description: 'Show available commands',
                 handler: async (_args, ctx) => ({
                     success: true,
-                    info: this.helpText(this.modeOfContext(ctx))
+                    info: this.helpText(ctx.mode)
                 })
             });
         }
-    }
-
-    /** The ctx has no mode; /help renders both modes' commands when unsure. */
-    private modeOfContext(_ctx: ChatCommandContext): 'plan' | 'build' {
-        return 'build';
     }
 
     private modesOf(c: ChatCommandContribution): Array<'plan' | 'build'> {

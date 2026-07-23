@@ -3,7 +3,7 @@
  * `DialogramApi.activateDiagramProfile`.
  *
  * NOTE ON ISOLATION: all state lives in per-profile instances
- * (ChatProfileRuntime, ChatBackend, GlspIntegrationHandle). The platform
+ * (ChatRuntime, ChatBackend, GlspIntegrationHandle). The platform
  * module is shared across profiles, loaded once by the host (see main.ts).
  * Each profile gets its own runtime instances, providing complete isolation.
  *
@@ -16,7 +16,7 @@ import type * as vscode from 'vscode';
 import type { ChatMessageSink, ChatProfile, ChatProfileHandle, DiagramProfile, DiagramProfileHandle } from '../api';
 import { activateGlspIntegration } from './diagram/glsp-activation';
 import { ChatBackend } from './chat/chat-backend';
-import { ChatProfileRuntime } from './chat/chat-profile-runtime';
+import { ChatRuntime, type ChatRuntimeConfig } from './chat/chat-runtime';
 
 export async function activateProfileRuntime(
     context: vscode.ExtensionContext,
@@ -68,11 +68,31 @@ export function activateChatRuntime(
     profile: ChatProfile,
     postToWebview: ChatMessageSink
 ): ChatProfileHandle {
-    const runtime = new ChatProfileRuntime(context, profile, postToWebview);
+    const runtime = new ChatRuntime(context, chatProfileToConfig(profile), postToWebview);
     context.subscriptions.push(runtime);
     return {
         handleMessage: (uri, payload) => runtime.handleMessage(uri, payload),
         setSelection: (uri, selectedNodeIds) => runtime.setSelection(uri, selectedNodeIds),
         dispose: () => runtime.dispose()
+    };
+}
+
+/**
+ * Temporary bridge (removed in Task 6): map the legacy chat-only {@link ChatProfile}
+ * onto the unified {@link ChatRuntimeConfig}. `profile.slashCommands` is
+ * `ChatSlashCommand[]` (pass-through suggestions), structurally a subset of
+ * `ChatCommandContribution[]`, so it typechecks unchanged.
+ */
+function chatProfileToConfig(profile: ChatProfile): ChatRuntimeConfig {
+    return {
+        key: profile.key,
+        displayName: profile.displayName,
+        settingsSection: profile.settingsSection,
+        skill: profile.skill,
+        graphContextProvider: profile.graphContextProvider,
+        turnContextProvider: profile.turnContextProvider,
+        selectionContext: profile.selectionContext,
+        tools: profile.tools,
+        slashCommands: profile.slashCommands
     };
 }

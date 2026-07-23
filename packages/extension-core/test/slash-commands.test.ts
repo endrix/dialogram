@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SlashCommandRegistry, type ChatCommandContribution } from '../src/extension/chat/slash-commands';
 
-const noopCtx = { file: '/tmp/wf.py', uri: 'file:///tmp/wf.py', sessionId: 's1', selectedNodeIds: [] };
+const noopCtx = {
+    file: '/tmp/wf.py',
+    uri: 'file:///tmp/wf.py',
+    sessionId: 's1',
+    selectedNodeIds: [],
+    mode: 'build' as const
+};
 
 function makeRegistry(extra: ChatCommandContribution[] = []) {
     return new SlashCommandRegistry([
@@ -78,5 +84,14 @@ describe('help', () => {
         expect(result.success).toBe(true);
         expect(result.info).toContain('/create-task');
         expect(result.info).toContain('Create a new task node');
+    });
+
+    it('/help honours the invocation mode, listing plan-mode commands only', async () => {
+        const hit = makeRegistry().resolve('/help', 'plan');
+        const result = await hit!.contribution.handler!({}, { ...noopCtx, mode: 'plan' as const });
+        expect(result.success).toBe(true);
+        // `create-task` is build-only, so plan-mode /help must exclude it.
+        expect(result.info).not.toContain('/create-task');
+        expect(result.info).toContain('/ask');
     });
 });
