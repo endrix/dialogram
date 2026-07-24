@@ -1231,9 +1231,9 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
             `
           : nothing}
         ${this.selectedNodeIds.length
-          ? html`<div class="chat-selection-hint">
-              <span class="codicon codicon-list-selection"></span>
-              ${this.selectedNodeIds.length} node${this.selectedNodeIds.length === 1 ? '' : 's'} selected — "this" refers to ${this.selectedNodeIds.length === 1 ? 'it' : 'them'}
+          ? html`<div class="chat-selection-hint" title="Selected diagram nodes are sent as context">
+              <span class="codicon codicon-inspect"></span>
+              ${this.selectedNodeIds.length} node${this.selectedNodeIds.length === 1 ? '' : 's'} selected — included as context
             </div>`
           : nothing}
         <div class="chat-composer">
