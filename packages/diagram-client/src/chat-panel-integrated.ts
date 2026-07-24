@@ -475,7 +475,11 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       case 'chat.error':
         this.isLoadingSession = false;
         this.finishStreamingMessage();
-        this.pushMessage('system', `Error: ${data?.message ?? 'Unknown error'}`);
+        // The unified runtime eagerly connects on the chat.ready handshake, so
+        // connection errors arrive without any user interaction — record them
+        // but never pop the drawer open for background chatter. When the error
+        // follows a user action the panel is already open.
+        this.pushMessage('system', `Error: ${data?.message ?? 'Unknown error'}`, undefined, undefined, { reveal: false });
         break;
     }
   }
@@ -705,10 +709,18 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     this.update();
   }
 
-  private pushMessage(role: Role, content: string, mode?: 'plan' | 'build', timestamp?: number): void {
+  private pushMessage(
+    role: Role,
+    content: string,
+    mode?: 'plan' | 'build',
+    timestamp?: number,
+    opts?: { reveal?: boolean }
+  ): void {
     this.timeline.push({ kind: 'message', role, content, timestamp: timestamp ?? Date.now(), mode });
     this.update();
-    this.autoShow();
+    // reveal:false = record without opening the drawer, for messages that can
+    // arrive with no user interaction (background connection errors).
+    if (opts?.reveal !== false) this.autoShow();
   }
 
   private switchMode(mode: 'plan' | 'build'): void {
