@@ -125,6 +125,11 @@
     {
         "id": "Symbol(stub.ISelectionListener)",
         "op": "bind",
+        "to": "service:ChatPanel"
+    },
+    {
+        "id": "Symbol(stub.ISelectionListener)",
+        "op": "bind",
         "to": "service:PropertyPanel"
     },
     {

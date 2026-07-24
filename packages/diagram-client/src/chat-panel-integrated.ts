@@ -1,5 +1,5 @@
 import { injectable } from 'inversify';
-import { IDiagramStartup } from '@eclipse-glsp/client';
+import { IDiagramStartup, ISelectionListener } from '@eclipse-glsp/client';
 import { Messenger } from 'vscode-messenger-webview';
 import { DiagramWebviewChannel, getDiagramWebviewChannel } from './webview-channel';
 import { NotificationType } from 'vscode-messenger-common';
@@ -137,7 +137,7 @@ interface CommandEntry {
  * channel (the diagram webview's raw postMessage is owned by GLSP).
  */
 @injectable()
-export class ChatPanel implements IDiagramStartup {
+export class ChatPanel implements IDiagramStartup, ISelectionListener {
   /** Run after the diagram model is ready so the webview DOM exists. */
   rank = 100;
 
@@ -165,6 +165,9 @@ export class ChatPanel implements IDiagramStartup {
   private connection: 'unknown' | 'connected' | 'disconnected' = 'unknown';
   private connectionReason = '';
   private inputValue = '';
+
+  /** Live diagram selection (node ids), mirrored to the host for chat context. */
+  private selectedNodeIds: string[] = [];
 
   /** In-progress assistant reply (streamed chunks). */
   private streamingText = '';
@@ -208,6 +211,16 @@ export class ChatPanel implements IDiagramStartup {
    */
   postModelInitialization(): void {
     this.initialize();
+  }
+
+  /**
+   * GLSP selection changed: track the ids, push them to the host (so the chat
+   * context always reflects the live selection) and refresh the composer hint.
+   */
+  selectionChanged(_root: unknown, selectedElements: string[]): void {
+    this.selectedNodeIds = selectedElements ?? [];
+    this.sendToHost('chat.selection', { selectedNodeIds: this.selectedNodeIds });
+    if (this.initialized) this.update();
   }
 
   private initialize(): void {
@@ -647,6 +660,7 @@ export class ChatPanel implements IDiagramStartup {
       text,
       sessionId: this.currentSessionId,
       mode: this.currentMode,
+      selectedNodeIds: this.selectedNodeIds,
     });
 
     if (!ok) {
@@ -1215,6 +1229,12 @@ export class ChatPanel implements IDiagramStartup {
                 )}
               </div>
             `
+          : nothing}
+        ${this.selectedNodeIds.length
+          ? html`<div class="chat-selection-hint">
+              <span class="codicon codicon-list-selection"></span>
+              ${this.selectedNodeIds.length} node${this.selectedNodeIds.length === 1 ? '' : 's'} selected — "this" refers to ${this.selectedNodeIds.length === 1 ? 'it' : 'them'}
+            </div>`
           : nothing}
         <div class="chat-composer">
           <textarea
