@@ -10,6 +10,7 @@
  * extension host.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as vscode from 'vscode';
 import { ChatRuntime } from '../src/extension/chat/chat-runtime';
 import type { ChatPayload } from '../src/api';
 
@@ -213,5 +214,71 @@ describe('unified runtime absorbed features', () => {
         const status = posts.filter(p => p.payload.type === 'chat.connectionStatus');
         expect(status.length).toBeGreaterThanOrEqual(1);
         expect(status[0].payload.data).toEqual(expect.objectContaining({ connected: false }));
+    });
+});
+
+describe('connect watchdog (30 s dialog on stuck connection)', () => {
+    it('shows a warning dialog when still disconnected 30 s after the handshake', async () => {
+        vi.useFakeTimers();
+        const warn = vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(undefined as any);
+        try {
+            const { runtime } = makeRuntime({});
+            const acp = (runtime as any).acp;
+            acp.isClientConnected = () => false;
+            acp.start = () => new Promise(() => undefined); // spawn hangs forever
+
+            void runtime.handleMessage('file:///ws/wf.py', { type: 'chat.ready', data: {} });
+            expect(warn).not.toHaveBeenCalled();
+            await vi.advanceTimersByTimeAsync(30_000);
+
+            expect(warn).toHaveBeenCalledTimes(1);
+            expect(String(warn.mock.calls[0][0])).toContain('30 seconds');
+            runtime.dispose();
+        } finally {
+            warn.mockRestore();
+            vi.useRealTimers();
+        }
+    });
+
+    it('does not warn when the connection succeeds before the deadline', async () => {
+        vi.useFakeTimers();
+        const warn = vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(undefined as any);
+        try {
+            const { runtime } = makeRuntime({});
+            const acp = (runtime as any).acp;
+            acp.isClientConnected = () => false;
+            acp.start = async () => undefined; // spawn succeeds immediately
+
+            await runtime.handleMessage('file:///ws/wf.py', { type: 'chat.ready', data: {} });
+            await vi.advanceTimersByTimeAsync(31_000);
+
+            expect(warn).not.toHaveBeenCalled();
+            runtime.dispose();
+        } finally {
+            warn.mockRestore();
+            vi.useRealTimers();
+        }
+    });
+
+    it('warns at most once per runtime even across repeated handshakes', async () => {
+        vi.useFakeTimers();
+        const warn = vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(undefined as any);
+        try {
+            const { runtime } = makeRuntime({});
+            const acp = (runtime as any).acp;
+            acp.isClientConnected = () => false;
+            acp.start = () => new Promise(() => undefined);
+
+            void runtime.handleMessage('file:///ws/a.py', { type: 'chat.ready', data: {} });
+            await vi.advanceTimersByTimeAsync(30_000);
+            void runtime.handleMessage('file:///ws/b.py', { type: 'chat.ready', data: {} });
+            await vi.advanceTimersByTimeAsync(30_000);
+
+            expect(warn).toHaveBeenCalledTimes(1);
+            runtime.dispose();
+        } finally {
+            warn.mockRestore();
+            vi.useRealTimers();
+        }
     });
 });

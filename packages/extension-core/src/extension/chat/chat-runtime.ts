@@ -80,6 +80,10 @@ export class ChatRuntime {
     private readonly output: vscode.OutputChannel;
     /** Tears down the ACP -> webview event forwarding registered in the ctor. */
     private readonly acpForwardingDisposer: () => void;
+    /** Pending stuck-connection watchdog (armed on the panel handshake). */
+    private connectWatchdog: ReturnType<typeof setTimeout> | undefined;
+    /** The watchdog dialog fires at most once per runtime — no per-diagram nagging. */
+    private connectWarned = false;
 
     constructor(
         context: vscode.ExtensionContext,
@@ -155,9 +159,56 @@ export class ChatRuntime {
                 void this.postLiveMessageIds(sessionId);
             }
         });
+        // A successful connection (from any path) stands down the watchdog.
+        this.acp.on('connected', () => this.clearConnectWatchdog());
     }
 
     // --- lifecycle ---------------------------------------------------------
+
+    /** How long after the panel handshake before a stuck connection surfaces as a dialog. */
+    private static readonly CONNECT_WATCHDOG_MS = 30_000;
+
+    /**
+     * Arm the stuck-connection watchdog. The eager connect on `chat.ready` is
+     * silent by design (background errors no longer auto-open the chat drawer),
+     * so a connection that never comes up would otherwise be invisible until
+     * the user opens the chat. If opencode is still not connected 30 s after
+     * the diagram's handshake, surface one VS Code dialog with escape hatches.
+     */
+    private armConnectWatchdog(): void {
+        if (this.connectWarned || this.connectWatchdog || this.acp.isClientConnected()) {
+            return;
+        }
+        this.connectWatchdog = setTimeout(() => {
+            this.connectWatchdog = undefined;
+            if (this.connectWarned || this.acp.isClientConnected()) {
+                return;
+            }
+            this.connectWarned = true;
+            this.output.appendLine('connect watchdog: still disconnected after 30 s — surfacing dialog');
+            void vscode.window
+                .showWarningMessage(
+                    `${this.config.displayName} chat could not connect to opencode within 30 seconds. ` +
+                        'The agent may not be installed or on PATH.',
+                    'Show Log',
+                    'Run Diagnostics'
+                )
+                .then(choice => {
+                    if (choice === 'Show Log') {
+                        this.showLog();
+                    } else if (choice === 'Run Diagnostics') {
+                        void this.runDiagnostics();
+                    }
+                });
+        }, ChatRuntime.CONNECT_WATCHDOG_MS);
+    }
+
+    private clearConnectWatchdog(): void {
+        if (this.connectWatchdog) {
+            clearTimeout(this.connectWatchdog);
+            this.connectWatchdog = undefined;
+        }
+    }
 
     private async ensureStarted(cwd: string): Promise<void> {
         if (this.started) return;
@@ -259,6 +310,7 @@ export class ChatRuntime {
         }
         try {
             await this.ensureStarted(cwd);
+            this.clearConnectWatchdog();
             this.postToWebview(uri, { type: 'chat.connectionStatus', data: { connected: true } });
             return true;
         } catch (err) {
@@ -305,6 +357,7 @@ export class ChatRuntime {
                     type: 'chat.connectionStatus',
                     data: { connected: this.acp.isClientConnected() }
                 });
+                this.armConnectWatchdog();
                 this.sendSessions(uri, file);
                 // Eagerly connect on panel open so the panel shows Connected
                 // without needing a first message.
@@ -743,6 +796,7 @@ export class ChatRuntime {
     }
 
     dispose(): void {
+        this.clearConnectWatchdog();
         this.acpForwardingDisposer();
         this.acp.stop();
         this.mcpHttp?.stop();
