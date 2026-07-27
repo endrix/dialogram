@@ -1567,11 +1567,11 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                         );
 
                         // Gather ports for IntelliSense
-                        const node = this.lastRoot?.index?.getById(elementId);
+                        const node: PropertyElement | undefined = this.lastRoot?.index?.getById(elementId);
                         const children = node?.children || [];
                         const ports = children.filter((c) => c.type?.startsWith('port'));
-                        const inputPorts = ports.filter((p) => p.args?.[WorkflowDiagramMetadata.IS_INPUT_PORT] === true).map((p) => p.args?.[WorkflowDiagramMetadata.PORT_NAME] || 'unnamed');
-                        const outputPorts = ports.filter((p) => p.args?.[WorkflowDiagramMetadata.IS_INPUT_PORT] === false).map((p) => p.args?.[WorkflowDiagramMetadata.PORT_NAME] || 'unnamed');
+                        const inputPorts = ports.filter((p) => p.args?.[WorkflowDiagramMetadata.IS_INPUT_PORT] === true).map((p) => (p.args?.[WorkflowDiagramMetadata.PORT_NAME] as string | undefined) || 'unnamed');
+                        const outputPorts = ports.filter((p) => p.args?.[WorkflowDiagramMetadata.IS_INPUT_PORT] === false).map((p) => (p.args?.[WorkflowDiagramMetadata.PORT_NAME] as string | undefined) || 'unnamed');
 
                         // Discovery mode is fixed to all roots for now.
                         this.skillRootsMode = 'all';
@@ -2094,7 +2094,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                         promptInput.placeholder = 'Transform inputs into outputs...\nWait for { to trigger autocomplete!';
                         promptInput.classList.add('agent-prompt-input');
 
-                        const updatePromptVal = (val) => {
+                        const updatePromptVal = (val: string) => {
                             promptInput.value = val;
                             argsMap.set('prompt', this.toWfStringLiteral(val));
                         };
@@ -2120,7 +2120,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                         });
                         syncPromptActive();
 
-                        const createAutocomplete = (inputEl, parent, extraZIndex = 0) => {
+                        const createAutocomplete = (inputEl: HTMLTextAreaElement, parent: HTMLElement, extraZIndex = 0) => {
                             const autocompleteBox = document.createElement('div');
                             autocompleteBox.style.position = 'absolute';
                             autocompleteBox.style.display = 'none';
@@ -2139,7 +2139,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
 
                             inputEl.addEventListener('input', (e) => {
                                 const val = inputEl.value;
-                                const cursorPos = inputEl.selectionStart;
+                                const cursorPos = inputEl.selectionStart as number;
                                 const textBefore = val.slice(0, cursorPos);
                                 
                                 const match = textBefore.match(/\{([a-zA-Z0-9_.]*)$/);
