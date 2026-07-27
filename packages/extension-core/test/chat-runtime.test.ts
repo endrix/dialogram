@@ -1,5 +1,5 @@
 /**
- * Message-contract tests for ChatRuntime (the activateChatProfile path).
+ * Message-contract tests for ChatRuntime (the diagram-profile chat path).
  *
  * The critical contract, inherited from the proven chatbox handler: only the
  * `chat.ready` handshake reports `chat.connectionStatus`. Data requests such as

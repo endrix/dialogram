@@ -13,7 +13,7 @@
  * toolkit import appear here.
  */
 import type * as vscode from 'vscode';
-import type { ChatMessageSink, ChatProfile, ChatProfileHandle, DiagramProfile, DiagramProfileHandle } from '../api';
+import type { DiagramProfile, DiagramProfileHandle } from '../api';
 import { activateGlspIntegration } from './diagram/glsp-activation';
 import { ChatRuntime, type ChatRuntimeConfig } from './chat/chat-runtime';
 import { createEditChatCapability, type EditChatCapability } from './chat/edit-capability';
@@ -102,40 +102,5 @@ export function assembleChatRuntimeConfig(
         stdioMcpServers: capability ? f => capability.stdioMcpServers(f) : undefined,
         slashCommands: [...(capability?.slashCommands ?? []), ...(chat.slashCommands ?? [])],
         postTurnHook: capability ? (f, t) => capability.postTurnHook(f, t) : undefined
-    };
-}
-
-/** Chat-only activation — the implementation behind `activateChatProfile`. */
-export function activateChatRuntime(
-    context: vscode.ExtensionContext,
-    profile: ChatProfile,
-    postToWebview: ChatMessageSink
-): ChatProfileHandle {
-    const runtime = new ChatRuntime(context, chatProfileToConfig(profile), postToWebview);
-    context.subscriptions.push(runtime);
-    return {
-        handleMessage: (uri, payload) => runtime.handleMessage(uri, payload),
-        setSelection: (uri, selectedNodeIds) => runtime.setSelection(uri, selectedNodeIds),
-        dispose: () => runtime.dispose()
-    };
-}
-
-/**
- * Temporary bridge (removed in Task 6): map the legacy chat-only {@link ChatProfile}
- * onto the unified {@link ChatRuntimeConfig}. `profile.slashCommands` is
- * `ChatSlashCommand[]` (pass-through suggestions), structurally a subset of
- * `ChatCommandContribution[]`, so it typechecks unchanged.
- */
-function chatProfileToConfig(profile: ChatProfile): ChatRuntimeConfig {
-    return {
-        key: profile.key,
-        displayName: profile.displayName,
-        settingsSection: profile.settingsSection,
-        skill: profile.skill,
-        graphContextProvider: profile.graphContextProvider,
-        turnContextProvider: profile.turnContextProvider,
-        selectionContext: profile.selectionContext,
-        tools: profile.tools,
-        slashCommands: profile.slashCommands
     };
 }

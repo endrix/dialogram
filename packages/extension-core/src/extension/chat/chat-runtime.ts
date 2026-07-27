@@ -1,8 +1,7 @@
 /**
  * The unified chat runtime: bridges the ACP/opencode client to a consumer-owned
  * webview chat panel over a postMessage-style transport, without requiring the
- * GLSP diagram platform. This is the single runtime behind both
- * `DialogramApi.activateChatProfile` (the mlir-viewer path) and the diagram
+ * GLSP diagram platform. This is the single runtime behind the diagram
  * profile's chat (the former legacy ChatBackend), driven entirely by a
  * {@link ChatRuntimeConfig}.
  *
@@ -24,9 +23,9 @@ import type { StdioMcpDescriptor } from './edit-capability';
 import { LEGACY_KEYS, readStateWithFallback } from '../legacy-settings-compat';
 
 /**
- * Everything project-specific the unified chat runtime needs. Both the chat-only
- * (mlir) profile and the diagram profile's chat contribution are expressed as
- * this data — the runtime carries no product/tool vocabulary of its own.
+ * Everything project-specific the unified chat runtime needs. The diagram
+ * profile's chat contribution is expressed as this data — the runtime carries
+ * no product/tool vocabulary of its own.
  */
 export interface ChatRuntimeConfig {
     /** Short unique key, e.g. 'mlir' — names the MCP server and log scope. */
