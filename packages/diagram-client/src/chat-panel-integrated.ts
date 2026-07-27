@@ -468,7 +468,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
             options: Array.isArray(data.options) ? data.options : [],
           });
           this.update();
-          this.autoShow();
+          this.autoShow('permission-request');
         }
         break;
 
@@ -513,7 +513,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         // Coalesce re-renders to one per animation frame so streaming doesn't
         // starve the diagram (both share this webview's single thread).
         this.scheduleUpdate();
-        this.autoShow();
+        this.autoShow('stream-chunk');
       }
     } else if (kind === 'tool_call' || kind === 'tool_call_update') {
       this.upsertToolCall(update);
@@ -542,7 +542,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       this.timeline.push({ kind: 'tool', id, title, status });
     }
     this.update();
-    this.autoShow();
+    this.autoShow('tool-call');
   }
 
   /** Extract plain text from an ACP content block (or array of blocks). */
@@ -726,7 +726,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     this.update();
     // reveal:false = record without opening the drawer, for messages that can
     // arrive with no user interaction (background connection errors).
-    if (opts?.reveal !== false) this.autoShow();
+    if (opts?.reveal !== false) this.autoShow(`message:${role}:${content.slice(0, 60)}`);
   }
 
   private switchMode(mode: 'plan' | 'build'): void {
@@ -752,7 +752,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     // noticeable moment; show the same spinner so the panel doesn't look frozen.
     this.isLoadingSession = true;
     this.loadingLabel = 'Creating session…';
-    this.autoShow();
+    this.autoShow('create-session');
     this.update();
     this.sendToHost('chat.createSession', { mode: this.currentMode });
   }
@@ -763,7 +763,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     // a noticeable moment; show a loading row so the panel doesn't look frozen.
     this.isLoadingSession = true;
     this.loadingLabel = 'Loading session…';
-    this.autoShow();
+    this.autoShow('load-session');
     this.update();
     this.sendToHost('chat.loadSession', { sessionId });
   }
@@ -907,8 +907,15 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     this.update();
   }
 
-  private autoShow(): void {
-    if (!this.isVisible) this.show();
+  /**
+   * Open the drawer for user-visible activity. `origin` names the trigger and
+   * is logged (webview console + host output channel) whenever this actually
+   * opens the panel — the evidence trail for any uninvited auto-open.
+   */
+  private autoShow(origin: string): void {
+    if (this.isVisible) return;
+    this.log(`autoShow(${origin}) opening the chat panel`);
+    this.show();
   }
 
   private focusInput(): void {
