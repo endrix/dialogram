@@ -101,8 +101,8 @@ export interface DiagramStorageOptions {
  * handlers, slash-command handlers) follow the {@link DiagramProfile.serverDiagramModule}
  * precedent — they are safe only in build-time library mode, where the consumer
  * bundles `@dialogram/extension-core` and calls `activateProfileRuntime` directly.
- * The cross-extension `DialogramApi.activateDiagramProfile` (sidecar) path never
- * populates them.
+ * The cross-extension `DialogramApi.activateDiagramProfile` path (data-only
+ * profiles assembled inside the platform bundle) never populates them.
  */
 export interface DiagramChatConfig {
     name: string;
