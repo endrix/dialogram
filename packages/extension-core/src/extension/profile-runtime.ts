@@ -51,17 +51,7 @@ export async function activateProfileRuntime(
                 log: m => log(m)
             });
         }
-        const config: ChatRuntimeConfig = {
-            key: profile.key,
-            displayName: profile.chat.fullName ?? profile.displayName,
-            settingsSection: `${profile.settingsNamespace}.chat`,
-            skill: profile.chat.skill,
-            sourceMimeType: profile.chat.sourceMimeType,
-            graphContextProvider: capability ? f => capability!.graphContextProvider(f) : undefined,
-            stdioMcpServers: capability ? f => capability!.stdioMcpServers(f) : undefined,
-            slashCommands: capability?.slashCommands ?? [],
-            postTurnHook: capability ? (f, t) => capability!.postTurnHook(f, t) : undefined
-        };
+        const config = assembleChatRuntimeConfig(profile, capability);
         chatRuntime = new ChatRuntime(context, config, transport.sink);
         transport.connect(chatRuntime);
         context.subscriptions.push(chatRuntime, {
@@ -82,6 +72,36 @@ export async function activateProfileRuntime(
         // Both delegate to the editor provider, which owns per-URI client/panel tracking.
         dispatchToWebview: (uri, action) => glsp.editorProvider.dispatchToWebview(uri, action),
         postToWebview: (uri, message) => glsp.editorProvider.postToWebview(uri, message)
+    };
+}
+
+/**
+ * Build the ChatRuntime config for a diagram profile. Pure assembly — the
+ * testable seam for the capability/profile merge rules:
+ * capability graph provider wins; slash commands are capability-first with
+ * profile contributions appended (profile overrides by name via registry
+ * map semantics); tools/turn/selection come only from the profile.
+ */
+export function assembleChatRuntimeConfig(
+    profile: DiagramProfile,
+    capability: EditChatCapability | undefined
+): ChatRuntimeConfig {
+    const chat = profile.chat!;
+    return {
+        key: profile.key,
+        displayName: chat.fullName ?? profile.displayName,
+        settingsSection: `${profile.settingsNamespace}.chat`,
+        skill: chat.skill,
+        sourceMimeType: chat.sourceMimeType,
+        graphContextProvider: capability
+            ? f => capability.graphContextProvider(f)
+            : chat.graphContextProvider,
+        turnContextProvider: chat.turnContextProvider,
+        selectionContext: chat.selectionContext,
+        tools: chat.tools,
+        stdioMcpServers: capability ? f => capability.stdioMcpServers(f) : undefined,
+        slashCommands: [...(capability?.slashCommands ?? []), ...(chat.slashCommands ?? [])],
+        postTurnHook: capability ? (f, t) => capability.postTurnHook(f, t) : undefined
     };
 }
 

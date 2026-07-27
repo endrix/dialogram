@@ -96,6 +96,13 @@ export interface DiagramStorageOptions {
  * namespace the chat's operation dispatcher routes under; `nodeCommands` are the
  * runtime's node-creation slash commands; `skill` is the domain primer injected
  * into each session's context.
+ *
+ * REALM NOTE: the function-valued fields (graph/turn/selection context, tool
+ * handlers, slash-command handlers) follow the {@link DiagramProfile.serverDiagramModule}
+ * precedent — they are safe only in build-time library mode, where the consumer
+ * bundles `@dialogram/extension-core` and calls `activateProfileRuntime` directly.
+ * The cross-extension `DialogramApi.activateDiagramProfile` (sidecar) path never
+ * populates them.
  */
 export interface DiagramChatConfig {
     name: string;
@@ -106,6 +113,24 @@ export interface DiagramChatConfig {
     nodeCommands?: Array<{ command: string; nodeType: string; description: string }>;
     /** MIME type for the source file attached to each session's agent context (opaque, consumer-owned). */
     sourceMimeType?: string;
+    /** In-process MCP tools served over loopback HTTP. */
+    tools?: InProcessChatTool[];
+    /**
+     * Compact graph/structure rendering, injected with the file (mtime-deduped).
+     * When the profile has an `editBackend`, the edit capability's exportGraph
+     * provider WINS and this field is ignored.
+     */
+    graphContextProvider?: (file: string) => Promise<string | undefined> | string | undefined;
+    /** Extra ACP content blocks injected on EVERY turn. */
+    turnContextProvider?: (file: string, selectedNodeIds: string[]) => Promise<any[]> | any[];
+    /** Per-turn selection injection; `false` disables, `render` customizes. */
+    selectionContext?: false | { render?: (file: string, selectedNodeIds: string[]) => string };
+    /**
+     * Slash commands contributed by the profile (handler-capable). Appended
+     * AFTER the edit capability's contributions; on a duplicate `command` name
+     * the profile's registration wins (registry map semantics).
+     */
+    slashCommands?: ChatCommandContribution[];
 }
 
 /**
