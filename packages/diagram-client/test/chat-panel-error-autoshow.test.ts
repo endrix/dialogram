@@ -57,3 +57,25 @@ describe('chat.error auto-show suppression', () => {
         expect(showSpy).toHaveBeenCalled();
     });
 });
+
+describe('connectionStatus auto-show suppression', () => {
+    it('a disconnected status records a notice without opening the panel', () => {
+        const { panel, showSpy } = makePanel();
+
+        (panel as any).handleIncomingMessage('chat.connectionStatus', { connected: false, reason: 'spawning' });
+
+        const timeline = (panel as any).timeline as Array<{ kind: string; role?: string; content?: string }>;
+        expect(timeline.some(t => t.kind === 'message' && t.content?.includes('Not connected'))).toBe(true);
+        expect(showSpy).not.toHaveBeenCalled();
+    });
+
+    it('the disconnected→connected startup flip never opens the panel', () => {
+        const { panel, showSpy } = makePanel();
+
+        (panel as any).handleIncomingMessage('chat.connectionStatus', { connected: false });
+        (panel as any).handleIncomingMessage('chat.connectionStatus', { connected: true });
+
+        expect(showSpy).not.toHaveBeenCalled();
+        expect((panel as any).connection).toBe('connected');
+    });
+});

@@ -632,9 +632,15 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     if (stateKey !== this.lastStatusKey) {
       this.lastStatusKey = stateKey;
       if (!connected) {
+        // The runtime posts an immediate connected:false on every diagram open
+        // (before its eager connect completes), so this is background chatter —
+        // record it for whenever the user opens the chat, never pop the drawer.
         this.pushMessage(
           'system',
-          `Not connected${reason ? `: ${reason}` : ''}. Run "Workflow Chat: Diagnose Connection" for details.`
+          `Not connected${reason ? `: ${reason}` : ''}. Run "Workflow Chat: Diagnose Connection" for details.`,
+          undefined,
+          undefined,
+          { reveal: false }
         );
       }
     }
