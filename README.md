@@ -90,7 +90,7 @@ TypeScript sources.
 
 ## Consuming Dialogram
 
-There are three ways in, ordered from simplest to most invasive.
+There are two ways in, ordered from simplest to most invasive.
 
 ### 1. Sidecar-backed diagrams (the wfpy / calpy path)
 
@@ -148,32 +148,10 @@ and the GLSP packages. The complete recipe (starter wiring, DOM anchors,
 CSP, esbuild options, timing constraints) is in
 [`packages/diagram-client/README.md`](packages/diagram-client/README.md).
 
-### 3. Chat only
-
-A consumer that keeps its own diagram stack can still adopt the chat
-runtime — ACP/opencode sessions, revert, file/graph context injection,
-per-turn selection, in-process MCP tools — while owning the webview UI and
-transport:
-
-```ts
-const handle = await api.activateChatProfile(context, {
-    key: 'flow',
-    displayName: 'Flow',
-    settingsSection: 'flow.chat',
-    graphContextProvider: file => renderCompactGraph(file),
-    tools: [ /* InProcessChatTool[] — read live host-side state directly */ ],
-    slashCommands: [ /* composer "/" menu entries */ ]
-}, (uri, payload) => myPanel.post(uri, payload));
-
-// forward webview payloads back in:
-handle.handleMessage(uri, payload);
-handle.setSelection(uri, selectedNodeIds);
-```
-
 ## The `DiagramProfile` contract
 
 `packages/extension-core/src/api.ts` is the single source of truth
-(`DIALOGRAM_API_VERSION = '0.2.0'`). A profile carries, in outline:
+(`DIALOGRAM_API_VERSION = '0.4.0'`). A profile carries, in outline:
 
 | Group | Fields |
 | --- | --- |
@@ -196,7 +174,7 @@ over the overlay bridge) and `postToWebview(uri, message)` (raw
 
 Pre-1.0, **major.minor must match exactly** — a minor bump may break.
 Consumers must call `isApiVersionCompatible(api.apiVersion)` at activation
-and fail with an actionable message. `0.2.0` is the DiagramProfile v2
+and fail with an actionable message. `0.4.0` is the DiagramProfile v2
 contract described here.
 
 ## The bundle-boundary law
@@ -317,7 +295,7 @@ consumer's profile input — never to extend the allow-list.
 ## Status
 
 The DiagramProfile v2 program (fully neutral core, sidecar toolkit, client
-library, first library-mode consumer) is complete at API `0.2.0`. Known open items: a
+library, first library-mode consumer) is complete at API `0.4.0`. Known open items: a
 `DiagramProfile.diagramType` field, publishing the `@dialogram/api` npm
 package and the Marketplace publisher, and passing `opencodePath` into the
 ACP client explicitly instead of via the environment.
