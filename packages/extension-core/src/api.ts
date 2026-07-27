@@ -37,7 +37,7 @@ export type { ChatCommandContribution, ChatCommandContext, ChatCommandResult };
  * Semver of the API contract. Consumers must check the major version on
  * activation and fail with an actionable message on mismatch.
  */
-export const DIALOGRAM_API_VERSION = '0.3.0';
+export const DIALOGRAM_API_VERSION = '0.4.0';
 
 /** The extension id consumers pass to `vscode.extensions.getExtension`. */
 export const DIALOGRAM_EXTENSION_ID = 'ebezati.dialogram';
@@ -96,6 +96,13 @@ export interface DiagramStorageOptions {
  * namespace the chat's operation dispatcher routes under; `nodeCommands` are the
  * runtime's node-creation slash commands; `skill` is the domain primer injected
  * into each session's context.
+ *
+ * REALM NOTE: the function-valued fields (graph/turn/selection context, tool
+ * handlers, slash-command handlers) follow the {@link DiagramProfile.serverDiagramModule}
+ * precedent — they are safe only in build-time library mode, where the consumer
+ * bundles `@dialogram/extension-core` and calls `activateProfileRuntime` directly.
+ * The cross-extension `DialogramApi.activateDiagramProfile` path (data-only
+ * profiles assembled inside the platform bundle) never populates them.
  */
 export interface DiagramChatConfig {
     name: string;
@@ -106,6 +113,24 @@ export interface DiagramChatConfig {
     nodeCommands?: Array<{ command: string; nodeType: string; description: string }>;
     /** MIME type for the source file attached to each session's agent context (opaque, consumer-owned). */
     sourceMimeType?: string;
+    /** In-process MCP tools served over loopback HTTP. */
+    tools?: InProcessChatTool[];
+    /**
+     * Compact graph/structure rendering, injected with the file (mtime-deduped).
+     * When the profile has an `editBackend`, the edit capability's exportGraph
+     * provider WINS and this field is ignored.
+     */
+    graphContextProvider?: (file: string) => Promise<string | undefined> | string | undefined;
+    /** Extra ACP content blocks injected on EVERY turn. */
+    turnContextProvider?: (file: string, selectedNodeIds: string[]) => Promise<any[]> | any[];
+    /** Per-turn selection injection; `false` disables, `render` customizes. */
+    selectionContext?: false | { render?: (file: string, selectedNodeIds: string[]) => string };
+    /**
+     * Slash commands contributed by the profile (handler-capable). Appended
+     * AFTER the edit capability's contributions; on a duplicate `command` name
+     * the profile's registration wins (registry map semantics).
+     */
+    slashCommands?: ChatCommandContribution[];
 }
 
 /**
@@ -276,7 +301,10 @@ export interface ChatPayload {
     data?: any;
 }
 
-/** Delivers a chat payload to the panel owned by the given document URI. */
+/**
+ * Delivers a chat payload to the panel owned by the given document URI.
+ * Types the per-URI reply sink consumed by ChatRuntime/GlspChatTransport.
+ */
 export type ChatMessageSink = (uri: string, payload: ChatPayload) => void;
 
 /**
@@ -307,56 +335,6 @@ export interface ChatSlashCommand {
     usage?: string;
 }
 
-/**
- * A chat-only profile: everything project-specific the chat runtime needs.
- * The consumer keeps its own webview UI and forwards `chat.*` payloads to the
- * returned handle; the platform runs ACP/opencode, sessions, revert, context
- * injection (file + graph + per-turn selection) and the in-process MCP tools.
- */
-export interface ChatProfile {
-    /** Short unique key, e.g. 'mlir' — names the MCP server and log scope. */
-    key: string;
-    /** Human-readable name, used for the output channel ("<name> Chat"). */
-    displayName: string;
-    /** Settings section read for `opencodePath` and `enableMcpTools`, e.g. 'mlir.chat'. */
-    settingsSection: string;
-    /** Domain primer injected into each session's context. */
-    skill?: string;
-    /** Compact graph/structure rendering, injected with the file (mtime-deduped). */
-    graphContextProvider?: (file: string) => Promise<string | undefined> | string | undefined;
-    /**
-     * Extra ACP content blocks injected on EVERY turn (unlike the mtime-deduped
-     * file/graph context). Receives the current diagram selection.
-     */
-    turnContextProvider?: (file: string, selectedNodeIds: string[]) => Promise<any[]> | any[];
-    /**
-     * Per-turn selection injection. Enabled by default (set `false` to disable);
-     * pass an object with `render` to customize the injected text.
-     */
-    selectionContext?: false | { render?: (file: string, selectedNodeIds: string[]) => string };
-    /** In-process MCP tools served over loopback HTTP. */
-    tools?: InProcessChatTool[];
-    /**
-     * Slash commands for the composer's '/' menu. A contribution without a
-     * handler is a pass-through suggestion (the raw text goes to the agent) —
-     * the 0.2.0 `ChatSlashCommand` shape remains valid. A handler makes the
-     * command execute host-side and post a system confirmation.
-     */
-    slashCommands?: ChatCommandContribution[];
-}
-
-/**
- * Handle returned by `activateChatProfile`. The consumer forwards webview
- * payloads (with the owning document URI) into `handleMessage`; replies and
- * streamed events come back through the sink passed at activation.
- */
-export interface ChatProfileHandle extends vscode.Disposable {
-    handleMessage(uri: string, payload: ChatPayload): Promise<void>;
-    /** Push the current diagram selection for a file (alternative to the
-     *  `chat.selection` webview message). */
-    setSelection(uri: string, selectedNodeIds: string[]): void;
-}
-
 export interface DialogramApi {
     apiVersion: string;
     /**
@@ -370,16 +348,6 @@ export interface DialogramApi {
         context: vscode.ExtensionContext,
         profile: DiagramProfile
     ): Promise<DiagramProfileHandle>;
-    /**
-     * Activate the chat runtime alone, for consumers with their own diagram
-     * stack (the mlir-viewer path). The consumer owns the webview UI and the
-     * transport; the platform owns ACP/opencode, sessions and tools.
-     */
-    activateChatProfile(
-        context: vscode.ExtensionContext,
-        profile: ChatProfile,
-        postToWebview: ChatMessageSink
-    ): Promise<ChatProfileHandle>;
 }
 
 /**

@@ -637,7 +637,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         // record it for whenever the user opens the chat, never pop the drawer.
         this.pushMessage(
           'system',
-          `Not connected${reason ? `: ${reason}` : ''}. Run "Workflow Chat: Diagnose Connection" for details.`,
+          `Not connected${reason ? `: ${reason}` : ''}. Run the chat's "Diagnose Connection" command for details.`,
           undefined,
           undefined,
           { reveal: false }

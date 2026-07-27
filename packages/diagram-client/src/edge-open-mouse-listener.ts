@@ -52,7 +52,7 @@ function edgeHasViewerToken(edge: GModelElement): boolean {
 
 function toDiagramPoint(event: MouseEvent): { x: number; y: number } | undefined {
     const target = event.target;
-    if (!(target instanceof Element)) {
+    if (!(target instanceof SVGElement)) {
         return undefined;
     }
     const svg = target.ownerSVGElement;

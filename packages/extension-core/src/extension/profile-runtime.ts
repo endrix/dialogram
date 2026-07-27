@@ -13,7 +13,7 @@
  * toolkit import appear here.
  */
 import type * as vscode from 'vscode';
-import type { ChatMessageSink, ChatProfile, ChatProfileHandle, DiagramProfile, DiagramProfileHandle } from '../api';
+import type { DiagramProfile, DiagramProfileHandle } from '../api';
 import { activateGlspIntegration } from './diagram/glsp-activation';
 import { ChatRuntime, type ChatRuntimeConfig } from './chat/chat-runtime';
 import { createEditChatCapability, type EditChatCapability } from './chat/edit-capability';
@@ -51,17 +51,7 @@ export async function activateProfileRuntime(
                 log: m => log(m)
             });
         }
-        const config: ChatRuntimeConfig = {
-            key: profile.key,
-            displayName: profile.chat.fullName ?? profile.displayName,
-            settingsSection: `${profile.settingsNamespace}.chat`,
-            skill: profile.chat.skill,
-            sourceMimeType: profile.chat.sourceMimeType,
-            graphContextProvider: capability ? f => capability!.graphContextProvider(f) : undefined,
-            stdioMcpServers: capability ? f => capability!.stdioMcpServers(f) : undefined,
-            slashCommands: capability?.slashCommands ?? [],
-            postTurnHook: capability ? (f, t) => capability!.postTurnHook(f, t) : undefined
-        };
+        const config = assembleChatRuntimeConfig(profile, capability);
         chatRuntime = new ChatRuntime(context, config, transport.sink);
         transport.connect(chatRuntime);
         context.subscriptions.push(chatRuntime, {
@@ -85,37 +75,32 @@ export async function activateProfileRuntime(
     };
 }
 
-/** Chat-only activation — the implementation behind `activateChatProfile`. */
-export function activateChatRuntime(
-    context: vscode.ExtensionContext,
-    profile: ChatProfile,
-    postToWebview: ChatMessageSink
-): ChatProfileHandle {
-    const runtime = new ChatRuntime(context, chatProfileToConfig(profile), postToWebview);
-    context.subscriptions.push(runtime);
-    return {
-        handleMessage: (uri, payload) => runtime.handleMessage(uri, payload),
-        setSelection: (uri, selectedNodeIds) => runtime.setSelection(uri, selectedNodeIds),
-        dispose: () => runtime.dispose()
-    };
-}
-
 /**
- * Temporary bridge (removed in Task 6): map the legacy chat-only {@link ChatProfile}
- * onto the unified {@link ChatRuntimeConfig}. `profile.slashCommands` is
- * `ChatSlashCommand[]` (pass-through suggestions), structurally a subset of
- * `ChatCommandContribution[]`, so it typechecks unchanged.
+ * Build the ChatRuntime config for a diagram profile. Pure assembly — the
+ * testable seam for the capability/profile merge rules:
+ * capability graph provider wins; slash commands are capability-first with
+ * profile contributions appended (profile overrides by name via registry
+ * map semantics); tools/turn/selection come only from the profile.
  */
-function chatProfileToConfig(profile: ChatProfile): ChatRuntimeConfig {
+export function assembleChatRuntimeConfig(
+    profile: DiagramProfile,
+    capability: EditChatCapability | undefined
+): ChatRuntimeConfig {
+    const chat = profile.chat!;
     return {
         key: profile.key,
-        displayName: profile.displayName,
-        settingsSection: profile.settingsSection,
-        skill: profile.skill,
-        graphContextProvider: profile.graphContextProvider,
-        turnContextProvider: profile.turnContextProvider,
-        selectionContext: profile.selectionContext,
-        tools: profile.tools,
-        slashCommands: profile.slashCommands
+        displayName: chat.fullName ?? profile.displayName,
+        settingsSection: `${profile.settingsNamespace}.chat`,
+        skill: chat.skill,
+        sourceMimeType: chat.sourceMimeType,
+        graphContextProvider: capability
+            ? f => capability.graphContextProvider(f)
+            : chat.graphContextProvider,
+        turnContextProvider: chat.turnContextProvider,
+        selectionContext: chat.selectionContext,
+        tools: chat.tools,
+        stdioMcpServers: capability ? f => capability.stdioMcpServers(f) : undefined,
+        slashCommands: [...(capability?.slashCommands ?? []), ...(chat.slashCommands ?? [])],
+        postTurnHook: capability ? (f, t) => capability.postTurnHook(f, t) : undefined
     };
 }

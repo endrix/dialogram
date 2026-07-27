@@ -9,8 +9,6 @@ export {
     type DialogramApi,
     type DiagramProfile,
     type DiagramProfileHandle,
-    type ChatProfile,
-    type ChatProfileHandle,
     type ChatPayload,
     type ChatMessageSink,
     type ChatSlashCommand,
@@ -23,7 +21,7 @@ export {
     isApiVersionCompatible
 } from './api';
 
-export { activateProfileRuntime, activateChatRuntime } from './extension/profile-runtime';
+export { activateProfileRuntime } from './extension/profile-runtime';
 
 export {
     resolveDiagramOpenTarget,

@@ -44,6 +44,10 @@ export { diagramBaseModule } from './base.module';
 export { workflowViewsModule } from './stock-views.module';
 export { workflowFeaturesModule } from './stock-features.module';
 
+// ── Stock integrated chat panel (reuse/extend the shipped chat UI) ──────────
+// Paired with `./chat-panel.css` (import that stylesheet directly for the panel styles).
+export { ChatPanel } from './chat-panel-integrated';
+
 // ── Back-compat aliases for the former monolith surface ─────────────────────
 export { workflowDiagramModule, createCalDiagramContainer } from './di.config';
 

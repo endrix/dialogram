@@ -16,9 +16,6 @@ import type * as vscode from 'vscode';
 import {
     DIALOGRAM_API_VERSION,
     assertProfileCrossesPlatformApiSafely,
-    type ChatMessageSink,
-    type ChatProfile,
-    type ChatProfileHandle,
     type DialogramApi,
     type DiagramProfile,
     type DiagramProfileHandle
@@ -43,11 +40,6 @@ interface PlatformModule {
         profile: DiagramProfile,
         assetsUri?: vscode.Uri
     ): Promise<DiagramProfileHandle>;
-    activateChatRuntime(
-        context: vscode.ExtensionContext,
-        profile: ChatProfile,
-        postToWebview: ChatMessageSink
-    ): ChatProfileHandle;
     // Assembles the sidecar-backed profile INSIDE the platform bundle so its
     // DI-decorated classes share this bundle's inversify/Symbol realm — the
     // whole point of the cross-bundle DI identity fix. See platform-entry.ts.
@@ -73,9 +65,7 @@ export function activate(context: vscode.ExtensionContext): DialogramApi & Sidec
             // a consumer's GLSP DiagramModule would resolve in this bundle's foreign realm.
             assertProfileCrossesPlatformApiSafely(profile);
             return platform.activateProfileRuntime(consumerContext, profile, context.extensionUri);
-        },
-        activateChatProfile: async (consumerContext, profile, postToWebview) =>
-            platform.activateChatRuntime(consumerContext, profile, postToWebview)
+        }
     };
 }
 
