@@ -1,3 +1,5 @@
+import { Args } from '@eclipse-glsp/sprotty';
+
 export const OPEN_DIAGRAM_ARG = 'cal:openDiagram';
 export const NETWORK_NAME_ARG = 'cal:networkName';
 export const GRAPH_SOURCE_URI_ARG = 'cal:graphSourceUri';
@@ -8,7 +10,7 @@ export const RUN_ID_ARG = 'wf:runId';
 
 export type CrossFileNavigationTarget = {
     uri: string;
-    args: Record<string, unknown>;
+    args: Args;
 };
 
 export function buildCrossFileNavigationTarget(opts: {
@@ -28,11 +30,13 @@ export function buildCrossFileNavigationTarget(opts: {
             [NETWORK_NAME_ARG]: opts.targetNetworkName,
             [NAV_TRAIL_ARG]: opts.serializedTrail,
             ...(opts.useGraphSourceNavigation && opts.currentSourceUri && opts.rootWorkflowName && opts.instancePath.length > 0
-                ? {
+                ? ({
                     [GRAPH_SOURCE_URI_ARG]: opts.currentSourceUri,
                     [ROOT_WORKFLOW_ARG]: opts.rootWorkflowName,
+                    // instancePath is a string[]; GLSP Args only types JsonPrimitive
+                    // values, but the arg is serialized/consumed as a list downstream.
                     [INSTANCE_PATH_ARG]: opts.instancePath
-                }
+                } as unknown as Args)
                 : {}),
             ...(opts.selectedRunId ? { [RUN_ID_ARG]: opts.selectedRunId } : {})
         }

@@ -4140,7 +4140,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         const section = this.createSection(`${this.isNetworkRuntime() ? 'Network' : 'Workflow'} Parameters (${parameters.length})`);
         if (!factoryName) {
             for (const parameter of parameters) {
-                const value = parameter.valueText || '(unspecified)';
+                const value = (parameter as { valueText: string }).valueText || '(unspecified)';
                 const detail = parameter.detailText ? `${value} (${parameter.detailText})` : value;
                 this.addProperty(section, parameter.name, detail);
             }

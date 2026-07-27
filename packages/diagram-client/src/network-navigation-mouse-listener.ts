@@ -180,11 +180,13 @@ export class WorkflowNetworkNavigationMouseListener extends MouseListener implem
                         networkName: targetNetworkName,
                         [NAV_TRAIL_ARG]: serializedTrail,
                         ...(includeGraphSourceFallback
-                            ? {
+                            ? ({
                                 [GRAPH_SOURCE_URI_ARG]: normalizedCurrentSourceUri,
                                 [ROOT_WORKFLOW_ARG]: rootWorkflowName,
+                                // instancePath is a string[]; GLSP Args only types JsonPrimitive
+                                // values, but the arg is serialized/consumed as a list downstream.
                                 [INSTANCE_PATH_ARG]: instancePath
-                            }
+                            } as unknown as Args)
                             : {}),
                         ...(selectedRunId ? { [RUN_ID_ARG]: selectedRunId } : {})
                     }
