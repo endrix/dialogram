@@ -107,6 +107,10 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             console.log('[WorkflowModelSubmissionHandler] Running initial ELK layout for:', layoutMeta.networkId);
             try {
                 const _elk0 = perfNow();
+                // Parity with the manual auto-layout path: clear pre-existing edge routes so
+                // stale routing points are not forwarded to ELK as fixed sections, which would
+                // bias the fresh layout (GLSP 2.7 regression).
+                clearAllEdgeRoutingPoints(modelState.root);
                 await layoutEngine.layout();
                 // Always-on breadcrumb: initial ELK layout is the dominant post-load server cost on a
                 // fresh open, and it runs here (in the client-bounds round-trip), not in the load path.
