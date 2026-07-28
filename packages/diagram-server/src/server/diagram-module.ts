@@ -26,8 +26,7 @@ import {
     ResolveNavigationTargetsActionHandler,
     SaveModelActionHandler,
     SourceModelStorage,
-    ToolPaletteItemProvider,
-    UndoRedoActionHandler
+    ToolPaletteItemProvider
 } from '@eclipse-glsp/server';
 import { injectable } from 'inversify';
 import { WORKFLOW_DIAGRAM_TYPE, type EditStrategy } from '@dialogram/shared';
@@ -41,6 +40,7 @@ import {
     WorkflowLayoutOperationHandler
 } from './diagram-action-handlers';
 import { WorkflowOperationActionHandler } from './operation-action-handler';
+import { WorkflowUndoRedoActionHandler } from './undo-redo-action-handler';
 import { WorkflowToolPaletteItemProvider } from './tool-palette-provider';
 import { WorkflowContextMenuItemProvider } from './context-menu-item-provider';
 import { WorkflowLabelEditValidator } from './label-edit-validator';
@@ -192,7 +192,9 @@ export class WorkflowDiagramModule extends GModelDiagramModule {
         binding.add(RequestNavigationTargetsActionHandler);
         binding.add(ResolveNavigationTargetsActionHandler);
         binding.add(SaveModelActionHandler);
-        binding.add(UndoRedoActionHandler);
+        // Graceful undo/redo: the host document stack owns durable undo, so a glspUndo that
+        // arrives after a source reload reset the in-memory stack must not error the client.
+        binding.add(WorkflowUndoRedoActionHandler);
         
         // Our custom handler instead of ComputedBoundsActionHandler
         binding.add(WorkflowComputedBoundsActionHandler);
