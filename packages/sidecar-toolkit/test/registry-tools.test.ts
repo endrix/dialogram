@@ -1,6 +1,6 @@
 /**
  * T7 (GLSP-MCP Phase B): the sidecar-registry READ tools, relocated out of the
- * standalone stdio MCP server (`sidecar-mcp-server.ts`) into in-process chat
+ * (now-deleted) legacy stdio MCP server into in-process chat
  * tools so the platform adapter can bridge them over GLSP-MCP.
  *
  * `createRegistryChatTools` builds the 5 read-shaped tools
