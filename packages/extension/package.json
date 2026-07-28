@@ -22,9 +22,9 @@
                     "description": "Expose diagram MCP tools (create_node, connect, validate, ...) to the chat agent.",
                     "default": true
                 },
-                "workflow.chat.useGlspMcp": {
+                "dialogram.chat.useGlspMcp": {
                     "type": "boolean",
-                    "description": "Hand the chat agent the in-host GLSP-MCP diagram server alongside the legacy MCP servers (parallel-run). Turn off to fall back to the legacy MCP path only.",
+                    "description": "Hand the chat agent the in-host GLSP-MCP diagram server alongside the legacy MCP servers (parallel-run). Turn off to fall back to the legacy MCP path only. (Legacy `workflow.chat.useGlspMcp` is still honoured.)",
                     "default": true
                 },
                 "dialogram.chat.autoLayoutAfterEdits": {

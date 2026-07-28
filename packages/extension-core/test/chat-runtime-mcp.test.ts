@@ -81,4 +81,34 @@ describe('ChatRuntime GLSP-MCP parallel-run', () => {
         expect(servers.some(s => s.type === 'http')).toBe(false);
         runtime.dispose();
     });
+
+    it('honours the legacy workflow.chat.useGlspMcp kill-switch (no glsp entry AND no hint)', () => {
+        // Reproduces the reported break: the user set the rollback lever under the
+        // legacy `workflow.chat.useGlspMcp` key (the id historically advertised by
+        // the platform manifest) — NOT the profile-namespaced `<ns>.chat` section.
+        // The kill-switch must read through the neutral compat resolver so a legacy
+        // `workflow.chat.useGlspMcp` value is honoured and both the MCP descriptor
+        // and the usage hint are withheld.
+        vi.spyOn(vscode.workspace, 'getConfiguration').mockImplementation(((section?: string) => {
+            if (section === 'workflow.chat') {
+                return {
+                    get: (key: string, def?: unknown) => (key === 'useGlspMcp' ? false : def),
+                    inspect: (key: string) =>
+                        key === 'useGlspMcp' ? { workspaceValue: false } : undefined
+                };
+            }
+            // Neutral `dialogram.chat` unset, and the profile settings section carries
+            // no override either.
+            return { get: (_key: string, def?: unknown) => def, inspect: (_key: string) => undefined };
+        }) as any);
+        const runtime = makeRuntime({
+            glspMcpEnabled: true,
+            mcpServerUrl: 'http://127.0.0.1:9/mcp'
+        });
+        const servers = providerOf(runtime)('file:///a.py');
+        expect(servers.some(s => s.type === 'http')).toBe(false);
+        const hintProvider = (runtime as any).acp.glspToolHintProvider as (f?: string) => string | undefined;
+        expect(hintProvider('file:///a.py')).toBeUndefined();
+        runtime.dispose();
+    });
 });

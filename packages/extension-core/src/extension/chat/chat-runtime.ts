@@ -20,7 +20,7 @@ import type { ChatMessageSink, ChatPayload, InProcessChatTool } from '../../api'
 import { SlashCommandRegistry, type ChatCommandContribution } from './slash-commands';
 import { attachAcpEventForwarding } from './acp-event-forwarding';
 import type { StdioMcpDescriptor } from './edit-capability';
-import { LEGACY_KEYS, readStateWithFallback } from '../legacy-settings-compat';
+import { LEGACY_KEYS, readStateWithFallback, getChatSetting } from '../legacy-settings-compat';
 
 /**
  * Everything project-specific the unified chat runtime needs. The diagram
@@ -261,13 +261,19 @@ export class ChatRuntime {
 
     /**
      * The per-user rollback lever for the GLSP-MCP parallel-run path
-     * (`<ns>.chat.useGlspMcp`, default on). Turning it off makes the chat fall
-     * back to the legacy stdio/HTTP MCP servers only — identical to 0.4.x.
+     * (`dialogram.chat.useGlspMcp`, default on). Turning it off makes the chat
+     * fall back to the legacy stdio/HTTP MCP servers only — identical to 0.4.x.
+     *
+     * Read through the neutral chat-settings compat resolver (same as the sibling
+     * core chat settings `autoLayoutAfterEdits` / `checkSourceRevision`): it reads
+     * the neutral `dialogram.chat.useGlspMcp` and falls back to the legacy
+     * `workflow.chat.useGlspMcp` key. Reading it here off the per-profile
+     * `settingsSection` (`<ns>.chat`) is wrong: this is a core-runtime rollback
+     * lever, not profile behaviour, so users set it under the shared core
+     * namespace — the profile-namespaced read silently ignored their value.
      */
     private useGlspMcp(): boolean {
-        return vscode.workspace
-            .getConfiguration(this.config.settingsSection)
-            .get<boolean>('useGlspMcp', true);
+        return getChatSetting<boolean>('useGlspMcp', true);
     }
 
     /**
