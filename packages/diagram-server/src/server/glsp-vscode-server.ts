@@ -9,10 +9,26 @@ import 'reflect-metadata';
 
 // @ts-ignore - Module resolution issue with Node16, but works at runtime
 import { NodeGlspVscodeServer, NodeGlspVscodeServerOptions } from '@eclipse-glsp/vscode-integration/node';
+import type { BaseGLSPClient } from '@eclipse-glsp/protocol';
 import type { ContainerModule } from 'inversify';
 import { createWorkflowServerModules } from './server-module';
+import { createSessionGatedGlspClient } from './session-gated-glsp-client';
 import type { EditStrategy, DiagramModelSource } from '@dialogram/shared';
 import type { StorageRuntimeOptions } from './storage-runtime-options';
+
+/**
+ * NodeGlspVscodeServer that gates client→server forwarding on the per-client
+ * session. It wraps the in-process GLSP client so an action forwarded before its
+ * `initializeClientSession` completes is buffered and flushed (in order) once the
+ * session exists, instead of being dropped by the server's
+ * "No client session has been initialized" throw. See
+ * {@link createSessionGatedGlspClient} for the full rationale.
+ */
+class SessionGatedNodeGlspVscodeServer extends NodeGlspVscodeServer {
+    override createGLSPClient(): BaseGLSPClient {
+        return createSessionGatedGlspClient(super.createGLSPClient());
+    }
+}
 
 /**
  * Options for creating the Workflow GLSP VS Code server
@@ -58,7 +74,7 @@ export function createWorkflowGlspVscodeServer(
         ...options
     };
 
-    const server = new NodeGlspVscodeServer({
+    const server = new SessionGatedNodeGlspVscodeServer({
         clientId: mergedOptions.clientId!,
         clientName: mergedOptions.clientName!,
         serverModules: createWorkflowServerModules({
