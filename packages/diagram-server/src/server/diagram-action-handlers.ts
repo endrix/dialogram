@@ -842,6 +842,31 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
             // (or cap) we COMMIT the settled sizes exactly once, set hasClientBounds=true —
             // which freezes sizes and (in WorkflowModelSubmissionHandler.submitModelDirectly)
             // gates the initial ELK layout so it runs on settled sizes — and submit.
+            // Persisted-layout verbatim path (pre-2.7 behavior): when a saved layout with node
+            // positions exists, its geometry is authoritative and must render byte-stable across
+            // opens. The size-settling machinery (record client reports, converge, COMMIT settled
+            // sizes, RE-ANCHOR ports to the committed width) is a FRESH-OPEN concern only. Running
+            // it on a persisted open re-measures the nodes, commits client sizes that differ from
+            // the deterministic server estimate by a few px, and reanchors the ports — which moves
+            // them AFTER applyPersistedEdgeRoutes/normalizePersistedRouteToFullPolyline already
+            // snapped each edge endpoint to the (pre-reanchor) port anchor. Nothing re-snaps the
+            // endpoints, so the edge start visibly detaches from its source port and every node
+            // jiggles a few px on each open. So: on a persisted open we trust the loaded geometry
+            // verbatim — no settle rounds, no size commit, no port reanchor, no RequestBounds
+            // re-request — freeze immediately and submit once. `applyBounds` (already run above)
+            // only RECORDS node reports (never bakes them) and leaves node/port positions untouched
+            // for persisted layouts, so nothing has moved at this point. Port-label late-measurement
+            // still runs in applyBounds (labels can measure 0 before fonts load) — that is a
+            // label-only concern and does not move nodes, ports, or edge endpoints.
+            if (layoutMeta && !layoutMeta.hasClientBounds && layoutMeta.hasPersistedLayout) {
+                layoutMeta.hasClientBounds = true;
+                this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
+                if (this.enableDiagramDebug) {
+                    this.logBoundsPass(layoutMeta.networkId, layoutMeta.sizeMeasurePassCount ?? 0, { frozen: true, stabilized: true, capped: false }, passResult);
+                }
+                return this.submissionHandler.submitModelDirectly();
+            }
+
             if (layoutMeta && !layoutMeta.hasClientBounds) {
                 const passCount = (layoutMeta.sizeMeasurePassCount ?? 0) + 1;
                 layoutMeta.sizeMeasurePassCount = passCount;
