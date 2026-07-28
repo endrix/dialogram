@@ -38,6 +38,14 @@ export interface PlatformMcpTool {
     readonly description: string;
     readonly inputSchema: Record<string, unknown>;
     handler(file: string, args: Record<string, unknown>): string | Promise<string>;
+    /**
+     * When `true`, this tool WRITES source and MUST NOT be bridged here: the generated
+     * handler inherits `readOnlyHint = true`, so an auto-approving MCP client could invoke
+     * it and mutate files unconfirmed. Locked design (approach B): mutation-capable tools
+     * ride the GLSP-MCP built-in operation tools only. {@link bridgeableChatTools} filters
+     * these out (see `mcp-diagram-module.ts`).
+     */
+    readonly mutates?: boolean;
 }
 
 /** Diagram-scope input = the base `{ sessionId }` plus whatever the tool's schema declares. */

@@ -44,6 +44,24 @@ describe('createRegistryChatTools (T7)', () => {
         }
     });
 
+    it('marks create_task_type as mutation-capable so the read-only GLSP-MCP bridge drops it', () => {
+        // Design rule (approach B): a tool that WRITES source via the sidecar must not be
+        // exposed through the read-only GLSP-MCP adapter (readOnlyHint=true) where an
+        // auto-approving MCP client could invoke it unconfirmed. The explicit `mutates`
+        // marker — not a name match — is what the bridge filters on. The tool stays
+        // assembled here (still available on the legacy stdio MCP server / in-host chat).
+        const { invoke } = stubInvoke({});
+        const tools = createRegistryChatTools({ invoke, scopeArgKey: 'workflow' });
+        const byName = new Map(tools.map((t) => [t.name, t] as const));
+
+        expect(byName.get('create_task_type')?.mutates).toBe(true);
+
+        // Every READ tool is (still) unmarked, so the bridge keeps exposing them.
+        for (const readName of ['list_task_types', 'list_workflow_types', 'list_nodes', 'validate_workflow']) {
+            expect(byName.get(readName)?.mutates).not.toBe(true);
+        }
+    });
+
     it('list_task_types invokes the sidecar op and maps `network` onto scopeArgKey', async () => {
         const { invoke, calls } = stubInvoke({ status: 'ok', taskTypes: ['Splitter'] });
         const text = await toolNamed('list_task_types', invoke).handler('/abs/net.py', { network: 'main' });

@@ -18,6 +18,21 @@ import type { InstanceMultiBinding } from '@eclipse-glsp/server';
 import { makePlatformToolHandlerClass, type PlatformMcpTool } from './mcp-platform-tool-adapter';
 
 /**
+ * Keep mutation-capable tools OFF the read-only GLSP-MCP bridge.
+ *
+ * Every bridged tool becomes a handler that inherits `readOnlyHint = true`
+ * ({@link makePlatformToolHandlerClass}), so an auto-approving MCP client may call it
+ * without confirmation. A tool marked `mutates: true` WRITES source and must therefore
+ * never be exposed this way. Locked design (approach B): mutation-capable
+ * tools ride the GLSP-MCP BUILT-IN operation tools only (whose GLSP operations flow through
+ * our reversible workspace edits). We filter on the explicit `mutates` marker — never a name
+ * match — so the rule stays declarative and survives renames.
+ */
+export function bridgeableChatTools(tools: readonly PlatformMcpTool[]): readonly PlatformMcpTool[] {
+    return tools.filter((tool) => tool.mutates !== true);
+}
+
+/**
  * Neutral opt-in options for the GLSP-MCP loopback server. Absent or `enabled:false`
  * keeps the legacy path byte-identical (no MCP DI modules are loaded). Presence of an
  * `mcpServer` config on the GLSP `initialize` request is what actually starts the HTTP
@@ -60,7 +75,8 @@ export class DiagramMcpModule extends DefaultMcpDiagramModule {
         binding: InstanceMultiBinding<McpDiagramToolHandlerConstructor>
     ): void {
         super.configureToolHandlers(binding);
-        for (const tool of this.platformTools) {
+        // Read-only bridge only: mutation-capable tools are excluded (see bridgeableChatTools).
+        for (const tool of bridgeableChatTools(this.platformTools)) {
             binding.add(makePlatformToolHandlerClass(tool));
         }
     }

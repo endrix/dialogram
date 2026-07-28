@@ -30,6 +30,16 @@ export interface RegistryChatTool {
   description: string;
   inputSchema: Record<string, unknown>;
   handler(file: string, args: Record<string, unknown>): Promise<string>;
+  /**
+   * When `true`, this tool WRITES source (via the sidecar) and MUST NOT be bridged onto
+   * the read-only GLSP-MCP surface — the platform adapter's handlers inherit
+   * `readOnlyHint = true`, so an auto-approving MCP client could otherwise mutate files
+   * unconfirmed. Locked design (approach B): mutation-capable tools ride the GLSP-MCP
+   * BUILT-IN operation tools only; the bridge filters on this explicit marker (not a name
+   * match). The tool stays assembled here so it remains available on the legacy stdio MCP
+   * server / in-host chat path unchanged.
+   */
+  mutates?: boolean;
 }
 
 /** Injected sidecar transport: invoke `<prefix>.<opName>` for `file` with `args`. */
@@ -103,16 +113,22 @@ export function createRegistryChatTools(cfg: RegistryToolsConfig): RegistryChatT
         return JSON.stringify(summarizeValidation(result.response), null, 2);
       },
     },
-    readTool(
-      'create_task_type',
-      'Scaffold a NEW component type (a task or actor, per the runtime) in the file. Provide name and (optionally) input/output ports. NOTE: this edits the source file directly and is NOT undoable via the diagram undo/redo (it is a source scaffold, not a GLSP operation). After scaffolding, edit the generated class to implement its behavior, then validate.',
-      'createTaskType',
-      {
-        name: { type: 'string', description: 'Class name of the new task type.' },
-        inputs: { type: 'array', items: { type: 'string' }, description: 'Input port names.' },
-        outputs: { type: 'array', items: { type: 'string' }, description: 'Output port names.' },
-      },
-      ['name']
-    ),
+    // `mutates: true` — this scaffolds/writes source, so the read-only GLSP-MCP bridge
+    // excludes it (approach B: mutations ride built-in operation tools only). Still assembled
+    // here so the legacy stdio MCP server / in-host chat path keep offering it.
+    {
+      ...readTool(
+        'create_task_type',
+        'Scaffold a NEW component type (a task or actor, per the runtime) in the file. Provide name and (optionally) input/output ports. NOTE: this edits the source file directly and is NOT undoable via the diagram undo/redo (it is a source scaffold, not a GLSP operation). After scaffolding, edit the generated class to implement its behavior, then validate.',
+        'createTaskType',
+        {
+          name: { type: 'string', description: 'Class name of the new task type.' },
+          inputs: { type: 'array', items: { type: 'string' }, description: 'Input port names.' },
+          outputs: { type: 'array', items: { type: 'string' }, description: 'Output port names.' },
+        },
+        ['name']
+      ),
+      mutates: true,
+    },
   ];
 }
