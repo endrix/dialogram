@@ -2,6 +2,7 @@ import { Operation } from '@eclipse-glsp/protocol';
 import { OperationHandler, ModelState, type Command, type MaybePromise } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
+import { readAuthoritativeSourceText } from './authoritative-source-text';
 import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
@@ -82,7 +83,7 @@ export class DuplicateOperationHandler extends OperationHandler {
                         });
                     }
                 }
-                const afterText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
+                const afterText = await readAuthoritativeSourceText(vscodeUri);
                 (command as any)._sourceBeforeText = beforeText;
                 (command as any)._sourceAfterText = afterText;
                 return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];

@@ -2,6 +2,7 @@ import { DeleteElementOperation } from '@eclipse-glsp/protocol';
 import { OperationHandler, MaybePromise, Action, ModelState, Command } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
+import { readAuthoritativeSourceText } from './authoritative-source-text';
 import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypeGuards, WorkflowDiagramTypes } from '@dialogram/shared';
 
@@ -99,7 +100,7 @@ export class DeleteElementOperationHandler extends OperationHandler {
                         continue;
                     }
                 }
-                const afterText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
+                const afterText = await readAuthoritativeSourceText(vscodeUri);
                 (command as any)._sourceBeforeText = beforeText;
                 (command as any)._sourceAfterText = afterText;
                 return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];

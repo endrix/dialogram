@@ -1,3 +1,6 @@
+import { promises as fs } from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import {
@@ -10,6 +13,11 @@ describe('python agent annotation roundtrip', () => {
     it('preserves prompt, skill, claudeAgent, and use* toggles on save', async () => {
         const handler = new UpdateDefinitionAnnotationOperationHandler();
 
+        // The reversible command snapshots afterText from the authoritative on-disk content, so
+        // this drives a real file the sidecar mock rewrites in place.
+        const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wfpy-agent-annotation-'));
+        const workflowPath = path.join(tempRoot, 'workflow.py');
+        const sourceUri = `file://${workflowPath}`;
         let pyText = [
             'from wfpy import agent, Port',
             '',
@@ -23,6 +31,7 @@ describe('python agent annotation roundtrip', () => {
             '        return x',
             ''
         ].join('\n');
+        await fs.writeFile(workflowPath, pyText);
 
         const expectedAnnotation = [
             '@agent(',
@@ -44,8 +53,8 @@ describe('python agent annotation roundtrip', () => {
 
         workspaceAny.openTextDocument = async (_uri: any) => ({
             uri: {
-                fsPath: '/tmp/workflow.py',
-                toString: () => 'file:///tmp/workflow.py'
+                fsPath: workflowPath,
+                toString: () => sourceUri
             },
             getText: () => pyText
         });
@@ -53,7 +62,7 @@ describe('python agent annotation roundtrip', () => {
 
         try {
             (handler as any).modelState = {
-                sourceUri: 'file:///tmp/workflow.py',
+                sourceUri,
                 index: {
                     find: (_id: string) => ({
                         args: {
@@ -70,6 +79,7 @@ describe('python agent annotation roundtrip', () => {
                 sidecarCalls.push({ sourceUri, payload });
                 const nextAnnotation = String(payload?.args?.annotationText ?? '');
                 pyText = pyText.replace('@agent(prompt="OLD")', nextAnnotation);
+                await fs.writeFile(workflowPath, pyText);
                 return true;
             };
 
@@ -86,7 +96,7 @@ describe('python agent annotation roundtrip', () => {
             await (command as any).execute();
 
             expect(sidecarCalls).toHaveLength(1);
-            expect(sidecarCalls[0]?.sourceUri).toBe('file:///tmp/workflow.py');
+            expect(sidecarCalls[0]?.sourceUri).toBe(sourceUri);
             expect(sidecarCalls[0]?.payload?.op).toBe('wfpy.updateDefinitionAnnotation');
             expect(sidecarCalls[0]?.payload?.args?.entityType).toBe('AnalyzeAgent');
             expect(sidecarCalls[0]?.payload?.args?.annotationName).toBe('agent');
@@ -102,12 +112,16 @@ describe('python agent annotation roundtrip', () => {
         } finally {
             workspaceAny.openTextDocument = originalOpenTextDocument;
             workspaceAny.applyEdit = originalApplyEdit;
+            await fs.rm(tempRoot, { recursive: true, force: true });
         }
     });
 
     it('normalizes js-style literals before sidecar update', async () => {
         const handler = new UpdateDefinitionAnnotationOperationHandler();
 
+        const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wfpy-agent-annotation-'));
+        const workflowPath = path.join(tempRoot, 'workflow.py');
+        const sourceUri = `file://${workflowPath}`;
         let pyText = [
             'from wfpy import agent, Port',
             '',
@@ -118,6 +132,7 @@ describe('python agent annotation roundtrip', () => {
             '        Out = Port[str](direction="out")',
             ''
         ].join('\n');
+        await fs.writeFile(workflowPath, pyText);
 
         const sidecarCalls: Array<{ sourceUri: string; payload: any }> = [];
 
@@ -127,8 +142,8 @@ describe('python agent annotation roundtrip', () => {
 
         workspaceAny.openTextDocument = async (_uri: any) => ({
             uri: {
-                fsPath: '/tmp/workflow.py',
-                toString: () => 'file:///tmp/workflow.py'
+                fsPath: workflowPath,
+                toString: () => sourceUri
             },
             getText: () => pyText
         });
@@ -136,7 +151,7 @@ describe('python agent annotation roundtrip', () => {
 
         try {
             (handler as any).modelState = {
-                sourceUri: 'file:///tmp/workflow.py',
+                sourceUri,
                 index: {
                     find: (_id: string) => ({
                         args: {
@@ -175,6 +190,7 @@ describe('python agent annotation roundtrip', () => {
         } finally {
             workspaceAny.openTextDocument = originalOpenTextDocument;
             workspaceAny.applyEdit = originalApplyEdit;
+            await fs.rm(tempRoot, { recursive: true, force: true });
         }
     });
 });

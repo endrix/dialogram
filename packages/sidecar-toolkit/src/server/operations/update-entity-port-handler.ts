@@ -2,6 +2,7 @@ import { Action } from '@eclipse-glsp/protocol';
 import { Command, ModelState, OperationHandler } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
+import { readAuthoritativeSourceText } from './authoritative-source-text';
 import { ReversibleMultiWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-multi-workspace-edit-command';
 import { SidecarInvoker } from './sidecar-invoker';
 
@@ -70,7 +71,7 @@ export class UpdateEntityPortOperationHandler extends OperationHandler {
                     return undefined;
                 }
 
-                const afterText = (await vscode.workspace.openTextDocument(vscode.Uri.parse(sourceUri))).getText();
+                const afterText = await readAuthoritativeSourceText(vscode.Uri.parse(sourceUri));
                 (command as any)._sourceBeforeText = beforeText;
                 (command as any)._sourceAfterText = afterText;
                 return [{ uri: vscode.Uri.parse(sourceUri), edits: [] }];

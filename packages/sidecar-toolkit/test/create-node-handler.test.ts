@@ -724,6 +724,103 @@ describe('workflow create node handler', () => {
         }
     });
 
+    it('snapshots afterText from authoritative disk content, not the stale document cache', async () => {
+        // The sidecar rewrites the .py out-of-band; immediately afterwards the VS Code
+        // text-document layer can still return the pre-write buffer (async reconcile). The
+        // reversible command must snapshot what the sidecar actually wrote so the later undo
+        // guard compares the reconciled live document against a value it truly held.
+        const handler = new CreateNodeOperationHandler();
+        const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wfpy-authoritative-'));
+        const mainPath = path.join(tempRoot, 'main.py');
+
+        const staleText = [
+            'from wfpy.core import workflow',
+            '',
+            '@workflow()',
+            'def Main():',
+            '    pass',
+            ''
+        ].join('\n');
+        // What the sidecar actually left on disk (the authoritative post-write content).
+        const authoritativeText = staleText.replace(
+            '    pass\n',
+            '    In = Port[int]()\n    pass\n'
+        );
+        await fs.writeFile(mainPath, authoritativeText);
+
+        const workspaceAny = vscode.workspace as any;
+        const windowAny = vscode.window as any;
+
+        const originalOpenTextDocument = workspaceAny.openTextDocument;
+        const originalApplyEdit = workspaceAny.applyEdit;
+        const originalShowInputBox = windowAny.showInputBox;
+        const originalShowWarningMessage = windowAny.showWarningMessage;
+
+        const warnings: string[] = [];
+        let liveText = staleText; // the document cache: stale right after the out-of-band write
+
+        workspaceAny.openTextDocument = async (uri: any) => {
+            const lines = () => liveText.split('\n');
+            return {
+                uri: {
+                    fsPath: uri?.fsPath ?? mainPath,
+                    toString: () => `file://${mainPath}`
+                },
+                getText: () => liveText,
+                get lineCount() {
+                    return lines().length;
+                },
+                lineAt: (line: number) => ({ text: lines()[line] ?? '' })
+            };
+        };
+        workspaceAny.applyEdit = async () => true;
+        const inputs = ['In', 'int(size=32)'];
+        windowAny.showInputBox = async () => inputs.shift();
+        windowAny.showWarningMessage = async (message: string) => {
+            warnings.push(message);
+        };
+
+        try {
+            (handler as any).modelState = {
+                root: {
+                    args: {
+                        sourceUri: `file://${mainPath}`,
+                        'wf:workflowName': 'Main'
+                    }
+                }
+            };
+            (handler as any).sidecar = wfpySidecar();
+            (handler as any).sendSidecarOpDetailed = async () => ({
+                ok: true,
+                response: { status: 'ok', revision: 'abc' }
+            });
+
+            const command = handler.createCommand({
+                kind: 'createNode',
+                elementTypeId: WorkflowDiagramTypes.NODE_BOUNDARY_INPUT,
+                args: {}
+            } as any);
+
+            expect(command).toBeTruthy();
+            await (command as any).execute();
+
+            // The snapshot must equal what the sidecar wrote to disk, not the stale cache.
+            expect((command as any)._sourceAfterText).toBe(authoritativeText);
+            expect((command as any)._sourceAfterText).not.toBe(staleText);
+
+            // Once the document reconciles to disk, the undo guard must accept (no warning).
+            liveText = authoritativeText;
+            await (command as any).undo();
+            expect(warnings).toEqual([]);
+        } finally {
+            workspaceAny.openTextDocument = originalOpenTextDocument;
+            workspaceAny.applyEdit = originalApplyEdit;
+            windowAny.showInputBox = originalShowInputBox;
+            windowAny.showWarningMessage = originalShowWarningMessage;
+            await fs.rm(tempRoot, { recursive: true, force: true });
+        }
+    });
+
     it('sources the create-node picker vocabulary from config (not a hardcoded profile)', async () => {
         const handler = new CreateNodeOperationHandler();
 
