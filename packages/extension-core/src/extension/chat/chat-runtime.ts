@@ -265,10 +265,33 @@ export class ChatRuntime {
         }
     }
 
+    /**
+     * The per-user rollback lever for the GLSP-MCP parallel-run path
+     * (`<ns>.chat.useGlspMcp`, default on). Turning it off makes the chat fall
+     * back to the legacy stdio/HTTP MCP servers only — identical to 0.4.x.
+     */
+    private useGlspMcp(): boolean {
+        return vscode.workspace
+            .getConfiguration(this.config.settingsSection)
+            .get<boolean>('useGlspMcp', true);
+    }
+
     private setupMcpProvider(): void {
         this.acp.setMcpServersProvider((file?: string) => {
             if (!file) return [];
             const servers: any[] = [];
+            // GLSP-MCP parallel-run (0.5.0): advertise the in-host diagram
+            // server's loopback URL to opencode ALONGSIDE the legacy MCP servers,
+            // gated by the profile opt-in and the per-user rollback setting.
+            // `headers` is an ARRAY here (the opencode http descriptor shape).
+            if (this.config.glspMcpEnabled && this.config.mcpServerUrl && this.useGlspMcp()) {
+                servers.push({
+                    type: 'http',
+                    name: `${this.config.key}-glsp`,
+                    url: this.config.mcpServerUrl,
+                    headers: []
+                } as any);
+            }
             if (this.mcpEnabled() && this.mcpHttp) {
                 servers.push({ type: 'http', name: this.config.key, url: this.mcpHttp.urlFor(file), headers: [] } as any);
             }
