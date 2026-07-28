@@ -276,7 +276,37 @@ export class ChatRuntime {
             .get<boolean>('useGlspMcp', true);
     }
 
+    /**
+     * Whether the in-host diagram (GLSP-MCP) server is actually advertised to
+     * the agent: the profile opted in, a loopback URL exists, and the per-user
+     * rollback lever is on. The single source of truth for both the MCP
+     * descriptor and the context usage hint.
+     */
+    private glspAdvertised(): boolean {
+        return Boolean(this.config.glspMcpEnabled && this.config.mcpServerUrl && this.useGlspMcp());
+    }
+
+    /**
+     * The concise, product-neutral usage hint that teaches agents the diagram
+     * MCP tools' id / sessionId semantics. Folded into the session context only
+     * when {@link glspAdvertised} — see the constructor wiring. Kept short and
+     * free of product vocabulary (neutrality gate 1).
+     */
+    private glspToolHint(): string {
+        const name = `${this.config.key}-glsp`;
+        return (
+            `Diagram MCP tools (${name}): get the sessionId from the session-info tool. ` +
+            'Element IDs must come from query-elements or diagram-model — IDs embedded in ' +
+            "diagram-svg / diagram-png output carry a '<clientId>_' prefix and are NOT valid " +
+            'tool arguments. Prefer create-nodes / create-edges / modify-* for edits ' +
+            '(they are undoable via undo / redo).'
+        );
+    }
+
     private setupMcpProvider(): void {
+        // Fold the diagram-tool usage hint into the session context, but only
+        // while the GLSP-MCP server is genuinely advertised to the agent.
+        this.acp.setGlspToolHintProvider(() => (this.glspAdvertised() ? this.glspToolHint() : undefined));
         this.acp.setMcpServersProvider((file?: string) => {
             if (!file) return [];
             const servers: any[] = [];
@@ -284,7 +314,7 @@ export class ChatRuntime {
             // server's loopback URL to opencode ALONGSIDE the legacy MCP servers,
             // gated by the profile opt-in and the per-user rollback setting.
             // `headers` is an ARRAY here (the opencode http descriptor shape).
-            if (this.config.glspMcpEnabled && this.config.mcpServerUrl && this.useGlspMcp()) {
+            if (this.glspAdvertised()) {
                 servers.push({
                     type: 'http',
                     name: `${this.config.key}-glsp`,

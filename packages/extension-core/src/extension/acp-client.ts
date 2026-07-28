@@ -140,6 +140,15 @@ export class ACPClientService extends EventEmitter {
   private chatSkill?: string;
 
   /**
+   * Optional per-file provider that returns a diagram-tool usage hint (id /
+   * sessionId semantics) to fold into the session context. Supplied by the
+   * extension layer only when the diagram MCP server is actually advertised to
+   * the agent, so the guidance appears iff the tools are reachable. Returns
+   * undefined when there is nothing to add.
+   */
+  private glspToolHintProvider?: (workflowFile?: string) => string | undefined;
+
+  /**
    * MIME type for the source file attached to each session's context, supplied by
    * the profile (an opaque, consumer-owned value). Falls back to `text/plain`.
    */
@@ -645,10 +654,17 @@ export class ACPClientService extends EventEmitter {
       `create_task_type to scaffold it, then edit the generated @task class to implement its ` +
       `behavior, and verify with get_graph.`;
 
+    // A diagram-tool usage hint, present only when the extension layer says the
+    // diagram MCP server is advertised to the agent.
+    const toolHint = this.glspToolHintProvider?.(session.workflowFile);
+
     const blocks: any[] = [
       {
         type: 'text',
-        text: `${framing}\n\n${skill}` + (reinjectedFlag ? '\n\n(Updated file content follows.)' : ''),
+        text:
+          `${framing}\n\n${skill}` +
+          (toolHint ? `\n\n${toolHint}` : '') +
+          (reinjectedFlag ? '\n\n(Updated file content follows.)' : ''),
       },
       {
         type: 'resource',
@@ -702,6 +718,15 @@ export class ACPClientService extends EventEmitter {
    */
   setChatSkill(skill?: string): void {
     this.chatSkill = skill;
+  }
+
+  /**
+   * Supply a per-file diagram-tool usage hint folded into the session context.
+   * The extension layer returns text only when the diagram MCP server is
+   * advertised to the agent (and undefined otherwise).
+   */
+  setGlspToolHintProvider(provider?: (workflowFile?: string) => string | undefined): void {
+    this.glspToolHintProvider = provider;
   }
 
   /** Supply the source-file MIME type attached to each session's context. */
