@@ -86,4 +86,17 @@ describe('assembleChatRuntimeConfig', () => {
         expect(cfg.selectionContext).toBeUndefined();
         expect(cfg.slashCommands).toEqual([]);
     });
+
+    it('threads the GLSP-MCP url and marks glspMcpEnabled when the profile opts in', () => {
+        const profile = { ...makeProfile({}), mcp: { enabled: true } };
+        const cfg = assembleChatRuntimeConfig(profile, undefined, 'http://127.0.0.1:5123/mcp');
+        expect(cfg.glspMcpEnabled).toBe(true);
+        expect(cfg.mcpServerUrl).toBe('http://127.0.0.1:5123/mcp');
+    });
+
+    it('leaves glspMcpEnabled false when the profile omits mcp (0.4.x parity)', () => {
+        const cfg = assembleChatRuntimeConfig(makeProfile({}), undefined, undefined);
+        expect(cfg.glspMcpEnabled).toBe(false);
+        expect(cfg.mcpServerUrl).toBeUndefined();
+    });
 });

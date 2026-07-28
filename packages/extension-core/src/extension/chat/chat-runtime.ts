@@ -14,13 +14,13 @@
  */
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { ACPClientService } from '../acp-client.js';
+import { ACPClientService, type TurnPart } from '../acp-client.js';
 import { SessionManager } from '../session-manager.js';
 import type { ChatMessageSink, ChatPayload, InProcessChatTool } from '../../api';
 import { SlashCommandRegistry, type ChatCommandContribution } from './slash-commands';
 import { attachAcpEventForwarding } from './acp-event-forwarding';
 import type { StdioMcpDescriptor } from './edit-capability';
-import { LEGACY_KEYS, readStateWithFallback } from '../legacy-settings-compat';
+import { LEGACY_KEYS, readStateWithFallback, getChatSetting } from '../legacy-settings-compat';
 
 /**
  * Everything project-specific the unified chat runtime needs. The diagram
@@ -49,6 +49,18 @@ export interface ChatRuntimeConfig {
     selectionContext?: false | { render?: (file: string, selectedNodeIds: string[]) => string };
     /** In-process MCP tools served over loopback HTTP. */
     tools?: InProcessChatTool[];
+    /**
+     * The GLSP-MCP loopback URL announced by the in-host diagram server when the
+     * profile opts into GLSP-MCP. Handed to opencode alongside the legacy MCP
+     * servers during 0.5.0 parallel-run (see {@link glspMcpEnabled}).
+     */
+    mcpServerUrl?: string;
+    /**
+     * `true` when the diagram profile enabled GLSP-MCP (`profile.mcp.enabled`).
+     * The coarse gate for advertising {@link mcpServerUrl} to the agent; a
+     * per-user `<ns>.chat.useGlspMcp` setting is the finer rollback lever.
+     */
+    glspMcpEnabled?: boolean;
     /** stdio MCP servers (arrive pre-gated from the edit backend). */
     stdioMcpServers?: (file: string) => StdioMcpDescriptor[];
     /** Slash commands contributed to the registry (with optional handlers). */
@@ -144,14 +156,8 @@ export class ChatRuntime {
         this.acpForwardingDisposer = attachAcpEventForwarding(this.acp, {
             postToSession: (sessionId, payload) => this.post(sessionId, payload),
             broadcast: payload => this.broadcast(payload),
-            onTurnComplete: ({ sessionId, text, thinking, model }) => {
-                this.sessions.addMessageToSession(sessionId, {
-                    role: 'assistant',
-                    content: text ?? '',
-                    timestamp: Date.now(),
-                    thinking,
-                    provider: model
-                });
+            onTurnComplete: ({ sessionId, text, thinking, model, parts }) => {
+                this.persistAssistantTurn(sessionId, { text, thinking, model, parts });
                 this.post(sessionId, { type: 'chat.turnEnd', data: { sessionId } });
                 // Resolve the just-sent user message's opencode id so its revert
                 // affordance appears without rebuilding the timeline.
@@ -253,10 +259,74 @@ export class ChatRuntime {
         }
     }
 
+    /**
+     * The per-user rollback lever for the GLSP-MCP parallel-run path
+     * (`dialogram.chat.useGlspMcp`, default on). Turning it off makes the chat
+     * fall back to the legacy stdio/HTTP MCP servers only — identical to 0.4.x.
+     *
+     * Read through the neutral chat-settings compat resolver (same as the sibling
+     * core chat settings `autoLayoutAfterEdits` / `checkSourceRevision`): it reads
+     * the neutral `dialogram.chat.useGlspMcp` and falls back to the legacy
+     * `workflow.chat.useGlspMcp` key. Reading it here off the per-profile
+     * `settingsSection` (`<ns>.chat`) is wrong: this is a core-runtime rollback
+     * lever, not profile behaviour, so users set it under the shared core
+     * namespace — the profile-namespaced read silently ignored their value.
+     */
+    private useGlspMcp(): boolean {
+        return getChatSetting<boolean>('useGlspMcp', true);
+    }
+
+    /**
+     * Whether the in-host diagram (GLSP-MCP) server is actually advertised to
+     * the agent: the profile opted in, a loopback URL exists, and the per-user
+     * rollback lever is on. The single source of truth for both the MCP
+     * descriptor and the context usage hint.
+     */
+    private glspAdvertised(): boolean {
+        return Boolean(this.config.glspMcpEnabled && this.config.mcpServerUrl && this.useGlspMcp());
+    }
+
+    /**
+     * The concise, product-neutral usage hint that teaches agents the diagram
+     * MCP tools' id / sessionId semantics. Folded into the session context only
+     * when {@link glspAdvertised} — see the constructor wiring. Kept short and
+     * free of product vocabulary (neutrality gate 1).
+     */
+    private glspToolHint(): string {
+        const name = `${this.config.key}-glsp`;
+        return (
+            `Diagram MCP tools (${name}): get the sessionId from the session-info tool. ` +
+            'Element IDs must come from query-elements or diagram-model — IDs embedded in ' +
+            "diagram-svg / diagram-png output carry a '<clientId>_' prefix and are NOT valid " +
+            'tool arguments. For ALL graph changes (adding nodes, connections, deletions) use ' +
+            'create-nodes / create-edges / modify-* / delete-elements — do NOT edit the source ' +
+            'file directly for changes these tools can express: tool edits go through the ' +
+            "editor's undo stack, direct file edits do not. " +
+            "Diagram edits are undoable by the user via the editor's undo — do not attempt " +
+            'tool-based undo / redo and do not hand-revert files after your own diagram edits ' +
+            'unless asked.'
+        );
+    }
+
     private setupMcpProvider(): void {
+        // Fold the diagram-tool usage hint into the session context, but only
+        // while the GLSP-MCP server is genuinely advertised to the agent.
+        this.acp.setGlspToolHintProvider(() => (this.glspAdvertised() ? this.glspToolHint() : undefined));
         this.acp.setMcpServersProvider((file?: string) => {
             if (!file) return [];
             const servers: any[] = [];
+            // GLSP-MCP parallel-run (0.5.0): advertise the in-host diagram
+            // server's loopback URL to opencode ALONGSIDE the legacy MCP servers,
+            // gated by the profile opt-in and the per-user rollback setting.
+            // `headers` is an ARRAY here (the opencode http descriptor shape).
+            if (this.glspAdvertised()) {
+                servers.push({
+                    type: 'http',
+                    name: `${this.config.key}-glsp`,
+                    url: this.config.mcpServerUrl,
+                    headers: []
+                } as any);
+            }
             if (this.mcpEnabled() && this.mcpHttp) {
                 servers.push({ type: 'http', name: this.config.key, url: this.mcpHttp.urlFor(file), headers: [] } as any);
             }
@@ -649,6 +719,67 @@ export class ChatRuntime {
         }
         if (this.pendingModel) {
             await this.acp.setProvider(sessionId, this.pendingModel).catch(() => undefined);
+        }
+    }
+
+    /**
+     * Persist a completed assistant turn as an ordered transcript. When the turn
+     * carries structured parts (text runs interleaved with tool calls), each is
+     * stored as its own message — text parts as `assistant` messages, tool parts
+     * as `tool` messages — so a reloaded session restores tool chips and text
+     * boundaries verbatim (no flattening into one concatenated blob). Reasoning is
+     * attached to the first text part it produced, mirroring the live renderer.
+     * Falls back to a single assistant message when no parts are available.
+     */
+    private persistAssistantTurn(
+        sessionId: string,
+        turn: { text?: string; thinking?: string; model?: string; parts?: TurnPart[] }
+    ): void {
+        const now = Date.now();
+        const parts = turn.parts ?? [];
+        if (parts.length === 0) {
+            this.sessions.addMessageToSession(sessionId, {
+                role: 'assistant',
+                content: turn.text ?? '',
+                timestamp: now,
+                thinking: turn.thinking,
+                provider: turn.model
+            });
+            return;
+        }
+        let thinkingAttached = false;
+        for (const part of parts) {
+            if (part.type === 'tool') {
+                this.sessions.addMessageToSession(sessionId, {
+                    role: 'tool',
+                    content: '',
+                    timestamp: now,
+                    toolName: part.title,
+                    toolStatus: part.status
+                });
+                continue;
+            }
+            const message: Parameters<typeof this.sessions.addMessageToSession>[1] = {
+                role: 'assistant',
+                content: part.text,
+                timestamp: now,
+                provider: turn.model
+            };
+            if (!thinkingAttached && turn.thinking) {
+                message.thinking = turn.thinking;
+                thinkingAttached = true;
+            }
+            this.sessions.addMessageToSession(sessionId, message);
+        }
+        // Reasoning with no text part to host it (a tool-only turn) still persists.
+        if (!thinkingAttached && turn.thinking) {
+            this.sessions.addMessageToSession(sessionId, {
+                role: 'assistant',
+                content: '',
+                timestamp: now,
+                thinking: turn.thinking,
+                provider: turn.model
+            });
         }
     }
 

@@ -53,6 +53,15 @@ export interface SessionInfo {
   injectedWorkflowMtimeMs?: number;
 }
 
+/**
+ * One ordered segment of an assistant turn: a run of streamed text, or a tool
+ * call. Captured in stream order so a reloaded session renders text and tool
+ * chips exactly where they occurred (no flattening into one text blob).
+ */
+export type TurnPart =
+  | { type: 'text'; text: string }
+  | { type: 'tool'; id: string; title: string; status?: string };
+
 export interface ACPClientEvents {
   sessionUpdate: (notification: SessionNotification) => void;
   modeChanged: (data: { sessionId: string; mode: 'plan' | 'build' }) => void;
@@ -60,8 +69,16 @@ export interface ACPClientEvents {
   error: (error: Error) => void;
   connected: () => void;
   disconnected: () => void;
-  /** Fired when a prompt turn finishes, with the full assistant reply text. */
-  turnComplete: (data: { sessionId: string; text: string; thinking?: string; model?: string }) => void;
+  /** Fired when a prompt turn finishes, with the full assistant reply text and
+   *  the ordered structure of the turn (text segments interleaved with tool
+   *  calls) so it can be persisted and later restored faithfully. */
+  turnComplete: (data: {
+    sessionId: string;
+    text: string;
+    thinking?: string;
+    model?: string;
+    parts?: TurnPart[];
+  }) => void;
   /** Fired when the agent asks the user to approve a tool call. */
   permissionRequest: (data: {
     requestId: string;
@@ -116,6 +133,8 @@ export class ACPClientService extends EventEmitter {
   private turnText: Map<string, string> = new Map();
   /** Accumulated assistant reasoning ("thinking") for the in-flight turn, per session. */
   private turnThinking: Map<string, string> = new Map();
+  /** Ordered text/tool structure of the in-flight turn, per session (see TurnPart). */
+  private turnParts: Map<string, TurnPart[]> = new Map();
 
   /** Pending permission requests awaiting a UI decision, keyed by requestId. */
   private pendingPermissions: Map<string, (optionId: string | null) => void> = new Map();
@@ -138,6 +157,15 @@ export class ACPClientService extends EventEmitter {
    * authoring workflow, and an idiomatic component template (profile-specific).
    */
   private chatSkill?: string;
+
+  /**
+   * Optional per-file provider that returns a diagram-tool usage hint (id /
+   * sessionId semantics) to fold into the session context. Supplied by the
+   * extension layer only when the diagram MCP server is actually advertised to
+   * the agent, so the guidance appears iff the tools are reachable. Returns
+   * undefined when there is nothing to add.
+   */
+  private glspToolHintProvider?: (workflowFile?: string) => string | undefined;
 
   /**
    * MIME type for the source file attached to each session's context, supplied by
@@ -579,9 +607,11 @@ export class ACPClientService extends EventEmitter {
     }
     blocks.push({ type: 'text', text: prompt });
 
-    // Reset the assistant turn buffers so we can capture the full reply + reasoning.
+    // Reset the assistant turn buffers so we can capture the full reply +
+    // reasoning + ordered part structure for this turn.
     this.turnText.set(sessionId, '');
     this.turnThinking.set(sessionId, '');
+    this.turnParts.set(sessionId, []);
 
     await this.connection.prompt({
       sessionId,
@@ -591,10 +621,12 @@ export class ACPClientService extends EventEmitter {
     // The turn is complete; emit the accumulated assistant text + thinking for persistence.
     const text = this.turnText.get(sessionId) ?? '';
     const thinking = this.turnThinking.get(sessionId) ?? '';
+    const parts = this.turnParts.get(sessionId) ?? [];
     this.turnText.delete(sessionId);
     this.turnThinking.delete(sessionId);
+    this.turnParts.delete(sessionId);
     const model = this.sessions.get(sessionId)?.model;
-    this.emit('turnComplete', { sessionId, text, thinking: thinking || undefined, model });
+    this.emit('turnComplete', { sessionId, text, thinking: thinking || undefined, model, parts });
   }
 
   /**
@@ -645,10 +677,17 @@ export class ACPClientService extends EventEmitter {
       `create_task_type to scaffold it, then edit the generated @task class to implement its ` +
       `behavior, and verify with get_graph.`;
 
+    // A diagram-tool usage hint, present only when the extension layer says the
+    // diagram MCP server is advertised to the agent.
+    const toolHint = this.glspToolHintProvider?.(session.workflowFile);
+
     const blocks: any[] = [
       {
         type: 'text',
-        text: `${framing}\n\n${skill}` + (reinjectedFlag ? '\n\n(Updated file content follows.)' : ''),
+        text:
+          `${framing}\n\n${skill}` +
+          (toolHint ? `\n\n${toolHint}` : '') +
+          (reinjectedFlag ? '\n\n(Updated file content follows.)' : ''),
       },
       {
         type: 'resource',
@@ -704,6 +743,15 @@ export class ACPClientService extends EventEmitter {
     this.chatSkill = skill;
   }
 
+  /**
+   * Supply a per-file diagram-tool usage hint folded into the session context.
+   * The extension layer returns text only when the diagram MCP server is
+   * advertised to the agent (and undefined otherwise).
+   */
+  setGlspToolHintProvider(provider?: (workflowFile?: string) => string | undefined): void {
+    this.glspToolHintProvider = provider;
+  }
+
   /** Supply the source-file MIME type attached to each session's context. */
   setSourceMimeType(mimeType?: string): void {
     this.sourceMimeType = mimeType;
@@ -725,15 +773,24 @@ export class ACPClientService extends EventEmitter {
   }
 
   /**
-   * Accumulate assistant message text from a session/update notification so the
-   * full reply can be persisted when the turn completes.
+   * Accumulate the assistant turn from a session/update notification so it can be
+   * persisted when the turn completes: reasoning into the thinking buffer, answer
+   * text into the text buffer, and — critically — the ordered part structure
+   * (text runs interleaved with tool calls) into {@link turnParts} so a reloaded
+   * session renders tool chips and text boundaries exactly where they occurred.
    */
   private accumulateTurnText(notification: SessionNotification): void {
     const update: any = (notification as any)?.update;
     const kind = update?.sessionUpdate;
-    if (kind !== 'agent_message_chunk' && kind !== 'agent_thought_chunk') return;
     const sessionId = (notification as any)?.sessionId;
     if (!sessionId) return;
+
+    if (kind === 'tool_call' || kind === 'tool_call_update') {
+      this.recordTurnToolPart(sessionId, update);
+      return;
+    }
+
+    if (kind !== 'agent_message_chunk' && kind !== 'agent_thought_chunk') return;
     const content = update.content;
     const text =
       content?.type === 'text' && typeof content.text === 'string' ? content.text : '';
@@ -741,6 +798,34 @@ export class ACPClientService extends EventEmitter {
     // Reasoning chunks go to the thinking buffer; the answer goes to the text buffer.
     const buffer = kind === 'agent_thought_chunk' ? this.turnThinking : this.turnText;
     buffer.set(sessionId, (buffer.get(sessionId) ?? '') + text);
+    // Reasoning is rendered as its own block, so only answer text contributes to
+    // the ordered part structure; append to the trailing text run (or start one).
+    if (kind === 'agent_message_chunk') {
+      const parts = this.turnParts.get(sessionId) ?? [];
+      const last = parts[parts.length - 1];
+      if (last && last.type === 'text') {
+        last.text += text;
+      } else {
+        parts.push({ type: 'text', text });
+      }
+      this.turnParts.set(sessionId, parts);
+    }
+  }
+
+  /** Upsert a tool-call part (by id) into the in-flight turn's part structure. */
+  private recordTurnToolPart(sessionId: string, update: any): void {
+    const id = String(update?.toolCallId ?? update?.id ?? `tc_${(this.turnParts.get(sessionId)?.length ?? 0)}`);
+    const title = String(update?.title || update?.kind || 'tool call');
+    const status = typeof update?.status === 'string' ? update.status : undefined;
+    const parts = this.turnParts.get(sessionId) ?? [];
+    const existing = parts.find((p): p is Extract<TurnPart, { type: 'tool' }> => p.type === 'tool' && p.id === id);
+    if (existing) {
+      existing.title = title;
+      if (status !== undefined) existing.status = status;
+    } else {
+      parts.push({ type: 'tool', id, title, status });
+    }
+    this.turnParts.set(sessionId, parts);
   }
 
   /**

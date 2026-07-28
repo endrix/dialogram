@@ -51,7 +51,7 @@ export async function activateProfileRuntime(
                 log: m => log(m)
             });
         }
-        const config = assembleChatRuntimeConfig(profile, capability);
+        const config = assembleChatRuntimeConfig(profile, capability, glsp.mcpServerUrl);
         chatRuntime = new ChatRuntime(context, config, transport.sink);
         transport.connect(chatRuntime);
         context.subscriptions.push(chatRuntime, {
@@ -84,7 +84,8 @@ export async function activateProfileRuntime(
  */
 export function assembleChatRuntimeConfig(
     profile: DiagramProfile,
-    capability: EditChatCapability | undefined
+    capability: EditChatCapability | undefined,
+    mcpServerUrl?: string
 ): ChatRuntimeConfig {
     const chat = profile.chat!;
     return {
@@ -99,6 +100,11 @@ export function assembleChatRuntimeConfig(
         turnContextProvider: chat.turnContextProvider,
         selectionContext: chat.selectionContext,
         tools: chat.tools,
+        // GLSP-MCP parallel-run (0.5.0): the coarse profile gate plus the URL the
+        // in-host diagram server announced. The chat runtime consults the finer
+        // `<ns>.chat.useGlspMcp` per-user setting before advertising it (T6).
+        glspMcpEnabled: profile.mcp?.enabled === true,
+        mcpServerUrl,
         stdioMcpServers: capability ? f => capability.stdioMcpServers(f) : undefined,
         slashCommands: [...(capability?.slashCommands ?? []), ...(chat.slashCommands ?? [])],
         postTurnHook: capability ? (f, t) => capability.postTurnHook(f, t) : undefined

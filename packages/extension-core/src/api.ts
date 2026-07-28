@@ -37,7 +37,7 @@ export type { ChatCommandContribution, ChatCommandContext, ChatCommandResult };
  * Semver of the API contract. Consumers must check the major version on
  * activation and fail with an actionable message on mismatch.
  */
-export const DIALOGRAM_API_VERSION = '0.4.0';
+export const DIALOGRAM_API_VERSION = '0.5.0';
 
 /** The extension id consumers pass to `vscode.extensions.getExtension`. */
 export const DIALOGRAM_EXTENSION_ID = 'ebezati.dialogram';
@@ -263,6 +263,15 @@ export interface DiagramProfile {
     editBackend?: DiagramEditBackend;
     /** Chat carry-overs; when absent the chat backend is not activated. */
     chat?: DiagramChatConfig;
+    /**
+     * GLSP-MCP opt-in. Absent or `{ enabled:false }` keeps the legacy chat/MCP path
+     * byte-identical (no in-host MCP loopback server, no diagram-scope MCP tools).
+     * `{ enabled:true }` boots the in-host GLSP-MCP loopback server on the diagram's
+     * `initialize` handshake and bridges the profile's read-only {@link DiagramChatConfig.tools}
+     * into diagram-scope MCP tools. The announced loopback URL is surfaced on the
+     * activation handle for the agent clients.
+     */
+    mcp?: { enabled: boolean };
     /** Run driver factory; when absent no run/stop commands or live glow are wired. */
     runDriver?: DiagramRunDriverFactory;
     /** Registers the new-source-file (and any edit-backend) commands; returns their disposable. */
@@ -318,6 +327,15 @@ export interface InProcessChatTool {
     description: string;
     inputSchema: Record<string, unknown>;
     handler(file: string, args: Record<string, unknown>): string | Promise<string>;
+    /**
+     * When `true`, this tool WRITES source and MUST NOT be bridged onto the read-only
+     * GLSP-MCP surface, whose handlers inherit `readOnlyHint = true` (an auto-approving MCP
+     * client could otherwise mutate files unconfirmed). Locked design (approach B):
+     * mutation-capable tools ride the GLSP-MCP built-in operation tools only. The diagram
+     * server's bridge filters on this explicit marker; the tool stays available on the
+     * in-host chat / legacy stdio MCP path.
+     */
+    mutates?: boolean;
 }
 
 /**

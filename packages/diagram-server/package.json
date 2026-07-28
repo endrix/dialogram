@@ -16,10 +16,11 @@
         "test": "vitest run"
     },
     "dependencies": {
+        "@dialogram/shared": "*",
         "@eclipse-glsp/protocol": "2.7.0",
         "@eclipse-glsp/server": "2.7.0",
+        "@eclipse-glsp/server-mcp": "2.7.0",
         "@eclipse-glsp/vscode-integration": "2.7.0",
-        "@dialogram/shared": "*",
         "elkjs": "^0.9.3",
         "inversify": "^6.0.2",
         "mathjs": "^15.1.0",

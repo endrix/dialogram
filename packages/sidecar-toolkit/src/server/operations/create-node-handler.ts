@@ -4,6 +4,7 @@ import { inject, injectable } from 'inversify';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { readAuthoritativeSourceText } from './authoritative-source-text';
 import { URI } from 'vscode-uri';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 
@@ -247,7 +248,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
                         this.showSidecarFailure(`create ${direction} port '${portName}'`, result);
                         return undefined;
                     }
-                    const afterText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
+                    const afterText = await readAuthoritativeSourceText(vscodeUri);
                     (command as any)._sourceBeforeText = beforeText;
                     (command as any)._sourceAfterText = afterText;
                     return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];
@@ -371,7 +372,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
                     this.showSidecarFailure(`create node '${entityName}'`, result);
                     return undefined;
                 }
-                const afterText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
+                const afterText = await readAuthoritativeSourceText(vscodeUri);
                 (command as any)._sourceBeforeText = beforeText;
                 (command as any)._sourceAfterText = afterText;
                 return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];

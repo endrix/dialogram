@@ -22,9 +22,12 @@ import {
 } from '@eclipse-glsp/server';
 import { NodeActionDispatchScope } from '@eclipse-glsp/server/node';
 import { configureELKLayoutModule, ElkFactory, ElementFilter, LayoutConfigurator, GlspElkLayoutEngine } from '@eclipse-glsp/layout-elk';
+import { NodeMcpServerModule } from '@eclipse-glsp/server-mcp/lib/node';
 import { ContainerModule, interfaces } from 'inversify';
 import type { EditStrategy, DiagramModelSource } from '@dialogram/shared';
 import { WorkflowDiagramModule } from './diagram-glsp-module';
+import { DiagramMcpModule } from './mcp-diagram-module';
+import type { McpServerModuleOptions } from './mcp-diagram-module';
 import { WorkflowLayoutConfigurator } from './layout-configurator';
 import { WorkflowElkLayoutEngine } from './elk-layout-engine';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
@@ -98,6 +101,14 @@ export function createWorkflowServerModules(
          * consumer types; narrowed to `DiagramModule` here.
          */
         diagramModuleFactory?: () => unknown;
+        /**
+         * GLSP-MCP loopback-server opt-in. Absent or `{ enabled:false }` keeps the legacy
+         * path byte-identical: neither the server-scope {@link NodeMcpServerModule} nor the
+         * per-session {@link DiagramMcpModule} is loaded. When `{ enabled:true }`, both are
+         * wired and the launcher boots lazily on a GLSP `initialize` carrying an `mcpServer`
+         * config (threaded separately by the extension host).
+         */
+        mcp?: McpServerModuleOptions;
     }
 ): ServerModule[] {
     const serverModule = new ServerModule();
@@ -194,6 +205,15 @@ export function createWorkflowServerModules(
         additionalModules.push(modelSourceModule);
     }
 
+    // GLSP-MCP opt-in: when enabled, append the per-session MCP diagram module (diagram-scope
+    // tool/resource/prompt handlers) to the session module array. Loaded LAST so consumer
+    // diagram/model bindings it reads (e.g. ModelState, OperationHandlerRegistry) are already
+    // present. When the flag is off nothing is added — the legacy session array is untouched.
+    const mcpEnabled = options?.mcp?.enabled === true;
+    if (mcpEnabled) {
+        additionalModules.push(new DiagramMcpModule({ tools: options?.mcp?.tools ?? [] }));
+    }
+
     // Configure the diagram module with the additional modules. A consumer-supplied
     // `diagramModuleFactory` (build-time library mode) replaces the stock module;
     // otherwise the stock WorkflowDiagramModule is used, byte-identical to before.
@@ -201,7 +221,17 @@ export function createWorkflowServerModules(
         ? (options.diagramModuleFactory() as DiagramModule)
         : new WorkflowDiagramModule({ edits: options?.edits });
     serverModule.configureDiagramModule(diagramModule, ...additionalModules);
-    
-    // Return logger module first, then server module
-    return [appModule as unknown as ServerModule, serverModule];
+
+    // Assemble the returned server-scope module list. Logger module first, then the server
+    // module. When MCP is enabled, append the server-scope NodeMcpServerModule — its own
+    // `configure` binds the launcher and aliases it under GLSPServerInitializer +
+    // GLSPServerListener (we never hand-bind those lifecycle hooks). The launcher then boots
+    // the loopback HTTP server lazily on the first `initialize` carrying an `mcpServer` config.
+    const serverModules: ServerModule[] = [appModule as unknown as ServerModule, serverModule];
+    if (mcpEnabled) {
+        const persona = options?.mcp?.agentPersona;
+        const nodeMcpServerModule = new NodeMcpServerModule(persona ? { agentPersona: persona } : {});
+        serverModules.push(nodeMcpServerModule as unknown as ServerModule);
+    }
+    return serverModules;
 }

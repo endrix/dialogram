@@ -89,6 +89,7 @@ export class ReversibleWorkspaceEditCommand implements Command {
         workspaceEdit.set(this.options.uri, [new vscode.TextEdit(fullDocumentRange(doc), this.beforeText)]);
         const applied = await vscode.workspace.applyEdit(workspaceEdit);
         if (applied) {
+            await this.persist(doc);
             await this.options.afterApply?.();
         }
     }
@@ -111,7 +112,22 @@ export class ReversibleWorkspaceEditCommand implements Command {
         workspaceEdit.set(this.options.uri, [new vscode.TextEdit(fullDocumentRange(doc), this.afterText)]);
         const applied = await vscode.workspace.applyEdit(workspaceEdit);
         if (applied) {
+            await this.persist(doc);
             await this.options.afterApply?.();
+        }
+    }
+
+    /**
+     * Flush the undo/redo edit to disk.
+     *
+     * `applyEdit` only mutates the in-memory (dirty) text buffer, but the diagram model is rebuilt
+     * FROM DISK. Without persisting, disk still holds the pre-undo content, so the reverted node
+     * keeps reappearing on every reload until the user manually saves. Saving lets the normal
+     * on-save reload reflect the revert immediately.
+     */
+    private async persist(doc: vscode.TextDocument): Promise<void> {
+        if (doc.isDirty) {
+            await doc.save();
         }
     }
 

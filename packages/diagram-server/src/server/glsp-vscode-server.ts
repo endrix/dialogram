@@ -15,6 +15,7 @@ import { createWorkflowServerModules } from './server-module';
 import { createSessionGatedGlspClient } from './session-gated-glsp-client';
 import type { EditStrategy, DiagramModelSource } from '@dialogram/shared';
 import type { StorageRuntimeOptions } from './storage-runtime-options';
+import type { McpServerModuleOptions } from './mcp-diagram-module';
 
 /**
  * NodeGlspVscodeServer that gates client→server forwarding on the per-client
@@ -47,6 +48,11 @@ export interface WorkflowGlspVscodeServerOptions extends Partial<Omit<NodeGlspVs
      *  stock one. Valid only in single-bundle (library) consumption — see the field's JSDoc in
      *  server-module.ts and `DiagramProfile.serverDiagramModule`. */
     diagramModuleFactory?: () => unknown;
+    /** GLSP-MCP loopback-server opt-in. Absent or `{ enabled:false }` keeps the legacy path
+     *  byte-identical; `{ enabled:true }` loads the MCP DI modules (see server-module.ts). The
+     *  wire-level `mcpServer` config that actually starts the listener is a separate option
+     *  (inherited from `NodeGlspVscodeServerOptions`), threaded by the extension host. */
+    mcp?: McpServerModuleOptions;
 }
 
 /**
@@ -77,12 +83,17 @@ export function createWorkflowGlspVscodeServer(
     const server = new SessionGatedNodeGlspVscodeServer({
         clientId: mergedOptions.clientId!,
         clientName: mergedOptions.clientName!,
+        // Wire-level MCP config carried on the GLSP `initialize` request. Its presence is
+        // what actually starts the loopback HTTP listener (the `mcp` DI option below only
+        // decides whether the DI wiring is present to serve it). Absent = legacy path.
+        mcpServer: mergedOptions.mcpServer,
         serverModules: createWorkflowServerModules({
             modelSourceFactory: mergedOptions.modelSourceFactory,
             storageOptions: mergedOptions.storageOptions,
             additionalServerModules: mergedOptions.additionalServerModules,
             edits: mergedOptions.edits,
-            diagramModuleFactory: mergedOptions.diagramModuleFactory
+            diagramModuleFactory: mergedOptions.diagramModuleFactory,
+            mcp: mergedOptions.mcp
         })
     });
     return server;

@@ -2,6 +2,7 @@ import { CutOperation } from '@eclipse-glsp/protocol';
 import { OperationHandler, ModelState, type Command, type MaybePromise } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
+import { readAuthoritativeSourceText } from './authoritative-source-text';
 import { buildPyClipboardPayload, pyClipboardDataFromPayload } from '@dialogram/diagram-server/clipboard/py-clipboard';
 import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
@@ -69,7 +70,7 @@ export class CutOperationHandler extends OperationHandler {
                         });
                     }
                 }
-                const afterText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
+                const afterText = await readAuthoritativeSourceText(vscodeUri);
                 (command as any)._sourceBeforeText = beforeText;
                 (command as any)._sourceAfterText = afterText;
                 return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];

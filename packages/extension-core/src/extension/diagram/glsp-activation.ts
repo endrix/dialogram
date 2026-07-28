@@ -34,6 +34,7 @@ import { resolveDiagramOpenTarget, type DiagramOpenTargetArg } from './open-diag
 import { normalizeSourceUriKey } from './uri-keys';
 import { executeViewerCommand, executeViewerOpen } from './viewer-actions';
 import { decideDiagramOpen } from './diagram-open-decision';
+import { readMcpServerUrl } from './mcp-server-url';
 import { type DiagramProfile, type DiagramRunHost } from '../../api';
 
 // Define the diagram type constant locally to avoid import
@@ -323,6 +324,12 @@ export interface GlspIntegrationHandle extends vscode.Disposable {
     editorProvider: WorkflowEditorProvider;
     /** Per-activation neutral execution-overlay seam (states + opaque events). */
     executionOverlay: ExecutionOverlayRegistry;
+    /**
+     * The in-host GLSP-MCP loopback server URL announced on the `initialize` handshake,
+     * or `undefined` when MCP is disabled or no endpoint was announced. Read from the typed
+     * initialize result (no stdout parsing). The chat runtime hands it to the agent clients.
+     */
+    mcpServerUrl?: string;
 }
 
 /**
@@ -361,6 +368,11 @@ export async function activateGlspIntegration(
     // Lazy import to avoid loading modules at extension activation time
     const { createWorkflowGlspVscodeServer } = await import('@dialogram/diagram-server');
 
+    // GLSP-MCP opt-in gate. When on, load the MCP DI modules (bridging the profile's
+    // read-only chat tools into diagram-scope MCP tools) AND send the wire-level
+    // `mcpServer` config that boots the in-host loopback listener on `initialize`.
+    const mcpEnabled = profile.mcp?.enabled === true;
+
     // Create the GLSP server (runs in the extension process). Every product
     // detail — model source, extra DI modules, edit operation modules and the
     // neutral storage options — arrives through the profile; core stays neutral.
@@ -373,11 +385,21 @@ export async function activateGlspIntegration(
         modelSourceFactory: profile.modelSource,
         // Build-time library seam: when the profile supplies its own GLSP DiagramModule
         // (constructed in the caller's realm), it replaces the stock module on the server.
-        diagramModuleFactory: profile.serverDiagramModule
+        diagramModuleFactory: profile.serverDiagramModule,
+        // MCP DI modules + the profile's read-only chat tools bridged into diagram-scope
+        // MCP tools (library-mode closures; absent on the cross-extension API path).
+        mcp: mcpEnabled ? { enabled: true, tools: profile.chat?.tools } : undefined,
+        // Wire-level opt-in: a distinct server name per profile so two installed consumers
+        // never collide on the built-in MCP host registry.
+        mcpServer: mcpEnabled ? { name: `glsp-${profile.key}` } : undefined
     });
 
     // Start the server
     await workflowServer.start();
+
+    // When MCP is on, read the announced loopback URL from the typed initialize result
+    // (no stdout parsing). Skipped when off so activation never awaits an absent MCP field.
+    const mcpServerUrl = await readMcpServerUrl(workflowServer, mcpEnabled);
 
     // Cross-file navigation provider, supplied by the profile (undefined = no
     // cross-file resolution; navigation falls through to the referenced target).
@@ -920,6 +942,7 @@ export async function activateGlspIntegration(
         connector: glspVscodeConnector,
         editorProvider,
         executionOverlay,
+        mcpServerUrl,
         dispose: () => disposable.dispose()
     };
 }

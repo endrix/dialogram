@@ -118,6 +118,7 @@ export class ReversibleMultiWorkspaceEditCommand implements Command {
 
         const applied = await vscode.workspace.applyEdit(workspaceEdit);
         if (applied) {
+            await this.persistSnapshots();
             await this.options.afterApply?.();
         }
     }
@@ -146,7 +147,27 @@ export class ReversibleMultiWorkspaceEditCommand implements Command {
 
         const applied = await vscode.workspace.applyEdit(workspaceEdit);
         if (applied) {
+            await this.persistSnapshots();
             await this.options.afterApply?.();
+        }
+    }
+
+    /**
+     * Flush the undo/redo edits to disk for every affected document.
+     *
+     * `applyEdit` only mutates the in-memory (dirty) buffers, but the diagram model is rebuilt
+     * FROM DISK. Without persisting, disk keeps the pre-undo content and the revert is not
+     * reflected until the user manually saves. Saving lets the normal on-save reload apply it.
+     */
+    private async persistSnapshots(): Promise<void> {
+        if (!this.snapshots) {
+            return;
+        }
+        for (const s of this.snapshots) {
+            const doc = await vscode.workspace.openTextDocument(s.uri);
+            if (doc.isDirty) {
+                await doc.save();
+            }
         }
     }
 

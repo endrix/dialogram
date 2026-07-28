@@ -136,4 +136,22 @@ describe('createSidecarDiagramProfile', () => {
         expect(typeof p.runDriver).toBe('function');
         expect(typeof p.newSourceFile).toBe('function');
     });
+
+    // --- T7 (GLSP-MCP): registry-tool relocation + profile.mcp default ---
+
+    it('bridges the 5 sidecar-registry READ tools into chat.tools (mutation tools excluded)', () => {
+        const p = createSidecarDiagramProfile(baseInput());
+        const names = (p.chat?.tools ?? []).map((t) => t.name).sort();
+        expect(names).toEqual(
+            ['create_task_type', 'list_nodes', 'list_task_types', 'list_workflow_types', 'validate_workflow'].sort()
+        );
+        // create_node/connect moved to GLSP-MCP built-ins; they must NOT be in chat.tools.
+        expect(names).not.toContain('create_node');
+        expect(names).not.toContain('connect');
+    });
+
+    it('defaults profile.mcp ON (GLSP-MCP opt-in) and honors an explicit override', () => {
+        expect(createSidecarDiagramProfile(baseInput()).mcp).toEqual({ enabled: true });
+        expect(createSidecarDiagramProfile(baseInput({ mcp: { enabled: false } })).mcp).toEqual({ enabled: false });
+    });
 });
