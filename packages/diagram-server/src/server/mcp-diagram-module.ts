@@ -23,6 +23,7 @@ import {
 } from '@eclipse-glsp/server-mcp';
 import type { InstanceMultiBinding } from '@eclipse-glsp/server';
 import { makePlatformToolHandlerClass, type PlatformMcpTool } from './mcp-platform-tool-adapter';
+import { CreateTaskTypeMcpToolHandler } from './create-task-type-mcp-tool-handler';
 
 /**
  * Keep mutation-capable tools OFF the read-only GLSP-MCP bridge.
@@ -96,6 +97,10 @@ export class DiagramMcpModule extends DefaultMcpDiagramModule {
         // Agents are told (session context hint) that edits are user-undoable via the editor.
         binding.remove(UndoMcpToolHandler);
         binding.remove(RedoMcpToolHandler);
+        // Custom operation tool: scaffold a task type. It rides the built-in operation-tool path
+        // (dispatches a reversible GLSP operation), so mutation flows through our undoable workspace
+        // edits — the one sanctioned way to expose a mutating tool on the GLSP-MCP surface.
+        binding.add(CreateTaskTypeMcpToolHandler);
         // Read-only bridge only: mutation-capable tools are excluded (see bridgeableChatTools).
         for (const tool of bridgeableChatTools(this.platformTools)) {
             binding.add(makePlatformToolHandlerClass(tool));
