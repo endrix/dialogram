@@ -18,6 +18,7 @@ import {
     ModelState,
     DiagramModule,
     ActionDispatchScope,
+    ActionDispatcher,
     InjectionContainer
 } from '@eclipse-glsp/server';
 import { NodeActionDispatchScope } from '@eclipse-glsp/server/node';
@@ -29,6 +30,8 @@ import { WorkflowLayoutConfigurator } from './layout-configurator';
 import { WorkflowElkLayoutEngine } from './elk-layout-engine';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { WorkflowRerouteEdgesAvoidOverlapsOperationHandler } from '../operations/reroute-edges-avoid-overlaps-handler';
+// TEMPORARY DIAGNOSTIC — remove before merge (Suspect 1 drag-storm breadcrumbs).
+import { DragDiagnosticsActionDispatcher } from './drag-diagnostics-dispatcher';
 import { DIAGRAM_MODEL_SOURCE } from './model-source-token';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
 
@@ -151,6 +154,22 @@ export function createWorkflowServerModules(
         }
     });
     additionalModules.push(operationHandlerSelfModule);
+
+    // TEMPORARY DIAGNOSTIC — remove before merge.
+    // Suspect 1: swap the session `ActionDispatcher` for a subclass that samples the
+    // 2.7 dispatcher's own queue/pending accumulators on every dispatch and logs a
+    // `[drag-diag]` breadcrumb (zero behavior change; see drag-diagnostics-dispatcher.ts).
+    // Loaded after the diagram module (all additional modules are), so the stock
+    // `bind(ActionDispatcher).to(DefaultActionDispatcher)` already exists → rebind wins.
+    // `isBound`-guarded (mirrors customLayoutEngineModule above) so it can never throw.
+    const dragDiagnosticsDispatcherModule = new ContainerModule((bind, _unbind, isBound, rebind) => {
+        if (isBound(ActionDispatcher)) {
+            rebind(ActionDispatcher).to(DragDiagnosticsActionDispatcher).inSingletonScope();
+        } else {
+            bind(ActionDispatcher).to(DragDiagnosticsActionDispatcher).inSingletonScope();
+        }
+    });
+    additionalModules.push(dragDiagnosticsDispatcherModule);
 
     // Neutral storage runtime options (settings namespace + operation-prefix), supplied as plain
     // data by the consuming extension. No product literals here.

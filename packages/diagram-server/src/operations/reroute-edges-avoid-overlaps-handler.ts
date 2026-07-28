@@ -73,7 +73,17 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
      * without going through the operation dispatch pipeline.
      */
     async runReroute(operation: WorkflowRerouteEdgesAvoidOverlapsOperation): Promise<void> {
-        await this.executeOperation(operation);
+        // TEMPORARY DIAGNOSTIC — remove before merge (Suspect 3 per-drag cost). Times the whole
+        // Dijkstra grid-route pass (this is the per-drag reroute; the one-shot bootstrap reroute
+        // is timed separately by `[dialogram perf] reroute=`). try/finally preserves error
+        // propagation — zero behavior change beyond the log.
+        const _dragDiagRerouteStart = performance.now();
+        try {
+            await this.executeOperation(operation);
+        } finally {
+            // eslint-disable-next-line no-console
+            console.log(`[drag-diag] reroute=${Math.round(performance.now() - _dragDiagRerouteStart)}ms`);
+        }
     }
 
     private readonly debugReroute: number = Number(process.env.WORKFLOW_DIAGRAM_DEBUG_REROUTE ?? '0') || 0;

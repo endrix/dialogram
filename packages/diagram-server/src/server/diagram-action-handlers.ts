@@ -633,6 +633,12 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
         const hasModelRevision = model.revision !== undefined && model.revision !== null;
         const revisionMatches = !hasActionRevision || !hasModelRevision || action.revision === model.revision;
 
+        // TEMPORARY DIAGNOSTIC — remove before merge (Suspect 2 revision race). One line per
+        // execution: frequent match=false during a drag storm = queued ComputedBounds arriving
+        // with a stale revision → applyBounds skipped → "move not applied".
+        // eslint-disable-next-line no-console
+        console.log(`[drag-diag] computedBounds action.revision=${action.revision} model.revision=${model.revision} match=${revisionMatches}`);
+
         if (revisionMatches) {
             await this.applyBounds(model, action);
 
