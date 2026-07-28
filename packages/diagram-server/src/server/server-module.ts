@@ -22,7 +22,7 @@ import {
 } from '@eclipse-glsp/server';
 import { NodeActionDispatchScope } from '@eclipse-glsp/server/node';
 import { configureELKLayoutModule, ElkFactory, ElementFilter, LayoutConfigurator, GlspElkLayoutEngine } from '@eclipse-glsp/layout-elk';
-import { NodeMcpServerModule } from '@eclipse-glsp/server-mcp';
+import { NodeMcpServerModule } from '@eclipse-glsp/server-mcp/lib/node';
 import { ContainerModule, interfaces } from 'inversify';
 import type { EditStrategy, DiagramModelSource } from '@dialogram/shared';
 import { WorkflowDiagramModule } from './diagram-glsp-module';
