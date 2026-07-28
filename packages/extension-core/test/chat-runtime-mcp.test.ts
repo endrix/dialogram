@@ -1,9 +1,9 @@
 /**
- * GLSP-MCP parallel-run wiring (API 0.5.0). When the profile opts into GLSP-MCP
- * and surfaces a loopback URL, the chat runtime must hand opencode the GLSP-MCP
- * http descriptor ALONGSIDE the legacy MCP servers (parallel-run), gated by the
- * per-user `<ns>.chat.useGlspMcp` rollback setting. With the profile gate off the
- * descriptor list stays byte-identical to 0.4.x.
+ * GLSP-MCP wiring. When the profile opts into GLSP-MCP and surfaces a loopback
+ * URL, the chat runtime hands opencode the GLSP-MCP http descriptor, gated by the
+ * per-user `<ns>.chat.useGlspMcp` rollback setting. Post-0.6.0 cutover there is no
+ * legacy stdio path: `mcpServersProvider` only ever yields http descriptors
+ * (GLSP-MCP + in-process registry), never a `command`/`args` (stdio) descriptor.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as vscode from 'vscode';
@@ -32,11 +32,10 @@ function providerOf(runtime: ChatRuntime): (file?: string) => any[] {
 describe('ChatRuntime GLSP-MCP parallel-run', () => {
     afterEach(() => vi.restoreAllMocks());
 
-    it('advertises the GLSP-MCP http descriptor alongside legacy servers when enabled', () => {
+    it('advertises the GLSP-MCP http descriptor when enabled (never a stdio descriptor)', () => {
         const runtime = makeRuntime({
             glspMcpEnabled: true,
-            mcpServerUrl: 'http://127.0.0.1:9/mcp',
-            stdioMcpServers: () => [{ name: 'legacy-stdio', command: 'c', args: [] }]
+            mcpServerUrl: 'http://127.0.0.1:9/mcp'
         });
         const servers = providerOf(runtime)('file:///a.py');
         const glsp = servers.find(s => s.type === 'http' && s.url === 'http://127.0.0.1:9/mcp');
@@ -45,20 +44,20 @@ describe('ChatRuntime GLSP-MCP parallel-run', () => {
         // opencode http shape: headers is an ARRAY (not a record).
         expect(Array.isArray(glsp.headers)).toBe(true);
         expect(glsp.headers).toEqual([]);
-        // Parallel-run: the legacy stdio descriptor is still advertised.
-        expect(servers.some(s => s.name === 'legacy-stdio')).toBe(true);
+        // Post-cutover: NO stdio (command/args) descriptor is ever advertised.
+        expect(servers.some(s => 'command' in s)).toBe(false);
         runtime.dispose();
     });
 
-    it('omits the GLSP-MCP descriptor when the profile did not opt in (0.4.x parity)', () => {
+    it('omits every descriptor when the profile did not opt in (post-cutover: empty)', () => {
         const runtime = makeRuntime({
             glspMcpEnabled: false,
-            mcpServerUrl: 'http://127.0.0.1:9/mcp',
-            stdioMcpServers: () => [{ name: 'legacy-stdio', command: 'c', args: [] }]
+            mcpServerUrl: 'http://127.0.0.1:9/mcp'
         });
         const servers = providerOf(runtime)('file:///a.py');
         expect(servers.some(s => s.type === 'http')).toBe(false);
-        expect(servers).toEqual([{ name: 'legacy-stdio', command: 'c', args: [] }]);
+        // No stdio fallback remains after the legacy cutover.
+        expect(servers).toEqual([]);
         runtime.dispose();
     });
 

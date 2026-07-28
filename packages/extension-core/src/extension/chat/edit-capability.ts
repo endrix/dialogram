@@ -16,13 +16,6 @@ import type { WorkflowEditorProvider } from '../diagram/diagram-editor-provider'
 import { getChatSetting } from '../legacy-settings-compat';
 import type { ChatCommandContext, ChatCommandContribution, ChatCommandResult } from './slash-commands';
 
-export interface StdioMcpDescriptor {
-    name: string;
-    command: string;
-    args: string[];
-    env: Array<{ name: string; value: string }>;
-}
-
 export interface EditChatCapabilityDeps {
     profile: DiagramProfile;
     editBackend: DiagramEditBackend;
@@ -34,7 +27,6 @@ export interface EditChatCapabilityDeps {
 export interface EditChatCapability {
     slashCommands: ChatCommandContribution[];
     graphContextProvider(file: string): Promise<string | undefined>;
-    stdioMcpServers(file: string): StdioMcpDescriptor[];
     postTurnHook(file: string, text: string): Promise<void>;
     dispose(): void;
 }
@@ -261,24 +253,6 @@ export function createEditChatCapability(deps: EditChatCapabilityDeps): EditChat
             } catch {
                 return undefined;
             }
-        },
-
-        stdioMcpServers(file: string): StdioMcpDescriptor[] {
-            const uri = vscode.Uri.file(file);
-            const networkName = deps.getEditorProvider()?.getRefreshContext(uri)?.networkName ?? undefined;
-            const descriptors = editBackend.mcpServers(uri.toString(), {
-                networkName,
-                assetsPath: deps.getAssetsPath()
-            });
-            if (descriptors.length) {
-                deps.log(`attaching ${profile.key} MCP server for ${file}`);
-            }
-            return descriptors.map(descriptor => ({
-                name: descriptor.name,
-                command: descriptor.command,
-                args: descriptor.args,
-                env: Object.entries(descriptor.env).map(([name, value]) => ({ name, value: String(value) }))
-            }));
         },
 
         /** After a free-text turn: run diagram VIEW ops the prompt asked for. */

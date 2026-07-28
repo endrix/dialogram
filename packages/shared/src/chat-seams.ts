@@ -36,14 +36,6 @@ export interface BackendCapabilities {
     features?: string[];
 }
 
-/** Spawn descriptor for an out-of-process MCP tool server scoped to one file. */
-export interface McpServerDescriptor {
-    name: string;
-    command: string;
-    args: string[];
-    env: Record<string, string>;
-}
-
 /**
  * Consumer-supplied edit/graph/capability backend for the diagram chat.
  * Core owns revision caching, conflict-refresh and auto-layout; the backend
@@ -59,8 +51,6 @@ export interface DiagramEditBackend {
         args: Record<string, unknown>,
         opts?: { expectedRevision?: string }
     ): Promise<EditResult>;
-    /** Spawn descriptors for out-of-process MCP tool servers scoped to this file; empty when disabled. */
-    mcpServers(uri: string, opts: { networkName?: string; assetsPath?: string }): McpServerDescriptor[];
     /** The arg key + value used to scope ops to a sub-graph (today: `{ workflow: <networkName> }`). */
     scopeArgs(uri: string, networkName: string | undefined): Record<string, unknown>;
 }

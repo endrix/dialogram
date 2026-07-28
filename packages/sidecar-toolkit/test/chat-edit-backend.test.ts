@@ -27,8 +27,6 @@ const CFG: SidecarEditBackendConfig = {
     sidecarCommandDefault: 'wfpy-sidecar',
     sidecarOperationPrefix: 'wfpy',
     exportOp: 'exportWorkflowGraph',
-    mcpServerName: 'wfpy',
-    mcpServerModulePath: (assetsPath: string) => `${assetsPath}/dist/sidecar-mcp-server.cjs`,
     mcpEnabledSetting: { section: 'workflow.chat', key: 'enableMcpTools', default: true },
     scopeArgKey: 'workflow'
 };
@@ -173,32 +171,5 @@ describe('createSidecarEditBackend', () => {
         const backend = createSidecarEditBackend(CFG);
         expect(backend.scopeArgs(FILE_URI, 'top')).toEqual({ workflow: 'top' });
         expect(backend.scopeArgs(FILE_URI, undefined)).toEqual({});
-    });
-
-    it('mcpServers builds one descriptor with the sidecar env (kill-switch on)', () => {
-        const backend = createSidecarEditBackend(CFG);
-        const descriptors = backend.mcpServers(FILE_URI, { networkName: 'top', assetsPath: '/assets' });
-
-        expect(descriptors).toHaveLength(1);
-        const [d] = descriptors;
-        expect(d.name).toBe('wfpy');
-        expect(d.command).toBe('node');
-        expect(d.args).toEqual(['/assets/dist/sidecar-mcp-server.cjs']);
-        expect(d.env).toEqual({
-            MCP_WORKFLOW_FILE: FILE_PATH,
-            MCP_SIDECAR_CMD: 'wfpy-sidecar',
-            MCP_OP_PREFIX: 'wfpy',
-            MCP_NETWORK: 'top',
-            MCP_SERVER_NAME: 'wfpy',
-            MCP_EXPORT_OP: 'exportWorkflowGraph'
-        });
-    });
-
-    it('mcpServers returns [] when the kill-switch is disabled', () => {
-        const backend = createSidecarEditBackend({
-            ...CFG,
-            mcpEnabledSetting: { section: 'workflow.chat', key: 'enableMcpTools', default: false }
-        });
-        expect(backend.mcpServers(FILE_URI, { assetsPath: '/assets' })).toEqual([]);
     });
 });

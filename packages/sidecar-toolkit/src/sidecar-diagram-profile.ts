@@ -12,7 +12,6 @@
  * result as `DiagramProfile` at the assignment site.
  */
 import * as vscode from 'vscode';
-import * as path from 'node:path';
 import { invokeSidecarOp } from './sidecar-graph-export.js';
 import { createRegistryChatTools } from './registry-tools.js';
 import type {
@@ -249,8 +248,6 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         sidecarCommandDefault: input.sidecarCommandDefault,
         sidecarOperationPrefix: input.sidecarOperationPrefix,
         exportOp: input.exportOp,
-        mcpServerName: input.key,
-        mcpServerModulePath: (assetsPath) => path.join(assetsPath, 'dist', 'sidecar-mcp-server.cjs'),
         mcpEnabledSetting: input.mcpEnabledSetting,
         scopeArgKey: input.scopeArgKey
     });

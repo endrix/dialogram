@@ -105,7 +105,6 @@ export function assembleChatRuntimeConfig(
         // `<ns>.chat.useGlspMcp` per-user setting before advertising it (T6).
         glspMcpEnabled: profile.mcp?.enabled === true,
         mcpServerUrl,
-        stdioMcpServers: capability ? f => capability.stdioMcpServers(f) : undefined,
         slashCommands: [...(capability?.slashCommands ?? []), ...(chat.slashCommands ?? [])],
         postTurnHook: capability ? (f, t) => capability.postTurnHook(f, t) : undefined
     };

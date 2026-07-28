@@ -19,7 +19,6 @@ import { SessionManager } from '../session-manager.js';
 import type { ChatMessageSink, ChatPayload, InProcessChatTool } from '../../api';
 import { SlashCommandRegistry, type ChatCommandContribution } from './slash-commands';
 import { attachAcpEventForwarding } from './acp-event-forwarding';
-import type { StdioMcpDescriptor } from './edit-capability';
 import { LEGACY_KEYS, readStateWithFallback, getChatSetting } from '../legacy-settings-compat';
 
 /**
@@ -51,8 +50,8 @@ export interface ChatRuntimeConfig {
     tools?: InProcessChatTool[];
     /**
      * The GLSP-MCP loopback URL announced by the in-host diagram server when the
-     * profile opts into GLSP-MCP. Handed to opencode alongside the legacy MCP
-     * servers during 0.5.0 parallel-run (see {@link glspMcpEnabled}).
+     * profile opts into GLSP-MCP. Handed to opencode as an http MCP descriptor
+     * (see {@link glspMcpEnabled}).
      */
     mcpServerUrl?: string;
     /**
@@ -61,8 +60,6 @@ export interface ChatRuntimeConfig {
      * per-user `<ns>.chat.useGlspMcp` setting is the finer rollback lever.
      */
     glspMcpEnabled?: boolean;
-    /** stdio MCP servers (arrive pre-gated from the edit backend). */
-    stdioMcpServers?: (file: string) => StdioMcpDescriptor[];
     /** Slash commands contributed to the registry (with optional handlers). */
     slashCommands?: ChatCommandContribution[];
     /** Runs after a free-text turn (e.g. diagram VIEW ops the prompt asked for). */
@@ -315,10 +312,9 @@ export class ChatRuntime {
         this.acp.setMcpServersProvider((file?: string) => {
             if (!file) return [];
             const servers: any[] = [];
-            // GLSP-MCP parallel-run (0.5.0): advertise the in-host diagram
-            // server's loopback URL to opencode ALONGSIDE the legacy MCP servers,
-            // gated by the profile opt-in and the per-user rollback setting.
-            // `headers` is an ARRAY here (the opencode http descriptor shape).
+            // GLSP-MCP: advertise the in-host diagram server's loopback URL to
+            // opencode, gated by the profile opt-in and the per-user rollback
+            // setting. `headers` is an ARRAY here (the opencode http descriptor shape).
             if (this.glspAdvertised()) {
                 servers.push({
                     type: 'http',
@@ -329,9 +325,6 @@ export class ChatRuntime {
             }
             if (this.mcpEnabled() && this.mcpHttp) {
                 servers.push({ type: 'http', name: this.config.key, url: this.mcpHttp.urlFor(file), headers: [] } as any);
-            }
-            for (const d of this.config.stdioMcpServers?.(file) ?? []) {
-                servers.push({ name: d.name, command: d.command, args: d.args, env: d.env });
             }
             return servers;
         });
