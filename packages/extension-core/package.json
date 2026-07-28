@@ -15,8 +15,8 @@
     },
     "dependencies": {
         "@agentclientprotocol/sdk": "^0.25.0",
-        "@eclipse-glsp/protocol": "~2.5.0",
-        "@eclipse-glsp/vscode-integration": "~2.5.0",
+        "@eclipse-glsp/protocol": "2.7.0",
+        "@eclipse-glsp/vscode-integration": "2.7.0",
         "@dialogram/diagram-client": "*",
         "@dialogram/diagram-server": "*",
         "@dialogram/shared": "*",

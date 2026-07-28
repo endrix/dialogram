@@ -141,10 +141,50 @@ describe('caller-reference deferral (cold load) and warm-cache parity', () => {
         expect(dispatched[0].kind).toBe(RequestModelAction.KIND);
         expect(String(dispatched[0].requestId)).toMatch(/^refresh-caller-refs-/);
         expect(dispatched[0].options?.sourceUri).toBe(sourceUri);
+        // Perf/layout guard: the redelivery must run the agent-context-only fast path (skip-bounds,
+        // warm plan-cache reuse) rather than the default full model reload. Caller references only
+        // add a root arg, so a full re-submit mid-open would reset the model revision and invalidate
+        // the persisted-layout first render (blank spaces). The WorkflowRequestModelActionHandler
+        // keys the fast path off this flag; without it every open with callers re-lays out.
+        expect(dispatched[0].options?.agentContextOnly).toBe(true);
 
         // The refresh's warm-cache reload now carries the caller data.
         const warmRoot = storage.modelState.root as { args?: Record<string, unknown> };
         expect(warmRoot.args?.['wf:parentWorkflows']).toEqual([{ sourceUri, workflowName: 'main' }]);
+    });
+
+    it('collapses re-entrant schedules (cold walk) onto one agent-context-only refresh', async () => {
+        // Reproduces the drill-in regression: while the (slow) caller walk is still cold, a fast
+        // agent-context-only redelivery (enrichment, or a prior caller-refs refresh) re-enters and
+        // re-schedules discovery. The per-key guard must collapse both onto a single redelivery.
+        const root = await mkTempDir('wf-lang-caller-reentrant-');
+        const workflowFile = path.join(root, 'child.py');
+        await writeFile(workflowFile, '# child workflow stub\n');
+        const sourceUri = `file://${workflowFile}`;
+
+        const storage = new (WorkflowSourceModelStorage as any)();
+        storage.modelState = makeModelStateStub();
+
+        const dispatched: RequestModelAction[] = [];
+        storage.actionDispatcher = { dispatch: (a: RequestModelAction) => { dispatched.push(a); } };
+        storage.isModelStillCurrent = () => true;
+
+        // Hold the walk pending so both schedule calls observe a cold cache before it resolves.
+        let resolveWalk: (refs: unknown[]) => void = () => undefined;
+        const walk = new Promise<unknown[]>(resolve => { resolveWalk = resolve; });
+        storage.getWorkflowCallerReferences = () => walk;
+
+        const relInfo = { workflowNames: ['child'], entryWorkflowNames: [], callersByWorkflow: { child: ['main'] } };
+        storage.scheduleDeferredCallerDiscovery(sourceUri, workflowFile, 'child', relInfo, {});
+        // Re-entry while the first walk is still pending — must be dropped by the guard.
+        storage.scheduleDeferredCallerDiscovery(sourceUri, workflowFile, 'child', relInfo, { agentContextOnly: true });
+
+        resolveWalk([{ sourceUri, workflowName: 'main' }]);
+        await storage.deferredCallerDiscovery;
+
+        expect(dispatched).toHaveLength(1);
+        expect(String(dispatched[0].requestId)).toMatch(/^refresh-caller-refs-/);
+        expect(dispatched[0].options?.agentContextOnly).toBe(true);
     });
 
     it('does not refresh when the deferred discovery finds no callers', async () => {

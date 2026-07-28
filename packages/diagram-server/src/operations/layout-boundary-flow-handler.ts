@@ -2,7 +2,6 @@ import { LayoutOperation, Operation } from '@eclipse-glsp/protocol';
 import {
     GEdge,
     GModelRecordingCommand,
-    GPort,
     LayoutEngine,
     ModelState,
     OperationHandler,
@@ -16,8 +15,9 @@ import { URI } from 'vscode-uri';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { WORKFLOW_LAYOUT_PERSISTENCE_KEY, WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { WorkflowDiagramMetadata } from '@dialogram/shared';
 import { clearAllEdgeRoutingPoints } from '../routing/clear-edge-routes';
+import { applyBoundaryFlowLayerConstraints, restoreNodeLayoutOptions } from './boundary-flow-layout';
 import {
     WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND,
     WorkflowRerouteEdgesAvoidOverlapsOperationHandler
@@ -66,12 +66,12 @@ export class WorkflowLayoutBoundaryFlowOperationHandler extends OperationHandler
         const preNodePositionsById = hasSelection ? this.snapshotNodePositionsById(this.modelState.root) : undefined;
         const preEdgeRoutesById = hasSelection ? this.snapshotEdgeRoutesById(this.modelState.root) : undefined;
 
-        const previousLayoutOptionsByNodeId = this.applyBoundaryFlowLayerConstraints(this.modelState.root, selectedMovableNodeIds, hasSelection);
+        const previousLayoutOptionsByNodeId = applyBoundaryFlowLayerConstraints(this.modelState.root, selectedMovableNodeIds, hasSelection);
 
         clearAllEdgeRoutingPoints(this.modelState.root);
         await this.layoutEngine?.layout(LayoutOperation.create(operation.elementIds));
 
-        this.restoreNodeLayoutOptions(this.modelState.root, previousLayoutOptionsByNodeId);
+        restoreNodeLayoutOptions(this.modelState.root, previousLayoutOptionsByNodeId);
 
         if (hasSelection && preNodePositionsById && preEdgeRoutesById) {
             this.restoreUnselectedLayout(this.modelState.root, selectedMovableNodeIds, preNodePositionsById, preEdgeRoutesById);
@@ -119,113 +119,6 @@ export class WorkflowLayoutBoundaryFlowOperationHandler extends OperationHandler
             layoutMeta.hasPersistedEdgeRoutes = routes.size > 0;
             this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
         }
-    }
-
-    private applyBoundaryFlowLayerConstraints(
-        root: any,
-        selectedMovableNodeIds: Set<string>,
-        hasSelection: boolean
-    ): Map<string, Record<string, unknown> | undefined> {
-        const previousLayoutOptionsByNodeId = new Map<string, Record<string, unknown> | undefined>();
-
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-
-            if (this.isTaskNode(element)) {
-                const nodeId = String(element.id);
-                if (!hasSelection || selectedMovableNodeIds.has(nodeId)) {
-                    const hasInput = this.nodeHasPortDirection(element, 'input');
-                    const hasOutput = this.nodeHasPortDirection(element, 'output');
-
-                    if (!hasInput || !hasOutput) {
-                        const previousLayoutOptions = (element as any).layoutOptions as Record<string, unknown> | undefined;
-                        previousLayoutOptionsByNodeId.set(nodeId, previousLayoutOptions ? { ...previousLayoutOptions } : undefined);
-
-                        // Keep one-sided nodes on dedicated outer layers so they do not
-                        // share a column with regular processing nodes.
-                        const nodeLayerConstraint = !hasInput ? 'FIRST_SEPARATE' : 'LAST_SEPARATE';
-                        (element as any).layoutOptions = {
-                            ...(previousLayoutOptions ?? {}),
-                            'elk.layered.layering.layerConstraint': nodeLayerConstraint,
-                            'org.eclipse.elk.layered.layering.layerConstraint': nodeLayerConstraint
-                        };
-                    }
-                }
-            }
-
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-
-        visit(root);
-        return previousLayoutOptionsByNodeId;
-    }
-
-    private restoreNodeLayoutOptions(root: any, previousLayoutOptionsByNodeId: Map<string, Record<string, unknown> | undefined>): void {
-        if (previousLayoutOptionsByNodeId.size === 0) {
-            return;
-        }
-
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-
-            const nodeId = typeof element.id === 'string' ? element.id : undefined;
-            if (nodeId && previousLayoutOptionsByNodeId.has(nodeId)) {
-                const previous = previousLayoutOptionsByNodeId.get(nodeId);
-                (element as any).layoutOptions = previous ? { ...previous } : undefined;
-            }
-
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-
-        visit(root);
-    }
-
-    private isTaskNode(element: any): boolean {
-        const type = element?.type as string | undefined;
-        return type === WorkflowDiagramTypes.NODE_ACTOR || type === WorkflowDiagramTypes.NODE_EXTERNAL_ACTOR;
-    }
-
-    private nodeHasPortDirection(node: any, direction: 'input' | 'output'): boolean {
-        const ports: any[] = [];
-
-        const collectPorts = (element: any): void => {
-            if (!element) {
-                return;
-            }
-            if (element instanceof GPort) {
-                ports.push(element);
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    collectPorts(child);
-                }
-            }
-        };
-
-        collectPorts(node);
-
-        return ports.some(port => {
-            const portDirection = (port as any).args?.[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined;
-            if (direction === 'input') {
-                return portDirection === 'input' || port.type === WorkflowDiagramTypes.PORT_INPUT;
-            }
-            return portDirection === 'output' || port.type === WorkflowDiagramTypes.PORT_OUTPUT;
-        });
     }
 
     private isMovableNode(element: any): boolean {

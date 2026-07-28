@@ -12,11 +12,11 @@
         "test": "vitest run"
     },
     "dependencies": {
-        "@eclipse-glsp/client": "~2.5.0",
-        "@eclipse-glsp/layout-elk": "~2.5.0",
-        "@eclipse-glsp/protocol": "~2.5.0",
-        "@eclipse-glsp/sprotty": "~2.5.0",
-        "@eclipse-glsp/vscode-integration-webview": "~2.5.0",
+        "@eclipse-glsp/client": "2.7.0",
+        "@eclipse-glsp/layout-elk": "2.7.0",
+        "@eclipse-glsp/protocol": "2.7.0",
+        "@eclipse-glsp/sprotty": "2.7.0",
+        "@eclipse-glsp/vscode-integration-webview": "2.7.0",
         "@vscode-elements/elements": "^2.5.1",
         "@vscode/codicons": "^0.0.44",
         "@dialogram/shared": "*",

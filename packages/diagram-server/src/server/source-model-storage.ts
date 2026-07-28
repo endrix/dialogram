@@ -696,6 +696,16 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
     private deferredCallerDiscovery?: Promise<void>;
 
     /**
+     * Per-(file, workflow) re-entrancy guard for {@link scheduleDeferredCallerDiscovery}. The caller
+     * walk is slow (it scans up to {@link MAX_SOURCE_FILES_PER_SCAN} files), so it is still cold when
+     * the fast, agent-context-only redeliveries (agent enrichment, or a prior caller-refs refresh)
+     * re-enter `loadSourceModel`. Each re-entry would otherwise schedule its own discovery and fire a
+     * duplicate refresh. Holding the key while a discovery is pending collapses every re-entrant
+     * schedule onto the first one, so exactly one redelivery ever fires per open.
+     */
+    private readonly pendingCallerRedelivery = new Set<string>();
+
+    /**
      * Run caller-reference discovery off the first-load critical path (cold-cache case). On
      * completion — only if it found references AND the diagram still shows this file+workflow —
      * deliver them via a single background model refresh. That refresh re-runs `loadSourceModel`,
@@ -710,6 +720,14 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         relationshipInfo: WorkflowRelationshipInfo,
         opts: Record<string, unknown>
     ): void {
+        // Re-entrancy guard: an agent-context-only redelivery re-enters `loadSourceModel` while this
+        // walk is still cold and would schedule a second discovery + a duplicate refresh. Collapse
+        // all re-entrant schedules onto the first pending one so exactly one redelivery fires.
+        const redeliveryKey = `${path.resolve(workflowFilePath)}::${workflowName}`;
+        if (this.pendingCallerRedelivery.has(redeliveryKey)) {
+            return;
+        }
+        this.pendingCallerRedelivery.add(redeliveryKey);
         const run = async (): Promise<void> => {
             try {
                 const references = await this.getWorkflowCallerReferences(workflowFilePath, workflowName, relationshipInfo);
@@ -722,6 +740,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 this.dispatchCallerReferenceRefresh(sourceUri, opts);
             } catch (err) {
                 console.warn('[WorkflowSourceModelStorage] Deferred caller-reference discovery failed', err);
+            } finally {
+                this.pendingCallerRedelivery.delete(redeliveryKey);
             }
         };
         this.deferredCallerDiscovery = run();
@@ -761,7 +781,15 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         }
         const refreshAction = RequestModelAction.create({
             requestId: `refresh-caller-refs-${Math.round(perfNow())}`,
-            options: { ...opts, sourceUri }
+            // Caller references only populate a root arg (`wf:parentWorkflows`, the "Used By"
+            // breadcrumb) — no node/edge/position change — so this redelivery must run the
+            // agent-context-only fast path: it re-applies the overlay off the warm plan cache and
+            // skips the RequestBounds round-trip. The default full path re-submits the model mid-open,
+            // which resets the model revision and invalidates the persisted-layout first render's
+            // in-flight ComputedBounds — the diagram re-lays out and loses the stored layout (blank
+            // spaces) until the user runs auto-layout. Without this flag the handler defaults
+            // `agentContextOnly` to false and pays that full reload.
+            options: { ...opts, sourceUri, agentContextOnly: true }
         });
         void Promise.resolve(dispatcher.dispatch(refreshAction)).catch(err => {
             console.warn('[WorkflowSourceModelStorage] Failed to dispatch caller-reference refresh', err);
@@ -1623,7 +1651,13 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         }
         const refreshAction = RequestModelAction.create({
             requestId: `refresh-agent-enrichment-${Math.round(perfNow())}`,
-            options: { ...opts, sourceUri }
+            // Agent enrichment only rewrites node/root args (skill status + skills/agents picker
+            // snapshots) — no node/edge/position change — so this redelivery must run the
+            // agent-context-only fast path: it re-applies the overlay off the warm plan cache and
+            // skips the RequestBounds round-trip (and its full model re-submit / CLI re-acquire) that
+            // the default full path would otherwise pay on every diagram open. Without this flag the
+            // handler defaults `agentContextOnly` to false and reloads the whole model.
+            options: { ...opts, sourceUri, agentContextOnly: true }
         });
         void Promise.resolve(dispatcher.dispatch(refreshAction)).catch(err => {
             console.warn('[WorkflowSourceModelStorage] Failed to dispatch agent-enrichment refresh', err);

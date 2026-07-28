@@ -11,7 +11,7 @@
         "build": "echo 'No build step'"
     },
     "dependencies": {
-        "@eclipse-glsp/protocol": "~2.5.0",
-        "@eclipse-glsp/server": "~2.5.0"
+        "@eclipse-glsp/protocol": "2.7.0",
+        "@eclipse-glsp/server": "2.7.0"
     }
 }
