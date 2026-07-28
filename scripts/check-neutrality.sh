@@ -66,8 +66,24 @@ else
 fi
 
 echo
+echo '== Gate 4: opencode-only MCP (no vscode.lm) =='
+# Phase B locked decision: the GLSP-MCP server is reachable ONLY over its
+# loopback URL by our opencode/ACP agents. VS Code's built-in (Copilot) MCP host
+# — `vscode.lm.registerMcpServerDefinitionProvider` / `GlspMcpServerProvider` —
+# is deliberately NOT used, so no `engines.vscode` bump is needed. This gate
+# fails if any `vscode.lm` usage creeps into the shipped sources.
+gate4_hits="$(grep -rn 'vscode\.lm' packages/*/src 2>/dev/null || true)"
+if [ -n "${gate4_hits}" ]; then
+    echo 'FAIL: vscode.lm usage found (opencode-only MCP — do not adopt the VS Code MCP host):'
+    echo "${gate4_hits}"
+    failures=$((failures + 1))
+else
+    echo 'PASS'
+fi
+
+echo
 if [ "${failures}" -ne 0 ]; then
     echo "NEUTRALITY CHECK FAILED (${failures} gate(s) violated)"
     exit 1
 fi
-echo 'NEUTRALITY CHECK PASSED (3/3 gates)'
+echo 'NEUTRALITY CHECK PASSED (4/4 gates)'
