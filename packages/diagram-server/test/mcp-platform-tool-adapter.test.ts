@@ -14,6 +14,7 @@
 import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
 import * as z from 'zod/v4';
+import { URI } from 'vscode-uri';
 import { jsonSchemaToZodShape } from '../src/server/json-schema-to-zod';
 import { makePlatformToolHandlerClass, type PlatformMcpTool } from '../src/server/mcp-platform-tool-adapter';
 
@@ -78,7 +79,7 @@ describe('makePlatformToolHandlerClass (T2 adapter)', () => {
         return { tool, calls };
     }
 
-    it('resolves sourceUri, strips sessionId, and returns success text', async () => {
+    it('resolves sourceUri to an absolute fsPath, strips sessionId, and returns success text', async () => {
         const { tool, calls } = echoTool();
         const HandlerClass = makePlatformToolHandlerClass(tool);
         const handler = new HandlerClass() as any;
@@ -89,7 +90,11 @@ describe('makePlatformToolHandlerClass (T2 adapter)', () => {
         expect(result.isError).toBe(false);
         expect(result.content[0].text).toContain('a.py');
         expect(calls).toHaveLength(1);
-        expect(calls[0].file).toBe('file:///a.py');
+        // DECISION (T7): the handler passes the fsPath, NOT the raw file:// URI —
+        // `InProcessChatTool.handler` documents `file` as an absolute path, and every
+        // sidecar transport in the toolkit does `URI.parse(...).fsPath`.
+        expect(calls[0].file).toBe(URI.parse('file:///a.py').fsPath);
+        expect(calls[0].file.startsWith('file:')).toBe(false);
         // sessionId is NOT forwarded into the handler args.
         expect(calls[0].args).toEqual({ network: 'n' });
     });

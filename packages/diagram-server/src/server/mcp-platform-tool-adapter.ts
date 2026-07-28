@@ -8,8 +8,9 @@
  *
  * Each tool becomes a distinct diagram-scope MCP tool handler class (extending the read-only
  * {@link AbstractMcpDiagramToolHandler}). At call time the handler:
- *  - reads `modelState.sourceUri` (the file the GLSP session is scoped to) to supply the
- *    closure's `file` argument — this is how the agent's `sessionId` is turned into a file;
+ *  - reads `modelState.sourceUri` (the file the GLSP session is scoped to), converts it to an
+ *    absolute fsPath, and supplies that as the closure's `file` argument — this is how the
+ *    agent's `sessionId` is turned into a file;
  *  - strips the framework-supplied `sessionId` from the args before calling the closure;
  *  - returns the closure's text via `success(...)`.
  *
@@ -18,6 +19,7 @@
  * per-instance field — a shared class would collide on `name`.
  */
 import { injectable } from 'inversify';
+import { URI } from 'vscode-uri';
 import {
     AbstractMcpDiagramToolHandler,
     McpDiagramScopedInputSchema,
@@ -62,9 +64,17 @@ export function makePlatformToolHandlerClass(tool: PlatformMcpTool): McpDiagramT
             if (!sourceUri) {
                 return this.error(`No source file is associated with session '${params.sessionId}'.`);
             }
+            // DECISION (T7): pass the absolute fsPath, NOT the raw `file://` URI. The platform
+            // tool contract documents `file` as an absolute path, and host-side tool closures
+            // treat it as a real filesystem path (spawning a CLI with `{ file }`, running
+            // path.dirname on it, walking parents for a package root). `URI.parse(...).fsPath`
+            // is the established conversion everywhere a source path crosses this seam (see the
+            // operation handlers' `documentUri` handling). Handing a URI would break that path
+            // resolution on POSIX and Windows alike.
+            const file = URI.parse(sourceUri).fsPath;
             // Strip the framework-routing sessionId; forward only the tool's own args.
             const { sessionId: _sessionId, ...args } = params;
-            const text = await tool.handler(sourceUri, args);
+            const text = await tool.handler(file, args);
             return this.success(text);
         }
     }

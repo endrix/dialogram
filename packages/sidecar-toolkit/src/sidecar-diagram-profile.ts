@@ -11,8 +11,10 @@
  * needs no `@dialogram/extension-core` dependency; the shell annotates the
  * result as `DiagramProfile` at the assignment site.
  */
-import type * as vscode from 'vscode';
+import * as vscode from 'vscode';
 import * as path from 'node:path';
+import { invokeSidecarOp } from './sidecar-graph-export.js';
+import { createRegistryChatTools } from './registry-tools.js';
 import type {
     SidecarRuntimeConfig,
     CreateNodeStrings,
@@ -253,6 +255,34 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         scopeArgKey: input.scopeArgKey
     });
 
+    // Resolve the sidecar command from settings for a given ABSOLUTE file path.
+    // The registry-tool handlers receive an fsPath (the platform adapter converts
+    // the GLSP sourceUri before calling), so scope the config lookup by that file.
+    const resolveSidecarCommand = (file: string): string => {
+        const scope = vscode.Uri.file(file);
+        return (
+            vscode.workspace
+                .getConfiguration(input.settingsNamespace, scope)
+                .get<string>(input.sidecarCommandSettingKey, input.sidecarCommandDefault) ?? input.sidecarCommandDefault
+        );
+    };
+
+    // Bridge the sidecar-registry READ tools into the profile's chat tools so the
+    // platform adapter exposes them over GLSP-MCP. Library-mode only (function
+    // closures share the platform realm) — the cross-extension API path leaves
+    // chat.tools absent, which is acceptable (the tools are simply unavailable).
+    const chatTools = createRegistryChatTools({
+        scopeArgKey: input.scopeArgKey,
+        exportOp: input.exportOp,
+        invoke: (file, opName, args) =>
+            invokeSidecarOp(
+                file,
+                { sidecarCommand: resolveSidecarCommand(file), sidecarOperationPrefix: input.sidecarOperationPrefix },
+                opName,
+                args
+            )
+    });
+
     const runDriver = (context: vscode.ExtensionContext, host: RunHost): vscode.Disposable => {
         const config: CliRunDriverConfig = {
             settingsNamespace: input.settingsNamespace,
@@ -337,15 +367,19 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         navigation: createPythonNavigationProvider(),
         canOpenSource,
         editBackend,
-        // GLSP-MCP opt-in (0.5.0) — absent unless the consumer opts in, so
-        // non-opting consumers keep the legacy 0.4.x path byte-identical.
-        mcp: input.mcp,
+        // GLSP-MCP opt-in (0.5.0): sidecar-backed products ship it ON by default.
+        // The coarse profile gate defaults enabled; the per-user rollback lever is
+        // the `<ns>.chat.useGlspMcp` setting (read per-turn in ChatRuntime), so no
+        // setting is read here. An explicit `input.mcp` wins (e.g. `{enabled:false}`).
+        mcp: input.mcp ?? { enabled: true },
         chat: {
             name: input.chat.name,
             fullName: input.chat.fullName,
             operationPrefix: input.sidecarOperationPrefix,
             skill: input.chat.skill,
             nodeCommands: input.chat.nodeCommands,
+            // Read-only sidecar-registry tools bridged to GLSP-MCP by the platform adapter.
+            tools: chatTools,
             // The libcst edit backend rewrites Python source; agents get the file as text/x-python.
             sourceMimeType: 'text/x-python'
         },
