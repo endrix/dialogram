@@ -67,6 +67,17 @@ export class Uri {
         return decodeURI(withoutScheme);
     }
 
+    // vscode.Uri.path is the decoded path component (no scheme/authority). For the
+    // file URIs these tests use it matches fsPath; production code (e.g. the
+    // external-.py watcher) reads `uri.path`, so the shim must provide it.
+    get path(): string {
+        const match = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/]*(\/[^?#]*)?/.exec(this.value);
+        if (match?.[1]) {
+            return decodeURI(match[1]);
+        }
+        return this.fsPath;
+    }
+
     toString(): string {
         return this.value;
     }
@@ -141,6 +152,9 @@ export const window = {
 };
 
 export const workspace = {
+    // Open text documents. The external-.py watcher consults this to skip files
+    // with unsaved in-editor edits; tests that don't open documents leave it empty.
+    textDocuments: [] as any[],
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     applyEdit: async (_edit: WorkspaceEdit): Promise<boolean> => false,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars

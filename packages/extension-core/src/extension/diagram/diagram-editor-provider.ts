@@ -91,6 +91,40 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     private static readonly CHANGE_DEBOUNCE_MS = 500;
     private static readonly EXTERNAL_REFRESH_DEBOUNCE_MS = 250;
 
+    /**
+     * Path segments that mark a `.py` file as a build artifact / irrelevant tree,
+     * NOT a workflow module worth reloading open diagrams for. The `**\/*.py`
+     * watcher fires for every Python file in the workspace, so without this filter
+     * unrelated generated files thrash the diagram.
+     *
+     * Incident this guards against: in the `streamblocks-mlir` workspace, CMakeTools
+     * regenerated `build/test/lit.site.cfg.py` on every configure, which the watcher
+     * treated as a cross-file import edit and force-reloaded the open calpy diagram
+     * 4+ times in seconds — each reload paying 1-2.3s of wfpy CLI spawn (`acquire`)
+     * plus a full webview re-render. A file whose path contains any of these
+     * segments is never a legitimate reload trigger.
+     */
+    private static readonly ARTIFACT_PATH_SEGMENTS: ReadonlySet<string> = new Set([
+        'build', 'dist', 'out', 'wf-out', 'node_modules', '.git', '__pycache__', '.venv', 'venv'
+    ]);
+
+    /**
+     * True when the URI lives under an artifact / irrelevant directory (see
+     * {@link ARTIFACT_PATH_SEGMENTS}). Segment-based, so it matches at any depth
+     * (`.../build/test/lit.site.cfg.py`) without matching filenames that merely
+     * contain a segment word (`build_config.py`).
+     */
+    private isUnderArtifactDir(uri: vscode.Uri): boolean {
+        const segments = uri.path.split('/');
+        // Exclude the final segment (the filename); only directory segments count.
+        for (let i = 0; i < segments.length - 1; i++) {
+            if (WorkflowEditorProvider.ARTIFACT_PATH_SEGMENTS.has(segments[i])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private canonicalizeUriString(uriOrString: vscode.Uri | string): string {
         // Delegates to the ONE shared key function (`normalizeSourceUriKey`) so the
         // provider's client/URI resolution and the execution-overlay replay buffer
@@ -422,6 +456,15 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             return;
         }
         const canonical = this.canonicalizeUriString(uri);
+
+        // Always reload when the changed file IS an open diagram's own source. For
+        // any OTHER watched .py, keep the cross-file-import reload but skip build
+        // artifacts / irrelevant trees (see isUnderArtifactDir) so generated files
+        // like CMake's build/test/lit.site.cfg.py don't thrash open diagrams.
+        const isOwnSource = this.uriToClientId.has(canonical);
+        if (!isOwnSource && this.isUnderArtifactDir(uri)) {
+            return;
+        }
 
         // The editor's own save handler already refreshed for this write.
         const savedAt = this.lastSavedAt.get(canonical);
