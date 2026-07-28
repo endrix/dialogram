@@ -26,6 +26,7 @@ import { UpdateEntityParameterOperationHandler } from './operations/update-entit
 import { UpdateEdgeCapacityOperationHandler } from './operations/update-edge-capacity-handler.js';
 import { UpdateDefinitionAnnotationOperationHandler } from './operations/update-definition-annotation-handler.js';
 import { UpdateDefinitionParameterOperationHandler } from './operations/update-definition-parameter-handler.js';
+import { CreateTaskTypeOperationHandler } from './operations/create-task-type-handler.js';
 import { CreateBoundaryPortOperationHandler } from './operations/create-boundary-port-handler.js';
 import { UpdateEntityPortOperationHandler } from './operations/update-entity-port-handler.js';
 import { createEntityPortCrudHandlers } from './operations/entity-port-crud-handler.js';
@@ -54,6 +55,7 @@ function sidecarOperationHandlers(cfg: SidecarRuntimeConfig): OperationHandlerCo
         UpdateEdgeCapacityOperationHandler,
         UpdateDefinitionAnnotationOperationHandler,
         UpdateDefinitionParameterOperationHandler,
+        CreateTaskTypeOperationHandler,
         CreateBoundaryPortOperationHandler,
         UpdateEntityPortOperationHandler,
         ...createEntityPortCrudHandlers(cfg.operationKinds),

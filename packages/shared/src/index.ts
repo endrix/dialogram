@@ -10,3 +10,4 @@ export * from './diagram-constants';
 export * from './binding-keys';
 export * from './diagram-seams';
 export * from './chat-seams';
+export * from './create-task-type-operation';
