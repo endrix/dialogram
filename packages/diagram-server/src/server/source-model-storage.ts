@@ -1623,7 +1623,13 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         }
         const refreshAction = RequestModelAction.create({
             requestId: `refresh-agent-enrichment-${Math.round(perfNow())}`,
-            options: { ...opts, sourceUri }
+            // Agent enrichment only rewrites node/root args (skill status + skills/agents picker
+            // snapshots) — no node/edge/position change — so this redelivery must run the
+            // agent-context-only fast path: it re-applies the overlay off the warm plan cache and
+            // skips the RequestBounds round-trip (and its full model re-submit / CLI re-acquire) that
+            // the default full path would otherwise pay on every diagram open. Without this flag the
+            // handler defaults `agentContextOnly` to false and reloads the whole model.
+            options: { ...opts, sourceUri, agentContextOnly: true }
         });
         void Promise.resolve(dispatcher.dispatch(refreshAction)).catch(err => {
             console.warn('[WorkflowSourceModelStorage] Failed to dispatch agent-enrichment refresh', err);

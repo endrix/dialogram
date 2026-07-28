@@ -1021,7 +1021,7 @@ function registerCalDiagramCommands(
         return undefined;
     };
 
-    const refreshActiveDiagramModel = async (opts?: { sourceUri?: string; workflowName?: string }): Promise<void> => {
+    const refreshActiveDiagramModel = async (opts?: { sourceUri?: string; workflowName?: string; agentContextOnly?: boolean }): Promise<void> => {
         const uri = opts?.sourceUri ? vscode.Uri.parse(opts.sourceUri) : getActiveWorkflowDiagramUri();
         if (!uri) {
             return;
@@ -1038,6 +1038,13 @@ function registerCalDiagramCommands(
                 sourceUri: uri.toString(),
                 diagramType: WORKFLOW_DIAGRAM_TYPE,
                 queueTraceVisible: getQueueTraceVisible(),
+                // Queue-trace visibility toggles only re-apply the queue-trace overlay (edge glow /
+                // queue-depth args) onto the unchanged graph — no node/edge/position change — so this
+                // redelivery can rebuild off the warm plan cache and skip the RequestBounds round-trip
+                // via the agent-context-only fast path. Callers that may change the source (rename) or
+                // want a fresh re-plan (the generic refresh command) leave this unset and pay the full
+                // reload, which re-acquires and re-runs bounds as required for correctness.
+                ...(opts?.agentContextOnly ? { agentContextOnly: true } : {}),
                 ...(opts?.workflowName ? { networkName: opts.workflowName } : refreshContext?.networkName ? { networkName: refreshContext.networkName } : {}),
                 ...(refreshContext?.navTrail ? { [NAV_TRAIL_ARG]: refreshContext.navTrail } : {})
             }
@@ -1276,7 +1283,9 @@ function registerCalDiagramCommands(
             const current = getQueueTraceVisible();
             const next = typeof args?.visible === 'boolean' ? args.visible : !current;
             await context.globalState.update(queueTraceVisibleStateKey(profile), next);
-            await refreshActiveDiagramModel({ sourceUri: args?.sourceUri, workflowName: args?.workflowName });
+            // Overlay-only change (edge visibility): rebuild off the cached graph without a CLI
+            // re-acquire or bounds round-trip.
+            await refreshActiveDiagramModel({ sourceUri: args?.sourceUri, workflowName: args?.workflowName, agentContextOnly: true });
             return true;
         })
     );

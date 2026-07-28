@@ -150,6 +150,11 @@ describe('agent-enrichment deferral (cold load) and warm-cache parity', () => {
         expect(dispatched[0].kind).toBe(RequestModelAction.KIND);
         expect(String(dispatched[0].requestId)).toMatch(/^refresh-agent-enrichment-/);
         expect(dispatched[0].options?.sourceUri).toBe(sourceUri);
+        // Perf guard: the redelivery must run the agent-context-only fast path (skip-bounds, warm
+        // plan-cache reuse) rather than the default full model reload with a fresh CLI acquire. The
+        // WorkflowRequestModelActionHandler keys the fast path off this flag; without it every
+        // diagram open pays an extra full acquire (regression this pins against).
+        expect(dispatched[0].options?.agentContextOnly).toBe(true);
 
         // The refresh's warm-cache reload now carries both snapshots.
         const warmRoot = (storage as any).modelState.root as { args?: Record<string, unknown> };
