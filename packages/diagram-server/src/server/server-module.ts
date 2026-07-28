@@ -16,8 +16,11 @@ import {
     getRequestParentName,
     LayoutEngine,
     ModelState,
-    DiagramModule
+    DiagramModule,
+    ActionDispatchScope,
+    InjectionContainer
 } from '@eclipse-glsp/server';
+import { NodeActionDispatchScope } from '@eclipse-glsp/server/node';
 import { configureELKLayoutModule, ElkFactory, ElementFilter, LayoutConfigurator, GlspElkLayoutEngine } from '@eclipse-glsp/layout-elk';
 import { ContainerModule, interfaces } from 'inversify';
 import type { EditStrategy, DiagramModelSource } from '@dialogram/shared';
@@ -30,10 +33,16 @@ import { DIAGRAM_MODEL_SOURCE } from './model-source-token';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
 
 /**
- * Logger module that provides a console logger for the GLSP server.
- * Required for NodeGlspVscodeServer to function.
+ * App-level module: dialogram's minimal stand-in for GLSP's node `createAppModule`.
+ * Provides a warn-level `ConsoleLogger` (we skip `createAppModule` so its winston
+ * logger rebind never applies) plus the two app-level DI defaults GLSP 2.7 moved into
+ * `createAppModule`: the container self-binding and the `ActionDispatchScope` that
+ * `DefaultActionDispatcher` injects (mirrors @eclipse-glsp/server
+ * lib/node/di/app-module.js:13-14, and nothing else). Required for
+ * NodeGlspVscodeServer to boot: without the scope binding `container.get(GLSPServer)`
+ * throws "No matching bindings found for ActionDispatchScope".
  */
-const loggerModule = new ContainerModule((bind, _unbind, isBound, _rebind) => {
+const appModule = new ContainerModule((bind, _unbind, isBound, _rebind) => {
     // Bind ConsoleLogger with warn level
     bind(Logger).toDynamicValue(ctx => 
         new ConsoleLogger(LogLevel.warn, getRequestParentName(ctx))
@@ -47,6 +56,14 @@ const loggerModule = new ContainerModule((bind, _unbind, isBound, _rebind) => {
         }
         return logger;
     });
+
+    // GLSP 2.7 app-level DI defaults (mirrors node `createAppModule`, sans its logger
+    // rebind): the container self-binding + the AsyncLocalStorage-backed action-dispatch
+    // scope that `DefaultActionDispatcher` injects. Without these,
+    // `NodeGlspVscodeServer`'s `container.get(GLSPServer)` fails to resolve the
+    // ActionDispatcher.
+    bind(InjectionContainer).toDynamicValue(dynamicContext => dynamicContext.container);
+    bind(ActionDispatchScope).to(NodeActionDispatchScope).inSingletonScope();
 });
 
 /**
@@ -182,5 +199,5 @@ export function createWorkflowServerModules(
     serverModule.configureDiagramModule(diagramModule, ...additionalModules);
     
     // Return logger module first, then server module
-    return [loggerModule as unknown as ServerModule, serverModule];
+    return [appModule as unknown as ServerModule, serverModule];
 }
