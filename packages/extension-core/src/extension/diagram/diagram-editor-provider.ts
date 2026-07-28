@@ -97,10 +97,10 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      * watcher fires for every Python file in the workspace, so without this filter
      * unrelated generated files thrash the diagram.
      *
-     * Incident this guards against: in the `streamblocks-mlir` workspace, CMakeTools
+     * Incident this guards against: in a CMake-based workspace, the build tool
      * regenerated `build/test/lit.site.cfg.py` on every configure, which the watcher
-     * treated as a cross-file import edit and force-reloaded the open calpy diagram
-     * 4+ times in seconds — each reload paying 1-2.3s of wfpy CLI spawn (`acquire`)
+     * treated as a cross-file import edit and force-reloaded the open diagram
+     * 4+ times in seconds — each reload paying 1-2.3s of source-CLI spawn (`acquire`)
      * plus a full webview re-render. A file whose path contains any of these
      * segments is never a legitimate reload trigger.
      */
