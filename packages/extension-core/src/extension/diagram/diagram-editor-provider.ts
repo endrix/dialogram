@@ -92,10 +92,10 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     private static readonly EXTERNAL_REFRESH_DEBOUNCE_MS = 250;
 
     /**
-     * Path segments that mark a `.py` file as a build artifact / irrelevant tree,
-     * NOT a workflow module worth reloading open diagrams for. The `**\/*.py`
-     * watcher fires for every Python file in the workspace, so without this filter
-     * unrelated generated files thrash the diagram.
+     * Path segments that mark a watched source file as a build artifact /
+     * irrelevant tree, NOT a source module worth reloading open diagrams for.
+     * The profile's watch glob fires for every matching file in the workspace,
+     * so without this filter unrelated generated files thrash the diagram.
      *
      * Incident this guards against: in a CMake-based workspace, the build tool
      * regenerated `build/test/lit.site.cfg.py` on every configure, which the watcher
