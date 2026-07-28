@@ -49,6 +49,18 @@ export interface ChatRuntimeConfig {
     selectionContext?: false | { render?: (file: string, selectedNodeIds: string[]) => string };
     /** In-process MCP tools served over loopback HTTP. */
     tools?: InProcessChatTool[];
+    /**
+     * The GLSP-MCP loopback URL announced by the in-host diagram server when the
+     * profile opts into GLSP-MCP. Handed to opencode alongside the legacy MCP
+     * servers during 0.5.0 parallel-run (see {@link glspMcpEnabled}).
+     */
+    mcpServerUrl?: string;
+    /**
+     * `true` when the diagram profile enabled GLSP-MCP (`profile.mcp.enabled`).
+     * The coarse gate for advertising {@link mcpServerUrl} to the agent; a
+     * per-user `<ns>.chat.useGlspMcp` setting is the finer rollback lever.
+     */
+    glspMcpEnabled?: boolean;
     /** stdio MCP servers (arrive pre-gated from the edit backend). */
     stdioMcpServers?: (file: string) => StdioMcpDescriptor[];
     /** Slash commands contributed to the registry (with optional handlers). */

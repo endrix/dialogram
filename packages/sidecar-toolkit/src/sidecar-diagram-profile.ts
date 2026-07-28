@@ -136,6 +136,14 @@ export interface SidecarProfileInput {
     mcpEnabledSetting: { section: string; key: string; default: boolean };
     scopeArgKey: string;
 
+    /**
+     * GLSP-MCP opt-in surfaced to consumers (API 0.5.0). Absent keeps the legacy
+     * 0.4.x path byte-identical (no in-host MCP loopback server); `{ enabled:true }`
+     * boots the in-host GLSP-MCP server and bridges the profile's read-only chat
+     * tools into diagram-scope MCP tools. Threaded straight onto `profile.mcp`.
+     */
+    mcp?: { enabled: boolean };
+
     // New-source-file scaffold.
     newContainer: { label: string; decorator: string; importLine: string };
     identifierNoun?: string;
@@ -329,6 +337,9 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         navigation: createPythonNavigationProvider(),
         canOpenSource,
         editBackend,
+        // GLSP-MCP opt-in (0.5.0) — absent unless the consumer opts in, so
+        // non-opting consumers keep the legacy 0.4.x path byte-identical.
+        mcp: input.mcp,
         chat: {
             name: input.chat.name,
             fullName: input.chat.fullName,
