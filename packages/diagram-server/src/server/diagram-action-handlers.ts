@@ -56,6 +56,7 @@ import {
     WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND
 } from '../operations/reroute-edges-avoid-overlaps-handler';
 import { clearAllEdgeRoutingPoints } from '../routing/clear-edge-routes';
+import { runBoundaryFlowLayout } from '../operations/boundary-flow-layout';
 import { perfNow } from './graph-load-perf';
 
 /**
@@ -107,11 +108,11 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             console.log('[WorkflowModelSubmissionHandler] Running initial ELK layout for:', layoutMeta.networkId);
             try {
                 const _elk0 = perfNow();
-                // Parity with the manual auto-layout path: clear pre-existing edge routes so
-                // stale routing points are not forwarded to ELK as fixed sections, which would
-                // bias the fresh layout (GLSP 2.7 regression).
-                clearAllEdgeRoutingPoints(modelState.root);
-                await layoutEngine.layout();
+                // Parity with the manual auto-layout path (`dialogram.layoutBoundaryFlow`):
+                // run the exact same boundary-flow routine (pin one-sided task nodes to outer
+                // layers + clear stale edge routes + ELK), so the fresh-open render matches
+                // what manual layout produces instead of diverging (plain ELK looked worse).
+                await runBoundaryFlowLayout(modelState.root, layoutEngine);
                 // Always-on breadcrumb: initial ELK layout is the dominant post-load server cost on a
                 // fresh open, and it runs here (in the client-bounds round-trip), not in the load path.
                 // eslint-disable-next-line no-console
