@@ -5,8 +5,9 @@ import { WorkflowUndoRedoActionHandler } from '../src/server/undo-redo-action-ha
 
 function makeHandler(commandStack: any, submissionHandler: any): WorkflowUndoRedoActionHandler {
     const handler = new WorkflowUndoRedoActionHandler();
+    // The stock UndoRedoActionHandler injects these two properties; the subclass inherits them.
     (handler as any).commandStack = commandStack;
-    (handler as any).submissionHandler = submissionHandler;
+    (handler as any).modelSubmissionHandler = submissionHandler;
     return handler;
 }
 
