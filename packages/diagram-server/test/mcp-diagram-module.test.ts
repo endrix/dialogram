@@ -7,6 +7,11 @@
 import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
 import {
+    CreateNodesMcpToolHandler,
+    RedoMcpToolHandler,
+    UndoMcpToolHandler
+} from '@eclipse-glsp/server-mcp';
+import {
     DiagramMcpModule,
     bridgeableChatTools
 } from '../src/server/mcp-diagram-module';
@@ -49,8 +54,19 @@ describe('DiagramMcpModule.configureToolHandlers', () => {
     function bridgedPlatformToolNames(module: DiagramMcpModule): string[] {
         const added: Array<new () => { name?: string }> = [];
         (module as unknown as {
-            configureToolHandlers(b: { add(c: new () => unknown): void }): void;
-        }).configureToolHandlers({ add: (c) => added.push(c as new () => { name?: string }) });
+            configureToolHandlers(b: {
+                add(c: new () => unknown): void;
+                remove(c: new () => unknown): void;
+            }): void;
+        }).configureToolHandlers({
+            add: (c) => added.push(c as new () => { name?: string }),
+            remove: (c) => {
+                const i = added.indexOf(c as new () => { name?: string });
+                if (i >= 0) {
+                    added.splice(i, 1);
+                }
+            }
+        });
         return added
             .filter((c) => c.name === 'PlatformMcpToolHandler')
             .map((c) => new c().name as string);
@@ -65,5 +81,48 @@ describe('DiagramMcpModule.configureToolHandlers', () => {
 
         expect(names).toContain('list_task_types');
         expect(names).not.toContain('create_task_type');
+    });
+});
+
+describe('DiagramMcpModule undo/redo tool exclusion (host owns undo)', () => {
+    /**
+     * A recording fake mirroring `InstanceMultiBinding`'s add/remove-by-reference semantics.
+     * The stock `super.configureToolHandlers` calls `binding.add(Ctor)` for the 16 built-ins,
+     * including {@link UndoMcpToolHandler} / {@link RedoMcpToolHandler}; our override then
+     * `binding.remove(...)`s the two so they are absent from the final constructor set.
+     */
+    function resolveToolHandlerCtors(module: DiagramMcpModule): Array<new () => unknown> {
+        const ctors: Array<new () => unknown> = [];
+        const binding = {
+            add(c: new () => unknown): void {
+                ctors.push(c);
+            },
+            remove(c: new () => unknown): void {
+                const i = ctors.indexOf(c);
+                if (i >= 0) {
+                    ctors.splice(i, 1);
+                }
+            }
+        };
+        (module as unknown as {
+            configureToolHandlers(b: typeof binding): void;
+        }).configureToolHandlers(binding);
+        return ctors;
+    }
+
+    it('excludes the built-in undo and redo tool handlers', () => {
+        const ctors = resolveToolHandlerCtors(new DiagramMcpModule());
+
+        // Dialogram's durable undo is the VS Code document stack (fed by reversible workspace
+        // edits, survives source-model reloads), not the per-session GLSP command stack the
+        // built-in undo/redo tools read. Those tools would only ever report "nothing to undo",
+        // so they must never be advertised to agents.
+        expect(ctors).not.toContain(UndoMcpToolHandler);
+        expect(ctors).not.toContain(RedoMcpToolHandler);
+    });
+
+    it('keeps the other built-in mutation tools (only undo/redo are dropped)', () => {
+        const ctors = resolveToolHandlerCtors(new DiagramMcpModule());
+        expect(ctors).toContain(CreateNodesMcpToolHandler);
     });
 });

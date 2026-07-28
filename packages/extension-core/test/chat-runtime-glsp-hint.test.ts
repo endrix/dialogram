@@ -49,8 +49,10 @@ describe('ChatRuntime GLSP-MCP context hint', () => {
         // The caveat about diagram-svg/-png embedded ids carrying a prefix.
         expect(hint).toMatch(/prefix/i);
         expect(hint).toContain('diagram-svg');
-        // Undoable edit tools.
-        expect(hint!.toLowerCase()).toContain('undo');
+        // Edits are user-undoable via the editor; agents must NOT attempt tool-based undo
+        // (the built-in undo/redo MCP tools are removed — the host owns undo).
+        expect(hint!.toLowerCase()).toContain("editor's undo");
+        expect(hint!.toLowerCase()).toMatch(/do not.*undo/);
         runtime.dispose();
     });
 

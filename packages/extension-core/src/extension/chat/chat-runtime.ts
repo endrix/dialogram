@@ -292,8 +292,10 @@ export class ChatRuntime {
             `Diagram MCP tools (${name}): get the sessionId from the session-info tool. ` +
             'Element IDs must come from query-elements or diagram-model — IDs embedded in ' +
             "diagram-svg / diagram-png output carry a '<clientId>_' prefix and are NOT valid " +
-            'tool arguments. Prefer create-nodes / create-edges / modify-* for edits ' +
-            '(they are undoable via undo / redo).'
+            'tool arguments. Prefer create-nodes / create-edges / modify-* for edits. ' +
+            "Diagram edits are undoable by the user via the editor's undo — do not attempt " +
+            'tool-based undo / redo and do not hand-revert files after your own diagram edits ' +
+            'unless asked.'
         );
     }
 

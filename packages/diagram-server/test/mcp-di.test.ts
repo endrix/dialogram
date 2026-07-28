@@ -7,8 +7,8 @@
 // assembled diagram-session module array are byte-parity with the legacy path (no MCP
 // bindings leak). With `mcp.enabled:true` the server container aliases the launcher under
 // `GLSPServerInitializer`/`GLSPServerListener` (its own module does the alias — we never
-// hand-bind it), and the session container resolves the 16 default diagram-scope tool
-// constructors.
+// hand-bind it), and the session container resolves the default diagram-scope tool
+// constructors (the stock 16 minus the dropped undo/redo tools -> 14).
 import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
 import { Container, ContainerModule } from 'inversify';
@@ -90,7 +90,7 @@ describe('createWorkflowServerModules — MCP opt-in (T1)', () => {
         expect(container.getAll(GLSPServerListener)).toContain(launcher);
     });
 
-    it('binds the 16 default diagram-scope tool constructors in the session container when enabled', () => {
+    it('binds the 14 default diagram-scope tool constructors (16 built-ins minus undo/redo) when enabled', () => {
         const serverModules = createWorkflowServerModules({
             modelSourceFactory: () => NEUTRAL_SOURCE,
             mcp: { enabled: true }
@@ -103,11 +103,15 @@ describe('createWorkflowServerModules — MCP opt-in (T1)', () => {
         // `InstanceMultiBinding` binds the constructor list as a single constant array
         // (`toConstantValue(bindings)`), so the registry initializer reads it via `.get`.
         const session = loadSessionContainer(serverModules);
-        const toolConstructors = session.get<unknown[]>(McpDiagramToolHandlerConstructor);
-        expect(toolConstructors).toHaveLength(16);
+        const toolConstructors = session.get<Array<new () => { name: string }>>(McpDiagramToolHandlerConstructor);
+        // The stock 16 built-ins minus the two we drop: `undo` / `redo` (the host owns undo).
+        expect(toolConstructors).toHaveLength(14);
+        const names = toolConstructors.map(ctor => new ctor().name);
+        expect(names).not.toContain('undo');
+        expect(names).not.toContain('redo');
     });
 
-    it('bridges supplied platform tools alongside the 16 built-ins (T2 wiring)', () => {
+    it('bridges supplied platform tools alongside the built-ins (T2 wiring)', () => {
         const echoTool = {
             name: 'echo-registry',
             description: 'Bridged read-only registry tool.',
@@ -121,8 +125,8 @@ describe('createWorkflowServerModules — MCP opt-in (T1)', () => {
 
         const session = loadSessionContainer(serverModules);
         const toolConstructors = session.get<Array<new () => { name: string }>>(McpDiagramToolHandlerConstructor);
-        // 16 built-ins + 1 bridged platform tool.
-        expect(toolConstructors).toHaveLength(17);
+        // 14 built-ins (undo/redo dropped) + 1 bridged platform tool.
+        expect(toolConstructors).toHaveLength(15);
         const names = toolConstructors.map(ctor => new ctor().name);
         expect(names).toContain('echo-registry');
     });
