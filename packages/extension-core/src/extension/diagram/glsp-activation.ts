@@ -34,6 +34,7 @@ import { resolveDiagramOpenTarget, type DiagramOpenTargetArg } from './open-diag
 import { normalizeSourceUriKey } from './uri-keys';
 import { executeViewerCommand, executeViewerOpen } from './viewer-actions';
 import { decideDiagramOpen } from './diagram-open-decision';
+import { readMcpServerUrl } from './mcp-server-url';
 import { type DiagramProfile, type DiagramRunHost } from '../../api';
 
 // Define the diagram type constant locally to avoid import
@@ -323,6 +324,12 @@ export interface GlspIntegrationHandle extends vscode.Disposable {
     editorProvider: WorkflowEditorProvider;
     /** Per-activation neutral execution-overlay seam (states + opaque events). */
     executionOverlay: ExecutionOverlayRegistry;
+    /**
+     * The in-host GLSP-MCP loopback server URL announced on the `initialize` handshake,
+     * or `undefined` when MCP is disabled or no endpoint was announced. Read from the typed
+     * initialize result (no stdout parsing). The chat runtime hands it to the agent clients.
+     */
+    mcpServerUrl?: string;
 }
 
 /**
@@ -389,6 +396,10 @@ export async function activateGlspIntegration(
 
     // Start the server
     await workflowServer.start();
+
+    // When MCP is on, read the announced loopback URL from the typed initialize result
+    // (no stdout parsing). Skipped when off so activation never awaits an absent MCP field.
+    const mcpServerUrl = await readMcpServerUrl(workflowServer, mcpEnabled);
 
     // Cross-file navigation provider, supplied by the profile (undefined = no
     // cross-file resolution; navigation falls through to the referenced target).
@@ -931,6 +942,7 @@ export async function activateGlspIntegration(
         connector: glspVscodeConnector,
         editorProvider,
         executionOverlay,
+        mcpServerUrl,
         dispose: () => disposable.dispose()
     };
 }
