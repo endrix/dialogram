@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
 
 import { ReversibleWorkspaceEditCommand } from '../src/operations/reversible-workspace-edit-command';
@@ -109,6 +109,106 @@ describe('ReversibleWorkspaceEditCommand undo guard', () => {
             workspaceAny.openTextDocument = originalOpen;
             workspaceAny.applyEdit = originalApply;
             windowAny.showWarningMessage = originalWarn;
+        }
+    });
+});
+
+/**
+ * The undo/redo edit lands on the dirty text buffer, but the diagram model is rebuilt by the
+ * sidecar FROM DISK. Unless the document is persisted, disk still holds the pre-undo content and
+ * the node does not disappear until the user manually saves. These tests pin that undo AND redo
+ * save the affected document after applying their edit, so the on-save reload reflects the revert.
+ */
+describe('ReversibleWorkspaceEditCommand persistence', () => {
+    function makeDirtyDoc(getText: () => string, save: () => Promise<boolean>) {
+        return {
+            get lineCount() {
+                return getText().split('\n').length;
+            },
+            lineAt: (line: number) => ({ text: getText().split('\n')[line] ?? '' }),
+            getText,
+            get isDirty() {
+                return true;
+            },
+            save
+        };
+    }
+
+    it('saves the document after applying an undo so the diagram reloads from disk', async () => {
+        const before = 'BEFORE\n';
+        const after = 'AFTER\n';
+        let liveText = after;
+
+        const workspaceAny = vscode.workspace as any;
+        const originalOpen = workspaceAny.openTextDocument;
+        const originalApply = workspaceAny.applyEdit;
+
+        const save = vi.fn(async () => true);
+        let executed = false;
+        workspaceAny.openTextDocument = async () => makeDirtyDoc(() => liveText, save);
+        workspaceAny.applyEdit = async () => {
+            if (executed) {
+                liveText = before;
+            }
+            return true;
+        };
+
+        try {
+            const command = new ReversibleWorkspaceEditCommand({
+                label: 'Create Node',
+                uri: vscode.Uri.parse('file:///tmp/g.py'),
+                computeEdits: async () => [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')]
+            });
+            (command as any)._sourceBeforeText = before;
+            (command as any)._sourceAfterText = after;
+            await command.execute();
+            executed = true;
+
+            await command.undo();
+            expect(save).toHaveBeenCalledOnce();
+            expect(liveText).toBe(before);
+        } finally {
+            workspaceAny.openTextDocument = originalOpen;
+            workspaceAny.applyEdit = originalApply;
+        }
+    });
+
+    it('saves the document after applying a redo (symmetry)', async () => {
+        const before = 'BEFORE\n';
+        const after = 'AFTER\n';
+        let liveText = before;
+
+        const workspaceAny = vscode.workspace as any;
+        const originalOpen = workspaceAny.openTextDocument;
+        const originalApply = workspaceAny.applyEdit;
+
+        const save = vi.fn(async () => true);
+        let executed = false;
+        workspaceAny.openTextDocument = async () => makeDirtyDoc(() => liveText, save);
+        workspaceAny.applyEdit = async () => {
+            if (executed) {
+                liveText = after;
+            }
+            return true;
+        };
+
+        try {
+            const command = new ReversibleWorkspaceEditCommand({
+                label: 'Create Node',
+                uri: vscode.Uri.parse('file:///tmp/g.py'),
+                computeEdits: async () => [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')]
+            });
+            (command as any)._sourceBeforeText = before;
+            (command as any)._sourceAfterText = after;
+            await command.execute();
+            executed = true;
+
+            await command.redo();
+            expect(save).toHaveBeenCalledOnce();
+            expect(liveText).toBe(after);
+        } finally {
+            workspaceAny.openTextDocument = originalOpen;
+            workspaceAny.applyEdit = originalApply;
         }
     });
 });
