@@ -7,6 +7,7 @@
  * flush first to preserve ordering.
  */
 import type { ChatPayload } from '../../api';
+import type { TurnPart } from '../acp-client.js';
 
 export interface AcpEmitterLike {
     on(event: string, fn: (...a: any[]) => void): any;
@@ -18,7 +19,7 @@ export interface AcpEventSinks {
     broadcast(payload: ChatPayload): void;
     /** Invoked AFTER buffered chunks are flushed; the runtime persists the
      *  reply, posts `chat.turnEnd` and refreshes live message ids. */
-    onTurnComplete(data: { sessionId: string; text?: string; thinking?: string; model?: string }): void;
+    onTurnComplete(data: { sessionId: string; text?: string; thinking?: string; model?: string; parts?: TurnPart[] }): void;
 }
 
 const CHUNK_FLUSH_MS = 50;

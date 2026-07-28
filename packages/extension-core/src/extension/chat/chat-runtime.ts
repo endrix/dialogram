@@ -14,7 +14,7 @@
  */
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { ACPClientService } from '../acp-client.js';
+import { ACPClientService, type TurnPart } from '../acp-client.js';
 import { SessionManager } from '../session-manager.js';
 import type { ChatMessageSink, ChatPayload, InProcessChatTool } from '../../api';
 import { SlashCommandRegistry, type ChatCommandContribution } from './slash-commands';
@@ -156,14 +156,8 @@ export class ChatRuntime {
         this.acpForwardingDisposer = attachAcpEventForwarding(this.acp, {
             postToSession: (sessionId, payload) => this.post(sessionId, payload),
             broadcast: payload => this.broadcast(payload),
-            onTurnComplete: ({ sessionId, text, thinking, model }) => {
-                this.sessions.addMessageToSession(sessionId, {
-                    role: 'assistant',
-                    content: text ?? '',
-                    timestamp: Date.now(),
-                    thinking,
-                    provider: model
-                });
+            onTurnComplete: ({ sessionId, text, thinking, model, parts }) => {
+                this.persistAssistantTurn(sessionId, { text, thinking, model, parts });
                 this.post(sessionId, { type: 'chat.turnEnd', data: { sessionId } });
                 // Resolve the just-sent user message's opencode id so its revert
                 // affordance appears without rebuilding the timeline.
@@ -714,6 +708,67 @@ export class ChatRuntime {
         }
         if (this.pendingModel) {
             await this.acp.setProvider(sessionId, this.pendingModel).catch(() => undefined);
+        }
+    }
+
+    /**
+     * Persist a completed assistant turn as an ordered transcript. When the turn
+     * carries structured parts (text runs interleaved with tool calls), each is
+     * stored as its own message — text parts as `assistant` messages, tool parts
+     * as `tool` messages — so a reloaded session restores tool chips and text
+     * boundaries verbatim (no flattening into one concatenated blob). Reasoning is
+     * attached to the first text part it produced, mirroring the live renderer.
+     * Falls back to a single assistant message when no parts are available.
+     */
+    private persistAssistantTurn(
+        sessionId: string,
+        turn: { text?: string; thinking?: string; model?: string; parts?: TurnPart[] }
+    ): void {
+        const now = Date.now();
+        const parts = turn.parts ?? [];
+        if (parts.length === 0) {
+            this.sessions.addMessageToSession(sessionId, {
+                role: 'assistant',
+                content: turn.text ?? '',
+                timestamp: now,
+                thinking: turn.thinking,
+                provider: turn.model
+            });
+            return;
+        }
+        let thinkingAttached = false;
+        for (const part of parts) {
+            if (part.type === 'tool') {
+                this.sessions.addMessageToSession(sessionId, {
+                    role: 'tool',
+                    content: '',
+                    timestamp: now,
+                    toolName: part.title,
+                    toolStatus: part.status
+                });
+                continue;
+            }
+            const message: Parameters<typeof this.sessions.addMessageToSession>[1] = {
+                role: 'assistant',
+                content: part.text,
+                timestamp: now,
+                provider: turn.model
+            };
+            if (!thinkingAttached && turn.thinking) {
+                message.thinking = turn.thinking;
+                thinkingAttached = true;
+            }
+            this.sessions.addMessageToSession(sessionId, message);
+        }
+        // Reasoning with no text part to host it (a tool-only turn) still persists.
+        if (!thinkingAttached && turn.thinking) {
+            this.sessions.addMessageToSession(sessionId, {
+                role: 'assistant',
+                content: '',
+                timestamp: now,
+                thinking: turn.thinking,
+                provider: turn.model
+            });
         }
     }
 

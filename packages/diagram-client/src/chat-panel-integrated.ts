@@ -169,6 +169,15 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   /** Live diagram selection (node ids), mirrored to the host for chat context. */
   private selectedNodeIds: string[] = [];
 
+  /**
+   * True from the moment a session's history is restored until the user sends the
+   * next message. opencode replays the conversation as `session/update`
+   * notifications on `session/load`; that replay tail must not stream in as a
+   * phantom row duplicating the just-restored trailing message. Cleared on send,
+   * when a real (user-initiated) turn begins.
+   */
+  private suppressReplayStream = false;
+
   /** In-progress assistant reply (streamed chunks). */
   private streamingText = '';
   /** Reasoning streamed during the in-flight turn (shown as a live Thinking block). */
@@ -499,6 +508,13 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       return;
     }
 
+    // Drop the session/load replay tail: after history is restored, opencode
+    // re-streams the conversation, which would otherwise duplicate the trailing
+    // message. A real turn (the user sending) clears this guard first.
+    if (this.suppressReplayStream) {
+      return;
+    }
+
     const kind = update.sessionUpdate;
     if (kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') {
       const text = this.extractText(update.content);
@@ -568,7 +584,18 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     this.clearTimeline();
 
     const messages: any[] = Array.isArray(data.messages) ? data.messages : [];
-    for (const m of messages) {
+    messages.forEach((m, i) => {
+      // Persisted tool calls restore as tool timeline items — the same chip the
+      // live path renders — keeping the text parts on either side distinct.
+      if (m.role === 'tool') {
+        this.timeline.push({
+          kind: 'tool',
+          id: typeof m.toolId === 'string' ? m.toolId : `restored-tool-${i}`,
+          title: m.toolName ?? 'tool call',
+          status: typeof m.toolStatus === 'string' ? m.toolStatus : undefined,
+        });
+        return;
+      }
       this.timeline.push({
         kind: 'message',
         role: m.role === 'assistant' || m.role === 'user' ? m.role : 'system',
@@ -578,7 +605,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         ...(typeof m.messageId === 'string' ? { messageId: m.messageId } : {}),
         ...(typeof m.thinking === 'string' && m.thinking ? { thinking: m.thinking } : {}),
       });
-    }
+    });
     if (data.mode === 'plan' || data.mode === 'build') {
       this.currentMode = data.mode;
     }
@@ -586,6 +613,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       this.currentModel = data.model;
     }
     this.reverted = Boolean(data.reverted);
+    // Ignore the session/load replay tail until the user drives a real turn.
+    this.suppressReplayStream = true;
     this.update();
   }
 
@@ -659,6 +688,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     if (!text) return;
 
     this.finishStreamingMessage();
+    // A real turn begins: subsequent agent streaming is genuine, not replay.
+    this.suppressReplayStream = false;
     // A new prompt continues from the revert point; opencode drops the reverted
     // tail, so the session is no longer in a reverted state.
     this.reverted = false;

@@ -25,7 +25,9 @@ export interface MessageData {
   toolName?: string;
   toolArgs?: Record<string, any>;
   toolResult?: string;
-  toolStatus?: 'pending' | 'executing' | 'success' | 'error';
+  /** Tool-call status, stored verbatim as the agent reports it (e.g. 'pending',
+   *  'in_progress', 'completed', 'failed') so the restored chip matches the live one. */
+  toolStatus?: string;
 }
 
 export interface WorkspaceStorage {
