@@ -615,20 +615,54 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
  * This handler skips invalid routes instead of throwing, allowing the diagram
  * to remain functional during live editing.
  */
+/**
+ * Hard cap on client-bounds measurement passes before the node sizes are frozen,
+ * even if consecutive measurements never converge. Bounds the worst-case number of
+ * extra RequestBounds round-trips on open (font-load oscillation) while guaranteeing
+ * the diagram always reaches a stable, laid-out state. Fonts normally settle within
+ * one extra pass, so this cap is only hit in pathological cases.
+ */
+export const MAX_SIZE_MEASURE_PASSES = 4;
+
+type BoundsPassNodeDecision =
+    | 'accepted-grow'
+    | 'accepted-shrink'
+    | 'no-change'
+    | 'rejected-zero'
+    | 'rejected-frozen';
+
+interface BoundsPassNodeEntry {
+    id: string;
+    newSize: { width: number; height: number };
+    decision: BoundsPassNodeDecision;
+}
+
+/** Per-pass accumulator populated by {@link WorkflowComputedBoundsActionHandler.applyBounds}. */
+interface BoundsPassResult {
+    /** A node grew or shrank this pass (measurement still moving). */
+    anyNodeSizeChanged: boolean;
+    /** A node reported a zero/partial size — never treat such a pass as "stable". */
+    sawInvalidMeasurement: boolean;
+    nodes: BoundsPassNodeEntry[];
+}
+
 @injectable()
 export class WorkflowComputedBoundsActionHandler implements ActionHandler {
     readonly actionKinds = [ComputedBoundsAction.KIND];
-    
+
     @inject(ModelSubmissionHandler)
     protected submissionHandler!: ModelSubmissionHandler;
-    
+
     @inject(ModelState)
     protected modelState!: ModelState;
+
+    @inject(GModelSerializer)
+    protected serializer!: GModelSerializer;
 
     private get enableDiagramDebug(): boolean {
         return process.env.WORKFLOW_DIAGRAM_DEBUG === '1';
     }
-    
+
     async execute(action: ComputedBoundsAction): Promise<Action[]> {
         const model = this.modelState.root;
         // `ComputedBoundsAction.revision` is optional in the GLSP protocol. Most clients include it,
@@ -639,9 +673,13 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
         const revisionMatches = !hasActionRevision || !hasModelRevision || action.revision === model.revision;
 
         if (revisionMatches) {
-            await this.applyBounds(model, action);
+            const passResult: BoundsPassResult = {
+                anyNodeSizeChanged: false,
+                sawInvalidMeasurement: false,
+                nodes: []
+            };
+            await this.applyBounds(model, action, passResult);
 
-            // Mark that we have a first, consistent client-bounds snapshot.
             const layoutMeta = this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as
                 | {
                       workflowFilePath: string;
@@ -652,19 +690,69 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
                       hasClientBounds: boolean;
                       allowInitialLayoutPersistence: boolean;
                       unpositionedNodeCount?: number;
+                      sizeMeasurePassCount?: number;
                   }
                 | undefined;
+
+            // Size-stabilization window (GLSP 2.7 font-load race):
+            // Until we have a STABLE client-bounds snapshot we keep accepting client
+            // node sizes (grow AND shrink, see applyBounds) and re-request bounds. A
+            // pass is "stable" only when it changed no node size AND saw no zero/partial
+            // measurement — i.e. two consecutive passes agree on valid sizes. A hard cap
+            // guarantees termination (and a laid-out diagram) if measurements oscillate.
+            // Once stable we set hasClientBounds=true, which both freezes sizes and (in
+            // WorkflowModelSubmissionHandler.submitModelDirectly) gates the initial ELK
+            // layout — so the layout runs on settled sizes rather than a font-race value.
             if (layoutMeta && !layoutMeta.hasClientBounds) {
+                const passCount = (layoutMeta.sizeMeasurePassCount ?? 0) + 1;
+                layoutMeta.sizeMeasurePassCount = passCount;
+
+                const stabilized = !passResult.anyNodeSizeChanged && !passResult.sawInvalidMeasurement;
+                const capped = passCount >= MAX_SIZE_MEASURE_PASSES;
+
+                if (this.enableDiagramDebug) {
+                    this.logBoundsPass(layoutMeta.networkId, passCount, { frozen: false, stabilized, capped }, passResult);
+                }
+
+                if (!stabilized && !capped) {
+                    // Not settled yet: re-measure without committing a layout. The original
+                    // RequestModelAction stays pending (its SetModel is emitted once we call
+                    // submitModelDirectly below), so no layout/position work happens on a
+                    // partial measurement.
+                    this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
+                    const rootSchema = this.serializer.createSchema(model);
+                    return [RequestBoundsAction.create(rootSchema)];
+                }
+
                 layoutMeta.hasClientBounds = true;
                 this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
+            } else if (this.enableDiagramDebug) {
+                // Post-stabilization pass (sizes are frozen): still log for diagnostics.
+                this.logBoundsPass(layoutMeta?.networkId, layoutMeta?.sizeMeasurePassCount ?? 0, { frozen: true, stabilized: true, capped: false }, passResult);
             }
+
             return this.submissionHandler.submitModelDirectly();
         }
 
         return [];
     }
-    
-    protected async applyBounds(root: GModelRoot, action: ComputedBoundsAction): Promise<void> {
+
+    /** Cheap, permanent diagnostics (WORKFLOW_DIAGRAM_DEBUG=1) for the size-stabilization loop. */
+    private logBoundsPass(
+        networkId: string | undefined,
+        passCount: number,
+        state: { frozen: boolean; stabilized: boolean; capped: boolean },
+        passResult: BoundsPassResult
+    ): void {
+        // eslint-disable-next-line no-console
+        console.debug(
+            `[ComputedBounds] net=${networkId ?? '?'} pass=${passCount} ${state.frozen ? 'frozen' : state.stabilized ? 'stabilized' : state.capped ? 'capped' : 'measuring'} ` +
+                `changed=${passResult.anyNodeSizeChanged} invalid=${passResult.sawInvalidMeasurement} ` +
+                `nodes=${JSON.stringify(passResult.nodes)}`
+        );
+    }
+
+    protected async applyBounds(root: GModelRoot, action: ComputedBoundsAction, passResult?: BoundsPassResult): Promise<void> {
         const index = this.modelState.index;
 
         const layoutMeta = this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as
@@ -851,25 +939,68 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
                     return;
                 }
 
-                // For nodes: allow a one-time expansion to client-measured size (never shrink).
-                // This keeps the model consistent with real text measurement, but prevents size creep.
+                // For nodes: while the client-bounds measurement is still settling
+                // (allowClientNodeResize === !hasClientBounds, i.e. before the first STABLE
+                // snapshot) accept the client-measured size in BOTH directions (grow AND
+                // shrink). A GLSP 2.7 client can emit its first ComputedBoundsAction before
+                // web-font text measurement completes (same hazard the port-label note above
+                // documents), which under the old never-shrink+freeze-on-pass-1 policy locked
+                // a slightly-wrong size for the whole session and rejected every later, correct
+                // measurement. Accepting corrections until two consecutive passes agree (the
+                // stabilization loop in execute) lets the size converge to the real measurement.
+                // The >0 guard preserves the documented zero-size protection: a partial/zero
+                // measurement is never applied and instead forces another measurement pass.
                 const isNode = element.type?.startsWith('node:');
                 if (isNode && 'size' in element) {
                     const existingSize = (element as any).size;
                     if (existingSize && existingSize.width > 0 && existingSize.height > 0) {
                         if (allowClientNodeResize && bounds.newSize) {
-                            const dw = bounds.newSize.width - existingSize.width;
-                            const dh = bounds.newSize.height - existingSize.height;
-                            const shouldExpand = dw >= RESIZE_EPSILON_PX || dh >= RESIZE_EPSILON_PX;
-                            if (shouldExpand) {
-                                const expandedWidth = Math.max(existingSize.width, bounds.newSize.width);
-                                const expandedHeight = Math.max(existingSize.height, bounds.newSize.height);
-                                if (expandedWidth !== existingSize.width || expandedHeight !== existingSize.height) {
+                            const nw = bounds.newSize.width;
+                            const nh = bounds.newSize.height;
+                            if (nw > 0 && nh > 0) {
+                                const nextWidth = Math.max(1, Math.ceil(nw));
+                                const nextHeight = Math.max(1, Math.ceil(nh));
+                                const dw = nextWidth - existingSize.width;
+                                const dh = nextHeight - existingSize.height;
+                                // Ignore sub-epsilon jitter (selection stroke / focus ring / subpixel).
+                                const changed = Math.abs(dw) >= RESIZE_EPSILON_PX || Math.abs(dh) >= RESIZE_EPSILON_PX;
+                                if (changed) {
                                     didExpandNodeSize = true;
-                                    (element as any).size = { width: expandedWidth, height: expandedHeight };
+                                    (element as any).size = { width: nextWidth, height: nextHeight };
                                     reanchorPortsToNodeSize(element as any);
+                                    passResult?.nodes.push({
+                                        id: bounds.elementId,
+                                        newSize: { width: nextWidth, height: nextHeight },
+                                        decision: dw + dh >= 0 ? 'accepted-grow' : 'accepted-shrink'
+                                    });
+                                    if (passResult) {
+                                        passResult.anyNodeSizeChanged = true;
+                                    }
+                                } else {
+                                    passResult?.nodes.push({
+                                        id: bounds.elementId,
+                                        newSize: { width: nextWidth, height: nextHeight },
+                                        decision: 'no-change'
+                                    });
+                                }
+                            } else {
+                                // Incomplete/zero measurement: never apply; force a re-measure.
+                                passResult?.nodes.push({
+                                    id: bounds.elementId,
+                                    newSize: { width: nw, height: nh },
+                                    decision: 'rejected-zero'
+                                });
+                                if (passResult) {
+                                    passResult.sawInvalidMeasurement = true;
                                 }
                             }
+                        } else if (bounds.newSize) {
+                            // Sizes are frozen (post-stabilization). Reject client fluctuations.
+                            passResult?.nodes.push({
+                                id: bounds.elementId,
+                                newSize: { width: bounds.newSize.width, height: bounds.newSize.height },
+                                decision: 'rejected-frozen'
+                            });
                         }
 
                         // Apply position only when there is NO persisted layout.

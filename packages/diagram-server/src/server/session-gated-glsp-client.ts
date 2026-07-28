@@ -43,6 +43,18 @@ const GATED_METHODS = new Set(['sendActionMessage', 'initializeClientSession', '
 export function createSessionGatedGlspClient(delegate: BaseGLSPClient): BaseGLSPClient {
     const initializedSessions = new Set<string>();
     const bufferedByClientId = new Map<string, ActionMessage[]>();
+    // Sessions that have been disposed but not (yet) re-initialized. Any action for one
+    // of these must be dropped, NOT forwarded to the now-disposed in-process dispatcher
+    // (which rejects late requests with "Request cancelled: dispatcher disposed") and
+    // NOT re-buffered (a stale action would otherwise replay on a genuine reopen).
+    const disposedSessions = new Set<string>();
+
+    const debug = (message: string): void => {
+        if (process.env.WORKFLOW_DIAGRAM_DEBUG === '1') {
+            // eslint-disable-next-line no-console
+            console.debug(`[session-gated-glsp-client] ${message}`);
+        }
+    };
 
     const flushBuffered = (clientId: string): void => {
         const buffered = bufferedByClientId.get(clientId);
@@ -50,6 +62,11 @@ export function createSessionGatedGlspClient(delegate: BaseGLSPClient): BaseGLSP
             return;
         }
         bufferedByClientId.delete(clientId);
+        // Guard: never flush a buffered pre-init action into a disposed session.
+        if (disposedSessions.has(clientId)) {
+            debug(`Dropping ${buffered.length} buffered action(s) for disposed session ${clientId}`);
+            return;
+        }
         for (const message of buffered) {
             delegate.sendActionMessage(message);
         }
@@ -62,6 +79,13 @@ export function createSessionGatedGlspClient(delegate: BaseGLSPClient): BaseGLSP
                 delegate.sendActionMessage(message);
                 return;
             }
+            // Session disposed (and not re-initialized): drop silently. This is the
+            // polling-redelivery / late-flush path that produced the
+            // "dispatcher disposed" server error on reopen.
+            if (disposedSessions.has(clientId)) {
+                debug(`Dropping '${message.action?.kind}' for disposed session ${clientId}`);
+                return;
+            }
             // Session not initialized yet: buffer (never mutate the existing array).
             const buffered = bufferedByClientId.get(clientId) ?? [];
             bufferedByClientId.set(clientId, [...buffered, message]);
@@ -70,8 +94,10 @@ export function createSessionGatedGlspClient(delegate: BaseGLSPClient): BaseGLSP
         initializeClientSession(params: InitializeClientSessionParameters): Promise<void> {
             // The GLSP server registers the session synchronously (the
             // `clientSessions.set` runs before the method's first `await`), so by the
-            // time this call returns control the session exists. Mark it ready and
-            // flush anything buffered before the session was known.
+            // time this call returns control the session exists. A reopen re-arms the
+            // client id, so clear any disposed marker first, mark it ready and flush
+            // anything buffered before the session was known.
+            disposedSessions.delete(params.clientSessionId);
             const result = delegate.initializeClientSession(params);
             initializedSessions.add(params.clientSessionId);
             flushBuffered(params.clientSessionId);
@@ -81,6 +107,7 @@ export function createSessionGatedGlspClient(delegate: BaseGLSPClient): BaseGLSP
         disposeClientSession(params: DisposeClientSessionParameters): Promise<void> {
             initializedSessions.delete(params.clientSessionId);
             bufferedByClientId.delete(params.clientSessionId);
+            disposedSessions.add(params.clientSessionId);
             return delegate.disposeClientSession(params);
         }
     };
