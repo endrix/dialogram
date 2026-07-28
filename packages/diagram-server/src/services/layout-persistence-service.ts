@@ -503,10 +503,6 @@ export class LayoutPersistenceService {
         positions: Map<string, NodePosition>,
         edgeRoutes?: Map<string, NodePosition[]>
     ): Promise<void> {
-        // TEMPORARY DIAGNOSTIC — remove before merge (Suspect 3 per-drag disk cost). Times the
-        // full read-merge-write of the layout file (readAnyLayoutFile + writeFile). Covers BOTH
-        // the per-drag `saveLayoutImmediate` and the debounced `saveLayout` (both funnel here).
-        const _dragDiagSaveStart = performance.now();
         const nodes: Record<string, NodePosition> = {};
         for (const [name, pos] of positions) {
             if (typeof name !== 'string' || name.trim() === '') {
@@ -567,13 +563,9 @@ export class LayoutPersistenceService {
             layouts: mergedLayouts
         };
 
-        // TEMPORARY DIAGNOSTIC — remove before merge: serialized once so we can report byte size.
-        const serialized = JSON.stringify(content, null, 2);
         try {
             await fs.mkdir(path.dirname(layoutPath), { recursive: true });
-            await fs.writeFile(layoutPath, serialized, 'utf-8');
-            // eslint-disable-next-line no-console
-            console.log(`[drag-diag] layoutSave=${Math.round(performance.now() - _dragDiagSaveStart)}ms bytes=${Buffer.byteLength(serialized, 'utf-8')}`);
+            await fs.writeFile(layoutPath, JSON.stringify(content, null, 2), 'utf-8');
         } catch (error) {
             console.error(`Failed to save layout file: ${layoutPath}`, error);
         }
