@@ -56,6 +56,7 @@ const EXPECTED_SIDECAR_HANDLER_NAMES = [
     'CutOperationHandler',
     'ReconnectEdgeOperationHandler',
     'RenameEntityOperationHandler',
+    'ApplyLabelEditRenameHandler',
     'UpdateEntityParameterOperationHandler',
     'UpdateEdgeCapacityOperationHandler',
     'UpdateDefinitionAnnotationOperationHandler',

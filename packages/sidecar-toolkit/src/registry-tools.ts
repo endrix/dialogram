@@ -36,8 +36,11 @@ export interface RegistryChatTool {
    * `readOnlyHint = true`, so an auto-approving MCP client could otherwise mutate files
    * unconfirmed. Locked design (approach B): mutation-capable tools ride the GLSP-MCP
    * BUILT-IN operation tools only; the bridge filters on this explicit marker (not a name
-   * match). The tool stays assembled here so it remains available on the legacy stdio MCP
-   * server / in-host chat path unchanged.
+   * match — see `bridgeableChatTools`).
+   *
+   * Post-0.6.0 NO assembled registry tool sets this: the former `create_task_type` chat tool
+   * became a reversible GLSP operation tool. The marker + filter are KEPT as a DEFENSIVE
+   * guardrail so any future source-writing chat tool is still excluded from the read-only bridge.
    */
   mutates?: boolean;
 }
@@ -103,6 +106,15 @@ export function createRegistryChatTools(cfg: RegistryToolsConfig): RegistryChatT
     ),
     readTool('list_workflow_types', 'List the workflow types available in the file.', 'listWorkflowTypes'),
     readTool('list_nodes', 'List the instance (node) names currently in the workflow graph.', 'listInstanceNames'),
+    // Ported from the deleted legacy stdio MCP server (0.6.0). Returns the RAW resolved graph as
+    // JSON (the GModel `diagram-model`/`query-elements` built-ins expose the GModel, not the
+    // sidecar's raw export). Non-mutating and bridgeable; mirrors `validate_workflow`'s transport
+    // but renders the export payload verbatim instead of summarizing it.
+    readTool(
+      'get_graph',
+      'Export the current file as a resolved graph (JSON): the workflow/network with its nodes, edges, and their resolved types and ports. Use this to inspect the full structure before or after editing.',
+      exportOp
+    ),
     {
       name: 'validate_workflow',
       description:
@@ -113,22 +125,9 @@ export function createRegistryChatTools(cfg: RegistryToolsConfig): RegistryChatT
         return JSON.stringify(summarizeValidation(result.response), null, 2);
       },
     },
-    // `mutates: true` — this scaffolds/writes source, so the read-only GLSP-MCP bridge
-    // excludes it (approach B: mutations ride built-in operation tools only). Still assembled
-    // here so the legacy stdio MCP server / in-host chat path keep offering it.
-    {
-      ...readTool(
-        'create_task_type',
-        'Scaffold a NEW component type (a task or actor, per the runtime) in the file. Provide name and (optionally) input/output ports. NOTE: this edits the source file directly and is NOT undoable via the diagram undo/redo (it is a source scaffold, not a GLSP operation). After scaffolding, edit the generated class to implement its behavior, then validate.',
-        'createTaskType',
-        {
-          name: { type: 'string', description: 'Class name of the new task type.' },
-          inputs: { type: 'array', items: { type: 'string' }, description: 'Input port names.' },
-          outputs: { type: 'array', items: { type: 'string' }, description: 'Output port names.' },
-        },
-        ['name']
-      ),
-      mutates: true,
-    },
+    // `create_task_type` was RE-HOMED (0.6.0) as a reversible GLSP operation + custom GLSP-MCP
+    // operation tool (`create-task-type`), so it is undoable via the editor's undo stack. It is no
+    // longer assembled as an in-process chat tool (which would have been a non-undoable direct-file
+    // scaffold on the read-only bridge).
   ];
 }

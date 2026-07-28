@@ -1,9 +1,14 @@
 // Review fix (MEDIUM): a mutation-capable platform chat tool (one that WRITES source via the
-// sidecar, e.g. `create_task_type`) must NOT be bridged onto the read-only GLSP-MCP surface.
-// The platform adapter's handlers inherit `readOnlyHint = true`, so an auto-approving MCP
-// client could otherwise call such a tool and mutate files unconfirmed. Locked design
-// (approach B): mutation-capable tools ride the GLSP-MCP BUILT-IN operation tools only and are
-// never bridged. The bridge filters on an explicit `mutates: true` marker — not a name match.
+// sidecar) must NOT be bridged onto the read-only GLSP-MCP surface. The platform adapter's
+// handlers inherit `readOnlyHint = true`, so an auto-approving MCP client could otherwise call
+// such a tool and mutate files unconfirmed. Locked design (approach B): mutation-capable tools
+// ride the GLSP-MCP BUILT-IN operation tools only and are never bridged. The bridge filters on
+// an explicit `mutates: true` marker — not a name match.
+//
+// Post-0.6.0 NO shipped chat tool sets `mutates` (the former `create_task_type` chat tool became
+// a reversible GLSP operation tool). The marker + filter are KEPT as a DEFENSIVE guardrail; these
+// tests pin it with a synthetic `mutating_scaffold` tool so any future source-writing chat tool is
+// still excluded from the read-only bridge.
 import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
 import {
@@ -32,13 +37,13 @@ describe('bridgeableChatTools (read-only GLSP-MCP bridge filter)', () => {
         const bridged = bridgeableChatTools([
             tool('list_task_types'),
             tool('validate_workflow', false),
-            tool('create_task_type', true)
+            tool('mutating_scaffold', true)
         ]).map((t) => t.name);
 
         expect(bridged).toContain('list_task_types');
         expect(bridged).toContain('validate_workflow');
         // The mutation-capable tool is excluded from the read-only bridge.
-        expect(bridged).not.toContain('create_task_type');
+        expect(bridged).not.toContain('mutating_scaffold');
     });
 
     it('returns all tools when none are mutation-marked', () => {
@@ -74,13 +79,13 @@ describe('DiagramMcpModule.configureToolHandlers', () => {
 
     it('bridges read tools but NOT mutation-marked tools', () => {
         const module = new DiagramMcpModule({
-            tools: [tool('list_task_types'), tool('create_task_type', true)]
+            tools: [tool('list_task_types'), tool('mutating_scaffold', true)]
         });
 
         const names = bridgedPlatformToolNames(module);
 
         expect(names).toContain('list_task_types');
-        expect(names).not.toContain('create_task_type');
+        expect(names).not.toContain('mutating_scaffold');
     });
 });
 

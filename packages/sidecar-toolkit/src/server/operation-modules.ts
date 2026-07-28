@@ -2,7 +2,7 @@
  * Sidecar operation-module assembly.
  *
  * Builds the concrete {@link DiagramOperationModule}(s) the consuming extension passes through the
- * neutral `EditStrategy.operationModules` seam. The single module returned here registers all 16
+ * neutral `EditStrategy.operationModules` seam. The single module returned here registers all
  * sidecar-backed operation handlers into GLSP's operation-handler multibinding, exactly mirroring
  * the pre-SP2c hardcoded registration set (registration order is irrelevant — each handler responds
  * to a distinct operation kind). The runtime services those handlers depend on (SidecarInvoker,
@@ -22,6 +22,7 @@ import { DeleteElementOperationHandler } from './operations/delete-handler.js';
 import { CutOperationHandler } from './operations/cut-handler.js';
 import { ReconnectEdgeOperationHandler } from './operations/reconnect-handler.js';
 import { RenameEntityOperationHandler } from './operations/rename-entity-handler.js';
+import { ApplyLabelEditRenameHandler } from './operations/apply-label-edit-rename-handler.js';
 import { UpdateEntityParameterOperationHandler } from './operations/update-entity-parameter-handler.js';
 import { UpdateEdgeCapacityOperationHandler } from './operations/update-edge-capacity-handler.js';
 import { UpdateDefinitionAnnotationOperationHandler } from './operations/update-definition-annotation-handler.js';
@@ -51,6 +52,10 @@ function sidecarOperationHandlers(cfg: SidecarRuntimeConfig): OperationHandlerCo
         CutOperationHandler,
         ReconnectEdgeOperationHandler,
         RenameEntityOperationHandler,
+        // Routes the protocol `ApplyLabelEditOperation` (dispatched by GLSP-MCP `modify-nodes`) to
+        // the reversible rename path — closes the MCP rename-coverage gap. Distinct operation kind
+        // from RenameEntityOperationHandler, so no multibinding collision.
+        ApplyLabelEditRenameHandler,
         UpdateEntityParameterOperationHandler,
         UpdateEdgeCapacityOperationHandler,
         UpdateDefinitionAnnotationOperationHandler,
@@ -66,7 +71,7 @@ function sidecarOperationHandlers(cfg: SidecarRuntimeConfig): OperationHandlerCo
 
 /**
  * Build the sidecar {@link DiagramOperationModule} set for a product {@link SidecarRuntimeConfig}.
- * Returns a single module registering all 16 sidecar handlers. The entity-port CRUD handlers carry
+ * Returns a single module registering all sidecar handlers. The entity-port CRUD handlers carry
  * their product create/delete kinds as plain fields (baked in via {@link createEntityPortCrudHandlers});
  * the remaining handlers use fixed protocol operation kinds.
  */

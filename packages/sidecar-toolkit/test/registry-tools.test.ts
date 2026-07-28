@@ -5,11 +5,12 @@
  *
  * `createRegistryChatTools` builds the 5 read-shaped tools
  * (`list_task_types`, `list_workflow_types`, `list_nodes`, `validate_workflow`,
- * `create_task_type`). Each tool's `handler(file, args)` invokes a sidecar op
+ * `get_graph`). Each tool's `handler(file, args)` invokes a sidecar op
  * through the injected `invoke` seam, maps the exposed `network` arg onto the
- * runtime's `scopeArgKey`, and renders the result as text. The 5 graph-mutation
+ * runtime's `scopeArgKey`, and renders the result as text. The graph-mutation
  * tools (`create_node`, `connect`, ...) are NOT here — they became GLSP-MCP
- * built-ins.
+ * built-ins; `create_task_type` likewise became a reversible GLSP operation tool
+ * (0.6.0), so it is no longer assembled as an in-process chat tool.
  */
 import { describe, expect, it } from 'vitest';
 import { createRegistryChatTools } from '../src/registry-tools';
@@ -36,29 +37,25 @@ describe('createRegistryChatTools (T7)', () => {
         const { invoke } = stubInvoke({});
         const names = createRegistryChatTools({ invoke, scopeArgKey: 'workflow' }).map((t) => t.name).sort();
         expect(names).toEqual(
-            ['create_task_type', 'list_nodes', 'list_task_types', 'list_workflow_types', 'validate_workflow'].sort()
+            ['get_graph', 'list_nodes', 'list_task_types', 'list_workflow_types', 'validate_workflow'].sort()
         );
         // The graph-mutation tools moved to GLSP-MCP built-ins — they must NOT be bridged here.
-        for (const gone of ['create_node', 'connect', 'rename_node', 'delete_node', 'update_node_parameter', 'get_graph']) {
+        // `create_task_type` is now a reversible GLSP operation tool (0.6.0), no longer a chat tool.
+        for (const gone of ['create_node', 'connect', 'rename_node', 'delete_node', 'update_node_parameter', 'create_task_type']) {
             expect(names).not.toContain(gone);
         }
     });
 
-    it('marks create_task_type as mutation-capable so the read-only GLSP-MCP bridge drops it', () => {
-        // Design rule (approach B): a tool that WRITES source via the sidecar must not be
-        // exposed through the read-only GLSP-MCP adapter (readOnlyHint=true) where an
-        // auto-approving MCP client could invoke it unconfirmed. The explicit `mutates`
-        // marker — not a name match — is what the bridge filters on. The tool stays
-        // assembled here (still available on the legacy stdio MCP server / in-host chat).
+    it('leaves every assembled registry tool read-only (none mutation-marked)', () => {
+        // Post-0.6.0 there is no mutation-capable chat tool: the only former one (`create_task_type`)
+        // became a GLSP-MCP operation tool. The `mutates` marker + `bridgeableChatTools` filter are
+        // KEPT as a defensive guardrail (pinned in mcp-diagram-module.test.ts) so any future
+        // source-writing chat tool is still excluded from the read-only bridge — but no current tool
+        // sets it.
         const { invoke } = stubInvoke({});
         const tools = createRegistryChatTools({ invoke, scopeArgKey: 'workflow' });
-        const byName = new Map(tools.map((t) => [t.name, t] as const));
-
-        expect(byName.get('create_task_type')?.mutates).toBe(true);
-
-        // Every READ tool is (still) unmarked, so the bridge keeps exposing them.
-        for (const readName of ['list_task_types', 'list_workflow_types', 'list_nodes', 'validate_workflow']) {
-            expect(byName.get(readName)?.mutates).not.toBe(true);
+        for (const t of tools) {
+            expect(t.mutates).not.toBe(true);
         }
     });
 
@@ -80,16 +77,14 @@ describe('createRegistryChatTools (T7)', () => {
         expect(calls[0].args).toEqual({});
     });
 
-    it('create_task_type forwards name/inputs/outputs (scaffold op)', async () => {
-        const { invoke, calls } = stubInvoke({ status: 'ok', created: 'Foo' });
-        const text = await toolNamed('create_task_type', invoke).handler('/abs/net.py', {
-            name: 'Foo',
-            inputs: ['a'],
-            outputs: ['b']
-        });
-        expect(calls[0].op).toBe('createTaskType');
-        expect(calls[0].args).toMatchObject({ name: 'Foo', inputs: ['a'], outputs: ['b'] });
-        expect(text).toContain('Foo');
+    it('get_graph exports the resolved graph JSON via the runtime export op', async () => {
+        const { invoke, calls } = stubInvoke({ status: 'ok', graph: { nodes: ['Splitter'], edges: [] } });
+        const text = await toolNamed('get_graph', invoke).handler('/abs/net.py', { network: 'main' });
+        // Ported from the deleted legacy stdio server: mirrors validate_workflow's transport but
+        // returns the RAW export payload (not the summarized verdict).
+        expect(calls[0].op).toBe('exportGraph');
+        expect(calls[0].args).toEqual({ workflow: 'main' });
+        expect(text).toContain('Splitter');
     });
 
     it('validate_workflow summarizes the export into a verdict', async () => {
