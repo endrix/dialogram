@@ -263,6 +263,15 @@ export interface DiagramProfile {
     editBackend?: DiagramEditBackend;
     /** Chat carry-overs; when absent the chat backend is not activated. */
     chat?: DiagramChatConfig;
+    /**
+     * GLSP-MCP opt-in. Absent or `{ enabled:false }` keeps the legacy chat/MCP path
+     * byte-identical (no in-host MCP loopback server, no diagram-scope MCP tools).
+     * `{ enabled:true }` boots the in-host GLSP-MCP loopback server on the diagram's
+     * `initialize` handshake and bridges the profile's read-only {@link DiagramChatConfig.tools}
+     * into diagram-scope MCP tools. The announced loopback URL is surfaced on the
+     * activation handle for the agent clients.
+     */
+    mcp?: { enabled: boolean };
     /** Run driver factory; when absent no run/stop commands or live glow are wired. */
     runDriver?: DiagramRunDriverFactory;
     /** Registers the new-source-file (and any edit-backend) commands; returns their disposable. */

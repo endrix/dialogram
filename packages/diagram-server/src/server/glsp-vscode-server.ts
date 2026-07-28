@@ -83,6 +83,10 @@ export function createWorkflowGlspVscodeServer(
     const server = new SessionGatedNodeGlspVscodeServer({
         clientId: mergedOptions.clientId!,
         clientName: mergedOptions.clientName!,
+        // Wire-level MCP config carried on the GLSP `initialize` request. Its presence is
+        // what actually starts the loopback HTTP listener (the `mcp` DI option below only
+        // decides whether the DI wiring is present to serve it). Absent = legacy path.
+        mcpServer: mergedOptions.mcpServer,
         serverModules: createWorkflowServerModules({
             modelSourceFactory: mergedOptions.modelSourceFactory,
             storageOptions: mergedOptions.storageOptions,
