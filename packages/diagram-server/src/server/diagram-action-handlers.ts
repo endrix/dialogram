@@ -624,6 +624,12 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
  */
 export const MAX_SIZE_MEASURE_PASSES = 4;
 
+/**
+ * Ignore sub-epsilon size deltas (selection stroke / focus ring / subpixel rounding)
+ * when deciding whether two consecutive CLIENT measurements agree.
+ */
+export const RESIZE_EPSILON_PX = 4;
+
 type BoundsPassNodeDecision =
     | 'accepted-grow'
     | 'accepted-shrink'
@@ -639,11 +645,137 @@ interface BoundsPassNodeEntry {
 
 /** Per-pass accumulator populated by {@link WorkflowComputedBoundsActionHandler.applyBounds}. */
 interface BoundsPassResult {
-    /** A node grew or shrank this pass (measurement still moving). */
+    /**
+     * A node's client-reported size differs from the previous pass's client report
+     * (measurement still moving). Computed against the last CLIENT report, not the
+     * model — a report that merely echoes the already-assigned model size does NOT
+     * count as "changed", which is what breaks the echo-inflation feedback loop.
+     */
     anyNodeSizeChanged: boolean;
     /** A node reported a zero/partial size — never treat such a pass as "stable". */
     sawInvalidMeasurement: boolean;
     nodes: BoundsPassNodeEntry[];
+}
+
+/**
+ * Re-anchor a node's descendant ports to the node's current width.
+ *
+ * Extracted to module scope so it can be applied at the moment node sizes are
+ * COMMITTED (once measurements have settled) rather than on every intermediate
+ * settling pass. Ports are placed at the node border; when the committed node
+ * width differs from the server estimate the ports must follow it.
+ */
+function reanchorPortsToNodeSize(node: any, hasPersistedLayout: boolean): void {
+    const nodeSize = node?.size as { width: number; height: number } | undefined;
+    const children = node?.children as any[] | undefined;
+    if (!nodeSize || !Array.isArray(children)) {
+        return;
+    }
+    const nodeWidth = nodeSize.width ?? 0;
+    const nodeHeight = nodeSize.height ?? 0;
+    if (!(nodeWidth > 0) || !(nodeHeight > 0)) {
+        return;
+    }
+
+    // Ports are often nested in compartments; ensure we re-anchor ALL descendant ports.
+    const absPos = (element: any): { x: number; y: number } => {
+        let x = 0;
+        let y = 0;
+        let current = element;
+        while (current) {
+            if (current.position) {
+                x += current.position.x ?? 0;
+                y += current.position.y ?? 0;
+            }
+            current = current.parent;
+        }
+        return { x, y };
+    };
+
+    const nodeAbs = absPos(node);
+    const visit = (el: any): void => {
+        if (!el) {
+            return;
+        }
+        const elType = (el as any)?.type as string | undefined;
+        if (typeof elType === 'string' && elType.startsWith('port:')) {
+            const port = el as any;
+            const portSize = port.size as { width: number; height: number } | undefined;
+            const portDirection = port.args?.[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined;
+            if (!portSize || !(portSize.width > 0) || !(portSize.height > 0) || !port.position) {
+                return;
+            }
+
+            // Desired absolute X at the node border.
+            const desiredAbsX = hasPersistedLayout
+                ? (portDirection === 'output' ? nodeAbs.x + nodeWidth : nodeAbs.x - portSize.width)
+                : (portDirection === 'output' ? nodeAbs.x + Math.max(0, nodeWidth - portSize.width) : nodeAbs.x);
+
+            const parentAbs = absPos(port.parent);
+            const anchoredX = desiredAbsX - parentAbs.x;
+
+            // Keep Y stable (avoid reshuffling port ordering).
+            port.position = { x: anchoredX, y: port.position.y ?? 0 };
+            return;
+        }
+
+        const elChildren = el.children as any[] | undefined;
+        if (Array.isArray(elChildren)) {
+            for (const c of elChildren) {
+                visit(c);
+            }
+        }
+    };
+
+    for (const child of children) {
+        visit(child);
+    }
+}
+
+/**
+ * Collect this pass's raw CLIENT-reported node sizes (the settling measurements),
+ * keyed by element id. Zero/partial ('rejected-zero') and post-freeze
+ * ('rejected-frozen') entries are excluded — only genuine measurements participate
+ * in convergence and commit.
+ */
+function collectNodeReports(passResult: BoundsPassResult): Record<string, { width: number; height: number }> {
+    const reports: Record<string, { width: number; height: number }> = {};
+    for (const entry of passResult.nodes) {
+        if (entry.decision === 'accepted-grow' || entry.decision === 'accepted-shrink') {
+            reports[entry.id] = { width: entry.newSize.width, height: entry.newSize.height };
+        }
+    }
+    return reports;
+}
+
+/**
+ * Two client reports "agree" when they cover the same node ids and every dimension
+ * matches within {@link RESIZE_EPSILON_PX}. Used for two-consecutive-equal
+ * convergence. A missing previous report never agrees (forces a second pass).
+ */
+function nodeReportsAgree(
+    current: Record<string, { width: number; height: number }>,
+    previous: Record<string, { width: number; height: number }> | undefined
+): boolean {
+    if (!previous) {
+        return false;
+    }
+    const currentIds = Object.keys(current);
+    const previousIds = Object.keys(previous);
+    if (currentIds.length !== previousIds.length) {
+        return false;
+    }
+    for (const id of currentIds) {
+        const a = current[id];
+        const b = previous[id];
+        if (!b) {
+            return false;
+        }
+        if (Math.abs(a.width - b.width) >= RESIZE_EPSILON_PX || Math.abs(a.height - b.height) >= RESIZE_EPSILON_PX) {
+            return false;
+        }
+    }
+    return true;
 }
 
 @injectable()
@@ -691,23 +823,38 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
                       allowInitialLayoutPersistence: boolean;
                       unpositionedNodeCount?: number;
                       sizeMeasurePassCount?: number;
+                      lastClientNodeSizes?: Record<string, { width: number; height: number }>;
                   }
                 | undefined;
 
             // Size-stabilization window (GLSP 2.7 font-load race):
-            // Until we have a STABLE client-bounds snapshot we keep accepting client
-            // node sizes (grow AND shrink, see applyBounds) and re-request bounds. A
-            // pass is "stable" only when it changed no node size AND saw no zero/partial
-            // measurement — i.e. two consecutive passes agree on valid sizes. A hard cap
-            // guarantees termination (and a laid-out diagram) if measurements oscillate.
-            // Once stable we set hasClientBounds=true, which both freezes sizes and (in
-            // WorkflowModelSubmissionHandler.submitModelDirectly) gates the initial ELK
-            // layout — so the layout runs on settled sizes rather than a font-race value.
+            // Until we have a STABLE client-bounds snapshot we re-request bounds, keeping
+            // the model at its server baseline so every settling measurement reports the
+            // same INTRINSIC bbox (see applyBounds — node sizes are recorded, never baked
+            // into the model during settling). Convergence compares this pass's CLIENT
+            // report against the PREVIOUS pass's client report: a report is "stable" only
+            // when it matches the last report within epsilon AND saw no zero/partial
+            // measurement — i.e. two consecutive passes agree on valid sizes. Comparing
+            // client-vs-client (not client-vs-model) is what defeats the echo-inflation
+            // loop: a report that merely echoes the already-assigned size is not treated
+            // as growth, so the node never balloons across passes. A hard cap guarantees
+            // termination (and a laid-out diagram) if measurements oscillate. On stabilize
+            // (or cap) we COMMIT the settled sizes exactly once, set hasClientBounds=true —
+            // which freezes sizes and (in WorkflowModelSubmissionHandler.submitModelDirectly)
+            // gates the initial ELK layout so it runs on settled sizes — and submit.
             if (layoutMeta && !layoutMeta.hasClientBounds) {
                 const passCount = (layoutMeta.sizeMeasurePassCount ?? 0) + 1;
                 layoutMeta.sizeMeasurePassCount = passCount;
 
-                const stabilized = !passResult.anyNodeSizeChanged && !passResult.sawInvalidMeasurement;
+                const currentReports = collectNodeReports(passResult);
+                const lastReports = layoutMeta.lastClientNodeSizes;
+                // A report echoing the last CLIENT report (within epsilon) is "unchanged".
+                const reportsChanged = !nodeReportsAgree(currentReports, lastReports);
+                passResult.anyNodeSizeChanged = reportsChanged;
+                layoutMeta.lastClientNodeSizes = currentReports;
+
+                const haveReports = Object.keys(currentReports).length > 0;
+                const stabilized = haveReports && !reportsChanged && !passResult.sawInvalidMeasurement;
                 const capped = passCount >= MAX_SIZE_MEASURE_PASSES;
 
                 if (this.enableDiagramDebug) {
@@ -715,15 +862,20 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
                 }
 
                 if (!stabilized && !capped) {
-                    // Not settled yet: re-measure without committing a layout. The original
-                    // RequestModelAction stays pending (its SetModel is emitted once we call
-                    // submitModelDirectly below), so no layout/position work happens on a
-                    // partial measurement.
+                    // Not settled yet: re-measure without committing a layout. The model is
+                    // NOT mutated with the last report, so the re-served schema carries the
+                    // server baseline — the client re-measures the same intrinsic geometry
+                    // instead of an ever-growing echo. The original RequestModelAction stays
+                    // pending (its SetModel is emitted once we call submitModelDirectly
+                    // below), so no layout/position work happens on a partial measurement.
                     this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
                     const rootSchema = this.serializer.createSchema(model);
                     return [RequestBoundsAction.create(rootSchema)];
                 }
 
+                // Settled (or capped): bake the converged client sizes into the model ONCE
+                // and re-anchor ports to the committed width, then freeze.
+                this.commitSettledNodeSizes(currentReports, layoutMeta.hasPersistedLayout === true);
                 layoutMeta.hasClientBounds = true;
                 this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
             } else if (this.enableDiagramDebug) {
@@ -735,6 +887,30 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
         }
 
         return [];
+    }
+
+    /**
+     * Bake the converged (settled) client node sizes into the model exactly once, then
+     * re-anchor each node's ports to the committed width. Applied only after convergence
+     * (or the hard cap), so no intermediate/echoed size is ever persisted. Sizes are
+     * ceil-guarded upstream; a non-positive size is skipped defensively.
+     */
+    private commitSettledNodeSizes(
+        reports: Record<string, { width: number; height: number }>,
+        hasPersistedLayout: boolean
+    ): void {
+        const index = this.modelState.index;
+        for (const [id, size] of Object.entries(reports)) {
+            if (!(size.width > 0) || !(size.height > 0)) {
+                continue;
+            }
+            const element = index.get(id) as any;
+            if (!element || !('size' in element)) {
+                continue;
+            }
+            element.size = { width: size.width, height: size.height };
+            reanchorPortsToNodeSize(element, hasPersistedLayout);
+        }
     }
 
     /** Cheap, permanent diagnostics (WORKFLOW_DIAGRAM_DEBUG=1) for the size-stabilization loop. */
@@ -803,83 +979,11 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
             label.position = { x, y };
         };
 
-        const reanchorPortsToNodeSize = (node: any): void => {
-            const nodeSize = node?.size as { width: number; height: number } | undefined;
-            const children = node?.children as any[] | undefined;
-            if (!nodeSize || !Array.isArray(children)) {
-                return;
-            }
-            const nodeWidth = nodeSize.width ?? 0;
-            const nodeHeight = nodeSize.height ?? 0;
-            if (!(nodeWidth > 0) || !(nodeHeight > 0)) {
-                return;
-            }
-
-            // Ports are often nested in compartments; ensure we re-anchor ALL descendant ports.
-            const absPos = (element: any): { x: number; y: number } => {
-                let x = 0;
-                let y = 0;
-                let current = element;
-                while (current) {
-                    if (current.position) {
-                        x += current.position.x ?? 0;
-                        y += current.position.y ?? 0;
-                    }
-                    current = current.parent;
-                }
-                return { x, y };
-            };
-
-            const nodeAbs = absPos(node);
-            const visit = (el: any): void => {
-                if (!el) {
-                    return;
-                }
-                const elType = (el as any)?.type as string | undefined;
-                if (typeof elType === 'string' && elType.startsWith('port:')) {
-                    const port = el as any;
-                    const portSize = port.size as { width: number; height: number } | undefined;
-                    const portDirection = port.args?.[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined;
-                    if (!portSize || !(portSize.width > 0) || !(portSize.height > 0) || !port.position) {
-                        return;
-                    }
-
-                    // Desired absolute X at the node border.
-                    const desiredAbsX = hasPersistedLayout
-                        ? (portDirection === 'output' ? nodeAbs.x + nodeWidth : nodeAbs.x - portSize.width)
-                        : (portDirection === 'output' ? nodeAbs.x + Math.max(0, nodeWidth - portSize.width) : nodeAbs.x);
-
-                    const parentAbs = absPos(port.parent);
-                    const anchoredX = desiredAbsX - parentAbs.x;
-
-                    // Keep Y stable (avoid reshuffling port ordering).
-                    port.position = { x: anchoredX, y: port.position.y ?? 0 };
-                    return;
-                }
-
-                const elChildren = el.children as any[] | undefined;
-                if (Array.isArray(elChildren)) {
-                    for (const c of elChildren) {
-                        visit(c);
-                    }
-                }
-            };
-
-            for (const child of children) {
-                visit(child);
-            }
-        };
-
                 // Only accept client-measured node size expansions during the initial bounds sync.
                 // After that, client bounds can fluctuate due to selection/hover styling (stroke, focus rings),
                 // and we must keep the model stable to avoid "creeping" node sizes.
                 const allowClientNodeResize = !layoutMeta?.hasClientBounds;
 
-                // Ignore tiny deltas that are typically selection stroke or subpixel rounding.
-                const RESIZE_EPSILON_PX = 4;
-
-        let didExpandNodeSize = false;
-        
         // Apply element bounds - but preserve server-calculated node sizes
         action.bounds.forEach(bounds => {
             const element = index.get(bounds.elementId);
@@ -939,17 +1043,20 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
                     return;
                 }
 
-                // For nodes: while the client-bounds measurement is still settling
-                // (allowClientNodeResize === !hasClientBounds, i.e. before the first STABLE
-                // snapshot) accept the client-measured size in BOTH directions (grow AND
-                // shrink). A GLSP 2.7 client can emit its first ComputedBoundsAction before
-                // web-font text measurement completes (same hazard the port-label note above
-                // documents), which under the old never-shrink+freeze-on-pass-1 policy locked
-                // a slightly-wrong size for the whole session and rejected every later, correct
-                // measurement. Accepting corrections until two consecutive passes agree (the
-                // stabilization loop in execute) lets the size converge to the real measurement.
+                // For nodes: during the settling window (allowClientNodeResize ===
+                // !hasClientBounds) we RECORD the client-measured size but do NOT bake it
+                // into the model. Baking each pass's report into the node size is exactly
+                // the echo-inflation feedback loop: the client re-renders the node's <rect>
+                // at the assigned size and getBBox() reports that size plus any port/label/
+                // footer overhang, so re-measuring a model that already carries the last
+                // report grows the node without bound (up to the pass cap). Instead we keep
+                // the node at its (fixed) server baseline for every settling measurement so
+                // the client re-reports the SAME intrinsic bbox, compare consecutive CLIENT
+                // reports for convergence (in execute), and COMMIT the settled size exactly
+                // once (execute -> commitSettledNodeSizes). Result: a single honest
+                // measurement, matching the pre-2.7 look rather than an inflated echo.
                 // The >0 guard preserves the documented zero-size protection: a partial/zero
-                // measurement is never applied and instead forces another measurement pass.
+                // measurement is recorded as invalid and forces another measurement pass.
                 const isNode = element.type?.startsWith('node:');
                 if (isNode && 'size' in element) {
                     const existingSize = (element as any).size;
@@ -961,28 +1068,15 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
                                 const nextWidth = Math.max(1, Math.ceil(nw));
                                 const nextHeight = Math.max(1, Math.ceil(nh));
                                 const dw = nextWidth - existingSize.width;
-                                const dh = nextHeight - existingSize.height;
-                                // Ignore sub-epsilon jitter (selection stroke / focus ring / subpixel).
-                                const changed = Math.abs(dw) >= RESIZE_EPSILON_PX || Math.abs(dh) >= RESIZE_EPSILON_PX;
-                                if (changed) {
-                                    didExpandNodeSize = true;
-                                    (element as any).size = { width: nextWidth, height: nextHeight };
-                                    reanchorPortsToNodeSize(element as any);
-                                    passResult?.nodes.push({
-                                        id: bounds.elementId,
-                                        newSize: { width: nextWidth, height: nextHeight },
-                                        decision: dw + dh >= 0 ? 'accepted-grow' : 'accepted-shrink'
-                                    });
-                                    if (passResult) {
-                                        passResult.anyNodeSizeChanged = true;
-                                    }
-                                } else {
-                                    passResult?.nodes.push({
-                                        id: bounds.elementId,
-                                        newSize: { width: nextWidth, height: nextHeight },
-                                        decision: 'no-change'
-                                    });
-                                }
+                                // Record the raw client report WITHOUT mutating the model.
+                                // Convergence (in execute) compares this report against the
+                                // previous pass's report, not against the model, so a report
+                                // that merely echoes the assigned size never counts as growth.
+                                passResult?.nodes.push({
+                                    id: bounds.elementId,
+                                    newSize: { width: nextWidth, height: nextHeight },
+                                    decision: dw >= 0 ? 'accepted-grow' : 'accepted-shrink'
+                                });
                             } else {
                                 // Incomplete/zero measurement: never apply; force a re-measure.
                                 passResult?.nodes.push({

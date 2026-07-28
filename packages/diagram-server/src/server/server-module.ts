@@ -31,6 +31,7 @@ import { LayoutPersistenceService } from '../services/layout-persistence-service
 import { WorkflowRerouteEdgesAvoidOverlapsOperationHandler } from '../operations/reroute-edges-avoid-overlaps-handler';
 import { DIAGRAM_MODEL_SOURCE } from './model-source-token';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
+import { WorkflowServerLogger } from './disposed-request-logger';
 
 /**
  * App-level module: dialogram's minimal stand-in for GLSP's node `createAppModule`.
@@ -43,9 +44,12 @@ import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-r
  * throws "No matching bindings found for ActionDispatchScope".
  */
 const appModule = new ContainerModule((bind, _unbind, isBound, _rebind) => {
-    // Bind ConsoleLogger with warn level
-    bind(Logger).toDynamicValue(ctx => 
-        new ConsoleLogger(LogLevel.warn, getRequestParentName(ctx))
+    // Bind a warn-level ConsoleLogger. WorkflowServerLogger downgrades the benign
+    // "cancelled: dispatcher disposed" in-flight-request rejection (logged at ERROR by
+    // DefaultGLSPServer when an editor closes mid-request) to debug; all other errors
+    // pass through unchanged.
+    bind(Logger).toDynamicValue(ctx =>
+        new WorkflowServerLogger(LogLevel.warn, getRequestParentName(ctx))
     ).inSingletonScope();
     
     // Bind LoggerFactory for creating named loggers
