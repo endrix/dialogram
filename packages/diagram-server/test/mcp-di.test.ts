@@ -106,4 +106,24 @@ describe('createWorkflowServerModules — MCP opt-in (T1)', () => {
         const toolConstructors = session.get<unknown[]>(McpDiagramToolHandlerConstructor);
         expect(toolConstructors).toHaveLength(16);
     });
+
+    it('bridges supplied platform tools alongside the 16 built-ins (T2 wiring)', () => {
+        const echoTool = {
+            name: 'echo-registry',
+            description: 'Bridged read-only registry tool.',
+            inputSchema: { type: 'object', properties: { network: { type: 'string' } }, required: [] },
+            handler: (file: string) => `file=${file}`
+        };
+        const serverModules = createWorkflowServerModules({
+            modelSourceFactory: () => NEUTRAL_SOURCE,
+            mcp: { enabled: true, tools: [echoTool] }
+        });
+
+        const session = loadSessionContainer(serverModules);
+        const toolConstructors = session.get<Array<new () => { name: string }>>(McpDiagramToolHandlerConstructor);
+        // 16 built-ins + 1 bridged platform tool.
+        expect(toolConstructors).toHaveLength(17);
+        const names = toolConstructors.map(ctor => new ctor().name);
+        expect(names).toContain('echo-registry');
+    });
 });
