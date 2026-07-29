@@ -36,6 +36,7 @@ import { GraphGModelSource } from '../model/graph-gmodel-source';
 import { WorkflowRequestAgentSkillsOperationHandler, type DiscoveredAgentSkill } from '../operations/request-agent-skills-handler';
 import { WorkflowRequestClaudeAgentsOperationHandler, type DiscoveredClaudeAgentProfile } from '../operations/request-claude-agents-handler';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
+import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
 import { convertToGModelRoot, cleanLegacyFanoutPoints } from './gmodel-convert';
 import { PERF_ENABLED, perfNow, GraphLoadPerf, nextBuildCount } from './graph-load-perf';
@@ -203,6 +204,17 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
     @inject(DIAGRAM_MODEL_SOURCE)
     @optional()
     protected injectedModelSource?: DiagramModelSource;
+
+    /**
+     * Per-session agent auto-layout signal. `@optional()` because it is bound only in the
+     * MCP-enabled container (absent in the palette/webview flow and in unit tests). Every source
+     * (re)load bumps its reload generation so a marked agent structural edit only becomes
+     * consumable AFTER the reload that actually carries it — never on the premature post-operation
+     * submit that runs on the not-yet-reloaded model. See {@link AgentStructuralEditSignal}.
+     */
+    @inject(AgentStructuralEditSignal)
+    @optional()
+    protected agentEditSignal?: AgentStructuralEditSignal;
 
     private ensureModelSource(): DiagramModelSource | undefined {
         return this.injectedModelSource;
@@ -453,6 +465,11 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             allowInitialLayoutPersistence: true,
             unpositionedNodeCount,
         });
+
+        // Advance the agent auto-layout reload generation: a marked agent structural edit becomes
+        // consumable only on a submit that follows THIS reload (the one carrying the new node/edge),
+        // never on the premature post-operation submit that runs on the pre-reload model.
+        this.agentEditSignal?.noteSourceReloaded();
 
         this.modelState.set(WORKFLOW_NETWORK_MODEL_KEY, diagramModel as any);
 

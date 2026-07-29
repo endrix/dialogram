@@ -7,6 +7,7 @@ import {
     WorkflowDiagramTypes
 } from '@dialogram/shared';
 import { WorkflowModelSubmissionHandler } from '../src/server/diagram-action-handlers';
+import { AgentStructuralEditSignal } from '../src/server/agent-structural-edit-signal';
 
 /**
  * When an agent adds a node and/or connects an edge through the MCP tool surface, the tool
@@ -89,6 +90,49 @@ function buildHarness(options: {
     };
 }
 
+/**
+ * Harness that wires the REAL {@link AgentStructuralEditSignal} into the submission handler and
+ * exposes hooks to replay the actual reload chain: mark an agent edit, run a submit WITHOUT a
+ * reload (the premature post-operation submit), then a source reload (`noteSourceReloaded`, as
+ * WorkflowSourceModelStorage.loadSourceModel does) followed by the reload's own submit. Each
+ * simulated reload rebuilds the per-reload layout meta (didInitialLayout=false), exactly as
+ * source-model-storage does on every load.
+ */
+function buildRealSignalHarness() {
+    const signal = new AgentStructuralEditSignal();
+    const base = buildHarness({ agentPending: false, unpositionedNodeCount: 1 });
+    const handler = base.handler;
+    (handler as any).agentEditSignal = signal;
+    const modelState = (handler as any).modelState as {
+        get: (k: string) => any;
+        set: (k: string, v: unknown) => void;
+    };
+
+    const freshReloadMeta = () => {
+        // Mirror source-model-storage: a fresh per-reload meta (didInitialLayout=false), persisted
+        // layout present, hasClientBounds=false (the already-open reload rarely re-measures).
+        modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, {
+            workflowFilePath: '/tmp/net.py',
+            networkId: 'Net',
+            hasPersistedLayout: true,
+            hasPersistedEdgeRoutes: false,
+            didInitialLayout: false,
+            hasClientBounds: false,
+            allowInitialLayoutPersistence: true,
+            unpositionedNodeCount: 1
+        });
+    };
+
+    return {
+        handler,
+        signal,
+        freshReloadMeta,
+        noteSourceReloaded: () => signal.noteSourceReloaded(),
+        layoutCalled: base.layoutCalled,
+        loadLayoutCalled: base.loadLayoutCalled
+    };
+}
+
 describe('auto-layout after agent structural edits', () => {
     it('runs boundary-flow (not park-below) when an agent added a node', async () => {
         const h = buildHarness({ agentPending: true, unpositionedNodeCount: 1 });
@@ -127,5 +171,36 @@ describe('auto-layout after agent structural edits', () => {
         expect(h.layoutCalled()).toBe(0);
         expect(h.loadLayoutCalled()).toBe(1);
         expect((h.node as any).position).toBeDefined();
+    });
+});
+
+describe('agent auto-layout survives the watcher-reload chain (real signal)', () => {
+    it('the premature post-op submit does NOT run layout; the watcher reload submit does', async () => {
+        // Reproduces the real 0.6.0 divergence end to end. A headless MCP create rewrites the
+        // source out-of-band and raises the signal; the create is a GLSP operation, so
+        // OperationActionHandler immediately re-submits the (not-yet-reloaded) model. With a naive
+        // boolean flag that post-op submit consumed the signal against a model without the new
+        // node, and the real watcher reload then found nothing pending — the node landed but no
+        // layout ran. Reload-generation gating fixes it: only a submit AFTER the reload that
+        // carries the edit can consume the signal.
+        const h = buildRealSignalHarness();
+
+        // 1) Agent create: source rewritten, signal raised (still pre-reload).
+        h.signal.markPending();
+
+        // 2) Premature post-operation submit (no source reload yet) — must NOT lay out.
+        await h.handler.submitModelDirectly();
+        expect(h.layoutCalled()).toBe(0);
+        expect(h.loadLayoutCalled()).toBe(1); // park-below path ran, boundary-flow did not
+        expect(h.signal.isPending()).toBe(false); // still armed-but-not-reloaded (not lowered)
+
+        // 3) Watcher reload carrying the new node: fresh per-reload meta + generation bump, then
+        //    the reload's own submit runs boundary-flow.
+        h.freshReloadMeta();
+        h.noteSourceReloaded();
+        expect(h.signal.isPending()).toBe(true);
+        await h.handler.submitModelDirectly();
+        expect(h.layoutCalled()).toBe(1);
+        expect(h.signal.isPending()).toBe(false); // consumed exactly once by the reload submit
     });
 });

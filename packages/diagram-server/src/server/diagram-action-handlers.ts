@@ -138,17 +138,38 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
         // 1c) Existing diagram (layout already persisted) gained new content after load.
         const agentEditPending = this.agentEditSignal?.isPending() === true;
 
+        // Permanent, WORKFLOW_DIAGRAM_DEBUG-gated breadcrumb: the exact state every submit sees at
+        // the branch-1c decision. Pin-points, from the host log, why an agent auto-layout did or did
+        // not fire on a given submit (signal reload-confirmed? persisted layout? already laid out?).
+        if (process.env.WORKFLOW_DIAGRAM_DEBUG === '1') {
+            // eslint-disable-next-line no-console
+            console.log(
+                `[agent-auto-layout] submit net=${layoutMeta?.networkId ?? '?'} ` +
+                `signalPending=${agentEditPending} hasPersistedLayout=${layoutMeta?.hasPersistedLayout} ` +
+                `didInitialLayout=${layoutMeta?.didInitialLayout} hasClientBounds=${layoutMeta?.hasClientBounds} ` +
+                `unpositioned=${layoutMeta?.unpositionedNodeCount ?? 0} hasLayoutEngine=${!!layoutEngine}`
+            );
+        }
+
         // 1c-i) Agent structural edit (MCP create-node / create-edge): run a full boundary-flow
         // layout so nothing is left at a parked default position and new edges are routed against a
         // fresh layout — matching the manual `dialogram.layoutBoundaryFlow` result.
         //
-        // Deliberately NOT gated on hasClientBounds. A headless create rewrites the .py and the
-        // diagram reloads, but a refresh of an ALREADY-OPEN diagram reuses the client's existing
-        // node sizes and may never emit a fresh ComputedBounds — the only place hasClientBounds is
-        // ever set true. So on the reload that carries the agent's new node/edge, hasClientBounds
-        // often stays false; gating on it would block the auto-layout forever (the real 0.6.0
-        // regression: agent creates land but nothing lays out). The diagram is already measured
-        // (an existing persisted layout), so boundary-flow on the current node sizes is fine.
+        // Why `agentEditPending` alone is trustworthy here (the real 0.6.0 regression fix). The
+        // create is dispatched as a GLSP operation, and OperationActionHandler re-submits the model
+        // immediately after every operation. Under client layout that post-op submit completes via
+        // a ComputedBounds round-trip and calls this handler — but on the CURRENT, not-yet-reloaded
+        // model (the create rewrote the source out-of-band; the model only re-sources on the later
+        // watcher reload). A naive boolean signal was consumed by that premature post-op submit,
+        // against a model without the new node/edge, so the real reload found the flag lowered and
+        // skipped the layout — the node landed but nothing laid out. AgentStructuralEditSignal now
+        // gates on the reload generation: `isPending()` is true only once a source reload has
+        // happened SINCE the edit was marked, so the post-op submit (no reload) cannot consume it
+        // and only the reload carrying the edit does. See agent-structural-edit-signal.ts.
+        //
+        // Also deliberately NOT gated on hasClientBounds: a refresh of an already-open diagram
+        // reuses the client's node sizes and may never emit a fresh ComputedBounds; the diagram is
+        // already measured (persisted layout), so boundary-flow on the current sizes is correct.
         //
         // Bursts of agent ops coalesce naturally: the editor debounces source-change reloads, so a
         // run of MCP creates collapses into a single reload → a single boundary-flow pass here.
@@ -163,6 +184,10 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             layoutMeta.didInitialLayout = true;
             modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
             this.agentEditSignal?.consumePending();
+            if (process.env.WORKFLOW_DIAGRAM_DEBUG === '1') {
+                // eslint-disable-next-line no-console
+                console.log(`[agent-auto-layout] branch=1c-i RUN boundary-flow net=${layoutMeta.networkId}`);
+            }
             console.log('[WorkflowModelSubmissionHandler] Auto-layout after agent structural edit for:', layoutMeta.networkId);
             try {
                 await this.runBoundaryFlowAndPersist(layoutMeta, modelState, layoutEngine);
