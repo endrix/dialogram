@@ -672,9 +672,11 @@ export class ACPClientService extends EventEmitter {
       `refers to "this", "the workflow/network", or asks about its nodes, treat them as ` +
       `the source of truth and do not search other files unless explicitly asked.`;
     const skill = this.chatSkill ??
-      `You also have MCP tools (list_task_types, get_graph, create_task_type, create_node, ` +
-      `connect, …). For STRUCTURAL edits prefer those tools. To add a BRAND-NEW task: call ` +
-      `create_task_type to scaffold it, then edit the generated @task class to implement its ` +
+      `You also have MCP tools: read tools (list_task_types, get_graph, validate_workflow) and, ` +
+      `when the diagram MCP server is available, GLSP diagram tools (create-task-type, create-nodes, ` +
+      `create-edges, modify-nodes, delete-elements). For STRUCTURAL edits prefer the GLSP tools when ` +
+      `present — their edits go through the editor's undo stack. To add a BRAND-NEW task: call ` +
+      `create-task-type to scaffold it, then edit the generated @task class to implement its ` +
       `behavior, and verify with get_graph.`;
 
     // A diagram-tool usage hint, present only when the extension layer says the
@@ -815,15 +817,19 @@ export class ACPClientService extends EventEmitter {
   /** Upsert a tool-call part (by id) into the in-flight turn's part structure. */
   private recordTurnToolPart(sessionId: string, update: any): void {
     const id = String(update?.toolCallId ?? update?.id ?? `tc_${(this.turnParts.get(sessionId)?.length ?? 0)}`);
-    const title = String(update?.title || update?.kind || 'tool call');
+    // The tool name arrives on the initial tool_call; later status-only updates
+    // omit the title, so only overwrite when a title is actually present (else a
+    // completed/failed update would drop the name back to the generic fallback).
+    const rawTitle = update?.title || update?.kind;
+    const title = rawTitle ? String(rawTitle) : undefined;
     const status = typeof update?.status === 'string' ? update.status : undefined;
     const parts = this.turnParts.get(sessionId) ?? [];
     const existing = parts.find((p): p is Extract<TurnPart, { type: 'tool' }> => p.type === 'tool' && p.id === id);
     if (existing) {
-      existing.title = title;
+      if (title !== undefined) existing.title = title;
       if (status !== undefined) existing.status = status;
     } else {
-      parts.push({ type: 'tool', id, title, status });
+      parts.push({ type: 'tool', id, title: title ?? 'tool call', status });
     }
     this.turnParts.set(sessionId, parts);
   }

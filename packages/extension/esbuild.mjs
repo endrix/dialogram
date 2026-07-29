@@ -107,21 +107,6 @@ const platformCtx = await esbuild.context({
     plugins: [resolveWorkspacePlugin, ...plugins]
 });
 
-// Sidecar MCP server (standalone Node process spawned by the agent over stdio;
-// op prefix / sidecar command supplied via env).
-const mcpServerCtx = await esbuild.context({
-    entryPoints: [path.join(srcDirs['sidecar-toolkit'], 'sidecar-mcp-server.ts')],
-    outdir: 'dist',
-    bundle: true,
-    target: 'ES2019',
-    format: 'cjs',
-    outExtension: { '.js': '.cjs' },
-    platform: 'node',
-    sourcemap: !minify,
-    minify,
-    plugins: [resolveWorkspacePlugin, ...plugins]
-});
-
 // GLSP diagram client bundle (runs in consumer webviews, browser IIFE)
 const glspClientCtx = await esbuild.context({
     banner: stampBanner('webview diagram-client.js'),
@@ -148,7 +133,7 @@ const glspClientCtx = await esbuild.context({
     }
 });
 
-const contexts = [hostCtx, platformCtx, mcpServerCtx, glspClientCtx];
+const contexts = [hostCtx, platformCtx, glspClientCtx];
 if (watch) {
     await Promise.all(contexts.map(ctx => ctx.watch()));
 } else {

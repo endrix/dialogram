@@ -31,6 +31,8 @@ import type { McpServerModuleOptions } from './mcp-diagram-module';
 import { WorkflowLayoutConfigurator } from './layout-configurator';
 import { WorkflowElkLayoutEngine } from './elk-layout-engine';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
+import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
+import { AgentCreateNodeOutcomeSink } from './agent-create-node-outcome';
 import { WorkflowRerouteEdgesAvoidOverlapsOperationHandler } from '../operations/reroute-edges-avoid-overlaps-handler';
 import { DIAGRAM_MODEL_SOURCE } from './model-source-token';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
@@ -166,6 +168,30 @@ export function createWorkflowServerModules(
         }
     });
     additionalModules.push(operationHandlerSelfModule);
+
+    // Per-session auto-layout signal shared by the agent-dispatch MCP tool handlers (which raise
+    // it after a structural create) and the model-submission handler (which consumes it to run a
+    // boundary-flow layout on the next reload). Session-singleton so one diagram's agent edit
+    // never triggers another diagram's relayout.
+    const agentStructuralEditSignalModule = new ContainerModule((bind, _unbind, isBound) => {
+        if (!isBound(AgentStructuralEditSignal)) {
+            bind(AgentStructuralEditSignal).toSelf().inSingletonScope();
+        }
+    });
+    additionalModules.push(agentStructuralEditSignalModule);
+
+    // Per-session channel carrying the outcome of an agent-dispatched (headless) create-node from
+    // the operation handler (which rewrites source) back to the MCP create-nodes tool handler
+    // (which must report an honest result to the agent). The stock handler's model-index diff can
+    // never observe a dialogram create (the model re-sources on a later reload), so the tool reads
+    // the authoritative outcome from here instead. Session-singleton so both the operation handler
+    // and the tool handler share one instance and outcomes never cross diagrams.
+    const agentCreateNodeOutcomeModule = new ContainerModule((bind, _unbind, isBound) => {
+        if (!isBound(AgentCreateNodeOutcomeSink)) {
+            bind(AgentCreateNodeOutcomeSink).toSelf().inSingletonScope();
+        }
+    });
+    additionalModules.push(agentCreateNodeOutcomeModule);
 
     // Neutral storage runtime options (settings namespace + operation-prefix), supplied as plain
     // data by the consuming extension. No product literals here.

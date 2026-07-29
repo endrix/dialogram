@@ -112,3 +112,84 @@ export function extractTopLevelPythonDefinitions(sourceText: string): PythonDefi
 export function escapePythonStringLiteral(value: string): string {
     return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
+
+/** One port declared on a workflow type: identifier name + best-effort direction. */
+export interface PythonPortInfo {
+    name: string;
+    direction: 'in' | 'out' | 'unknown';
+}
+
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizePortDirection(raw: string | undefined): 'in' | 'out' | 'unknown' {
+    if (!raw) {
+        return 'unknown';
+    }
+    const value = raw.trim().toLowerCase();
+    if (value === 'in' || value === 'input') {
+        return 'in';
+    }
+    if (value === 'out' || value === 'output') {
+        return 'out';
+    }
+    return 'unknown';
+}
+
+/**
+ * Extract the ports declared on a top-level Python class `typeName`, as `<Name> = [...]Port[...](...)`
+ * assignments (directly in the class body or nested under a `class Ports:` block). Operates on the
+ * RAW source (not the comment/string-stripped body) so a `direction="in"/"out"` kwarg survives.
+ * Best-effort and dependency-free: used only to enrich the agent create-node confirmation with the
+ * created node's port names so the next create-edges can address them by name. Returns [] when the
+ * class is not found in this source text (e.g. a type defined in another module).
+ */
+export function extractTypePorts(sourceText: string, typeName: string): PythonPortInfo[] {
+    const lines = sourceText.split(/\r?\n/);
+    const classRe = new RegExp(`^(\\s*)class\\s+${escapeRegExp(typeName)}\\b`);
+
+    let classIndent = -1;
+    let startIndex = -1;
+    for (let index = 0; index < lines.length; index += 1) {
+        const match = classRe.exec(lines[index]);
+        if (match) {
+            classIndent = match[1].length;
+            startIndex = index + 1;
+            break;
+        }
+    }
+    if (startIndex < 0) {
+        return [];
+    }
+
+    // Port declaration: `<Name> = [pkg.]?[Input|Output]?Port[ ... ` — captures the identifier and an
+    // optional Input/Output type prefix that also implies direction.
+    const portRe = /^\s*([A-Za-z_]\w*)\s*=\s*(?:[A-Za-z_][\w.]*\.)?(Input|Output)?Port\s*\[/;
+    const directionKwargRe = /\bdirection\s*=\s*["']([A-Za-z]+)["']/;
+
+    const ports: PythonPortInfo[] = [];
+    const seen = new Set<string>();
+    for (let index = startIndex; index < lines.length; index += 1) {
+        const line = lines[index];
+        if (line.trim() === '') {
+            continue;
+        }
+        const indent = line.length - line.trimStart().length;
+        if (indent <= classIndent) {
+            break; // dedented out of the class block
+        }
+        const match = portRe.exec(line);
+        if (!match || seen.has(match[1])) {
+            continue;
+        }
+        seen.add(match[1]);
+        const prefixDirection = match[2] === 'Input' ? 'in' : match[2] === 'Output' ? 'out' : undefined;
+        const kwarg = directionKwargRe.exec(line);
+        ports.push({
+            name: match[1],
+            direction: prefixDirection ?? normalizePortDirection(kwarg?.[1])
+        });
+    }
+    return ports;
+}

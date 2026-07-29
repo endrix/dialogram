@@ -51,6 +51,7 @@ import {
     WORKFLOW_LAYOUT_PERSISTENCE_KEY
 } from '@dialogram/shared';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
+import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
 import {
     WorkflowRerouteEdgesAvoidOverlapsOperationHandler,
     WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND
@@ -70,7 +71,15 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
 
     @inject(WorkflowRerouteEdgesAvoidOverlapsOperationHandler)
     protected rerouteHandler!: WorkflowRerouteEdgesAvoidOverlapsOperationHandler;
-    
+
+    /**
+     * Optional so the many unit tests that construct this handler directly (no DI container)
+     * keep working — an absent signal simply reads as "no agent edit pending".
+     */
+    @inject(AgentStructuralEditSignal)
+    @optional()
+    protected agentEditSignal?: AgentStructuralEditSignal;
+
     override async submitModelDirectly(reason?: DirtyStateChangeReason): Promise<Action[]> {
         const layoutEngine = (this as any).layoutEngine as LayoutEngine | undefined;
         const diagramConfiguration = (this as any).diagramConfiguration as DiagramConfiguration;
@@ -112,28 +121,85 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
                 // run the exact same boundary-flow routine (pin one-sided task nodes to outer
                 // layers + clear stale edge routes + ELK), so the fresh-open render matches
                 // what manual layout produces instead of diverging (plain ELK looked worse).
-                await runBoundaryFlowLayout(modelState.root, layoutEngine);
+                await this.runBoundaryFlowAndPersist(layoutMeta, modelState, layoutEngine);
                 // Always-on breadcrumb: initial ELK layout is the dominant post-load server cost on a
                 // fresh open, and it runs here (in the client-bounds round-trip), not in the load path.
                 // eslint-disable-next-line no-console
                 console.log(`[dialogram perf] layout ${layoutMeta.networkId}: elk=${Math.round(perfNow() - _elk0)}ms`);
-                const positions = this.collectNodePositions(modelState.root);
-                const routes = this.collectEdgeRoutes(modelState.root);
-                await this.layoutPersistence.saveLayoutImmediate(layoutMeta.workflowFilePath, layoutMeta.networkId, positions, routes);
-                // From now on, treat it as persisted.
-                layoutMeta.hasPersistedLayout = true;
-                layoutMeta.hasPersistedEdgeRoutes = routes.size > 0;
-                modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
+                // A fresh-open diagram an agent just populated already got its boundary-flow layout
+                // here; consume the pending flag so branch 1c does not run a second, redundant one.
+                this.agentEditSignal?.consumePending();
             } catch (error) {
                 console.error('[WorkflowModelSubmissionHandler] Initial layout failed:', error);
             }
         } else {
         }
 
-        // 1c) Partial layout for newly added nodes when a layout file already exists.
-        // Places new/unpositioned nodes below the existing graph without disturbing
-        // the positions of already-placed nodes.
+        // 1c) Existing diagram (layout already persisted) gained new content after load.
+        const agentEditPending = this.agentEditSignal?.isPending() === true;
+
+        // Permanent, WORKFLOW_DIAGRAM_DEBUG-gated breadcrumb: the exact state every submit sees at
+        // the branch-1c decision. Pin-points, from the host log, why an agent auto-layout did or did
+        // not fire on a given submit (signal reload-confirmed? persisted layout? already laid out?).
+        if (process.env.WORKFLOW_DIAGRAM_DEBUG === '1') {
+            // eslint-disable-next-line no-console
+            console.log(
+                `[agent-auto-layout] submit net=${layoutMeta?.networkId ?? '?'} ` +
+                `signalPending=${agentEditPending} hasPersistedLayout=${layoutMeta?.hasPersistedLayout} ` +
+                `didInitialLayout=${layoutMeta?.didInitialLayout} hasClientBounds=${layoutMeta?.hasClientBounds} ` +
+                `unpositioned=${layoutMeta?.unpositionedNodeCount ?? 0} hasLayoutEngine=${!!layoutEngine}`
+            );
+        }
+
+        // 1c-i) Agent structural edit (MCP create-node / create-edge): run a full boundary-flow
+        // layout so nothing is left at a parked default position and new edges are routed against a
+        // fresh layout — matching the manual `dialogram.layoutBoundaryFlow` result.
+        //
+        // Why `agentEditPending` alone is trustworthy here (the real 0.6.0 regression fix). The
+        // create is dispatched as a GLSP operation, and OperationActionHandler re-submits the model
+        // immediately after every operation. Under client layout that post-op submit completes via
+        // a ComputedBounds round-trip and calls this handler — but on the CURRENT, not-yet-reloaded
+        // model (the create rewrote the source out-of-band; the model only re-sources on the later
+        // watcher reload). A naive boolean signal was consumed by that premature post-op submit,
+        // against a model without the new node/edge, so the real reload found the flag lowered and
+        // skipped the layout — the node landed but nothing laid out. AgentStructuralEditSignal now
+        // gates on the reload generation: `isPending()` is true only once a source reload has
+        // happened SINCE the edit was marked, so the post-op submit (no reload) cannot consume it
+        // and only the reload carrying the edit does. See agent-structural-edit-signal.ts.
+        //
+        // Also deliberately NOT gated on hasClientBounds: a refresh of an already-open diagram
+        // reuses the client's node sizes and may never emit a fresh ComputedBounds; the diagram is
+        // already measured (persisted layout), so boundary-flow on the current sizes is correct.
+        //
+        // Bursts of agent ops coalesce naturally: the editor debounces source-change reloads, so a
+        // run of MCP creates collapses into a single reload → a single boundary-flow pass here.
         if (
+            layoutEngine &&
+            agentEditPending &&
+            layoutMeta &&
+            layoutMeta.hasPersistedLayout &&
+            !layoutMeta.didInitialLayout &&
+            layoutMeta.allowInitialLayoutPersistence
+        ) {
+            layoutMeta.didInitialLayout = true;
+            modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
+            this.agentEditSignal?.consumePending();
+            if (process.env.WORKFLOW_DIAGRAM_DEBUG === '1') {
+                // eslint-disable-next-line no-console
+                console.log(`[agent-auto-layout] branch=1c-i RUN boundary-flow net=${layoutMeta.networkId}`);
+            }
+            console.log('[WorkflowModelSubmissionHandler] Auto-layout after agent structural edit for:', layoutMeta.networkId);
+            try {
+                await this.runBoundaryFlowAndPersist(layoutMeta, modelState, layoutEngine);
+                console.log('[WorkflowModelSubmissionHandler] Agent auto-layout completed');
+            } catch (error) {
+                console.error('[WorkflowModelSubmissionHandler] Agent auto-layout failed:', error);
+            }
+        }
+        // 1c-ii) Otherwise (palette add / hand-edited source): keep new/unpositioned nodes parked
+        // below the existing graph without disturbing already-placed nodes. Unchanged: this path
+        // still waits for client bounds so the park-below geometry uses measured node sizes.
+        else if (
             layoutMeta &&
             layoutMeta.hasPersistedLayout &&
             !layoutMeta.didInitialLayout &&
@@ -314,6 +380,33 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
         };
 
         visit(root);
+    }
+
+    /**
+     * Run the shared boundary-flow layout, persist the resulting node positions + edge routes,
+     * and mark the layout meta as persisted. Shared by the fresh-open initial layout (branch 1)
+     * and the agent-structural-edit auto-layout (branch 1c) so both produce identical geometry
+     * and persistence — no divergence between them.
+     */
+    private async runBoundaryFlowAndPersist(
+        layoutMeta: {
+            workflowFilePath: string;
+            networkId: string;
+            hasPersistedLayout: boolean;
+            hasPersistedEdgeRoutes: boolean;
+            [key: string]: unknown;
+        },
+        modelState: ModelState,
+        layoutEngine: LayoutEngine
+    ): Promise<void> {
+        await runBoundaryFlowLayout(modelState.root, layoutEngine);
+        const positions = this.collectNodePositions(modelState.root);
+        const routes = this.collectEdgeRoutes(modelState.root);
+        await this.layoutPersistence.saveLayoutImmediate(layoutMeta.workflowFilePath, layoutMeta.networkId, positions, routes);
+        // From now on, treat it as persisted.
+        layoutMeta.hasPersistedLayout = true;
+        layoutMeta.hasPersistedEdgeRoutes = routes.size > 0;
+        modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
     }
 
     /**
@@ -601,6 +694,23 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
             return;
         }
         super.reportModelLoadingFinished(monitor as any);
+    }
+
+    /**
+     * Always clear the "Model loading in progress" status, even when the load fails.
+     *
+     * The base handler starts progress reporting by dispatching a sticky `StatusAction`
+     * (severity INFO) and only clears it (a second `StatusAction`, severity NONE) once the
+     * load has completed. Its own `handleModelLoadingError` ends the progress monitor but
+     * rethrows WITHOUT dispatching that clearing action — so a failed source load leaves the
+     * notification pinned on screen forever. Routing the error through
+     * `reportModelLoadingFinished` (which dispatches the clearing NONE status and ends the
+     * monitor, honouring `suppressNotifications` symmetrically with `reportModelLoading`)
+     * before rethrowing guarantees the notification is disposed on every path.
+     */
+    protected override handleModelLoadingError(error: unknown, monitor?: unknown): void {
+        this.reportModelLoadingFinished(monitor);
+        throw error;
     }
 }
 

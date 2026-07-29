@@ -16,6 +16,8 @@
  * their defaults here — cleaner, diagram-aware overrides are a follow-up.
  */
 import {
+    CreateEdgesMcpToolHandler,
+    CreateNodesMcpToolHandler,
     DefaultMcpDiagramModule,
     RedoMcpToolHandler,
     UndoMcpToolHandler,
@@ -23,6 +25,9 @@ import {
 } from '@eclipse-glsp/server-mcp';
 import type { InstanceMultiBinding } from '@eclipse-glsp/server';
 import { makePlatformToolHandlerClass, type PlatformMcpTool } from './mcp-platform-tool-adapter';
+import { CreateTaskTypeMcpToolHandler } from './create-task-type-mcp-tool-handler';
+import { AgentDispatchCreateNodesMcpToolHandler } from './create-nodes-mcp-tool-handler';
+import { AgentDispatchCreateEdgesMcpToolHandler } from './create-edges-mcp-tool-handler';
 
 /**
  * Keep mutation-capable tools OFF the read-only GLSP-MCP bridge.
@@ -96,6 +101,24 @@ export class DiagramMcpModule extends DefaultMcpDiagramModule {
         // Agents are told (session context hint) that edits are user-undoable via the editor.
         binding.remove(UndoMcpToolHandler);
         binding.remove(RedoMcpToolHandler);
+        // Replace the built-in `create-nodes` with the agent-dispatch override. The stock tool
+        // reaches the operation handler's interactive quick-input (a palette-drop affordance),
+        // which blocks an agent call on a dialog no agent can answer. The override marks its
+        // dispatched operations `headless` so creation runs non-interactively — deriving the
+        // instance name and failing with an actionable error instead of ever prompting.
+        binding.remove(CreateNodesMcpToolHandler);
+        binding.add(AgentDispatchCreateNodesMcpToolHandler);
+        // Replace the built-in `create-edges` with the agent-dispatch override. Connecting two
+        // nodes is a structural edit; the override raises the auto-layout signal after a
+        // non-dry-run create so the model-submission handler runs a full boundary-flow layout on
+        // the next reload, matching the create-nodes behaviour. The palette edge-creation flow
+        // never uses this handler, so its behaviour is unchanged.
+        binding.remove(CreateEdgesMcpToolHandler);
+        binding.add(AgentDispatchCreateEdgesMcpToolHandler);
+        // Custom operation tool: scaffold a task type. It rides the built-in operation-tool path
+        // (dispatches a reversible GLSP operation), so mutation flows through our undoable workspace
+        // edits — the one sanctioned way to expose a mutating tool on the GLSP-MCP surface.
+        binding.add(CreateTaskTypeMcpToolHandler);
         // Read-only bridge only: mutation-capable tools are excluded (see bridgeableChatTools).
         for (const tool of bridgeableChatTools(this.platformTools)) {
             binding.add(makePlatformToolHandlerClass(tool));

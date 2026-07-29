@@ -606,3 +606,37 @@ describe('ACPClientService', () => {
     });
   });
 });
+
+describe('turn tool-part accumulation (name preservation)', () => {
+  let client: ACPClientService;
+
+  beforeEach(() => {
+    client = new ACPClientService();
+  });
+
+  const feed = (update: any) =>
+    (client as any).accumulateTurnText({ sessionId: 's1', update });
+
+  const toolParts = () =>
+    ((client as any).turnParts.get('s1') ?? []).filter((p: any) => p.type === 'tool');
+
+  it('keeps the tool name when a status-only update omits the title (success path)', () => {
+    // opencode names the tool on the initial tool_call, then a later
+    // tool_call_update carries only the completed status (no title).
+    feed({ sessionUpdate: 'tool_call', toolCallId: 'tc1', title: 'wfpy-glsp_create-nodes', status: 'pending' });
+    feed({ sessionUpdate: 'tool_call_update', toolCallId: 'tc1', status: 'completed' });
+
+    const [tool] = toolParts();
+    expect(tool.title).toBe('wfpy-glsp_create-nodes');
+    expect(tool.status).toBe('completed');
+  });
+
+  it('preserves the failed tool name too', () => {
+    feed({ sessionUpdate: 'tool_call', toolCallId: 'tc2', title: 'wfpy-glsp_delete-nodes', status: 'in_progress' });
+    feed({ sessionUpdate: 'tool_call_update', toolCallId: 'tc2', status: 'failed' });
+
+    const [tool] = toolParts();
+    expect(tool.title).toBe('wfpy-glsp_delete-nodes');
+    expect(tool.status).toBe('failed');
+  });
+});

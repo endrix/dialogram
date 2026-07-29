@@ -11,9 +11,6 @@ function makeBackend(overrides: Record<string, any> = {}) {
         applyNamedEdit: vi.fn(async () => ({ ok: true, revision: 'r2' })),
         exportGraph: vi.fn(async () => 'graph-text'),
         listCapabilities: vi.fn(async () => undefined),
-        mcpServers: vi.fn(() => [
-            { name: 'wf', command: 'node', args: ['srv.cjs'], env: { OP_PREFIX: 'workflow' } }
-        ]),
         ...overrides
     } as any;
 }
@@ -42,7 +39,6 @@ function makeCapability(backend = makeBackend()) {
         profile: makeProfile(),
         editBackend: backend,
         getEditorProvider: () => editorProvider as any,
-        getAssetsPath: () => '/assets',
         log: () => undefined
     });
     return { capability, backend, refresh };
@@ -232,12 +228,5 @@ describe('providers', () => {
     it('graphContextProvider returns the exported graph', async () => {
         const { capability } = makeCapability();
         await expect(capability.graphContextProvider('/ws/wf.py')).resolves.toBe('graph-text');
-    });
-
-    it('stdioMcpServers adapts env to the ACP name/value shape', () => {
-        const { capability } = makeCapability();
-        expect(capability.stdioMcpServers('/ws/wf.py')).toEqual([
-            { name: 'wf', command: 'node', args: ['srv.cjs'], env: [{ name: 'OP_PREFIX', value: 'workflow' }] }
-        ]);
     });
 });

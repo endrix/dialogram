@@ -66,12 +66,16 @@ export class SessionManager {
     name?: string,
     mode: 'plan' | 'build' = 'build'
   ): Promise<SessionData> {
+    // Resolve the default name BEFORE spawning the session so the same helper is
+    // the single source of truth for every default name (agent-side SessionInfo
+    // included) — no second count-based resolver may compute a name elsewhere.
+    const resolvedName = name || this.nextDefaultSessionName(workflowFile);
     const cwd = this.getWorkflowDirectory(workflowFile);
-    const sessionId = await this.acpClient.createSession(cwd, name, mode, workflowFile);
+    const sessionId = await this.acpClient.createSession(cwd, resolvedName, mode, workflowFile);
 
     const sessionData: SessionData = {
       id: sessionId,
-      name: name || `Session ${this.getSessionsForWorkflow(workflowFile).length + 1}`,
+      name: resolvedName,
       workflowFile,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -86,6 +90,37 @@ export class SessionManager {
     await this.saveSessions();
 
     return sessionData;
+  }
+
+  /**
+   * Compute a unique default name ("Session N") for a new session in a workflow.
+   *
+   * Uses the highest existing "Session <n>" number + 1 rather than the session
+   * count, so deleting an interior session can never yield a duplicate default
+   * name (e.g. deleting "Session 2" of 3 must still produce "Session 4", not a
+   * second "Session 3"). Renamed/custom names that don't match the pattern are
+   * ignored.
+   */
+  nextDefaultSessionName(workflowFile: string): string {
+    const pattern = /^Session (\d+)$/;
+    let maxNumber = 0;
+    for (const session of this.getSessionsForWorkflow(workflowFile)) {
+      const match = pattern.exec(session.name);
+      if (match) {
+        maxNumber = Math.max(maxNumber, Number.parseInt(match[1], 10));
+      }
+    }
+    return `Session ${maxNumber + 1}`;
+  }
+
+  /**
+   * Whether a session with the given name already exists for this workflow.
+   * Backs the new-session input box's duplicate-name guard.
+   */
+  sessionNameExists(workflowFile: string, name: string): boolean {
+    return this.getSessionsForWorkflow(workflowFile).some(
+      (session) => session.name === name
+    );
   }
 
   /**
@@ -370,11 +405,11 @@ export class SessionManager {
       this.sessions.set(session.id, session);
     }
 
-    // Try to restore current session
-    if (data.length > 0) {
-      const mostRecent = data.sort((a, b) => b.updatedAt - a.updatedAt)[0];
-      this.currentSessionId = mostRecent.id;
-    }
+    // Deliberately do NOT auto-select a current session here. The chat panel
+    // opens on an explicit empty state ("select or create a session"); auto-
+    // selecting the most-recent one leaked a phantom current session into the
+    // panel and routed the first message to it. A session becomes current only
+    // when the user explicitly loads/creates one.
   }
 
   /**

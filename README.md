@@ -32,14 +32,20 @@ type, and settings namespace is consumer-owned and disjoint by contract.
 ## Architecture
 
 Dialogram ships as a VS Code extension (`ebezati.dialogram`). Its build
-emits four bundles:
+emits two Node bundles plus the webview client assets:
 
 | Bundle | What it is |
 | --- | --- |
 | `out/main.cjs` | Extension host entry: `activate()` returns the `DialogramApi` |
 | `dist/platform.cjs` | The platform runtime (GLSP server, editor provider, chat backend, sidecar toolkit) — loaded once and shared by every profile |
-| `dist/sidecar-mcp-server.cjs` | Standalone MCP server process spawned for agent sessions over stdio |
 | `dist/webview/diagram-client.*` | The stock GLSP/Sprotty webview client (browser IIFE + CSS with inlined fonts) |
+
+Agents reach the diagram through **two in-process MCP servers**, both attached
+to each chat session over loopback HTTP (no spawned stdio process): the in-host
+**GLSP-MCP** server, hosted on the diagram's GLSP server and exposing the
+diagram read and operation tools (opt-in via `DiagramProfile.mcp`), and the
+in-process **read-tools** MCP server, which serves the profile registry's
+read-only tools.
 
 ```mermaid
 flowchart LR
@@ -51,27 +57,30 @@ flowchart LR
         EP["Custom editor provider"]
         GS["GLSP server<br/>(in-process)"]
         CB["Chat backend<br/>(ACP / opencode)"]
+        GMCP["GLSP-MCP server<br/>(in-host, loopback HTTP)"]
+        RMCP["Read-tools MCP server<br/>(in-process, loopback HTTP)"]
     end
     subgraph webview["Webview"]
         DC["diagram-client<br/>(GLSP/Sprotty)"]
         CP["Chat panel"]
     end
-    MCP["MCP server<br/>(stdio process)"]
     SRC[("Source file")]
 
     P -->|activateDiagramProfile| API
     API --> EP --> DC
     EP --> GS
     GS -->|model| DC
+    GS --- GMCP
     CB --> CP
-    CB --> MCP
+    CB -. attaches .-> GMCP
+    CB -. attaches .-> RMCP
     GS <--> SRC
 ```
 
-The GLSP server runs **inside the extension host** (not a separate process).
-Everything a profile registers is bound to the *consumer's*
-`ExtensionContext`, so disposables die with the consumer extension. Webview
-and MCP assets are served from Dialogram's own install directory.
+The GLSP server runs **inside the extension host** (not a separate process),
+and so do both MCP servers. Everything a profile registers is bound to the
+*consumer's* `ExtensionContext`, so disposables die with the consumer
+extension. Webview assets are served from Dialogram's own install directory.
 
 ### Packages
 
@@ -82,7 +91,7 @@ and MCP assets are served from Dialogram's own install directory.
 | `packages/diagram-client` | GLSP/Sprotty webview client — ships the stock diagram **and** is consumable as a library (`createDiagramContainer`, `DiagramWebviewChannel`). See its [README](packages/diagram-client/README.md) for the full consumer contract |
 | `packages/extension-core` | Profile-driven runtime: custom-editor activation, chat backend (ACP/opencode sessions, context injection, in-process MCP tools), run-event streaming. **`src/api.ts` is the public API contract** (future `@dialogram/api` package) |
 | `packages/sidecar-toolkit` | Everything for *sidecar-backed* consumers: the CLI graph model source, the 16 edit-operation handlers, the run driver, Python navigation, and `createSidecarDiagramProfile` — the one-call profile assembler |
-| `packages/extension` | The host extension shell: manifest, `activate()`, and the esbuild recipes for the four bundles |
+| `packages/extension` | The host extension shell: manifest, `activate()`, and the esbuild recipes for the two Node bundles and the webview assets |
 
 Only `packages/extension` has a real build; the inner packages' `main` points
 at `src/index.ts` and esbuild resolves `@dialogram/*` imports straight to

@@ -12,13 +12,13 @@
  * result as `DiagramProfile` at the assignment site.
  */
 import * as vscode from 'vscode';
-import * as path from 'node:path';
 import { invokeSidecarOp } from './sidecar-graph-export.js';
 import { createRegistryChatTools } from './registry-tools.js';
-import type {
-    SidecarRuntimeConfig,
-    CreateNodeStrings,
-    CreateNodeBehavior
+import {
+    getSidecarCommand,
+    type SidecarRuntimeConfig,
+    type CreateNodeStrings,
+    type CreateNodeBehavior
 } from './server/sidecar-runtime-config.js';
 import { createSidecarModelSource } from './server/cli-graph-model-source.js';
 import { createSidecarServerModule } from './server/sidecar-server-module.js';
@@ -249,23 +249,21 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         sidecarCommandDefault: input.sidecarCommandDefault,
         sidecarOperationPrefix: input.sidecarOperationPrefix,
         exportOp: input.exportOp,
-        mcpServerName: input.key,
-        mcpServerModulePath: (assetsPath) => path.join(assetsPath, 'dist', 'sidecar-mcp-server.cjs'),
         mcpEnabledSetting: input.mcpEnabledSetting,
         scopeArgKey: input.scopeArgKey
     });
 
-    // Resolve the sidecar command from settings for a given ABSOLUTE file path.
-    // The registry-tool handlers receive an fsPath (the platform adapter converts
-    // the GLSP sourceUri before calling), so scope the config lookup by that file.
-    const resolveSidecarCommand = (file: string): string => {
-        const scope = vscode.Uri.file(file);
-        return (
-            vscode.workspace
-                .getConfiguration(input.settingsNamespace, scope)
-                .get<string>(input.sidecarCommandSettingKey, input.sidecarCommandDefault) ?? input.sidecarCommandDefault
-        );
-    };
+    // Resolve the sidecar command for a given ABSOLUTE file path through the SAME
+    // helper the diagram's edit path uses (`getSidecarCommand`, via
+    // `SidecarRuntimeService.getSidecarCommand`), driven by the SAME `runtimeConfig`
+    // the DI-bound model source / operation handlers use. Single source of truth:
+    // if the diagram resolves (and spawns) a working sidecar, these registry READ
+    // tools resolve the identical command — no second resolver, no blank-setting
+    // leak or hardcoded path divergence. The registry-tool handlers receive an
+    // fsPath (the platform adapter converts the GLSP sourceUri before calling), so
+    // scope the config lookup by that file.
+    const resolveSidecarCommand = (file: string): string =>
+        getSidecarCommand(runtimeConfig, vscode, vscode.Uri.file(file));
 
     // Bridge the sidecar-registry READ tools into the profile's chat tools so the
     // platform adapter exposes them over GLSP-MCP. Library-mode only (function

@@ -16,6 +16,7 @@ import {
     SidecarRuntimeService
 } from './sidecar-runtime-config';
 import { SidecarInvoker } from './operations/sidecar-invoker';
+import { RenameEntityOperationHandler } from './operations/rename-entity-handler';
 
 /**
  * A DI module binding the sidecar runtime config, its injectable service, and the sidecar invoker
@@ -32,6 +33,13 @@ export function createSidecarServerModule(cfg: SidecarRuntimeConfig): ContainerM
         }
         if (!isBound(SidecarInvoker)) {
             bind(SidecarInvoker).toSelf().inSingletonScope();
+        }
+        // Self-bind the rename handler so ApplyLabelEditRenameHandler can `@inject` it and route
+        // MCP label edits through the same reversible rename path (mirrors how server-module.ts
+        // self-binds WorkflowRerouteEdgesAvoidOverlapsOperationHandler for cross-handler injection).
+        // It stays in the operation-handler constructor list too (distinct service identifier).
+        if (!isBound(RenameEntityOperationHandler)) {
+            bind(RenameEntityOperationHandler).toSelf().inSingletonScope();
         }
     });
 }

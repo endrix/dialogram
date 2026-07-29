@@ -13,7 +13,7 @@
 
 import * as vscode from 'vscode';
 import { URI } from 'vscode-uri';
-import type { BackendCapabilities, DiagramEditBackend, EditResult, McpServerDescriptor } from '@dialogram/shared';
+import type { BackendCapabilities, DiagramEditBackend, EditResult } from '@dialogram/shared';
 import { exportWorkflowGraph, invokeSidecarOp } from './sidecar-graph-export.js';
 import { getSidecarCapabilities, sidecarSupportsOp } from './sidecar-capabilities.js';
 
@@ -24,10 +24,6 @@ export interface SidecarEditBackendConfig {
     sidecarOperationPrefix: string;
     /** Graph-export op name (without prefix); differs per runtime. */
     exportOp?: string;
-    /** MCP server descriptor name (today the profile key). */
-    mcpServerName: string;
-    /** Absolute path to the bundled `dist/sidecar-mcp-server.cjs`, from the assets root. */
-    mcpServerModulePath: (assetsPath: string) => string;
     /** Kill-switch setting for the MCP tool server. */
     mcpEnabledSetting: { section: string; key: string; default: boolean };
     /** Arg key used to scope ops to a sub-graph (today `'workflow'`). */
@@ -116,32 +112,6 @@ export function createSidecarEditBackend(cfg: SidecarEditBackendConfig): Diagram
                 revision: optionalString((result.response as { revision?: unknown } | undefined)?.revision),
                 response: result.response
             };
-        },
-
-        mcpServers(uri, opts): McpServerDescriptor[] {
-            const enabled = vscode.workspace
-                .getConfiguration(cfg.mcpEnabledSetting.section)
-                .get<boolean>(cfg.mcpEnabledSetting.key, cfg.mcpEnabledSetting.default);
-            if (!enabled) {
-                return [];
-            }
-            const filePath = toFsPath(uri);
-            const serverPath = cfg.mcpServerModulePath(opts.assetsPath ?? '');
-            return [
-                {
-                    name: cfg.mcpServerName,
-                    command: 'node',
-                    args: [serverPath],
-                    env: {
-                        MCP_WORKFLOW_FILE: filePath,
-                        MCP_SIDECAR_CMD: resolveSidecarCommand(uri),
-                        MCP_OP_PREFIX: cfg.sidecarOperationPrefix,
-                        MCP_NETWORK: opts.networkName ?? '',
-                        MCP_SERVER_NAME: cfg.mcpServerName,
-                        MCP_EXPORT_OP: cfg.exportOp ?? 'exportWorkflowGraph'
-                    }
-                }
-            ];
         },
 
         scopeArgs(_uri, networkName) {

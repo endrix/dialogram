@@ -34,7 +34,6 @@ function makeCapability(): any {
             { command: 'layout', description: 'cap-layout', handler: async () => ({ success: true }) }
         ],
         graphContextProvider: vi.fn(async () => 'capability-graph'),
-        stdioMcpServers: vi.fn(() => []),
         postTurnHook: vi.fn(async () => undefined),
         dispose: () => undefined
     };
@@ -58,7 +57,6 @@ describe('assembleChatRuntimeConfig', () => {
         expect(cfg.selectionContext).toBe(selection);
         expect(cfg.slashCommands).toEqual(slash);
         await expect(Promise.resolve(cfg.graphContextProvider!('/f.mlir'))).resolves.toBe('profile-graph');
-        expect(cfg.stdioMcpServers).toBeUndefined();
         expect(cfg.postTurnHook).toBeUndefined();
     });
 

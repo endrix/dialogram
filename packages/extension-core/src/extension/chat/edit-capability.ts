@@ -3,7 +3,7 @@
  * consumes to drive chat around the edit backend — slash commands mapping to
  * real edit-backend ops (with capability
  * gating, optimistic concurrency and diagram refresh), the graph context
- * provider, the stdio MCP descriptors, the keyword view-ops post-turn hook
+ * provider, the in-process MCP tool descriptors, the keyword view-ops post-turn hook
  * and the debounced auto-layout.
  *
  * Commands whose legacy implementation was a stub (validate, analyze, …) are
@@ -16,25 +16,16 @@ import type { WorkflowEditorProvider } from '../diagram/diagram-editor-provider'
 import { getChatSetting } from '../legacy-settings-compat';
 import type { ChatCommandContext, ChatCommandContribution, ChatCommandResult } from './slash-commands';
 
-export interface StdioMcpDescriptor {
-    name: string;
-    command: string;
-    args: string[];
-    env: Array<{ name: string; value: string }>;
-}
-
 export interface EditChatCapabilityDeps {
     profile: DiagramProfile;
     editBackend: DiagramEditBackend;
     getEditorProvider(): WorkflowEditorProvider | undefined;
-    getAssetsPath(): string;
     log(message: string): void;
 }
 
 export interface EditChatCapability {
     slashCommands: ChatCommandContribution[];
     graphContextProvider(file: string): Promise<string | undefined>;
-    stdioMcpServers(file: string): StdioMcpDescriptor[];
     postTurnHook(file: string, text: string): Promise<void>;
     dispose(): void;
 }
@@ -261,24 +252,6 @@ export function createEditChatCapability(deps: EditChatCapabilityDeps): EditChat
             } catch {
                 return undefined;
             }
-        },
-
-        stdioMcpServers(file: string): StdioMcpDescriptor[] {
-            const uri = vscode.Uri.file(file);
-            const networkName = deps.getEditorProvider()?.getRefreshContext(uri)?.networkName ?? undefined;
-            const descriptors = editBackend.mcpServers(uri.toString(), {
-                networkName,
-                assetsPath: deps.getAssetsPath()
-            });
-            if (descriptors.length) {
-                deps.log(`attaching ${profile.key} MCP server for ${file}`);
-            }
-            return descriptors.map(descriptor => ({
-                name: descriptor.name,
-                command: descriptor.command,
-                args: descriptor.args,
-                env: Object.entries(descriptor.env).map(([name, value]) => ({ name, value: String(value) }))
-            }));
         },
 
         /** After a free-text turn: run diagram VIEW ops the prompt asked for. */

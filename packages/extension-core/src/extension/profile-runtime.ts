@@ -34,7 +34,7 @@ export async function activateProfileRuntime(
     }
 
     // Chat activates when the profile carries a chat config; the edit-backed
-    // features (slash ops, graph context, stdio MCP, view-op hook) additionally
+    // features (slash ops, graph context, in-process MCP tools, view-op hook) additionally
     // require an edit backend. Read-only profiles get pass-through chat only.
     let chatRuntime: ChatRuntime | undefined;
     let transport: GlspChatTransport | undefined;
@@ -47,7 +47,6 @@ export async function activateProfileRuntime(
                 profile,
                 editBackend: profile.editBackend,
                 getEditorProvider: () => glsp.editorProvider,
-                getAssetsPath: () => (assetsUri ?? context.extensionUri).fsPath,
                 log: m => log(m)
             });
         }
@@ -105,7 +104,6 @@ export function assembleChatRuntimeConfig(
         // `<ns>.chat.useGlspMcp` per-user setting before advertising it (T6).
         glspMcpEnabled: profile.mcp?.enabled === true,
         mcpServerUrl,
-        stdioMcpServers: capability ? f => capability.stdioMcpServers(f) : undefined,
         slashCommands: [...(capability?.slashCommands ?? []), ...(chat.slashCommands ?? [])],
         postTurnHook: capability ? (f, t) => capability.postTurnHook(f, t) : undefined
     };

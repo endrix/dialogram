@@ -143,7 +143,7 @@ describe('createSidecarDiagramProfile', () => {
         const p = createSidecarDiagramProfile(baseInput());
         const names = (p.chat?.tools ?? []).map((t) => t.name).sort();
         expect(names).toEqual(
-            ['create_task_type', 'list_nodes', 'list_task_types', 'list_workflow_types', 'validate_workflow'].sort()
+            ['get_graph', 'list_nodes', 'list_task_types', 'list_workflow_types', 'validate_workflow'].sort()
         );
         // create_node/connect moved to GLSP-MCP built-ins; they must NOT be in chat.tools.
         expect(names).not.toContain('create_node');

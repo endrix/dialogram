@@ -1,9 +1,8 @@
 /**
  * Sidecar graph-container location + validation-verdict distillation.
  *
- * Extracted so BOTH the standalone stdio MCP server (`sidecar-mcp-server.ts`)
- * and the in-process registry chat tools (`registry-tools.ts`) share one copy
- * of the graph-container probing and validation-summary logic (no duplication).
+ * Used by the in-process registry chat tools (`registry-tools.ts`) for
+ * graph-container probing and validation-summary logic.
  */
 
 /**

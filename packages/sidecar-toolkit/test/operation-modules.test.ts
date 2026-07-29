@@ -8,8 +8,8 @@
 //     `{ operationModules: createSidecarOperationModules(cfg) }` registers the neutral in-core
 //     handlers followed by exactly the pre-SP2c sidecar handler set (class-name snapshot);
 //     `read-only` registers none.
-//  2. End-to-end DI resolution — the real toolkit sidecar DI module resolves every one of the 16
-//     handlers with NO stubbing of `.sidecar`, proving the SIDECAR_RUNTIME_CONFIG →
+//  2. End-to-end DI resolution — the real toolkit sidecar DI module resolves every one of the
+//     sidecar handlers with NO stubbing of `.sidecar`, proving the SIDECAR_RUNTIME_CONFIG →
 //     SidecarRuntimeService → SidecarInvoker → handler chain is intact.
 //  3. CRUD-collapse routing — the collapsed entity-port CRUD handlers resolve the active product's
 //     create/delete operation kinds for BOTH a wfpy-shaped and a calpy-shaped runtime config.
@@ -56,10 +56,12 @@ const EXPECTED_SIDECAR_HANDLER_NAMES = [
     'CutOperationHandler',
     'ReconnectEdgeOperationHandler',
     'RenameEntityOperationHandler',
+    'ApplyLabelEditRenameHandler',
     'UpdateEntityParameterOperationHandler',
     'UpdateEdgeCapacityOperationHandler',
     'UpdateDefinitionAnnotationOperationHandler',
     'UpdateDefinitionParameterOperationHandler',
+    'CreateTaskTypeOperationHandler',
     'CreateBoundaryPortOperationHandler',
     'UpdateEntityPortOperationHandler',
     'EntityPortCrudHandler',

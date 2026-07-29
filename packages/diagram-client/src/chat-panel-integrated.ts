@@ -7,6 +7,7 @@ import { html, render, nothing, TemplateResult } from 'lit';
 import { repeat } from 'lit/directives/repeat.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { renderMarkdownSafe } from './markdown';
+import { shouldStick } from './chat-scroll';
 
 /**
  * Memoized markdown → HTML. The chat template runs `renderMarkdownSafe` for every
@@ -395,6 +396,11 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         this.isLoadingSession = false;
         if (data?.session?.id) {
           this.currentSessionId = data.session.id;
+          // A fresh session starts with an empty transcript — clear whatever the
+          // previous session left on screen so its rows don't leak in. A brand-new
+          // session has no history to replay, so drop the replay guard too.
+          this.clearTimeline();
+          this.suppressReplayStream = false;
           this.loadSessions();
           this.pushMessage('system', `Created session: ${data.session.name ?? data.session.id}`);
         }
@@ -542,7 +548,10 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
    */
   private upsertToolCall(update: any): void {
     const id = update.toolCallId ?? update.id ?? `tc_${this.timeline.length}`;
-    const title = update.title || update.kind || 'tool call';
+    // opencode names the tool on the initial `tool_call`, then emits status-only
+    // `tool_call_update`s that omit the title. Only take a title when one is
+    // present so a later status update can't clobber the name back to generic.
+    const title = update.title || update.kind || undefined;
     const status = update.status as string | undefined;
 
     // A tool call interrupts streamed text — finalize the current row first.
@@ -552,10 +561,10 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       (t): t is ToolItem => t.kind === 'tool' && t.id === id
     );
     if (existing) {
-      existing.title = title;
-      existing.status = status;
+      if (title !== undefined) existing.title = title;
+      if (status !== undefined) existing.status = status;
     } else {
-      this.timeline.push({ kind: 'tool', id, title, status });
+      this.timeline.push({ kind: 'tool', id, title: title ?? 'tool call', status });
     }
     this.update();
     this.autoShow('tool-call');
@@ -1032,8 +1041,33 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       !!this.streamingText ||
       !!this.streamingThinking ||
       this.showTyping ||
-      this.isLoadingSession
+      this.isLoadingSession ||
+      // The empty-state placeholder is content too: it opens the drawer so the
+      // user sees the "create/select a session" prompt on a fresh panel.
+      this.isEmptyState
     );
+  }
+
+  /**
+   * True when no session is selected and there is nothing else to show — the
+   * fresh-panel / just-deleted state that renders the centered placeholder.
+   */
+  private get isEmptyState(): boolean {
+    return (
+      !this.currentSessionId &&
+      this.timeline.length === 0 &&
+      !this.streamingText &&
+      !this.streamingThinking &&
+      !this.showTyping &&
+      !this.isLoadingSession
+    );
+  }
+
+  /** Placeholder copy for the empty state — varies on whether sessions exist. */
+  private get emptyStateText(): string {
+    return this.sessions.length === 0
+      ? 'Create a new session'
+      : 'Select a session or create a new session';
   }
 
   /**
@@ -1060,9 +1094,15 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     // The message drawer slides open only when there is content (and the user
     // hasn't collapsed it); otherwise the card is just header + composer.
     this.panel.classList.toggle('drawer-closed', this.isCompact || !this.hasContent);
+    // Decide BEFORE re-rendering whether to keep the view pinned: only if the
+    // user was already at (or near) the bottom. Once they scroll up to read
+    // earlier content, streaming must not yank them back down.
+    const scroll = this.panel.querySelector('.chat-scroll') as HTMLElement | null;
+    const stick = scroll
+      ? shouldStick(scroll.scrollTop, scroll.scrollHeight, scroll.clientHeight)
+      : true;
     render(this.template(), this.panel);
-    const scroll = this.panel.querySelector('.chat-scroll');
-    if (scroll) scroll.scrollTop = scroll.scrollHeight;
+    if (scroll && stick) scroll.scrollTop = scroll.scrollHeight;
   }
 
   private template(): TemplateResult {
@@ -1070,6 +1110,12 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       <div class="chat-resize-handle" @mousedown=${(e: MouseEvent) => this.startResize(e)}></div>
       ${this.topbarTemplate()}
       <div class="chat-scroll">
+        ${this.isEmptyState
+          ? html`<div class="chat-empty-state">
+              <span class="codicon codicon-comment-discussion"></span>
+              <span>${this.emptyStateText}</span>
+            </div>`
+          : nothing}
         ${this.isLoadingSession
           ? html`<div class="chat-loading-session">
               <span class="codicon codicon-loading codicon-modifier-spin"></span>
@@ -1119,7 +1165,9 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
             if (value && value !== this.currentSessionId) this.loadSession(value);
           }}
         >
-          ${this.sessions.length === 0 ? html`<vscode-option value="">No session</vscode-option>` : nothing}
+          ${!this.currentSessionId
+            ? html`<vscode-option value="" ?selected=${true}>${this.sessions.length === 0 ? 'No session' : 'Select a session'}</vscode-option>`
+            : nothing}
           ${this.sessions.map(
             (s) => html`<vscode-option value=${s.id} ?selected=${s.id === this.currentSessionId}>${s.name}</vscode-option>`
           )}

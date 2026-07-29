@@ -913,4 +913,367 @@ describe('workflow create node handler', () => {
             windowAny.showQuickPick = originalShowQuickPick;
         }
     });
+
+    it('agent-dispatched create-node is non-interactive and derives the instance name', async () => {
+        // Regression: an MCP/agent-originated CreateNodeOperation (args.headless) must NEVER open
+        // the interactive VS Code quick-input the palette drop uses — it runs with no user present.
+        const handler = new CreateNodeOperationHandler();
+        const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-create-node-'));
+        const mainPath = path.join(tempRoot, 'main.py');
+        await fs.writeFile(mainPath, [
+            'from wfpy.core import workflow',
+            '',
+            '@workflow()',
+            'def Main():',
+            '    pass',
+            ''
+        ].join('\n'));
+
+        const workspaceAny = vscode.workspace as any;
+        const windowAny = vscode.window as any;
+        const originalOpenTextDocument = workspaceAny.openTextDocument;
+        const originalApplyEdit = workspaceAny.applyEdit;
+        const originalShowInputBox = windowAny.showInputBox;
+        const originalShowQuickPick = windowAny.showQuickPick;
+        const originalShowErrorMessage = windowAny.showErrorMessage;
+
+        let inputBoxCalls = 0;
+        let quickPickCalls = 0;
+        const errors: string[] = [];
+        let createNodeArgs: any;
+
+        workspaceAny.openTextDocument = async (uri: any) => {
+            const fsPath = uri?.fsPath ?? mainPath;
+            const text = await fs.readFile(fsPath, 'utf-8');
+            return { uri: { fsPath, toString: () => `file://${fsPath}` }, getText: () => text };
+        };
+        workspaceAny.applyEdit = async () => true;
+        windowAny.showInputBox = async () => { inputBoxCalls += 1; return undefined; };
+        windowAny.showQuickPick = async () => { quickPickCalls += 1; return undefined; };
+        windowAny.showErrorMessage = async (message: string) => { errors.push(message); };
+
+        try {
+            (handler as any).modelState = {
+                root: { args: { sourceUri: `file://${mainPath}`, 'wf:workflowName': 'Main' } }
+            };
+            (handler as any).sidecar = wfpySidecar();
+            (handler as any).sendSidecarListDetailed = async () => ({
+                ok: true,
+                response: { status: 'ok', diagnostic: { names: [] } }
+            });
+            (handler as any).sendSidecarOpDetailed = async (_uri: string, payload: any) => {
+                createNodeArgs = payload.args;
+                return { ok: true, response: { status: 'ok', revision: 'r1' } };
+            };
+
+            const command = handler.createCommand({
+                kind: 'createNode',
+                elementTypeId: WorkflowDiagramTypes.NODE_TASK,
+                args: { headless: true, type: 'MyTask' }
+            } as any);
+
+            expect(command).toBeTruthy();
+            await (command as any).execute();
+
+            expect(inputBoxCalls).toBe(0);
+            expect(quickPickCalls).toBe(0);
+            expect(errors).toEqual([]);
+            expect(createNodeArgs?.type).toBe('MyTask');
+            // Derived like the palette default (unique, lower-cased type name), no user typing.
+            expect(createNodeArgs?.name).toBe('mytask');
+        } finally {
+            workspaceAny.openTextDocument = originalOpenTextDocument;
+            workspaceAny.applyEdit = originalApplyEdit;
+            windowAny.showInputBox = originalShowInputBox;
+            windowAny.showQuickPick = originalShowQuickPick;
+            windowAny.showErrorMessage = originalShowErrorMessage;
+            await fs.rm(tempRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('agent-dispatched create-node honors an explicit args.name', async () => {
+        const handler = new CreateNodeOperationHandler();
+        const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-create-node-'));
+        const mainPath = path.join(tempRoot, 'main.py');
+        await fs.writeFile(mainPath, '@workflow()\ndef Main():\n    pass\n');
+
+        const workspaceAny = vscode.workspace as any;
+        const windowAny = vscode.window as any;
+        const originalOpenTextDocument = workspaceAny.openTextDocument;
+        const originalApplyEdit = workspaceAny.applyEdit;
+        const originalShowInputBox = windowAny.showInputBox;
+
+        let inputBoxCalls = 0;
+        let createNodeArgs: any;
+
+        workspaceAny.openTextDocument = async (uri: any) => {
+            const fsPath = uri?.fsPath ?? mainPath;
+            const text = await fs.readFile(fsPath, 'utf-8');
+            return { uri: { fsPath, toString: () => `file://${fsPath}` }, getText: () => text };
+        };
+        workspaceAny.applyEdit = async () => true;
+        windowAny.showInputBox = async () => { inputBoxCalls += 1; return undefined; };
+
+        try {
+            (handler as any).modelState = {
+                root: { args: { sourceUri: `file://${mainPath}`, 'wf:workflowName': 'Main' } }
+            };
+            (handler as any).sidecar = wfpySidecar();
+            (handler as any).sendSidecarListDetailed = async () => ({
+                ok: true,
+                response: { status: 'ok', diagnostic: { names: [] } }
+            });
+            (handler as any).sendSidecarOpDetailed = async (_uri: string, payload: any) => {
+                createNodeArgs = payload.args;
+                return { ok: true, response: { status: 'ok', revision: 'r1' } };
+            };
+
+            const command = handler.createCommand({
+                kind: 'createNode',
+                elementTypeId: WorkflowDiagramTypes.NODE_TASK,
+                args: { headless: true, type: 'MyTask', name: 'customInstance' }
+            } as any);
+
+            expect(command).toBeTruthy();
+            await (command as any).execute();
+
+            expect(inputBoxCalls).toBe(0);
+            expect(createNodeArgs?.name).toBe('customInstance');
+        } finally {
+            workspaceAny.openTextDocument = originalOpenTextDocument;
+            workspaceAny.applyEdit = originalApplyEdit;
+            windowAny.showInputBox = originalShowInputBox;
+            await fs.rm(tempRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('agent-dispatched create-node with no type fails with an actionable error, never prompting', async () => {
+        const handler = new CreateNodeOperationHandler();
+
+        const pyText = '@workflow()\ndef Main():\n    pass\n';
+
+        const workspaceAny = vscode.workspace as any;
+        const windowAny = vscode.window as any;
+        const originalOpenTextDocument = workspaceAny.openTextDocument;
+        const originalApplyEdit = workspaceAny.applyEdit;
+        const originalShowInputBox = windowAny.showInputBox;
+        const originalShowQuickPick = windowAny.showQuickPick;
+        const originalShowErrorMessage = windowAny.showErrorMessage;
+
+        let inputBoxCalls = 0;
+        let quickPickCalls = 0;
+        let createNodeCalls = 0;
+        const errors: string[] = [];
+
+        workspaceAny.openTextDocument = async (_uri: any) => ({
+            uri: { fsPath: '/tmp/agent-ambiguous.py', toString: () => 'file:///tmp/agent-ambiguous.py' },
+            getText: () => pyText
+        });
+        workspaceAny.applyEdit = async () => false;
+        windowAny.showInputBox = async () => { inputBoxCalls += 1; return undefined; };
+        windowAny.showQuickPick = async () => { quickPickCalls += 1; return undefined; };
+        windowAny.showErrorMessage = async (message: string) => { errors.push(message); };
+
+        try {
+            (handler as any).modelState = {
+                root: { args: { sourceUri: 'file:///tmp/agent-ambiguous.py', 'wf:workflowName': 'Main' } }
+            };
+            (handler as any).sidecar = wfpySidecar();
+            (handler as any).sendSidecarOpDetailed = async () => {
+                createNodeCalls += 1;
+                return { ok: true, response: { status: 'ok' } };
+            };
+
+            const command = handler.createCommand({
+                kind: 'createNode',
+                elementTypeId: WorkflowDiagramTypes.NODE_TASK,
+                args: { headless: true }
+            } as any);
+
+            expect(command).toBeTruthy();
+            await (command as any).execute();
+
+            expect(inputBoxCalls).toBe(0);
+            expect(quickPickCalls).toBe(0);
+            expect(createNodeCalls).toBe(0);
+            expect(errors).toHaveLength(1);
+            expect(errors[0]).toContain('args.type');
+        } finally {
+            workspaceAny.openTextDocument = originalOpenTextDocument;
+            workspaceAny.applyEdit = originalApplyEdit;
+            windowAny.showInputBox = originalShowInputBox;
+            windowAny.showQuickPick = originalShowQuickPick;
+            windowAny.showErrorMessage = originalShowErrorMessage;
+        }
+    });
+
+    it('records an actionable rejection (with available type names) on the outcome sink for a headless missing-type create', async () => {
+        // The agent never sees the toast — the sink is the contract. A headless create with no
+        // args.type must record a rejection naming exactly what to pass AND the creatable types.
+        const handler = new CreateNodeOperationHandler();
+        const pyText = '@workflow()\ndef Main():\n    pass\n';
+
+        const workspaceAny = vscode.workspace as any;
+        const windowAny = vscode.window as any;
+        const originalOpenTextDocument = workspaceAny.openTextDocument;
+        const originalApplyEdit = workspaceAny.applyEdit;
+        const originalShowErrorMessage = windowAny.showErrorMessage;
+
+        const rejected: string[] = [];
+        const created: Array<{ name: string; type: string }> = [];
+
+        workspaceAny.openTextDocument = async (_uri: any) => ({
+            uri: { fsPath: '/tmp/agent-missing-type.py', toString: () => 'file:///tmp/agent-missing-type.py' },
+            getText: () => pyText
+        });
+        workspaceAny.applyEdit = async () => false;
+        windowAny.showErrorMessage = async () => {};
+
+        try {
+            (handler as any).modelState = {
+                root: { args: { sourceUri: 'file:///tmp/agent-missing-type.py', 'wf:workflowName': 'Main' } }
+            };
+            (handler as any).sidecar = wfpySidecar();
+            (handler as any).createNodeOutcomeSink = {
+                recordRejected: (message: string) => { rejected.push(message); },
+                recordCreated: (name: string, type: string) => { created.push({ name, type }); }
+            };
+            (handler as any).sendSidecarListDetailed = async () => ({
+                ok: true,
+                response: { status: 'ok', diagnostic: { types: ['Foo', 'Bar'] } }
+            });
+
+            const command = handler.createCommand({
+                kind: 'createNode',
+                elementTypeId: WorkflowDiagramTypes.NODE_TASK,
+                args: { headless: true }
+            } as any);
+
+            expect(command).toBeTruthy();
+            await (command as any).execute();
+
+            expect(created).toEqual([]);
+            expect(rejected).toHaveLength(1);
+            expect(rejected[0]).toContain('args.type');
+            expect(rejected[0]).toContain('Foo');
+            expect(rejected[0]).toContain('Bar');
+        } finally {
+            workspaceAny.openTextDocument = originalOpenTextDocument;
+            workspaceAny.applyEdit = originalApplyEdit;
+            windowAny.showErrorMessage = originalShowErrorMessage;
+        }
+    });
+
+    it('records a created confirmation (name + type) on the outcome sink for a successful headless create', async () => {
+        const handler = new CreateNodeOperationHandler();
+        const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-create-node-sink-'));
+        const mainPath = path.join(tempRoot, 'main.py');
+        await fs.writeFile(mainPath, '@workflow()\ndef Main():\n    pass\n');
+
+        const workspaceAny = vscode.workspace as any;
+        const originalOpenTextDocument = workspaceAny.openTextDocument;
+        const originalApplyEdit = workspaceAny.applyEdit;
+
+        const rejected: string[] = [];
+        const created: Array<{ name: string; type: string }> = [];
+
+        workspaceAny.openTextDocument = async (uri: any) => {
+            const fsPath = uri?.fsPath ?? mainPath;
+            const text = await fs.readFile(fsPath, 'utf-8');
+            return { uri: { fsPath, toString: () => `file://${fsPath}` }, getText: () => text };
+        };
+        workspaceAny.applyEdit = async () => true;
+
+        try {
+            (handler as any).modelState = {
+                root: { args: { sourceUri: `file://${mainPath}`, 'wf:workflowName': 'Main' } }
+            };
+            (handler as any).sidecar = wfpySidecar();
+            (handler as any).createNodeOutcomeSink = {
+                recordRejected: (message: string) => { rejected.push(message); },
+                recordCreated: (name: string, type: string) => { created.push({ name, type }); }
+            };
+            (handler as any).sendSidecarListDetailed = async () => ({
+                ok: true,
+                response: { status: 'ok', diagnostic: { names: [] } }
+            });
+            (handler as any).sendSidecarOpDetailed = async () => ({ ok: true, response: { status: 'ok', revision: 'r1' } });
+
+            const command = handler.createCommand({
+                kind: 'createNode',
+                elementTypeId: WorkflowDiagramTypes.NODE_TASK,
+                args: { headless: true, type: 'BottlenecksReport', name: 'bottlenecks_report' }
+            } as any);
+
+            expect(command).toBeTruthy();
+            await (command as any).execute();
+
+            expect(rejected).toEqual([]);
+            expect(created).toEqual([{ name: 'bottlenecks_report', type: 'BottlenecksReport' }]);
+        } finally {
+            workspaceAny.openTextDocument = originalOpenTextDocument;
+            workspaceAny.applyEdit = originalApplyEdit;
+            await fs.rm(tempRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('records an actionable rejection on the outcome sink for a headless instance-name collision', async () => {
+        // The 4-identical-retries scenario: the derived/explicit name already exists. The agent must
+        // learn to pass a unique args.name, not silently receive a success-shaped "0 created".
+        const handler = new CreateNodeOperationHandler();
+        const pyText = '@workflow()\ndef Main():\n    pass\n';
+
+        const workspaceAny = vscode.workspace as any;
+        const windowAny = vscode.window as any;
+        const originalOpenTextDocument = workspaceAny.openTextDocument;
+        const originalApplyEdit = workspaceAny.applyEdit;
+        const originalShowErrorMessage = windowAny.showErrorMessage;
+
+        const rejected: string[] = [];
+        let createNodeCalls = 0;
+
+        workspaceAny.openTextDocument = async (_uri: any) => ({
+            uri: { fsPath: '/tmp/agent-collision.py', toString: () => 'file:///tmp/agent-collision.py' },
+            getText: () => pyText
+        });
+        workspaceAny.applyEdit = async () => false;
+        windowAny.showErrorMessage = async () => {};
+
+        try {
+            (handler as any).modelState = {
+                root: { args: { sourceUri: 'file:///tmp/agent-collision.py', 'wf:workflowName': 'Main' } }
+            };
+            (handler as any).sidecar = wfpySidecar();
+            (handler as any).createNodeOutcomeSink = {
+                recordRejected: (message: string) => { rejected.push(message); },
+                recordCreated: () => {}
+            };
+            (handler as any).sendSidecarListDetailed = async () => ({
+                ok: true,
+                response: { status: 'ok', diagnostic: { names: ['bottlenecks_report'] } }
+            });
+            (handler as any).sendSidecarOpDetailed = async () => {
+                createNodeCalls += 1;
+                return { ok: true, response: { status: 'ok', revision: 'r1' } };
+            };
+
+            const command = handler.createCommand({
+                kind: 'createNode',
+                elementTypeId: WorkflowDiagramTypes.NODE_TASK,
+                args: { headless: true, type: 'BottlenecksReport', name: 'bottlenecks_report' }
+            } as any);
+
+            expect(command).toBeTruthy();
+            await (command as any).execute();
+
+            expect(createNodeCalls).toBe(0);
+            expect(rejected).toHaveLength(1);
+            expect(rejected[0]).toContain('already exists');
+            expect(rejected[0]).toContain('args.name');
+        } finally {
+            workspaceAny.openTextDocument = originalOpenTextDocument;
+            workspaceAny.applyEdit = originalApplyEdit;
+            windowAny.showErrorMessage = originalShowErrorMessage;
+        }
+    });
 });
