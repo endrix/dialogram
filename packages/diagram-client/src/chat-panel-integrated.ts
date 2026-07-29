@@ -542,7 +542,10 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
    */
   private upsertToolCall(update: any): void {
     const id = update.toolCallId ?? update.id ?? `tc_${this.timeline.length}`;
-    const title = update.title || update.kind || 'tool call';
+    // opencode names the tool on the initial `tool_call`, then emits status-only
+    // `tool_call_update`s that omit the title. Only take a title when one is
+    // present so a later status update can't clobber the name back to generic.
+    const title = update.title || update.kind || undefined;
     const status = update.status as string | undefined;
 
     // A tool call interrupts streamed text — finalize the current row first.
@@ -552,10 +555,10 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       (t): t is ToolItem => t.kind === 'tool' && t.id === id
     );
     if (existing) {
-      existing.title = title;
-      existing.status = status;
+      if (title !== undefined) existing.title = title;
+      if (status !== undefined) existing.status = status;
     } else {
-      this.timeline.push({ kind: 'tool', id, title, status });
+      this.timeline.push({ kind: 'tool', id, title: title ?? 'tool call', status });
     }
     this.update();
     this.autoShow('tool-call');

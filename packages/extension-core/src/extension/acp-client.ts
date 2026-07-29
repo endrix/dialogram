@@ -817,15 +817,19 @@ export class ACPClientService extends EventEmitter {
   /** Upsert a tool-call part (by id) into the in-flight turn's part structure. */
   private recordTurnToolPart(sessionId: string, update: any): void {
     const id = String(update?.toolCallId ?? update?.id ?? `tc_${(this.turnParts.get(sessionId)?.length ?? 0)}`);
-    const title = String(update?.title || update?.kind || 'tool call');
+    // The tool name arrives on the initial tool_call; later status-only updates
+    // omit the title, so only overwrite when a title is actually present (else a
+    // completed/failed update would drop the name back to the generic fallback).
+    const rawTitle = update?.title || update?.kind;
+    const title = rawTitle ? String(rawTitle) : undefined;
     const status = typeof update?.status === 'string' ? update.status : undefined;
     const parts = this.turnParts.get(sessionId) ?? [];
     const existing = parts.find((p): p is Extract<TurnPart, { type: 'tool' }> => p.type === 'tool' && p.id === id);
     if (existing) {
-      existing.title = title;
+      if (title !== undefined) existing.title = title;
       if (status !== undefined) existing.status = status;
     } else {
-      parts.push({ type: 'tool', id, title, status });
+      parts.push({ type: 'tool', id, title: title ?? 'tool call', status });
     }
     this.turnParts.set(sessionId, parts);
   }
