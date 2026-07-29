@@ -651,6 +651,23 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
         }
         super.reportModelLoadingFinished(monitor as any);
     }
+
+    /**
+     * Always clear the "Model loading in progress" status, even when the load fails.
+     *
+     * The base handler starts progress reporting by dispatching a sticky `StatusAction`
+     * (severity INFO) and only clears it (a second `StatusAction`, severity NONE) once the
+     * load has completed. Its own `handleModelLoadingError` ends the progress monitor but
+     * rethrows WITHOUT dispatching that clearing action — so a failed source load leaves the
+     * notification pinned on screen forever. Routing the error through
+     * `reportModelLoadingFinished` (which dispatches the clearing NONE status and ends the
+     * monitor, honouring `suppressNotifications` symmetrically with `reportModelLoading`)
+     * before rethrowing guarantees the notification is disposed on every path.
+     */
+    protected override handleModelLoadingError(error: unknown, monitor?: unknown): void {
+        this.reportModelLoadingFinished(monitor);
+        throw error;
+    }
 }
 
 /**
