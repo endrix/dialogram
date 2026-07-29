@@ -1,6 +1,6 @@
 import { CreateNodeOperation, TriggerNodeCreationAction } from '@eclipse-glsp/protocol';
 import { OperationHandler, MaybePromise, ModelState, Command } from '@eclipse-glsp/server';
-import { inject, injectable } from 'inversify';
+import { inject, injectable, optional } from 'inversify';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
@@ -9,6 +9,7 @@ import { URI } from 'vscode-uri';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
+import { AgentCreateNodeOutcomeSink } from '@dialogram/diagram-server/server/agent-create-node-outcome';
 import { SidecarInvoker, SidecarInvocationResult } from './sidecar-invoker';
 import {
     type PythonDefinition,
@@ -170,6 +171,17 @@ export class CreateNodeOperationHandler extends OperationHandler {
     @inject(SidecarInvoker)
     protected readonly sidecar!: SidecarInvoker;
 
+    /**
+     * Per-session outcome channel for AGENT-dispatched (headless) creates. Optional: bound only in
+     * the MCP-enabled diagram container, absent in the palette/webview flow and in unit tests. When
+     * present, the headless path records its authoritative outcome here so the MCP `create-nodes`
+     * tool can report an honest confirmation / error to the agent (the tool's own model-index diff
+     * can never observe a dialogram create). Never touched on the interactive path.
+     */
+    @inject(AgentCreateNodeOutcomeSink)
+    @optional()
+    protected readonly createNodeOutcomeSink?: AgentCreateNodeOutcomeSink;
+
     getTriggerActions(): TriggerNodeCreationAction[] {
         return this.elementTypeIds.map(elementTypeId => ({
             kind: TriggerNodeCreationAction.KIND,
@@ -262,12 +274,19 @@ export class CreateNodeOperationHandler extends OperationHandler {
                         }
                     });
                     if (!result.ok) {
-                        this.showSidecarFailure(`create ${direction} port '${portName}'`, result);
+                        const failureMessage = this.sidecarFailureMessage(`create ${direction} port '${portName}'`, result);
+                        void vscode.window.showErrorMessage(failureMessage);
+                        if (headless) {
+                            this.createNodeOutcomeSink?.recordRejected(failureMessage);
+                        }
                         return undefined;
                     }
                     const afterText = await readAuthoritativeSourceText(vscodeUri);
                     (command as any)._sourceBeforeText = beforeText;
                     (command as any)._sourceAfterText = afterText;
+                    if (headless) {
+                        this.createNodeOutcomeSink?.recordCreated(portName, `${direction} port`);
+                    }
                     return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];
                 }
 
@@ -284,7 +303,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
                                     : 'task';
                         const typeLabel = this.typeLabelForPicker(requestedKind);
                         if (headless) {
-                            this.showAgentAmbiguity(`create ${typeLabel} node`, `pass args.type with an existing ${typeLabel} name`);
+                            this.failAgent(await this.agentMissingTypeMessage(sourceUri, requestedKind));
                             return undefined;
                         }
                         const listResult = await this.listTypeNamesDetailed(sourceUri, requestedKind);
@@ -384,7 +403,14 @@ export class CreateNodeOperationHandler extends OperationHandler {
                         value: defaultName
                     }))?.trim() || defaultName);
                 if (taken.has(entityName)) {
-                    void vscode.window.showErrorMessage(`Instance '${entityName}' already exists.`);
+                    const base = this.sidecar.createNodeStrings().sidecarDisplayName;
+                    const collisionMessage = headless
+                        ? `${base}: instance '${entityName}' already exists — pass a unique args.name to create another '${finalTypeName}'.`
+                        : `Instance '${entityName}' already exists.`;
+                    void vscode.window.showErrorMessage(collisionMessage);
+                    if (headless) {
+                        this.createNodeOutcomeSink?.recordRejected(collisionMessage);
+                    }
                     return undefined;
                 }
                 const paramsRaw = operation.args?.['params'];
@@ -399,12 +425,19 @@ export class CreateNodeOperationHandler extends OperationHandler {
                     }
                 });
                 if (!result.ok) {
-                    this.showSidecarFailure(`create node '${entityName}'`, result);
+                    const failureMessage = this.sidecarFailureMessage(`create node '${entityName}'`, result);
+                    void vscode.window.showErrorMessage(failureMessage);
+                    if (headless) {
+                        this.createNodeOutcomeSink?.recordRejected(failureMessage);
+                    }
                     return undefined;
                 }
                 const afterText = await readAuthoritativeSourceText(vscodeUri);
                 (command as any)._sourceBeforeText = beforeText;
                 (command as any)._sourceAfterText = afterText;
+                if (headless) {
+                    this.createNodeOutcomeSink?.recordCreated(entityName, finalTypeName);
+                }
                 return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];
             },
         });
@@ -739,15 +772,53 @@ export class CreateNodeOperationHandler extends OperationHandler {
      * the caller exactly which `args.*` to supply (the MCP layer relays tool errors to the agent).
      */
     private showAgentAmbiguity(action: string, hint: string): void {
+        this.failAgent(this.agentAmbiguityMessage(action, hint));
+    }
+
+    private agentAmbiguityMessage(action: string, hint: string): string {
         const base = this.sidecar.createNodeStrings().sidecarDisplayName;
-        void vscode.window.showErrorMessage(`${base}: cannot ${action} without a required value — ${hint}.`);
+        return `${base}: cannot ${action} without a required value — ${hint}.`;
+    }
+
+    /**
+     * Surface an agent-facing rejection for a headless create: toast it for user visibility AND
+     * record it on the outcome sink so the MCP tool relays `isError:true` with this exact message
+     * to the agent (the toast alone is invisible to the agent).
+     */
+    private failAgent(message: string): void {
+        void vscode.window.showErrorMessage(message);
+        this.createNodeOutcomeSink?.recordRejected(message);
+    }
+
+    /**
+     * Build the actionable "missing type" rejection, enriched with the concrete type names the
+     * agent may pass. Listing is best-effort: any failure falls back to the base hint so a broken
+     * sidecar never turns an actionable rejection into a thrown error.
+     */
+    private async agentMissingTypeMessage(sourceUri: string, requestedKind: WorkflowTypeKind): Promise<string> {
+        const typeLabel = this.typeLabelForPicker(requestedKind);
+        const base = this.agentAmbiguityMessage(`create ${typeLabel} node`, `pass args.type with an existing ${typeLabel} name`);
+        try {
+            const listResult = await this.listTypeNamesDetailed(sourceUri, requestedKind);
+            const values = listResult.response?.diagnostic?.['types'];
+            if (Array.isArray(values) && values.length > 0 && values.every((value: unknown) => typeof value === 'string')) {
+                return `${base} Available ${typeLabel} types: ${values.join(', ')}.`;
+            }
+        } catch {
+            // Fall back to the base hint below — an unlistable sidecar must not throw here.
+        }
+        return base;
     }
 
     private showSidecarFailure(action: string, result: SidecarInvocationResult): void {
+        void vscode.window.showErrorMessage(this.sidecarFailureMessage(action, result));
+    }
+
+    private sidecarFailureMessage(action: string, result: SidecarInvocationResult): string {
         const detail = result.code ? ` (${result.code})` : '';
         const base = this.sidecar.createNodeStrings().sidecarDisplayName;
         const message = result.message?.trim() || `Operation failed while trying to ${action}.`;
-        void vscode.window.showErrorMessage(`${base} failed to ${action}${detail}: ${message}`);
+        return `${base} failed to ${action}${detail}: ${message}`;
     }
 
     private uniqueInstanceName(base: string, taken: Set<string>): string {

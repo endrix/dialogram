@@ -155,12 +155,17 @@ describe('agent-dispatch tool handlers raise the auto-layout signal', () => {
         return () => { proto.createResult = original; };
     }
 
-    it('create-nodes override marks pending after delegating to the built-in create', async () => {
+    it('create-nodes override marks pending only when a create actually landed', async () => {
         const restore = stubSuperCreateResult(CreateNodesMcpToolHandler);
         try {
             const handler = new AgentDispatchCreateNodesMcpToolHandler();
             let marked = 0;
             (handler as any).agentSignal = { markPending: () => { marked += 1; } };
+            // The operation handler recorded one successful create on the shared sink.
+            (handler as any).outcomeSink = {
+                reset: () => {},
+                take: () => [{ kind: 'created', name: 'mytask', type: 'MyTask' }]
+            };
             await (handler as any).createResult({ sessionId: 's', nodes: [{ elementTypeId: 'node:task', position: { x: 0, y: 0 } }] });
             expect(marked).toBe(1);
         } finally {
@@ -180,6 +185,85 @@ describe('agent-dispatch tool handlers raise the auto-layout signal', () => {
 
             await (handler as any).createResult({ sessionId: 's', edges: [] });
             expect(marked).toBe(1);
+        } finally {
+            restore();
+        }
+    });
+});
+
+describe('AgentDispatchCreateNodesMcpToolHandler (honest agent-facing result)', () => {
+    /** Stub the inherited built-in create loop so no real dispatch is needed; the sink stands in
+     * for what the operation handler would have recorded during that dispatch. */
+    function stubSuper(): () => void {
+        const proto = CreateNodesMcpToolHandler.prototype as unknown as {
+            createResult: (input: unknown) => Promise<unknown>;
+        };
+        const original = proto.createResult;
+        proto.createResult = async () => ({ isError: false, content: [{ type: 'text', text: 'Successfully created 0 node(s)' }] });
+        return () => { proto.createResult = original; };
+    }
+
+    function fakeSink(outcomes: unknown[]) {
+        return { reset: () => {}, take: () => outcomes };
+    }
+
+    function makeHandler(outcomes: unknown[]) {
+        const handler = new AgentDispatchCreateNodesMcpToolHandler();
+        let marked = 0;
+        (handler as any).agentSignal = { markPending: () => { marked += 1; } };
+        (handler as any).outcomeSink = fakeSink(outcomes);
+        return { handler, marks: () => marked };
+    }
+
+    const input = { sessionId: 's', nodes: [{ elementTypeId: 'node:task', position: { x: 0, y: 0 }, args: { type: 'MyTask' } }] };
+
+    it('drops the output schema so a text-only success result is valid at the SDK boundary', () => {
+        // With CreateNodesOutputSchema still declared, a success result with no structuredContent
+        // throws in the SDK. The override returns authoritative text, so the schema must be absent.
+        expect(new AgentDispatchCreateNodesMcpToolHandler().outputSchema).toBeUndefined();
+    });
+
+    it('returns a readable confirmation (id + name) on a successful headless create', async () => {
+        const restore = stubSuper();
+        try {
+            const { handler, marks } = makeHandler([{ kind: 'created', name: 'bottlenecks_report', type: 'BottlenecksReport' }]);
+            const result = await (handler as any).createResult(input);
+            expect(result.isError).toBeFalsy();
+            const text = result.content.map((c: any) => c.text).join('\n');
+            expect(text).toContain('bottlenecks_report');
+            expect(text).toContain('BottlenecksReport');
+            expect(marks()).toBe(1);
+        } finally {
+            restore();
+        }
+    });
+
+    it('returns an MCP tool error carrying the actionable message on a headless rejection', async () => {
+        const restore = stubSuper();
+        try {
+            const { handler, marks } = makeHandler([
+                { kind: 'rejected', message: "Workflow sidecar: cannot create task node without a required value — pass args.type with an existing task name. Available task types: Foo, Bar." }
+            ]);
+            const result = await (handler as any).createResult(input);
+            // The failure marker the agent needs — NOT a success-shaped "0 created".
+            expect(result.isError).toBe(true);
+            const text = result.content.map((c: any) => c.text).join('\n');
+            expect(text).toContain('args.type');
+            expect(text).toContain('Available task types: Foo, Bar');
+            // A pure rejection changed nothing on disk — no auto-layout owed.
+            expect(marks()).toBe(0);
+        } finally {
+            restore();
+        }
+    });
+
+    it('falls back to the built-in result when the sink recorded nothing', async () => {
+        const restore = stubSuper();
+        try {
+            const { handler, marks } = makeHandler([]);
+            const result = await (handler as any).createResult(input);
+            expect(result.isError).toBeFalsy();
+            expect(marks()).toBe(0);
         } finally {
             restore();
         }

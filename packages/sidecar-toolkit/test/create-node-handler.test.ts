@@ -1106,4 +1106,174 @@ describe('workflow create node handler', () => {
             windowAny.showErrorMessage = originalShowErrorMessage;
         }
     });
+
+    it('records an actionable rejection (with available type names) on the outcome sink for a headless missing-type create', async () => {
+        // The agent never sees the toast — the sink is the contract. A headless create with no
+        // args.type must record a rejection naming exactly what to pass AND the creatable types.
+        const handler = new CreateNodeOperationHandler();
+        const pyText = '@workflow()\ndef Main():\n    pass\n';
+
+        const workspaceAny = vscode.workspace as any;
+        const windowAny = vscode.window as any;
+        const originalOpenTextDocument = workspaceAny.openTextDocument;
+        const originalApplyEdit = workspaceAny.applyEdit;
+        const originalShowErrorMessage = windowAny.showErrorMessage;
+
+        const rejected: string[] = [];
+        const created: Array<{ name: string; type: string }> = [];
+
+        workspaceAny.openTextDocument = async (_uri: any) => ({
+            uri: { fsPath: '/tmp/agent-missing-type.py', toString: () => 'file:///tmp/agent-missing-type.py' },
+            getText: () => pyText
+        });
+        workspaceAny.applyEdit = async () => false;
+        windowAny.showErrorMessage = async () => {};
+
+        try {
+            (handler as any).modelState = {
+                root: { args: { sourceUri: 'file:///tmp/agent-missing-type.py', 'wf:workflowName': 'Main' } }
+            };
+            (handler as any).sidecar = wfpySidecar();
+            (handler as any).createNodeOutcomeSink = {
+                recordRejected: (message: string) => { rejected.push(message); },
+                recordCreated: (name: string, type: string) => { created.push({ name, type }); }
+            };
+            (handler as any).sendSidecarListDetailed = async () => ({
+                ok: true,
+                response: { status: 'ok', diagnostic: { types: ['Foo', 'Bar'] } }
+            });
+
+            const command = handler.createCommand({
+                kind: 'createNode',
+                elementTypeId: WorkflowDiagramTypes.NODE_TASK,
+                args: { headless: true }
+            } as any);
+
+            expect(command).toBeTruthy();
+            await (command as any).execute();
+
+            expect(created).toEqual([]);
+            expect(rejected).toHaveLength(1);
+            expect(rejected[0]).toContain('args.type');
+            expect(rejected[0]).toContain('Foo');
+            expect(rejected[0]).toContain('Bar');
+        } finally {
+            workspaceAny.openTextDocument = originalOpenTextDocument;
+            workspaceAny.applyEdit = originalApplyEdit;
+            windowAny.showErrorMessage = originalShowErrorMessage;
+        }
+    });
+
+    it('records a created confirmation (name + type) on the outcome sink for a successful headless create', async () => {
+        const handler = new CreateNodeOperationHandler();
+        const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-create-node-sink-'));
+        const mainPath = path.join(tempRoot, 'main.py');
+        await fs.writeFile(mainPath, '@workflow()\ndef Main():\n    pass\n');
+
+        const workspaceAny = vscode.workspace as any;
+        const originalOpenTextDocument = workspaceAny.openTextDocument;
+        const originalApplyEdit = workspaceAny.applyEdit;
+
+        const rejected: string[] = [];
+        const created: Array<{ name: string; type: string }> = [];
+
+        workspaceAny.openTextDocument = async (uri: any) => {
+            const fsPath = uri?.fsPath ?? mainPath;
+            const text = await fs.readFile(fsPath, 'utf-8');
+            return { uri: { fsPath, toString: () => `file://${fsPath}` }, getText: () => text };
+        };
+        workspaceAny.applyEdit = async () => true;
+
+        try {
+            (handler as any).modelState = {
+                root: { args: { sourceUri: `file://${mainPath}`, 'wf:workflowName': 'Main' } }
+            };
+            (handler as any).sidecar = wfpySidecar();
+            (handler as any).createNodeOutcomeSink = {
+                recordRejected: (message: string) => { rejected.push(message); },
+                recordCreated: (name: string, type: string) => { created.push({ name, type }); }
+            };
+            (handler as any).sendSidecarListDetailed = async () => ({
+                ok: true,
+                response: { status: 'ok', diagnostic: { names: [] } }
+            });
+            (handler as any).sendSidecarOpDetailed = async () => ({ ok: true, response: { status: 'ok', revision: 'r1' } });
+
+            const command = handler.createCommand({
+                kind: 'createNode',
+                elementTypeId: WorkflowDiagramTypes.NODE_TASK,
+                args: { headless: true, type: 'BottlenecksReport', name: 'bottlenecks_report' }
+            } as any);
+
+            expect(command).toBeTruthy();
+            await (command as any).execute();
+
+            expect(rejected).toEqual([]);
+            expect(created).toEqual([{ name: 'bottlenecks_report', type: 'BottlenecksReport' }]);
+        } finally {
+            workspaceAny.openTextDocument = originalOpenTextDocument;
+            workspaceAny.applyEdit = originalApplyEdit;
+            await fs.rm(tempRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('records an actionable rejection on the outcome sink for a headless instance-name collision', async () => {
+        // The 4-identical-retries scenario: the derived/explicit name already exists. The agent must
+        // learn to pass a unique args.name, not silently receive a success-shaped "0 created".
+        const handler = new CreateNodeOperationHandler();
+        const pyText = '@workflow()\ndef Main():\n    pass\n';
+
+        const workspaceAny = vscode.workspace as any;
+        const windowAny = vscode.window as any;
+        const originalOpenTextDocument = workspaceAny.openTextDocument;
+        const originalApplyEdit = workspaceAny.applyEdit;
+        const originalShowErrorMessage = windowAny.showErrorMessage;
+
+        const rejected: string[] = [];
+        let createNodeCalls = 0;
+
+        workspaceAny.openTextDocument = async (_uri: any) => ({
+            uri: { fsPath: '/tmp/agent-collision.py', toString: () => 'file:///tmp/agent-collision.py' },
+            getText: () => pyText
+        });
+        workspaceAny.applyEdit = async () => false;
+        windowAny.showErrorMessage = async () => {};
+
+        try {
+            (handler as any).modelState = {
+                root: { args: { sourceUri: 'file:///tmp/agent-collision.py', 'wf:workflowName': 'Main' } }
+            };
+            (handler as any).sidecar = wfpySidecar();
+            (handler as any).createNodeOutcomeSink = {
+                recordRejected: (message: string) => { rejected.push(message); },
+                recordCreated: () => {}
+            };
+            (handler as any).sendSidecarListDetailed = async () => ({
+                ok: true,
+                response: { status: 'ok', diagnostic: { names: ['bottlenecks_report'] } }
+            });
+            (handler as any).sendSidecarOpDetailed = async () => {
+                createNodeCalls += 1;
+                return { ok: true, response: { status: 'ok', revision: 'r1' } };
+            };
+
+            const command = handler.createCommand({
+                kind: 'createNode',
+                elementTypeId: WorkflowDiagramTypes.NODE_TASK,
+                args: { headless: true, type: 'BottlenecksReport', name: 'bottlenecks_report' }
+            } as any);
+
+            expect(command).toBeTruthy();
+            await (command as any).execute();
+
+            expect(createNodeCalls).toBe(0);
+            expect(rejected).toHaveLength(1);
+            expect(rejected[0]).toContain('already exists');
+            expect(rejected[0]).toContain('args.name');
+        } finally {
+            workspaceAny.openTextDocument = originalOpenTextDocument;
+            workspaceAny.applyEdit = originalApplyEdit;
+            windowAny.showErrorMessage = originalShowErrorMessage;
+        }
+    });
 });

@@ -24,6 +24,12 @@ import {
     type McpToolResult
 } from '@eclipse-glsp/server-mcp';
 import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
+import {
+    AgentCreateNodeOutcomeSink,
+    type AgentCreateNodeOutcome,
+    type CreatedNodeOutcome,
+    type RejectedNodeOutcome
+} from './agent-create-node-outcome';
 
 /** Marker folded into every dispatched node's `args`; the operation handler branches on it. */
 const HEADLESS_ARG = 'headless';
@@ -34,6 +40,10 @@ export class AgentDispatchCreateNodesMcpToolHandler extends CreateNodesMcpToolHa
     @optional()
     protected agentSignal?: AgentStructuralEditSignal;
 
+    @inject(AgentCreateNodeOutcomeSink)
+    @optional()
+    protected outcomeSink?: AgentCreateNodeOutcomeSink;
+
     override readonly description =
         'Create one or multiple new nodes in the diagram at the specified positions. ' +
         'Call `query-elements` (or `count-elements`) first to avoid overlap. Each node needs an ' +
@@ -43,16 +53,61 @@ export class AgentDispatchCreateNodesMcpToolHandler extends CreateNodesMcpToolHa
         'if a required value is missing the call fails with a message naming exactly what to pass. ' +
         'This operation modifies the source and is undoable via the editor.';
 
+    // The stock handler declares CreateNodesOutputSchema and derives `createdNodes` from a
+    // post-dispatch `modelState.index` diff. In dialogram that diff can never see a create (the
+    // model re-sources on a later reload), so the structured payload would always be empty/false.
+    // We drop the output schema and return an authoritative TEXT result sourced from the operation
+    // handler via {@link AgentCreateNodeOutcomeSink} instead — no fabricated structured content.
+    override readonly outputSchema = undefined;
+
     protected override async createResult(input: CreateNodesInput): Promise<McpToolResult> {
         // Immutably restamp each node so the dispatched operation carries the headless marker.
         const nodes = input.nodes.map((node) => ({
             ...node,
             args: { ...(node.args ?? {}), [HEADLESS_ARG]: true }
         }));
-        const result = await super.createResult({ ...input, nodes });
-        // Structural edit: request an auto-layout on the next reload so the new node is not
-        // left parked at its default position (palette/webview creation never runs this path).
-        this.agentSignal?.markPending();
-        return result;
+
+        // Clear any stale outcome, dispatch through the built-in create loop (which the operation
+        // handler services by rewriting source and recording the outcome), then read it back.
+        this.outcomeSink?.reset();
+        const fallback = await super.createResult({ ...input, nodes });
+        const outcomes = this.outcomeSink?.take() ?? [];
+
+        const created = outcomes.filter(isCreated);
+        const rejected = outcomes.filter(isRejected);
+
+        // No authoritative signal (sink unbound, or a non-headless path that never records) — defer
+        // to the built-in result rather than inventing one.
+        if (created.length === 0 && rejected.length === 0) {
+            return fallback;
+        }
+
+        // Only request an auto-layout when a create actually landed on disk — a pure rejection
+        // changed nothing, so relaying out would be wrong.
+        if (created.length > 0) {
+            this.agentSignal?.markPending();
+        }
+
+        // Any rejection makes the whole call a hard failure (`isError:true`): the agent MUST see the
+        // actionable message rather than a success-shaped "0 created". Created nodes (partial batch)
+        // are echoed first so the agent knows what already landed.
+        if (rejected.length > 0) {
+            const lines = [
+                ...created.map((outcome) => `Created ${outcome.type} '${outcome.name}'.`),
+                ...rejected.map((outcome) => outcome.message)
+            ];
+            return this.error(lines.join('\n'));
+        }
+
+        const summary = created.map((outcome) => `- ${outcome.type} '${outcome.name}' (#${outcome.name})`).join('\n');
+        return this.success(`Successfully created ${created.length} node(s):\n${summary}`);
     }
+}
+
+function isCreated(outcome: AgentCreateNodeOutcome): outcome is CreatedNodeOutcome {
+    return outcome.kind === 'created';
+}
+
+function isRejected(outcome: AgentCreateNodeOutcome): outcome is RejectedNodeOutcome {
+    return outcome.kind === 'rejected';
 }
