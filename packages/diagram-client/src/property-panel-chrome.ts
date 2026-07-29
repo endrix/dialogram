@@ -9,7 +9,59 @@
  * node when nothing is explicitly selected). The owning panel reads `pinned` /
  * `floatingMode`, sets `lastSelectedElement`, and calls `show()` /
  * `positionPanelNearElement()` from its selection flow.
+ *
+ * All product-specific strings (DOM ids, storage keys, CSS var, body class,
+ * header selector) are injected via {@link PropertyPanelChromeConfig}. The
+ * default config reproduces the stock workflow strings verbatim, so the stock
+ * PropertyPanel constructs the chrome with no arguments and behaves identically.
+ * A consumer with a different DOM id set (e.g. mlir's `mlir-*`) passes its own
+ * config and reuses this exact behavior.
  */
+
+/** Injectable id/key/selector set for {@link PropertyPanelChrome}. */
+export interface PropertyPanelChromeConfig {
+    /** Id of the panel root element. */
+    readonly panelId: string;
+    /** Id of the close button inside the panel header. */
+    readonly closeBtnId: string;
+    /** Id of the pin button inside the panel header. */
+    readonly pinBtnId: string;
+    /** Id of the float-mode button (optional in the DOM; wiring is null-guarded). */
+    readonly floatBtnId: string;
+    /** Id of the external floating toggle button. */
+    readonly toggleBtnId: string;
+    /** CSS selector for the draggable panel header (floating mode). */
+    readonly headerSelector: string;
+    /** Body class toggled when the docked panel reserves viewport space. */
+    readonly visibleBodyClass: string;
+    /** CSS custom property that carries the current docked panel width. */
+    readonly panelWidthCssVar: string;
+    /** localStorage key for the persisted docked panel width (px). */
+    readonly panelWidthStorageKey: string;
+    /** localStorage key for the persisted floating-mode preference. */
+    readonly floatingModeStorageKey: string;
+    /** Minimum docked panel width, px. */
+    readonly panelMinWidthPx: number;
+    /** Maximum docked panel width as a fraction of the viewport width. */
+    readonly panelMaxWidthRatio: number;
+}
+
+/** Stock workflow chrome strings — the historical `private static readonly` values verbatim. */
+export const DEFAULT_PROPERTY_PANEL_CHROME_CONFIG: PropertyPanelChromeConfig = {
+    panelId: 'property-panel',
+    closeBtnId: 'btn-close-properties',
+    pinBtnId: 'btn-pin-properties',
+    floatBtnId: 'btn-float-properties',
+    toggleBtnId: 'btn-toggle-properties',
+    headerSelector: '.property-panel-header',
+    visibleBodyClass: 'workflow-properties-visible',
+    panelWidthCssVar: '--workflow-property-panel-width',
+    panelWidthStorageKey: 'workflow.diagram.propertyPanel.widthPx',
+    floatingModeStorageKey: 'workflow.diagram.propertyPanel.floatingMode',
+    panelMinWidthPx: 280,
+    panelMaxWidthRatio: 0.6
+};
+
 export class PropertyPanelChrome {
     /** Pinned: panel stays visible across selection changes (auto-shown on select). */
     pinned = false;
@@ -26,36 +78,39 @@ export class PropertyPanelChrome {
     private panelResizeRaf: number | undefined;
     private lastSyncedPanelWidthPx: number | undefined;
 
-    private static readonly VISIBLE_BODY_CLASS = 'workflow-properties-visible';
-    private static readonly PANEL_WIDTH_CSS_VAR = '--workflow-property-panel-width';
-    private static readonly PANEL_WIDTH_STORAGE_KEY = 'workflow.diagram.propertyPanel.widthPx';
-    private static readonly FLOATING_MODE_STORAGE_KEY = 'workflow.diagram.propertyPanel.floatingMode';
-    private static readonly PANEL_MIN_WIDTH_PX = 280;
-    private static readonly PANEL_MAX_WIDTH_RATIO = 0.6;
+    private readonly cfg: PropertyPanelChromeConfig;
 
-    /** @param getFallbackNodeId active node id when no element is explicitly selected. */
-    constructor(private readonly getFallbackNodeId: () => string | undefined) {}
+    /**
+     * @param getFallbackNodeId active node id when no element is explicitly selected.
+     * @param config product id/key/selector set; defaults to the stock workflow strings.
+     */
+    constructor(
+        private readonly getFallbackNodeId: () => string | undefined,
+        config: PropertyPanelChromeConfig = DEFAULT_PROPERTY_PANEL_CHROME_CONFIG
+    ) {
+        this.cfg = config;
+    }
 
     initialize(): void {
         this.initializePanelResize();
         this.initializeFloatingMode();
 
-        const closeBtn = document.getElementById('btn-close-properties');
+        const closeBtn = document.getElementById(this.cfg.closeBtnId);
         if (closeBtn) {
             closeBtn.addEventListener('click', () => this.hide());
         }
 
-        const pinBtn = document.getElementById('btn-pin-properties');
+        const pinBtn = document.getElementById(this.cfg.pinBtnId);
         if (pinBtn) {
             pinBtn.addEventListener('click', () => this.togglePinned());
         }
 
-        const floatBtn = document.getElementById('btn-float-properties');
+        const floatBtn = document.getElementById(this.cfg.floatBtnId);
         if (floatBtn) {
             floatBtn.addEventListener('click', () => this.toggleFloatingMode());
         }
 
-        const toggleBtn = document.getElementById('btn-toggle-properties');
+        const toggleBtn = document.getElementById(this.cfg.toggleBtnId);
         if (toggleBtn) {
             toggleBtn.addEventListener('click', () => this.toggle());
         }
@@ -78,7 +133,7 @@ export class PropertyPanelChrome {
     // ── Docked resize + width persistence ───────────────────────────────
 
     private initializePanelResize(): void {
-        const panel = document.getElementById('property-panel');
+        const panel = document.getElementById(this.cfg.panelId);
         if (!panel) {
             return;
         }
@@ -108,7 +163,7 @@ export class PropertyPanelChrome {
 
     private readStoredPanelWidthPx(): number | undefined {
         try {
-            const raw = window.localStorage.getItem(PropertyPanelChrome.PANEL_WIDTH_STORAGE_KEY);
+            const raw = window.localStorage.getItem(this.cfg.panelWidthStorageKey);
             if (!raw) {
                 return undefined;
             }
@@ -120,8 +175,8 @@ export class PropertyPanelChrome {
     }
 
     private clampPanelWidthPx(rawWidthPx: number): number {
-        const minWidth = PropertyPanelChrome.PANEL_MIN_WIDTH_PX;
-        const maxByViewport = Math.max(minWidth, Math.floor(window.innerWidth * PropertyPanelChrome.PANEL_MAX_WIDTH_RATIO));
+        const minWidth = this.cfg.panelMinWidthPx;
+        const maxByViewport = Math.max(minWidth, Math.floor(window.innerWidth * this.cfg.panelMaxWidthRatio));
         return Math.max(minWidth, Math.min(maxByViewport, Math.round(rawWidthPx)));
     }
 
@@ -130,7 +185,7 @@ export class PropertyPanelChrome {
             return;
         }
 
-        const panel = document.getElementById('property-panel');
+        const panel = document.getElementById(this.cfg.panelId);
         if (!panel) {
             return;
         }
@@ -144,11 +199,11 @@ export class PropertyPanelChrome {
         const widthCss = `${clampedWidthPx}px`;
 
         panel.style.width = widthCss;
-        document.documentElement.style.setProperty(PropertyPanelChrome.PANEL_WIDTH_CSS_VAR, widthCss);
+        document.documentElement.style.setProperty(this.cfg.panelWidthCssVar, widthCss);
 
         if (persist) {
             try {
-                window.localStorage.setItem(PropertyPanelChrome.PANEL_WIDTH_STORAGE_KEY, String(clampedWidthPx));
+                window.localStorage.setItem(this.cfg.panelWidthStorageKey, String(clampedWidthPx));
             } catch {
                 // Ignore storage failures in restricted environments.
             }
@@ -170,7 +225,7 @@ export class PropertyPanelChrome {
     // ── Show / hide / pin ───────────────────────────────────────────────
 
     show(): void {
-        const panel = document.getElementById('property-panel');
+        const panel = document.getElementById(this.cfg.panelId);
         if (panel) {
             panel.classList.remove('collapsed');
         }
@@ -178,11 +233,11 @@ export class PropertyPanelChrome {
     }
 
     hide(): void {
-        const panel = document.getElementById('property-panel');
+        const panel = document.getElementById(this.cfg.panelId);
         // Option A: closing the panel also unpins it.
         this.pinned = false;
 
-        const pinBtn = document.getElementById('btn-pin-properties');
+        const pinBtn = document.getElementById(this.cfg.pinBtnId);
         if (pinBtn) {
             pinBtn.classList.remove('pinned');
             pinBtn.title = 'Pin panel (keeps visible)';
@@ -197,7 +252,7 @@ export class PropertyPanelChrome {
     }
 
     toggle(): void {
-        const panel = document.getElementById('property-panel');
+        const panel = document.getElementById(this.cfg.panelId);
         if (panel) {
             const isCollapsed = panel.classList.toggle('collapsed');
             this.updateToggleButtonState(!isCollapsed);
@@ -206,8 +261,8 @@ export class PropertyPanelChrome {
 
     private togglePinned(): void {
         this.pinned = !this.pinned;
-        const pinBtn = document.getElementById('btn-pin-properties');
-        const panel = document.getElementById('property-panel');
+        const pinBtn = document.getElementById(this.cfg.pinBtnId);
+        const panel = document.getElementById(this.cfg.panelId);
         if (pinBtn) {
             pinBtn.classList.toggle('pinned', this.pinned);
             pinBtn.title = this.pinned ? 'Unpin panel (auto-updates on selection)' : 'Pin panel (keeps visible)';
@@ -221,7 +276,7 @@ export class PropertyPanelChrome {
     }
 
     private updateToggleButtonState(isVisible: boolean): void {
-        const toggleBtn = document.getElementById('btn-toggle-properties');
+        const toggleBtn = document.getElementById(this.cfg.toggleBtnId);
         if (toggleBtn) {
             toggleBtn.classList.toggle('active', isVisible);
             toggleBtn.title = isVisible ? 'Hide Properties' : 'Show Properties';
@@ -232,11 +287,11 @@ export class PropertyPanelChrome {
     }
 
     private syncViewportLayoutFromDom(): void {
-        const panel = document.getElementById('property-panel');
+        const panel = document.getElementById(this.cfg.panelId);
         const isVisible = !!panel && !panel.classList.contains('collapsed');
         // In floating mode the panel doesn't push the canvas.
         const reserveSpace = isVisible && !this.floatingMode;
-        document.body.classList.toggle(PropertyPanelChrome.VISIBLE_BODY_CLASS, reserveSpace);
+        document.body.classList.toggle(this.cfg.visibleBodyClass, reserveSpace);
 
         // Force sprotty to recompute canvas bounds.
         // A microtask/RAF avoids measuring mid-transition.
@@ -248,10 +303,10 @@ export class PropertyPanelChrome {
     private initializeFloatingMode(): void {
         // Restore persisted floating state
         try {
-            const stored = window.localStorage.getItem(PropertyPanelChrome.FLOATING_MODE_STORAGE_KEY);
+            const stored = window.localStorage.getItem(this.cfg.floatingModeStorageKey);
             if (stored === 'true') {
                 this.floatingMode = true;
-                const panel = document.getElementById('property-panel');
+                const panel = document.getElementById(this.cfg.panelId);
                 if (panel) {
                     panel.classList.add('floating');
                 }
@@ -265,7 +320,7 @@ export class PropertyPanelChrome {
 
     private toggleFloatingMode(): void {
         this.floatingMode = !this.floatingMode;
-        const panel = document.getElementById('property-panel');
+        const panel = document.getElementById(this.cfg.panelId);
         if (panel) {
             panel.classList.toggle('floating', this.floatingMode);
             if (this.floatingMode) {
@@ -290,12 +345,12 @@ export class PropertyPanelChrome {
 
         // Persist preference
         try {
-            window.localStorage.setItem(PropertyPanelChrome.FLOATING_MODE_STORAGE_KEY, String(this.floatingMode));
+            window.localStorage.setItem(this.cfg.floatingModeStorageKey, String(this.floatingMode));
         } catch { /* ignore */ }
     }
 
     private updateFloatButtonState(): void {
-        const btn = document.getElementById('btn-float-properties');
+        const btn = document.getElementById(this.cfg.floatBtnId);
         if (!btn) return;
         btn.classList.toggle('active', this.floatingMode);
         btn.title = this.floatingMode ? 'Dock panel to left edge' : 'Float panel near node';
@@ -351,7 +406,7 @@ export class PropertyPanelChrome {
 
     /** Make floating panel draggable by its header. */
     private initializePanelDrag(): void {
-        const header = document.querySelector('.property-panel-header') as HTMLElement | null;
+        const header = document.querySelector(this.cfg.headerSelector) as HTMLElement | null;
         if (!header) return;
 
         header.addEventListener('mousedown', (e: MouseEvent) => {
@@ -359,7 +414,7 @@ export class PropertyPanelChrome {
             // Ignore clicks on buttons inside the header.
             if ((e.target as HTMLElement).closest('button')) return;
 
-            const panel = document.getElementById('property-panel');
+            const panel = document.getElementById(this.cfg.panelId);
             if (!panel) return;
 
             e.preventDefault();
