@@ -95,3 +95,28 @@ describe('consumer-path proof — in-process composition + registration', () => 
         expect(custom?.view).toBe('CustomDemoNodeView');
     });
 });
+
+/**
+ * Reuse-boundary guard (D2): the neutral property-panel toolkit resolves from the
+ * package entry and is the expected kind, while the domain-coupled content class
+ * (`PropertyPanel`) stays unexported — mirroring `WorkflowDiagramStarter`.
+ */
+describe('property-panel library surface — package entry exports', () => {
+    it('exports the reusable chrome + field toolkit as the expected kinds', async () => {
+        const entry = await import('../src/index');
+        expect(typeof entry.PropertyPanelChrome).toBe('function'); // class
+        expect(entry.DEFAULT_PROPERTY_PANEL_CHROME_CONFIG.panelId).toBe('property-panel');
+        expect(typeof entry.ppField).toBe('function');
+        expect(typeof entry.ppNumberField).toBe('function');
+        expect(typeof entry.ppReadonlyRow).toBe('function');
+        expect(typeof entry.renderInto).toBe('function');
+        expect(typeof entry.readStringArg).toBe('function');
+        expect(typeof entry.readNumberArg).toBe('function');
+        expect(typeof entry.readBoolArg).toBe('function');
+    });
+
+    it('does NOT export the domain-coupled PropertyPanel content class', async () => {
+        const entry = await import('../src/index');
+        expect((entry as Record<string, unknown>).PropertyPanel).toBeUndefined();
+    });
+});
