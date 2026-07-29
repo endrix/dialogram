@@ -18,6 +18,7 @@ import { WorkflowModelSubmissionHandler } from '../src/server/diagram-action-han
 function buildHarness(options: {
     agentPending: boolean;
     unpositionedNodeCount: number;
+    hasClientBounds?: boolean;
 }) {
     const inPort = GPort.builder().id('t1.in').type(WorkflowDiagramTypes.PORT_INPUT).build();
     const t1 = GNode.builder()
@@ -34,7 +35,7 @@ function buildHarness(options: {
         hasPersistedLayout: true,
         hasPersistedEdgeRoutes: false,
         didInitialLayout: false,
-        hasClientBounds: true,
+        hasClientBounds: options.hasClientBounds ?? true,
         allowInitialLayoutPersistence: true,
         unpositionedNodeCount: options.unpositionedNodeCount
     };
@@ -103,6 +104,20 @@ describe('auto-layout after agent structural edits', () => {
         await h.handler.submitModelDirectly();
         expect(h.layoutCalled()).toBe(1);
         expect(h.loadLayoutCalled()).toBe(0);
+    });
+
+    it('fires even when the reload submit never gets a fresh client-bounds round-trip', async () => {
+        // Real regression: a headless MCP create rewrites the .py and the diagram reloads, but a
+        // refresh of an ALREADY-OPEN diagram reuses the client's existing node sizes and may never
+        // emit a fresh ComputedBounds — so hasClientBounds stays false on the reload that carries
+        // the agent's new node/edge (both hasClientBounds setters live only in the ComputedBounds
+        // handler). Gating the agent auto-layout on hasClientBounds blocks it forever. The diagram
+        // is already measured (existing persisted layout), so boundary-flow must still run.
+        const h = buildHarness({ agentPending: true, unpositionedNodeCount: 1, hasClientBounds: false });
+        await h.handler.submitModelDirectly();
+        expect(h.layoutCalled()).toBe(1);
+        expect(h.loadLayoutCalled()).toBe(0);
+        expect(h.consumed()).toBe(1);
     });
 
     it('keeps park-below behaviour for palette / hand-edit additions (no agent signal)', async () => {

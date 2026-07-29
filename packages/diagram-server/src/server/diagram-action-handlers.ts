@@ -135,42 +135,61 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
         } else {
         }
 
-        // 1c) Existing diagram (layout already persisted) gained new content after load:
-        //  - Agent structural edit (MCP create-node / create-edge): run a full boundary-flow
-        //    layout so nothing is left at a parked default position and new edges are routed
-        //    against a fresh layout — matching the manual `dialogram.layoutBoundaryFlow` result.
-        //  - Otherwise (palette add / hand-edited source): keep new/unpositioned nodes parked
-        //    below the existing graph without disturbing already-placed nodes (unchanged path).
+        // 1c) Existing diagram (layout already persisted) gained new content after load.
+        const agentEditPending = this.agentEditSignal?.isPending() === true;
+
+        // 1c-i) Agent structural edit (MCP create-node / create-edge): run a full boundary-flow
+        // layout so nothing is left at a parked default position and new edges are routed against a
+        // fresh layout — matching the manual `dialogram.layoutBoundaryFlow` result.
+        //
+        // Deliberately NOT gated on hasClientBounds. A headless create rewrites the .py and the
+        // diagram reloads, but a refresh of an ALREADY-OPEN diagram reuses the client's existing
+        // node sizes and may never emit a fresh ComputedBounds — the only place hasClientBounds is
+        // ever set true. So on the reload that carries the agent's new node/edge, hasClientBounds
+        // often stays false; gating on it would block the auto-layout forever (the real 0.6.0
+        // regression: agent creates land but nothing lays out). The diagram is already measured
+        // (an existing persisted layout), so boundary-flow on the current node sizes is fine.
+        //
         // Bursts of agent ops coalesce naturally: the editor debounces source-change reloads, so a
         // run of MCP creates collapses into a single reload → a single boundary-flow pass here.
-        const agentEditPending = this.agentEditSignal?.isPending() === true;
         if (
+            layoutEngine &&
+            agentEditPending &&
+            layoutMeta &&
+            layoutMeta.hasPersistedLayout &&
+            !layoutMeta.didInitialLayout &&
+            layoutMeta.allowInitialLayoutPersistence
+        ) {
+            layoutMeta.didInitialLayout = true;
+            modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
+            this.agentEditSignal?.consumePending();
+            console.log('[WorkflowModelSubmissionHandler] Auto-layout after agent structural edit for:', layoutMeta.networkId);
+            try {
+                await this.runBoundaryFlowAndPersist(layoutMeta, modelState, layoutEngine);
+                console.log('[WorkflowModelSubmissionHandler] Agent auto-layout completed');
+            } catch (error) {
+                console.error('[WorkflowModelSubmissionHandler] Agent auto-layout failed:', error);
+            }
+        }
+        // 1c-ii) Otherwise (palette add / hand-edited source): keep new/unpositioned nodes parked
+        // below the existing graph without disturbing already-placed nodes. Unchanged: this path
+        // still waits for client bounds so the park-below geometry uses measured node sizes.
+        else if (
             layoutMeta &&
             layoutMeta.hasPersistedLayout &&
             !layoutMeta.didInitialLayout &&
             layoutMeta.hasClientBounds &&
             layoutMeta.allowInitialLayoutPersistence &&
-            (agentEditPending || (layoutMeta.unpositionedNodeCount ?? 0) > 0)
+            (layoutMeta.unpositionedNodeCount ?? 0) > 0
         ) {
             layoutMeta.didInitialLayout = true;
             modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
-            if (agentEditPending && layoutEngine) {
-                this.agentEditSignal?.consumePending();
-                console.log('[WorkflowModelSubmissionHandler] Auto-layout after agent structural edit for:', layoutMeta.networkId);
-                try {
-                    await this.runBoundaryFlowAndPersist(layoutMeta, modelState, layoutEngine);
-                    console.log('[WorkflowModelSubmissionHandler] Agent auto-layout completed');
-                } catch (error) {
-                    console.error('[WorkflowModelSubmissionHandler] Agent auto-layout failed:', error);
-                }
-            } else {
-                console.log(`[WorkflowModelSubmissionHandler] Placing ${layoutMeta.unpositionedNodeCount} newly added node(s)...`);
-                try {
-                    await this.placeNewNodes(layoutMeta.workflowFilePath, layoutMeta.networkId, modelState.root);
-                    console.log('[WorkflowModelSubmissionHandler] New node placement completed');
-                } catch (error) {
-                    console.error('[WorkflowModelSubmissionHandler] New node placement failed:', error);
-                }
+            console.log(`[WorkflowModelSubmissionHandler] Placing ${layoutMeta.unpositionedNodeCount} newly added node(s)...`);
+            try {
+                await this.placeNewNodes(layoutMeta.workflowFilePath, layoutMeta.networkId, modelState.root);
+                console.log('[WorkflowModelSubmissionHandler] New node placement completed');
+            } catch (error) {
+                console.error('[WorkflowModelSubmissionHandler] New node placement failed:', error);
             }
         }
 
