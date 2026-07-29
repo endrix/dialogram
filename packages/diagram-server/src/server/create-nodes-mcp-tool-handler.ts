@@ -17,18 +17,23 @@
  * The concrete type + instance name mirror what the dialog collects; agents pass them explicitly via
  * the already-open per-node `args` record — e.g. `args: { type: 'MyType', name: 'my_instance' }`.
  */
-import { injectable } from 'inversify';
+import { inject, injectable, optional } from 'inversify';
 import {
     CreateNodesMcpToolHandler,
     type CreateNodesInput,
     type McpToolResult
 } from '@eclipse-glsp/server-mcp';
+import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
 
 /** Marker folded into every dispatched node's `args`; the operation handler branches on it. */
 const HEADLESS_ARG = 'headless';
 
 @injectable()
 export class AgentDispatchCreateNodesMcpToolHandler extends CreateNodesMcpToolHandler {
+    @inject(AgentStructuralEditSignal)
+    @optional()
+    protected agentSignal?: AgentStructuralEditSignal;
+
     override readonly description =
         'Create one or multiple new nodes in the diagram at the specified positions. ' +
         'Call `query-elements` (or `count-elements`) first to avoid overlap. Each node needs an ' +
@@ -44,6 +49,10 @@ export class AgentDispatchCreateNodesMcpToolHandler extends CreateNodesMcpToolHa
             ...node,
             args: { ...(node.args ?? {}), [HEADLESS_ARG]: true }
         }));
-        return super.createResult({ ...input, nodes });
+        const result = await super.createResult({ ...input, nodes });
+        // Structural edit: request an auto-layout on the next reload so the new node is not
+        // left parked at its default position (palette/webview creation never runs this path).
+        this.agentSignal?.markPending();
+        return result;
     }
 }

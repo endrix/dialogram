@@ -51,6 +51,7 @@ import {
     WORKFLOW_LAYOUT_PERSISTENCE_KEY
 } from '@dialogram/shared';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
+import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
 import {
     WorkflowRerouteEdgesAvoidOverlapsOperationHandler,
     WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND
@@ -70,7 +71,15 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
 
     @inject(WorkflowRerouteEdgesAvoidOverlapsOperationHandler)
     protected rerouteHandler!: WorkflowRerouteEdgesAvoidOverlapsOperationHandler;
-    
+
+    /**
+     * Optional so the many unit tests that construct this handler directly (no DI container)
+     * keep working — an absent signal simply reads as "no agent edit pending".
+     */
+    @inject(AgentStructuralEditSignal)
+    @optional()
+    protected agentEditSignal?: AgentStructuralEditSignal;
+
     override async submitModelDirectly(reason?: DirtyStateChangeReason): Promise<Action[]> {
         const layoutEngine = (this as any).layoutEngine as LayoutEngine | undefined;
         const diagramConfiguration = (this as any).diagramConfiguration as DiagramConfiguration;
@@ -112,43 +121,56 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
                 // run the exact same boundary-flow routine (pin one-sided task nodes to outer
                 // layers + clear stale edge routes + ELK), so the fresh-open render matches
                 // what manual layout produces instead of diverging (plain ELK looked worse).
-                await runBoundaryFlowLayout(modelState.root, layoutEngine);
+                await this.runBoundaryFlowAndPersist(layoutMeta, modelState, layoutEngine);
                 // Always-on breadcrumb: initial ELK layout is the dominant post-load server cost on a
                 // fresh open, and it runs here (in the client-bounds round-trip), not in the load path.
                 // eslint-disable-next-line no-console
                 console.log(`[dialogram perf] layout ${layoutMeta.networkId}: elk=${Math.round(perfNow() - _elk0)}ms`);
-                const positions = this.collectNodePositions(modelState.root);
-                const routes = this.collectEdgeRoutes(modelState.root);
-                await this.layoutPersistence.saveLayoutImmediate(layoutMeta.workflowFilePath, layoutMeta.networkId, positions, routes);
-                // From now on, treat it as persisted.
-                layoutMeta.hasPersistedLayout = true;
-                layoutMeta.hasPersistedEdgeRoutes = routes.size > 0;
-                modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
+                // A fresh-open diagram an agent just populated already got its boundary-flow layout
+                // here; consume the pending flag so branch 1c does not run a second, redundant one.
+                this.agentEditSignal?.consumePending();
             } catch (error) {
                 console.error('[WorkflowModelSubmissionHandler] Initial layout failed:', error);
             }
         } else {
         }
 
-        // 1c) Partial layout for newly added nodes when a layout file already exists.
-        // Places new/unpositioned nodes below the existing graph without disturbing
-        // the positions of already-placed nodes.
+        // 1c) Existing diagram (layout already persisted) gained new content after load:
+        //  - Agent structural edit (MCP create-node / create-edge): run a full boundary-flow
+        //    layout so nothing is left at a parked default position and new edges are routed
+        //    against a fresh layout — matching the manual `dialogram.layoutBoundaryFlow` result.
+        //  - Otherwise (palette add / hand-edited source): keep new/unpositioned nodes parked
+        //    below the existing graph without disturbing already-placed nodes (unchanged path).
+        // Bursts of agent ops coalesce naturally: the editor debounces source-change reloads, so a
+        // run of MCP creates collapses into a single reload → a single boundary-flow pass here.
+        const agentEditPending = this.agentEditSignal?.isPending() === true;
         if (
             layoutMeta &&
             layoutMeta.hasPersistedLayout &&
             !layoutMeta.didInitialLayout &&
             layoutMeta.hasClientBounds &&
             layoutMeta.allowInitialLayoutPersistence &&
-            (layoutMeta.unpositionedNodeCount ?? 0) > 0
+            (agentEditPending || (layoutMeta.unpositionedNodeCount ?? 0) > 0)
         ) {
             layoutMeta.didInitialLayout = true;
             modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
-            console.log(`[WorkflowModelSubmissionHandler] Placing ${layoutMeta.unpositionedNodeCount} newly added node(s)...`);
-            try {
-                await this.placeNewNodes(layoutMeta.workflowFilePath, layoutMeta.networkId, modelState.root);
-                console.log('[WorkflowModelSubmissionHandler] New node placement completed');
-            } catch (error) {
-                console.error('[WorkflowModelSubmissionHandler] New node placement failed:', error);
+            if (agentEditPending && layoutEngine) {
+                this.agentEditSignal?.consumePending();
+                console.log('[WorkflowModelSubmissionHandler] Auto-layout after agent structural edit for:', layoutMeta.networkId);
+                try {
+                    await this.runBoundaryFlowAndPersist(layoutMeta, modelState, layoutEngine);
+                    console.log('[WorkflowModelSubmissionHandler] Agent auto-layout completed');
+                } catch (error) {
+                    console.error('[WorkflowModelSubmissionHandler] Agent auto-layout failed:', error);
+                }
+            } else {
+                console.log(`[WorkflowModelSubmissionHandler] Placing ${layoutMeta.unpositionedNodeCount} newly added node(s)...`);
+                try {
+                    await this.placeNewNodes(layoutMeta.workflowFilePath, layoutMeta.networkId, modelState.root);
+                    console.log('[WorkflowModelSubmissionHandler] New node placement completed');
+                } catch (error) {
+                    console.error('[WorkflowModelSubmissionHandler] New node placement failed:', error);
+                }
             }
         }
 
@@ -314,6 +336,33 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
         };
 
         visit(root);
+    }
+
+    /**
+     * Run the shared boundary-flow layout, persist the resulting node positions + edge routes,
+     * and mark the layout meta as persisted. Shared by the fresh-open initial layout (branch 1)
+     * and the agent-structural-edit auto-layout (branch 1c) so both produce identical geometry
+     * and persistence — no divergence between them.
+     */
+    private async runBoundaryFlowAndPersist(
+        layoutMeta: {
+            workflowFilePath: string;
+            networkId: string;
+            hasPersistedLayout: boolean;
+            hasPersistedEdgeRoutes: boolean;
+            [key: string]: unknown;
+        },
+        modelState: ModelState,
+        layoutEngine: LayoutEngine
+    ): Promise<void> {
+        await runBoundaryFlowLayout(modelState.root, layoutEngine);
+        const positions = this.collectNodePositions(modelState.root);
+        const routes = this.collectEdgeRoutes(modelState.root);
+        await this.layoutPersistence.saveLayoutImmediate(layoutMeta.workflowFilePath, layoutMeta.networkId, positions, routes);
+        // From now on, treat it as persisted.
+        layoutMeta.hasPersistedLayout = true;
+        layoutMeta.hasPersistedEdgeRoutes = routes.size > 0;
+        modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
     }
 
     /**

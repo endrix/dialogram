@@ -12,6 +12,7 @@
 import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
 import {
+    CreateEdgesMcpToolHandler,
     CreateNodesMcpToolHandler,
     RedoMcpToolHandler,
     UndoMcpToolHandler
@@ -21,6 +22,7 @@ import {
     bridgeableChatTools
 } from '../src/server/mcp-diagram-module';
 import { AgentDispatchCreateNodesMcpToolHandler } from '../src/server/create-nodes-mcp-tool-handler';
+import { AgentDispatchCreateEdgesMcpToolHandler } from '../src/server/create-edges-mcp-tool-handler';
 import type { PlatformMcpTool } from '../src/server/mcp-platform-tool-adapter';
 
 function tool(name: string, mutates?: boolean): PlatformMcpTool {
@@ -134,6 +136,53 @@ describe('DiagramMcpModule undo/redo tool exclusion (host owns undo)', () => {
         const ctors = resolveToolHandlerCtors(new DiagramMcpModule());
         expect(ctors).not.toContain(CreateNodesMcpToolHandler);
         expect(ctors).toContain(AgentDispatchCreateNodesMcpToolHandler);
+    });
+
+    it('replaces the built-in create-edges with the auto-layout agent-dispatch override', () => {
+        // The override raises the auto-layout signal after an agent-connected edge so the diagram
+        // relayouts on the next reload; the built-in must be gone and the override present.
+        const ctors = resolveToolHandlerCtors(new DiagramMcpModule());
+        expect(ctors).not.toContain(CreateEdgesMcpToolHandler);
+        expect(ctors).toContain(AgentDispatchCreateEdgesMcpToolHandler);
+    });
+});
+
+describe('agent-dispatch tool handlers raise the auto-layout signal', () => {
+    function stubSuperCreateResult<T extends { prototype: any }>(ctor: T): () => void {
+        const proto = ctor.prototype as { createResult: (input: unknown) => Promise<unknown> };
+        const original = proto.createResult;
+        proto.createResult = async () => ({ content: [] });
+        return () => { proto.createResult = original; };
+    }
+
+    it('create-nodes override marks pending after delegating to the built-in create', async () => {
+        const restore = stubSuperCreateResult(CreateNodesMcpToolHandler);
+        try {
+            const handler = new AgentDispatchCreateNodesMcpToolHandler();
+            let marked = 0;
+            (handler as any).agentSignal = { markPending: () => { marked += 1; } };
+            await (handler as any).createResult({ sessionId: 's', nodes: [{ elementTypeId: 'node:task', position: { x: 0, y: 0 } }] });
+            expect(marked).toBe(1);
+        } finally {
+            restore();
+        }
+    });
+
+    it('create-edges override marks pending for a real create but NOT for a dry-run', async () => {
+        const restore = stubSuperCreateResult(CreateEdgesMcpToolHandler);
+        try {
+            const handler = new AgentDispatchCreateEdgesMcpToolHandler();
+            let marked = 0;
+            (handler as any).agentSignal = { markPending: () => { marked += 1; } };
+
+            await (handler as any).createResult({ sessionId: 's', edges: [], dryRun: true });
+            expect(marked).toBe(0);
+
+            await (handler as any).createResult({ sessionId: 's', edges: [] });
+            expect(marked).toBe(1);
+        } finally {
+            restore();
+        }
     });
 });
 
