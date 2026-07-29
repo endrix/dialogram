@@ -71,7 +71,7 @@ export class SessionManager {
 
     const sessionData: SessionData = {
       id: sessionId,
-      name: name || `Session ${this.getSessionsForWorkflow(workflowFile).length + 1}`,
+      name: name || this.nextDefaultSessionName(workflowFile),
       workflowFile,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -86,6 +86,27 @@ export class SessionManager {
     await this.saveSessions();
 
     return sessionData;
+  }
+
+  /**
+   * Compute a unique default name ("Session N") for a new session in a workflow.
+   *
+   * Uses the highest existing "Session <n>" number + 1 rather than the session
+   * count, so deleting an interior session can never yield a duplicate default
+   * name (e.g. deleting "Session 2" of 3 must still produce "Session 4", not a
+   * second "Session 3"). Renamed/custom names that don't match the pattern are
+   * ignored.
+   */
+  private nextDefaultSessionName(workflowFile: string): string {
+    const pattern = /^Session (\d+)$/;
+    let maxNumber = 0;
+    for (const session of this.getSessionsForWorkflow(workflowFile)) {
+      const match = pattern.exec(session.name);
+      if (match) {
+        maxNumber = Math.max(maxNumber, Number.parseInt(match[1], 10));
+      }
+    }
+    return `Session ${maxNumber + 1}`;
   }
 
   /**

@@ -112,6 +112,43 @@ describe('SessionManager', () => {
 
       expect(session2.name).toBe('Session 2');
     });
+
+    it('should not reuse a default name after an interior session is deleted', async () => {
+      mockACPClient.createSession.mockResolvedValueOnce('s1');
+      const s1 = await sessionManager.createSession('/test/workflow.py');
+      mockACPClient.createSession.mockResolvedValueOnce('s2');
+      const s2 = await sessionManager.createSession('/test/workflow.py');
+      mockACPClient.createSession.mockResolvedValueOnce('s3');
+      const s3 = await sessionManager.createSession('/test/workflow.py');
+
+      expect([s1.name, s2.name, s3.name]).toEqual([
+        'Session 1',
+        'Session 2',
+        'Session 3',
+      ]);
+
+      // Delete the interior session, then create a new one: the default name
+      // must be unique (max existing number + 1), never a duplicate.
+      await sessionManager.deleteSession('s2');
+      mockACPClient.createSession.mockResolvedValueOnce('s4');
+      const s4 = await sessionManager.createSession('/test/workflow.py');
+
+      expect(s4.name).toBe('Session 4');
+      const names = sessionManager
+        .getSessionsForWorkflow('/test/workflow.py')
+        .map((s) => s.name);
+      expect(new Set(names).size).toBe(names.length);
+    });
+
+    it('should ignore renamed/custom names when computing the default number', async () => {
+      mockACPClient.createSession.mockResolvedValueOnce('s1');
+      await sessionManager.createSession('/test/workflow.py', 'My Custom Chat');
+      mockACPClient.createSession.mockResolvedValueOnce('s2');
+      const s2 = await sessionManager.createSession('/test/workflow.py');
+
+      // Custom-named session does not count toward "Session N"; first default is 1.
+      expect(s2.name).toBe('Session 1');
+    });
   });
 
   describe('loadSession', () => {
