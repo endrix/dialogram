@@ -370,11 +370,11 @@ export class SessionManager {
       this.sessions.set(session.id, session);
     }
 
-    // Try to restore current session
-    if (data.length > 0) {
-      const mostRecent = data.sort((a, b) => b.updatedAt - a.updatedAt)[0];
-      this.currentSessionId = mostRecent.id;
-    }
+    // Deliberately do NOT auto-select a current session here. The chat panel
+    // opens on an explicit empty state ("select or create a session"); auto-
+    // selecting the most-recent one leaked a phantom current session into the
+    // panel and routed the first message to it. A session becomes current only
+    // when the user explicitly loads/creates one.
   }
 
   /**

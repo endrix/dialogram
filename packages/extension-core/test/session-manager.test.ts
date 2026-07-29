@@ -60,7 +60,10 @@ describe('SessionManager', () => {
       await sessionManager.initialize();
 
       expect(sessionManager.getAllSessions()).toHaveLength(1);
-      expect(sessionManager.getCurrentSessionId()).toBe('session-1');
+      // Restoring sessions must NOT auto-select one: the chat panel opens on an
+      // explicit empty state, and the user picks or creates a session. Auto-
+      // selecting here made a phantom "current" session leak into the panel.
+      expect(sessionManager.getCurrentSessionId()).toBeNull();
     });
 
     it('should handle empty storage', async () => {
