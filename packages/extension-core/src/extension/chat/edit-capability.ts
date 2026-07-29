@@ -3,7 +3,7 @@
  * consumes to drive chat around the edit backend — slash commands mapping to
  * real edit-backend ops (with capability
  * gating, optimistic concurrency and diagram refresh), the graph context
- * provider, the stdio MCP descriptors, the keyword view-ops post-turn hook
+ * provider, the in-process MCP tool descriptors, the keyword view-ops post-turn hook
  * and the debounced auto-layout.
  *
  * Commands whose legacy implementation was a stub (validate, analyze, …) are

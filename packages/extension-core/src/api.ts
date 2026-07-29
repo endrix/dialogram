@@ -333,7 +333,7 @@ export interface InProcessChatTool {
      * client could otherwise mutate files unconfirmed). Locked design (approach B):
      * mutation-capable tools ride the GLSP-MCP built-in operation tools only. The diagram
      * server's bridge filters on this explicit marker; the tool stays available on the
-     * in-host chat / legacy stdio MCP path.
+     * in-host chat / in-process MCP path.
      */
     mutates?: boolean;
 }

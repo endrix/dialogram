@@ -34,7 +34,7 @@ export async function activateProfileRuntime(
     }
 
     // Chat activates when the profile carries a chat config; the edit-backed
-    // features (slash ops, graph context, stdio MCP, view-op hook) additionally
+    // features (slash ops, graph context, in-process MCP tools, view-op hook) additionally
     // require an edit backend. Read-only profiles get pass-through chat only.
     let chatRuntime: ChatRuntime | undefined;
     let transport: GlspChatTransport | undefined;
