@@ -23,11 +23,25 @@ import { injectable } from 'inversify';
  * outcome never leaks into another's.
  */
 
+/** One port of a created node, carried in the confirmation so the next create-edges needs no query. */
+export interface CreatedNodePort {
+    readonly name: string;
+    /** 'in' | 'out' | 'unknown' — informational; edge validation still owns direction correctness. */
+    readonly direction?: string;
+}
+
 /** A create that landed on disk. `name` is the source-level instance identity; `type` its class. */
 export interface CreatedNodeOutcome {
     readonly kind: 'created';
     readonly name: string;
     readonly type: string;
+    /**
+     * The created node's port names (and directions where known), so an agent can connect it via
+     * `create-edges` with `args.source`/`args.target` = "name.port" WITHOUT a query-elements dump.
+     * Best-effort: empty when the node's type definition is not resolvable from the rewritten source
+     * (e.g. an existing type declared in another module).
+     */
+    readonly ports?: readonly CreatedNodePort[];
 }
 
 /** A create the headless path refused, carrying an agent-actionable message. */
@@ -42,9 +56,9 @@ export type AgentCreateNodeOutcome = CreatedNodeOutcome | RejectedNodeOutcome;
 export class AgentCreateNodeOutcomeSink {
     private outcomes: readonly AgentCreateNodeOutcome[] = [];
 
-    /** Record a successful create (instance name + concrete type). */
-    recordCreated(name: string, type: string): void {
-        this.outcomes = [...this.outcomes, { kind: 'created', name, type }];
+    /** Record a successful create (instance name + concrete type + optional discovered ports). */
+    recordCreated(name: string, type: string, ports?: readonly CreatedNodePort[]): void {
+        this.outcomes = [...this.outcomes, { kind: 'created', name, type, ports: ports && ports.length > 0 ? ports : undefined }];
     }
 
     /** Record a rejected create with the actionable, agent-facing message. */

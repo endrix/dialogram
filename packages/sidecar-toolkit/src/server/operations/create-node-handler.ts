@@ -14,6 +14,7 @@ import { SidecarInvoker, SidecarInvocationResult } from './sidecar-invoker';
 import {
     type PythonDefinition,
     extractTopLevelPythonDefinitions,
+    extractTypePorts,
     hasDecorator
 } from '../python-text';
 
@@ -436,7 +437,11 @@ export class CreateNodeOperationHandler extends OperationHandler {
                 (command as any)._sourceBeforeText = beforeText;
                 (command as any)._sourceAfterText = afterText;
                 if (headless) {
-                    this.createNodeOutcomeSink?.recordCreated(entityName, finalTypeName);
+                    // Enrich the agent confirmation with the created node's port names (best-effort,
+                    // parsed from the rewritten source) so the next create-edges can address them by
+                    // "name.port" without a query-elements dump.
+                    const ports = extractTypePorts(afterText, finalTypeName);
+                    this.createNodeOutcomeSink?.recordCreated(entityName, finalTypeName, ports);
                 }
                 return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];
             },

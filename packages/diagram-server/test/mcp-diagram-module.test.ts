@@ -24,6 +24,8 @@ import {
 import { AgentDispatchCreateNodesMcpToolHandler } from '../src/server/create-nodes-mcp-tool-handler';
 import { AgentDispatchCreateEdgesMcpToolHandler } from '../src/server/create-edges-mcp-tool-handler';
 import type { PlatformMcpTool } from '../src/server/mcp-platform-tool-adapter';
+import { GGraph, GNode, GPort } from '@eclipse-glsp/server';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 
 function tool(name: string, mutates?: boolean): PlatformMcpTool {
     return {
@@ -238,6 +240,29 @@ describe('AgentDispatchCreateNodesMcpToolHandler (honest agent-facing result)', 
         }
     });
 
+    it('lists the created node\'s ports so the next create-edges needs no query', async () => {
+        const restore = stubSuper();
+        try {
+            const { handler } = makeHandler([
+                { kind: 'created', name: 'producer', type: 'Producer', ports: [
+                    { name: 'out', direction: 'out' },
+                    { name: 'aux', direction: 'in' }
+                ] }
+            ]);
+            const result = await (handler as any).createResult(input);
+            expect(result.isError).toBeFalsy();
+            const text = result.content.map((c: any) => c.text).join('\n');
+            // Port names are surfaced with directions...
+            expect(text).toContain('out (out)');
+            expect(text).toContain('aux (in)');
+            // ...and the name-addressable connect hint points at create-edges.
+            expect(text).toContain('producer.<port>');
+            expect(text).toContain('create-edges');
+        } finally {
+            restore();
+        }
+    });
+
     it('returns an MCP tool error carrying the actionable message on a headless rejection', async () => {
         const restore = stubSuper();
         try {
@@ -302,5 +327,90 @@ describe('AgentDispatchCreateNodesMcpToolHandler (headless marker injection)', (
         const forwarded = seen as { nodes: Array<{ args?: Record<string, unknown> }> };
         expect(forwarded.nodes[0].args).toEqual({ type: 'MyTask', headless: true });
         expect(forwarded.nodes[1].args).toEqual({ headless: true });
+    });
+});
+
+describe('AgentDispatchCreateEdgesMcpToolHandler (name-addressable endpoints)', () => {
+    // producer.out (output) and consumer.in (input) on two named nodes.
+    function buildRoot() {
+        const out = GPort.builder().id('producer.out').type(WorkflowDiagramTypes.PORT_OUTPUT)
+            .addArg(WorkflowDiagramMetadata.PORT_NAME, 'out').build();
+        const producer = GNode.builder().id('n_producer').type(WorkflowDiagramTypes.NODE_ACTOR)
+            .addArg(WorkflowDiagramMetadata.ENTITY_NAME, 'producer').addChildren(out).build();
+        const inp = GPort.builder().id('consumer.in').type(WorkflowDiagramTypes.PORT_INPUT)
+            .addArg(WorkflowDiagramMetadata.PORT_NAME, 'in').build();
+        const consumer = GNode.builder().id('n_consumer').type(WorkflowDiagramTypes.NODE_ACTOR)
+            .addArg(WorkflowDiagramMetadata.ENTITY_NAME, 'consumer').addChildren(inp).build();
+        return GGraph.builder().id('root').addChildren(producer, consumer).build();
+    }
+
+    function makeHandler() {
+        const handler = new AgentDispatchCreateEdgesMcpToolHandler();
+        (handler as any).agentSignal = { markPending: () => {} };
+        (handler as any).modelState = { root: buildRoot() };
+        (handler as any).encodeIds = (ids: string[]) => ids; // Null alias passthrough
+        return handler;
+    }
+
+    /** Capture what the override forwards to the built-in create loop. */
+    function captureSuper(): { restore: () => void; forwarded: () => any } {
+        const proto = CreateEdgesMcpToolHandler.prototype as any;
+        const original = proto.createResult;
+        let seen: any;
+        proto.createResult = async function (input: any) { seen = input; return { content: [], isError: false }; };
+        return { restore: () => { proto.createResult = original; }, forwarded: () => seen };
+    }
+
+    it('resolves args.source/args.target "nodeName.portName" to element ids before dispatch', async () => {
+        const cap = captureSuper();
+        try {
+            const handler = makeHandler();
+            const result = await (handler as any).createResult({
+                sessionId: 's',
+                edges: [{ elementTypeId: 'edge:connection', args: { source: 'producer.out', target: 'consumer.in' } }]
+            });
+            expect(result.isError).toBeFalsy();
+            const fwd = cap.forwarded();
+            expect(fwd.edges[0].sourceElementId).toBe('producer.out');
+            expect(fwd.edges[0].targetElementId).toBe('consumer.in');
+            // The name specs are addressing, not model metadata — stripped from args.
+            expect(fwd.edges[0].args).toBeUndefined();
+        } finally {
+            cap.restore();
+        }
+    });
+
+    it('keeps raw element-id addressing working (pass-through)', async () => {
+        const cap = captureSuper();
+        try {
+            const handler = makeHandler();
+            await (handler as any).createResult({
+                sessionId: 's',
+                edges: [{ elementTypeId: 'edge:connection', sourceElementId: 'producer.out', targetElementId: 'consumer.in' }]
+            });
+            const fwd = cap.forwarded();
+            expect(fwd.edges[0].sourceElementId).toBe('producer.out');
+            expect(fwd.edges[0].targetElementId).toBe('consumer.in');
+        } finally {
+            cap.restore();
+        }
+    });
+
+    it('fails the whole call with an actionable message when a port name is unknown', async () => {
+        const cap = captureSuper();
+        try {
+            const handler = makeHandler();
+            const result = await (handler as any).createResult({
+                sessionId: 's',
+                edges: [{ elementTypeId: 'edge:connection', args: { source: 'producer.out', target: 'consumer.missing' } }]
+            });
+            expect(result.isError).toBe(true);
+            const text = result.content.map((c: any) => c.text).join('\n');
+            expect(text).toMatch(/No port named 'missing'/);
+            // No dispatch happened — the built-in create loop was never reached.
+            expect(cap.forwarded()).toBeUndefined();
+        } finally {
+            cap.restore();
+        }
     });
 });

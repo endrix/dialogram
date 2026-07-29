@@ -293,9 +293,14 @@ export class ChatRuntime {
         const name = `${this.config.key}-glsp`;
         return (
             `Diagram MCP tools (${name}): get the sessionId from the session-info tool. ` +
-            'Element IDs must come from query-elements or diagram-model — IDs embedded in ' +
-            "diagram-svg / diagram-png output carry a '<clientId>_' prefix and are NOT valid " +
-            'tool arguments. For ALL graph changes (adding nodes, connections, deletions, and ' +
+            'To add and wire a node you do NOT need to dump the model: create-nodes returns a ' +
+            "confirmation listing the new node's port names, then create-edges accepts " +
+            'args.source / args.target as "nodeName.portName" (resolved server-side) — so the ' +
+            'usual flow is create-nodes -> read the listed ports -> create-edges with ' +
+            'nodeName.portName, with no query-elements/diagram-model round-trips. Raw element-id ' +
+            'addressing still works: element IDs must come from query-elements or diagram-model — ' +
+            "IDs embedded in diagram-svg / diagram-png output carry a '<clientId>_' prefix and are " +
+            'NOT valid tool arguments. For ALL graph changes (adding nodes, connections, deletions, and ' +
             'scaffolding a brand-new task type) use create-nodes / create-edges / modify-* / ' +
             'delete-elements / create-task-type — do NOT edit the source ' +
             'file directly for changes these tools can express: tool edits go through the ' +

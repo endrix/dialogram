@@ -46,6 +46,10 @@ describe('ChatRuntime GLSP-MCP context hint', () => {
         expect(hint).toContain('session-info');
         // The authoritative id sources.
         expect(hint).toContain('query-elements');
+        // The name-addressable ergonomic path: create-nodes lists ports, create-edges takes names.
+        expect(hint).toContain('nodeName.portName');
+        expect(hint).toContain('create-nodes');
+        expect(hint).toContain('create-edges');
         // The caveat about diagram-svg/-png embedded ids carrying a prefix.
         expect(hint).toMatch(/prefix/i);
         expect(hint).toContain('diagram-svg');

@@ -51,7 +51,9 @@ export class AgentDispatchCreateNodesMcpToolHandler extends CreateNodesMcpToolHa
         'source definition, pass that definition name as `args.type` and, optionally, an instance ' +
         'name as `args.name` (auto-generated when omitted). This runs without any interactive prompt; ' +
         'if a required value is missing the call fails with a message naming exactly what to pass. ' +
-        'This operation modifies the source and is undoable via the editor.';
+        "On success the confirmation lists each created node's port names — pass those to create-edges " +
+        'as args.source/args.target "nodeName.portName" to connect the node without any query-elements ' +
+        'dump. This operation modifies the source and is undoable via the editor.';
 
     // The stock handler declares CreateNodesOutputSchema and derives `createdNodes` from a
     // post-dispatch `modelState.index` diff. In dialogram that diff can never see a create (the
@@ -99,9 +101,25 @@ export class AgentDispatchCreateNodesMcpToolHandler extends CreateNodesMcpToolHa
             return this.error(lines.join('\n'));
         }
 
-        const summary = created.map((outcome) => `- ${outcome.type} '${outcome.name}' (#${outcome.name})`).join('\n');
+        const summary = created.map(formatCreatedNode).join('\n');
         return this.success(`Successfully created ${created.length} node(s):\n${summary}`);
     }
+}
+
+/**
+ * Render a created node with its port names so the very next `create-edges` can address the node by
+ * `name.port` (via args.source / args.target) with NO query-elements/diagram-model dump. When ports
+ * could not be resolved from source the line degrades to the plain id + name confirmation.
+ */
+function formatCreatedNode(outcome: CreatedNodeOutcome): string {
+    const base = `- ${outcome.type} '${outcome.name}' (#${outcome.name})`;
+    if (!outcome.ports || outcome.ports.length === 0) {
+        return base;
+    }
+    const ports = outcome.ports
+        .map((port) => (port.direction && port.direction !== 'unknown' ? `${port.name} (${port.direction})` : port.name))
+        .join(', ');
+    return `${base}\n    ports: ${ports}\n    connect via create-edges args.source/args.target "${outcome.name}.<port>"`;
 }
 
 function isCreated(outcome: AgentCreateNodeOutcome): outcome is CreatedNodeOutcome {
