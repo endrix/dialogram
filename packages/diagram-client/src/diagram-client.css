@@ -12,6 +12,7 @@
    selectors are self-contained (.chat-* / .workflow-chat-*), so the block's cascade
    position does not change any other element's computed style. */
 @import './chat-panel.css';
+@import './property-panel.css';
 
 :root {
      --sprotty-background: var(--vscode-editor-background, #1e1e1e);
@@ -1408,103 +1409,6 @@ body.vscode-high-contrast {
     font-size: 16px;
 }
 
-.property-panel {
-    /* Design tokens — one source of truth for the panel's rhythm & shape. */
-    --pp-gap: 8px;
-    --pp-pad: 14px;
-    --pp-radius: 7px;
-    --pp-border: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
-    --pp-muted: var(--vscode-descriptionForeground, #8b8b8b);
-    --pp-control-h: 28px;
-    /* A subtle raised surface for cards/inputs (cleaner than VS Code's stock fills). */
-    --pp-surface: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
-    --pp-surface-hover: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
-    --pp-accent: var(--vscode-focusBorder, #4daafc);
-
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: var(--workflow-property-panel-width);
-    min-width: var(--workflow-property-panel-min-width);
-    max-width: var(--workflow-property-panel-max-width);
-    height: 100%;
-    background: var(--vscode-sideBar-background);
-    border-right: 1px solid var(--pp-border);
-    display: flex;
-    flex-direction: column;
-    z-index: 100;
-    transition: transform 0.2s ease;
-    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.2);
-    resize: horizontal;
-    overflow: hidden;
-    font-size: 12px;
-    /* Enable container queries so rows can stack when the panel is narrow. */
-    container-type: inline-size;
-    container-name: pp-panel;
-}
-
-/* ============================================
-   Property Panel Tabs
-   ============================================ */
-
-.property-tabs-header {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    display: flex;
-    flex-direction: row;
-    overflow-x: auto;
-    border-bottom: 1px solid var(--vscode-panel-border);
-    background: var(--vscode-editorGroupHeader-tabsBackground, #2d2d2d);
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-    flex-shrink: 0;
-}
-
-.property-tabs-header::-webkit-scrollbar {
-    display: none;
-}
-
-.property-tab-btn {
-    flex: 0 0 auto;
-    padding: 8px 12px;
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid transparent;
-    color: var(--vscode-tab-inactiveForeground, #8b8b8b);
-    cursor: pointer;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-    text-transform: uppercase;
-    transition: color 0.15s ease, border-color 0.15s ease;
-    outline: none;
-}
-
-.property-tab-btn:hover {
-    color: var(--vscode-tab-hoverForeground, #cccccc);
-    background: var(--vscode-list-hoverBackground, rgba(90, 93, 94, 0.31));
-}
-
-.property-tab-btn.active {
-    color: var(--vscode-tab-activeForeground, #ffffff);
-    border-bottom: 1px solid var(--vscode-focusBorder, #007fd4);
-}
-
-.property-tab-content {
-    display: none;
-    flex-direction: column;
-    height: 100%;
-}
-
-.property-tab-content.active {
-    display: flex;
-}
-
-.property-panel.collapsed {
-    transform: translateX(-100%);
-}
-
 /* When panel is visible, reserve diagram space and move the toggle button.
    (We key off a body class because the panel is a sibling overlay and DOM order
    makes `.property-panel ~ .floating-tool-btn` selectors unreliable here.) */
@@ -1515,20 +1419,6 @@ body.workflow-properties-visible .sprotty-container {
 
 body.workflow-properties-visible .floating-tool-btn {
     left: calc(var(--workflow-property-panel-width) + 10px);
-}
-
-.property-panel-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 12px;
-    background: var(--vscode-sideBarSectionHeader-background);
-    border-bottom: 1px solid var(--vscode-panel-border);
-    font-weight: 600;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--vscode-sideBarSectionHeader-foreground);
 }
 
 .panel-title {
@@ -1571,56 +1461,6 @@ body.workflow-properties-visible .floating-tool-btn {
     font-size: 14px;
 }
 
-/* When panel is pinned, show visual indicator */
-.property-panel.pinned {
-    border-right-color: var(--vscode-button-background, #0e639c);
-}
-
-/* ============================================
-   Floating Panel Mode (Miro-style)
-   ============================================ */
-
-.property-panel.floating {
-    /* Detach from left dock — become a floating card */
-    position: fixed;
-    top: 80px;
-    left: 50%;
-    height: auto;
-    max-height: 75vh;
-    width: 380px;
-    min-width: 340px;
-    max-width: 460px;
-    border-right: none;
-    border-radius: 10px;
-    border: 1px solid var(--vscode-widget-border, #454545);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255,255,255,0.04);
-    resize: both;
-    overflow: hidden;
-    z-index: 200;
-    transition: box-shadow 0.2s ease, transform 0.15s ease;
-}
-
-.property-panel.floating .property-panel-header {
-    cursor: grab;
-    border-radius: 10px 10px 0 0;
-}
-
-.property-panel.floating .property-panel-header:active {
-    cursor: grabbing;
-}
-
-.property-panel.floating .property-panel-body {
-    max-height: calc(75vh - 44px);
-    overflow-y: auto;
-}
-
-/* When floating, collapsed just hides entirely (no translateX) */
-.property-panel.floating.collapsed {
-    transform: scale(0.95);
-    opacity: 0;
-    pointer-events: none;
-}
-
 /* Float button active state */
 .panel-btn.active {
     opacity: 1;
@@ -1641,12 +1481,6 @@ body.workflow-properties-visible .floating-tool-btn {
 .panel-close-btn:hover {
     opacity: 1;
     background: var(--vscode-toolbar-hoverBackground);
-}
-
-.property-panel-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0;
 }
 
 #property-content {
@@ -1679,28 +1513,6 @@ body.workflow-properties-visible .floating-tool-btn {
     max-width: 240px;
     line-height: 1.5;
 }
-
-/* Property Sections */
-.property-section {
-    border-bottom: 1px solid var(--pp-border);
-}
-
-.property-section-header {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 7px var(--pp-pad);
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-    color: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-foreground));
-    cursor: pointer;
-    user-select: none;
-}
-.property-section-header:hover {
-    background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.08));
-}
 .property-section-header .section-title {
     flex: 1;
     overflow: hidden;
@@ -1716,9 +1528,6 @@ body.workflow-properties-visible .floating-tool-btn {
 }
 .property-section.collapsed .property-section-header .section-icon {
     transform: rotate(-90deg);
-}
-.property-section.collapsed .property-section-content {
-    display: none;
 }
 
 .section-actions {
@@ -1970,56 +1779,6 @@ body.workflow-properties-visible .floating-tool-btn {
     line-height: 1;
 }
 
-/* List-editor card chrome (MCP / LSP / Output Validators): a header row carries the
-   item title + an in-flow remove button, so the control no longer floats over the
-   first field or clips at the panel edge. */
-.pp-card-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 6px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--vscode-panel-border, #333);
-}
-
-.pp-card-title {
-    font-weight: 600;
-    font-size: 11px;
-    opacity: 0.85;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-/* Inline undo affordance shown after an item card is removed. */
-.pp-undo-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    background: var(--vscode-inputValidation-warningBackground, rgba(201, 162, 39, 0.12));
-    border: 1px solid var(--vscode-inputValidation-warningBorder, #c9a227);
-    border-radius: 4px;
-    padding: 3px 3px 3px 8px;
-    margin-bottom: 6px;
-    font-size: 11px;
-}
-
-.pp-undo-msg {
-    opacity: 0.9;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.pp-undo-actions {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex: none;
-}
-
 .port-actions {
     display: flex;
     align-items: center;
@@ -2035,79 +1794,8 @@ body.workflow-properties-visible .floating-tool-btn {
     flex: 1 1 auto;
     overflow: hidden;
 }
-
-.property-section-header:hover {
-    background: var(--vscode-list-hoverBackground);
-}
-
-.property-section-content {
-    padding: 10px var(--pp-pad) 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-/* Property Rows */
-.property-row {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin: 0;
-}
-
-.property-label {
-    font-size: 11px;
-    color: var(--pp-muted);
-    font-weight: 500;
-}
-
-.property-value {
-    font-size: 12px;
-    color: var(--vscode-foreground);
-    padding: 4px 8px;
-    background: var(--vscode-input-background);
-    border: 1px solid var(--vscode-input-border, transparent);
-    border-radius: 4px;
-    min-height: var(--pp-control-h);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    word-break: break-word;
-    overflow-wrap: anywhere;
-}
-
-.property-value.read-only {
-    background: color-mix(in srgb, var(--vscode-input-background) 55%, transparent);
-    border-color: transparent;
-    color: var(--vscode-foreground);
-    cursor: default;
-}
 .property-value.read-only .mini-btn {
     margin-left: auto;
-}
-
-/* Editable Input */
-.property-input {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 4px 8px;
-    min-height: var(--pp-control-h);
-    font-size: 12px;
-    color: var(--vscode-input-foreground, var(--vscode-foreground));
-    background: var(--vscode-input-background);
-    border: 1px solid var(--vscode-input-border, var(--pp-border));
-    border-radius: 4px;
-    outline: none;
-    font-family: inherit;
-}
-
-.property-input:focus {
-    border-color: var(--vscode-focusBorder);
-}
-
-.property-input.error {
-    border-color: var(--vscode-inputValidation-errorBorder, #f44747);
-    background: var(--vscode-inputValidation-errorBackground, rgba(244, 71, 71, 0.1));
 }
 
 /* Property Type Badge */
@@ -2474,65 +2162,6 @@ body.workflow-properties-visible .floating-tool-btn {
     margin-left: 2px;
 }
 
-/* ── Property panel — field toolkit (property-fields.ts) ─────────────────
-   Reusable, colocated styles for the typed lit-html field helpers. Generic
-   (not edge-specific) so every migrated section shares one look. */
-.pp-field {
-    gap: 6px;
-}
-
-.pp-field-hint {
-    font-size: 10.5px;
-    line-height: 1.4;
-    color: var(--vscode-descriptionForeground);
-}
-
-.pp-num-field {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.pp-num-input {
-    width: 84px;
-    flex: 0 0 auto;
-    padding: 4px 8px;
-    font-size: 12px;
-    color: var(--vscode-foreground);
-    background: var(--vscode-input-background);
-    border: 1px solid var(--vscode-input-border, transparent);
-    border-radius: 4px;
-    outline: none;
-    min-height: var(--pp-control-h);
-    box-sizing: border-box;
-    font-variant-numeric: tabular-nums;
-}
-
-.pp-num-input:focus {
-    border-color: var(--vscode-focusBorder);
-    box-shadow: 0 0 0 1px var(--vscode-focusBorder);
-}
-
-.pp-num-input::placeholder {
-    color: var(--vscode-input-placeholderForeground, var(--pp-muted));
-    font-style: italic;
-}
-
-/* Hide the number spinner for a cleaner field. */
-.pp-num-input::-webkit-inner-spin-button,
-.pp-num-input::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-}
-
-/* Inline unit shown after the input once a value is set (e.g. "16 tokens"). */
-.pp-num-unit {
-    font-size: 11px;
-    color: var(--pp-muted, var(--vscode-descriptionForeground));
-    user-select: none;
-    margin-left: -2px;
-}
-
 .property-panel .pp-num-field .mini-btn {
     flex: 0 0 auto;
     height: var(--pp-control-h);
@@ -2542,38 +2171,6 @@ body.workflow-properties-visible .floating-tool-btn {
    it reads as a deliberate action, not glued to the input. */
 .property-panel .pp-num-field .mini-btn.primary {
     margin-left: auto;
-}
-
-/* ── Definition-parameter editor (network model) ─────────────────────────
-   Each param is an editable `name : type = default` row that reads like the
-   factory signature; Save surfaces only when the row is dirty. */
-.pp-defparam-filter {
-    width: 100%;
-    margin-bottom: 8px;
-    padding: 5px 8px;
-    font-size: 12px;
-    color: var(--vscode-foreground);
-    background: var(--vscode-input-background);
-    border: 1px solid var(--vscode-input-border, transparent);
-    border-radius: 4px;
-    outline: none;
-    box-sizing: border-box;
-}
-.pp-defparam-filter:focus {
-    border-color: var(--vscode-focusBorder);
-    box-shadow: 0 0 0 1px var(--vscode-focusBorder);
-}
-
-.pp-defparam-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.pp-defparam-row {
-    display: flex;
-    align-items: center;
-    gap: 5px;
 }
 
 .pp-defparam-row input {
@@ -2595,64 +2192,6 @@ body.workflow-properties-visible .floating-tool-btn {
     border-color: var(--vscode-focusBorder);
     box-shadow: 0 0 0 1px var(--vscode-focusBorder);
 }
-
-.pp-defparam-name { flex: 2 1 0; }
-.pp-defparam-type { flex: 0 1 64px; }
-.pp-defparam-default { flex: 2 1 0; }
-
-.pp-defparam-sep {
-    flex: 0 0 auto;
-    color: var(--pp-muted, var(--vscode-descriptionForeground));
-    font-size: 12px;
-    user-select: none;
-}
-
-/* Save appears only once a row is edited. */
-.property-panel .pp-defparam-row .pp-defparam-save {
-    display: none;
-    flex: 0 0 auto;
-    height: var(--pp-control-h);
-}
-.property-panel .pp-defparam-row.dirty .pp-defparam-save {
-    display: inline-flex;
-}
-
-/* "+ Add parameter": dashed ghost button + the expanding form. */
-.property-panel .pp-add-param-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    width: 100%;
-    margin-top: 8px;
-    padding: 6px 10px;
-    font-size: 11px;
-    color: var(--pp-muted, var(--vscode-descriptionForeground));
-    background: transparent;
-    border: 1px dashed var(--pp-border);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-}
-.property-panel .pp-add-param-btn:hover {
-    color: var(--vscode-foreground);
-    border-color: color-mix(in srgb, var(--vscode-foreground) 28%, transparent);
-    background: var(--pp-surface);
-}
-
-.pp-add-param-form {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-top: 8px;
-    padding: 10px;
-    background: var(--pp-surface);
-    border: 1px solid var(--pp-border);
-    border-radius: var(--pp-radius, 6px);
-}
-.pp-add-param-form[hidden] {
-    display: none;
-}
 .pp-add-param-form input {
     padding: 4px 8px;
     font-size: 12px;
@@ -2664,11 +2203,6 @@ body.workflow-properties-visible .floating-tool-btn {
     min-height: var(--pp-control-h);
     box-sizing: border-box;
     font-family: var(--vscode-editor-font-family, monospace);
-}
-.pp-add-param-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 6px;
 }
 
 .param-def-list {
@@ -2753,52 +2287,6 @@ body.workflow-properties-visible .floating-tool-btn {
 .param-def-input:focus {
     border-color: var(--vscode-focusBorder);
     box-shadow: 0 0 0 1px var(--vscode-focusBorder);
-}
-
-/* Action Buttons in Properties */
-.property-actions {
-    display: flex;
-    gap: 8px;
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--vscode-panel-border);
-}
-
-.property-btn {
-    flex: 1;
-    padding: 6px 12px;
-    font-size: 11px;
-    border: none;
-    border-radius: 3px;
-    cursor: pointer;
-    transition: background 0.15s ease;
-}
-
-.property-btn.primary {
-    background: var(--vscode-button-background);
-    color: var(--vscode-button-foreground);
-}
-
-.property-btn.primary:hover {
-    background: var(--vscode-button-hoverBackground);
-}
-
-.property-btn.secondary {
-    background: var(--vscode-button-secondaryBackground);
-    color: var(--vscode-button-secondaryForeground);
-}
-
-.property-btn.secondary:hover {
-    background: var(--vscode-button-secondaryHoverBackground);
-}
-
-.property-btn.danger {
-    background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
-    color: var(--vscode-errorForeground, #f44747);
-}
-
-.property-btn.danger:hover {
-    background: #7a2d2d;
 }
 
 /* ── Agent Context Section ─────────────────────────────────────────── */
@@ -3426,16 +2914,6 @@ details[open] > summary .agent-chat-expand-arrow {
     border-color: var(--vscode-focusBorder, #007fd4);
     box-shadow: none;
 }
-
-/* ═══════════════════════════════════════════════════════════════════ */
-/* Property panel — Lit/vscode-elements sections (Basic Info, Ports)   */
-/* ═══════════════════════════════════════════════════════════════════ */
-
-/* Section headers must never squash their title when actions are wide:
-   let actions wrap to a second line instead of ellipsizing the title. */
-.property-section-header {
-    flex-wrap: wrap;
-}
 .property-section-header .section-title {
     flex: 1 1 auto;
     min-width: 70px;
@@ -3446,97 +2924,8 @@ details[open] > summary .agent-chat-expand-arrow {
     flex-wrap: wrap;
     justify-content: flex-end;
 }
-.property-panel .pp-chip {
-    font-family: var(--vscode-editor-font-family, monospace);
-    font-size: 11px;
-    padding: 2px 8px;
-    border: 1px solid var(--pp-border);
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--vscode-badge-background) 22%, transparent);
-    color: var(--vscode-foreground);
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.property-panel .pp-change {
-    margin-left: auto;
-}
-
-.property-panel .pp-icon-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: var(--pp-control-h);
-    height: var(--pp-control-h);
-    border: none;
-    background: transparent;
-    color: var(--vscode-icon-foreground, var(--vscode-foreground));
-    border-radius: 4px;
-    cursor: pointer;
-}
-.property-panel .pp-icon-btn:hover {
-    background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
-}
-.property-panel .pp-icon-btn.danger:hover {
-    color: var(--vscode-errorForeground, #f14c4c);
-}
 .property-panel .pp-icon-btn .codicon {
     font-size: 14px;
-}
-
-.property-panel .pp-empty {
-    font-size: 12px;
-    color: var(--pp-muted);
-    padding: 2px 0;
-}
-
-/* ═══════════════════════════════════════════════════════════════════ */
-/* Property panel — "super clean" custom theme (not the stock VS Code   */
-/* widget look). Applies across ALL sections via shared classes.        */
-/* ═══════════════════════════════════════════════════════════════════ */
-
-/* Panel shell: flat editor surface, hairline divider, no heavy shadow. */
-.property-panel {
-    background: var(--vscode-editor-background);
-    box-shadow: none;
-}
-.property-panel-header {
-    background: transparent;
-    border-bottom: 1px solid var(--pp-border);
-    letter-spacing: 0.6px;
-}
-
-/* Tabs: minimal, accent underline. */
-.property-tabs-header {
-    background: transparent;
-    border-bottom: 1px solid var(--pp-border);
-}
-.property-tab-btn {
-    color: var(--pp-muted);
-    border-bottom-color: transparent;
-}
-.property-tab-btn:hover {
-    color: var(--vscode-foreground);
-    background: transparent;
-}
-.property-tab-btn.active {
-    color: var(--vscode-foreground);
-    border-bottom-color: var(--pp-accent);
-}
-
-/* Sections: plain header (no fill), hairline separators between sections. */
-.property-section {
-    border-bottom: 1px solid var(--pp-border);
-}
-.property-section-header {
-    background: transparent;
-    color: var(--pp-muted);
-    letter-spacing: 0.6px;
-}
-.property-section-header:hover {
-    background: transparent;
-    color: var(--vscode-foreground);
 }
 
 /* Unified clean buttons — ghost by default, soft hover, no VS Code chrome. */
@@ -3634,55 +3023,6 @@ details[open] > summary .agent-chat-expand-arrow {
     border: 1px solid var(--pp-border);
     border-radius: 10px;
 }
-
-/* Consistent empty-state styling everywhere. */
-.property-panel .pp-empty {
-    padding: 10px 12px;
-    color: var(--pp-muted);
-    font-size: 12px;
-    background: var(--pp-surface);
-    border: 1px dashed var(--pp-border);
-    border-radius: var(--pp-radius);
-    text-align: center;
-}
-.property-panel .pp-param-head .pp-chip {
-    margin-left: auto;
-    flex: none;
-}
-.property-panel .pp-input,
-.property-panel .pp-select {
-    flex: 1;
-    min-width: 0;
-    box-sizing: border-box;
-    height: var(--pp-control-h);
-    padding: 0 8px;
-    font-size: 12px;
-    font-family: var(--vscode-editor-font-family, monospace);
-    color: var(--vscode-input-foreground, var(--vscode-foreground));
-    background: var(--vscode-input-background);
-    border: 1px solid var(--pp-border);
-    border-radius: 6px;
-    outline: none;
-}
-.property-panel .pp-input:focus,
-.property-panel .pp-select:focus {
-    border-color: var(--pp-accent);
-}
-
-/* ═══════════════════════════════════════════════════════════════════ */
-/* Property panel — ALIGNED FORM layout (label column | value column)   */
-/* ═══════════════════════════════════════════════════════════════════ */
-.property-panel {
-    --pp-label-w: 96px;
-}
-
-.property-panel .pp-arow {
-    display: grid;
-    grid-template-columns: var(--pp-label-w) minmax(0, 1fr);
-    gap: 10px;
-    align-items: center;
-    padding: 3px 0;
-}
 /* Narrow panel: stack label over value so the value gets full width
    (otherwise the fixed label column starves it and text breaks badly). */
 @container pp-panel (max-width: 340px) {
@@ -3692,127 +3032,6 @@ details[open] > summary .agent-chat-expand-arrow {
         padding: 5px 0;
         align-items: start;
     }
-}
-.property-panel .pp-akey {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    min-width: 0;
-    font-size: 12px;
-    color: var(--pp-muted);
-}
-.property-panel .pp-akey-name {
-    color: var(--vscode-foreground);
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.property-panel .pp-akey-type {
-    font-family: var(--vscode-editor-font-family, monospace);
-    font-size: 10px;
-    color: var(--pp-muted);
-}
-.property-panel .pp-aval {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    font-size: 12px;
-    color: var(--vscode-foreground);
-    /* Break only at spaces / genuinely unbreakable strings — never mid-word
-       like "Exter/nal". */
-    overflow-wrap: break-word;
-}
-.property-panel .pp-change {
-    margin-left: auto;
-    flex: none;
-}
-.property-panel .pp-aval-wrap {
-    display: block;
-    line-height: 1.5;
-}
-.property-panel .pp-aval .pp-input {
-    flex: 1;
-}
-.property-panel .pp-akey-select {
-    width: 100%;
-}
-
-/* extra-small inline button (e.g. "Change") */
-.property-panel .pp-btn-xs {
-    height: 22px;
-    padding: 0 8px;
-    margin-left: auto;
-}
-
-/* Ports: flat aligned rows with a status dot, hover-revealed delete. */
-.property-panel .pp-prows {
-    display: flex;
-    flex-direction: column;
-}
-.property-panel .pp-prow {
-    display: grid;
-    grid-template-columns: 8px minmax(0, 1fr) auto var(--pp-control-h);
-    align-items: center;
-    gap: 8px;
-    padding: 5px 2px;
-}
-.property-panel .pp-prow + .pp-prow {
-    border-top: 1px solid color-mix(in srgb, var(--pp-border) 55%, transparent);
-}
-.property-panel .pp-pdot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--pp-muted);
-}
-.property-panel .pp-prow-input .pp-pdot {
-    background: var(--vscode-charts-green, #89d185);
-}
-.property-panel .pp-prow-output .pp-pdot {
-    background: var(--vscode-charts-blue, #4daafc);
-}
-.property-panel .pp-pname {
-    background: none;
-    border: none;
-    padding: 0;
-    text-align: left;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--vscode-foreground);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.property-panel .pp-pname:hover {
-    color: var(--vscode-textLink-foreground, #3794ff);
-}
-.property-panel .pp-ptype {
-    font-family: var(--vscode-editor-font-family, monospace);
-    font-size: 11px;
-    color: var(--pp-muted);
-    cursor: pointer;
-    justify-self: end;
-    max-width: 180px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.property-panel .pp-ptype:hover {
-    color: var(--vscode-foreground);
-}
-.property-panel .pp-prow.selected {
-    background: color-mix(in srgb, var(--pp-accent) 14%, transparent);
-    border-radius: 6px;
-}
-.property-panel .pp-prow-del {
-    opacity: 0;
-    transition: opacity 0.12s ease;
-}
-.property-panel .pp-prow:hover .pp-prow-del {
-    opacity: 1;
 }
 
 /* ── Read-only live "Running agents" bar (streamed from the run) ────────── */

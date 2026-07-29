@@ -48,6 +48,32 @@ export { workflowFeaturesModule } from './stock-features.module';
 // Paired with `./chat-panel.css` (import that stylesheet directly for the panel styles).
 export { ChatPanel } from './chat-panel-integrated';
 
+// ── Property panel (reusable chrome + field toolkit) ────────────────────────
+// The window-management "chrome" (show/hide/pin/resize/float) and the typed
+// field/model toolkit are product-neutral and reusable. The domain-coupled
+// content class (`PropertyPanel`) is intentionally NOT exported — same policy as
+// `WorkflowDiagramStarter`: chrome + fields are neutral, content is domain-bound.
+// Paired with `./property-panel.css` for the panel/field styles.
+export {
+    PropertyPanelChrome,
+    DEFAULT_PROPERTY_PANEL_CHROME_CONFIG,
+    type PropertyPanelChromeConfig
+} from './property-panel-chrome';
+export {
+    ppField,
+    ppNumberField,
+    ppReadonlyRow,
+    renderInto,
+    type NumberFieldOptions
+} from './property-fields';
+export {
+    type PropertyElement,
+    type PropertyArgs,
+    readStringArg,
+    readNumberArg,
+    readBoolArg
+} from './property-model';
+
 // ── Back-compat aliases for the former monolith surface ─────────────────────
 export { workflowDiagramModule, createCalDiagramContainer } from './di.config';
 
