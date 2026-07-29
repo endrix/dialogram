@@ -20,6 +20,7 @@ import {
     DiagramMcpModule,
     bridgeableChatTools
 } from '../src/server/mcp-diagram-module';
+import { AgentDispatchCreateNodesMcpToolHandler } from '../src/server/create-nodes-mcp-tool-handler';
 import type { PlatformMcpTool } from '../src/server/mcp-platform-tool-adapter';
 
 function tool(name: string, mutates?: boolean): PlatformMcpTool {
@@ -126,8 +127,47 @@ describe('DiagramMcpModule undo/redo tool exclusion (host owns undo)', () => {
         expect(ctors).not.toContain(RedoMcpToolHandler);
     });
 
-    it('keeps the other built-in mutation tools (only undo/redo are dropped)', () => {
+    it('replaces the built-in create-nodes with the non-interactive agent-dispatch override', () => {
+        // The stock create-nodes tool reaches the operation handler's interactive quick-input,
+        // blocking an agent call on a dialog. The override marks dispatches `headless` so creation
+        // runs without any prompt — so the built-in must be gone and the override present.
         const ctors = resolveToolHandlerCtors(new DiagramMcpModule());
-        expect(ctors).toContain(CreateNodesMcpToolHandler);
+        expect(ctors).not.toContain(CreateNodesMcpToolHandler);
+        expect(ctors).toContain(AgentDispatchCreateNodesMcpToolHandler);
+    });
+});
+
+describe('AgentDispatchCreateNodesMcpToolHandler (headless marker injection)', () => {
+    it('stamps `headless` on every dispatched node before delegating to the built-in flow', async () => {
+        const handler = new AgentDispatchCreateNodesMcpToolHandler();
+        // Intercept the inherited built-in create loop: capture what the override forwards to super,
+        // then restore so the shared built-in prototype is left untouched for other tests.
+        const builtinProto = CreateNodesMcpToolHandler.prototype as unknown as {
+            createResult: (input: unknown) => Promise<unknown>;
+        };
+        const originalCreateResult = builtinProto.createResult;
+        let seen: unknown;
+        builtinProto.createResult = async function (input: unknown) {
+            seen = input;
+            return { content: [] };
+        };
+
+        try {
+            await (handler as unknown as {
+                createResult(input: unknown): Promise<unknown>;
+            }).createResult({
+                sessionId: 's1',
+                nodes: [
+                    { elementTypeId: 'node:task', position: { x: 0, y: 0 }, args: { type: 'MyTask' } },
+                    { elementTypeId: 'node:task', position: { x: 1, y: 1 } }
+                ]
+            });
+        } finally {
+            builtinProto.createResult = originalCreateResult;
+        }
+
+        const forwarded = seen as { nodes: Array<{ args?: Record<string, unknown> }> };
+        expect(forwarded.nodes[0].args).toEqual({ type: 'MyTask', headless: true });
+        expect(forwarded.nodes[1].args).toEqual({ headless: true });
     });
 });

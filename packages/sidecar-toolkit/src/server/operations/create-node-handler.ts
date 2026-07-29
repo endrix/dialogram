@@ -201,6 +201,13 @@ export class CreateNodeOperationHandler extends OperationHandler {
                     return undefined;
                 }
 
+                // Agent-dispatched (headless) creations MUST NOT trigger interactive UI. The MCP
+                // tool layer stamps `args.headless` on the operation; the palette/webview flow never
+                // does, so it keeps its dialogs. When headless every value the dialog would collect
+                // (type, instance name, port name/type) must come from `operation.args` — otherwise
+                // we FAIL with an actionable error instead of prompting a user who isn't there.
+                const headless = operation.args?.['headless'] === true;
+
                 if (!(await this.ensureCreateCapabilities(sourceUri, elementTypeId))) {
                     return undefined;
                 }
@@ -217,22 +224,32 @@ export class CreateNodeOperationHandler extends OperationHandler {
                 const isBoundaryOutput = elementTypeId === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT;
                 if (isBoundaryInput || isBoundaryOutput) {
                     const direction = isBoundaryInput ? 'input' : 'output';
-                    const portName = (await vscode.window.showInputBox({
-                        prompt: `New ${direction} port name`,
-                        placeHolder: direction === 'input' ? 'In' : 'Out'
-                    }))?.trim();
+                    const portName = headless
+                        ? (operation.args?.['portName'] as string | undefined)?.trim()
+                        : (await vscode.window.showInputBox({
+                            prompt: `New ${direction} port name`,
+                            placeHolder: direction === 'input' ? 'In' : 'Out'
+                        }))?.trim();
                     if (!portName) {
+                        if (headless) {
+                            this.showAgentAmbiguity(`create ${direction} port`, 'pass args.portName and args.portType');
+                        }
                         return undefined;
                     }
                     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(portName)) {
                         void vscode.window.showErrorMessage('Invalid port name (must be an identifier).');
                         return undefined;
                     }
-                    const portType = (await vscode.window.showInputBox({
-                        prompt: `Type for ${direction} port '${portName}'`,
-                        placeHolder: 'e.g. int(size=32)'
-                    }))?.trim();
+                    const portType = headless
+                        ? (operation.args?.['portType'] as string | undefined)?.trim()
+                        : (await vscode.window.showInputBox({
+                            prompt: `Type for ${direction} port '${portName}'`,
+                            placeHolder: 'e.g. int(size=32)'
+                        }))?.trim();
                     if (!portType) {
+                        if (headless) {
+                            this.showAgentAmbiguity(`create ${direction} port '${portName}'`, 'pass args.portType');
+                        }
                         return undefined;
                     }
                     const result = await this.sendSidecarOpDetailed(sourceUri, {
@@ -266,6 +283,10 @@ export class CreateNodeOperationHandler extends OperationHandler {
                                     ? 'tool'
                                     : 'task';
                         const typeLabel = this.typeLabelForPicker(requestedKind);
+                        if (headless) {
+                            this.showAgentAmbiguity(`create ${typeLabel} node`, `pass args.type with an existing ${typeLabel} name`);
+                            return undefined;
+                        }
                         const listResult = await this.listTypeNamesDetailed(sourceUri, requestedKind);
                     const items = await this.resolveAvailableTypeNames(sourceUri, requestedKind, beforeText, listResult, `list available ${typeLabel} types`);
                     if (!items) {
@@ -321,6 +342,10 @@ export class CreateNodeOperationHandler extends OperationHandler {
                     const label = elementTypeId === WorkflowDiagramTypes.NODE_WORKFLOW
                         ? this.typeLabelForPicker('workflow')
                         : this.typeLabelForPicker('task');
+                    if (headless) {
+                        this.showAgentAmbiguity(`create ${label} node`, `pass args.type with an existing ${label} name`);
+                        return undefined;
+                    }
                     const picked = (await vscode.window.showInputBox({
                         prompt: `Enter ${label} type name`,
                         placeHolder: label === this.typeLabelForPicker('workflow')
@@ -349,10 +374,15 @@ export class CreateNodeOperationHandler extends OperationHandler {
                 }
                 const taken = new Set(names);
                 const defaultName = this.uniqueInstanceName(finalTypeName.toLowerCase(), taken);
-                const entityName = (await vscode.window.showInputBox({
-                    prompt: 'Instance name',
-                    value: defaultName
-                }))?.trim() || defaultName;
+                // Headless: use a caller-supplied `args.name`, else auto-generate the same unique
+                // default the dialog pre-fills — never open the instance-name input box.
+                const providedName = (operation.args?.['name'] as string | undefined)?.trim();
+                const entityName = headless
+                    ? (providedName || defaultName)
+                    : ((await vscode.window.showInputBox({
+                        prompt: 'Instance name',
+                        value: defaultName
+                    }))?.trim() || defaultName);
                 if (taken.has(entityName)) {
                     void vscode.window.showErrorMessage(`Instance '${entityName}' already exists.`);
                     return undefined;
@@ -700,6 +730,17 @@ export class CreateNodeOperationHandler extends OperationHandler {
         }
 
         return [];
+    }
+
+    /**
+     * Surface a non-interactive, actionable failure for an agent-dispatched creation that lacks a
+     * value the palette dialog would otherwise collect. This is a passive error notification — it
+     * never blocks on user input — so the agent-facing operation fails cleanly and the message tells
+     * the caller exactly which `args.*` to supply (the MCP layer relays tool errors to the agent).
+     */
+    private showAgentAmbiguity(action: string, hint: string): void {
+        const base = this.sidecar.createNodeStrings().sidecarDisplayName;
+        void vscode.window.showErrorMessage(`${base}: cannot ${action} without a required value — ${hint}.`);
     }
 
     private showSidecarFailure(action: string, result: SidecarInvocationResult): void {

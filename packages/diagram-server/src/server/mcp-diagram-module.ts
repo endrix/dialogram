@@ -16,6 +16,7 @@
  * their defaults here — cleaner, diagram-aware overrides are a follow-up.
  */
 import {
+    CreateNodesMcpToolHandler,
     DefaultMcpDiagramModule,
     RedoMcpToolHandler,
     UndoMcpToolHandler,
@@ -24,6 +25,7 @@ import {
 import type { InstanceMultiBinding } from '@eclipse-glsp/server';
 import { makePlatformToolHandlerClass, type PlatformMcpTool } from './mcp-platform-tool-adapter';
 import { CreateTaskTypeMcpToolHandler } from './create-task-type-mcp-tool-handler';
+import { AgentDispatchCreateNodesMcpToolHandler } from './create-nodes-mcp-tool-handler';
 
 /**
  * Keep mutation-capable tools OFF the read-only GLSP-MCP bridge.
@@ -97,6 +99,13 @@ export class DiagramMcpModule extends DefaultMcpDiagramModule {
         // Agents are told (session context hint) that edits are user-undoable via the editor.
         binding.remove(UndoMcpToolHandler);
         binding.remove(RedoMcpToolHandler);
+        // Replace the built-in `create-nodes` with the agent-dispatch override. The stock tool
+        // reaches the operation handler's interactive quick-input (a palette-drop affordance),
+        // which blocks an agent call on a dialog no agent can answer. The override marks its
+        // dispatched operations `headless` so creation runs non-interactively — deriving the
+        // instance name and failing with an actionable error instead of ever prompting.
+        binding.remove(CreateNodesMcpToolHandler);
+        binding.add(AgentDispatchCreateNodesMcpToolHandler);
         // Custom operation tool: scaffold a task type. It rides the built-in operation-tool path
         // (dispatches a reversible GLSP operation), so mutation flows through our undoable workspace
         // edits — the one sanctioned way to expose a mutating tool on the GLSP-MCP surface.
