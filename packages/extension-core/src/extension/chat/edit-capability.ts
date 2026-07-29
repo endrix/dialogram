@@ -20,7 +20,6 @@ export interface EditChatCapabilityDeps {
     profile: DiagramProfile;
     editBackend: DiagramEditBackend;
     getEditorProvider(): WorkflowEditorProvider | undefined;
-    getAssetsPath(): string;
     log(message: string): void;
 }
 

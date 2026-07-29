@@ -47,7 +47,6 @@ export async function activateProfileRuntime(
                 profile,
                 editBackend: profile.editBackend,
                 getEditorProvider: () => glsp.editorProvider,
-                getAssetsPath: () => (assetsUri ?? context.extensionUri).fsPath,
                 log: m => log(m)
             });
         }

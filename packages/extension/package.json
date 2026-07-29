@@ -19,12 +19,12 @@
             "properties": {
                 "workflow.chat.enableMcpTools": {
                     "type": "boolean",
-                    "description": "Expose diagram MCP tools (create_node, connect, validate, ...) to the chat agent.",
+                    "description": "Expose the in-host read-only registry MCP tools (list_task_types, get_graph, validate_workflow, ...) to the chat agent.",
                     "default": true
                 },
                 "dialogram.chat.useGlspMcp": {
                     "type": "boolean",
-                    "description": "Hand the chat agent the in-host GLSP-MCP diagram server alongside the legacy MCP servers (parallel-run). Turn off to fall back to the legacy MCP path only. (Legacy `workflow.chat.useGlspMcp` is still honoured.)",
+                    "description": "Hand the chat agent the in-host GLSP-MCP diagram server, whose tools (create-task-type, create-nodes, create-edges, modify-*, delete-elements) make undoable edits through the editor's undo stack. Turn off to fall back to the read-only in-host registry server only: reads still work, but the agent can no longer make undoable diagram edits and any mutation happens via direct (non-undoable) file edits. (Legacy `workflow.chat.useGlspMcp` is still honoured.)",
                     "default": true
                 },
                 "dialogram.chat.autoLayoutAfterEdits": {

@@ -39,7 +39,6 @@ function makeCapability(backend = makeBackend()) {
         profile: makeProfile(),
         editBackend: backend,
         getEditorProvider: () => editorProvider as any,
-        getAssetsPath: () => '/assets',
         log: () => undefined
     });
     return { capability, backend, refresh };

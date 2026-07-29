@@ -672,10 +672,11 @@ export class ACPClientService extends EventEmitter {
       `refers to "this", "the workflow/network", or asks about its nodes, treat them as ` +
       `the source of truth and do not search other files unless explicitly asked.`;
     const skill = this.chatSkill ??
-      `You also have MCP tools (list_task_types, get_graph, create_task_type, create_node, ` +
-      `connect, …). For STRUCTURAL edits prefer those tools. To add a BRAND-NEW task: call ` +
-      `create_task_type to scaffold it, then edit the generated @task class to implement its ` +
-      `behavior, and verify with get_graph.`;
+      `You also have MCP tools: read tools (list_task_types, get_graph, validate_workflow) and ` +
+      `GLSP diagram tools (create-task-type, create-nodes, create-edges, modify-nodes, ` +
+      `delete-elements). For STRUCTURAL edits prefer the GLSP tools — their edits go through the ` +
+      `editor's undo stack. To add a BRAND-NEW task: call create-task-type to scaffold it, then ` +
+      `edit the generated @task class to implement its behavior, and verify with get_graph.`;
 
     // A diagram-tool usage hint, present only when the extension layer says the
     // diagram MCP server is advertised to the agent.
