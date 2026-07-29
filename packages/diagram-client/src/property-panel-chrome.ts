@@ -44,6 +44,15 @@ export interface PropertyPanelChromeConfig {
     readonly panelMinWidthPx: number;
     /** Maximum docked panel width as a fraction of the viewport width. */
     readonly panelMaxWidthRatio: number;
+    /**
+     * Whether the docked panel is user-resizable with persisted width (the stock
+     * behavior: restore stored width on init, observe resize, clamp to
+     * `panelMinWidthPx`, and persist). Set `false` for a panel whose width is
+     * purely CSS-driven (e.g. a responsive `min(280px, 40vw)`) — the chrome then
+     * never applies an inline width or writes the width storage key, so the CSS
+     * width is preserved. Defaults to `true` (stock behavior unchanged).
+     */
+    readonly enableDockedResize: boolean;
 }
 
 /** Stock workflow chrome strings — the historical `private static readonly` values verbatim. */
@@ -59,7 +68,8 @@ export const DEFAULT_PROPERTY_PANEL_CHROME_CONFIG: PropertyPanelChromeConfig = {
     panelWidthStorageKey: 'workflow.diagram.propertyPanel.widthPx',
     floatingModeStorageKey: 'workflow.diagram.propertyPanel.floatingMode',
     panelMinWidthPx: 280,
-    panelMaxWidthRatio: 0.6
+    panelMaxWidthRatio: 0.6,
+    enableDockedResize: true
 };
 
 export class PropertyPanelChrome {
@@ -133,6 +143,11 @@ export class PropertyPanelChrome {
     // ── Docked resize + width persistence ───────────────────────────────
 
     private initializePanelResize(): void {
+        // Opt-out: a CSS-width-driven panel takes no inline width and no persistence.
+        if (!this.cfg.enableDockedResize) {
+            return;
+        }
+
         const panel = document.getElementById(this.cfg.panelId);
         if (!panel) {
             return;

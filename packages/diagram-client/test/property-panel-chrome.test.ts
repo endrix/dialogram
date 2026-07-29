@@ -197,3 +197,36 @@ describe('PropertyPanelChrome — custom (mlir-like) config', () => {
         expect(store.has('workflow.diagram.propertyPanel.widthPx')).toBe(false);
     });
 });
+
+describe('PropertyPanelChrome — enableDockedResize:false (CSS-width panel)', () => {
+    const CSS_WIDTH: PropertyPanelChromeConfig = {
+        ...DEFAULT_PROPERTY_PANEL_CHROME_CONFIG,
+        panelId: 'mlir-property-panel',
+        closeBtnId: 'mlir-btn-close-properties',
+        pinBtnId: 'mlir-btn-pin-properties',
+        toggleBtnId: 'mlir-btn-toggle-properties',
+        headerSelector: '.mlir-property-header',
+        visibleBodyClass: 'mlir-properties-visible',
+        panelWidthStorageKey: 'mlir.propertyPanel.widthPx',
+        enableDockedResize: false
+    };
+
+    it('wires no ResizeObserver, applies no inline width, and never persists width', () => {
+        const { doc, panel, close } = buildDom(CSS_WIDTH);
+        // A stored width must NOT be applied when docked resize is disabled.
+        store.set('mlir.propertyPanel.widthPx', '500');
+        installFakeDom(doc, store);
+
+        const chrome = new PropertyPanelChrome(() => undefined, CSS_WIDTH);
+        chrome.initialize();
+
+        expect(capturedResizeCb).toBeUndefined(); // no observer wired
+        expect(panel.style.width).toBe(''); // CSS width untouched
+        // show/hide still work (chrome behavior otherwise intact).
+        expect(doc.body.classList.contains('mlir-properties-visible')).toBe(true);
+        close.dispatch('click');
+        expect(panel.classList.contains('collapsed')).toBe(true);
+        // Stored width preserved but never rewritten by the chrome.
+        expect(store.get('mlir.propertyPanel.widthPx')).toBe('500');
+    });
+});
