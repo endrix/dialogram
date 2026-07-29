@@ -7,6 +7,7 @@ import { html, render, nothing, TemplateResult } from 'lit';
 import { repeat } from 'lit/directives/repeat.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { renderMarkdownSafe } from './markdown';
+import { shouldStick } from './chat-scroll';
 
 /**
  * Memoized markdown → HTML. The chat template runs `renderMarkdownSafe` for every
@@ -1063,9 +1064,15 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     // The message drawer slides open only when there is content (and the user
     // hasn't collapsed it); otherwise the card is just header + composer.
     this.panel.classList.toggle('drawer-closed', this.isCompact || !this.hasContent);
+    // Decide BEFORE re-rendering whether to keep the view pinned: only if the
+    // user was already at (or near) the bottom. Once they scroll up to read
+    // earlier content, streaming must not yank them back down.
+    const scroll = this.panel.querySelector('.chat-scroll') as HTMLElement | null;
+    const stick = scroll
+      ? shouldStick(scroll.scrollTop, scroll.scrollHeight, scroll.clientHeight)
+      : true;
     render(this.template(), this.panel);
-    const scroll = this.panel.querySelector('.chat-scroll');
-    if (scroll) scroll.scrollTop = scroll.scrollHeight;
+    if (scroll && stick) scroll.scrollTop = scroll.scrollHeight;
   }
 
   private template(): TemplateResult {
