@@ -217,6 +217,52 @@ describe('unified runtime absorbed features', () => {
     });
 });
 
+describe('new-session input box (single source of truth + duplicate guard)', () => {
+    it('pre-fills the helper default and validateInput rejects existing names', async () => {
+        const { runtime, acp } = makeRuntime();
+        const file = '/ws/wf.py';
+        const uri = `file://${file}`;
+
+        // Seed a gap-y session list (Session 1, Session 3) so a naive count-based
+        // default would collide — the fix must use the shared helper instead.
+        let counter = 0;
+        acp.createSession = async () => `id-${++counter}`;
+        acp.getSession = () => ({ provider: undefined });
+        acp.deleteSession = async () => undefined;
+        const sessions = (runtime as any).sessions;
+        await sessions.createSession(file); // Session 1
+        await sessions.createSession(file); // Session 2
+        await sessions.createSession(file); // Session 3
+        await sessions.deleteSession('id-2'); // gap
+
+        const captured: any[] = [];
+        const spy = vi
+            .spyOn(vscode.window, 'showInputBox')
+            .mockImplementation(async (opts: any) => {
+                captured.push(opts);
+                return undefined; // user cancels; we only inspect the options
+            });
+        try {
+            await runtime.handleMessage(uri, { type: 'chat.createSession', data: {} });
+        } finally {
+            spy.mockRestore();
+        }
+
+        expect(captured).toHaveLength(1);
+        const opts = captured[0];
+        // The default equals the helper's value exactly — no second resolver.
+        expect(opts.value).toBe(sessions.nextDefaultSessionName(file));
+        expect(opts.value).toBe('Session 4');
+        // validateInput rejects a name already in use for this workflow…
+        expect(opts.validateInput('Session 1')).toBe(
+            'A session named "Session 1" already exists'
+        );
+        // …but accepts the free default (and any unused name).
+        expect(opts.validateInput('Session 4')).toBeUndefined();
+        expect(opts.validateInput('Fresh')).toBeUndefined();
+    });
+});
+
 describe('connect watchdog (30 s dialog on stuck connection)', () => {
     it('shows a warning dialog when still disconnected 30 s after the handshake', async () => {
         vi.useFakeTimers();

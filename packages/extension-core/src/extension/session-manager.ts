@@ -66,12 +66,16 @@ export class SessionManager {
     name?: string,
     mode: 'plan' | 'build' = 'build'
   ): Promise<SessionData> {
+    // Resolve the default name BEFORE spawning the session so the same helper is
+    // the single source of truth for every default name (agent-side SessionInfo
+    // included) — no second count-based resolver may compute a name elsewhere.
+    const resolvedName = name || this.nextDefaultSessionName(workflowFile);
     const cwd = this.getWorkflowDirectory(workflowFile);
-    const sessionId = await this.acpClient.createSession(cwd, name, mode, workflowFile);
+    const sessionId = await this.acpClient.createSession(cwd, resolvedName, mode, workflowFile);
 
     const sessionData: SessionData = {
       id: sessionId,
-      name: name || this.nextDefaultSessionName(workflowFile),
+      name: resolvedName,
       workflowFile,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -97,7 +101,7 @@ export class SessionManager {
    * second "Session 3"). Renamed/custom names that don't match the pattern are
    * ignored.
    */
-  private nextDefaultSessionName(workflowFile: string): string {
+  nextDefaultSessionName(workflowFile: string): string {
     const pattern = /^Session (\d+)$/;
     let maxNumber = 0;
     for (const session of this.getSessionsForWorkflow(workflowFile)) {
@@ -107,6 +111,16 @@ export class SessionManager {
       }
     }
     return `Session ${maxNumber + 1}`;
+  }
+
+  /**
+   * Whether a session with the given name already exists for this workflow.
+   * Backs the new-session input box's duplicate-name guard.
+   */
+  sessionNameExists(workflowFile: string, name: string): boolean {
+    return this.getSessionsForWorkflow(workflowFile).some(
+      (session) => session.name === name
+    );
   }
 
   /**

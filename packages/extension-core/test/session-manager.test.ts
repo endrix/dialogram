@@ -140,6 +140,45 @@ describe('SessionManager', () => {
       expect(new Set(names).size).toBe(names.length);
     });
 
+    it('passes the resolved default name down to the ACP client (no second resolver)', async () => {
+      // The default name must be resolved once, up front, and handed to the
+      // agent — so the SessionInfo the ACP client builds cannot compute a
+      // divergent count-based name of its own.
+      mockACPClient.createSession.mockResolvedValueOnce('s1');
+      await sessionManager.createSession('/test/workflow.py');
+      mockACPClient.createSession.mockResolvedValueOnce('s2');
+      await sessionManager.createSession('/test/workflow.py');
+
+      expect(mockACPClient.createSession).toHaveBeenLastCalledWith(
+        '/test',
+        'Session 2',
+        'build',
+        '/test/workflow.py'
+      );
+    });
+
+    it('nextDefaultSessionName / sessionNameExists back a duplicate-safe input default', async () => {
+      mockACPClient.createSession.mockResolvedValueOnce('s1');
+      await sessionManager.createSession('/test/workflow.py');
+      mockACPClient.createSession.mockResolvedValueOnce('s2');
+      await sessionManager.createSession('/test/workflow.py');
+      mockACPClient.createSession.mockResolvedValueOnce('s3');
+      await sessionManager.createSession('/test/workflow.py');
+
+      // Interior delete leaves a gap-y list (Session 1, Session 3) — the helper
+      // still yields the next unused number, never a live duplicate.
+      await sessionManager.deleteSession('s2');
+      expect(sessionManager.nextDefaultSessionName('/test/workflow.py')).toBe(
+        'Session 4'
+      );
+
+      expect(sessionManager.sessionNameExists('/test/workflow.py', 'Session 1')).toBe(true);
+      expect(sessionManager.sessionNameExists('/test/workflow.py', 'Session 2')).toBe(false);
+      expect(sessionManager.sessionNameExists('/test/workflow.py', 'Session 4')).toBe(false);
+      // Scoped per workflow: a name used in another file is not a duplicate here.
+      expect(sessionManager.sessionNameExists('/test/other.py', 'Session 1')).toBe(false);
+    });
+
     it('should ignore renamed/custom names when computing the default number', async () => {
       mockACPClient.createSession.mockResolvedValueOnce('s1');
       await sessionManager.createSession('/test/workflow.py', 'My Custom Chat');

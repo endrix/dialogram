@@ -463,12 +463,18 @@ export class ChatRuntime {
                 // blocked). Cancelling drops the panel's spinner.
                 let name: string | undefined = data?.name;
                 if (!name) {
-                    const existing = this.sessions.getSessionsForWorkflow(file).length;
                     name = await vscode.window.showInputBox({
                         title: 'New Chat Session',
                         prompt: 'Name for the new chat session',
-                        value: `Session ${existing + 1}`,
-                        ignoreFocusOut: true
+                        // Single source of truth: the same helper the session
+                        // manager uses, so the pre-filled name can never collide
+                        // with an existing "Session N".
+                        value: this.sessions.nextDefaultSessionName(file),
+                        ignoreFocusOut: true,
+                        validateInput: (candidate) =>
+                            this.sessions.sessionNameExists(file, candidate.trim())
+                                ? `A session named "${candidate.trim()}" already exists`
+                                : undefined
                     });
                     if (!name) {
                         this.postToWebview(uri, { type: 'chat.sessionCreateAborted' });
