@@ -16,6 +16,7 @@ import { ElkExtendedEdge, ElkNode, ElkPort, ElkShape } from 'elkjs';
 import { injectable } from 'inversify';
 import { WorkflowDiagramTypes } from '@dialogram/shared';
 import { WorkflowDiagramConstants } from '@dialogram/shared';
+import { snapRouteEndpoints } from '../routing/persisted-edge-routes';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -338,6 +339,22 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
      * For normal nodes, preserve server-provided sizes.
      */
     protected override applyShape(shape: GShapeElement, elkShape: ElkShape): void {
+        // Ports are placed by the server and every node type declares `elk.portConstraints:
+        // FIXED_POS`, so ELK is not meant to move them — but it does not hand them back
+        // untouched. ELK re-centres a port on a whole-pixel routing lane, so a port whose height
+        // is odd (PORT_HEIGHT_PX is 7: centre 30 + 3.5 = 33.5, snapped to 34) returns half a
+        // pixel below where it was placed. Writing that back makes a freshly laid-out diagram sit
+        // 0.5px off every later open of the same layout, since a reopen skips ELK and re-places
+        // the ports at the server coordinates — a visible twitch on each reload.
+        //
+        // So port geometry is never taken from ELK. Edge endpoints are snapped to the server
+        // anchors instead (see applyEdgeWithOffset), which keeps edges attached without letting
+        // ELK's rounding leak into the model. Port LABELS are unaffected: applyLayoutWithOffset
+        // applies those from `elkPort.labels` separately.
+        if (shape instanceof GPort) {
+            return;
+        }
+
         // Boundary nodes have a fixed-position port whose x-coordinate equals the node
         // width (right edge for inputs, or a negative offset for outputs).  If ELK were
         // allowed to recompute a smaller width the port would land outside the visual
@@ -639,7 +656,14 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
             ? (rawScore === undefined ? true : translatedScore <= rawScore)
             : false;
 
-        const full = useTranslated ? translatedPoints : rawPoints;
+        const chosen = useTranslated ? translatedPoints : rawPoints;
+        // ELK routes from its own (re-centred) port coordinates, which we deliberately do not
+        // write into the model — see applyShape. Pin the endpoints back onto the server's port
+        // anchors so the edge attaches exactly, carrying the adjacent bend so the leading and
+        // trailing segments stay orthogonal.
+        const full = srcAnchor && tgtAnchor && chosen.length >= 2
+            ? snapRouteEndpoints(chosen, srcAnchor, tgtAnchor)
+            : chosen;
         if (full.length >= 2) {
             edge.routingPoints = full;
         } else if (Array.isArray(edge.routingPoints) && edge.routingPoints.length === 0) {

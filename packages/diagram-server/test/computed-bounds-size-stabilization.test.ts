@@ -9,30 +9,21 @@ import {
 } from '../src/server/diagram-action-handlers';
 
 /**
- * Additional coverage for the echo-inflation regression (item: size settling must
- * compare INTRINSIC measurements, not echoes). A GLSP 2.7 client renders a node's
- * <rect> at its assigned size and reports getBBox() = assigned size + port/label/
- * footer overhang. The previous settling loop baked each pass's report into the
- * model, so re-measuring a model carrying the last report grew the node without
- * bound (up to the cap) — uniformly-too-tall nodes with the port label pushed onto
- * the edge line. The fix keeps the model at its server baseline for every settling
- * measurement and commits the settled size exactly once, matching a single honest
- * measurement (the pre-2.7 look) instead of an inflated echo.
- */
-
-/**
- * Regression coverage for the GLSP 2.7 node-size measurement race (item A).
+ * Node sizes are server-authoritative: the client's measurement is never written into the
+ * model, on any path.
  *
- * The old policy flipped `hasClientBounds` on the FIRST ComputedBoundsAction and
- * never shrank node sizes afterwards. Under GLSP 2.7 the first ComputedBounds can
- * arrive before web-font text measurement completes, so a slightly-wrong size was
- * frozen for the whole session and every later (correct) measurement was rejected
- * by the never-shrink freeze — nodes rendered a few px off on every open.
+ * A GLSP 2.7 client renders a node's <rect> at its assigned size and reports getBBox() =
+ * that size + the port and type-footer overhang. Applying such a report inflates the node
+ * past the deterministic server estimate (the footer alone is routinely wider than the node),
+ * and applying it repeatedly grows the node without bound. Worse, only FRESH opens ever did
+ * so — a persisted reopen renders the server estimate verbatim — so the two paths disagreed
+ * and a layout saved from a fresh open recorded port anchors no reopen could reproduce.
  *
- * New policy: keep accepting client-measured node sizes (grow AND shrink) and
- * re-request bounds until two consecutive passes report identical, valid sizes
- * (or a hard pass cap is hit). Then freeze. The >0 guard preserves the documented
- * zero-size protection: a partial/zero measurement never freezes the geometry.
+ * The settle loop below is retained purely as the font-load gate: it re-requests bounds until
+ * two consecutive CLIENT reports agree (or a hard cap is hit), which is when web fonts have
+ * loaded and the port-label sizes recorded by applyBounds are trustworthy — ELK places labels
+ * from those. Only then does `hasClientBounds` flip, releasing the initial ELK layout. The >0
+ * guard preserves the zero-size protection: a partial/zero measurement never counts as stable.
  */
 
 type LayoutMeta = {
@@ -95,59 +86,58 @@ const bounds = (width: number, height: number): ComputedBoundsAction =>
     ({ kind: 'computedBounds', revision: 0, bounds: [{ elementId: 'n1', newSize: { width, height } }] } as any);
 
 describe('ComputedBounds node-size stabilization (GLSP 2.7)', () => {
-    it('re-measures until two consecutive equal CLIENT reports, then commits once and freezes', async () => {
+    it('re-measures until two consecutive equal CLIENT reports, then freezes without resizing', async () => {
         const { handler, node, meta, submitCalls } = makeHarness({ width: 100, height: 40 }, freshLayoutMeta());
 
-        // Pass 1: client measures larger (server estimate was conservative). The report is
-        // RECORDED but NOT baked into the model — the node stays at its server baseline so
-        // the next measurement is intrinsic, not an echo of an accepted size.
+        // Pass 1: client measures larger (rect + port/footer overhang). The report is RECORDED
+        // but never baked into the model — the node stays at its server estimate.
         const r1 = await handler.execute(bounds(130, 50));
-        expect(node.size).toEqual({ width: 100, height: 40 }); // baseline preserved during settle
+        expect(node.size).toEqual({ width: 100, height: 40 });
         expect(meta().hasClientBounds).toBe(false);
         expect(r1[0].kind).toBe(RequestBoundsAction.KIND); // re-measure, no layout yet
         expect(submitCalls.count).toBe(0);
 
-        // Pass 2: fonts finished loading -> different (smaller) report. Still differs from
-        // pass 1, so re-measure again; model still untouched.
+        // Pass 2: fonts finished loading -> different report. Still differs from pass 1, so
+        // re-measure again.
         const r2 = await handler.execute(bounds(118, 50));
         expect(node.size).toEqual({ width: 100, height: 40 });
         expect(meta().hasClientBounds).toBe(false);
         expect(r2[0].kind).toBe(RequestBoundsAction.KIND);
         expect(submitCalls.count).toBe(0);
 
-        // Pass 3: identical to pass 2 -> stabilized -> COMMIT the settled size once, freeze, submit.
+        // Pass 3: identical to pass 2 -> fonts have settled -> release the layout and submit.
+        // The node is STILL at the server estimate; the reports only timed the gate.
         await handler.execute(bounds(118, 50));
-        expect(node.size).toEqual({ width: 118, height: 50 });
+        expect(node.size).toEqual({ width: 100, height: 40 });
         expect(meta().hasClientBounds).toBe(true);
         expect(submitCalls.count).toBe(1);
 
-        // Pass 4: after freeze a fluctuating (e.g. hover-stroke) measurement is rejected.
+        // Pass 4: after freeze a fluctuating (e.g. hover-stroke) measurement changes nothing.
         await handler.execute(bounds(400, 200));
-        expect(node.size).toEqual({ width: 118, height: 50 });
+        expect(node.size).toEqual({ width: 100, height: 40 });
     });
 
-    it('does not inflate when the client echoes the assigned size plus a constant overhang', async () => {
-        // Reproduces the regression: the client reports getBBox() = current model size +
-        // overhang (ports/footer stick out). With the old bake-every-pass loop this grew the
-        // node by `overhang` on each of the MAX_SIZE_MEASURE_PASSES passes (100 -> 164), a
-        // uniformly-too-tall node. The fix measures against a fixed baseline, so the echo is
-        // constant across passes: it converges on pass 2 and commits the honest size ONCE.
-        const OVERHANG = 16;
-        const { handler, node, meta } = makeHarness({ width: 100, height: 40 }, freshLayoutMeta());
-
-        // Client report is a function of the CURRENT model size (the echo).
-        const echo = () => bounds(node.size.width + OVERHANG, node.size.height + OVERHANG);
-
+    it('keeps a fresh open at the same node size a persisted reopen would render', async () => {
+        // The two paths must agree: this is what makes a layout saved from a fresh open
+        // reproducible on reopen (port anchors derive from node.size).
+        const fresh = makeHarness({ width: 100, height: 40 }, freshLayoutMeta());
         let guard = 0;
-        while (!meta().hasClientBounds && guard++ < 10) {
-            await handler.execute(echo());
+        while (!fresh.meta().hasClientBounds && guard++ < 10) {
+            // Client reports getBBox() = assigned size + overhang (ports + type footer).
+            await fresh.handler.execute(bounds(fresh.node.size.width + 47, fresh.node.size.height + 18));
         }
 
-        expect(meta().hasClientBounds).toBe(true);
-        // Exactly one overhang absorbed — NOT MAX_SIZE_MEASURE_PASSES * OVERHANG.
-        expect(node.size).toEqual({ width: 100 + OVERHANG, height: 40 + OVERHANG });
-        // Converged on the second pass (report was stable), well before the hard cap.
-        expect(meta().sizeMeasurePassCount).toBe(2);
+        const persisted = makeHarness(
+            { width: 100, height: 40 },
+            { ...freshLayoutMeta(), hasPersistedLayout: true }
+        );
+        await persisted.handler.execute(bounds(147, 58));
+
+        expect(fresh.meta().hasClientBounds).toBe(true);
+        expect(persisted.meta().hasClientBounds).toBe(true);
+        expect(fresh.node.size).toEqual(persisted.node.size);
+        expect(fresh.node.size).toEqual({ width: 100, height: 40 });
+        // The overhang echo is constant against a fixed baseline, so it converges immediately.
         expect(guard).toBeLessThan(MAX_SIZE_MEASURE_PASSES);
     });
 
@@ -172,7 +162,7 @@ describe('ComputedBounds node-size stabilization (GLSP 2.7)', () => {
         const { handler, node, meta } = makeHarness({ width: 100, height: 40 }, freshLayoutMeta());
 
         const r = await handler.execute(bounds(0, 0));
-        expect(node.size).toEqual({ width: 100, height: 40 }); // never applied
+        expect(node.size).toEqual({ width: 100, height: 40 });
         expect(meta().hasClientBounds).toBe(false); // a zero pass is not "stable"
         expect(r[0].kind).toBe(RequestBoundsAction.KIND);
     });
