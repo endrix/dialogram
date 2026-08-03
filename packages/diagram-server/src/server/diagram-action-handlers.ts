@@ -768,85 +768,10 @@ interface BoundsPassResult {
 }
 
 /**
- * Re-anchor a node's descendant ports to the node's current width.
- *
- * Extracted to module scope so it can be applied at the moment node sizes are
- * COMMITTED (once measurements have settled) rather than on every intermediate
- * settling pass. Ports are placed at the node border; when the committed node
- * width differs from the server estimate the ports must follow it.
- */
-function reanchorPortsToNodeSize(node: any, hasPersistedLayout: boolean): void {
-    const nodeSize = node?.size as { width: number; height: number } | undefined;
-    const children = node?.children as any[] | undefined;
-    if (!nodeSize || !Array.isArray(children)) {
-        return;
-    }
-    const nodeWidth = nodeSize.width ?? 0;
-    const nodeHeight = nodeSize.height ?? 0;
-    if (!(nodeWidth > 0) || !(nodeHeight > 0)) {
-        return;
-    }
-
-    // Ports are often nested in compartments; ensure we re-anchor ALL descendant ports.
-    const absPos = (element: any): { x: number; y: number } => {
-        let x = 0;
-        let y = 0;
-        let current = element;
-        while (current) {
-            if (current.position) {
-                x += current.position.x ?? 0;
-                y += current.position.y ?? 0;
-            }
-            current = current.parent;
-        }
-        return { x, y };
-    };
-
-    const nodeAbs = absPos(node);
-    const visit = (el: any): void => {
-        if (!el) {
-            return;
-        }
-        const elType = (el as any)?.type as string | undefined;
-        if (typeof elType === 'string' && elType.startsWith('port:')) {
-            const port = el as any;
-            const portSize = port.size as { width: number; height: number } | undefined;
-            const portDirection = port.args?.[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined;
-            if (!portSize || !(portSize.width > 0) || !(portSize.height > 0) || !port.position) {
-                return;
-            }
-
-            // Desired absolute X at the node border.
-            const desiredAbsX = hasPersistedLayout
-                ? (portDirection === 'output' ? nodeAbs.x + nodeWidth : nodeAbs.x - portSize.width)
-                : (portDirection === 'output' ? nodeAbs.x + Math.max(0, nodeWidth - portSize.width) : nodeAbs.x);
-
-            const parentAbs = absPos(port.parent);
-            const anchoredX = desiredAbsX - parentAbs.x;
-
-            // Keep Y stable (avoid reshuffling port ordering).
-            port.position = { x: anchoredX, y: port.position.y ?? 0 };
-            return;
-        }
-
-        const elChildren = el.children as any[] | undefined;
-        if (Array.isArray(elChildren)) {
-            for (const c of elChildren) {
-                visit(c);
-            }
-        }
-    };
-
-    for (const child of children) {
-        visit(child);
-    }
-}
-
-/**
  * Collect this pass's raw CLIENT-reported node sizes (the settling measurements),
  * keyed by element id. Zero/partial ('rejected-zero') and post-freeze
  * ('rejected-frozen') entries are excluded — only genuine measurements participate
- * in convergence and commit.
+ * in convergence.
  */
 function collectNodeReports(passResult: BoundsPassResult): Record<string, { width: number; height: number }> {
     const reports: Record<string, { width: number; height: number }> = {};
@@ -937,37 +862,35 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
                   }
                 | undefined;
 
-            // Size-stabilization window (GLSP 2.7 font-load race):
-            // Until we have a STABLE client-bounds snapshot we re-request bounds, keeping
-            // the model at its server baseline so every settling measurement reports the
-            // same INTRINSIC bbox (see applyBounds — node sizes are recorded, never baked
-            // into the model during settling). Convergence compares this pass's CLIENT
-            // report against the PREVIOUS pass's client report: a report is "stable" only
-            // when it matches the last report within epsilon AND saw no zero/partial
-            // measurement — i.e. two consecutive passes agree on valid sizes. Comparing
-            // client-vs-client (not client-vs-model) is what defeats the echo-inflation
-            // loop: a report that merely echoes the already-assigned size is not treated
-            // as growth, so the node never balloons across passes. A hard cap guarantees
-            // termination (and a laid-out diagram) if measurements oscillate. On stabilize
-            // (or cap) we COMMIT the settled sizes exactly once, set hasClientBounds=true —
-            // which freezes sizes and (in WorkflowModelSubmissionHandler.submitModelDirectly)
-            // gates the initial ELK layout so it runs on settled sizes — and submit.
-            // Persisted-layout verbatim path (pre-2.7 behavior): when a saved layout with node
-            // positions exists, its geometry is authoritative and must render byte-stable across
-            // opens. The size-settling machinery (record client reports, converge, COMMIT settled
-            // sizes, RE-ANCHOR ports to the committed width) is a FRESH-OPEN concern only. Running
-            // it on a persisted open re-measures the nodes, commits client sizes that differ from
-            // the deterministic server estimate by a few px, and reanchors the ports — which moves
-            // them AFTER applyPersistedEdgeRoutes/normalizePersistedRouteToFullPolyline already
-            // snapped each edge endpoint to the (pre-reanchor) port anchor. Nothing re-snaps the
-            // endpoints, so the edge start visibly detaches from its source port and every node
-            // jiggles a few px on each open. So: on a persisted open we trust the loaded geometry
-            // verbatim — no settle rounds, no size commit, no port reanchor, no RequestBounds
-            // re-request — freeze immediately and submit once. `applyBounds` (already run above)
-            // only RECORDS node reports (never bakes them) and leaves node/port positions untouched
-            // for persisted layouts, so nothing has moved at this point. Port-label late-measurement
-            // still runs in applyBounds (labels can measure 0 before fonts load) — that is a
-            // label-only concern and does not move nodes, ports, or edge endpoints.
+            // Node sizes are SERVER-AUTHORITATIVE on every path.
+            //
+            // WorkflowDiagramModelSource computes each node's size deterministically from its
+            // ports, port labels and header label, and places the ports just outside the border
+            // (input at x=-portWidth, output at x=nodeWidth). That estimate is what a persisted
+            // reopen renders, verbatim, so it is already the geometry users see most of the time.
+            // A fresh open used to instead COMMIT the client's measurement and re-anchor the ports
+            // inside the committed width — which made the two paths disagree. The client's
+            // measurement is getBBox() of the node's <g>, so it includes the ports AND the italic
+            // type-footer drawn below and centred on the node; that footer is routinely wider than
+            // the node itself, so the committed size overshot the estimate by far more than the
+            // 2*portWidth the re-anchor formula assumes. Net effect: nodes visibly grew on first
+            // render, and a layout saved from that render recorded port anchors that no reopen
+            // could reproduce. Trusting the estimate on both paths makes fresh-open and
+            // persisted-open geometry identical by construction.
+            //
+            // The settle loop below is retained, but purely as the font-load gate (GLSP 2.7 race):
+            // it holds the initial ELK layout until two consecutive client reports agree, which is
+            // when web fonts have loaded and the PORT LABEL sizes recorded by applyBounds are
+            // trustworthy — ELK places labels from those. The reports themselves are never baked
+            // into a node.
+            //
+            // Persisted-layout verbatim path: a saved layout must render byte-stable across opens,
+            // and it has already been measured, so there is nothing to wait for — freeze
+            // immediately and submit once, with no RequestBounds re-request. `applyBounds` (already
+            // run above) only RECORDS node reports and leaves node/port positions untouched, so
+            // nothing has moved at this point. Port-label late-measurement still runs there (labels
+            // can measure 0 before fonts load); that is label-only and moves no node, port or edge
+            // endpoint.
             if (layoutMeta && !layoutMeta.hasClientBounds && layoutMeta.hasPersistedLayout) {
                 layoutMeta.hasClientBounds = true;
                 this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
@@ -997,20 +920,20 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
                 }
 
                 if (!stabilized && !capped) {
-                    // Not settled yet: re-measure without committing a layout. The model is
-                    // NOT mutated with the last report, so the re-served schema carries the
-                    // server baseline — the client re-measures the same intrinsic geometry
-                    // instead of an ever-growing echo. The original RequestModelAction stays
-                    // pending (its SetModel is emitted once we call submitModelDirectly
-                    // below), so no layout/position work happens on a partial measurement.
+                    // Not settled yet: re-measure. The model is never mutated with a report, so
+                    // the re-served schema carries the server baseline and the client re-measures
+                    // the same intrinsic geometry instead of an ever-growing echo. The original
+                    // RequestModelAction stays pending (its SetModel is emitted once we call
+                    // submitModelDirectly below), so no layout work happens on a partial
+                    // measurement.
                     this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
                     const rootSchema = this.serializer.createSchema(model);
                     return [RequestBoundsAction.create(rootSchema)];
                 }
 
-                // Settled (or capped): bake the converged client sizes into the model ONCE
-                // and re-anchor ports to the committed width, then freeze.
-                this.commitSettledNodeSizes(currentReports, layoutMeta.hasPersistedLayout === true);
+                // Settled (or capped): fonts have loaded, so the port-label sizes applyBounds
+                // recorded are trustworthy and the initial ELK layout may run. Node sizes stay at
+                // the server estimate — see the note above.
                 layoutMeta.hasClientBounds = true;
                 this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
             } else if (this.enableDiagramDebug) {
@@ -1022,30 +945,6 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
         }
 
         return [];
-    }
-
-    /**
-     * Bake the converged (settled) client node sizes into the model exactly once, then
-     * re-anchor each node's ports to the committed width. Applied only after convergence
-     * (or the hard cap), so no intermediate/echoed size is ever persisted. Sizes are
-     * ceil-guarded upstream; a non-positive size is skipped defensively.
-     */
-    private commitSettledNodeSizes(
-        reports: Record<string, { width: number; height: number }>,
-        hasPersistedLayout: boolean
-    ): void {
-        const index = this.modelState.index;
-        for (const [id, size] of Object.entries(reports)) {
-            if (!(size.width > 0) || !(size.height > 0)) {
-                continue;
-            }
-            const element = index.get(id) as any;
-            if (!element || !('size' in element)) {
-                continue;
-            }
-            element.size = { width: size.width, height: size.height };
-            reanchorPortsToNodeSize(element, hasPersistedLayout);
-        }
     }
 
     /** Cheap, permanent diagnostics (WORKFLOW_DIAGRAM_DEBUG=1) for the size-stabilization loop. */
@@ -1179,17 +1078,15 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
                 }
 
                 // For nodes: during the settling window (allowClientNodeResize ===
-                // !hasClientBounds) we RECORD the client-measured size but do NOT bake it
-                // into the model. Baking each pass's report into the node size is exactly
-                // the echo-inflation feedback loop: the client re-renders the node's <rect>
-                // at the assigned size and getBBox() reports that size plus any port/label/
-                // footer overhang, so re-measuring a model that already carries the last
-                // report grows the node without bound (up to the pass cap). Instead we keep
-                // the node at its (fixed) server baseline for every settling measurement so
-                // the client re-reports the SAME intrinsic bbox, compare consecutive CLIENT
-                // reports for convergence (in execute), and COMMIT the settled size exactly
-                // once (execute -> commitSettledNodeSizes). Result: a single honest
-                // measurement, matching the pre-2.7 look rather than an inflated echo.
+                // !hasClientBounds) we RECORD the client-measured size but never bake it into
+                // the model — node sizes are server-authoritative (see the note in execute).
+                // The report exists only so `execute` can compare consecutive CLIENT reports
+                // and tell when web fonts have finished loading. It must not be applied: the
+                // client renders the node's <rect> at its assigned size and getBBox() returns
+                // that size plus the port and type-footer overhang, so applying a report both
+                // inflates the node past the server estimate and, if repeated, grows it without
+                // bound. Keeping the node at its fixed baseline also makes every settling pass
+                // report the SAME intrinsic bbox, which is what lets convergence terminate.
                 // The >0 guard preserves the documented zero-size protection: a partial/zero
                 // measurement is recorded as invalid and forces another measurement pass.
                 const isNode = element.type?.startsWith('node:');

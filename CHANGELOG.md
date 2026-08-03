@@ -6,6 +6,18 @@ platform API version.
 
 ## [Unreleased]
 
+### Fixed
+
+- Edges no longer render detached from their ports. Persisted edge routes are re-anchored to the
+  current port anchors on load; the snap existed but had never run, because ports were resolved
+  through a `GModelRoot.index` property that does not exist.
+- Node sizes are server-authoritative on every path. A fresh open no longer commits the client's
+  measured bounds — which include the port and type-footer overhang — nor re-anchors ports inside
+  the committed width, so fresh-open and persisted-reopen geometry now agree.
+- Diagrams no longer twitch on reload. ELK re-centres `FIXED_POS` ports on a whole-pixel routing
+  lane, returning ports of odd height half a pixel low; its port geometry is no longer written
+  into the model, and edge endpoints are snapped to the server anchors instead.
+
 ### Security
 
 - Resolved npm audit findings.

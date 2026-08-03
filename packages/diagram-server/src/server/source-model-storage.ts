@@ -22,7 +22,6 @@ import { promises as fs } from 'node:fs';
 import {
     WorkflowDiagramMetadata,
     type WorkflowDiagramModel,
-    WorkflowDiagramConstants,
     WORKFLOW_NETWORK_MODEL_KEY,
     WORKFLOW_LAYOUT_PERSISTENCE_KEY,
     type GraphDocument,
@@ -38,7 +37,8 @@ import { WorkflowRequestClaudeAgentsOperationHandler, type DiscoveredClaudeAgent
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
-import { convertToGModelRoot, cleanLegacyFanoutPoints } from './gmodel-convert';
+import { convertToGModelRoot } from './gmodel-convert';
+import { applyPersistedEdgeRoutes } from '../routing/persisted-edge-routes';
 import { PERF_ENABLED, perfNow, GraphLoadPerf, nextBuildCount } from './graph-load-perf';
 import { getGraphDiagnosticsCollection } from './graph-diagnostics';
 import {
@@ -549,7 +549,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         }
 
         if (hasPersistedLayout && edgeRoutes && edgeRoutes.size > 0) {
-            this.applyPersistedEdgeRoutes(gmodelRoot, edgeRoutes);
+            applyPersistedEdgeRoutes(gmodelRoot, edgeRoutes);
         }
 
         await this.applyViewerOverlayToEdges(
@@ -2487,191 +2487,6 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         }
         this.runOutputFallbackCache.set(glob, { at: now, paths });
         return paths;
-    }
-
-    private pointDistance(a: { x: number; y: number }, b: { x: number; y: number }): number {
-        const dx = a.x - b.x;
-        const dy = a.y - b.y;
-        return Math.sqrt(dx * dx + dy * dy);
-    }
-
-    private absolutePosition(element: any): { x: number; y: number } {
-        let x = 0;
-        let y = 0;
-        let cur: any = element;
-        while (cur) {
-            const p = cur.position as { x?: number; y?: number } | undefined;
-            if (p) {
-                x += p.x ?? 0;
-                y += p.y ?? 0;
-            }
-            cur = cur.parent;
-        }
-        return { x, y };
-    }
-
-    private portAnchorAbsolute(root: GModelRoot, portId: string): { x: number; y: number } | undefined {
-        const idx = (root as any).index as any;
-        const port = idx?.get?.(portId) as any;
-        if (!port) {
-            return undefined;
-        }
-        let node: any = port;
-        while (node && !(node instanceof GNode)) {
-            node = node.parent;
-        }
-        if (!node) {
-            return undefined;
-        }
-
-        const nodeAbs = this.absolutePosition(node);
-        const portRel = (port.position as { x?: number; y?: number } | undefined) ?? { x: 0, y: 0 };
-        const fallbackPortWidth = WorkflowDiagramConstants.PORT_WIDTH_PX;
-        const fallbackPortHeight = WorkflowDiagramConstants.PORT_HEIGHT_PX;
-        const w = (port.size?.width && port.size.width > 0) ? port.size.width : fallbackPortWidth;
-        const h = (port.size?.height && port.size.height > 0) ? port.size.height : fallbackPortHeight;
-
-        const direction = (port as any).args?.['cal:portDirection'] as string | undefined;
-        const side = direction === 'output' ? 'EAST'
-            : direction === 'input' ? 'WEST'
-            : (port.type as string | undefined)?.includes('output') ? 'EAST'
-            : (port.type as string | undefined)?.includes('input') ? 'WEST'
-            : 'WEST';
-
-        const absPortX = nodeAbs.x + (portRel.x ?? 0);
-        const absPortY = nodeAbs.y + (portRel.y ?? 0);
-        const cx = absPortX + w / 2;
-        const cy = absPortY + h / 2;
-
-        switch (side) {
-            case 'WEST':
-                return { x: absPortX, y: cy };
-            case 'EAST':
-                return { x: absPortX + w, y: cy };
-            default:
-                return { x: cx, y: cy };
-        }
-    }
-
-    
-    private edgeSignatureFromArgs(args: Record<string, unknown> | undefined): string | undefined {
-        if (!args) {
-            return undefined;
-        }
-
-        const normalizeEndpoint = (value: unknown): string => {
-            if (typeof value === 'string' && value.trim() !== '') {
-                return value.trim();
-            }
-            return 'boundary';
-        };
-
-        const fromEntity = normalizeEndpoint(args['wf:from']);
-        const toEntity = normalizeEndpoint(args['wf:to']);
-        const outPort = typeof args['wf:outPort'] === 'string' ? (args['wf:outPort'] as string) : undefined;
-        const inPort = typeof args['wf:inPort'] === 'string' ? (args['wf:inPort'] as string) : undefined;
-
-        if (!outPort || !inPort) {
-            return undefined;
-        }
-
-        return `${fromEntity}|${outPort}|${toEntity}|${inPort}`;
-    }
-
-    private buildEdgeSignatureCounts(root: GModelRoot): Map<string, number> {
-        const counts = new Map<string, number>();
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-            if (element instanceof GEdge) {
-                const signature = this.edgeSignatureFromArgs(element.args as Record<string, unknown> | undefined);
-                if (signature) {
-                    counts.set(signature, (counts.get(signature) ?? 0) + 1);
-                }
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
-        return counts;
-    }
-
-    private edgeRouteKeyFor(
-        args: Record<string, unknown> | undefined,
-        signatureCounts: Map<string, number>
-    ): string | undefined {
-        const signature = this.edgeSignatureFromArgs(args);
-        const astPath = args?.[WorkflowDiagramMetadata.AST_PATH];
-
-        if (signature) {
-            const count = signatureCounts.get(signature) ?? 0;
-            if (count > 1) {
-                if (typeof astPath === 'string' && astPath.trim() !== '') {
-                    return `${signature}|${astPath}`;
-                }
-                return undefined;
-            }
-            return signature;
-        }
-
-        if (typeof astPath === 'string' && astPath.trim() !== '') {
-            return astPath;
-        }
-
-        return undefined;
-    }
-
-    private normalizePersistedRouteToFullPolyline(root: GModelRoot, edge: GEdge, persisted: { x: number; y: number }[]): { x: number; y: number }[] {
-        const src = typeof (edge as any).sourceId === 'string' ? this.portAnchorAbsolute(root, (edge as any).sourceId) : undefined;
-        const tgt = typeof (edge as any).targetId === 'string' ? this.portAnchorAbsolute(root, (edge as any).targetId) : undefined;
-        if (!src || !tgt) {
-            return persisted;
-        }
-
-        if (persisted.length >= 2) {
-            const snapped = persisted.map(p => ({ x: p.x, y: p.y }));
-            snapped[0] = src;
-            snapped[snapped.length - 1] = tgt;
-            return snapped;
-        }
-
-        return [src, ...persisted, tgt];
-    }
-
-    private applyPersistedEdgeRoutes(root: GModelRoot, edgeRoutes: Map<string, { x: number; y: number }[]>): void {
-        const signatureCounts = this.buildEdgeSignatureCounts(root);
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-            if (element instanceof GEdge) {
-                const args = element.args as Record<string, unknown> | undefined;
-                const key = this.edgeRouteKeyFor(args, signatureCounts);
-                if (!key) {
-                    return;
-                }
-                const astPath = args?.[WorkflowDiagramMetadata.AST_PATH];
-                const points = edgeRoutes.get(key)
-                    ?? (typeof astPath === 'string' && astPath.trim() !== '' ? edgeRoutes.get(astPath) : undefined);
-                if (points) {
-                    const full = this.normalizePersistedRouteToFullPolyline(root, element, points);
-                    const cleaned = cleanLegacyFanoutPoints(full);
-                    (element as any).routingPoints = cleaned.length >= 2 ? cleaned : undefined;
-                }
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
     }
 
     /**
