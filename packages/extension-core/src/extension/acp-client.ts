@@ -1,13 +1,35 @@
-import { ClientSideConnection, ndJsonStream, type Agent, type Client, type SessionNotification, type RequestPermissionRequest, type RequestPermissionResponse, type ReadTextFileRequest, type ReadTextFileResponse, type WriteTextFileRequest, type WriteTextFileResponse, type CreateTerminalRequest, type CreateTerminalResponse, type TerminalOutputRequest, type TerminalOutputResponse, type WaitForTerminalExitRequest, type WaitForTerminalExitResponse, type KillTerminalRequest, type KillTerminalResponse, type ReleaseTerminalRequest, type ReleaseTerminalResponse } from '@agentclientprotocol/sdk';
-import { spawn, type ChildProcess } from 'node:child_process';
-import { EventEmitter } from 'node:events';
-import { existsSync } from 'node:fs';
-import * as fs from 'node:fs/promises';
-import * as net from 'node:net';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import { Readable, Writable } from 'node:stream';
-import { OpencodeHttpClient, type OpencodeMessage } from './opencode-http.js';
+import {
+  ClientSideConnection,
+  ndJsonStream,
+  type Agent,
+  type Client,
+  type SessionNotification,
+  type RequestPermissionRequest,
+  type RequestPermissionResponse,
+  type ReadTextFileRequest,
+  type ReadTextFileResponse,
+  type WriteTextFileRequest,
+  type WriteTextFileResponse,
+  type CreateTerminalRequest,
+  type CreateTerminalResponse,
+  type TerminalOutputRequest,
+  type TerminalOutputResponse,
+  type WaitForTerminalExitRequest,
+  type WaitForTerminalExitResponse,
+  type KillTerminalRequest,
+  type KillTerminalResponse,
+  type ReleaseTerminalRequest,
+  type ReleaseTerminalResponse,
+} from "@agentclientprotocol/sdk";
+import { spawn, type ChildProcess } from "node:child_process";
+import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
+import * as fs from "node:fs/promises";
+import * as net from "node:net";
+import * as os from "node:os";
+import * as path from "node:path";
+import { Readable, Writable } from "node:stream";
+import { OpencodeHttpClient, type OpencodeMessage } from "./opencode-http.js";
 
 interface TerminalState {
   process: ChildProcess;
@@ -15,17 +37,29 @@ interface TerminalState {
   byteLimit?: number;
   truncated: boolean;
   exitStatus?: { exitCode?: number | null; signal?: string | null };
-  exitWaiters: Array<(status: { exitCode?: number | null; signal?: string | null }) => void>;
+  exitWaiters: Array<
+    (status: { exitCode?: number | null; signal?: string | null }) => void
+  >;
 }
 
 /** Reject a promise after `ms` with an actionable message (used to guard ACP
  *  calls that can hang forever when an attached MCP server misbehaves). */
-function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  message: string,
+): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(message)), ms);
     promise.then(
-      value => { clearTimeout(timer); resolve(value); },
-      err => { clearTimeout(timer); reject(err); }
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
     );
   });
 }
@@ -42,7 +76,7 @@ export interface SessionInfo {
   name: string;
   cwd: string;
   createdAt: number;
-  mode: 'plan' | 'build';
+  mode: "plan" | "build";
   availableModes: string[];
   provider?: string;
   /** Currently selected model id for this session (the `model` config option). */
@@ -59,12 +93,12 @@ export interface SessionInfo {
  * chips exactly where they occurred (no flattening into one text blob).
  */
 export type TurnPart =
-  | { type: 'text'; text: string }
-  | { type: 'tool'; id: string; title: string; status?: string };
+  | { type: "text"; text: string }
+  | { type: "tool"; id: string; title: string; status?: string };
 
 export interface ACPClientEvents {
   sessionUpdate: (notification: SessionNotification) => void;
-  modeChanged: (data: { sessionId: string; mode: 'plan' | 'build' }) => void;
+  modeChanged: (data: { sessionId: string; mode: "plan" | "build" }) => void;
   providerChanged: (data: { sessionId: string; provider: string }) => void;
   error: (error: Error) => void;
   connected: () => void;
@@ -89,8 +123,14 @@ export interface ACPClientEvents {
 }
 
 export declare interface ACPClientService {
-  on<K extends keyof ACPClientEvents>(event: K, listener: ACPClientEvents[K]): this;
-  emit<K extends keyof ACPClientEvents>(event: K, ...args: Parameters<ACPClientEvents[K]>): boolean;
+  on<K extends keyof ACPClientEvents>(
+    event: K,
+    listener: ACPClientEvents[K],
+  ): this;
+  emit<K extends keyof ACPClientEvents>(
+    event: K,
+    ...args: Parameters<ACPClientEvents[K]>
+  ): boolean;
 }
 
 /**
@@ -137,7 +177,8 @@ export class ACPClientService extends EventEmitter {
   private turnParts: Map<string, TurnPart[]> = new Map();
 
   /** Pending permission requests awaiting a UI decision, keyed by requestId. */
-  private pendingPermissions: Map<string, (optionId: string | null) => void> = new Map();
+  private pendingPermissions: Map<string, (optionId: string | null) => void> =
+    new Map();
   private permissionCounter = 0;
 
   /** Terminals the agent has created via the ACP terminal capability. */
@@ -150,7 +191,9 @@ export class ACPClientService extends EventEmitter {
    * knows how to invoke the edit backend). Injected into session context alongside
    * the source so the agent understands the workflow structure.
    */
-  private workflowGraphProvider?: (workflowFile: string) => Promise<string | undefined>;
+  private workflowGraphProvider?: (
+    workflowFile: string,
+  ) => Promise<string | undefined>;
 
   /**
    * Domain "skill" injected into the session context — runtime vocabulary,
@@ -174,6 +217,19 @@ export class ACPClientService extends EventEmitter {
   private sourceMimeType?: string;
 
   /**
+   * Largest source file injected into a session, in bytes.
+   *
+   * The file is attached whole on the first turn of every session. That is fine
+   * for a hand-written diagram and fatal for a generated one: a 12 MB MLIR
+   * module exhausts the context before the user's question is even read, and the
+   * session dies with "too large to compact" — an error about the transport
+   * rather than about anything the agent could have done differently. Past this
+   * bound the head is sent with a note saying what was left out and how to get
+   * it; the profile's own tools are the intended route to the rest.
+   */
+  private sourceMaxBytes = 256 * 1024;
+
+  /**
    * Optional provider for the MCP servers to attach to a new session, so the
    * agent gets first-class workflow tools (list/create task types, validate,
    * connect, …). Supplied by the extension layer.
@@ -181,7 +237,9 @@ export class ACPClientService extends EventEmitter {
   private mcpServersProvider?: (workflowFile?: string) => any[];
 
   /** Extra per-turn context blocks (injected every prompt, not mtime-deduped). */
-  private turnContextBlocksProvider?: (workflowFile?: string) => Promise<any[]> | any[];
+  private turnContextBlocksProvider?: (
+    workflowFile?: string,
+  ) => Promise<any[]> | any[];
 
   /**
    * Start the ACP client and spawn the opencode subprocess
@@ -198,23 +256,26 @@ export class ACPClientService extends EventEmitter {
    * In all cases the child's PATH is augmented with those install dirs so
    * opencode and anything it shells out to can be found.
    */
-  private resolveOpencodeCommand(): { command: string; env: NodeJS.ProcessEnv } {
+  private resolveOpencodeCommand(): {
+    command: string;
+    env: NodeJS.ProcessEnv;
+  } {
     const home = os.homedir();
-    const binName = process.platform === 'win32' ? 'opencode.cmd' : 'opencode';
+    const binName = process.platform === "win32" ? "opencode.cmd" : "opencode";
     const candidateDirs = [
-      path.join(home, '.opencode', 'bin'),
-      '/usr/local/bin',
-      '/opt/homebrew/bin',
-      path.join(home, '.local', 'bin'),
-      path.join(home, 'bin'),
+      path.join(home, ".opencode", "bin"),
+      "/usr/local/bin",
+      "/opt/homebrew/bin",
+      path.join(home, ".local", "bin"),
+      path.join(home, "bin"),
     ];
 
     const env: NodeJS.ProcessEnv = { ...process.env };
-    const sep = process.platform === 'win32' ? ';' : ':';
-    const existingPath = env.PATH ?? env.Path ?? '';
+    const sep = process.platform === "win32" ? ";" : ":";
+    const existingPath = env.PATH ?? env.Path ?? "";
     const merged = [...candidateDirs, existingPath].filter(Boolean).join(sep);
     env.PATH = merged;
-    if ('Path' in env) env.Path = merged;
+    if ("Path" in env) env.Path = merged;
 
     const override = process.env.WORKFLOW_OPENCODE_PATH;
     if (override && existsSync(override)) {
@@ -233,7 +294,7 @@ export class ACPClientService extends EventEmitter {
 
   async start(cwd: string): Promise<void> {
     if (this.isConnected) {
-      throw new Error('ACP client is already connected');
+      throw new Error("ACP client is already connected");
     }
     this.workspaceCwd = cwd;
 
@@ -250,35 +311,46 @@ export class ACPClientService extends EventEmitter {
       this.http = new OpencodeHttpClient(`http://127.0.0.1:${httpPort}`);
 
       // Spawn opencode acp subprocess
-      this.process = spawn(command, ['acp', '--hostname', '127.0.0.1', '--port', String(httpPort)], {
-        cwd,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env,
-      });
+      this.process = spawn(
+        command,
+        ["acp", "--hostname", "127.0.0.1", "--port", String(httpPort)],
+        {
+          cwd,
+          stdio: ["pipe", "pipe", "pipe"],
+          env,
+        },
+      );
 
       // Handle process errors
-      this.process.on('error', (error) => {
-        this.emit('error', error);
+      this.process.on("error", (error) => {
+        this.emit("error", error);
         this.handleDisconnect();
       });
 
-      this.process.on('exit', (code) => {
+      this.process.on("exit", (code) => {
         if (code !== 0 && code !== null) {
-          this.emit('error', new Error(`OpenCode process exited with code ${code}`));
+          this.emit(
+            "error",
+            new Error(`OpenCode process exited with code ${code}`),
+          );
         }
         this.handleDisconnect();
       });
 
       // Create bidirectional stream using ndjson format
       // Convert Node.js streams to Web API streams
-      const stdoutWeb = Readable.toWeb(this.process.stdout!) as unknown as import('node:stream/web').ReadableStream<Uint8Array>;
-      const stdinWeb = Writable.toWeb(this.process.stdin!) as unknown as import('node:stream/web').WritableStream<Uint8Array>;
+      const stdoutWeb = Readable.toWeb(
+        this.process.stdout!,
+      ) as unknown as import("node:stream/web").ReadableStream<Uint8Array>;
+      const stdinWeb = Writable.toWeb(
+        this.process.stdin!,
+      ) as unknown as import("node:stream/web").WritableStream<Uint8Array>;
       const stream = ndJsonStream(stdinWeb, stdoutWeb);
 
       // Initialize client-side connection
       this.connection = new ClientSideConnection(
         (agent) => this.createClientHandler(agent),
-        stream
+        stream,
       );
 
       // Initialize with capabilities
@@ -292,16 +364,18 @@ export class ACPClientService extends EventEmitter {
           terminal: true,
         },
         clientInfo: {
-          name: 'dialogram',
-          version: '0.0.1',
+          name: "dialogram",
+          version: "0.0.1",
         },
       });
 
       this.isConnected = true;
-      this.emit('connected');
+      this.emit("connected");
     } catch (error) {
       this.handleDisconnect();
-      throw new Error(`Failed to start ACP client: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to start ACP client: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -311,11 +385,11 @@ export class ACPClientService extends EventEmitter {
   async createSession(
     cwd: string,
     name?: string,
-    mode: 'plan' | 'build' = 'build',
-    workflowFile?: string
+    mode: "plan" | "build" = "build",
+    workflowFile?: string,
   ): Promise<string> {
     if (!this.connection) {
-      throw new Error('ACP client is not connected');
+      throw new Error("ACP client is not connected");
     }
 
     // newSession spawns/connects the session's MCP servers and waits for their
@@ -327,8 +401,8 @@ export class ACPClientService extends EventEmitter {
         mcpServers: (this.mcpServersProvider?.(workflowFile) ?? []) as any,
       }),
       30000,
-      'Timed out creating the chat session (an MCP tool server may have failed to start). ' +
-        'Disable the chat MCP tools in settings if this persists.'
+      "Timed out creating the chat session (an MCP tool server may have failed to start). " +
+        "Disable the chat MCP tools in settings if this persists.",
     );
     const sessionId = response.sessionId;
 
@@ -338,7 +412,7 @@ export class ACPClientService extends EventEmitter {
       cwd,
       createdAt: Date.now(),
       mode,
-      availableModes: ['plan', 'build'],
+      availableModes: ["plan", "build"],
       provider: undefined,
       workflowFile,
     };
@@ -353,7 +427,10 @@ export class ACPClientService extends EventEmitter {
     this.applyConfigOptions(sessionInfo, (response as any).configOptions);
 
     // Align the session with the requested mode if it differs from the default.
-    if (sessionInfo.mode !== mode && sessionInfo.availableModes.includes(mode)) {
+    if (
+      sessionInfo.mode !== mode &&
+      sessionInfo.availableModes.includes(mode)
+    ) {
       await this.setSessionMode(sessionId, mode);
     }
 
@@ -365,27 +442,37 @@ export class ACPClientService extends EventEmitter {
    * (as returned by session/new and session/set_config_option). Also refreshes
    * the cached model catalog. Tolerant of missing/empty input.
    */
-  private applyConfigOptions(session: SessionInfo, configOptions: any[] | null | undefined): void {
+  private applyConfigOptions(
+    session: SessionInfo,
+    configOptions: any[] | null | undefined,
+  ): void {
     if (!Array.isArray(configOptions)) return;
 
-    const modeOption = configOptions.find((o) => o?.id === 'mode' || o?.category === 'mode');
+    const modeOption = configOptions.find(
+      (o) => o?.id === "mode" || o?.category === "mode",
+    );
     if (modeOption) {
       const values = (modeOption.options || [])
         .map((o: any) => o?.value)
-        .filter((v: any): v is string => typeof v === 'string');
+        .filter((v: any): v is string => typeof v === "string");
       if (values.length) session.availableModes = values;
-      if (modeOption.currentValue === 'plan' || modeOption.currentValue === 'build') {
+      if (
+        modeOption.currentValue === "plan" ||
+        modeOption.currentValue === "build"
+      ) {
         session.mode = modeOption.currentValue;
       }
     }
 
-    const modelOption = configOptions.find((o) => o?.id === 'model' || o?.category === 'model');
+    const modelOption = configOptions.find(
+      (o) => o?.id === "model" || o?.category === "model",
+    );
     if (modelOption) {
-      if (typeof modelOption.currentValue === 'string') {
+      if (typeof modelOption.currentValue === "string") {
         session.model = modelOption.currentValue;
       }
       const options: ModelOption[] = (modelOption.options || [])
-        .filter((o: any) => typeof o?.value === 'string')
+        .filter((o: any) => typeof o?.value === "string")
         .map((o: any) => ({ id: o.value, name: o.name || o.value }));
       if (options.length) this.modelOptions = options;
     }
@@ -394,9 +481,12 @@ export class ACPClientService extends EventEmitter {
   /**
    * Set the mode for a session (plan or build)
    */
-  async setSessionMode(sessionId: string, mode: 'plan' | 'build'): Promise<void> {
+  async setSessionMode(
+    sessionId: string,
+    mode: "plan" | "build",
+  ): Promise<void> {
     if (!this.connection) {
-      throw new Error('ACP client is not connected');
+      throw new Error("ACP client is not connected");
     }
 
     const session = this.sessions.get(sessionId);
@@ -411,21 +501,21 @@ export class ACPClientService extends EventEmitter {
     // opencode 1.17+ drives mode through the generic config-option API.
     const response = await this.connection.setSessionConfigOption({
       sessionId,
-      configId: 'mode',
+      configId: "mode",
       value: mode,
     });
     this.applyConfigOptions(session, (response as any)?.configOptions);
 
     session.mode = mode;
-    this.emit('modeChanged', { sessionId, mode });
+    this.emit("modeChanged", { sessionId, mode });
   }
 
   /**
    * Get the current mode for a session
    */
-  getSessionMode(sessionId: string): 'plan' | 'build' {
+  getSessionMode(sessionId: string): "plan" | "build" {
     const session = this.sessions.get(sessionId);
-    return session?.mode || 'build';
+    return session?.mode || "build";
   }
 
   /**
@@ -433,7 +523,7 @@ export class ACPClientService extends EventEmitter {
    */
   async listSessions(): Promise<SessionInfo[]> {
     if (!this.connection) {
-      throw new Error('ACP client is not connected');
+      throw new Error("ACP client is not connected");
     }
 
     const response = await this.connection.listSessions({});
@@ -448,9 +538,9 @@ export class ACPClientService extends EventEmitter {
         id: s.sessionId,
         name: s.title || `Session ${s.sessionId.slice(0, 8)}`,
         cwd: s.cwd,
-        createdAt: typeof s.updatedAt === 'number' ? s.updatedAt : Date.now(),
-        mode: 'build',
-        availableModes: ['plan', 'build'],
+        createdAt: typeof s.updatedAt === "number" ? s.updatedAt : Date.now(),
+        mode: "build",
+        availableModes: ["plan", "build"],
       };
       this.sessions.set(s.sessionId, sessionInfo);
       return sessionInfo;
@@ -460,9 +550,13 @@ export class ACPClientService extends EventEmitter {
   /**
    * Load an existing session
    */
-  async loadSession(sessionId: string, cwd?: string, workflowFile?: string): Promise<void> {
+  async loadSession(
+    sessionId: string,
+    cwd?: string,
+    workflowFile?: string,
+  ): Promise<void> {
     if (!this.connection) {
-      throw new Error('ACP client is not connected');
+      throw new Error("ACP client is not connected");
     }
 
     // Already resident on this connection — re-attaching would re-spawn its MCP
@@ -500,8 +594,8 @@ export class ACPClientService extends EventEmitter {
         mcpServers: (this.mcpServersProvider?.(wf) ?? []) as any,
       }),
       30000,
-      'Timed out restoring the chat session (an MCP tool server may have failed to start). ' +
-        'Disable the chat MCP tools in settings if this persists.'
+      "Timed out restoring the chat session (an MCP tool server may have failed to start). " +
+        "Disable the chat MCP tools in settings if this persists.",
     );
     // Resident now — subsequent switches back to this session skip the re-attach.
     this.loadedSessionIds.add(sessionId);
@@ -514,8 +608,8 @@ export class ACPClientService extends EventEmitter {
         name: `Session ${sessionId.slice(0, 8)}`,
         cwd: loadCwd,
         createdAt: Date.now(),
-        mode: 'build',
-        availableModes: ['plan', 'build'],
+        mode: "build",
+        availableModes: ["plan", "build"],
         workflowFile: wf,
       });
     }
@@ -526,7 +620,7 @@ export class ACPClientService extends EventEmitter {
    */
   async deleteSession(sessionId: string): Promise<void> {
     if (!this.connection) {
-      throw new Error('ACP client is not connected');
+      throw new Error("ACP client is not connected");
     }
 
     await this.connection.deleteSession({ sessionId });
@@ -538,11 +632,13 @@ export class ACPClientService extends EventEmitter {
   private findFreePort(): Promise<number> {
     return new Promise((resolve, reject) => {
       const server = net.createServer();
-      server.on('error', reject);
-      server.listen(0, '127.0.0.1', () => {
+      server.on("error", reject);
+      server.listen(0, "127.0.0.1", () => {
         const address = server.address();
-        const port = typeof address === 'object' && address ? address.port : 0;
-        server.close(() => (port ? resolve(port) : reject(new Error('Could not allocate a port'))));
+        const port = typeof address === "object" && address ? address.port : 0;
+        server.close(() =>
+          port ? resolve(port) : reject(new Error("Could not allocate a port")),
+        );
       });
     });
   }
@@ -563,7 +659,7 @@ export class ACPClientService extends EventEmitter {
    */
   async revertToMessage(sessionId: string, messageID: string): Promise<void> {
     if (!this.http) {
-      throw new Error('opencode HTTP API is not available');
+      throw new Error("opencode HTTP API is not available");
     }
     await this.http.revert(sessionId, messageID);
   }
@@ -571,7 +667,7 @@ export class ACPClientService extends EventEmitter {
   /** Restore whatever the most recent revert undid. */
   async unrevert(sessionId: string): Promise<void> {
     if (!this.http) {
-      throw new Error('opencode HTTP API is not available');
+      throw new Error("opencode HTTP API is not available");
     }
     await this.http.unrevert(sessionId);
   }
@@ -589,7 +685,7 @@ export class ACPClientService extends EventEmitter {
    */
   async sendPrompt(sessionId: string, prompt: string): Promise<void> {
     if (!this.connection) {
-      throw new Error('ACP client is not connected');
+      throw new Error("ACP client is not connected");
     }
 
     const blocks: any[] = [];
@@ -597,7 +693,9 @@ export class ACPClientService extends EventEmitter {
     blocks.push(...contextBlocks);
     if (this.turnContextBlocksProvider) {
       try {
-        const turnBlocks = await this.turnContextBlocksProvider(this.sessions.get(sessionId)?.workflowFile);
+        const turnBlocks = await this.turnContextBlocksProvider(
+          this.sessions.get(sessionId)?.workflowFile,
+        );
         if (Array.isArray(turnBlocks)) {
           blocks.push(...turnBlocks);
         }
@@ -605,12 +703,12 @@ export class ACPClientService extends EventEmitter {
         // Per-turn context is best-effort.
       }
     }
-    blocks.push({ type: 'text', text: prompt });
+    blocks.push({ type: "text", text: prompt });
 
     // Reset the assistant turn buffers so we can capture the full reply +
     // reasoning + ordered part structure for this turn.
-    this.turnText.set(sessionId, '');
-    this.turnThinking.set(sessionId, '');
+    this.turnText.set(sessionId, "");
+    this.turnThinking.set(sessionId, "");
     this.turnParts.set(sessionId, []);
 
     await this.connection.prompt({
@@ -619,14 +717,20 @@ export class ACPClientService extends EventEmitter {
     });
 
     // The turn is complete; emit the accumulated assistant text + thinking for persistence.
-    const text = this.turnText.get(sessionId) ?? '';
-    const thinking = this.turnThinking.get(sessionId) ?? '';
+    const text = this.turnText.get(sessionId) ?? "";
+    const thinking = this.turnThinking.get(sessionId) ?? "";
     const parts = this.turnParts.get(sessionId) ?? [];
     this.turnText.delete(sessionId);
     this.turnThinking.delete(sessionId);
     this.turnParts.delete(sessionId);
     const model = this.sessions.get(sessionId)?.model;
-    this.emit('turnComplete', { sessionId, text, thinking: thinking || undefined, model, parts });
+    this.emit("turnComplete", {
+      sessionId,
+      text,
+      thinking: thinking || undefined,
+      model,
+      parts,
+    });
   }
 
   /**
@@ -640,7 +744,7 @@ export class ACPClientService extends EventEmitter {
     const session = this.sessions.get(sessionId);
     if (!session?.workflowFile) return [];
 
-    let stat: import('node:fs').Stats;
+    let stat: import("node:fs").Stats;
     try {
       stat = await fs.stat(session.workflowFile);
     } catch {
@@ -651,11 +755,34 @@ export class ACPClientService extends EventEmitter {
       return []; // unchanged since last injection
     }
 
+    // Nothing is read when the attachment is off: the point of disabling it is a
+    // file too big to hold, so reading it to throw it away is the same mistake.
+    if (this.sourceMaxBytes === 0) {
+      session.injectedWorkflowMtimeMs = stat.mtimeMs;
+      return this.sourceOmittedBlocks(session.workflowFile, stat.size);
+    }
+
     let content: string;
     try {
-      content = await fs.readFile(session.workflowFile, 'utf-8');
+      content = await fs.readFile(session.workflowFile, "utf-8");
     } catch {
       return [];
+    }
+
+    // Truncated at the head: the top of a diagram source is its declarations —
+    // the module, its symbols, its imports — which is the orientation the rest of
+    // this block is for. The note names the cost and the alternative, so the
+    // agent's next move is a tool call rather than a read of the same file.
+    let truncationNote = "";
+    if (Buffer.byteLength(content, "utf-8") > this.sourceMaxBytes) {
+      const shown = content.slice(0, this.sourceMaxBytes);
+      const totalMb = (stat.size / (1024 * 1024)).toFixed(1);
+      truncationNote =
+        `\n\nNOTE: "${path.basename(session.workflowFile)}" is ${totalMb} MB; only its first ` +
+        `${Math.round(this.sourceMaxBytes / 1024)} KB is attached above. Do NOT read the file to ` +
+        `see the rest — it will exhaust the context. Use the diagram tools, or read only the ` +
+        `specific line range you need.`;
+      content = shown;
     }
 
     const reinjected = session.injectedWorkflowMtimeMs !== undefined;
@@ -671,13 +798,14 @@ export class ACPClientService extends EventEmitter {
       `resolved graph are the authoritative definition of the diagram — when the user ` +
       `refers to "this", "the workflow/network", or asks about its nodes, treat them as ` +
       `the source of truth and do not search other files unless explicitly asked.`;
-    const skill = this.chatSkill ??
+    const skill =
+      this.chatSkill ??
       `You also have MCP tools: read tools (list_task_types, get_graph, validate_workflow) and, ` +
-      `when the diagram MCP server is available, GLSP diagram tools (create-task-type, create-nodes, ` +
-      `create-edges, modify-nodes, delete-elements). For STRUCTURAL edits prefer the GLSP tools when ` +
-      `present — their edits go through the editor's undo stack. To add a BRAND-NEW task: call ` +
-      `create-task-type to scaffold it, then edit the generated @task class to implement its ` +
-      `behavior, and verify with get_graph.`;
+        `when the diagram MCP server is available, GLSP diagram tools (create-task-type, create-nodes, ` +
+        `create-edges, modify-nodes, delete-elements). For STRUCTURAL edits prefer the GLSP tools when ` +
+        `present — their edits go through the editor's undo stack. To add a BRAND-NEW task: call ` +
+        `create-task-type to scaffold it, then edit the generated @task class to implement its ` +
+        `behavior, and verify with get_graph.`;
 
     // A diagram-tool usage hint, present only when the extension layer says the
     // diagram MCP server is advertised to the agent.
@@ -685,39 +813,44 @@ export class ACPClientService extends EventEmitter {
 
     const blocks: any[] = [
       {
-        type: 'text',
+        type: "text",
         text:
           `${framing}\n\n${skill}` +
-          (toolHint ? `\n\n${toolHint}` : '') +
-          (reinjectedFlag ? '\n\n(Updated file content follows.)' : ''),
+          (toolHint ? `\n\n${toolHint}` : "") +
+          (reinjectedFlag ? "\n\n(Updated file content follows.)" : ""),
       },
       {
-        type: 'resource',
+        type: "resource",
         resource: {
           uri: `file://${session.workflowFile}`,
-          mimeType: this.sourceMimeType ?? 'text/plain',
+          mimeType: this.sourceMimeType ?? "text/plain",
           text: content,
         },
       },
     ];
+    if (truncationNote) {
+      blocks.push({ type: "text", text: truncationNote });
+    }
 
     // Attach the resolved graph (nodes/edges/ports/agents) when available, so
     // the agent sees the concrete structure, not just the source.
     if (this.workflowGraphProvider) {
       try {
-        const graphJson = await this.workflowGraphProvider(session.workflowFile);
+        const graphJson = await this.workflowGraphProvider(
+          session.workflowFile,
+        );
         if (graphJson) {
           blocks.push({
-            type: 'text',
+            type: "text",
             text:
-              'The resolved workflow graph (the exact nodes, edges and ports rendered in the ' +
-              'diagram) follows as JSON. Prefer it when reasoning about connectivity and structure.',
+              "The resolved workflow graph (the exact nodes, edges and ports rendered in the " +
+              "diagram) follows as JSON. Prefer it when reasoning about connectivity and structure.",
           });
           blocks.push({
-            type: 'resource',
+            type: "resource",
             resource: {
               uri: `file://${session.workflowFile}.graph.json`,
-              mimeType: 'application/json',
+              mimeType: "application/json",
               text: graphJson,
             },
           });
@@ -733,7 +866,9 @@ export class ACPClientService extends EventEmitter {
   /**
    * Supply a resolver for the workflow graph JSON (used for context injection).
    */
-  setWorkflowGraphProvider(provider: (workflowFile: string) => Promise<string | undefined>): void {
+  setWorkflowGraphProvider(
+    provider: (workflowFile: string) => Promise<string | undefined>,
+  ): void {
     this.workflowGraphProvider = provider;
   }
 
@@ -750,11 +885,40 @@ export class ACPClientService extends EventEmitter {
    * The extension layer returns text only when the diagram MCP server is
    * advertised to the agent (and undefined otherwise).
    */
-  setGlspToolHintProvider(provider?: (workflowFile?: string) => string | undefined): void {
+  setGlspToolHintProvider(
+    provider?: (workflowFile?: string) => string | undefined,
+  ): void {
     this.glspToolHintProvider = provider;
   }
 
   /** Supply the source-file MIME type attached to each session's context. */
+  /**
+   * What stands in for the source when it is not attached: what the file is, how
+   * big, and where to get the parts of it that matter.
+   */
+  private sourceOmittedBlocks(workflowFile: string, size: number): any[] {
+    const megabytes = (size / (1024 * 1024)).toFixed(1);
+    return [
+      {
+        type: "text",
+        text:
+          `Context for this conversation: the user is editing "${path.basename(workflowFile)}" ` +
+          `(${workflowFile}) in a visual diagram editor. The file itself is NOT attached: it is ` +
+          `${megabytes} MB, and reading it whole exhausts the context before anything is answered. ` +
+          `Use the diagram tools for structure, and read only specific line ranges when you need ` +
+          `the source text.` +
+          (this.chatSkill ? `\n\n${this.chatSkill}` : ""),
+      },
+    ];
+  }
+
+  /** 0 disables the attachment entirely; undefined keeps the default bound. */
+  setSourceMaxBytes(maxBytes?: number): void {
+    if (typeof maxBytes === "number" && maxBytes >= 0) {
+      this.sourceMaxBytes = maxBytes;
+    }
+  }
+
   setSourceMimeType(mimeType?: string): void {
     this.sourceMimeType = mimeType;
   }
@@ -766,7 +930,9 @@ export class ACPClientService extends EventEmitter {
    * Supply extra content blocks injected on EVERY turn (unlike the mtime-deduped
    * workflow context) — e.g. the current diagram selection.
    */
-  setTurnContextBlocksProvider(provider: (workflowFile?: string) => Promise<any[]> | any[]): void {
+  setTurnContextBlocksProvider(
+    provider: (workflowFile?: string) => Promise<any[]> | any[],
+  ): void {
     this.turnContextBlocksProvider = provider;
   }
 
@@ -787,28 +953,32 @@ export class ACPClientService extends EventEmitter {
     const sessionId = (notification as any)?.sessionId;
     if (!sessionId) return;
 
-    if (kind === 'tool_call' || kind === 'tool_call_update') {
+    if (kind === "tool_call" || kind === "tool_call_update") {
       this.recordTurnToolPart(sessionId, update);
       return;
     }
 
-    if (kind !== 'agent_message_chunk' && kind !== 'agent_thought_chunk') return;
+    if (kind !== "agent_message_chunk" && kind !== "agent_thought_chunk")
+      return;
     const content = update.content;
     const text =
-      content?.type === 'text' && typeof content.text === 'string' ? content.text : '';
+      content?.type === "text" && typeof content.text === "string"
+        ? content.text
+        : "";
     if (!text) return;
     // Reasoning chunks go to the thinking buffer; the answer goes to the text buffer.
-    const buffer = kind === 'agent_thought_chunk' ? this.turnThinking : this.turnText;
-    buffer.set(sessionId, (buffer.get(sessionId) ?? '') + text);
+    const buffer =
+      kind === "agent_thought_chunk" ? this.turnThinking : this.turnText;
+    buffer.set(sessionId, (buffer.get(sessionId) ?? "") + text);
     // Reasoning is rendered as its own block, so only answer text contributes to
     // the ordered part structure; append to the trailing text run (or start one).
-    if (kind === 'agent_message_chunk') {
+    if (kind === "agent_message_chunk") {
       const parts = this.turnParts.get(sessionId) ?? [];
       const last = parts[parts.length - 1];
-      if (last && last.type === 'text') {
+      if (last && last.type === "text") {
         last.text += text;
       } else {
-        parts.push({ type: 'text', text });
+        parts.push({ type: "text", text });
       }
       this.turnParts.set(sessionId, parts);
     }
@@ -816,20 +986,28 @@ export class ACPClientService extends EventEmitter {
 
   /** Upsert a tool-call part (by id) into the in-flight turn's part structure. */
   private recordTurnToolPart(sessionId: string, update: any): void {
-    const id = String(update?.toolCallId ?? update?.id ?? `tc_${(this.turnParts.get(sessionId)?.length ?? 0)}`);
+    const id = String(
+      update?.toolCallId ??
+        update?.id ??
+        `tc_${this.turnParts.get(sessionId)?.length ?? 0}`,
+    );
     // The tool name arrives on the initial tool_call; later status-only updates
     // omit the title, so only overwrite when a title is actually present (else a
     // completed/failed update would drop the name back to the generic fallback).
     const rawTitle = update?.title || update?.kind;
     const title = rawTitle ? String(rawTitle) : undefined;
-    const status = typeof update?.status === 'string' ? update.status : undefined;
+    const status =
+      typeof update?.status === "string" ? update.status : undefined;
     const parts = this.turnParts.get(sessionId) ?? [];
-    const existing = parts.find((p): p is Extract<TurnPart, { type: 'tool' }> => p.type === 'tool' && p.id === id);
+    const existing = parts.find(
+      (p): p is Extract<TurnPart, { type: "tool" }> =>
+        p.type === "tool" && p.id === id,
+    );
     if (existing) {
       if (title !== undefined) existing.title = title;
       if (status !== undefined) existing.status = status;
     } else {
-      parts.push({ type: 'tool', id, title: title ?? 'tool call', status });
+      parts.push({ type: "tool", id, title: title ?? "tool call", status });
     }
     this.turnParts.set(sessionId, parts);
   }
@@ -850,7 +1028,7 @@ export class ACPClientService extends EventEmitter {
    */
   async cancelPrompt(sessionId: string): Promise<void> {
     if (!this.connection) {
-      throw new Error('ACP client is not connected');
+      throw new Error("ACP client is not connected");
     }
 
     await this.connection.cancel({ sessionId });
@@ -885,11 +1063,11 @@ export class ACPClientService extends EventEmitter {
       });
       const probe: SessionInfo = {
         id: response.sessionId,
-        name: 'catalog-probe',
+        name: "catalog-probe",
         cwd: this.workspaceCwd,
         createdAt: Date.now(),
-        mode: 'build',
-        availableModes: ['plan', 'build'],
+        mode: "build",
+        availableModes: ["plan", "build"],
       };
       this.applyConfigOptions(probe, (response as any).configOptions);
       // Clean up — we only needed the model catalog.
@@ -916,7 +1094,7 @@ export class ACPClientService extends EventEmitter {
    */
   async setProvider(sessionId: string, providerId: string): Promise<void> {
     if (!this.connection) {
-      throw new Error('ACP client is not connected');
+      throw new Error("ACP client is not connected");
     }
 
     const session = this.sessions.get(sessionId);
@@ -926,14 +1104,14 @@ export class ACPClientService extends EventEmitter {
 
     const response = await this.connection.setSessionConfigOption({
       sessionId,
-      configId: 'model',
+      configId: "model",
       value: providerId,
     });
     this.applyConfigOptions(session, (response as any)?.configOptions);
 
     session.provider = providerId;
     session.model = providerId;
-    this.emit('providerChanged', { sessionId, provider: providerId });
+    this.emit("providerChanged", { sessionId, provider: providerId });
   }
 
   /**
@@ -971,63 +1149,87 @@ export class ACPClientService extends EventEmitter {
     return {
       sessionUpdate: async (notification: SessionNotification) => {
         this.accumulateTurnText(notification);
-        this.emit('sessionUpdate', notification);
+        this.emit("sessionUpdate", notification);
       },
 
-      requestPermission: async (request: RequestPermissionRequest): Promise<RequestPermissionResponse> => {
+      requestPermission: async (
+        request: RequestPermissionRequest,
+      ): Promise<RequestPermissionResponse> => {
         const options = request.options ?? [];
 
         // No UI is listening (e.g. headless) → fall back to auto-approve so the
         // agent is never blocked.
-        if (this.listenerCount('permissionRequest') === 0 || options.length === 0) {
-          const allow = options.find((o) => o.name.toLowerCase().includes('allow')) || options[0];
+        if (
+          this.listenerCount("permissionRequest") === 0 ||
+          options.length === 0
+        ) {
+          const allow =
+            options.find((o) => o.name.toLowerCase().includes("allow")) ||
+            options[0];
           return allow
-            ? { outcome: { outcome: 'selected', optionId: allow.optionId } }
-            : { outcome: { outcome: 'cancelled' } };
+            ? { outcome: { outcome: "selected", optionId: allow.optionId } }
+            : { outcome: { outcome: "cancelled" } };
         }
 
         const requestId = `perm_${++this.permissionCounter}`;
         const choice = await new Promise<string | null>((resolve) => {
           this.pendingPermissions.set(requestId, resolve);
-          this.emit('permissionRequest', {
+          this.emit("permissionRequest", {
             requestId,
-            title: (request.toolCall as any)?.title ?? (request.toolCall as any)?.rawInput?.command ?? 'Tool call',
+            title:
+              (request.toolCall as any)?.title ??
+              (request.toolCall as any)?.rawInput?.command ??
+              "Tool call",
             kind: (request.toolCall as any)?.kind,
-            options: options.map((o) => ({ optionId: o.optionId, name: o.name, kind: (o as any).kind })),
+            options: options.map((o) => ({
+              optionId: o.optionId,
+              name: o.name,
+              kind: (o as any).kind,
+            })),
           });
         });
         this.pendingPermissions.delete(requestId);
 
         return choice
-          ? { outcome: { outcome: 'selected', optionId: choice } }
-          : { outcome: { outcome: 'cancelled' } };
+          ? { outcome: { outcome: "selected", optionId: choice } }
+          : { outcome: { outcome: "cancelled" } };
       },
 
-      readTextFile: async (request: ReadTextFileRequest): Promise<ReadTextFileResponse> => {
+      readTextFile: async (
+        request: ReadTextFileRequest,
+      ): Promise<ReadTextFileResponse> => {
         try {
-          const content = await fs.readFile(request.path, 'utf-8');
+          const content = await fs.readFile(request.path, "utf-8");
           return {
             content,
           };
         } catch (error) {
-          throw new Error(`Failed to read file ${request.path}: ${error instanceof Error ? error.message : String(error)}`);
+          throw new Error(
+            `Failed to read file ${request.path}: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
       },
 
-      writeTextFile: async (request: WriteTextFileRequest): Promise<WriteTextFileResponse> => {
+      writeTextFile: async (
+        request: WriteTextFileRequest,
+      ): Promise<WriteTextFileResponse> => {
         try {
           // Ensure directory exists
           const dir = path.dirname(request.path);
           await fs.mkdir(dir, { recursive: true });
 
-          await fs.writeFile(request.path, request.content, 'utf-8');
+          await fs.writeFile(request.path, request.content, "utf-8");
           return {};
         } catch (error) {
-          throw new Error(`Failed to write file ${request.path}: ${error instanceof Error ? error.message : String(error)}`);
+          throw new Error(
+            `Failed to write file ${request.path}: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
       },
 
-      createTerminal: async (request: CreateTerminalRequest): Promise<CreateTerminalResponse> => {
+      createTerminal: async (
+        request: CreateTerminalRequest,
+      ): Promise<CreateTerminalResponse> => {
         const terminalId = `term_${++this.terminalCounter}`;
         const env: NodeJS.ProcessEnv = { ...process.env };
         for (const e of (request as any).env ?? []) {
@@ -1041,12 +1243,12 @@ export class ACPClientService extends EventEmitter {
           cwd,
           env,
           shell: args.length === 0,
-          stdio: ['ignore', 'pipe', 'pipe'],
+          stdio: ["ignore", "pipe", "pipe"],
         });
 
         const state: TerminalState = {
           process: child,
-          output: '',
+          output: "",
           byteLimit: (request as any).outputByteLimit ?? undefined,
           truncated: false,
           exitWaiters: [],
@@ -1054,20 +1256,27 @@ export class ACPClientService extends EventEmitter {
         const append = (chunk: Buffer) => {
           state.output += chunk.toString();
           if (state.byteLimit && state.output.length > state.byteLimit) {
-            state.output = state.output.slice(state.output.length - state.byteLimit);
+            state.output = state.output.slice(
+              state.output.length - state.byteLimit,
+            );
             state.truncated = true;
           }
         };
-        child.stdout?.on('data', append);
-        child.stderr?.on('data', append);
-        const settle = (status: { exitCode?: number | null; signal?: string | null }) => {
+        child.stdout?.on("data", append);
+        child.stderr?.on("data", append);
+        const settle = (status: {
+          exitCode?: number | null;
+          signal?: string | null;
+        }) => {
           if (state.exitStatus) return;
           state.exitStatus = status;
           state.exitWaiters.forEach((w) => w(status));
           state.exitWaiters = [];
         };
-        child.on('close', (code, signal) => settle({ exitCode: code, signal: signal ?? null }));
-        child.on('error', (err) => {
+        child.on("close", (code, signal) =>
+          settle({ exitCode: code, signal: signal ?? null }),
+        );
+        child.on("error", (err) => {
           append(Buffer.from(`\n[terminal error] ${err.message}\n`));
           settle({ exitCode: 1, signal: null });
         });
@@ -1076,23 +1285,38 @@ export class ACPClientService extends EventEmitter {
         return { terminalId };
       },
 
-      terminalOutput: async (request: TerminalOutputRequest): Promise<TerminalOutputResponse> => {
+      terminalOutput: async (
+        request: TerminalOutputRequest,
+      ): Promise<TerminalOutputResponse> => {
         const t = this.terminals.get(request.terminalId);
-        if (!t) return { output: '', truncated: false };
-        return { output: t.output, truncated: t.truncated, exitStatus: t.exitStatus ?? null };
+        if (!t) return { output: "", truncated: false };
+        return {
+          output: t.output,
+          truncated: t.truncated,
+          exitStatus: t.exitStatus ?? null,
+        };
       },
 
       waitForTerminalExit: async (
-        request: WaitForTerminalExitRequest
+        request: WaitForTerminalExitRequest,
       ): Promise<WaitForTerminalExitResponse> => {
         const t = this.terminals.get(request.terminalId);
         if (!t) return {};
         const status =
-          t.exitStatus ?? (await new Promise<{ exitCode?: number | null; signal?: string | null }>((resolve) => t.exitWaiters.push(resolve)));
-        return { exitCode: status.exitCode ?? null, signal: status.signal ?? null };
+          t.exitStatus ??
+          (await new Promise<{
+            exitCode?: number | null;
+            signal?: string | null;
+          }>((resolve) => t.exitWaiters.push(resolve)));
+        return {
+          exitCode: status.exitCode ?? null,
+          signal: status.signal ?? null,
+        };
       },
 
-      killTerminal: async (request: KillTerminalRequest): Promise<KillTerminalResponse> => {
+      killTerminal: async (
+        request: KillTerminalRequest,
+      ): Promise<KillTerminalResponse> => {
         try {
           this.terminals.get(request.terminalId)?.process.kill();
         } catch {
@@ -1101,7 +1325,9 @@ export class ACPClientService extends EventEmitter {
         return {};
       },
 
-      releaseTerminal: async (request: ReleaseTerminalRequest): Promise<ReleaseTerminalResponse> => {
+      releaseTerminal: async (
+        request: ReleaseTerminalRequest,
+      ): Promise<ReleaseTerminalResponse> => {
         const t = this.terminals.get(request.terminalId);
         if (t) {
           try {
@@ -1135,6 +1361,6 @@ export class ACPClientService extends EventEmitter {
 
     this.http = null;
     this.isConnected = false;
-    this.emit('disconnected');
+    this.emit("disconnected");
   }
 }
