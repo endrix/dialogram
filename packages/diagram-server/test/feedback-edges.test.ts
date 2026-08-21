@@ -137,3 +137,42 @@ describe('scale', () => {
         expect(found(long)).toEqual(['back']);
     });
 });
+
+describe('the walk starts where the data enters', () => {
+    it('names the RETURN edge, not the forward path', () => {
+        // Reported from a real network: `pgm -> core -> icache` with icache
+        // feeding core again. Both directions of that cycle are valid back
+        // edges — which one gets named depends on where the walk starts — and
+        // a walk beginning at `icache` names `core -> icache`, colouring the
+        // whole forward path and leaving the actual return black.
+        //
+        // The edge list deliberately puts the return FIRST, which is what made
+        // `icache` the first-seen node and produced exactly that.
+        const network = [
+            edge('back', 'icache', 'core'),
+            edge('feed', 'pgm', 'core'),
+            edge('fwd', 'core', 'icache')
+        ];
+        expect(found(network)).toEqual(['back']);
+    });
+
+    it('still names something when a cycle has no entry at all', () => {
+        // Two actors feeding only each other: no source to start from, so the
+        // walk falls back to first-appearance order and must still terminate
+        // with one edge named rather than none.
+        expect(found([edge('a2b', 'a', 'b'), edge('b2a', 'b', 'a')])).toEqual(['b2a']);
+    });
+
+    it('is unmoved by the order the edges arrive in', () => {
+        // The property the fix buys: the answer is a fact about the network,
+        // not about the order the exporter happened to emit.
+        const shuffled = [
+            [edge('fwd', 'core', 'icache'), edge('feed', 'pgm', 'core'), edge('back', 'icache', 'core')],
+            [edge('feed', 'pgm', 'core'), edge('back', 'icache', 'core'), edge('fwd', 'core', 'icache')],
+            [edge('back', 'icache', 'core'), edge('fwd', 'core', 'icache'), edge('feed', 'pgm', 'core')]
+        ];
+        for (const network of shuffled) {
+            expect(found(network)).toEqual(['back']);
+        }
+    });
+});

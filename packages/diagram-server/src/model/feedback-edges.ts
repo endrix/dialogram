@@ -63,12 +63,18 @@ export function findFeedbackEdges(
         }
     };
 
+    /** Nodes something feeds — i.e. everything that is not a source. */
+    const hasIncoming = new Set<string>();
+
     for (const edge of edges) {
         const source = ownerOf(edge.sourceId);
         const target = ownerOf(edge.targetId);
         see(source);
         see(target);
         outgoing.get(source)!.push({ edgeId: edge.id, target });
+        if (target !== source) {
+            hasIncoming.add(target);
+        }
     }
 
     const feedback = new Set<string>();
@@ -77,7 +83,25 @@ export function findFeedbackEdges(
     /** Nodes on the current path. An edge INTO one of these is a back edge. */
     const open = new Set<string>();
 
-    for (const root of order) {
+    // WHERE THE DATA ENTERS, first.
+    //
+    // Both directions of a cycle are valid back edges — which one the walk
+    // names depends entirely on where it starts, and starting in the middle
+    // names the wrong one. A reader looking at `pgm -> core -> icache` and a
+    // return from `icache` calls the RETURN the feedback; a walk that happened
+    // to begin at `icache` calls `core -> icache` the feedback instead, and
+    // colours the whole forward path.
+    //
+    // Sources — nodes nothing feeds — are where the reader's "forward" starts,
+    // so they are entered first. Anything left after that is inside a cycle
+    // with no entry of its own, and keeps first-appearance order so the result
+    // stays deterministic.
+    const roots = [
+        ...order.filter(node => !hasIncoming.has(node)),
+        ...order.filter(node => hasIncoming.has(node))
+    ];
+
+    for (const root of roots) {
         if (done.has(root)) {
             continue;
         }
