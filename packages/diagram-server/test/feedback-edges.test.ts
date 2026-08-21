@@ -24,6 +24,36 @@ const identity = (endpointId: string): string => endpointId;
 const found = (edges: FeedbackEdgeCandidate[], owner = identity): string[] =>
     [...findFeedbackEdges(edges, owner)].sort();
 
+/**
+ * Does removing `remove` leave a network with no cycle left?
+ *
+ * The property that actually matters: the named edges are a feedback arc set.
+ * Counting them instead asks the wrong question — ONE edge can break two
+ * overlapping loops, and naming a second would be highlighting an edge that
+ * carries the signal forward.
+ */
+function isAcyclicWithout(edges: FeedbackEdgeCandidate[], remove: string[]): boolean {
+    const kept = edges.filter(e => !remove.includes(e.id));
+    const out = new Map<string, string[]>();
+    for (const e of kept) {
+        out.set(e.sourceId, [...(out.get(e.sourceId) ?? []), e.targetId]);
+    }
+    const state = new Map<string, 'open' | 'done'>();
+    const visit = (node: string): boolean => {
+        const seen = state.get(node);
+        if (seen === 'open') return false;
+        if (seen === 'done') return true;
+        state.set(node, 'open');
+        for (const next of out.get(node) ?? []) {
+            if (!visit(next)) return false;
+        }
+        state.set(node, 'done');
+        return true;
+    };
+    return [...new Set(edges.flatMap(e => [e.sourceId, e.targetId]))].every(visit);
+}
+
+
 describe('a network with no loop', () => {
     it('names nothing in a straight pipeline', () => {
         expect(found([edge('e1', 'a', 'b'), edge('e2', 'b', 'c')])).toEqual([]);
@@ -48,6 +78,23 @@ describe('a network with no loop', () => {
 });
 
 describe('a network with a loop', () => {
+    it('always names a set whose removal leaves no loop', () => {
+        // The purpose, stated once over several shapes: what is named must be a
+        // feedback arc set. Everything else here is about WHICH edge; this is
+        // about the set being the right kind of thing at all.
+        const shapes: FeedbackEdgeCandidate[][] = [
+            [edge('self', 'a', 'a')],
+            [edge('e1', 'a', 'b'), edge('back', 'b', 'a')],
+            [edge('e1', 'a', 'b'), edge('e2', 'b', 'c'), edge('back', 'c', 'a')],
+            [edge('e1', 'a', 'b'), edge('back1', 'b', 'a'), edge('e2', 'c', 'd'), edge('back2', 'd', 'c')],
+            [edge('feed', 'pgm', 'core'), edge('fwd', 'core', 'ic'), edge('back', 'ic', 'core')]
+        ];
+        for (const shape of shapes) {
+            const named = found(shape);
+            expect(isAcyclicWithout(shape, named), JSON.stringify(shape.map(e => e.id))).toBe(true);
+        }
+    });
+
     it('names the edge that closes it, and only that one', () => {
         // Three edges carry the signal forward, one sends it back. Highlighting
         // all four would say the whole loop is exceptional when its closing
@@ -135,6 +182,67 @@ describe('scale', () => {
         }
         long.push(edge('back', 'n50000', 'n0'));
         expect(found(long)).toEqual(['back']);
+    });
+});
+
+describe('a network with no source actor at all', () => {
+    // Reported: "sometimes it happens that there is no source actor without
+    // input ports". Then there is no natural entry, so entering sources first
+    // decides nothing and the answer must come from the shape of the network.
+
+    it('names one edge in a ring, not the whole ring', () => {
+        const ring = [
+            edge('a2b', 'a', 'b'),
+            edge('b2c', 'b', 'c'),
+            edge('c2d', 'c', 'd'),
+            edge('d2a', 'd', 'a')
+        ];
+        const named = found(ring);
+        expect(named).toHaveLength(1);
+        expect(isAcyclicWithout(ring, named)).toBe(true);
+    });
+
+    it('breaks the ring however it is emitted, with a single edge', () => {
+        // A symmetric ring has no distinguished edge — every one of them is an
+        // equally true answer, so demanding the SAME edge under rotation would
+        // be demanding an arbitrary convention. What must hold for any emission
+        // order is that exactly one edge is named and that it breaks the loop.
+        const ring = [edge('a2b', 'a', 'b'), edge('b2c', 'b', 'c'), edge('c2a', 'c', 'a')];
+        for (const order of [ring, [ring[1], ring[2], ring[0]], [...ring].reverse()]) {
+            const named = found(order);
+            expect(named, JSON.stringify(order.map(e => e.id))).toHaveLength(1);
+            expect(isAcyclicWithout(order, named)).toBe(true);
+        }
+    });
+
+    it('breaks a two-actor loop with a busy actor at its own single edge', () => {
+        // `a` feeds three sinks as well as `b`; `b` feeds only `a`. The order
+        // that runs the most edges forward starts at `a`, which leaves b -> a
+        // as the one pointing back.
+        expect(
+            found([
+                edge('a2b', 'a', 'b'),
+                edge('b2a', 'b', 'a'),
+                edge('a2x', 'a', 'x'),
+                edge('a2y', 'a', 'y'),
+                edge('a2z', 'a', 'z')
+            ])
+        ).toEqual(['b2a']);
+    });
+
+    it('breaks two overlapping loops without naming an edge it need not', () => {
+        // `a->b->c->a` and `a->b->a` share the `a -> b` edge, so removing that
+        // ONE edge leaves both acyclic. Naming a second would highlight an edge
+        // that carries the signal forward — the opposite of the point.
+        const overlapping = [
+            edge('a2b', 'a', 'b'),
+            edge('b2c', 'b', 'c'),
+            edge('c2a', 'c', 'a'),
+            edge('b2a2', 'b', 'a')
+        ];
+        const named = found(overlapping);
+        expect(isAcyclicWithout(overlapping, named)).toBe(true);
+        expect(named).toHaveLength(1);
     });
 });
 
