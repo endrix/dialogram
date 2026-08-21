@@ -16,6 +16,7 @@ import type * as vscode from "vscode";
 import type { DiagramProfile, DiagramProfileHandle } from "../api";
 import { activateGlspIntegration } from "./diagram/glsp-activation";
 import { ChatRuntime, type ChatRuntimeConfig } from "./chat/chat-runtime";
+import { createViewerEditorsTool } from "./chat/viewer-editors-tool";
 import {
   createEditChatCapability,
   type EditChatCapability,
@@ -114,7 +115,10 @@ export function assembleChatRuntimeConfig(
       : chat.graphContextProvider,
     turnContextProvider: chat.turnContextProvider,
     selectionContext: chat.selectionContext,
-    tools: chat.tools,
+    // The profile's own tools, plus the platform's: "what can open this file"
+    // is a question about the EDITOR, not about any one product's graph, so it
+    // is answered here rather than contributed by every shell in turn.
+    tools: [...(chat.tools ?? []), createViewerEditorsTool()],
     // GLSP-MCP parallel-run (0.5.0): the coarse profile gate plus the URL the
     // in-host diagram server announced. The chat runtime consults the finer
     // `<ns>.chat.useGlspMcp` per-user setting before advertising it (T6).
