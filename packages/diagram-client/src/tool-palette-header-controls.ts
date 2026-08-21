@@ -1,6 +1,6 @@
 import { codiconCSSClasses } from '@eclipse-glsp/sprotty';
 import { VscodeUi } from './vscode-ui';
-import { commandId, queueTraceVisibleStorageKey } from './profile';
+import { commandId, feedbackEdgesVisibleStorageKey, queueTraceVisibleStorageKey } from './profile';
 
 type DiagramContext = {
     sourceUri?: string;
@@ -28,6 +28,33 @@ function setQueueTraceVisible(visible: boolean): void {
         // ignore
     }
     document.body.classList.toggle('workflow-queue-hidden', !visible);
+}
+
+const FEEDBACK_EDGES_VISIBLE_STORAGE_KEY = feedbackEdgesVisibleStorageKey();
+
+/**
+ * Whether feedback loops are drawn apart from the other connections.
+ *
+ * On unless the reader turned it off — the highlight exists because a loop is
+ * the thing worth spotting, and a marker nobody switches on marks nothing.
+ */
+function isFeedbackEdgesVisible(): boolean {
+    try {
+        return globalThis.localStorage?.getItem(FEEDBACK_EDGES_VISIBLE_STORAGE_KEY) !== '0';
+    } catch {
+        return true;
+    }
+}
+
+function setFeedbackEdgesVisible(visible: boolean): void {
+    try {
+        globalThis.localStorage?.setItem(FEEDBACK_EDGES_VISIBLE_STORAGE_KEY, visible ? '1' : '0');
+    } catch {
+        // ignore
+    }
+    // The whole toggle: the server has already marked the edges, so this is a
+    // question about looking and never needs the host.
+    document.body.classList.toggle('workflow-feedback-edges', visible);
 }
 
 function getDiagramContext(): DiagramContext | undefined {
@@ -60,6 +87,9 @@ function classifyHeaderTool(icon: HTMLElement, index: number): { order: number; 
     }
     if (icon.classList.contains('cal-toggle-queues') || hasCodicon(icon, 'eye') || hasCodicon(icon, 'eye-closed')) {
         return { order: 20, group: 'queue' };
+    }
+    if (icon.classList.contains('cal-toggle-feedback-edges')) {
+        return { order: 21, group: 'queue' };
     }
 
     // Layout/viewport cluster.
@@ -227,7 +257,35 @@ function patchHeaderTools(headerTools: HTMLElement): void {
         headerTools.insertBefore(queueIcon, headerTools.firstChild);
     }
 
-    // 5) Normalize icon order + visual grouping separators.
+    // 5) Add the feedback-loop highlight toggle.
+    if (!headerTools.querySelector('i.cal-toggle-feedback-edges')) {
+        const loopIcon = createHeaderIcon('debug-step-back');
+        loopIcon.classList.add('cal-toggle-feedback-edges');
+
+        const applyIconState = (visible: boolean): void => {
+            loopIcon.classList.toggle('cal-feedback-hidden-icon', !visible);
+            loopIcon.title = visible
+                ? 'Hide the feedback-loop highlight'
+                : 'Highlight connections that close a feedback loop';
+            loopIcon.setAttribute('aria-label', loopIcon.title);
+            loopIcon.setAttribute('aria-pressed', String(visible));
+        };
+
+        const initialVisible = isFeedbackEdgesVisible();
+        setFeedbackEdgesVisible(initialVisible);
+        applyIconState(initialVisible);
+
+        loopIcon.onclick = () => {
+            const visible = !isFeedbackEdgesVisible();
+            setFeedbackEdgesVisible(visible);
+            applyIconState(visible);
+            loopIcon.focus();
+        };
+
+        headerTools.insertBefore(loopIcon, headerTools.firstChild);
+    }
+
+    // 6) Normalize icon order + visual grouping separators.
     reorderAndGroupHeaderTools(headerTools);
 }
 

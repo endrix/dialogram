@@ -1,5 +1,6 @@
 import { WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import * as path from 'node:path';
+import { findFeedbackEdges } from './feedback-edges';
 import { URI } from 'vscode-uri';
 
 export type PyGraphPort = {
@@ -83,6 +84,60 @@ export type GEdge = GModelElement & {
 export type GGraph = GModelElement & {
     type: typeof WorkflowDiagramTypes.GRAPH;
 };
+
+/** True for the element types an edge can actually be attached to. */
+function isEdge(element: GModelElement): element is GEdge {
+    return (
+        typeof (element as GEdge).sourceId === 'string' &&
+        typeof (element as GEdge).targetId === 'string'
+    );
+}
+
+/**
+ * Tag the connections that close a feedback loop.
+ *
+ * The graph is walked in `feedback-edges.ts`; this is the part that knows the
+ * model. Two jobs: say which node owns each endpoint — an edge attaches to a
+ * PORT, and an actor's in and out ports are the same node, so without this
+ * every actor in a straight pipeline would look like a loop — and put the class
+ * on the edges the walk names.
+ *
+ * The class is always applied. Whether it is DRAWN differently is the reader's
+ * choice, made in the webview with no round trip, because it is a question
+ * about looking rather than about the graph (see the palette toggle).
+ */
+function markFeedbackEdges(children: GModelElement[]): void {
+    /** endpoint id → owning node id, for every port under every node. */
+    const ownerByEndpoint = new Map<string, string>();
+    const indexPorts = (element: GModelElement, owner: string | undefined): void => {
+        const isNode = !isEdge(element) && element.type !== WorkflowDiagramTypes.GRAPH;
+        const nodeId = isNode ? element.id : owner;
+        if (owner !== undefined) {
+            ownerByEndpoint.set(element.id, owner);
+        }
+        for (const child of element.children ?? []) {
+            indexPorts(child, nodeId);
+        }
+    };
+    for (const child of children) {
+        indexPorts(child, undefined);
+    }
+
+    const edges = children.filter(isEdge);
+    if (edges.length === 0) {
+        return;
+    }
+    // An endpoint nothing claims is its own node: a boundary port hangs off the
+    // graph itself, and calling two of them the same node would invent a loop.
+    const feedback = findFeedbackEdges(edges, id => ownerByEndpoint.get(id) ?? id);
+    for (const edge of edges) {
+        if (!feedback.has(edge.id)) {
+            continue;
+        }
+        edge.cssClasses = [...(edge.cssClasses ?? []), WorkflowDiagramCss.EDGE_FEEDBACK];
+        edge.args = { ...(edge.args ?? {}), [WorkflowDiagramMetadata.IS_FEEDBACK]: true };
+    }
+}
 
 function normalizeNavigationFileUri(value: string | undefined): string | undefined {
     const trimmed = value?.trim();
@@ -700,6 +755,12 @@ export class GraphGModelSource {
             }
             children.push(gedge);
         }
+
+        // After the edges exist and before anything is pruned: which of them
+        // send the signal back up the pipeline. Done over the finished model
+        // rather than over the IR because a loop belongs to the NODES, and only
+        // the model knows which node owns a port — see `feedback-edges.ts`.
+        markFeedbackEdges(children);
 
         // Remove re-parented nodes from root children
         if (removedNodeIds.size > 0) {

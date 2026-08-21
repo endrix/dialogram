@@ -76,6 +76,16 @@ export function queueTraceVisibleStorageKey(): string {
 }
 
 /**
+ * Where the feedback-loop highlight remembers its state.
+ *
+ * Namespaced like the queue key, so each profile keeps its own answer rather
+ * than one product's choice following the reader into another.
+ */
+export function feedbackEdgesVisibleStorageKey(): string {
+    return `${settingsNamespace()}.feedbackEdgesVisible`;
+}
+
+/**
  * Neutral, host-supplied client behavior flags. The webview consults these
  * instead of comparing a product-identity string to a literal. Returns an empty
  * object when nothing was injected (dev/standalone), which reads as all flags off.
