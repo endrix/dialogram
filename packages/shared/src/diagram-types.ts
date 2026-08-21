@@ -140,6 +140,12 @@ export namespace WorkflowDiagramCss {
     export const EDGE = 'workflow-edge';
     /** Virtual edge (dashed, read-only) derived from loop structure. */
     export const EDGE_VIRTUAL = 'workflow-edge-virtual';
+    /**
+     * A connection that closes a feedback loop — it feeds a stage that runs
+     * before it. Always applied by the server; whether it is drawn differently
+     * is the reader's choice, made in the webview.
+     */
+    export const EDGE_FEEDBACK = 'workflow-edge-feedback';
     
     export const LABEL = 'workflow-label';
     export const LABEL_NAME = 'workflow-label-name';
@@ -175,6 +181,8 @@ export namespace WorkflowDiagramMetadata {
     export const IS_FINISHED = 'cal:isFinished';
     /** Marks a node as the entity that caused a run failure. */
     export const IS_ERRORED = 'cal:isErrored';
+    /** Marks a connection as the one that closes a feedback loop. */
+    export const IS_FEEDBACK = 'cal:isFeedback';
     /** Marks a node as a proxy (indexed entity reference like c[i]) */
     export const IS_PROXY = 'cal:isProxy';
     /** Index expression for proxy nodes (e.g., "i", "i-1", "nSegs-1") */

@@ -992,6 +992,44 @@ body.vscode-high-contrast {
     stroke-linejoin: round;
 }
 
+/* ── Feedback loops ──────────────────────────────────────────────────────
+   A connection that feeds a stage running before it. Drawn in a lighter hue so
+   the loop can be found at a glance without tracing arrows: a feedback edge is
+   where a pipeline stops being a pipeline, and it decides initial tokens,
+   deadlock and scheduling.
+
+   LIGHTER, not louder. These edges are not errors and there is nothing to fix;
+   they should read as "this one goes back", so the weight stays the same as
+   every other connection and only the colour moves.
+
+   Gated on the body class, which the palette's loop toggle sets. The server
+   always marks the edges — whether they are drawn apart is a question about
+   looking, so it is answered here with no round trip. `:not(.selected)` and
+   `:not(.hover)` keep selection and hover feedback authoritative, exactly as
+   the last-token rule below does. */
+body.workflow-feedback-edges .workflow-edge.workflow-edge-feedback:not(.selected):not(.hover) {
+    color: var(--workflow-edge-feedback, #d19a66);
+}
+
+body.workflow-feedback-edges
+    .workflow-edge.workflow-edge-feedback:not(.selected):not(.hover)
+    .edge-line {
+    stroke-opacity: 0.75;
+}
+
+/* The palette toggle wears the colour it controls, so the button doubles as
+   the legend for it: there is nowhere else to learn what the lighter edges
+   mean. Off, it is only dimmed — the control has to stay findable, or the
+   reader who turned the highlight off cannot turn it back on. */
+i.cal-toggle-feedback-edges {
+    color: var(--workflow-edge-feedback, #d19a66);
+}
+
+i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
+    color: inherit;
+    opacity: 0.6;
+}
+
 /* Keep last-token / viewer-trace edges solid too (colour already conveys the
    trace; no dashing). */
 .workflow-edge.edge-has-last-token .edge-line {
