@@ -8,6 +8,22 @@ export interface ReversibleMultiWorkspaceEditCommandOptions {
     computeEdits: ComputeMultiTextEdits;
     /** Optional hook invoked after a successful execute/undo/redo. */
     afterApply?: () => void | Promise<void>;
+    /**
+     * Snapshots for an op that wrote the files ITSELF, consulted after the
+     * (then no-op) edit is applied.
+     *
+     * An op that rewrites source out of band leaves nothing for `applyEdit` to
+     * do and nothing for it to observe: the before text is gone by the time
+     * this command runs, and the after text has to be read from disk rather
+     * than from a document VS Code reconciles asynchronously. The single-URI
+     * command solves this with `_sourceBeforeText`/`_sourceAfterText`; this is
+     * the same idea for several files at once, typed rather than stashed on
+     * the instance.
+     *
+     * Returning `undefined` (or an empty list) leaves the computed snapshots in
+     * place, so an ordinary edit is unaffected.
+     */
+    outOfBandSnapshots?: () => Array<{ uri: vscode.Uri; beforeText: string; afterText: string }> | undefined;
 }
 
 function fullDocumentRange(doc: vscode.TextDocument): vscode.Range {
@@ -90,7 +106,8 @@ export class ReversibleMultiWorkspaceEditCommand implements Command {
             snapshots.push({ uri: s.uri, beforeText: s.beforeText, afterText: afterDoc.getText() });
         }
 
-        this.snapshots = snapshots;
+        const override = this.options.outOfBandSnapshots?.();
+        this.snapshots = override && override.length > 0 ? override : snapshots;
         await this.options.afterApply?.();
     }
 
