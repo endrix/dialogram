@@ -48,11 +48,16 @@ describe('create task type handler', () => {
             (handler as any).sidecar = {
                 sidecarOp: (opName: string) => `wfpy.${opName}`,
                 undoLabelSuffix: () => ' (wfpy)',
-                sendSidecarOp: async (_sourceUri: string, nextPayload: { op: string; args: Record<string, unknown> }) => {
+                sendSidecarOpDetailed: async (
+                    _sourceUri: string,
+                    nextPayload: { op: string; args: Record<string, unknown> }
+                ) => {
                     payload = nextPayload;
                     pyText = 'class Foo(Task):\n    pass\n\n\ndef make_net():\n    return None\n';
                     await fs.writeFile(workflowPath, pyText);
-                    return true;
+                    // No `changedFiles`: this workflow is not in a package, so
+                    // the op wrote one file and the undo step covers one file.
+                    return { ok: true, response: { status: 'ok' } };
                 }
             };
 
@@ -63,9 +68,13 @@ describe('create task type handler', () => {
 
             // Only `kind` and `name` reach the sidecar — its `create_task_type(*, kind, name)`
             // signature accepts nothing else.
+            // `kind` and `name` are what the runtime's create op takes;
+            // `updatePackageExports` is the host SAYING it can snapshot a second
+            // file for undo, so a created class may be exported from its
+            // package. A host that could not do that must never ask.
             expect(payload).toEqual({
                 op: 'wfpy.createTaskType',
-                args: { kind: 'task', name: 'Foo' }
+                args: { kind: 'task', name: 'Foo', updatePackageExports: true }
             });
 
             // Reversible snapshot recorded → an undo entry exists.
