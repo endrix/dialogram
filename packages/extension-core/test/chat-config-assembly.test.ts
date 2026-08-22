@@ -52,7 +52,13 @@ describe('assembleChatRuntimeConfig', () => {
         expect(cfg.key).toBe('mlirViewer');
         expect(cfg.displayName).toBe('MLIR Chat');
         expect(cfg.settingsSection).toBe('mlir.chat');
-        expect(cfg.tools).toBe(tools);
+        // The profile's tools come through in order, followed by the
+        // platform's own `list_viewer_editors` — "what can open this file" is a
+        // question about the EDITOR rather than about any product's graph, so
+        // the platform answers it for every profile instead of each shell
+        // contributing its own copy.
+        expect(cfg.tools?.slice(0, tools.length)).toEqual(tools);
+        expect(cfg.tools?.map(t => t.name)).toContain('list_viewer_editors');
         expect(cfg.turnContextProvider).toBe(turn);
         expect(cfg.selectionContext).toBe(selection);
         expect(cfg.slashCommands).toEqual(slash);
@@ -79,7 +85,13 @@ describe('assembleChatRuntimeConfig', () => {
 
     it('absent optional fields stay undefined', () => {
         const cfg = assembleChatRuntimeConfig(makeProfile({}), undefined);
-        expect(cfg.tools).toBeUndefined();
+        // `tools` is the one optional that is no longer absent: the platform
+        // always contributes the viewer-editor tool. Note what this implies —
+        // a profile with no tools of its own now has a non-empty list, so the
+        // chat runtime will start its MCP server (still subject to the
+        // `chat.enableMcpTools` setting). Every shipped profile already
+        // contributed tools, so nothing changes in practice.
+        expect(cfg.tools?.map(t => t.name)).toEqual(['list_viewer_editors']);
         expect(cfg.turnContextProvider).toBeUndefined();
         expect(cfg.selectionContext).toBeUndefined();
         expect(cfg.slashCommands).toEqual([]);
