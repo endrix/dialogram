@@ -644,10 +644,28 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
  * to flash repeatedly. This subclass detects polling requests by their requestId
  * prefix and silently skips the progress reporting for those.
  */
+/**
+ * Handed back for a request that reported no progress, so the finishing step can
+ * tell "there was nothing to clear" from "clear it" by identity — a fact about
+ * THIS request, unlike a field, which by then describes whichever request touched
+ * it last.
+ */
+const SILENT_LOAD = { update: () => undefined, end: () => undefined };
+
 @injectable()
 export class WorkflowRequestModelActionHandler extends RequestModelActionHandler {
-    /** When true, reportModelLoading / reportModelLoadingFinished are no-ops. */
-    private suppressNotifications = false;
+    /**
+     * Whether the request being STARTED should report progress.
+     *
+     * Read only by `reportModelLoading`, and only in the same synchronous step that
+     * set it. Suppression must not be a fact about the handler that outlives a
+     * request: `reportModelLoadingFinished` runs after an await, and a flag another
+     * request had flipped by then would skip ending a monitor THIS one created —
+     * pinning "Model loading in progress" until the tab is closed. What is suppressed
+     * is carried by the monitor instead (there simply isn't one), so finishing is
+     * unconditional and cannot be talked out of it.
+     */
+    private startingSilently = false;
 
     override async execute(action: RequestModelAction): Promise<Action[]> {
         const requestId = action.requestId ?? '';
@@ -657,7 +675,7 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
             requestId.startsWith('refresh-caller-refs-') ||
             requestId.startsWith('refresh-agent-enrichment-');
         const isAgentCtxOnly = Boolean(action.options?.agentContextOnly);
-        this.suppressNotifications = isPolling;
+        this.startingSilently = isPolling;
         if (isPolling) {
             console.log(`[WorkflowRequestModelActionHandler] polling refresh: ${requestId.slice(0, 40)} agentOnly=${isAgentCtxOnly}`);
         }
@@ -678,19 +696,34 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
             }
             return await super.execute(action);
         } finally {
-            this.suppressNotifications = false;
+            this.startingSilently = false;
         }
     }
 
+    /**
+     * Start progress reporting — unless this request is a silent one, in which case
+     * nothing is dispatched and nothing is started; the caller gets
+     * {@link SILENT_LOAD} to hand back when it finishes.
+     */
     protected override reportModelLoading(message: string) {
-        if (this.suppressNotifications) {
-            return undefined;
+        if (this.startingSilently) {
+            return SILENT_LOAD;
         }
         return super.reportModelLoading(message);
     }
 
+    /**
+     * End progress reporting for whatever `reportModelLoading` returned.
+     *
+     * The decision is read off the MONITOR, never off handler state: only a request
+     * that started silently gets {@link SILENT_LOAD} back, and every other request
+     * clears unconditionally. A flag consulted here instead would be read after an
+     * await — by which time it describes some other request — and skipping the clear
+     * for a load that did start one pins "Model loading in progress" until the tab
+     * is closed.
+     */
     protected override reportModelLoadingFinished(monitor?: unknown): void {
-        if (this.suppressNotifications) {
+        if (monitor === SILENT_LOAD) {
             return;
         }
         super.reportModelLoadingFinished(monitor as any);
@@ -705,8 +738,7 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
      * rethrows WITHOUT dispatching that clearing action — so a failed source load leaves the
      * notification pinned on screen forever. Routing the error through
      * `reportModelLoadingFinished` (which dispatches the clearing NONE status and ends the
-     * monitor, honouring `suppressNotifications` symmetrically with `reportModelLoading`)
-     * before rethrowing guarantees the notification is disposed on every path.
+     * monitor) before rethrowing guarantees the notification is disposed on every path.
      */
     protected override handleModelLoadingError(error: unknown, monitor?: unknown): void {
         this.reportModelLoadingFinished(monitor);

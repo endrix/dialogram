@@ -20,7 +20,14 @@ import type {
 } from '@dialogram/shared';
 import { GRAPH_SOURCE_URI_ARG } from '@dialogram/diagram-server/server/graph-load-request-options';
 import { extractWorkflowDefinitionNames, normalizeSourceUriKey } from './source-analysis';
-import { type SidecarRuntimeConfig, getCliInvocation } from './sidecar-runtime-config';
+import {
+    type SidecarRuntimeConfig,
+    DEFAULT_GRAPH_LOAD_TIMEOUT_MS,
+    getCliInvocation,
+    getGraphLoadTimeoutMs,
+    graphLoadTimeoutHint
+} from './sidecar-runtime-config';
+import { describeChildFailure, runChildProcess } from '../run-child-process';
 import { SidecarModelSource, type SidecarModelSourceResult, nodeIdentitiesFromDoc } from './sidecar-model-source';
 
 /**
@@ -94,29 +101,22 @@ export class CliGraphModelSource implements DiagramModelSource {
             }
         }
 
-        const child = spawn(cliInvocation.cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-        let stdout = '';
-        let stderr = '';
-        let spawnError: Error | undefined;
-        // A command that cannot be spawned at all (ENOENT — CLI not installed or a typo'd setting)
-        // emits 'error'; without this handler the EventEmitter throws an uncaught exception in the
-        // extension host and this promise never resolves, leaving the diagram stuck at "model
-        // loading" forever.
-        const exitPromise = new Promise<number>(resolve => {
-            child.on('error', err => {
-                spawnError = err;
-                resolve(-1);
-            });
-            child.on('close', c => resolve(c ?? 1));
+        // Bounded on purpose: the plan command runs the user's own module, so import-time
+        // code can hang it, and this run is what "model loading" is waiting on. An
+        // unstartable command (ENOENT) reports as an event rather than a throw, which is
+        // the other way this used to never settle. Both end up as `failure` below.
+        const result = await runChildProcess(cliInvocation.cmd, args, {
+            timeoutMs: this.graphLoadTimeoutMs(workflowFilePath)
         });
-        child.stdout.on('data', d => (stdout += d.toString()));
-        child.stderr.on('data', d => (stderr += d.toString()));
+        const { stdout } = result;
 
-        const exitCode: number = await exitPromise;
-        if (spawnError || exitCode !== 0) {
-            const detail = spawnError
-                ? `failed to start '${cliInvocation.cmd}': ${spawnError.message}`
-                : (stderr || String(exitCode));
+        const failure = describeChildFailure(cliInvocation.cmd, result);
+        if (failure) {
+            const detail = result.spawnError
+                ? `failed to start '${cliInvocation.cmd}': ${result.spawnError.message}`
+                : result.timedOut
+                  ? `${failure} ${graphLoadTimeoutHint(this.cfg)}`
+                  : (result.stderr || String(result.code));
             const message = detail.includes('attempted relative import with no known parent package')
                 ? `CLI plan failed: ${detail}\nHint: the selected workflow file uses relative imports (for example, from .agents import ...). The runtime CLI currently loads a file as a standalone module. Open the top-level workflow file instead, or switch those imports to package-absolute imports.`
                 : `CLI plan failed: ${detail}`;
@@ -180,22 +180,21 @@ export class CliGraphModelSource implements DiagramModelSource {
         if (!this.cfg.cliGraphArgs) {
             return undefined;
         }
-        const { spawn } = await import('node:child_process');
         const cliInvocation = this.getCliInvocation();
         const args: string[] = [...cliInvocation.argsPrefix, ...this.cfg.cliGraphArgs(filePath, workflowName), '--workflow', workflowName];
-        const child = spawn(cliInvocation.cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-        let stdout = '';
-        let stderr = '';
-        child.stdout.on('data', d => (stdout += d.toString()));
-        child.stderr.on('data', d => (stderr += d.toString()));
-
-        const exitCode: number = await new Promise(resolve => child.on('close', c => resolve(c ?? 1)));
-        if (exitCode !== 0 || stdout.trim() === '') {
-            console.warn(`[CliGraphModelSource] Failed to resolve child workflow identities for ${filePath}#${workflowName}: ${stderr || exitCode}`);
+        // Same deadline as the plan run: this drills into a child workflow, which runs the
+        // same user code and can wedge the same way. Identities are optional — a failure
+        // here degrades the result rather than failing the load — but it must still END.
+        const result = await runChildProcess(cliInvocation.cmd, args, {
+            timeoutMs: this.graphLoadTimeoutMs(filePath)
+        });
+        if (result.code !== 0 || result.stdout.trim() === '') {
+            const reason = describeChildFailure(cliInvocation.cmd, result) ?? 'no output';
+            console.warn(`[CliGraphModelSource] Failed to resolve child workflow identities for ${filePath}#${workflowName}: ${reason}`);
             return undefined;
         }
 
-        return nodeIdentitiesFromDoc(JSON.parse(stdout));
+        return nodeIdentitiesFromDoc(JSON.parse(result.stdout));
     }
 
     /** Produce a well-formed failure document when acquisition is impossible; delegates to the fallback. */
@@ -213,6 +212,21 @@ export class CliGraphModelSource implements DiagramModelSource {
             return getCliInvocation(this.cfg, vscode);
         } catch {
             return { cmd: this.cfg.cliCommandDefault, argsPrefix: [] };
+        }
+    }
+
+    /**
+     * The graph-load deadline for this file, from settings.
+     *
+     * Falls back to the default outside a VS Code host (tests) — the point of the
+     * deadline is that it always exists, so an unavailable setting must not remove it.
+     */
+    private graphLoadTimeoutMs(filePath: string): number {
+        try {
+            const vscode = require('vscode') as typeof import('vscode');
+            return getGraphLoadTimeoutMs(this.cfg, vscode, vscode.Uri.file(filePath));
+        } catch {
+            return DEFAULT_GRAPH_LOAD_TIMEOUT_MS;
         }
     }
 

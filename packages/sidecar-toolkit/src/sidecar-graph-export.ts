@@ -7,9 +7,9 @@
  * agent understands the workflow structure without searching the project.
  */
 
-import * as cp from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { describeChildFailure, runChildProcess } from './run-child-process.js';
 
 export interface WorkflowGraphExportOptions {
   /** Sidecar executable (the configured sidecar command). */
@@ -80,35 +80,31 @@ export async function invokeSidecarOp(
           : packageRoot;
     }
 
-    const child = cp.spawn(options.sidecarCommand, [], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      cwd: packageRoot ?? path.dirname(filePath),
-      env,
-    });
     const payload = {
       file: filePath,
       op: `${options.sidecarOperationPrefix}.${opName}`,
       args,
     };
-    child.stdin.write(JSON.stringify(payload) + '\n');
-    child.stdin.end();
 
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (d) => (stdout += d.toString()));
-    child.stderr.on('data', (d) => (stderr += d.toString()));
-    const exitCode: number = await new Promise((resolve) => {
-      child.on('close', (c) => resolve(c ?? 1));
-      child.on('error', () => resolve(1));
+    const result = await runChildProcess(options.sidecarCommand, [], {
+      cwd: packageRoot ?? path.dirname(filePath),
+      env,
+      input: JSON.stringify(payload) + '\n',
     });
 
-    if (exitCode !== 0) {
-      return { ok: false, message: stderr.trim() || `sidecar exited with ${exitCode}` };
+    const failure = describeChildFailure(options.sidecarCommand, result);
+    if (failure) {
+      return {
+        ok: false,
+        message: result.spawnError || result.timedOut
+          ? failure
+          : result.stderr.trim() || `sidecar exited with ${result.code}`,
+      };
     }
-    if (stdout.trim() === '') {
+    if (result.stdout.trim() === '') {
       return { ok: true };
     }
-    const response = JSON.parse(stdout.trim());
+    const response = JSON.parse(result.stdout.trim());
     if (response?.status === 'ok') {
       return { ok: true, response };
     }
@@ -141,12 +137,6 @@ export async function exportWorkflowGraph(
           : packageRoot;
     }
 
-    const child = cp.spawn(options.sidecarCommand, [], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      cwd: packageRoot ?? path.dirname(filePath),
-      env,
-    });
-
     const payload = {
       file: filePath,
       // The graph-export op name differs per runtime; the caller supplies it via
@@ -157,21 +147,18 @@ export async function exportWorkflowGraph(
           ? { network: options.networkName.trim() }
           : {},
     };
-    child.stdin.write(JSON.stringify(payload) + '\n');
-    child.stdin.end();
 
-    let stdout = '';
-    child.stdout.on('data', (d) => (stdout += d.toString()));
-    const exitCode: number = await new Promise((resolve) => {
-      child.on('close', (c) => resolve(c ?? 1));
-      child.on('error', () => resolve(1));
+    const result = await runChildProcess(options.sidecarCommand, [], {
+      cwd: packageRoot ?? path.dirname(filePath),
+      env,
+      input: JSON.stringify(payload) + '\n',
     });
 
-    if (exitCode !== 0 || stdout.trim() === '') {
+    if (result.code !== 0 || result.stdout.trim() === '') {
       return undefined;
     }
 
-    const response = JSON.parse(stdout);
+    const response = JSON.parse(result.stdout);
     if (response?.status !== 'ok') {
       return undefined;
     }

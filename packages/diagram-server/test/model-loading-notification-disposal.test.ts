@@ -71,4 +71,32 @@ describe('WorkflowRequestModelActionHandler model-loading notification disposal'
 
         expect(dispatched).toHaveLength(0);
     });
+
+    it('still clears a load that a silent refresh interleaved with', async () => {
+        // Whether to clear must follow what THIS request started, not handler state:
+        // the finishing step runs after an await, and a silent refresh that ran in
+        // the meantime would otherwise talk it out of clearing a notification the
+        // refresh never started — pinning it until the tab is closed.
+        // Both loads are held open, so the refresh is still IN FLIGHT when the real
+        // load finishes. That ordering is the whole point: it is the only moment at
+        // which shared state says "silent" while the request doing the finishing is
+        // the loud one.
+        const release: Array<() => void> = [];
+        const { handler, dispatched, monitorEnded } = makeHandler(
+            () => new Promise<void>(resolve => release.push(resolve))
+        );
+
+        const open = handler.execute({ kind: 'requestModel', requestId: 'open-3' } as any);
+        await Promise.resolve();
+        const refresh = handler.execute({ kind: 'requestModel', requestId: 'refresh-during-run-7' } as any);
+        await Promise.resolve();
+
+        release[0]?.();   // the real load finishes while the refresh is still running
+        await open;
+        release[1]?.();
+        await refresh;
+
+        expect(dispatched.at(-1)?.severity).toBe('NONE');
+        expect(monitorEnded()).toBe(1);
+    });
 });

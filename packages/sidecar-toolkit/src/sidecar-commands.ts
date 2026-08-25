@@ -65,24 +65,22 @@ export function registerSidecarCommands(
                 .getConfiguration(config.settingsNamespace)
                 .get<string>(config.sidecarCommandSettingKey, config.sidecarCommandDefault);
             try {
-                const cp = await import('node:child_process');
-                const child = cp.spawn(cmd, [], { stdio: ['pipe', 'pipe', 'pipe'] });
-                const input = JSON.stringify(payload) + '\n';
-                child.stdin.write(input);
-                child.stdin.end();
-                let stdout = '';
-                let stderr = '';
-                child.stdout.on('data', d => (stdout += d.toString()));
-                child.stderr.on('data', d => (stderr += d.toString()));
-                const code: number = await new Promise(resolve => {
-                    child.on('close', c => resolve(c ?? 1));
-                });
-                if (code !== 0) {
-                    return { ok: false, message: stderr || `${config.opNamespace}-sidecar exited with ${code}` };
+                // This command is awaited by whoever invoked it, so it must always answer:
+                // before, an unstartable command raised an unhandled 'error' event and left
+                // the caller's promise pending for the life of the window.
+                const result = await runChildProcess(cmd, [], { input: JSON.stringify(payload) + '\n' });
+                const failure = describeChildFailure(cmd, result);
+                if (failure) {
+                    return {
+                        ok: false,
+                        message: result.spawnError || result.timedOut
+                            ? failure
+                            : result.stderr || `${config.opNamespace}-sidecar exited with ${result.code}`
+                    };
                 }
-                if (stdout.trim() !== '') {
+                if (result.stdout.trim() !== '') {
                     try {
-                        const resp = JSON.parse(stdout.trim());
+                        const resp = JSON.parse(result.stdout.trim());
                         return { ok: resp.status === 'ok', message: resp.message };
                     } catch {
                         return { ok: false, message: 'Invalid sidecar response' };

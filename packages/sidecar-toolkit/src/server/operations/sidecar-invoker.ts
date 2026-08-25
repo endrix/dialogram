@@ -2,6 +2,7 @@ import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
 import { URI } from 'vscode-uri';
 import { SidecarRuntimeService, type CreateNodeStrings, type CreateNodeBehavior } from '../sidecar-runtime-config';
+import { describeChildFailure, runChildProcess } from '../../run-child-process';
 
 export interface SidecarInvocationResult {
     ok: boolean;
@@ -85,26 +86,28 @@ export class SidecarInvoker {
 
     private async invokeSidecar(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<SidecarInvocationResult> {
         try {
-            const { spawn } = await import('node:child_process');
             const command = this.sidecarCommand(vscode.Uri.parse(sourceUri));
-            const child = spawn(command, [], { stdio: ['pipe', 'pipe', 'pipe'] });
             const input = JSON.stringify({
                 file: URI.parse(sourceUri).fsPath,
                 op: this.rewriteSidecarOperation(payload.op),
                 args: payload.args
             }) + '\n';
-            child.stdin.write(input);
-            child.stdin.end();
 
-            let stdout = '';
-            let stderr = '';
-            child.stdout.on('data', d => (stdout += d.toString()));
-            child.stderr.on('data', d => (stderr += d.toString()));
-            const exitCode: number = await new Promise(resolve => child.on('close', c => resolve(c ?? 1)));
-            if (exitCode !== 0) {
+            // Every diagram edit comes through here, and the caller awaits it inside a
+            // workspace edit. A child that never settles used to strand the edit with no
+            // error and no way to retry — including the plain case of an unstartable
+            // command, whose 'error' event had no listener at all.
+            const result = await runChildProcess(command, [], { input });
+            const { stdout, stderr } = result;
+            const failure = describeChildFailure(command, result);
+            if (failure) {
                 return {
                     ok: false,
-                    message: `Sidecar exited with code ${exitCode} while handling ${payload.op}.`,
+                    message: result.timedOut
+                        ? `${failure} (while handling ${payload.op})`
+                        : result.spawnError
+                          ? failure
+                          : `Sidecar exited with code ${result.code} while handling ${payload.op}.`,
                     stderr: stderr.trim() || undefined
                 };
             }
