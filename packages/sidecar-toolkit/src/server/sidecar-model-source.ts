@@ -43,7 +43,14 @@ import {
     normalizeSourceUriKey
 } from './source-analysis';
 import { graphPayloadToDoc } from './graph-payload-to-doc';
-import { type SidecarRuntimeConfig, sidecarOp, getSidecarCommand } from './sidecar-runtime-config';
+import {
+    type SidecarRuntimeConfig,
+    sidecarOp,
+    getSidecarCommand,
+    getGraphLoadTimeoutMs,
+    graphLoadTimeoutHint
+} from './sidecar-runtime-config';
+import { describeChildFailure, runChildProcess } from '../run-child-process';
 
 /**
  * `GraphDocument` plus the request options `finishLoadFromDoc` must continue with. Usually
@@ -349,7 +356,6 @@ export class SidecarModelSource implements DiagramModelSource {
                 op: sidecarOp(this.cfg, exportOp),
                 args: requestArgs
             };
-            const { spawn } = await import('node:child_process');
             const sidecarEnv: NodeJS.ProcessEnv = { ...process.env };
             const packageRoot = await findPackageRootForFile(filePath);
             if (packageRoot) {
@@ -357,37 +363,23 @@ export class SidecarModelSource implements DiagramModelSource {
                     ? `${packageRoot}${path.delimiter}${sidecarEnv.PYTHONPATH}`
                     : packageRoot;
             }
-            const child = spawn(sidecarCmd, [], {
-                stdio: ['pipe', 'pipe', 'pipe'],
+            // Bounded on purpose. Acquisition imports the user's module, so anything that
+            // module does at import time can hang the child — and this load is what the
+            // "model loading" notification is waiting on, so a child that never exits is a
+            // notification that never leaves and a diagram that never opens.
+            const result = await runChildProcess(sidecarCmd, [], {
                 cwd: packageRoot ?? path.dirname(filePath),
-                env: sidecarEnv
+                env: sidecarEnv,
+                input: JSON.stringify(requestPayload) + '\n',
+                timeoutMs: getGraphLoadTimeoutMs(this.cfg, vscode, vscode.Uri.file(filePath))
             });
-            let spawnError: Error | undefined;
-            // An unspawnable sidecar (ENOENT — not installed or a typo'd setting) emits 'error';
-            // without this handler the EventEmitter throws an uncaught exception in the extension
-            // host and the load hangs at "model loading" forever. The stdin no-op error handler
-            // swallows the EPIPE that follows when the process never started.
-            const exitPromise = new Promise<number>(resolve => {
-                child.on('error', err => {
-                    spawnError = err;
-                    resolve(-1);
-                });
-                child.on('close', c => resolve(c ?? 1));
-            });
-            child.stdin.on('error', () => undefined);
-            child.stdin.write(JSON.stringify(requestPayload) + '\n');
-            child.stdin.end();
-
-            let stdout = '';
-            let stderr = '';
-            child.stdout.on('data', d => (stdout += d.toString()));
-            child.stderr.on('data', d => (stderr += d.toString()));
-            const exitCode: number = await exitPromise;
-            if (spawnError || exitCode !== 0 || stdout.trim() === '') {
-                const msg = spawnError
-                    ? `failed to start: ${spawnError.message}`
-                    : stderr.trim() !== '' ? stderr.trim() : `sidecar exited with ${exitCode}`;
-                return { error: `${sidecarCmd}: ${msg}` };
+            const { stdout } = result;
+            const failure = describeChildFailure(sidecarCmd, result);
+            if (failure || stdout.trim() === '') {
+                const error = failure ?? `${sidecarCmd}: the graph export produced no output`;
+                return {
+                    error: result.timedOut ? `${error} ${graphLoadTimeoutHint(this.cfg)}` : error
+                };
             }
             const response = JSON.parse(stdout);
             if (response?.status !== 'ok') {

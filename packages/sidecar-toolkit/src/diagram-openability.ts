@@ -1,7 +1,18 @@
-import * as cp from 'node:child_process';
 import * as vscode from 'vscode';
 import type { DiagramOpenabilityCheck } from '@dialogram/shared';
 import { hasRequestedDecoratedDefinition } from './python-diagram-definitions.js';
+import { runChildProcess } from './run-child-process.js';
+
+/**
+ * Deadline for the openability probe.
+ *
+ * Shorter than a real load: this only answers "can this file be shown as a
+ * diagram?", it runs before anything is on screen, and a runtime that takes this
+ * long to answer is a no as far as the decision is concerned. The fallback
+ * source scan still runs, so a slow probe degrades to the static answer rather
+ * than to a wrong one.
+ */
+export const OPENABILITY_PROBE_TIMEOUT_MS = 20_000;
 
 /**
  * Product-neutral configuration for the diagram-openability probe/fallback. The
@@ -53,7 +64,6 @@ async function probeDiagramOpenability(
         ?? cfg.sidecarCommandDefault;
 
     try {
-        const child = cp.spawn(sidecarCommand, [], { stdio: ['pipe', 'pipe', 'pipe'] });
         // Graph-export op is config-driven (see docs/sidecar-contract-v2.md): the
         // sidecar is asked to export the graph and the response status decides
         // whether the source can render as a diagram.
@@ -65,21 +75,13 @@ async function probeDiagramOpenability(
                 : {}
         };
 
-        child.stdin.write(`${JSON.stringify(payload)}\n`);
-        child.stdin.end();
-
-        let stdout = '';
-        child.stdout.on('data', chunk => {
-            stdout += chunk.toString();
+        const result = await runChildProcess(sidecarCommand, [], {
+            input: `${JSON.stringify(payload)}\n`,
+            timeoutMs: OPENABILITY_PROBE_TIMEOUT_MS
         });
 
-        const exitCode = await new Promise<number>(resolve => {
-            child.on('close', code => resolve(code ?? 1));
-            child.on('error', () => resolve(1));
-        });
-
-        const trimmedStdout = stdout.trim();
-        if (exitCode !== 0 || trimmedStdout === '') {
+        const trimmedStdout = result.stdout.trim();
+        if (result.code !== 0 || trimmedStdout === '') {
             return undefined;
         }
 

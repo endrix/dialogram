@@ -101,6 +101,53 @@ export function getSidecarCommand(
     return toNonEmptyString(configured, cfg.sidecarCommandDefault);
 }
 
+/**
+ * Setting that raises the graph-load deadline, read under the product's own
+ * namespace (`<namespace>.graphLoadTimeoutSeconds`).
+ *
+ * A deadline with no way to raise it turns a legitimately slow workflow into one
+ * that can never be opened, so the escape hatch ships with the limit.
+ */
+export const GRAPH_LOAD_TIMEOUT_SETTING = 'graphLoadTimeoutSeconds';
+
+/**
+ * Default deadline for acquiring a graph, in ms.
+ *
+ * Generous on purpose: acquisition runs the user's own code (importing a module,
+ * elaborating a workflow), and a first run can be slow for honest reasons. This
+ * is here to catch the child that will NEVER answer, not to police slow ones.
+ */
+export const DEFAULT_GRAPH_LOAD_TIMEOUT_MS = 120_000;
+
+/**
+ * The sentence appended to a deadline-miss message, naming the setting that
+ * raises it.
+ *
+ * A deadline the reader cannot see and cannot change reads as the tool refusing
+ * to open their file. Naming the setting in the message is what turns it into a
+ * decision they own — and it is the only place the setting is discoverable until
+ * each product contributes it to its own `package.json`.
+ */
+export function graphLoadTimeoutHint(cfg: SidecarRuntimeConfig): string {
+    return `If this workflow genuinely needs longer, raise \`${cfg.settingsNamespace}.${GRAPH_LOAD_TIMEOUT_SETTING}\`.`;
+}
+
+/** Resolve the graph-load deadline in ms from settings, falling back to the default. */
+export function getGraphLoadTimeoutMs(
+    cfg: SidecarRuntimeConfig,
+    vscodeModule: typeof import('vscode'),
+    scopeUri?: import('vscode').Uri
+): number {
+    const configured = vscodeModule.workspace
+        .getConfiguration(cfg.settingsNamespace, scopeUri)
+        .get<number>(GRAPH_LOAD_TIMEOUT_SETTING);
+    // Zero or negative would mean "time out immediately", which nobody means by
+    // it, and a non-number is a typo'd setting. Both fall back to the default.
+    return typeof configured === 'number' && Number.isFinite(configured) && configured > 0
+        ? configured * 1000
+        : DEFAULT_GRAPH_LOAD_TIMEOUT_MS;
+}
+
 /** Resolve the CLI command from VS Code settings (falling back to the default). */
 export function getCliCommand(
     cfg: SidecarRuntimeConfig,
