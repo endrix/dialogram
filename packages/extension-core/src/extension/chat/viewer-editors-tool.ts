@@ -15,7 +15,9 @@
  * is safe on the read-only MCP surface, unlike anything that edits source.
  */
 import * as vscode from 'vscode';
-import type { InProcessChatTool } from './chat-runtime';
+// Declared by the public api module; chat-runtime only consumes it, so importing
+// it from there names a local declaration that is not exported.
+import type { InProcessChatTool } from '../../api';
 import { ExtensionManifest, discoverViewerEditors, rankForFile } from './viewer-editors';
 
 /** Read every installed extension's manifest, in host order. */
