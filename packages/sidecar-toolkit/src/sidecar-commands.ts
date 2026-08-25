@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { describeChildFailure, runChildProcess } from './run-child-process.js';
 
 /**
  * Config for the raw sidecar edit/send commands. Product values (command ids,

@@ -10,6 +10,7 @@
         "build": "npm run build --workspace packages/extension",
         "test": "npm run test --workspaces --if-present",
         "check:neutrality": "bash scripts/check-neutrality.sh",
+        "typecheck": "bash scripts/typecheck.sh",
         "watch": "npm run watch --workspace packages/extension",
         "package": "npm run package --workspace packages/extension"
     },
