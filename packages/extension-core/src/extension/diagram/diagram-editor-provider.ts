@@ -403,6 +403,8 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         // Set the webview HTML content
         webview.html = this.getWebviewContent(webview, {
             scriptUri: assets.scriptUri,
+            libavoidWasmUri: this.getWebviewResourceUri(webview, 'dist', 'webview', 'libavoid.wasm'),
+            libavoidModuleUri: this.getWebviewResourceUri(webview, 'dist', 'webview', 'libavoid.mjs'),
             styleUri: assets.styleUri,
             clientId,
             documentUri: document.uri.toString()
@@ -762,6 +764,8 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         webview: vscode.Webview,
         options: {
             scriptUri: vscode.Uri;
+            libavoidWasmUri?: vscode.Uri;
+            libavoidModuleUri?: vscode.Uri;
             styleUri?: vscode.Uri;
             clientId: string;
             documentUri: string;
@@ -791,7 +795,8 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     <meta http-equiv="Content-Security-Policy" content="
         default-src 'none';
         style-src ${webview.cspSource} 'unsafe-inline';
-        script-src 'nonce-${nonce}';
+        script-src 'nonce-${nonce}' 'wasm-unsafe-eval' ${webview.cspSource};
+        connect-src ${webview.cspSource} blob:;
         font-src ${webview.cspSource} data:;
         img-src ${webview.cspSource} data:;
     ">
@@ -853,7 +858,11 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             commandIds: this.profile.commands,
             operationKinds: this.profile.operationKinds,
             settingsNamespace: this.profile.settingsNamespace,
-            clientBehavior: this.profile.clientBehavior
+            clientBehavior: this.profile.clientBehavior,
+            // Where the live edge router fetches its WASM binary. The webview
+            // cannot read the filesystem, so the URI is resolved host-side.
+            libavoidWasmUri: options.libavoidWasmUri?.toString(),
+            libavoidModuleUri: options.libavoidModuleUri?.toString()
         })};
 
         // Optional debug config injected from the extension host (launch.json env).

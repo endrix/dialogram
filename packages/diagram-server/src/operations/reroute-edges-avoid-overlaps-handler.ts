@@ -16,7 +16,7 @@ import { LayoutPersistenceService } from '../services/layout-persistence-service
 import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
-import { WorkflowDiagramConstants } from '@dialogram/shared';
+import { WorkflowDiagramConstants, portAnchor } from '@dialogram/shared';
 import { GModelSerializer } from '@eclipse-glsp/server';
 import { routeOrthogonal, type RouterConnector, type RouterObstacle } from '../routing/libavoid-router';
 
@@ -36,7 +36,12 @@ interface RerouteTiming {
     anchorMs: number;
     routeMs: number;
     persistMs: number;
-    router: 'libavoid' | 'manhattan' | 'none';
+    /**
+     * `dead-zone-slide` means no router ran because none was needed — the
+     * endpoints had already settled and the existing route was slid onto them.
+     * That is the fast path working, not a failure.
+     */
+    router: 'libavoid' | 'manhattan' | 'dead-zone-slide' | 'none';
 }
 
 export const WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND = 'dialogram.rerouteEdgesAvoidOverlaps' as const;
@@ -213,23 +218,15 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
         const parentNode = this.findParentNode(port);
         if (!parentNode) { return undefined; }
 
-        const p = this.absPos(port);
-        const { width, height } = this.sizeOf(port);
-        const w = width > 0 ? width : WorkflowDiagramConstants.PORT_WIDTH_PX;
-        const h = height > 0 ? height : WorkflowDiagramConstants.PORT_HEIGHT_PX;
-        const cy = p.y + h / 2;
-        const nodeId = String((parentNode as any).id);
-
-        const direction = (port as any).args?.[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined;
-        const side = direction === 'output' ? 'EAST'
-            : direction === 'input' ? 'WEST'
-            : port.type?.includes('output') ? 'EAST'
-            : port.type?.includes('input') ? 'WEST'
-            : 'WEST';
-
-        return side === 'EAST'
-            ? { x: p.x + w, y: cy, side: 'EAST', nodeId }
-            : { x: p.x, y: cy, side: 'WEST', nodeId };
+        // Shared geometry — the webview's live router must land on the same
+        // anchor or edges jump when the mouse is released.
+        const anchor = portAnchor({
+            absolute: this.absPos(port),
+            size: this.sizeOf(port),
+            direction: (port as any).args?.[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined,
+            type: port.type
+        });
+        return { ...anchor, nodeId: String((parentNode as any).id) };
     }
 
     private findParentNode(element: any): GNode | undefined {
@@ -1024,6 +1021,7 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
                     // Already slid and verified orthogonal during collection.
                     (edge as any).routingPoints = rps;
                 }
+                if (timing) { timing.router = 'dead-zone-slide'; }
                 if (this.debugReroute >= 1) {
                     console.info('[cal-reroute] dead-zone slide — ' + slideOps.length + ' edges endpoints updated');
                 }

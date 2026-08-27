@@ -14,7 +14,7 @@
  */
 
 import { GEdge, GModelElement, GModelIndex, GModelRoot, GPort } from '@eclipse-glsp/server';
-import { WorkflowDiagramConstants, WorkflowDiagramMetadata } from '@dialogram/shared';
+import { WorkflowDiagramConstants, WorkflowDiagramMetadata, portAnchor } from '@dialogram/shared';
 import { cleanLegacyFanoutPoints } from '../server/gmodel-convert';
 
 type Point = { x: number; y: number };
@@ -50,18 +50,14 @@ function portAnchorAbsolute(index: GModelIndex, portId: string | undefined): Poi
         return undefined;
     }
 
-    const portAbs = absolutePosition(port);
-    const size = (port as any).size as { width?: number; height?: number } | undefined;
-    const width = size?.width && size.width > 0 ? size.width : WorkflowDiagramConstants.PORT_WIDTH_PX;
-    const height = size?.height && size.height > 0 ? size.height : WorkflowDiagramConstants.PORT_HEIGHT_PX;
-
-    const direction = (port as any).args?.[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined;
-    const isOutput = direction === 'output' || (direction === undefined && port.type?.includes('output') === true);
-
-    return {
-        x: isOutput ? portAbs.x + width : portAbs.x,
-        y: portAbs.y + height / 2
-    };
+    // Geometry lives in shared so the webview's live router computes the same
+    // anchor; see packages/shared/src/port-anchor.ts.
+    return portAnchor({
+        absolute: absolutePosition(port),
+        size: (port as any).size as { width?: number; height?: number } | undefined,
+        direction: (port as any).args?.[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined,
+        type: port.type
+    });
 }
 
 /**

@@ -136,7 +136,7 @@ async function loadAvoid(): Promise<AvoidModule | undefined> {
     for (const dir of candidateDirs()) {
         try {
             // Computed specifier: esbuild does not follow this, which is the point.
-            const entry = url.pathToFileURL(path.join(dir, 'index-node.mjs')).href;
+            const entry = url.pathToFileURL(path.join(dir, 'libavoid-node.mjs')).href;
             const mod = await import(/* @vite-ignore */ entry);
             const AvoidLib = mod?.AvoidLib ?? mod?.default?.AvoidLib;
             if (!AvoidLib) {
@@ -250,19 +250,21 @@ export async function routeOrthogonal(
     const clearance = minAnchorClearance(obstacles, routed);
     const buffer = Math.max(1, Math.min(requested.shapeBufferDistance, clearance - 1));
     const opts = { ...requested, shapeBufferDistance: buffer };
-    // The enum members are objects in the WASM binding, not bare numbers.
-    const orthogonal = Avoid.RouterFlag?.OrthogonalRouting?.value ?? Avoid.RouterFlag?.OrthogonalRouting;
+    // libavoid 0.4.5 exposes flags, parameters and options as flat top-level
+    // values. Pinned deliberately — see vendor/libavoid/README.md for the table
+    // of what changes if this is ever moved to 0.5.x.
+    const orthogonal = Avoid.OrthogonalRouting;
     let router: any;
     try {
         router = new Avoid.Router(orthogonal);
-        router.setRoutingParameter(Avoid.RoutingParameter.shapeBufferDistance, opts.shapeBufferDistance);
-        router.setRoutingParameter(Avoid.RoutingParameter.idealNudgingDistance, opts.idealNudgingDistance);
+        router.setRoutingParameter(Avoid.shapeBufferDistance, opts.shapeBufferDistance);
+        router.setRoutingParameter(Avoid.idealNudgingDistance, opts.idealNudgingDistance);
         // Without this, parallel routes sharing a channel land on identical
         // coordinates: 99 overlapping segment pairs on the reference network,
         // against 1 with it on. The other nudging options change nothing on
         // their own, and `crossingPenalty` is actively harmful — raising it made
         // crossings worse and the solve 200x slower.
-        router.setRoutingOption(Avoid.RoutingOption.nudgeOrthogonalSegmentsConnectedToShapes, true);
+        router.setRoutingOption(Avoid.nudgeOrthogonalSegmentsConnectedToShapes, true);
 
         for (const o of obstacles) {
             if (!(o.width > 0) || !(o.height > 0)) {
@@ -275,7 +277,6 @@ export async function routeOrthogonal(
         }
 
         const byId = new Map(connectors.map(c => [c.id, c]));
-        const offsetById = new Map(routed.map(c => [c.id, c]));
         const refs: Array<{ id: string; ref: any }> = [];
         for (const c of routed) {
             refs.push({
@@ -296,7 +297,7 @@ export async function routeOrthogonal(
             const points: RouterPoint[] = [];
             const size = polyline.size();
             for (let i = 0; i < size; i++) {
-                const p = polyline.at(i);
+                const p = polyline.get_ps(i);
                 points.push({ x: p.x, y: p.y });
             }
             if (points.length >= 2) {
@@ -307,23 +308,28 @@ export async function routeOrthogonal(
                 // so the leading and trailing segments stay orthogonal. This is
                 // the same guarantee the ELK path relies on.
                 const c = byId.get(id);
-                const off = offsetById.get(id);
-                if (!c || !off) {
+                if (!c) {
                     routes.set(id, points);
                     continue;
                 }
-                // libavoid nudges the ends of a route, so it does not necessarily
-                // start where we asked. Left alone, an edge that must double back
-                // turns around wherever libavoid stopped — measured at 11px from
-                // the port, inside the 21px gap to the neighbouring port, which is
-                // exactly the crowding this stub exists to prevent.
+                // Attach the port anchors to whatever libavoid produced.
                 //
-                // So pull the ends back onto the offset points FIRST (carrying the
-                // adjacent bend, so the turn moves out with them), and only then
-                // attach the anchors. The stub is now always exactly portStub long
-                // and every reversal happens clear of the port.
-                const atStub = snapRouteEndpoints(points, off.source, off.target);
-                const withStubs = [c.source, ...atStub, c.target];
+                // Note what this deliberately does NOT do: pull the route's ends
+                // onto the offset points first. That looks like it enforces a
+                // uniform stub, but snapping an endpoint drags the adjacent bend
+                // with it — and the offset x is identical for every edge reaching
+                // ports on the same side of a node. Three edges leaving one node
+                // had their nudged channels (x = 292, 300, 308) collapsed onto a
+                // single x = 300, so they drew as one thick line.
+                //
+                // libavoid already keeps the route clear of the port, because it
+                // was handed endpoints pushed `portStub` out. Its own ends may sit
+                // a few pixels in from those, which only shortens the stub — and a
+                // shorter stub is far cheaper than losing the nudging.
+                //
+                // The connecting segment stays axis-aligned because libavoid ends
+                // on the anchor's own horizontal line.
+                const withStubs = [c.source, ...points, c.target];
                 routes.set(id, snapRouteEndpoints(withStubs, c.source, c.target));
             }
         }
@@ -336,7 +342,7 @@ export async function routeOrthogonal(
         // releases the whole transaction's WASM memory. Skipping it leaks on
         // every drag.
         try {
-            router?.delete();
+            router?.__destroy__();
         } catch {
             // Nothing useful to do if teardown itself fails.
         }

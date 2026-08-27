@@ -88,30 +88,31 @@ const hostCtx = await esbuild.context({
     plugins: [resolveWorkspacePlugin, ...plugins]
 });
 
-// libavoid (WASM) is loaded at runtime by routing/libavoid-router.ts, NOT
-// bundled: the package uses `import.meta.url` internally and cannot survive
-// being inlined into a CJS bundle, and node_modules is excluded from the .vsix.
-// The router resolves it relative to its own __dirname, which for the platform
-// bundle is `dist/`, so the two files go to `dist/libavoid/`.
+// libavoid (WASM), vendored at vendor/libavoid — see its README for why it is
+// built from source rather than taken from npm (the published package generates
+// its bindings with `new Function`, which the webview CSP forbids).
 //
-// Keeping libavoid a separate, replaceable pair of files is also what its
-// LGPL-2.1 terms expect of a work that merely *uses* the library.
-const libavoidDist = path.resolve(__dirname, '../../node_modules/libavoid-js/dist');
-const libavoidOut = path.resolve(__dirname, 'dist/libavoid');
-if (fs.existsSync(libavoidDist)) {
-    fs.mkdirSync(libavoidOut, { recursive: true });
-    for (const file of ['index-node.mjs', 'libavoid.wasm', 'LICENSE']) {
-        const from = fs.existsSync(path.join(libavoidDist, file))
-            ? path.join(libavoidDist, file)
-            : path.resolve(libavoidDist, '..', file);
-        if (fs.existsSync(from)) {
-            fs.copyFileSync(from, path.join(libavoidOut, file));
-        } else {
-            console.warn(`[esbuild] libavoid asset missing: ${file}`);
-        }
-    }
+// Neither wrapper is bundled: emscripten reads `import.meta.url` to locate
+// itself and esbuild rewrites `import.meta` to `{}` in CJS/IIFE output, so an
+// inlined module aborts during init. Both are loaded at runtime from a file.
+const libavoidVendor = path.resolve(__dirname, '../../vendor/libavoid');
+if (fs.existsSync(libavoidVendor)) {
+    // Server side: next to dist/platform.cjs, which is what __dirname resolves
+    // to for the bundled GLSP server.
+    const serverOut = path.resolve(__dirname, 'dist/libavoid');
+    fs.mkdirSync(serverOut, { recursive: true });
+    fs.copyFileSync(path.join(libavoidVendor, 'libavoid-node.mjs'), path.join(serverOut, 'libavoid-node.mjs'));
+    fs.copyFileSync(path.join(libavoidVendor, 'libavoid.wasm'), path.join(serverOut, 'libavoid.wasm'));
+    fs.copyFileSync(path.join(libavoidVendor, 'LICENSE'), path.join(serverOut, 'LICENSE'));
+
+    // Webview side: served to the iframe over asWebviewUri.
+    const webviewOut = path.resolve(__dirname, 'dist/webview');
+    fs.mkdirSync(webviewOut, { recursive: true });
+    fs.copyFileSync(path.join(libavoidVendor, 'libavoid-web.mjs'), path.join(webviewOut, 'libavoid.mjs'));
+    fs.copyFileSync(path.join(libavoidVendor, 'libavoid.wasm'), path.join(webviewOut, 'libavoid.wasm'));
+    fs.copyFileSync(path.join(libavoidVendor, 'LICENSE'), path.join(webviewOut, 'libavoid-LICENSE'));
 } else {
-    console.warn('[esbuild] libavoid-js not installed; edge routing falls back to the built-in router');
+    console.warn('[esbuild] vendor/libavoid missing; edge routing falls back to the built-in router');
 }
 
 // Platform bundle: the whole extension-core runtime (GLSP server + chat
@@ -136,6 +137,11 @@ const platformCtx = await esbuild.context({
 
 // GLSP diagram client bundle (runs in consumer webviews, browser IIFE)
 const glspClientCtx = await esbuild.context({
+    // libavoid must NOT be inlined here. esbuild rewrites `import.meta` to `{}`
+    // in an IIFE, and emscripten's browser build derives its script directory
+    // from `import.meta.url` — undefined, so the module aborts at init and every
+    // later error reads "program has already aborted!". It is loaded at runtime
+    // as a real ES module instead; see libavoid-loader.ts.
     banner: stampBanner('webview diagram-client.js'),
     entryPoints: [path.join(srcDirs['diagram-client'], 'diagram-client.ts')],
     outdir: 'dist/webview',

@@ -41,8 +41,18 @@ import {
 } from './model';
 import { EDGE_OPEN_ANCHOR_X_ARG, EDGE_OPEN_ANCHOR_Y_ARG } from './edge-open-mouse-listener';
 import { clientBehavior } from './profile';
+import { isIncidentEdgeInActiveDrag } from './elk-live-drag-router';
 import { WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { WorkflowDiagramConstants } from '@dialogram/shared';
+
+/** Walk to the model root; the drag-active window is tracked per root. */
+function rootOfEdge(element: any): any {
+    let current = element;
+    while (current?.parent) {
+        current = current.parent;
+    }
+    return current;
+}
 
 function absPos(element: any): { x: number; y: number } {
     let x = 0;
@@ -1394,16 +1404,27 @@ export class WorkflowEdgeView extends PolylineEdgeView {
     }
 
     override render(edge: Readonly<SEdgeImpl>, context: RenderingContext, args?: IViewArgs): VNode | undefined {
-        // When the server has provided a full-polyline route (Manhattan/ELK router),
-        // use it directly instead of going through Sprotty's PolylineEdgeRouter.
-        // The client router computes its own source/target anchors using a different
-        // algorithm (RectangleAnchor intersection vs. port-edge-center), which creates
-        // near-duplicate endpoint segments and visual artifacts with rounded corners.
+        // Two tiers. The server's polyline is authoritative: computed with the
+        // whole graph in view and persisted, so it wins whenever it exists.
+        //
+        // The exception is an edge attached to a node being dragged right now.
+        // Its stored route was computed for where that node used to be, so
+        // drawing it leaves the edge lagging the cursor — which is what produced
+        // the straight port-to-port diagonals during a drag. For those edges the
+        // live client router takes over until the drag settles and the server's
+        // route arrives.
+        //
+        // Handing over is safe because both tiers run libavoid over the same
+        // anchors (@dialogram/shared portAnchor), so the two agree and the swap
+        // is not visible. That shared geometry is what made this possible: the
+        // client router previously computed anchors differently, which is why
+        // this code used to bypass the router registry entirely.
         const serverRoute = (edge as any).routingPoints as { x: number; y: number }[] | undefined;
         const hasServerRoute = Array.isArray(serverRoute) && serverRoute.length >= 2;
-        const route = hasServerRoute
+        const liveRouted = isIncidentEdgeInActiveDrag(rootOfEdge(edge), String((edge as any).id));
+        const route = hasServerRoute && !liveRouted
             ? serverRoute
-            : ((this.edgeRouterRegistry?.route(edge as any, args) as any) ?? []);
+            : ((this.edgeRouterRegistry?.route(edge as any, args) as any) ?? serverRoute ?? []);
 
         // Some intermediate interaction states can temporarily report an empty/invalid route.
         // Never drop the edge completely; fall back to a simple source->target line.
