@@ -1,6 +1,7 @@
 //@ts-check
 import * as esbuild from 'esbuild';
 import * as path from 'node:path';
+import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -86,6 +87,32 @@ const hostCtx = await esbuild.context({
     minify,
     plugins: [resolveWorkspacePlugin, ...plugins]
 });
+
+// libavoid (WASM) is loaded at runtime by routing/libavoid-router.ts, NOT
+// bundled: the package uses `import.meta.url` internally and cannot survive
+// being inlined into a CJS bundle, and node_modules is excluded from the .vsix.
+// The router resolves it relative to its own __dirname, which for the platform
+// bundle is `dist/`, so the two files go to `dist/libavoid/`.
+//
+// Keeping libavoid a separate, replaceable pair of files is also what its
+// LGPL-2.1 terms expect of a work that merely *uses* the library.
+const libavoidDist = path.resolve(__dirname, '../../node_modules/libavoid-js/dist');
+const libavoidOut = path.resolve(__dirname, 'dist/libavoid');
+if (fs.existsSync(libavoidDist)) {
+    fs.mkdirSync(libavoidOut, { recursive: true });
+    for (const file of ['index-node.mjs', 'libavoid.wasm', 'LICENSE']) {
+        const from = fs.existsSync(path.join(libavoidDist, file))
+            ? path.join(libavoidDist, file)
+            : path.resolve(libavoidDist, '..', file);
+        if (fs.existsSync(from)) {
+            fs.copyFileSync(from, path.join(libavoidOut, file));
+        } else {
+            console.warn(`[esbuild] libavoid asset missing: ${file}`);
+        }
+    }
+} else {
+    console.warn('[esbuild] libavoid-js not installed; edge routing falls back to the built-in router');
+}
 
 // Platform bundle: the whole extension-core runtime (GLSP server + chat
 // backend) PLUS the sidecar-toolkit's profile assembly, compiled into ONE realm

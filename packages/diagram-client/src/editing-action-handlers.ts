@@ -341,6 +341,14 @@ export namespace WorkflowRerouteEdgesAvoidOverlapsOperation {
         movedElements?: { elementId: string; position: { x: number; y: number } }[];
         /** When true, update the model but skip persistence (useful for drag preview). */
         preview?: boolean;
+        /**
+         * Client clock at dispatch, for end-to-end timing only. Lets the server
+         * report transit latency alongside its own phases so the whole
+         * drag -> visible-edges path shows up in one log line.
+         */
+        clientDispatchedAt?: number;
+        /** Which client path armed this reroute: mouse-up, or the quiet-timer fallback. */
+        trigger?: 'finished' | 'quiet' | 'requeue';
     }
 
     export function create(options: Omit<Operation, 'kind'>): Operation {

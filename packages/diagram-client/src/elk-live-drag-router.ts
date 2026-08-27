@@ -114,6 +114,9 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
 
     private dragEndTimer: ReturnType<typeof setTimeout> | undefined;
 
+    /** Which path armed the pending reroute — reported to the server for timing. */
+    private pendingTrigger: 'finished' | 'quiet' | 'requeue' = 'quiet';
+
     handle(action: Action): void {
         if (action.kind !== MoveAction.KIND) {
             return;
@@ -157,6 +160,7 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
             clearTimeout(this.dragEndTimer);
         }
         this.dragEndTimer = setTimeout(() => {
+            this.pendingTrigger = 'quiet';
             void this.flushPendingReroute(false);
         }, 700);
 
@@ -174,6 +178,7 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
             // Important: final reroute must be based on authoritative positions, not on
             // transient drag coordinates (which breaks ESC cancel and can leave bendpoints behind).
             setTimeout(() => {
+                this.pendingTrigger = 'finished';
                 void this.flushPendingReroute(false);
             }, 60);
         }
@@ -365,7 +370,9 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
                 WorkflowRerouteEdgesAvoidOverlapsOperation.create({
                     elementIds: edgeIds,
                     movedElements: effectivePreview && movedElements.length > 0 ? movedElements : undefined,
-                    preview: effectivePreview
+                    preview: effectivePreview,
+                    clientDispatchedAt: Date.now(),
+                    trigger: this.pendingTrigger
                 }) as any
             );
 
@@ -396,6 +403,7 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
                 this.dispatchNeedsAnotherFlush = false;
                 // Flush on next macrotask; keeps UI responsive and coalesces bursts.
                 setTimeout(() => {
+                    this.pendingTrigger = 'requeue';
                     void this.flushPendingReroute(false);
                 }, 0);
             }

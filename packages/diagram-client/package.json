@@ -21,10 +21,8 @@
         "@vscode/codicons": "^0.0.44",
         "@dialogram/shared": "*",
         "dompurify": "^3.4.10",
-        "elkjs": "^0.9.3",
         "inversify": "^6.0.2",
-        "lit": 
-        "^3.3.3",
+        "lit": "^3.3.3",
         "markdown-it": "^14.2.0",
         "reflect-metadata": "^0.2.2",
         "vscode-messenger-common": "^0.4.5",
