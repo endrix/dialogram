@@ -1,0 +1,285 @@
+{
+  "preview": false,
+  "pad": 15,
+  "nodes": [
+    {
+      "id": "I0",
+      "x": 12,
+      "y": 664,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "I1",
+      "x": 12,
+      "y": 979,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "I2",
+      "x": 12,
+      "y": 12,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "I3",
+      "x": 12,
+      "y": 1179,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "Go0",
+      "x": 12,
+      "y": 764,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "Go1",
+      "x": 12,
+      "y": 1079,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "Go2",
+      "x": 12,
+      "y": 112,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "Go3",
+      "x": 12,
+      "y": 1279,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "GmD",
+      "x": 12,
+      "y": 879,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "GmQ",
+      "x": 2275,
+      "y": 945,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "R0",
+      "x": 2275,
+      "y": 1045,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "Q0",
+      "x": 2275,
+      "y": 1145,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "R1",
+      "x": 2275,
+      "y": 745,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "Q1",
+      "x": 2275,
+      "y": 845,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "R2",
+      "x": 2275,
+      "y": 256,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "Q2",
+      "x": 2275,
+      "y": 356,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "R3",
+      "x": 2275,
+      "y": 545,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "Q3",
+      "x": 2275,
+      "y": 645,
+      "width": 120,
+      "height": 50
+    },
+    {
+      "id": "pe_thread",
+      "x": 562,
+      "y": 629,
+      "width": 153,
+      "height": 176
+    },
+    {
+      "id": "pe_thread_2",
+      "x": 1251,
+      "y": 731,
+      "width": 153,
+      "height": 176
+    },
+    {
+      "id": "pe_thread_3",
+      "x": 562,
+      "y": 248,
+      "width": 153,
+      "height": 176
+    },
+    {
+      "id": "pe_thread_4",
+      "x": 1970,
+      "y": 545,
+      "width": 153,
+      "height": 176
+    },
+    {
+      "id": "ggc",
+      "x": 1617,
+      "y": 394,
+      "width": 140,
+      "height": 113
+    },
+    {
+      "id": "pgi",
+      "x": 973,
+      "y": 353,
+      "width": 140,
+      "height": 113
+    },
+    {
+      "id": "stg",
+      "x": 270,
+      "y": 420,
+      "width": 140,
+      "height": 113
+    },
+    {
+      "id": "fab",
+      "x": 1617,
+      "y": 608,
+      "width": 140,
+      "height": 113
+    },
+    {
+      "id": "l2",
+      "x": 973,
+      "y": 815,
+      "width": 140,
+      "height": 134
+    }
+  ],
+  "edges": [
+    {
+      "id": "e:n:pe_thread_3:StgW->n:stg:W2:35",
+      "source": {
+        "x": 724,
+        "y": 323.5
+      },
+      "target": {
+        "x": 261,
+        "y": 495.5
+      }
+    },
+    {
+      "id": "e:n:stg:B0->n:pe_thread:StgB:8",
+      "source": {
+        "x": 419,
+        "y": 453.5
+      },
+      "target": {
+        "x": 553,
+        "y": 704.5
+      }
+    },
+    {
+      "id": "e:n:stg:B1->n:pe_thread_2:StgB:22",
+      "source": {
+        "x": 419,
+        "y": 474.5
+      },
+      "target": {
+        "x": 1242,
+        "y": 806.5
+      }
+    },
+    {
+      "id": "e:n:stg:B2->n:pe_thread_3:StgB:36",
+      "source": {
+        "x": 419,
+        "y": 495.5
+      },
+      "target": {
+        "x": 553,
+        "y": 323.5
+      }
+    },
+    {
+      "id": "e:n:stg:B3->n:pe_thread_4:StgB:50",
+      "source": {
+        "x": 419,
+        "y": 516.5
+      },
+      "target": {
+        "x": 1961,
+        "y": 620.5
+      }
+    },
+    {
+      "id": "e:n:pe_thread_4:StgW->n:stg:W3:49",
+      "source": {
+        "x": 2132,
+        "y": 620.5
+      },
+      "target": {
+        "x": 261,
+        "y": 516.5
+      }
+    },
+    {
+      "id": "e:n:pe_thread:StgW->n:stg:W0:7",
+      "source": {
+        "x": 724,
+        "y": 704.5
+      },
+      "target": {
+        "x": 261,
+        "y": 453.5
+      }
+    },
+    {
+      "id": "e:n:pe_thread_2:StgW->n:stg:W1:21",
+      "source": {
+        "x": 1413,
+        "y": 806.5
+      },
+      "target": {
+        "x": 261,
+        "y": 474.5
+      }
+    }
+  ]
+}

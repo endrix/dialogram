@@ -18,6 +18,26 @@ import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
 import { WorkflowDiagramConstants } from '@dialogram/shared';
 import { GModelSerializer } from '@eclipse-glsp/server';
+import { routeOrthogonal, type RouterConnector, type RouterObstacle } from '../routing/libavoid-router';
+
+/** Every segment axis-aligned? A diagonal means the polyline is not a valid route. */
+export function isOrthogonalPolyline(points: readonly { x: number; y: number }[]): boolean {
+    for (let i = 1; i < points.length; i++) {
+        const dx = Math.abs(points[i].x - points[i - 1].x);
+        const dy = Math.abs(points[i].y - points[i - 1].y);
+        if (dx > 0.5 && dy > 0.5) {
+            return false;
+        }
+    }
+    return true;
+}
+
+interface RerouteTiming {
+    anchorMs: number;
+    routeMs: number;
+    persistMs: number;
+    router: 'libavoid' | 'manhattan' | 'none';
+}
 
 export const WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND = 'dialogram.rerouteEdgesAvoidOverlaps' as const;
 
@@ -39,6 +59,10 @@ export interface WorkflowRerouteEdgesAvoidOverlapsOperation extends Operation {
      * Optional routing strategy (not currently used — always Manhattan).
      */
     routingStrategy?: 'legacy' | 'stable';
+    /** Client clock at dispatch — end-to-end timing only. */
+    clientDispatchedAt?: number;
+    /** Which client path armed this reroute. */
+    trigger?: 'finished' | 'quiet' | 'requeue';
 }
 
 /**
@@ -65,7 +89,41 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
     protected layoutPersistence!: LayoutPersistenceService;
 
     override createCommand(operation: WorkflowRerouteEdgesAvoidOverlapsOperation): MaybePromise<Command | undefined> {
-        return new GModelRecordingCommand(this.modelState, this.serializer, () => this.executeOperation(operation));
+        if (!this.timeReroute) {
+            return new GModelRecordingCommand(this.modelState, this.serializer, () => this.executeOperation(operation));
+        }
+        // GModelRecordingCommand deep-clones and JSON-diffs the WHOLE model around
+        // doExecute, so the gap between `inner` and `command` below is pure
+        // bookkeeping overhead — on a large graph it can dwarf the routing itself.
+        const arrivedAt = Date.now();
+        const transit = operation.clientDispatchedAt ? arrivedAt - operation.clientDispatchedAt : undefined;
+        let innerMs = 0;
+        const timing: RerouteTiming = { routeMs: 0, router: 'none', anchorMs: 0, persistMs: 0 };
+        const cmd = new GModelRecordingCommand(this.modelState, this.serializer, async () => {
+            const t = Date.now();
+            await this.executeOperation(operation, timing);
+            innerMs = Date.now() - t;
+        });
+        const originalExecute = cmd.execute.bind(cmd);
+        (cmd as any).execute = async () => {
+            const t = Date.now();
+            await originalExecute();
+            const commandMs = Date.now() - t;
+            console.info('[cal-reroute timing]', {
+                trigger: operation.trigger ?? '(none)',
+                preview: Boolean(operation.preview),
+                edges: operation.elementIds?.length ?? 'all',
+                clientToServerMs: transit,
+                anchorMs: timing.anchorMs,
+                routeMs: timing.routeMs,
+                persistMs: timing.persistMs,
+                executeMs: innerMs,
+                recordingOverheadMs: commandMs - innerMs,
+                totalServerMs: commandMs,
+                router: timing.router
+            });
+        };
+        return cmd;
     }
 
     /**
@@ -77,6 +135,39 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
     }
 
     private readonly debugReroute: number = Number(process.env.WORKFLOW_DIAGRAM_DEBUG_REROUTE ?? '0') || 0;
+
+    /**
+     * Which router computes edge routes.
+     *
+     * libavoid measures better than the built-in router on every axis in an
+     * offline harness (crossings, overlaps, bends, length), but it changed drag
+     * behaviour for the worse on a real network in a way the harness does not
+     * reproduce, so it is OPT-IN until that is understood:
+     *
+     *   WORKFLOW_DIAGRAM_ROUTER=libavoid
+     *
+     * Do not flip the default back without a reproduction — see
+     * `dumpRoutingInput` below for capturing one.
+     */
+    private readonly useLibavoid: boolean =
+        (process.env.WORKFLOW_DIAGRAM_ROUTER ?? '').toLowerCase() === 'libavoid';
+
+    /**
+     * `WORKFLOW_DIAGRAM_DUMP_ROUTING=1` writes the exact router input — node
+     * boxes and port anchors, in absolute coordinates — to a JSON file per
+     * reroute. That file is enough to replay a drag offline against either
+     * router, which is what the harness was missing.
+     */
+    private readonly dumpRoutingInput: boolean = process.env.WORKFLOW_DIAGRAM_DUMP_ROUTING === '1';
+
+    /** `WORKFLOW_DIAGRAM_TIME_REROUTE=1` logs the full drag -> visible-edges timing. */
+    private readonly timeReroute: boolean = process.env.WORKFLOW_DIAGRAM_TIME_REROUTE === '1';
+
+    /**
+     * Per-call timing. Deliberately NOT instance state: reroutes overlap during a
+     * drag, and shared fields report another call's numbers (which is how this
+     * first showed routeMs > executeMs, an impossibility).
+     */
 
     // ═══════════════════════════════════════════════════════════════════
     // Graph traversal helpers
@@ -839,7 +930,7 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
     // Main execution
     // ═══════════════════════════════════════════════════════════════════
 
-    private async executeOperation(operation: WorkflowRerouteEdgesAvoidOverlapsOperation): Promise<void> {
+    private async executeOperation(operation: WorkflowRerouteEdgesAvoidOverlapsOperation, timing?: RerouteTiming): Promise<void> {
         const nowMs = Date.now();
         const src = operation.source ?? 'client';
         this.modelState.set('workflow.lastRerouteAtMs', nowMs);
@@ -886,7 +977,13 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
                 const el = this.modelState.index.find(edgeId);
                 if (!(el instanceof GEdge)) { continue; }
                 const rps = (el as any).routingPoints as { x: number; y: number }[] | undefined;
-                if (!Array.isArray(rps) || rps.length < 2) {
+                // A 2-point route has no interior bend to carry, so sliding it just
+                // moves both endpoints and leaves a straight line between them —
+                // diagonal unless the anchors happen to share an axis, and then
+                // PERSISTED. Every later nudge re-enters the dead zone and slides
+                // the same degenerate route again, so the edge can never recover.
+                // Anything without a bend must go through the real router.
+                if (!Array.isArray(rps) || rps.length < 3) {
                     allWithinDeadZone = false;
                     break;
                 }
@@ -906,23 +1003,25 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
                     allWithinDeadZone = false;
                     break;
                 }
-                slideOps.push({ edge: el, rps: rps.map(p => ({ x: p.x, y: p.y })), srcA, tgtA });
+                // Slide into a candidate and keep it only if it stays orthogonal.
+                // The slide assumes the first and last segments are horizontal
+                // (true for WEST/EAST ports); a route that violates that would be
+                // bent into a diagonal here, so verify rather than assume.
+                const slid = rps.map(p => ({ x: p.x, y: p.y }));
+                slid[0] = { x: srcA.x, y: srcA.y };
+                slid[1] = { x: slid[1].x, y: srcA.y };
+                slid[slid.length - 1] = { x: tgtA.x, y: tgtA.y };
+                slid[slid.length - 2] = { x: slid[slid.length - 2].x, y: tgtA.y };
+                if (!isOrthogonalPolyline(slid)) {
+                    allWithinDeadZone = false;
+                    break;
+                }
+                slideOps.push({ edge: el, rps: slid, srcA, tgtA });
             }
             if (allWithinDeadZone && slideOps.length > 0) {
                 // Slide endpoints and adjacent bends to keep segments orthogonal.
-                for (const { edge, rps, srcA, tgtA } of slideOps) {
-                    // Update source endpoint
-                    rps[0] = { x: srcA.x, y: srcA.y };
-                    // Keep the first stub segment horizontal: align next point's Y
-                    if (rps.length >= 3) {
-                        rps[1] = { x: rps[1].x, y: srcA.y };
-                    }
-                    // Update target endpoint
-                    rps[rps.length - 1] = { x: tgtA.x, y: tgtA.y };
-                    // Keep the last stub segment horizontal: align previous point's Y
-                    if (rps.length >= 3) {
-                        rps[rps.length - 2] = { x: rps[rps.length - 2].x, y: tgtA.y };
-                    }
+                for (const { edge, rps } of slideOps) {
+                    // Already slid and verified orthogonal during collection.
                     (edge as any).routingPoints = rps;
                 }
                 if (this.debugReroute >= 1) {
@@ -1032,28 +1131,98 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
         let routed = 0;
         let changed = 0;
 
+        // Resolve every endpoint once — both routers need the same anchors, and
+        // an edge whose ports have gone missing is skipped by both.
+        const anchorStartedAt = Date.now();
+        const routable: Array<{
+            edge: GEdge;
+            src: NonNullable<ReturnType<typeof this.portAnchorInfo>>;
+            tgt: NonNullable<ReturnType<typeof this.portAnchorInfo>>;
+        }> = [];
         for (const edge of edgesToRoute) {
             const srcId = typeof edge.sourceId === 'string' ? edge.sourceId : undefined;
             const tgtId = typeof edge.targetId === 'string' ? edge.targetId : undefined;
             const srcA = srcId ? this.portAnchorInfo(srcId) : undefined;
             const tgtA = tgtId ? this.portAnchorInfo(tgtId) : undefined;
+            if (srcA && tgtA) { routable.push({ edge, src: srcA, tgt: tgtA }); }
+        }
 
-            if (srcA && tgtA) {
-                const exclude = this.edgeEndpointNodeIds(edge);
-                const route = this.computeRoute(srcA, tgtA, obstacles, exclude, vChannels, hChannels);
-                (edge as any).routingPoints = route;
-                routed++;
-                if (this.debugReroute >= 1) {
-                    const id = String((edge as any).id);
-                    const before = this.routingSignature(preEdgeRoutesById.get(id));
-                    const after = this.routingSignature(route);
-                    if (before !== after) { changed++; }
+        const applyRoute = (edge: GEdge, route: { x: number; y: number }[]): void => {
+            (edge as any).routingPoints = route;
+            routed++;
+            if (this.debugReroute >= 1) {
+                const id = String((edge as any).id);
+                if (this.routingSignature(preEdgeRoutesById.get(id)) !== this.routingSignature(route)) { changed++; }
+            }
+        };
+
+        // libavoid is the preferred router: on identical geometry it beats the
+        // built-in one on crossings, overlaps, bends and length simultaneously.
+        // It is asked only for the scoped edge set because its cost is
+        // superlinear in connector count, while obstacles are cheap — so every
+        // node is passed, and only the edges that need routing.
+        if (timing) { timing.anchorMs = Date.now() - anchorStartedAt; }
+        const routeStartedAt = Date.now();
+        let usedLibavoid = false;
+        if (this.useLibavoid) {
+            const shapes: RouterObstacle[] = obstacles.map(o => ({
+                id: o.id,
+                // `obstacles` carries PAD already baked in; libavoid keeps its own
+                // clearance, so hand it the true node box and let it do the padding.
+                x: o.x + WorkflowRerouteEdgesAvoidOverlapsOperationHandler.PAD,
+                y: o.y + WorkflowRerouteEdgesAvoidOverlapsOperationHandler.PAD,
+                width: (o.r - o.x) - 2 * WorkflowRerouteEdgesAvoidOverlapsOperationHandler.PAD,
+                height: (o.b - o.y) - 2 * WorkflowRerouteEdgesAvoidOverlapsOperationHandler.PAD
+            }));
+            const connectors: RouterConnector[] = routable.map(r => ({
+                id: String((r.edge as any).id),
+                source: { x: r.src.x, y: r.src.y },
+                target: { x: r.tgt.x, y: r.tgt.y },
+                sourceSide: r.src.side,
+                targetSide: r.tgt.side
+            }));
+            const routes = await routeOrthogonal(shapes, connectors, {
+                shapeBufferDistance: WorkflowRerouteEdgesAvoidOverlapsOperationHandler.PAD,
+                idealNudgingDistance: WorkflowRerouteEdgesAvoidOverlapsOperationHandler.EDGE_GAP,
+                // Matches the built-in router's stub, so edges leave a port the
+                // same distance either way and clearance stays at PAD.
+                portStub: WorkflowRerouteEdgesAvoidOverlapsOperationHandler.STUB
+            });
+            if (routes) {
+                usedLibavoid = true;
+                for (const r of routable) {
+                    const route = routes.get(String((r.edge as any).id));
+                    // A connector libavoid could not solve falls through to the
+                    // built-in router rather than being left with a stale route.
+                    if (route && route.length >= 2) {
+                        applyRoute(r.edge, route);
+                    } else {
+                        const exclude = this.edgeEndpointNodeIds(r.edge);
+                        applyRoute(r.edge, this.computeRoute(r.src, r.tgt, obstacles, exclude, vChannels, hChannels));
+                    }
                 }
             }
         }
 
+        if (!usedLibavoid) {
+            for (const r of routable) {
+                const exclude = this.edgeEndpointNodeIds(r.edge);
+                applyRoute(r.edge, this.computeRoute(r.src, r.tgt, obstacles, exclude, vChannels, hChannels));
+            }
+        }
+
+        if (timing) {
+            timing.routeMs = Date.now() - routeStartedAt;
+            timing.router = usedLibavoid ? 'libavoid' : 'manhattan';
+        }
+
+        if (this.dumpRoutingInput) {
+            void this.writeRoutingInput(obstacles, routable, Boolean(operation.preview), usedLibavoid);
+        }
+
         if (this.debugReroute >= 1) {
-            console.info('[cal-reroute] result (manhattan)', {
+            console.info('[cal-reroute] result', {
+                router: usedLibavoid ? 'libavoid' : 'manhattan',
                 preview: Boolean(operation.preview),
                 routedEdges: routed,
                 changedEdges: changed,
@@ -1089,4 +1258,51 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
         if (!Array.isArray(points) || points.length === 0) { return '∅'; }
         return points.map(p => `${Math.round(p.x)}:${Math.round(p.y)}`).join('|');
     }
+
+    /**
+     * Capture the router input so a bad drag can be replayed offline.
+     * Best-effort: a failure here must never affect the reroute.
+     */
+    private async writeRoutingInput(
+        obstacles: ReadonlyArray<{ id: string; x: number; y: number; r: number; b: number }>,
+        routable: ReadonlyArray<{ edge: GEdge; src: { x: number; y: number }; tgt: { x: number; y: number } }>,
+        preview: boolean,
+        usedLibavoid: boolean
+    ): Promise<void> {
+        try {
+            const os = await import('node:os');
+            const pathMod = await import('node:path');
+            const fsp = await import('node:fs/promises');
+            const pad = WorkflowRerouteEdgesAvoidOverlapsOperationHandler.PAD;
+            const payload = {
+                preview,
+                pad,
+                // Unpadded node boxes, exactly what both routers are handed.
+                nodes: obstacles.map(o => ({
+                    id: o.id,
+                    x: o.x + pad,
+                    y: o.y + pad,
+                    width: (o.r - o.x) - 2 * pad,
+                    height: (o.b - o.y) - 2 * pad
+                })),
+                router: usedLibavoid ? 'libavoid' : 'manhattan',
+                edges: routable.map(r => ({
+                    id: String((r.edge as any).id),
+                    source: { x: r.src.x, y: r.src.y },
+                    target: { x: r.tgt.x, y: r.tgt.y },
+                    // What we actually wrote onto the edge. If this is orthogonal
+                    // but the screen shows diagonals, the loss is downstream.
+                    applied: ((r.edge as any).routingPoints ?? []).map((p: any) => ({ x: p.x, y: p.y }))
+                }))
+            };
+            const dir = pathMod.join(os.tmpdir(), 'dialogram-routing');
+            await fsp.mkdir(dir, { recursive: true });
+            const file = pathMod.join(dir, `routing-${process.pid}-${Date.now()}.json`);
+            await fsp.writeFile(file, JSON.stringify(payload, null, 2), 'utf8');
+            console.info('[cal-reroute] wrote routing input:', file);
+        } catch (error) {
+            console.warn('[cal-reroute] could not write routing input', error);
+        }
+    }
+
 }
