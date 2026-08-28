@@ -485,6 +485,24 @@ export class InlineIfNodeView extends ShapeView {
  * Server calculates exact dimensions based on ports and label width.
  * The 'size' property comes from the server, 'bounds' may be computed by Sprotty.
  */
+/**
+ * The node's visible body height, and the type label under it.
+ *
+ * The model's height RESERVES a band for the italic type label so that ELK and
+ * the edge routers account for the space it occupies (see
+ * NODE_FOOTER_LABEL_HEIGHT_PX). The label itself is drawn below the body, so
+ * the body must be shortened by that same band — otherwise adding the reserve
+ * would visibly grow every node that has a type label.
+ */
+function getNodeBody(
+    node: { args?: Record<string, unknown> },
+    size: { width: number; height: number }
+): { width: number; height: number; footerLabel?: string } {
+    const footerLabel = (node as any).args?.['wf:footerTypeLabel'] as string | undefined;
+    const reserve = footerLabel ? WorkflowDiagramConstants.NODE_FOOTER_LABEL_HEIGHT_PX : 0;
+    return { width: size.width, height: Math.max(1, size.height - reserve), footerLabel };
+}
+
 function getNodeSize(
     node: { id?: string; size?: { width: number; height: number }; bounds?: { width: number; height: number } },
     defaultWidth: number,
@@ -665,7 +683,7 @@ export class ActorNodeView extends ShapeView {
         const defAnnotations = ((node as any).args?.[WorkflowDiagramMetadata.ENTITY_DEFINITION_ANNOTATIONS] as Array<{ name?: string; arguments?: Array<{ name?: string; value?: string }> }> | undefined) ?? [];
         const iconKind = resolveNodeIconKind(defAnnotations, hasExternalMembers);
 
-        const footerLabel = (node as any).args?.['wf:footerTypeLabel'] as string | undefined;
+        const { height: bodyHeight, footerLabel } = getNodeBody(node as any, { width, height });
         const footerLabelNode = footerLabel
             ? svg('text', {
                 class: { 'type-footer-label': true },
@@ -675,7 +693,7 @@ export class ActorNodeView extends ShapeView {
                 },
                 attrs: {
                     x: width / 2,
-                    y: height + 4,
+                    y: bodyHeight + WorkflowDiagramConstants.NODE_FOOTER_LABEL_GAP_PX,
                     'text-anchor': 'middle',
                     'dominant-baseline': 'hanging'
                 }
@@ -701,11 +719,11 @@ export class ActorNodeView extends ShapeView {
                 class: { 'node-body': true },
                 attrs: {
                     x: 0, y: 0,
-                    width, height,
+                    width, height: bodyHeight,
                     rx: 4, ry: 4
                 }
             }),
-            ...(iconKind ? [renderNodeCenterIcon(iconKind, width, height)] : []),
+            ...(iconKind ? [renderNodeCenterIcon(iconKind, width, bodyHeight)] : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
         );
@@ -739,7 +757,7 @@ export class ExternalActorNodeView extends ShapeView {
 
         const iconKind = resolveNodeIconKind(defAnnotations);
 
-        const footerLabel = (node as any).args?.['wf:footerTypeLabel'] as string | undefined;
+        const { height: bodyHeight, footerLabel } = getNodeBody(node as any, { width, height });
         const footerLabelNode = footerLabel
             ? svg('text', {
                 class: { 'type-footer-label': true },
@@ -749,7 +767,7 @@ export class ExternalActorNodeView extends ShapeView {
                 },
                 attrs: {
                     x: width / 2,
-                    y: height + 4,
+                    y: bodyHeight + WorkflowDiagramConstants.NODE_FOOTER_LABEL_GAP_PX,
                     'text-anchor': 'middle',
                     'dominant-baseline': 'hanging'
                 }
@@ -778,11 +796,11 @@ export class ExternalActorNodeView extends ShapeView {
                 class: { 'node-body': true },
                 attrs: {
                     x: 0, y: 0,
-                    width, height,
+                    width, height: bodyHeight,
                     rx: 4, ry: 4
                 }
             }),
-            ...(iconKind ? [renderNodeCenterIcon(iconKind, width, height)] : []),
+            ...(iconKind ? [renderNodeCenterIcon(iconKind, width, bodyHeight)] : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
         );
@@ -807,7 +825,7 @@ export class NetworkNodeView extends ShapeView {
         const isErrored = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_ERRORED]) || cssClasses.includes('cal-node-error') || cssClasses.includes('cal-node-graph-error');
         const isWarned = !isErrored && cssClasses.includes('cal-node-graph-warning');
 
-        const footerLabel = (node as any).args?.['wf:footerTypeLabel'] as string | undefined;
+        const { height: bodyHeight, footerLabel } = getNodeBody(node as any, { width, height });
         const footerLabelNode = footerLabel
             ? svg('text', {
                 class: { 'type-footer-label': true },
@@ -817,7 +835,7 @@ export class NetworkNodeView extends ShapeView {
                 },
                 attrs: {
                     x: width / 2,
-                    y: height + 4,
+                    y: bodyHeight + WorkflowDiagramConstants.NODE_FOOTER_LABEL_GAP_PX,
                     'text-anchor': 'middle',
                     'dominant-baseline': 'hanging'
                 }
@@ -842,7 +860,7 @@ export class NetworkNodeView extends ShapeView {
                 class: { 'node-body': true },
                 attrs: {
                     x: 0, y: 0,
-                    width, height,
+                    width, height: bodyHeight,
                     rx: 4, ry: 4
                 }
             }),
