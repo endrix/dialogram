@@ -19,10 +19,8 @@ import {
 
 // Point the loader at the installed package; the extension build copies these
 // same two files next to the bundle instead.
-process.env.WORKFLOW_DIAGRAM_LIBAVOID_DIR ??= path.resolve(
-    __dirname,
-    '../../../node_modules/libavoid-js/dist'
-);
+// The vendored, eval-free build — see vendor/libavoid/README.md.
+process.env.WORKFLOW_DIAGRAM_LIBAVOID_DIR ??= path.resolve(__dirname, '../../../vendor/libavoid');
 
 const orthogonal = (points: { x: number; y: number }[]): boolean =>
     points.every((p, i) => {
@@ -217,17 +215,22 @@ describe('libavoid router — adjacent ports feeding opposite directions', () =>
         sourceSide: sideOf(e.source), targetSide: sideOf(e.target)
     }));
 
-    it('gives every edge the full stub at both ends, whichever way it leaves', async () => {
+    it('leaves every port on a horizontal stub with real clearance', async () => {
         const routes = (await routeOrthogonal(fx.nodes, connectors, {
             shapeBufferDistance: 15, portStub: STUB
         }))!;
         for (const c of connectors) {
             const r = routes.get(c.id)!;
             for (const [anchor, next] of [[r[0], r[1]], [r[r.length - 1], r[r.length - 2]]]) {
-                // horizontal, and exactly STUB long — a shortened stub means the
-                // route turned around next to the port.
                 expect(Math.abs(anchor.y - next.y), `stub not horizontal on ${c.id}`).toBeLessThan(0.5);
-                expect(Math.abs(Math.abs(anchor.x - next.x) - STUB), `stub not ${STUB}px on ${c.id}`).toBeLessThan(0.5);
+                // Deliberately a minimum, not an exact length. Requiring exactly
+                // STUB meant snapping the ends onto the offset points, which drags
+                // the adjacent bend — and since that x is shared by every edge
+                // reaching one side of a node, it collapsed their separately
+                // nudged channels into one. libavoid may end a few pixels short of
+                // the offset; what matters is that the route does not turn around
+                // on top of the port.
+                expect(Math.abs(anchor.x - next.x), `stub too short on ${c.id}`).toBeGreaterThan(8);
             }
         }
     });
@@ -242,6 +245,66 @@ describe('libavoid router — adjacent ports feeding opposite directions', () =>
             expect(orthogonal(r), `${name} is not orthogonal`).toBe(true);
             expect(r[0]).toEqual(c.source);
             expect(r[r.length - 1]).toEqual(c.target);
+        }
+    });
+});
+
+/**
+ * Captured from a drag where three outputs of one node fan out to three ports on
+ * another. libavoid nudges their vertical channels apart (x = 292 / 300 / 308),
+ * but an earlier stub-enforcement step snapped each route's ends onto the offset
+ * points — and snapping an endpoint drags the adjacent bend. Since that offset x
+ * is identical for every edge reaching one side of a node, all three channels
+ * collapsed onto x = 300 and the edges drew as a single thick line.
+ */
+describe('libavoid router — parallel edges between the same two nodes', () => {
+    const fx = JSON.parse(
+        readFileSync(path.join(__dirname, 'fixtures-shared-channel.json'), 'utf8')
+    ) as { nodes: RouterObstacle[]; edges: Array<{ id: string; source: any; target: any }> };
+
+    const sideOf = (p: { x: number; y: number }): 'WEST' | 'EAST' => {
+        let best: { sc: number; side: 'WEST' | 'EAST' } | undefined;
+        for (const n of fx.nodes) {
+            const dl = Math.abs(p.x - n.x);
+            const dr = Math.abs(p.x - (n.x + n.width));
+            const inY = n.y - 2 <= p.y && p.y <= n.y + n.height + 2;
+            const sc = Math.min(dl, dr) + (inY ? 0 : 1e6);
+            if (!best || sc < best.sc) best = { sc, side: dl < dr ? 'WEST' : 'EAST' };
+        }
+        return best!.side;
+    };
+
+    const connectors: RouterConnector[] = fx.edges.map(e => ({
+        id: e.id, source: e.source, target: e.target,
+        sourceSide: sideOf(e.source), targetSide: sideOf(e.target)
+    }));
+
+    /** The x of every vertical segment in a route. */
+    function verticalChannels(route: { x: number; y: number }[]): number[] {
+        const xs: number[] = [];
+        for (let i = 1; i < route.length; i++) {
+            if (Math.abs(route[i].x - route[i - 1].x) < 0.5 && Math.abs(route[i].y - route[i - 1].y) > 0.5) {
+                xs.push(Math.round(route[i].x));
+            }
+        }
+        return xs;
+    }
+
+    it('keeps parallel edges on separate vertical channels', async () => {
+        const routes = (await routeOrthogonal(fx.nodes, connectors, {
+            shapeBufferDistance: 15, idealNudgingDistance: 8, portStub: 25
+        }))!;
+
+        const fanOut = connectors.filter(c => c.id.includes('pgm:') && !c.id.includes('FillReq'));
+        expect(fanOut.length).toBe(3);
+
+        const channels = fanOut.map(c => verticalChannels(routes.get(c.id)!)[0]);
+        expect(new Set(channels).size, `channels collapsed: ${channels.join(', ')}`).toBe(3);
+
+        // and far enough apart to read as separate lines
+        const sorted = [...channels].sort((a, b) => a - b);
+        for (let i = 1; i < sorted.length; i++) {
+            expect(sorted[i] - sorted[i - 1]).toBeGreaterThanOrEqual(6);
         }
     });
 });

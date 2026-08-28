@@ -20,6 +20,8 @@ import { ViewerMouseListener } from './viewer-mouse-listener';
 import { EdgeOpenMouseListener } from './edge-open-mouse-listener';
 import { WhitespaceRootPropertiesMouseListener } from './whitespace-root-properties-mouse-listener';
 import { WorkflowElkLiveDragRouter } from './elk-live-drag-router';
+import { LibavoidEdgeRouter } from './libavoid-edge-router';
+import { preloadLibavoid } from './libavoid-loader';
 import {
     WorkflowPromptLabelEditAction,
     WorkflowPromptLabelEditActionHandler,
@@ -89,4 +91,14 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
 
     // Drag-time rerouting: client streams MoveAction updates; server recomputes routes (ELK fixed).
     configureActionHandler(context, MoveAction.KIND, WorkflowElkLiveDragRouter);
+
+    // The live tier: edges routed in the webview during a drag, with the same
+    // router and the same anchors the server uses on commit, so the committed
+    // route replaces the live one without a visible jump.
+    //
+    // Loading is kicked off here and never awaited: `IEdgeRouter.route()` is
+    // synchronous, so the router simply routes straight lines until the WASM is
+    // ready rather than blocking the first frames.
+    bindAsService(context, TYPES.IEdgeRouter, LibavoidEdgeRouter);
+    void preloadLibavoid();
 });

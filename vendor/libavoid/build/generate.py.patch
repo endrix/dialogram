@@ -1,0 +1,50 @@
+diff --git a/tools/generate.py b/tools/generate.py
+index ac615d9..f694bbc 100644
+--- a/tools/generate.py
++++ b/tools/generate.py
+@@ -112,13 +112,9 @@ def compile(generated_sources_dir, dist_dir_name, debug=False, environment: Lite
+   mjs = environment == 'node'
+   # list of parameters: https://emsettings.surma.technology/
+   execute_command(f"""
+-  docker run \
+-  --rm \
+-  -v {str(pwd)}:/src -w /src/ \
+-  -u {os.getuid()}:{os.getgid()} \
+-  emscripten/emsdk:3.1.36 \
+   emcc {args} \
+     --closure 1 \
++    -sDYNAMIC_EXECUTION=0 \
+     -fwasm-exceptions \
+     -s LLD_REPORT_UNDEFINED \
+     -s FILESYSTEM=0 \
+@@ -184,7 +180,7 @@ def main():
+     'dist_node',
+     '../dist',
+     '../examples/dist',
+-    '../examples/debug-src/generated',
++
+     '../examples/debug-dist',
+     '../src/generated'
+   ]
+@@ -200,16 +196,12 @@ def main():
+     except FileExistsError:
+       ...
+ 
+-  logger.info('Build debug version')
+-  output_dir = 'generated_debug'
+-  generate_bindings(output_dir, debug=True)
+-  compile(output_dir, 'dist_debug', debug=True)
+-  copyfile('dist_debug/libavoid.js', '../examples/debug-src/generated/libavoid.js')
+-  copyfile('dist_debug/libavoid.wasm', '../examples/debug-src/generated/libavoid.wasm')
+-  copyfile('dist_debug/libavoid.wasm.map', '../examples/debug-src/generated/libavoid.wasm.map')
++  # Debug build skipped — we only vendor the production artifacts.
+   
+-  logger.info('Build API documentation')
+-  execute_command('npm run api-docs', logger, '../')
++  # Skipped: jsdoc is a devDependency we do not need, and its absence aborted
++  # the script before the production web/node builds ever ran.
++  # logger.info('Build API documentation')
++  # execute_command('npm run api-docs', logger, '../')
+ 
+   logger.info('Build production version for web')
+   output_dir = 'generated_web'

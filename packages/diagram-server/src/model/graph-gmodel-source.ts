@@ -238,11 +238,26 @@ export class GraphGModelSource {
             const labelRequiredWidth = portW + labelGap + labelPad + maxInputLabelW + centreGap + maxOutputLabelW + labelPad + labelGap + portW;
             const headerLabelW = this.estimateLabelSize(node.label, WorkflowDiagramConstants.HEADER_LABEL_FONT_SIZE_PX).width
                 + WorkflowDiagramConstants.HEADER_LABEL_EXTRA_WIDTH_PX;
+            const isNetworkInstanceNode = this.isNetworkInstanceNode(node);
+            // Does this node get an italic type label under it? Mirrors the
+            // condition used below when setting `wf:footerTypeLabel`.
+            const footerTypeLabel = node.type
+                ? (isNetworkInstanceNode ? node.type : (node.type !== node.label ? node.type : undefined))
+                : undefined;
+            // Reserve the label's band INSIDE the node height. The label is drawn
+            // below the body, but leaving it out of the height hid it from
+            // everything that reasons about geometry: ELK spaced nodes box to box
+            // and could drop a label onto the node beneath, and both routers take
+            // these same boxes as obstacles, so a route could cross a label.
+            // The client draws the body shorter by the same amount, so nothing
+            // changes visually.
+            const footerReserve = footerTypeLabel
+                ? WorkflowDiagramConstants.NODE_FOOTER_LABEL_HEIGHT_PX
+                : 0;
             const size = {
                 width: Math.max(defaultWidth, labelRequiredWidth, headerLabelW),
-                height: Math.max(minHeight, requiredHeight)
+                height: Math.max(minHeight, requiredHeight) + footerReserve
             };
-            const isNetworkInstanceNode = this.isNetworkInstanceNode(node);
             const gnode: GNode = {
                 id: stableNodeId,
                 type: this.nodeType(node),
@@ -469,14 +484,7 @@ export class GraphGModelSource {
             const subtitle = this.controlSubtitle(node);
             const headerClasses = this.getHeaderCssClasses(node);
             gnode.children!.push(this.createHeaderCompartment(headerLabelId, node.label, subtitle, headerClasses));
-            let typeLabel: string | undefined;
-            if (node.type) {
-                if (isNetworkInstanceNode) {
-                    typeLabel = node.type;
-                } else if (node.type !== node.label) {
-                    typeLabel = node.type;
-                }
-            }
+            const typeLabel = footerTypeLabel;
             if (typeLabel) {
                 gnode.args = {
                     ...(gnode.args ?? {}),

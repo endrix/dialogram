@@ -41,4 +41,21 @@ export const WorkflowDiagramConstants = {
     // Padding between the port marker and the start of the label box column when
     // computing node width.
     PORT_LABEL_PADDING_PX: 8,
+
+    // Vertical band reserved below a node for its italic type label (the
+    // `wf:footerTypeLabel`), when it has one.
+    //
+    // The label is drawn OUTSIDE the node body — at `height + 4` with a 10px
+    // font — but it still occupies space on the canvas. Leaving it out of the
+    // node's height made it invisible to everything that reasons about
+    // geometry: ELK spaced nodes box-to-box and could drop a label onto the
+    // node below, and both edge routers took the same boxes as obstacles, so a
+    // route could pass straight through a label.
+    //
+    // So the height INCLUDES this band, and the client draws the body that much
+    // shorter and places the label inside it. The node looks identical; the
+    // geometry is now honest.
+    NODE_FOOTER_LABEL_GAP_PX: 4,
+    NODE_FOOTER_LABEL_FONT_SIZE_PX: 10,
+    NODE_FOOTER_LABEL_HEIGHT_PX: 14,
 } as const;
