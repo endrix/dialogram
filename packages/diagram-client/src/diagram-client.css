@@ -881,38 +881,34 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
    ============================================ */
 
 /* A boundary port is a symbol on the wire, not a box: an arrow glyph on the
-   axis with the name beside it and the type on a second line below. Sizes come
-   from BoundaryPortGeometry, which the server reads too — the glyph and the
-   port anchor have to land on the same pixel. */
+   axis, with the name on that same line and the type below it. All three are
+   drawn by the node's own view — there is no separate label element to style,
+   which is why nothing here reaches for `.boundary-label` any more. Sizes come
+   from BoundaryPortGeometry, which the server reads too, so the glyph and the
+   port anchor land on the same pixel. */
 
-.boundary-node .boundary-label {
+.boundary-node .boundary-name {
     font-family: var(--vscode-font-family);
     font-size: 12px;
     font-weight: 500;
 }
 
 .boundary-input .boundary-glyph,
-.boundary-input .boundary-label {
+.boundary-input .boundary-name {
     fill: var(--vscode-charts-green, #89d185);
 }
 
 .boundary-output .boundary-glyph,
-.boundary-output .boundary-label {
+.boundary-output .boundary-name {
     fill: var(--vscode-charts-blue, #007fd4);
 }
 
-/* The type is deliberately NOT tinted by direction: it is supporting text on
-   its own line, and colouring it makes it compete with the name.
-
-   Both the class and the position matter. The type label also carries
-   `boundary-label`, so `.boundary-input .boundary-label` matches it too — at
-   equal specificity, which the direction rules would then win on document
-   order. Qualifying with both classes outranks them outright, and it sits after
-   them so neither can be reintroduced by a reorder. */
-.boundary-node .boundary-label.boundary-type-label {
+/* The type deliberately carries the NODES' footer class and nothing else, so a
+   port's type reads exactly like an entity's rather than inventing a second
+   convention. Tinting it by direction would also make it compete with the name
+   sitting right above it. */
+.boundary-node .boundary-type {
     font-size: 10px;
-    font-weight: 400;
-    fill: #a8a8a2;
 }
 
 /* The grab target. Invisible until the port is selected or hovered, which is
@@ -933,15 +929,10 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
     rx: 2px;
 }
 
-/* The port element stays in the model as the edge anchor, but the glyph above
+/* The port element stays in the model as the edge anchor, but the symbol above
    is what is drawn — rendering both would double the arrow. */
 .boundary-node .workflow-port {
     display: none;
-}
-
-.boundary-node .direction-arrow {
-    fill: var(--vscode-foreground, #cccccc);
-    opacity: 0.6;
 }
 
 /* ============================================

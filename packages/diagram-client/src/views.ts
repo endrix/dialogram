@@ -1017,8 +1017,14 @@ export class ProxyNodeView extends ShapeView {
  * Boundary input port node (left margin) - network's input exposed to internal entities
  * Styled as a terminal connector shape with port name centered
  */
+/** One of a boundary node's own text values, from the args the server set. */
+function boundaryText(node: unknown, key: string): string {
+    const value = (node as { args?: Record<string, unknown> })?.args?.[key];
+    return typeof value === 'string' ? value : '';
+}
+
 /**
- * The glyph for a boundary port, drawn on the wire's axis.
+ * A boundary port, drawn on the wire's axis: glyph, name and type as one object.
  *
  * An input is a bare arrow pointing into the diagram; an output is an arrow
  * that stops against a bar, the way a terminal is drawn on a schematic.
@@ -1033,7 +1039,7 @@ export class ProxyNodeView extends ShapeView {
  * wire misses the arrow — both read `BoundaryPortGeometry` for exactly that
  * reason.
  */
-function boundaryGlyph(isInput: boolean, nodeWidth: number): VNode[] {
+function boundaryPort(isInput: boolean, nodeWidth: number, name: string, type: string): VNode[] {
     const G = BoundaryPortGeometry;
     const axis = G.AXIS_Y_PX;
     const arrow = isInput ? G.SOURCE_ARROW : G.SINK_ARROW;
@@ -1041,6 +1047,8 @@ function boundaryGlyph(isInput: boolean, nodeWidth: number): VNode[] {
     const glyphX = isInput ? nodeWidth - G.glyphWidth(true) : 0;
     const top = axis - arrow.height / 2;
     const tipX = glyphX + arrow.width;
+    const textX = isInput ? nodeWidth - G.textOffset(true) : G.textOffset(false);
+    const anchor = isInput ? 'end' : 'start';
 
     const parts: VNode[] = [
         svg('rect', {
@@ -1070,6 +1078,25 @@ function boundaryGlyph(isInput: boolean, nodeWidth: number): VNode[] {
             }
         }));
     }
+
+    // The name belongs to the symbol, not beside it. It used to be a child
+    // label element positioned by its own view, which is what made it drift off
+    // the glyph — an element with no layout feature still carries a stale
+    // position, and anything that reads it moves the text. Drawn here it cannot
+    // disagree with the arrow it labels.
+    parts.push(svg('text', {
+        class: { 'boundary-name': true },
+        attrs: { x: textX, y: axis, 'text-anchor': anchor, 'dominant-baseline': 'middle' }
+    }, name));
+
+    // The type reuses the nodes' own footer treatment, so a port's type reads
+    // exactly like an entity's does rather than inventing a second convention.
+    if (type) {
+        parts.push(svg('text', {
+            class: { 'type-footer-label': true, 'boundary-type': true },
+            attrs: { x: textX, y: G.TYPE_Y_PX, 'text-anchor': anchor, 'dominant-baseline': 'middle' }
+        }, type));
+    }
     return parts;
 }
 
@@ -1094,11 +1121,12 @@ export class BoundaryInputNodeView extends ShapeView {
                 transform: `translate(${node.position.x}, ${node.position.y})`
             }
         },
-            // No body: the glyph on the axis IS the port, and the two text lines
-            // run outward from it into the margin.
-            ...boundaryGlyph(true, width),
-            // Children: boundary labels + the port itself (anchor only; the
-            // glyph above is what is seen).
+            // No body: the symbol on the axis IS the port — glyph, name and
+            // type together, drawn as one thing.
+            ...boundaryPort(true, width, boundaryText(node, WorkflowDiagramMetadata.PORT_NAME),
+                boundaryText(node, WorkflowDiagramMetadata.PORT_TYPE)),
+            // The port element (an anchor only) and the label elements, which
+            // render nothing — see WorkflowLabelView.
             ...context.renderChildren(node)
         );
     }
@@ -1130,7 +1158,8 @@ export class BoundaryOutputNodeView extends ShapeView {
             }
         },
             // No body — see the input view above.
-            ...boundaryGlyph(false, width),
+            ...boundaryPort(false, width, boundaryText(node, WorkflowDiagramMetadata.PORT_NAME),
+                boundaryText(node, WorkflowDiagramMetadata.PORT_TYPE)),
             ...context.renderChildren(node)
         );
     }
@@ -2170,35 +2199,20 @@ export class WorkflowLabelView implements IView {
         const labelType = (label as any).type as string || '';
         const pos = label.position ?? { x: 0, y: 0 };
 
-        // Boundary labels (name + type) are positioned relative to the boundary
-        // node, which is why they must carry no layout feature — see
-        // `BoundaryLabel`. Text runs OUTWARD from the glyph, away from the wire:
-        // right-aligned on an input (whose glyph is on its right edge),
-        // left-aligned on an output (whose glyph is on its left). That keeps the
-        // glyphs in a column with the text running off into the margin, and
-        // keeps the type off the wire — the name sits on the axis, the type on
-        // its own line below.
+        // Boundary labels render NOTHING here.
+        //
+        // The boundary node view draws its own name and type as part of the port
+        // symbol, so drawing them again from the label elements would double the
+        // text. The elements stay in the model because they are what a rename
+        // addresses (`<node>_label_name`), and because the server owns them —
+        // they simply have no appearance of their own.
+        //
+        // This is also what put the name on top of its glyph. A label positioned
+        // by its own view still carries whatever position it was left with, and
+        // the view applied it; the text and the arrow it belonged to were being
+        // placed by two different pieces of code that had no way to agree.
         if (labelType === WorkflowDiagramTypes.LABEL_BOUNDARY_NAME || labelType === WorkflowDiagramTypes.LABEL_BOUNDARY_TYPE) {
-            const parent: any = (label as any).parent;
-            const parentW = parent?.size?.width ?? parent?.bounds?.width ?? 100;
-            const isType = labelType === WorkflowDiagramTypes.LABEL_BOUNDARY_TYPE;
-            const isInput = parent?.type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT;
-            const offset = BoundaryPortGeometry.textOffset(isInput);
-
-            // NOT translated by `label.position`. These labels carry no layout
-            // feature precisely so that nothing positions them but this view —
-            // their position is whatever it was left at, and applying it shifted
-            // the text off the coordinates computed here. It is the reason the
-            // name rendered on top of its own glyph.
-            return svg('text', {
-                class: { 'boundary-label': true, 'boundary-type-label': isType },
-                attrs: {
-                    x: isInput ? parentW - offset : offset,
-                    y: isType ? BoundaryPortGeometry.TYPE_Y_PX : BoundaryPortGeometry.AXIS_Y_PX,
-                    'text-anchor': isInput ? 'end' : 'start',
-                    'dominant-baseline': 'middle'
-                }
-            }, label.text || '');
+            return undefined;
         }
 
         // Port labels - ELK positions the label box, we handle text anchoring
