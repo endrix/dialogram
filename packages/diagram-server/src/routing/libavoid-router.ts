@@ -56,6 +56,7 @@
 import * as path from 'node:path';
 import * as url from 'node:url';
 import { snapRouteEndpoints } from './persisted-edge-routes';
+import { portStubOffsets, portStubKey, type PortStubOffset } from '@dialogram/shared';
 
 export interface RouterPoint {
     x: number;
@@ -186,6 +187,18 @@ export async function isLibavoidAvailable(): Promise<boolean> {
  * swallows an endpoint, and libavoid then treats the inside of that node as
  * traversable. Returns Infinity when there is nothing to constrain.
  */
+
+/**
+ * The corner needed to join a port anchor to the route, when libavoid's end
+ * does not sit on the anchor's row. Empty when they already align.
+ */
+function bridge(anchor: RouterPoint, end: RouterPoint | undefined): RouterPoint[] {
+    if (!end || Math.abs(anchor.y - end.y) < 0.01) {
+        return [];
+    }
+    return [{ x: end.x, y: anchor.y }];
+}
+
 function minAnchorClearance(
     obstacles: readonly RouterObstacle[],
     connectors: readonly RouterConnector[]
@@ -235,14 +248,33 @@ export async function routeOrthogonal(
     // invalidate, derive the ceiling from the anchors actually passed in.
     // Push each endpoint out along its port's side before routing; the stub back
     // to the true anchor is re-attached afterwards.
-    const offsetOf = (p: RouterPoint, side: 'WEST' | 'EAST' | undefined): RouterPoint =>
-        side === 'EAST' ? { x: p.x + requested.portStub, y: p.y }
-            : side === 'WEST' ? { x: p.x - requested.portStub, y: p.y }
+    // Staggered where a port carries several edges, so they do not all turn on
+    // one x and blur together at the port. The rule is shared with the client's
+    // live router — see `portStubDistances` — because the two must agree or the
+    // edge visibly jumps the moment the mouse is released.
+    const stubs = portStubOffsets(
+        connectors.flatMap(c => [
+            ...(c.sourceSide
+                ? [{ id: c.id, end: 'source' as const, ...c.source, side: c.sourceSide, towardY: c.target.y }]
+                : []),
+            ...(c.targetSide
+                ? [{ id: c.id, end: 'target' as const, ...c.target, side: c.targetSide, towardY: c.source.y }]
+                : [])
+        ]),
+        obstacles,
+        { portStub: requested.portStub, nudge: requested.idealNudgingDistance }
+    );
+    const base: PortStubOffset = { distance: requested.portStub, across: 0 };
+    const offsetOf = (p: RouterPoint, side: 'WEST' | 'EAST' | undefined, at: PortStubOffset): RouterPoint =>
+        side === 'EAST' ? { x: p.x + at.distance, y: p.y + at.across }
+            : side === 'WEST' ? { x: p.x - at.distance, y: p.y + at.across }
                 : p;
+    const stubFor = (id: string, end: 'source' | 'target'): PortStubOffset =>
+        stubs.get(portStubKey(id, end)) ?? base;
     const routed = connectors.map(c => ({
         id: c.id,
-        source: offsetOf(c.source, c.sourceSide),
-        target: offsetOf(c.target, c.targetSide)
+        source: offsetOf(c.source, c.sourceSide, stubFor(c.id, 'source')),
+        target: offsetOf(c.target, c.targetSide, stubFor(c.id, 'target'))
     }));
 
     // The ceiling is set by where the router actually starts, i.e. the offset
@@ -314,22 +346,23 @@ export async function routeOrthogonal(
                 }
                 // Attach the port anchors to whatever libavoid produced.
                 //
-                // Note what this deliberately does NOT do: pull the route's ends
-                // onto the offset points first. That looks like it enforces a
-                // uniform stub, but snapping an endpoint drags the adjacent bend
-                // with it — and the offset x is identical for every edge reaching
-                // ports on the same side of a node. Three edges leaving one node
-                // had their nudged channels (x = 292, 300, 308) collapsed onto a
-                // single x = 300, so they drew as one thick line.
+                // Deliberately NOT by snapping the route's ends onto the offset
+                // points: that drags the adjacent bend, and the offset x is the
+                // same for every edge reaching one side of a node, which
+                // collapsed three separately nudged channels (x = 292, 300, 308)
+                // onto one and drew them as a single thick line.
                 //
-                // libavoid already keeps the route clear of the port, because it
-                // was handed endpoints pushed `portStub` out. Its own ends may sit
-                // a few pixels in from those, which only shortens the stub — and a
-                // shorter stub is far cheaper than losing the nudging.
+                // But libavoid also nudges route ends VERTICALLY to separate
+                // edges leaving the same port, so its first point rarely sits on
+                // the anchor's own line — two edges off one port came back at
+                // y = 390 and y = 398 for an anchor at 393.5. Joining anchor to
+                // that point directly draws a diagonal.
                 //
-                // The connecting segment stays axis-aligned because libavoid ends
-                // on the anchor's own horizontal line.
-                const withStubs = [c.source, ...points, c.target];
+                // So the join is an L where the lines differ: out along the
+                // anchor's row first, then across to meet the route. Orthogonal,
+                // and the nudging survives.
+                const withStubs = [c.source, ...bridge(c.source, points[0]), ...points,
+                    ...bridge(c.target, points[points.length - 1]).reverse(), c.target];
                 routes.set(id, snapRouteEndpoints(withStubs, c.source, c.target));
             }
         }

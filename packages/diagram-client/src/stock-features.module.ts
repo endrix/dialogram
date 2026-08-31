@@ -10,7 +10,7 @@
  * the neutral base and (optionally) the stock views by `createDiagramContainer`.
  */
 import { ContainerModule } from 'inversify';
-import { TYPES, bindAsService, configureActionHandler } from '@eclipse-glsp/client';
+import { ChangeBoundsTool, TYPES, bindAsService, configureActionHandler } from '@eclipse-glsp/client';
 import { MoveAction } from '@eclipse-glsp/sprotty';
 import { PropertyPanel } from './property-panel';
 import { ChatPanel } from './chat-panel-integrated';
@@ -20,6 +20,7 @@ import { ViewerMouseListener } from './viewer-mouse-listener';
 import { EdgeOpenMouseListener } from './edge-open-mouse-listener';
 import { WhitespaceRootPropertiesMouseListener } from './whitespace-root-properties-mouse-listener';
 import { WorkflowElkLiveDragRouter } from './elk-live-drag-router';
+import { WorkflowChangeBoundsTool } from './change-bounds-drag-threshold';
 import { LibavoidEdgeRouter } from './libavoid-edge-router';
 import { preloadLibavoid } from './libavoid-loader';
 import {
@@ -88,6 +89,13 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     configureActionHandler(context, WorkflowShowWorkspaceEntitiesAction.KIND, WorkflowShowWorkspaceEntitiesActionHandler);
     configureActionHandler(context, WorkflowShowAgentSkillsAction.KIND, WorkflowShowAgentSkillsActionHandler);
     configureActionHandler(context, WorkflowShowClaudeAgentsAction.KIND, WorkflowShowClaudeAgentsActionHandler);
+
+    // Ignore the pixel or two of pointer travel a double-click carries, so
+    // navigating into a nested network no longer nudges the node and triggers a
+    // reroute. `changeBoundsToolModule` (a DEFAULT_MODULE, loaded before this
+    // one) binds `bind(ChangeBoundsTool).toSelf()` + `IDefaultTool` as a
+    // `toService` alias, so rebinding the class alone redirects the alias too.
+    rebind(ChangeBoundsTool).to(WorkflowChangeBoundsTool).inSingletonScope();
 
     // Drag-time rerouting: client streams MoveAction updates; server recomputes routes (ELK fixed).
     configureActionHandler(context, MoveAction.KIND, WorkflowElkLiveDragRouter);

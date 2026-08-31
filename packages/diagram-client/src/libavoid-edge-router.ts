@@ -41,7 +41,7 @@ import {
     type GRoutingHandle
 } from '@eclipse-glsp/sprotty';
 import { injectable } from 'inversify';
-import { portAnchor, type PortSide } from '@dialogram/shared';
+import { portAnchor, portStubOffsets, portStubKey, type PortSide, type PortStubOffset } from '@dialogram/shared';
 import { isLibavoidReady, libavoid } from './libavoid-loader';
 
 export const LIBAVOID_ROUTER_KIND = 'libavoid';
@@ -237,20 +237,39 @@ export class LibavoidEdgeRouter extends AbstractEdgeRouter {
                 );
             }
 
+            // Anchors first: how far each end starts off its port depends on how
+            // many edges share that port, which is not knowable one edge at a
+            // time. Same rule as the server, from shared, so the live route and
+            // the committed route agree and the handover stays invisible.
+            const ends = edges
+                .map(edge => ({
+                    id: String(edge.id),
+                    source: anchorOf((edge as any).source),
+                    target: anchorOf((edge as any).target)
+                }))
+                .filter(e => e.source && e.target);
+            const stubs = portStubOffsets(
+                ends.flatMap(e => [
+                    { id: e.id, end: 'source' as const, ...e.source!, towardY: e.target!.y },
+                    { id: e.id, end: 'target' as const, ...e.target!, towardY: e.source!.y }
+                ]),
+                boxes,
+                { portStub: PORT_STUB, nudge: NUDGE }
+            );
+            const base: PortStubOffset = { distance: PORT_STUB, across: 0 };
+
             const refs: Array<{ id: string; ref: any; source: any; target: any }> = [];
-            for (const edge of edges) {
-                const source = anchorOf((edge as any).source);
-                const target = anchorOf((edge as any).target);
+            for (const { id: edgeId, source, target } of ends) {
                 if (!source || !target) {
                     continue;
                 }
                 // Route from a stub off the port, not the port itself: an anchor
                 // sits only PORT_WIDTH_PX outside its node, and an endpoint inside
                 // a shape's clearance makes libavoid route through that shape.
-                const from = this.stub(source);
-                const to = this.stub(target);
+                const from = this.stub(source, stubs.get(portStubKey(edgeId, 'source')) ?? base);
+                const to = this.stub(target, stubs.get(portStubKey(edgeId, 'target')) ?? base);
                 refs.push({
-                    id: String(edge.id),
+                    id: edgeId,
                     ref: new Avoid.ConnRef(
                         router,
                         new Avoid.ConnEnd(new Avoid.Point(from.x, from.y)),
@@ -281,10 +300,10 @@ export class LibavoidEdgeRouter extends AbstractEdgeRouter {
         }
     }
 
-    private stub(anchor: { x: number; y: number; side: PortSide }): XY {
+    private stub(anchor: { x: number; y: number; side: PortSide }, at: PortStubOffset): XY {
         return anchor.side === 'EAST'
-            ? { x: anchor.x + PORT_STUB, y: anchor.y }
-            : { x: anchor.x - PORT_STUB, y: anchor.y };
+            ? { x: anchor.x + at.distance, y: anchor.y + at.across }
+            : { x: anchor.x - at.distance, y: anchor.y + at.across };
     }
 
     /**
@@ -300,10 +319,30 @@ export class LibavoidEdgeRouter extends AbstractEdgeRouter {
         source: { x: number; y: number; side: PortSide },
         target: { x: number; y: number; side: PortSide }
     ): XY[] {
-        const withStubs = [{ x: source.x, y: source.y }, ...points.map(p => ({ x: p.x, y: p.y })), { x: target.x, y: target.y }];
+        const body = points.map(p => ({ x: p.x, y: p.y }));
+        // libavoid nudges route ends vertically to separate edges leaving the
+        // same port, so its first point rarely sits on the anchor's own row.
+        // Joining the two directly would draw a diagonal off the port; an L
+        // keeps it orthogonal and keeps the nudging. Mirrors the server.
+        const withStubs = [
+            { x: source.x, y: source.y },
+            ...this.bridge(source, body[0]),
+            ...body,
+            ...this.bridge(target, body[body.length - 1]).reverse(),
+            { x: target.x, y: target.y }
+        ];
         this.snap(withStubs, 0, source);
         this.snap(withStubs, withStubs.length - 1, target);
         return withStubs;
+    }
+
+
+    /** The corner joining a port anchor to a route end that is off its row. */
+    private bridge(anchor: { x: number; y: number }, end: XY | undefined): XY[] {
+        if (!end || Math.abs(anchor.y - end.y) < 0.01) {
+            return [];
+        }
+        return [{ x: end.x, y: anchor.y }];
     }
 
     /** Move an endpoint onto `to`, carrying the adjacent bend so it stays orthogonal. */
