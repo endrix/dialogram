@@ -41,7 +41,7 @@ import {
     type GRoutingHandle
 } from '@eclipse-glsp/sprotty';
 import { injectable } from 'inversify';
-import { portAnchor, type PortSide } from '@dialogram/shared';
+import { portAnchor, portStubDistances, portStubKey, type PortSide } from '@dialogram/shared';
 import { isLibavoidReady, libavoid } from './libavoid-loader';
 
 export const LIBAVOID_ROUTER_KIND = 'libavoid';
@@ -237,20 +237,38 @@ export class LibavoidEdgeRouter extends AbstractEdgeRouter {
                 );
             }
 
+            // Anchors first: how far each end starts off its port depends on how
+            // many edges share that port, which is not knowable one edge at a
+            // time. Same rule as the server, from shared, so the live route and
+            // the committed route agree and the handover stays invisible.
+            const ends = edges
+                .map(edge => ({
+                    id: String(edge.id),
+                    source: anchorOf((edge as any).source),
+                    target: anchorOf((edge as any).target)
+                }))
+                .filter(e => e.source && e.target);
+            const stubs = portStubDistances(
+                ends.flatMap(e => [
+                    { id: e.id, end: 'source' as const, ...e.source! },
+                    { id: e.id, end: 'target' as const, ...e.target! }
+                ]),
+                boxes,
+                { portStub: PORT_STUB, nudge: NUDGE }
+            );
+
             const refs: Array<{ id: string; ref: any; source: any; target: any }> = [];
-            for (const edge of edges) {
-                const source = anchorOf((edge as any).source);
-                const target = anchorOf((edge as any).target);
+            for (const { id: edgeId, source, target } of ends) {
                 if (!source || !target) {
                     continue;
                 }
                 // Route from a stub off the port, not the port itself: an anchor
                 // sits only PORT_WIDTH_PX outside its node, and an endpoint inside
                 // a shape's clearance makes libavoid route through that shape.
-                const from = this.stub(source);
-                const to = this.stub(target);
+                const from = this.stub(source, stubs.get(portStubKey(edgeId, 'source')) ?? PORT_STUB);
+                const to = this.stub(target, stubs.get(portStubKey(edgeId, 'target')) ?? PORT_STUB);
                 refs.push({
-                    id: String(edge.id),
+                    id: edgeId,
                     ref: new Avoid.ConnRef(
                         router,
                         new Avoid.ConnEnd(new Avoid.Point(from.x, from.y)),
@@ -281,10 +299,10 @@ export class LibavoidEdgeRouter extends AbstractEdgeRouter {
         }
     }
 
-    private stub(anchor: { x: number; y: number; side: PortSide }): XY {
+    private stub(anchor: { x: number; y: number; side: PortSide }, distance: number): XY {
         return anchor.side === 'EAST'
-            ? { x: anchor.x + PORT_STUB, y: anchor.y }
-            : { x: anchor.x - PORT_STUB, y: anchor.y };
+            ? { x: anchor.x + distance, y: anchor.y }
+            : { x: anchor.x - distance, y: anchor.y };
     }
 
     /**

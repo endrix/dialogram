@@ -56,6 +56,7 @@
 import * as path from 'node:path';
 import * as url from 'node:url';
 import { snapRouteEndpoints } from './persisted-edge-routes';
+import { portStubDistances, portStubKey } from '@dialogram/shared';
 
 export interface RouterPoint {
     x: number;
@@ -247,14 +248,28 @@ export async function routeOrthogonal(
     // invalidate, derive the ceiling from the anchors actually passed in.
     // Push each endpoint out along its port's side before routing; the stub back
     // to the true anchor is re-attached afterwards.
-    const offsetOf = (p: RouterPoint, side: 'WEST' | 'EAST' | undefined): RouterPoint =>
-        side === 'EAST' ? { x: p.x + requested.portStub, y: p.y }
-            : side === 'WEST' ? { x: p.x - requested.portStub, y: p.y }
+    // Staggered where a port carries several edges, so they do not all turn on
+    // one x and blur together at the port. The rule is shared with the client's
+    // live router — see `portStubDistances` — because the two must agree or the
+    // edge visibly jumps the moment the mouse is released.
+    const stubs = portStubDistances(
+        connectors.flatMap(c => [
+            ...(c.sourceSide ? [{ id: c.id, end: 'source' as const, ...c.source, side: c.sourceSide }] : []),
+            ...(c.targetSide ? [{ id: c.id, end: 'target' as const, ...c.target, side: c.targetSide }] : [])
+        ]),
+        obstacles,
+        { portStub: requested.portStub, nudge: requested.idealNudgingDistance }
+    );
+    const offsetOf = (p: RouterPoint, side: 'WEST' | 'EAST' | undefined, stub: number): RouterPoint =>
+        side === 'EAST' ? { x: p.x + stub, y: p.y }
+            : side === 'WEST' ? { x: p.x - stub, y: p.y }
                 : p;
+    const stubFor = (id: string, end: 'source' | 'target'): number =>
+        stubs.get(portStubKey(id, end)) ?? requested.portStub;
     const routed = connectors.map(c => ({
         id: c.id,
-        source: offsetOf(c.source, c.sourceSide),
-        target: offsetOf(c.target, c.targetSide)
+        source: offsetOf(c.source, c.sourceSide, stubFor(c.id, 'source')),
+        target: offsetOf(c.target, c.targetSide, stubFor(c.id, 'target'))
     }));
 
     // The ceiling is set by where the router actually starts, i.e. the offset

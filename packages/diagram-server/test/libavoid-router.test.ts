@@ -373,4 +373,39 @@ describe('libavoid router — several edges leaving one port', () => {
         });
         expect(Math.abs(rows[0] - rows[1])).toBeGreaterThan(4);
     });
+
+    /**
+     * ...and they must not TURN at the same place either, which is the third
+     * way this join has looked broken.
+     *
+     * Every end starts `portStub` off its port, so the L back to the anchor
+     * turned at exactly that distance for every edge — put two edges on one port
+     * and both corners landed on one x (444 here). The routes then ran
+     * superimposed for the whole stub and split there in a 4px step. At stroke
+     * width, with rounded joins, that is not a fan-out; it is a blob on the port,
+     * which is what was reported at `rob.Com`.
+     *
+     * libavoid separates such corners by itself when both edges turn and run a
+     * long way (three edges off one port in `fixtures-dense-core` come back
+     * 12px apart with no help). It cannot here, because the first move is only
+     * the 4px nudge — far too short for segment nudging to bite. Hence the
+     * staggered stub, and hence this test: the previous two assertions both pass
+     * with every corner piled on one x.
+     */
+    it('does not turn two edges off one port at the same x', async () => {
+        const routes = (await routeOrthogonal(fx.nodes, connectors, opts))!;
+        const shared = connectors.filter(c => c.id.includes('rob:Com'));
+        expect(shared.length).toBe(2);
+
+        // The corner is the last point still on the anchor's own row.
+        const corners = shared.map(c => {
+            const r = routes.get(c.id)!;
+            let i = 1;
+            while (i < r.length && Math.abs(r[i].y - r[0].y) < 0.5) {
+                i++;
+            }
+            return r[i - 1].x;
+        });
+        expect(Math.abs(corners[0] - corners[1])).toBeGreaterThan(4);
+    });
 });
