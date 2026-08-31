@@ -109,7 +109,7 @@ export function applyBoundaryFlowLayerConstraints(
  * is the right default.
  *
  * It is also expensive. An input feeding a node six layers in has to cross all
- * six. Measured on a CalPy network, releasing the pins:
+ * six. Measured on the reference network, releasing the pins:
  *
  *     crossings 228 -> 191, long-haul edges 15 -> 9, edge length -15%
  *

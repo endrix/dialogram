@@ -111,7 +111,7 @@ describe('libavoid router', () => {
 });
 
 /**
- * Captured from a real drag of the `stg` node in a CalPy network (27 nodes,
+ * Captured from a real drag of the `stg` node in a reference network (27 nodes,
  * 8 rerouted edges). This fixture exists because of a specific shipped bug:
  * `shapeBufferDistance` was set to the obstacle padding (15) while port anchors
  * sit only 9px outside their node box, so every connector endpoint landed

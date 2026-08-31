@@ -1,9 +1,9 @@
 /**
  * The compact layout differs from the boundary-flow one by exactly this: the
  * network's input and output pills are released from their first/last columns,
- * so ELK can put them beside whatever they connect to. Measured on a CalPy
- * network that is 16% fewer crossings and 15% less edge length, at the cost of
- * the interface no longer reading down the two edges of the diagram.
+ * so ELK can put them beside whatever they connect to. Measured on the
+ * reference network that is 16% fewer crossings and 15% less edge length, at
+ * the cost of the interface no longer reading down the two edges of the diagram.
  *
  * The pins belong to the model, not to one layout run, so they must come back
  * afterwards — otherwise the compact layout would quietly change what every
