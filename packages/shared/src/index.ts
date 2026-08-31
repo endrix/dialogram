@@ -9,6 +9,7 @@ export * from './diagram-types';
 export * from './diagram-constants';
 export * from './port-anchor';
 export * from './port-stub';
+export * from './boundary-port-geometry';
 export * from './binding-keys';
 export * from './diagram-seams';
 export * from './chat-seams';

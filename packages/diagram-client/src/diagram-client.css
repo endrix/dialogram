@@ -880,50 +880,57 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
    Boundary node styles (network input/output ports)
    ============================================ */
 
-.boundary-node .boundary-body {
-    stroke-width: 1.5px;
-}
+/* A boundary port is a symbol on the wire, not a box: an arrow glyph on the
+   axis with the name beside it and the type on a second line below. Sizes come
+   from BoundaryPortGeometry, which the server reads too — the glyph and the
+   port anchor have to land on the same pixel. */
 
 .boundary-node .boundary-label {
-    fill: var(--vscode-editor-foreground, #ffffff);
     font-family: var(--vscode-font-family);
-    font-size: 11px;
+    font-size: 9.5px;
     font-weight: 500;
 }
 
+/* The type is deliberately NOT tinted by direction: it is supporting text on
+   its own line, and colouring it would make it compete with the name. */
 .boundary-node .boundary-type-label {
-    font-size: 9px;
+    font-size: 8px;
     font-weight: 400;
-    opacity: 0.85;
+    fill: #a8a8a2;
 }
 
-.boundary-input .boundary-body {
-    fill: var(--vscode-charts-green, #89d185);
-    fill-opacity: 0.3;
-    stroke: var(--vscode-charts-green, #89d185);
-}
-
+.boundary-input .boundary-glyph,
 .boundary-input .boundary-label {
     fill: var(--vscode-charts-green, #89d185);
 }
 
-.boundary-output .boundary-body {
-    fill: var(--vscode-charts-blue, #007fd4);
-    fill-opacity: 0.3;
-    stroke: var(--vscode-charts-blue, #007fd4);
-}
-
+.boundary-output .boundary-glyph,
 .boundary-output .boundary-label {
     fill: var(--vscode-charts-blue, #007fd4);
 }
 
-.boundary-node.selected .boundary-body {
-    stroke: var(--vscode-focusBorder, #007fd4);
-    stroke-width: 2px;
+/* The grab target. Invisible until the port is selected or hovered, which is
+   also what replaced the old body as the thing that shows selection. */
+.boundary-node .boundary-hit {
+    fill: transparent;
+    stroke: none;
 }
 
-.boundary-node.hover .boundary-body {
-    fill-opacity: 0.5;
+.boundary-node.hover .boundary-hit {
+    fill: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.18));
+}
+
+.boundary-node.selected .boundary-hit {
+    fill: none;
+    stroke: var(--vscode-focusBorder, #007fd4);
+    stroke-width: 1px;
+    rx: 2px;
+}
+
+/* The port element stays in the model as the edge anchor, but the glyph above
+   is what is drawn — rendering both would double the arrow. */
+.boundary-node .workflow-port {
+    display: none;
 }
 
 .boundary-node .direction-arrow {

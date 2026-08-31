@@ -1,4 +1,4 @@
-import { WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
 import { URI } from 'vscode-uri';
@@ -1030,14 +1030,32 @@ export class GraphGModelSource {
     private createBoundaryNode(node: PyGraphNode, stableNodeId: string): GNode {
         const port = node.ports[0];
         const isInput = node.kind === 'wf-input';
-        const size = { width: 120, height: 50 };
+        // One row tall now, not a 50px box — the port is a symbol on the wire's
+        // axis rather than a container. Width stays fixed across every boundary
+        // node so their inner edges, and therefore their glyphs, line up in a
+        // column whatever ELK does with alignment inside the layer; the text
+        // runs outward from that edge into the margin, where overflow is
+        // harmless. See BoundaryPortGeometry.
+        const size = { width: 120, height: BoundaryPortGeometry.ROW_PITCH_PX };
+        const glyph = {
+            width: BoundaryPortGeometry.glyphWidth(isInput),
+            height: BoundaryPortGeometry.SOURCE_ARROW.height
+        };
         const portId = `${stableNodeId}_port_${port?.name ?? 'Port'}`;
         const p: GPort = {
             id: portId,
             type: isInput ? WorkflowDiagramTypes.PORT_OUTPUT : WorkflowDiagramTypes.PORT_INPUT,
             cssClasses: [WorkflowDiagramCss.PORT],
-            position: { x: isInput ? size.width : -8, y: 22 },
-            size: { width: 8, height: 6 },
+            // Sits exactly where the client draws the glyph, so the anchor the
+            // routers compute lands on the arrow's tip: an input's arrow ends at
+            // the node's right edge, an output's begins at its left edge. The y
+            // puts the anchor on the axis — the NAME's line, not the node's
+            // centre, which is what used to run the wire between the two lines.
+            position: {
+                x: isInput ? size.width - glyph.width : 0,
+                y: BoundaryPortGeometry.AXIS_Y_PX - glyph.height / 2
+            },
+            size: glyph,
             args: {
                 [WorkflowDiagramMetadata.PORT_NAME]: port?.name ?? '',
                 [WorkflowDiagramMetadata.PORT_DIRECTION]: isInput ? 'output' : 'input'

@@ -42,7 +42,7 @@ import {
 import { EDGE_OPEN_ANCHOR_X_ARG, EDGE_OPEN_ANCHOR_Y_ARG } from './edge-open-mouse-listener';
 import { clientBehavior } from './profile';
 import { isIncidentEdgeInActiveDrag } from './elk-live-drag-router';
-import { WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { WorkflowDiagramConstants } from '@dialogram/shared';
 
 /** Walk to the model root; the drag-active window is tracked per root. */
@@ -88,7 +88,7 @@ const NODE_HEIGHT = 80;
 const HEADER_HEIGHT = WorkflowDiagramConstants.HEADER_HEIGHT_PX;
 const PORT_RADIUS = 5;
 const BOUNDARY_NODE_WIDTH = 80;
-const BOUNDARY_NODE_HEIGHT = 30;
+const BOUNDARY_NODE_HEIGHT = BoundaryPortGeometry.ROW_PITCH_PX;
 
 // Icon size for center node icons
 const NODE_ICON_SIZE = 36;
@@ -1017,6 +1017,62 @@ export class ProxyNodeView extends ShapeView {
  * Boundary input port node (left margin) - network's input exposed to internal entities
  * Styled as a terminal connector shape with port name centered
  */
+/**
+ * The glyph for a boundary port, drawn on the wire's axis.
+ *
+ * An input is a bare arrow pointing into the diagram; an output is an arrow
+ * that stops against a bar, the way a terminal is drawn on a schematic.
+ *
+ * The hit target is deliberately far larger than the arrow, and deliberately
+ * only as tall as one row: an 8px arrow cannot be grabbed reliably, and
+ * including the type line would move the drag target whenever the type is
+ * hidden at low zoom. It also carries selection now that there is no body to
+ * outline.
+ *
+ * The x it is built at must agree with where the SERVER placed the port, or the
+ * wire misses the arrow — both read `BoundaryPortGeometry` for exactly that
+ * reason.
+ */
+function boundaryGlyph(isInput: boolean, nodeWidth: number): VNode[] {
+    const G = BoundaryPortGeometry;
+    const axis = G.AXIS_Y_PX;
+    const arrow = isInput ? G.SOURCE_ARROW : G.SINK_ARROW;
+    // Inputs occupy the node's right edge, outputs its left.
+    const glyphX = isInput ? nodeWidth - G.glyphWidth(true) : 0;
+    const top = axis - arrow.height / 2;
+    const tipX = glyphX + arrow.width;
+
+    const parts: VNode[] = [
+        svg('rect', {
+            class: { 'boundary-hit': true },
+            attrs: {
+                x: glyphX + G.glyphWidth(isInput) / 2 - G.HIT.width / 2,
+                y: axis - G.HIT.height / 2,
+                width: G.HIT.width,
+                height: G.HIT.height
+            }
+        }),
+        // Both arrows point the way the data flows: into the diagram for an
+        // input, into the bar for an output.
+        svg('path', {
+            class: { 'boundary-glyph': true },
+            attrs: { d: `M ${glyphX} ${top} L ${tipX} ${axis} L ${glyphX} ${top + arrow.height} Z` }
+        })
+    ];
+    if (!isInput) {
+        parts.push(svg('rect', {
+            class: { 'boundary-glyph': true, 'boundary-glyph-bar': true },
+            attrs: {
+                x: tipX,
+                y: axis - G.SINK_BAR.height / 2,
+                width: G.SINK_BAR.width,
+                height: G.SINK_BAR.height
+            }
+        }));
+    }
+    return parts;
+}
+
 @injectable()
 export class BoundaryInputNodeView extends ShapeView {
     override render(node: Readonly<BoundaryInputNode>, context: RenderingContext, args?: IViewArgs): VNode | undefined {
@@ -1025,8 +1081,7 @@ export class BoundaryInputNodeView extends ShapeView {
         }
 
         // Use server-provided size, not Sprotty-computed bounds
-        const { width, height } = getNodeSize(node, BOUNDARY_NODE_WIDTH, BOUNDARY_NODE_HEIGHT);
-        const cornerRadius = height / 2;
+        const { width } = getNodeSize(node, BOUNDARY_NODE_WIDTH, BOUNDARY_NODE_HEIGHT);
 
         return svg('g', {
             class: {
@@ -1039,17 +1094,11 @@ export class BoundaryInputNodeView extends ShapeView {
                 transform: `translate(${node.position.x}, ${node.position.y})`
             }
         },
-            // Rounded terminal shape (left side fully rounded, right side has small radius)
-            svg('rect', {
-                class: { 'boundary-body': true },
-                attrs: {
-                    x: 0, y: 0,
-                    width, height,
-                    rx: cornerRadius,
-                    ry: cornerRadius
-                }
-            }),
-            // Children: boundary labels + output port on right side
+            // No body: the glyph on the axis IS the port, and the two text lines
+            // run outward from it into the margin.
+            ...boundaryGlyph(true, width),
+            // Children: boundary labels + the port itself (anchor only; the
+            // glyph above is what is seen).
             ...context.renderChildren(node)
         );
     }
@@ -1067,8 +1116,7 @@ export class BoundaryOutputNodeView extends ShapeView {
         }
 
         // Use server-provided size, not Sprotty-computed bounds
-        const { width, height } = getNodeSize(node, BOUNDARY_NODE_WIDTH, BOUNDARY_NODE_HEIGHT);
-        const cornerRadius = height / 2;
+        const { width } = getNodeSize(node, BOUNDARY_NODE_WIDTH, BOUNDARY_NODE_HEIGHT);
 
         return svg('g', {
             class: {
@@ -1081,17 +1129,8 @@ export class BoundaryOutputNodeView extends ShapeView {
                 transform: `translate(${node.position.x}, ${node.position.y})`
             }
         },
-            // Rounded terminal shape (right side fully rounded)
-            svg('rect', {
-                class: { 'boundary-body': true },
-                attrs: {
-                    x: 0, y: 0,
-                    width, height,
-                    rx: cornerRadius,
-                    ry: cornerRadius
-                }
-            }),
-            // Children: boundary labels + input port on left side
+            // No body — see the input view above.
+            ...boundaryGlyph(false, width),
             ...context.renderChildren(node)
         );
     }
@@ -2131,12 +2170,20 @@ export class WorkflowLabelView implements IView {
         const labelType = (label as any).type as string || '';
         const pos = label.position ?? { x: 0, y: 0 };
 
-        // Boundary labels (name + type) are positioned relative to the boundary node.
+        // Boundary labels (name + type) are positioned relative to the boundary
+        // node, which is why they must carry no layout feature — see
+        // `BoundaryLabel`. Text runs OUTWARD from the glyph, away from the wire:
+        // right-aligned on an input (whose glyph is on its right edge),
+        // left-aligned on an output (whose glyph is on its left). That keeps the
+        // glyphs in a column with the text running off into the margin, and
+        // keeps the type off the wire — the name sits on the axis, the type on
+        // its own line below.
         if (labelType === WorkflowDiagramTypes.LABEL_BOUNDARY_NAME || labelType === WorkflowDiagramTypes.LABEL_BOUNDARY_TYPE) {
             const parent: any = (label as any).parent;
             const parentW = parent?.size?.width ?? parent?.bounds?.width ?? 100;
-            const parentH = parent?.size?.height ?? parent?.bounds?.height ?? 40;
             const isType = labelType === WorkflowDiagramTypes.LABEL_BOUNDARY_TYPE;
+            const isInput = parent?.type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT;
+            const offset = BoundaryPortGeometry.textOffset(isInput);
 
             return svg('g', {
                 attrs: { transform: `translate(${pos.x}, ${pos.y})` }
@@ -2144,9 +2191,9 @@ export class WorkflowLabelView implements IView {
                 svg('text', {
                     class: { 'boundary-label': true, 'boundary-type-label': isType },
                     attrs: {
-                        x: parentW / 2,
-                        y: isType ? (parentH / 2 + 10) : (parentH / 2 - 2),
-                        'text-anchor': 'middle',
+                        x: isInput ? parentW - offset : offset,
+                        y: isType ? BoundaryPortGeometry.TYPE_Y_PX : BoundaryPortGeometry.AXIS_Y_PX,
+                        'text-anchor': isInput ? 'end' : 'start',
                         'dominant-baseline': 'middle'
                     }
                 }, label.text || '')
