@@ -1724,10 +1724,10 @@ export class WorkflowLayoutOperationHandler extends OperationHandler {
 
         // What makes this the COMPACT layout rather than a second boundary-flow
         // one: the network's input and output pills are released from their
-        // first/last columns and placed beside whatever they connect to. On a
-        // CalPy network that is 16% fewer crossings, 40% fewer full-width edges
-        // and 15% less edge length — paid for by giving up the interface being
-        // readable down the two edges of the diagram.
+        // first/last columns and placed beside whatever they connect to. On
+        // the reference network that is 16% fewer crossings, 40% fewer
+        // full-width edges and 15% less edge length — paid for by giving up
+        // the interface being readable down the two edges of the diagram.
         //
         // The pins are restored straight afterwards: they belong to the model,
         // not to one layout run, so the boundary-flow layout still gets them.
