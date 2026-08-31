@@ -198,6 +198,12 @@
         "view": "BoundaryInputNodeView"
     },
     {
+        "model": "BoundaryLabel",
+        "op": "modelElement",
+        "typeId": "label:boundary:type",
+        "view": "WorkflowLabelView"
+    },
+    {
         "model": "BoundaryOutputNode",
         "op": "modelElement",
         "typeId": "node:boundary:output",
@@ -340,12 +346,6 @@
         "op": "modelElement",
         "typeId": "label:badge",
         "view": "GLabelView"
-    },
-    {
-        "model": "WorkflowLabel",
-        "op": "modelElement",
-        "typeId": "label:boundary:type",
-        "view": "WorkflowLabelView"
     },
     {
         "model": "WorkflowLabel",

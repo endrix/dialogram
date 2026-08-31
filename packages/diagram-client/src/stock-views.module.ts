@@ -45,6 +45,7 @@ import {
     WorkflowEdge,
     WorkflowLabel,
     BoundaryEditableLabel,
+    BoundaryLabel,
     HeaderCompartment,
     PortsCompartment
 } from './model';
@@ -129,8 +130,12 @@ export const workflowViewsModule = new ContainerModule((bind, unbind, isBound, r
     // Making the type editable for real needs a sidecar op that addresses a
     // boundary port by `workflow` (the way `createPort` already does) rather
     // than by owning `entity`, which is what `updatePortType` requires today.
+    //
+    // `BoundaryLabel`, NOT the generic `WorkflowLabel`: boundary labels must
+    // carry no layout features, or the node's layout engine positions them
+    // instead of the view and the type lands in the top-left corner.
     configureModelElement(context, WorkflowDiagramTypes.LABEL_BOUNDARY_NAME, BoundaryEditableLabel, WorkflowLabelView);
-    configureModelElement(context, WorkflowDiagramTypes.LABEL_BOUNDARY_TYPE, WorkflowLabel, WorkflowLabelView);
+    configureModelElement(context, WorkflowDiagramTypes.LABEL_BOUNDARY_TYPE, BoundaryLabel, WorkflowLabelView);
 
     // Port labels
     configureModelElement(context, WorkflowDiagramTypes.LABEL_PORT, WorkflowLabel, WorkflowLabelView);

@@ -18,7 +18,7 @@
  * two additions — `IEdgeRouter -> LibavoidEdgeRouter` (the client-side live
  * routing tier) and `ChangeBoundsTool -> WorkflowChangeBoundsTool` (the
  * mouse-drag threshold) — plus one change: `label:boundary:type` is bound to
- * the non-editable `WorkflowLabel`, because editing it renamed the port.
+ * the non-editable `BoundaryLabel`, because editing it renamed the port.
  * The oracle still does its job: it fails on any binding this composition gains
  * or loses, and updating the fixture is the deliberate act of accepting one.
  * Regenerate it only after confirming the diff contains exactly the bindings the
