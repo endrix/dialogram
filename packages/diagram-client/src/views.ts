@@ -1051,14 +1051,12 @@ function boundaryPort(isInput: boolean, nodeWidth: number, name: string, type: s
     const anchor = isInput ? 'end' : 'start';
 
     const parts: VNode[] = [
+        // The whole row is the grab target, so the name belongs to the port
+        // rather than sitting beside it — see HIT_HEIGHT_PX. First in the list
+        // so it paints behind the glyph and the text.
         svg('rect', {
             class: { 'boundary-hit': true },
-            attrs: {
-                x: glyphX + G.glyphWidth(isInput) / 2 - G.HIT.width / 2,
-                y: axis - G.HIT.height / 2,
-                width: G.HIT.width,
-                height: G.HIT.height
-            }
+            attrs: { x: 0, y: 0, width: nodeWidth, height: G.HIT_HEIGHT_PX }
         }),
         // Both arrows point the way the data flows: into the diagram for an
         // input, into the bar for an output.

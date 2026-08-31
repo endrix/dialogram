@@ -104,13 +104,14 @@ describe('boundary port geometry', () => {
                 + BoundaryPortGeometry.GLYPH_TEXT_GAP_PX);
     });
 
-    it('keeps the grab target bigger than the arrow but only one row tall', () => {
-        const G = BoundaryPortGeometry;
-
-        expect(G.HIT.width).toBeGreaterThan(G.glyphWidth(false));
-        // Not taller than a row: the type line can be hidden at low zoom, and a
-        // hit area covering it would move the drag target when it goes.
-        expect(G.HIT.height).toBe(G.ROW_PITCH_PX);
+    /**
+     * The grab target is the row, which is what makes the name part of the port
+     * rather than something sitting next to it. Its height is the fixed pitch
+     * and not anything measured from the text, so hiding the type line at low
+     * zoom cannot move the target.
+     */
+    it('keeps the grab target a fixed row tall', () => {
+        expect(BoundaryPortGeometry.HIT_HEIGHT_PX).toBe(BoundaryPortGeometry.ROW_PITCH_PX);
     });
 
     it('still carries the port identity', () => {

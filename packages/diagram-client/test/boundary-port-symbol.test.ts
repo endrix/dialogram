@@ -1,5 +1,11 @@
 /**
- * A boundary port's type must look like a node's type, and must not be tinted.
+ * A boundary port is ONE object, drawn by the node's own view.
+ *
+ * These assert the properties that kept failing while it was assembled from
+ * separate pieces: that the whole row is the object, that the text anchors the
+ * way it is told to, and that the type looks like a node's type.
+ *
+ * On the type in particular: it must look like a node's, and must not be tinted.
  *
  * This shipped wrong once. The type label carried both `boundary-label` and
  * `boundary-type-label`, so `.boundary-input .boundary-label` — the rule that
@@ -27,7 +33,7 @@ const read = (file: string): string => readFileSync(path.resolve(here, file), 'u
 const CSS = read('../src/diagram-client.css').replace(/\/\*[\s\S]*?\*\//g, '');
 const VIEWS = read('../src/views.ts');
 
-describe('boundary port type styling', () => {
+describe('boundary port symbol', () => {
     it('reuses the nodes’ own footer class rather than a second convention', () => {
         // The class the entity node views put on their type footer.
         expect(VIEWS).toMatch(/'type-footer-label':\s*true,\s*'boundary-type':\s*true/);
@@ -78,6 +84,25 @@ describe('boundary port type styling', () => {
         // One per text element it draws: the name and the type.
         const styled = [...symbol![0].matchAll(/style:\s*\{\s*'text-anchor':/g)];
         expect(styled.length).toBe(2);
+    });
+
+    /**
+     * The grab target is the node's whole row, which is what makes the name part
+     * of the port instead of something sitting beside it.
+     *
+     * It began as a small box centred on the glyph — reasonable, since a 10px
+     * arrow is hard to hit, but it meant a port could not be clicked or dragged
+     * by its own name, and selecting one outlined the arrow while leaving the
+     * name outside the outline. Asserting the WIDTH comes from the node is the
+     * point: any fixed number would be a box around the arrow again.
+     */
+    it('makes the whole row the grab target, not a box around the arrow', () => {
+        const symbol = /function boundaryPort[\s\S]*?\n\}/.exec(VIEWS);
+        const hit = /'boundary-hit':\s*true[\s\S]*?attrs:\s*\{([^}]*)\}/.exec(symbol![0]);
+
+        expect(hit, 'the hit rectangle has gone').not.toBeNull();
+        expect(hit![1]).toMatch(/x:\s*0/);
+        expect(hit![1]).toMatch(/width:\s*nodeWidth/);
     });
 
     /**

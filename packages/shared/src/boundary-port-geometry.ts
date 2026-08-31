@@ -54,13 +54,21 @@ export namespace BoundaryPortGeometry {
     export const SINK_BAR: BoundaryGlyphBox = { width: 2.5, height: 14 };
 
     /**
-     * The grab target, centred on the glyph.
+     * The grab target: the node's whole row, not a box around the arrow.
      *
-     * An 8px arrow is too small to hit reliably, and the type line must NOT be
-     * part of it — the type can be hidden at low zoom, and a hit area that
-     * changed with it would move the drag target as you zoom.
+     * It started as a small rectangle centred on the glyph, on the reasoning
+     * that a 10px arrow is too small to hit reliably. True, but it made the name
+     * something that merely sat NEXT to the port rather than part of it — you
+     * could not click or drag a port by its own name, and selecting one outlined
+     * the arrow while leaving the name outside. A port is one object; its whole
+     * row is that object.
+     *
+     * The width is the node's, so it is the caller that supplies it. The height
+     * stays the fixed row pitch rather than anything measured from the text,
+     * which is what keeps the original property: hiding the type line at low
+     * zoom moves nothing, because the target never depended on it.
      */
-    export const HIT: BoundaryGlyphBox = { width: 24, height: ROW_PITCH_PX };
+    export const HIT_HEIGHT_PX = ROW_PITCH_PX;
 
     /** Where the wire meets the port, measured down from the node's top. */
     export const AXIS_Y_PX = NAME_LINE_HEIGHT_PX / 2;
