@@ -300,10 +300,30 @@ export class LibavoidEdgeRouter extends AbstractEdgeRouter {
         source: { x: number; y: number; side: PortSide },
         target: { x: number; y: number; side: PortSide }
     ): XY[] {
-        const withStubs = [{ x: source.x, y: source.y }, ...points.map(p => ({ x: p.x, y: p.y })), { x: target.x, y: target.y }];
+        const body = points.map(p => ({ x: p.x, y: p.y }));
+        // libavoid nudges route ends vertically to separate edges leaving the
+        // same port, so its first point rarely sits on the anchor's own row.
+        // Joining the two directly would draw a diagonal off the port; an L
+        // keeps it orthogonal and keeps the nudging. Mirrors the server.
+        const withStubs = [
+            { x: source.x, y: source.y },
+            ...this.bridge(source, body[0]),
+            ...body,
+            ...this.bridge(target, body[body.length - 1]).reverse(),
+            { x: target.x, y: target.y }
+        ];
         this.snap(withStubs, 0, source);
         this.snap(withStubs, withStubs.length - 1, target);
         return withStubs;
+    }
+
+
+    /** The corner joining a port anchor to a route end that is off its row. */
+    private bridge(anchor: { x: number; y: number }, end: XY | undefined): XY[] {
+        if (!end || Math.abs(anchor.y - end.y) < 0.01) {
+            return [];
+        }
+        return [{ x: end.x, y: anchor.y }];
     }
 
     /** Move an endpoint onto `to`, carrying the adjacent bend so it stays orthogonal. */

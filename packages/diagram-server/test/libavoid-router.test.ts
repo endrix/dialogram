@@ -308,3 +308,69 @@ describe('libavoid router — parallel edges between the same two nodes', () => 
         }
     });
 });
+
+/**
+ * Captured from a network where two edges leave the SAME output port (`rob.Com`)
+ * and go to different places. libavoid nudges their route ends apart vertically
+ * to separate them — for an anchor at y = 393.5 it returned starts at y = 390
+ * and y = 398 — so joining the anchor straight to that point drew a DIAGONAL
+ * off the port, which is not a legal orthogonal route and looked broken.
+ *
+ * The join is now an L: out along the anchor's own row, then across to meet the
+ * route. Both properties have to hold at once, and they pull against each
+ * other: forcing the route back onto the anchor's row would restore
+ * orthogonality by destroying the nudging (which is what collapsed parallel
+ * channels into one thick line before).
+ */
+describe('libavoid router — several edges leaving one port', () => {
+    const fx = JSON.parse(
+        readFileSync(path.join(__dirname, 'fixtures-shared-port.json'), 'utf8')
+    ) as { nodes: RouterObstacle[]; edges: Array<{ id: string; source: any; target: any }> };
+
+    const sideOf = (p: { x: number; y: number }): 'WEST' | 'EAST' => {
+        let best: { sc: number; side: 'WEST' | 'EAST' } | undefined;
+        for (const n of fx.nodes) {
+            const dl = Math.abs(p.x - n.x);
+            const dr = Math.abs(p.x - (n.x + n.width));
+            const inY = n.y - 2 <= p.y && p.y <= n.y + n.height + 2;
+            const sc = Math.min(dl, dr) + (inY ? 0 : 1e6);
+            if (!best || sc < best.sc) best = { sc, side: dl < dr ? 'WEST' : 'EAST' };
+        }
+        return best!.side;
+    };
+    const connectors: RouterConnector[] = fx.edges.map(e => ({
+        id: e.id, source: e.source, target: e.target,
+        sourceSide: sideOf(e.source), targetSide: sideOf(e.target)
+    }));
+    const opts = { shapeBufferDistance: 15, idealNudgingDistance: 8, portStub: 25 };
+
+    it('never leaves a port on a diagonal', async () => {
+        const routes = (await routeOrthogonal(fx.nodes, connectors, opts))!;
+        for (const c of connectors) {
+            const r = routes.get(c.id)!;
+            expect(orthogonal(r), `${c.id} has a diagonal segment`).toBe(true);
+            // and the very first step is along the port's own row
+            expect(Math.abs(r[0].y - r[1].y), `${c.id} leaves its port diagonally`).toBeLessThan(0.5);
+        }
+    });
+
+    it('still separates two edges that share a port', async () => {
+        const routes = (await routeOrthogonal(fx.nodes, connectors, opts))!;
+        const shared = connectors.filter(c => c.id.includes('rob:Com'));
+        expect(shared.length).toBe(2);
+
+        // They start at the same anchor, so they must diverge somewhere: the
+        // long horizontal runs need to sit on different rows.
+        const rows = shared.map(c => {
+            const r = routes.get(c.id)!;
+            let longest = { len: 0, y: 0 };
+            for (let i = 1; i < r.length; i++) {
+                if (Math.abs(r[i].y - r[i - 1].y) > 0.5) continue;
+                const len = Math.abs(r[i].x - r[i - 1].x);
+                if (len > longest.len) longest = { len, y: r[i].y };
+            }
+            return longest.y;
+        });
+        expect(Math.abs(rows[0] - rows[1])).toBeGreaterThan(4);
+    });
+});
