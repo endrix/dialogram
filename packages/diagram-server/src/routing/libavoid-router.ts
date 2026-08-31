@@ -56,7 +56,7 @@
 import * as path from 'node:path';
 import * as url from 'node:url';
 import { snapRouteEndpoints } from './persisted-edge-routes';
-import { portStubDistances, portStubKey } from '@dialogram/shared';
+import { portStubOffsets, portStubKey, type PortStubOffset } from '@dialogram/shared';
 
 export interface RouterPoint {
     x: number;
@@ -252,20 +252,25 @@ export async function routeOrthogonal(
     // one x and blur together at the port. The rule is shared with the client's
     // live router — see `portStubDistances` — because the two must agree or the
     // edge visibly jumps the moment the mouse is released.
-    const stubs = portStubDistances(
+    const stubs = portStubOffsets(
         connectors.flatMap(c => [
-            ...(c.sourceSide ? [{ id: c.id, end: 'source' as const, ...c.source, side: c.sourceSide }] : []),
-            ...(c.targetSide ? [{ id: c.id, end: 'target' as const, ...c.target, side: c.targetSide }] : [])
+            ...(c.sourceSide
+                ? [{ id: c.id, end: 'source' as const, ...c.source, side: c.sourceSide, towardY: c.target.y }]
+                : []),
+            ...(c.targetSide
+                ? [{ id: c.id, end: 'target' as const, ...c.target, side: c.targetSide, towardY: c.source.y }]
+                : [])
         ]),
         obstacles,
         { portStub: requested.portStub, nudge: requested.idealNudgingDistance }
     );
-    const offsetOf = (p: RouterPoint, side: 'WEST' | 'EAST' | undefined, stub: number): RouterPoint =>
-        side === 'EAST' ? { x: p.x + stub, y: p.y }
-            : side === 'WEST' ? { x: p.x - stub, y: p.y }
+    const base: PortStubOffset = { distance: requested.portStub, across: 0 };
+    const offsetOf = (p: RouterPoint, side: 'WEST' | 'EAST' | undefined, at: PortStubOffset): RouterPoint =>
+        side === 'EAST' ? { x: p.x + at.distance, y: p.y + at.across }
+            : side === 'WEST' ? { x: p.x - at.distance, y: p.y + at.across }
                 : p;
-    const stubFor = (id: string, end: 'source' | 'target'): number =>
-        stubs.get(portStubKey(id, end)) ?? requested.portStub;
+    const stubFor = (id: string, end: 'source' | 'target'): PortStubOffset =>
+        stubs.get(portStubKey(id, end)) ?? base;
     const routed = connectors.map(c => ({
         id: c.id,
         source: offsetOf(c.source, c.sourceSide, stubFor(c.id, 'source')),

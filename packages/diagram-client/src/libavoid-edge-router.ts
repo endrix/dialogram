@@ -41,7 +41,7 @@ import {
     type GRoutingHandle
 } from '@eclipse-glsp/sprotty';
 import { injectable } from 'inversify';
-import { portAnchor, portStubDistances, portStubKey, type PortSide } from '@dialogram/shared';
+import { portAnchor, portStubOffsets, portStubKey, type PortSide, type PortStubOffset } from '@dialogram/shared';
 import { isLibavoidReady, libavoid } from './libavoid-loader';
 
 export const LIBAVOID_ROUTER_KIND = 'libavoid';
@@ -248,14 +248,15 @@ export class LibavoidEdgeRouter extends AbstractEdgeRouter {
                     target: anchorOf((edge as any).target)
                 }))
                 .filter(e => e.source && e.target);
-            const stubs = portStubDistances(
+            const stubs = portStubOffsets(
                 ends.flatMap(e => [
-                    { id: e.id, end: 'source' as const, ...e.source! },
-                    { id: e.id, end: 'target' as const, ...e.target! }
+                    { id: e.id, end: 'source' as const, ...e.source!, towardY: e.target!.y },
+                    { id: e.id, end: 'target' as const, ...e.target!, towardY: e.source!.y }
                 ]),
                 boxes,
                 { portStub: PORT_STUB, nudge: NUDGE }
             );
+            const base: PortStubOffset = { distance: PORT_STUB, across: 0 };
 
             const refs: Array<{ id: string; ref: any; source: any; target: any }> = [];
             for (const { id: edgeId, source, target } of ends) {
@@ -265,8 +266,8 @@ export class LibavoidEdgeRouter extends AbstractEdgeRouter {
                 // Route from a stub off the port, not the port itself: an anchor
                 // sits only PORT_WIDTH_PX outside its node, and an endpoint inside
                 // a shape's clearance makes libavoid route through that shape.
-                const from = this.stub(source, stubs.get(portStubKey(edgeId, 'source')) ?? PORT_STUB);
-                const to = this.stub(target, stubs.get(portStubKey(edgeId, 'target')) ?? PORT_STUB);
+                const from = this.stub(source, stubs.get(portStubKey(edgeId, 'source')) ?? base);
+                const to = this.stub(target, stubs.get(portStubKey(edgeId, 'target')) ?? base);
                 refs.push({
                     id: edgeId,
                     ref: new Avoid.ConnRef(
@@ -299,10 +300,10 @@ export class LibavoidEdgeRouter extends AbstractEdgeRouter {
         }
     }
 
-    private stub(anchor: { x: number; y: number; side: PortSide }, distance: number): XY {
+    private stub(anchor: { x: number; y: number; side: PortSide }, at: PortStubOffset): XY {
         return anchor.side === 'EAST'
-            ? { x: anchor.x + distance, y: anchor.y }
-            : { x: anchor.x - distance, y: anchor.y };
+            ? { x: anchor.x + at.distance, y: anchor.y + at.across }
+            : { x: anchor.x - at.distance, y: anchor.y + at.across };
     }
 
     /**

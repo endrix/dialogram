@@ -375,6 +375,44 @@ describe('libavoid router — several edges leaving one port', () => {
     });
 
     /**
+     * The reported artifact, and the one that matters most: an edge on a shared
+     * port must leave it STRAIGHT, like an edge on any other port.
+     *
+     * Handed two edges with the same start, libavoid separates them the only way
+     * it can — half the nudging distance each, in opposite directions. Both then
+     * come back off the anchor's row, both need an L to get back to it, and a
+     * 4px step a few pixels off the port does not read as a branch. It reads as
+     * a kink in an edge that should have gone straight out, which is exactly
+     * what was reported at `rob.Com` (`Rb` and `Trap`, one edge each, leave
+     * perfectly straight right below it).
+     *
+     * So the starts are separated BEFORE routing instead: the first edge keeps
+     * the port's row and libavoid has no reason to move it. A "real" turn is one
+     * bigger than the nudging distance; anything at or below that is the kink.
+     */
+    it('leaves the first edge on a shared port straight', async () => {
+        const routes = (await routeOrthogonal(fx.nodes, connectors, opts))!;
+        const shared = connectors
+            .filter(c => c.id.includes('rob:Com'))
+            .sort((a, b) => (a.id < b.id ? -1 : 1));
+        expect(shared.length).toBe(2);
+
+        /** How far the route first departs the anchor's row. */
+        const firstTurn = (id: string): number => {
+            const r = routes.get(id)!;
+            const step = r.slice(1).find(p => Math.abs(p.y - r[0].y) > 0.5);
+            return step ? Math.abs(step.y - r[0].y) : Infinity;
+        };
+
+        // The first edge goes straight out and only leaves the row to head for
+        // its target.
+        expect(firstTurn(shared[0].id)).toBeGreaterThan(opts.idealNudgingDistance);
+        // The second branches off it by a FULL nudge, not the half-nudge kink
+        // that libavoid produces when it has to separate them itself.
+        expect(firstTurn(shared[1].id)).toBeGreaterThanOrEqual(opts.idealNudgingDistance);
+    });
+
+    /**
      * ...and they must not TURN at the same place either, which is the third
      * way this join has looked broken.
      *
