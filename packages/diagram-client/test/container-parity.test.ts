@@ -12,6 +12,15 @@
  * from the pre-refactor monolith (`fixtures/container-parity.baseline.json`,
  * generated from commit 26442ac's `workflowDiagramModule`). No binding may be
  * dropped, added, or altered. It also pins the module composition order.
+ *
+ * The baseline is no longer a pure capture of that commit: features added since
+ * the split are appended to it deliberately, and the fixture currently carries
+ * two — `IEdgeRouter -> LibavoidEdgeRouter` (the client-side live routing tier)
+ * and `ChangeBoundsTool -> WorkflowChangeBoundsTool` (the mouse-drag threshold).
+ * The oracle still does its job: it fails on any binding this composition gains
+ * or loses, and updating the fixture is the deliberate act of accepting one.
+ * Regenerate it only after confirming the diff contains exactly the bindings the
+ * change intends — never to make a red test go green.
  */
 import { describe, it, expect } from 'vitest';
 import baseline from './fixtures/container-parity.baseline.json';

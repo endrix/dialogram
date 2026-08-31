@@ -83,7 +83,8 @@ export const TYPES = {
     IGModelRootListener: Symbol.for('stub.IGModelRootListener'),
     IDiagramStartup: Symbol.for('stub.IDiagramStartup'),
     IContextMenuService: Symbol.for('stub.IContextMenuService'),
-    MouseListener: Symbol.for('stub.MouseListener')
+    MouseListener: Symbol.for('stub.MouseListener'),
+    IEdgeRouter: Symbol.for('stub.IEdgeRouter')
 };
 
 export const DefaultTypes = {
@@ -122,6 +123,14 @@ export class GGraphView {}
 export class GLabelView {}
 export class GCompartmentView {}
 export class GRoutingHandleView {}
+
+/**
+ * Base class for `LibavoidEdgeRouter`, which the feature module imports at load.
+ * A bare stand-in is enough: no node test routes an edge — the router's real
+ * behaviour is covered by the server-side fixtures, which replay captured drags
+ * outside the webview.
+ */
+export class AbstractEdgeRouter {}
 export class GIssueMarkerView {
     render(_marker: unknown, _context: unknown): unknown {
         return { children: [] };
@@ -225,3 +234,21 @@ export type IGridManager = unknown;
 export interface IDiagramStartup {
     postModelInitialization?(): void;
 }
+
+// ── Real GLSP classes, loaded past the package index ─────────────────────────
+// Everything above is a stand-in, but these three must be the genuine articles:
+// the drag-threshold test asserts that GLSP's own `DragAwareMouseListener`
+// dispatch honours the sensitivity our subclasses set, which a re-implementation
+// here could not prove. The alias exists only because the package INDEX imports
+// `.css` at load; these individual modules have no such side effect and require
+// cleanly under node. `createRequire` reaches them past the vitest alias that
+// would otherwise point this file back at itself.
+import { createRequire } from 'node:module';
+
+const requireGlsp = createRequire(import.meta.url);
+const changeBoundsToolModule = requireGlsp('@eclipse-glsp/client/lib/features/tools/change-bounds/change-bounds-tool');
+const moveFeedbackModule = requireGlsp('@eclipse-glsp/client/lib/features/tools/change-bounds/change-bounds-tool-move-feedback');
+
+export const ChangeBoundsTool = changeBoundsToolModule.ChangeBoundsTool;
+export const ChangeBoundsListener = changeBoundsToolModule.ChangeBoundsListener;
+export const FeedbackMoveMouseListener = moveFeedbackModule.FeedbackMoveMouseListener;

@@ -50,6 +50,12 @@
         "op": "actionHandler"
     },
     {
+        "id": "ChangeBoundsTool",
+        "op": "rebind",
+        "scope": "singleton",
+        "to": "WorkflowChangeBoundsTool"
+    },
+    {
         "id": "ChatPanel",
         "op": "bind",
         "scope": "singleton",
@@ -147,6 +153,11 @@
         "impl": "EdgeOpenMouseListener",
         "op": "bindAsService",
         "service": "Symbol(stub.MouseListener)"
+    },
+    {
+        "impl": "LibavoidEdgeRouter",
+        "op": "bindAsService",
+        "service": "Symbol(stub.IEdgeRouter)"
     },
     {
         "impl": "ViewerMouseListener",
