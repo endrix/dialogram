@@ -2185,19 +2185,20 @@ export class WorkflowLabelView implements IView {
             const isInput = parent?.type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT;
             const offset = BoundaryPortGeometry.textOffset(isInput);
 
-            return svg('g', {
-                attrs: { transform: `translate(${pos.x}, ${pos.y})` }
-            },
-                svg('text', {
-                    class: { 'boundary-label': true, 'boundary-type-label': isType },
-                    attrs: {
-                        x: isInput ? parentW - offset : offset,
-                        y: isType ? BoundaryPortGeometry.TYPE_Y_PX : BoundaryPortGeometry.AXIS_Y_PX,
-                        'text-anchor': isInput ? 'end' : 'start',
-                        'dominant-baseline': 'middle'
-                    }
-                }, label.text || '')
-            );
+            // NOT translated by `label.position`. These labels carry no layout
+            // feature precisely so that nothing positions them but this view —
+            // their position is whatever it was left at, and applying it shifted
+            // the text off the coordinates computed here. It is the reason the
+            // name rendered on top of its own glyph.
+            return svg('text', {
+                class: { 'boundary-label': true, 'boundary-type-label': isType },
+                attrs: {
+                    x: isInput ? parentW - offset : offset,
+                    y: isType ? BoundaryPortGeometry.TYPE_Y_PX : BoundaryPortGeometry.AXIS_Y_PX,
+                    'text-anchor': isInput ? 'end' : 'start',
+                    'dominant-baseline': 'middle'
+                }
+            }, label.text || '');
         }
 
         // Port labels - ELK positions the label box, we handle text anchoring

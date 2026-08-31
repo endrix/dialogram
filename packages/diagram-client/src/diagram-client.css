@@ -887,16 +887,8 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
 
 .boundary-node .boundary-label {
     font-family: var(--vscode-font-family);
-    font-size: 9.5px;
+    font-size: 12px;
     font-weight: 500;
-}
-
-/* The type is deliberately NOT tinted by direction: it is supporting text on
-   its own line, and colouring it would make it compete with the name. */
-.boundary-node .boundary-type-label {
-    font-size: 8px;
-    font-weight: 400;
-    fill: #a8a8a2;
 }
 
 .boundary-input .boundary-glyph,
@@ -907,6 +899,20 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
 .boundary-output .boundary-glyph,
 .boundary-output .boundary-label {
     fill: var(--vscode-charts-blue, #007fd4);
+}
+
+/* The type is deliberately NOT tinted by direction: it is supporting text on
+   its own line, and colouring it makes it compete with the name.
+
+   Both the class and the position matter. The type label also carries
+   `boundary-label`, so `.boundary-input .boundary-label` matches it too — at
+   equal specificity, which the direction rules would then win on document
+   order. Qualifying with both classes outranks them outright, and it sits after
+   them so neither can be reintroduced by a reorder. */
+.boundary-node .boundary-label.boundary-type-label {
+    font-size: 10px;
+    font-weight: 400;
+    fill: #a8a8a2;
 }
 
 /* The grab target. Invisible until the port is selected or hovered, which is
