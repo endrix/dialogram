@@ -1017,6 +1017,19 @@ export class ProxyNodeView extends ShapeView {
  * Boundary input port node (left margin) - network's input exposed to internal entities
  * Styled as a terminal connector shape with port name centered
  */
+/** Whether an edge terminates on a boundary port, whose glyph is already an arrow. */
+function endsAtBoundaryPort(edge: Readonly<SEdgeImpl>): boolean {
+    let element: any = (edge as any).target;
+    while (element) {
+        if (element.type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT
+            || element.type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+            return true;
+        }
+        element = element.parent;
+    }
+    return false;
+}
+
 /** One of a boundary node's own text values, from the args the server set. */
 function boundaryText(node: unknown, key: string): string {
     const value = (node as { args?: Record<string, unknown> })?.args?.[key];
@@ -1050,13 +1063,29 @@ function boundaryPort(isInput: boolean, nodeWidth: number, name: string, type: s
     const textX = isInput ? nodeWidth - G.textOffset(true) : G.textOffset(false);
     const anchor = isInput ? 'end' : 'start';
 
+    // How far the text reaches, from the glyph outward. Approximate by design —
+    // see approximateTextWidth; it sizes the target and nothing else.
+    const textReach = Math.max(
+        G.approximateTextWidth(name, G.NAME_FONT_PX),
+        G.approximateTextWidth(type, G.TYPE_FONT_PX)
+    );
+    const hit = isInput
+        ? { x: textX - textReach, width: textReach + G.textOffset(true) }
+        : { x: 0, width: G.textOffset(false) + textReach };
+
     const parts: VNode[] = [
         // The whole row is the grab target, so the name belongs to the port
         // rather than sitting beside it — see HIT_HEIGHT_PX. First in the list
         // so it paints behind the glyph and the text.
+        //
+        // Sized to the text rather than to the node box. The box is a fixed 120
+        // so that the glyph columns line up, which has nothing to do with how
+        // wide any particular port reads: using it made a short name leave dead
+        // clickable space beside it, while a long one overflowed the box and
+        // stopped being clickable at exactly the point it became visible.
         svg('rect', {
             class: { 'boundary-hit': true },
-            attrs: { x: 0, y: 0, width: nodeWidth, height: G.HIT_HEIGHT_PX }
+            attrs: { x: hit.x, y: 0, width: hit.width, height: G.HIT_HEIGHT_PX }
         }),
         // Both arrows point the way the data flows: into the diagram for an
         // input, into the bar for an output.
@@ -1733,7 +1762,7 @@ export class WorkflowEdgeView extends PolylineEdgeView {
                 }, svg('tspan', {}, toIndexLabel))]
                 : []),
             // Arrow marker at target (use trimmed segments so arrow is at end of visible line)
-            this.renderArrow(normalizedSegments)
+            this.renderArrow(normalizedSegments, edge)
         );
     }
 
@@ -2112,7 +2141,16 @@ export class WorkflowEdgeView extends PolylineEdgeView {
         return path;
     }
 
-    protected renderArrow(segments: { x: number; y: number }[]): VNode {
+    protected renderArrow(segments: { x: number; y: number }[], edge?: Readonly<SEdgeImpl>): VNode {
+        // A boundary port is drawn AS an arrow, so an edge ending at one must
+        // not bring its own. Two arrowheads meeting is not the only problem:
+        // the tip is deliberately nudged past the endpoint to meet the stroke
+        // cap, and the endpoint is the glyph's own edge — so it landed inside
+        // the glyph. The wire is a plain line into the symbol, which is how the
+        // drawing shows it.
+        if (edge && endsAtBoundaryPort(edge)) {
+            return svg('g', {});
+        }
         if (segments.length < 2) {
             return svg('g', {});
         }
@@ -2160,7 +2198,7 @@ export class WorkflowEdgeView extends PolylineEdgeView {
  */
 @injectable()
 export class WorkflowNoArrowEdgeView extends WorkflowEdgeView {
-    protected override renderArrow(_segments: { x: number; y: number }[]): VNode {
+    protected override renderArrow(_segments: { x: number; y: number }[], _edge?: Readonly<SEdgeImpl>): VNode {
         return svg('g', {});
     }
 }

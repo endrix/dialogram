@@ -76,6 +76,25 @@ export namespace BoundaryPortGeometry {
     /** Centre of the type line, measured down from the node's top. */
     export const TYPE_Y_PX = NAME_LINE_HEIGHT_PX + TYPE_LINE_HEIGHT_PX / 2;
 
+    /**
+     * A rough width for a run of text, used ONLY to size the grab target.
+     *
+     * The real width is a browser measurement the model has no access to, and
+     * asking for one would mean a render pass. An estimate is fine here because
+     * nothing about the drawing depends on it: the glyph, the text and the port
+     * anchor are all positioned from fixed geometry, and this decides only how
+     * far the clickable area reaches. Being a few pixels out makes the target
+     * slightly generous or slightly tight, and nothing moves either way.
+     *
+     * It must never be used to lay anything out.
+     */
+    export function approximateTextWidth(text: string, fontPx: number): number {
+        // Averaged across the mixed-case identifiers these labels actually hold;
+        // the UI font is proportional, so no single ratio is right for all of
+        // them, and erring wide costs nothing but a slightly larger target.
+        return text.length * fontPx * 0.6;
+    }
+
     /** Full width of a glyph, including an output's bar. */
     export function glyphWidth(isInput: boolean): number {
         return isInput ? SOURCE_ARROW.width : SINK_ARROW.width + SINK_BAR.width;

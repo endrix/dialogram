@@ -24,6 +24,8 @@ import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { WorkflowDiagramTypes } from '@dialogram/shared';
+import { WorkflowEdgeView } from '../src/views';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const read = (file: string): string => readFileSync(path.resolve(here, file), 'utf8');
@@ -101,8 +103,55 @@ describe('boundary port symbol', () => {
         const hit = /'boundary-hit':\s*true[\s\S]*?attrs:\s*\{([^}]*)\}/.exec(symbol![0]);
 
         expect(hit, 'the hit rectangle has gone').not.toBeNull();
-        expect(hit![1]).toMatch(/x:\s*0/);
-        expect(hit![1]).toMatch(/width:\s*nodeWidth/);
+        // Derived from the text's reach, not from a constant and not from the
+        // node box — the box is a fixed width so the glyph columns line up,
+        // which says nothing about how wide any one port reads.
+        expect(hit![1]).toMatch(/x:\s*hit\.x/);
+        expect(hit![1]).toMatch(/width:\s*hit\.width/);
+        expect(symbol![0]).toMatch(/approximateTextWidth/);
+    });
+
+    /**
+     * A boundary port IS an arrow, so an edge ending at one must not draw
+     * another. They do not merely duplicate: the edge's tip is nudged past its
+     * endpoint to meet the stroke cap, and that endpoint is the glyph's own
+     * edge, so the arrowhead came to rest inside the glyph.
+     *
+     * Called for real rather than grepped. The first version of this test
+     * searched the source for the guard, and passed happily when the guard was
+     * disabled with `false &&` — it was checking that the words were present,
+     * not that they did anything.
+     */
+    describe('an edge ending at a boundary port', () => {
+        const view = new WorkflowEdgeView();
+        const segments = [{ x: 0, y: 0 }, { x: 10, y: 0 }];
+        const arrowFor = (target: unknown): { tag: string } =>
+            (view as unknown as {
+                renderArrow(s: typeof segments, e: unknown): { tag: string };
+            }).renderArrow(segments, { target } as never);
+
+        it('arrives as a plain line', () => {
+            const arrow = arrowFor({ type: WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT });
+
+            expect(arrow.tag).toBe('g');
+        });
+
+        it('arrives as a plain line when it ends on the port inside the node', () => {
+            // Edges attach to the GPort, not the node, so the check has to walk up.
+            const arrow = arrowFor({
+                type: 'port:output',
+                parent: { type: WorkflowDiagramTypes.NODE_BOUNDARY_INPUT }
+            });
+
+            expect(arrow.tag).toBe('g');
+        });
+
+        /** The control: an ordinary edge must still get its arrowhead. */
+        it('still draws one into an ordinary node', () => {
+            const arrow = arrowFor({ type: 'node:task', parent: undefined });
+
+            expect(arrow.tag).toBe('polygon');
+        });
     });
 
     /**
