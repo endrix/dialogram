@@ -570,12 +570,19 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             content.appendChild(this.buildInstanceParametersSection(node, entityParams, defParams));
         }
 
-        // Input / Output port sections
-        if (inputPorts.length > 0 || entityType) {
-            content.appendChild(this.buildEntityPortsSection(node, entityType, 'input', inputPorts));
-        }
-        if (outputPorts.length > 0 || entityType) {
-            content.appendChild(this.buildEntityPortsSection(node, entityType, 'output', outputPorts));
+        // Input / Output port sections.
+        //
+        // Not for a boundary node: it IS a port — the network's own interface —
+        // so offering it "Input Ports (0)" and "Output Ports (0)", each with an
+        // add button, describes something that cannot exist. Its own type and
+        // direction are already on the Basic Info section above.
+        if (!isBoundary) {
+            if (inputPorts.length > 0 || entityType) {
+                content.appendChild(this.buildEntityPortsSection(node, entityType, 'input', inputPorts));
+            }
+            if (outputPorts.length > 0 || entityType) {
+                content.appendChild(this.buildEntityPortsSection(node, entityType, 'output', outputPorts));
+            }
         }
 
         // Agent Context Section — live chat history for stateful agent tasks. Built by the
@@ -1089,7 +1096,8 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         const defAnnotations = (args?.[WorkflowDiagramMetadata.ENTITY_DEFINITION_ANNOTATIONS] as any[]) || [];
 
         const annSection = this.createSection(
-            Array.isArray(defAnnotations) ? `Annotations (${defAnnotations.length})` : 'Annotations'
+            Array.isArray(defAnnotations) ? `Annotations (${defAnnotations.length})` : 'Annotations',
+            { collapsed: !Array.isArray(defAnnotations) || defAnnotations.length === 0 }
         );
         const annHeader = annSection.querySelector('.property-section-header');
         if (annHeader) {
@@ -3737,10 +3745,12 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         const isNetworkModelInstance = this.isNetworkRuntime()
             && args?.[WorkflowDiagramMetadata.IS_NETWORK_INSTANCE] === true;
 
+        const paramCount = Array.isArray(defParams) ? defParams.length : 0;
         const section = this.createSection(
             isNetworkModelInstance
-                ? `Network Parameters (${Array.isArray(defParams) ? defParams.length : 0})`
-                : `Definition Parameters (${Array.isArray(defParams) ? defParams.length : 0})`
+                ? `Network Parameters (${paramCount})`
+                : `Definition Parameters (${paramCount})`,
+            { collapsed: paramCount === 0 }
         );
         const content = section.querySelector('.property-section-content');
         if (!content) {
@@ -3815,7 +3825,10 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             .filter((row) => row.name !== '');
         return this.litSection(
             `Definition Parameters (${rows.length})`,
-            { body: this.definitionParamEditorBody(elementId, rows, 'No parameters on the referenced definition.') }
+            {
+                body: this.definitionParamEditorBody(elementId, rows, 'No parameters on the referenced definition.'),
+                collapsed: rows.length === 0
+            }
         );
     }
 
@@ -4386,7 +4399,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         direction: 'input' | 'output',
         boundaryNodes: any[]
     ): HTMLElement {
-        const section = this.createSection(title);
+        const section = this.createSection(title, { collapsed: boundaryNodes.length === 0 });
         const header = section.querySelector('.property-section-header');
         if (header) {
             const actions = document.createElement('div');
@@ -4633,9 +4646,21 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         return this.litSection('Queue', { body: ppField('Capacity', control, hint) });
     }
 
-    protected createSection(title: string): HTMLElement {
+    /**
+     * A collapsible section.
+     *
+     * `collapsed` sets the INITIAL state only — the header toggle still works,
+     * and nothing here remembers the choice, so reopening the panel starts from
+     * the default again. Callers pass it for sections that turned out empty:
+     * an "(0)" section costs a screenful of nothing to scroll past, and the
+     * count in the header already says everything its body would.
+     */
+    protected createSection(title: string, opts?: { collapsed?: boolean }): HTMLElement {
         const section = document.createElement('div');
         section.className = 'property-section';
+        if (opts?.collapsed) {
+            section.classList.add('collapsed');
+        }
         
         const header = document.createElement('div');
         header.className = 'property-section-header';
@@ -4666,9 +4691,9 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
      */
     protected litSection(
         title: string,
-        opts: { headerAction?: TemplateResult; body: TemplateResult; extraClass?: string }
+        opts: { headerAction?: TemplateResult; body: TemplateResult; extraClass?: string; collapsed?: boolean }
     ): HTMLElement {
-        const section = this.createSection(title);
+        const section = this.createSection(title, { collapsed: opts.collapsed });
         if (opts.extraClass) section.classList.add(opts.extraClass);
         if (opts.headerAction) {
             const actions = document.createElement('div');
@@ -4881,7 +4906,11 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                   </div>
               `
             : html`<div class="pp-empty">No ${direction} ports.</div>`;
-        return this.litSection(`${label} (${ports.length})`, { headerAction, body });
+        return this.litSection(`${label} (${ports.length})`, {
+            headerAction,
+            body,
+            collapsed: ports.length === 0
+        });
     }
 
     protected addProperty(section: HTMLElement, label: string, value: string): void {
