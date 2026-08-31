@@ -117,9 +117,20 @@ export const workflowViewsModule = new ContainerModule((bind, unbind, isBound, r
     configureModelElement(context, WorkflowDiagramTypes.LABEL_TYPE, WorkflowLabel, GLabelView);
     configureModelElement(context, WorkflowDiagramTypes.LABEL_BADGE, WorkflowLabel, GLabelView);
 
-    // Boundary labels are directly editable (name + type)
+    // The boundary NAME is directly editable; the type is not.
+    //
+    // A label edit travels as the protocol `ApplyLabelEditOperation`, and the
+    // only handler for that renames the nearest entity — which for a boundary
+    // type label is the port itself. Editing the type therefore renamed the port
+    // to whatever type was typed. The handler now refuses anything that is not a
+    // name label, so the edit is merely inert rather than destructive; an editor
+    // that silently discards what you type is still worth not offering.
+    //
+    // Making the type editable for real needs a sidecar op that addresses a
+    // boundary port by `workflow` (the way `createPort` already does) rather
+    // than by owning `entity`, which is what `updatePortType` requires today.
     configureModelElement(context, WorkflowDiagramTypes.LABEL_BOUNDARY_NAME, BoundaryEditableLabel, WorkflowLabelView);
-    configureModelElement(context, WorkflowDiagramTypes.LABEL_BOUNDARY_TYPE, BoundaryEditableLabel, WorkflowLabelView);
+    configureModelElement(context, WorkflowDiagramTypes.LABEL_BOUNDARY_TYPE, WorkflowLabel, WorkflowLabelView);
 
     // Port labels
     configureModelElement(context, WorkflowDiagramTypes.LABEL_PORT, WorkflowLabel, WorkflowLabelView);

@@ -1046,6 +1046,29 @@ export class GraphGModelSource {
         };
 
         const typeText = port?.type ?? '';
+        // Where the port is declared, so "Go to source" works on a boundary node
+        // the same way it already does on an entity's port (see `mkPort`). This
+        // was simply never wired: the schema carries `port.source`, and the
+        // boundary node read only `name` and `type` off the same object.
+        //
+        // NOTE this is the PORT's declaration site, not its type's definition —
+        // navigating to where a type is defined needs a field the graph schema
+        // does not yet have.
+        const boundarySourceFile = normalizeNavigationFileUri(port?.source?.file);
+        const boundarySourceLine = port?.source?.line;
+        const boundaryNavigation = boundarySourceFile && boundarySourceLine
+            ? (() => {
+                const at = {
+                    start: { line: Math.max(0, boundarySourceLine - 1), character: 0 },
+                    end: { line: Math.max(0, boundarySourceLine - 1), character: 0 }
+                };
+                return {
+                    [WorkflowDiagramMetadata.SOURCE_RANGE]: at,
+                    [WorkflowDiagramMetadata.REFERENCED_SOURCE_RANGE]: at,
+                    [WorkflowDiagramMetadata.REFERENCED_URI]: boundarySourceFile
+                };
+            })()
+            : {};
         return {
             id: stableNodeId,
             type: isInput ? WorkflowDiagramTypes.NODE_BOUNDARY_INPUT : WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT,
@@ -1080,7 +1103,8 @@ export class GraphGModelSource {
                 [WorkflowDiagramMetadata.PORT_NAME]: port?.name ?? '',
                 [WorkflowDiagramMetadata.PORT_TYPE]: typeText,
                 'wf:boundaryKind': isInput ? 'input' : 'output',
-                'wf:portName': port?.name ?? ''
+                'wf:portName': port?.name ?? '',
+                ...boundaryNavigation
             }
         };
     }
