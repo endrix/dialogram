@@ -17,8 +17,16 @@ import * as path from 'node:path';
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument } from '../src/model/graph-gmodel-source';
 
-/** A one-node graph whose only content is a boundary input port. */
-function docWithBoundaryInput(source?: { file?: string; line?: number }): PyGraphDocument {
+type At = { file?: string; line?: number };
+
+/**
+ * A one-node graph whose only content is a boundary input port.
+ *
+ * `meta` and `port` are separate because the two places a product can put the
+ * location are the whole point: `node.meta.source` is what every other node
+ * resolves navigation from, `port.source` is what the schema declares on a port.
+ */
+function docWithBoundaryInput(at?: { meta?: At; port?: At }): PyGraphDocument {
     return {
         version: '1',
         graph: {
@@ -29,13 +37,14 @@ function docWithBoundaryInput(source?: { file?: string; line?: number }): PyGrap
                     kind: 'wf-input',
                     label: 'Alloc',
                     scope: 'root',
+                    meta: at?.meta ? { source: at.meta } : undefined,
                     ports: [
                         {
                             id: 'port:wf:input:Alloc:out',
                             name: 'Alloc',
                             direction: 'out',
                             type: 'RobAlloc',
-                            source
+                            source: at?.port
                         }
                     ]
                 }
@@ -56,8 +65,8 @@ function boundaryNodeOf(doc: PyGraphDocument): any {
 }
 
 describe('boundary port navigation metadata', () => {
-    it('carries the port declaration site through to the model', () => {
-        const node = boundaryNodeOf(docWithBoundaryInput({ file: '/w/pipeline.py', line: 12 }));
+    it('resolves the declaration site from node meta, as every other node does', () => {
+        const node = boundaryNodeOf(docWithBoundaryInput({ meta: { file: '/w/pipeline.py', line: 12 } }));
 
         // Line numbers arrive 1-based from the sidecar and are stored 0-based,
         // matching what the entity ports emit.
@@ -70,7 +79,7 @@ describe('boundary port navigation metadata', () => {
     });
 
     it('leaves the port identity alone', () => {
-        const node = boundaryNodeOf(docWithBoundaryInput({ file: '/w/pipeline.py', line: 12 }));
+        const node = boundaryNodeOf(docWithBoundaryInput({ meta: { file: '/w/pipeline.py', line: 12 } }));
 
         expect(node.args[WorkflowDiagramMetadata.PORT_NAME]).toBe('Alloc');
         expect(node.args[WorkflowDiagramMetadata.PORT_TYPE]).toBe('RobAlloc');
@@ -90,8 +99,36 @@ describe('boundary port navigation metadata', () => {
     });
 
     it('emits nothing navigable when the source has a file but no line', () => {
-        const node = boundaryNodeOf(docWithBoundaryInput({ file: '/w/pipeline.py' }));
+        const node = boundaryNodeOf(docWithBoundaryInput({ meta: { file: '/w/pipeline.py' } }));
 
         expect(node.args[WorkflowDiagramMetadata.REFERENCED_URI]).toBeUndefined();
+    });
+
+    /**
+     * The schema declares `source` on the port, so a product that fills that in
+     * instead of node meta must work too — the point is to require neither
+     * specifically, since the platform cannot make either product change.
+     */
+    it('falls back to the port when node meta carries no source', () => {
+        const node = boundaryNodeOf(docWithBoundaryInput({ port: { file: '/w/pipeline.py', line: 5 } }));
+
+        expect(node.args[WorkflowDiagramMetadata.REFERENCED_URI]).toBe(
+            URI.file(path.resolve('/w/pipeline.py')).toString()
+        );
+        expect(node.args[WorkflowDiagramMetadata.SOURCE_RANGE]).toEqual({
+            start: { line: 4, character: 0 },
+            end: { line: 4, character: 0 }
+        });
+    });
+
+    /** Node meta wins, so a boundary node navigates like the nodes beside it. */
+    it('prefers node meta over the port when both are present', () => {
+        const node = boundaryNodeOf(
+            docWithBoundaryInput({ meta: { file: '/w/net.py', line: 12 }, port: { file: '/w/other.py', line: 5 } })
+        );
+
+        expect(node.args[WorkflowDiagramMetadata.REFERENCED_URI]).toBe(
+            URI.file(path.resolve('/w/net.py')).toString()
+        );
     });
 });

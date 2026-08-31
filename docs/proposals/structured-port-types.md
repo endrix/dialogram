@@ -16,6 +16,10 @@ be fixed in the platform:
    panel.
 3. **Go to the definition of a type**, from a port.
 
+A fourth turned up while investigating them: a boundary port has no source
+location at all, so "Go to Source" does not even reach the port, let alone its
+type. That one is much smaller — see Part C.
+
 (2) and (3) are blocked by one line of the export schema:
 
 ```ts
@@ -135,6 +139,28 @@ case; a viewer that can only reach the whole type is much less so.
 
 Absent `typeRef`, the panel renders exactly what it renders now.
 
+## Part C — a source location for boundary ports
+
+Smaller than the other two, and possibly already satisfied.
+
+"Go to Source" resolves from navigation metadata on the element. Every entity
+node gets it from `node.meta.source`; an entity's ports get it from the typed
+`port.source`. A boundary node read neither — it took `name` and `type` off its
+port and nothing else — so a network's own inputs and outputs were the one kind
+of port with no navigation at all.
+
+The platform now reads **both**, preferring `node.meta.source` (so a boundary
+node behaves like the nodes beside it) and falling back to `port.source`. It
+requires neither specifically, because the platform cannot make a product
+change. But it does require **one of them to be populated**, and as of writing
+neither product appears to emit either for a boundary node — the feature is
+wired and inert.
+
+So: for a boundary node (`kind: 'wf-input'` / `'wf-output'`), populate
+`meta.source = { file, line }` with the port's declaration site, exactly as
+entity nodes already do. Nothing else is needed; no new op, no schema change —
+`meta` is already an open bag and the field name is the one in use.
+
 ## Capability gating
 
 Both parts should be gated through the existing negotiation rather than
@@ -164,10 +190,9 @@ This means neither sidecar blocks the other, and neither blocks the platform.
 
 ## What is already done in the platform
 
-Neither of these waits on a sidecar:
-
 - A boundary port type edit no longer **renames the port**. Every label edit was
   routed to a rename of the nearest entity; for a type label that resolved to
-  the port itself. The handler now allow-lists name labels.
-- Boundary ports carry navigation metadata, so "go to source" reaches the port's
-  declaration. This is the port, not its type — Part B is what adds the type.
+  the port itself. The handler now allow-lists name labels. This needs no
+  sidecar work and is the one change here with immediate effect.
+- Boundary nodes emit navigation metadata when a source location is available —
+  see Part C for why that is currently never.

@@ -1046,16 +1046,29 @@ export class GraphGModelSource {
         };
 
         const typeText = port?.type ?? '';
-        // Where the port is declared, so "Go to source" works on a boundary node
-        // the same way it already does on an entity's port (see `mkPort`). This
-        // was simply never wired: the schema carries `port.source`, and the
-        // boundary node read only `name` and `type` off the same object.
+        // Where this port is declared, so "Go to Source" works on a boundary node
+        // the way it already does on every other node. It was never wired at
+        // all: the boundary node took `name` and `type` off its port and read
+        // nothing else.
         //
-        // NOTE this is the PORT's declaration site, not its type's definition —
-        // navigating to where a type is defined needs a field the graph schema
-        // does not yet have.
-        const boundarySourceFile = normalizeNavigationFileUri(port?.source?.file);
-        const boundarySourceLine = port?.source?.line;
+        // Two places carry it, and BOTH are checked because the products differ
+        // on which they fill in. `node.meta.source` is the established one —
+        // every entity node above resolves its navigation from exactly that, so
+        // a sidecar already emitting node source needs no change at all.
+        // `port.source` is the typed field the schema declares on a port, used
+        // by an entity's ports in `mkPort`. Preferring meta means a boundary node
+        // behaves like its neighbours; falling back to the port keeps faith with
+        // the declared schema.
+        //
+        // NOTE this reaches the PORT's declaration, not its type's definition —
+        // navigating to where a type is defined needs a field the schema does
+        // not have. See docs/proposals/structured-port-types.md.
+        const boundaryMetaSource = node.meta?.['source'] as { file?: string; line?: number } | undefined;
+        const boundarySource = boundaryMetaSource?.file && boundaryMetaSource?.line
+            ? boundaryMetaSource
+            : port?.source ?? undefined;
+        const boundarySourceFile = normalizeNavigationFileUri(boundarySource?.file);
+        const boundarySourceLine = boundarySource?.line;
         const boundaryNavigation = boundarySourceFile && boundarySourceLine
             ? (() => {
                 const at = {
