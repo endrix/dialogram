@@ -59,6 +59,28 @@ describe('boundary port type styling', () => {
     });
 
     /**
+     * Anchoring has to be an inline STYLE, not only an attribute.
+     *
+     * A presentation attribute loses to any stylesheet rule, and upstream
+     * GLSP/Sprotty styles set `text-anchor: middle`. So the name rendered
+     * centred on its own glyph no matter what the attribute said — the text and
+     * the arrow appeared on top of each other, twice, before this was found.
+     * The port labels in the same file already carried the fix and a comment
+     * explaining it.
+     *
+     * Asserting the style specifically is the point: an assertion that merely
+     * found `text-anchor` somewhere would have passed throughout the bug.
+     */
+    it('forces the text anchor as a style, which CSS cannot override', () => {
+        const symbol = /function boundaryPort[\s\S]*?\n\}/.exec(VIEWS);
+        expect(symbol, 'boundaryPort has been renamed').not.toBeNull();
+
+        // One per text element it draws: the name and the type.
+        const styled = [...symbol![0].matchAll(/style:\s*\{\s*'text-anchor':/g)];
+        expect(styled.length).toBe(2);
+    });
+
+    /**
      * The name and type are drawn by the node view now, so the label elements
      * must draw nothing — rendering both would double every string on screen.
      */

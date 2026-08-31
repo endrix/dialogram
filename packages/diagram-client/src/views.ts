@@ -1086,6 +1086,12 @@ function boundaryPort(isInput: boolean, nodeWidth: number, name: string, type: s
     // disagree with the arrow it labels.
     parts.push(svg('text', {
         class: { 'boundary-name': true },
+        // As an inline style, NOT only as an attribute. A presentation attribute
+        // loses to any stylesheet rule, and upstream GLSP/Sprotty styles set
+        // `text-anchor: middle` — which is why the name kept rendering centred
+        // on its own glyph however the attribute was set. The port labels below
+        // hit this years ago and say so; this is the same fix.
+        style: { 'text-anchor': anchor },
         attrs: { x: textX, y: axis, 'text-anchor': anchor, 'dominant-baseline': 'middle' }
     }, name));
 
@@ -1094,6 +1100,7 @@ function boundaryPort(isInput: boolean, nodeWidth: number, name: string, type: s
     if (type) {
         parts.push(svg('text', {
             class: { 'type-footer-label': true, 'boundary-type': true },
+            style: { 'text-anchor': anchor },
             attrs: { x: textX, y: G.TYPE_Y_PX, 'text-anchor': anchor, 'dominant-baseline': 'middle' }
         }, type));
     }
