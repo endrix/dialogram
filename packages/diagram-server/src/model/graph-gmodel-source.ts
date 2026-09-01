@@ -1090,7 +1090,7 @@ export class GraphGModelSource {
         // Two places carry it, and BOTH are checked because the products differ
         // on which they fill in. `node.meta.source` is the established one —
         // every entity node above resolves its navigation from exactly that, so
-        // a sidecar already emitting node source needs no change at all.
+        // a backend already emitting node source needs no change at all.
         // `port.source` is the typed field the schema declares on a port, used
         // by an entity's ports in `mkPort`. Preferring meta means a boundary node
         // behaves like its neighbours; falling back to the port keeps faith with

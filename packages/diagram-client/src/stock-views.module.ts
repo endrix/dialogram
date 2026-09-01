@@ -127,7 +127,7 @@ export const workflowViewsModule = new ContainerModule((bind, unbind, isBound, r
     // name label, so the edit is merely inert rather than destructive; an editor
     // that silently discards what you type is still worth not offering.
     //
-    // Making the type editable for real needs a sidecar op that addresses a
+    // Making the type editable for real needs a backend op that addresses a
     // boundary port by `workflow` (the way `createPort` already does) rather
     // than by owning `entity`, which is what `updatePortType` requires today.
     //

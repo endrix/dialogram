@@ -4459,7 +4459,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             // renames the nearest entity, i.e. the port. Changing a type renamed
             // the port to that type. The handler now refuses non-name labels, so
             // the edit would be inert instead; either way there is nothing to
-            // offer until a sidecar op can address a boundary port by `workflow`
+            // offer until a backend op can address a boundary port by `workflow`
             // rather than by an owning `entity`.
             const typeField = document.createElement('span');
             typeField.className = 'port-field port-type';
