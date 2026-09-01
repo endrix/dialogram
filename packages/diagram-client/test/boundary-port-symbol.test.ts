@@ -42,11 +42,55 @@ describe('boundary port symbol', () => {
     });
 
     it('has that class actually define the shared look', () => {
-        const footer = /\.type-footer-label\s*\{([^}]*)\}/.exec(CSS);
+        const footer = /([^}]*)\.type-footer-label\s*\{([^}]*)\}/.exec(CSS);
 
         expect(footer, '.type-footer-label no longer exists').not.toBeNull();
-        expect(footer![1]).toContain('descriptionForeground');
-        expect(footer![1]).toContain('italic');
+        expect(footer![2]).toContain('descriptionForeground');
+        expect(footer![2]).toContain('italic');
+    });
+
+    /**
+     * ...and it has to OUTRANK the framework rule, which is the part that was
+     * wrong. `.sprotty text` sets a fill and is a class plus an element, so a
+     * lone `.type-footer-label` loses to it and every type rendered in the body
+     * colour. The node views hid that by setting fill inline at three call
+     * sites; the boundary type had no such patch and came out black.
+     *
+     * Specificity is compared rather than the selector's exact text, so this
+     * still holds if either rule is rewritten.
+     */
+    it('outranks the framework rule that would otherwise colour it', () => {
+        // Rules parsed as selector/body pairs — a looser regex silently matched
+        // `.sprotty text` as a PREFIX of `.sprotty text.type-footer-label` and
+        // compared the rule against itself.
+        const rules = [...CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+            .map(m => ({ selector: m[1].trim(), body: m[2] }));
+
+        const rank = (selector: string): number => {
+            const classes = (selector.match(/\.[\w-]+/g) ?? []).length;
+            const elements = (selector.replace(/\.[\w-]+/g, '').match(/[a-z]+/g) ?? []).length;
+            return classes * 10 + elements;
+        };
+
+        const ours = rules.find(r => r.selector.includes('.type-footer-label') && r.body.includes('descriptionForeground'));
+        const framework = rules.find(r => r.selector === '.sprotty text' && r.body.includes('fill:'));
+
+        expect(ours, 'the type colour rule has gone').toBeDefined();
+        expect(framework, 'the framework fill rule has gone — this test is moot').toBeDefined();
+        expect(rank(ours!.selector)).toBeGreaterThan(rank(framework!.selector));
+    });
+
+    /** One place decides what a type looks like — no view may re-set it inline. */
+    it('is not patched inline by any view', () => {
+        const footers = [...VIEWS.matchAll(/'type-footer-label':\s*true[\s\S]{0,240}?attrs:/g)];
+
+        expect(footers.length, 'no type footer is rendered any more').toBeGreaterThan(0);
+        for (const footer of footers) {
+            // Quoted OR bare: the views write `'fill':`, so a bare /fill:/ never
+            // matched and this passed while an inline fill was sitting there.
+            expect(footer[0], 'a view is setting the type fill inline again')
+                .not.toMatch(/['"]?fill['"]?\s*:/);
+        }
     });
 
     /**
@@ -152,6 +196,24 @@ describe('boundary port symbol', () => {
 
             expect(arrow.tag).toBe('polygon');
         });
+    });
+
+    /**
+     * Clicking and highlighting are different extents, and the diagram already
+     * makes that distinction: a node's type caption is clickable — it is inside
+     * the node's group — but a node's hover tints only its body, leaving the
+     * caption outside. The port had one rectangle doing both jobs, so hovering
+     * it lit up the type as well.
+     */
+    it('highlights less than it lets you click', () => {
+        const symbol = /function boundaryPort[\s\S]*?\n\}/.exec(VIEWS)![0];
+        const heightOf = (cls: string): string =>
+            new RegExp(`'${cls}':\\s*true[\\s\\S]*?height:\\s*([\\w.]+(?:\\.[\\w]+)*)`).exec(symbol)![1];
+
+        // The grab target is the whole row; the highlight is the name's line.
+        expect(heightOf('boundary-hit')).toContain('HIT_HEIGHT_PX');
+        expect(heightOf('boundary-highlight')).not.toContain('HIT_HEIGHT_PX');
+        expect(symbol).toMatch(/height:\s*G\.NAME_LINE_HEIGHT_PX/);
     });
 
     /**

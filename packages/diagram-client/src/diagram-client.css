@@ -324,11 +324,6 @@ body.vscode-high-contrast {
      font-family: var(--vscode-font-family);
 }
 
-.sprotty text {
-     font-family: var(--vscode-font-family);
-     fill: var(--vscode-editor-foreground, #cccccc);
-}
-
 .sprotty-edge {
     stroke: var(--sprotty-edge);
     stroke-width: 2px;
@@ -903,26 +898,28 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
     fill: var(--vscode-charts-blue, #007fd4);
 }
 
-/* The type deliberately carries the NODES' footer class and nothing else, so a
-   port's type reads exactly like an entity's rather than inventing a second
-   convention. Tinting it by direction would also make it compete with the name
-   sitting right above it. */
-.boundary-node .boundary-type {
-    font-size: 10px;
-}
-
-/* The grab target. Invisible until the port is selected or hovered, which is
-   also what replaced the old body as the thing that shows selection. */
+/* The grab target: the whole row, type line included, so clicking a port's type
+   selects it just as clicking a node's type caption selects the node. Never
+   painted — it exists only to be hit. */
 .boundary-node .boundary-hit {
     fill: transparent;
     stroke: none;
 }
 
-.boundary-node.hover .boundary-hit {
+/* What is actually lit up, and deliberately smaller: the glyph and the name.
+   A node's hover tints its body and leaves its type caption outside, so a port
+   does the same. Clicking and highlighting are different extents. */
+.boundary-node .boundary-highlight {
+    fill: none;
+    stroke: none;
+    pointer-events: none;
+}
+
+.boundary-node.hover .boundary-highlight {
     fill: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.18));
 }
 
-.boundary-node.selected .boundary-hit {
+.boundary-node.selected .boundary-highlight {
     fill: none;
     stroke: var(--vscode-focusBorder, #007fd4);
     stroke-width: 1px;
@@ -1273,7 +1270,12 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
     font-style: italic;
 }
 
-.type-footer-label {
+/* Qualified with `text` deliberately. `.sprotty text` below sets a fill and is
+   a class PLUS an element, so a lone `.type-footer-label` loses to it and every
+   type rendered in the body colour — which the node views used to hide by also
+   setting fill inline, at each of three call sites. Matching that specificity
+   makes this the one place a type's appearance is decided. */
+.sprotty text.type-footer-label {
     fill: var(--vscode-descriptionForeground, #8b8b8b);
     font-size: 10px;
     font-style: italic;

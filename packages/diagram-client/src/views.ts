@@ -687,10 +687,6 @@ export class ActorNodeView extends ShapeView {
         const footerLabelNode = footerLabel
             ? svg('text', {
                 class: { 'type-footer-label': true },
-                style: {
-                    'font-style': 'italic',
-                    'fill': 'var(--vscode-descriptionForeground, #8b8b8b)'
-                },
                 attrs: {
                     x: width / 2,
                     y: bodyHeight + WorkflowDiagramConstants.NODE_FOOTER_LABEL_GAP_PX,
@@ -761,10 +757,6 @@ export class ExternalActorNodeView extends ShapeView {
         const footerLabelNode = footerLabel
             ? svg('text', {
                 class: { 'type-footer-label': true },
-                style: {
-                    'font-style': 'italic',
-                    'fill': 'var(--vscode-descriptionForeground, #8b8b8b)'
-                },
                 attrs: {
                     x: width / 2,
                     y: bodyHeight + WorkflowDiagramConstants.NODE_FOOTER_LABEL_GAP_PX,
@@ -829,10 +821,6 @@ export class NetworkNodeView extends ShapeView {
         const footerLabelNode = footerLabel
             ? svg('text', {
                 class: { 'type-footer-label': true },
-                style: {
-                    'font-style': 'italic',
-                    'fill': 'var(--vscode-descriptionForeground, #8b8b8b)'
-                },
                 attrs: {
                     x: width / 2,
                     y: bodyHeight + WorkflowDiagramConstants.NODE_FOOTER_LABEL_GAP_PX,
@@ -1064,14 +1052,20 @@ function boundaryPort(isInput: boolean, nodeWidth: number, name: string, type: s
     const anchor = isInput ? 'end' : 'start';
 
     // How far the text reaches, from the glyph outward. Approximate by design —
-    // see approximateTextWidth; it sizes the target and nothing else.
-    const textReach = Math.max(
-        G.approximateTextWidth(name, G.NAME_FONT_PX),
-        G.approximateTextWidth(type, G.TYPE_FONT_PX)
-    );
-    const hit = isInput
-        ? { x: textX - textReach, width: textReach + G.textOffset(true) }
-        : { x: 0, width: G.textOffset(false) + textReach };
+    // see approximateTextWidth; it sizes these rectangles and nothing else.
+    const nameReach = G.approximateTextWidth(name, G.NAME_FONT_PX);
+    const textReach = Math.max(nameReach, G.approximateTextWidth(type, G.TYPE_FONT_PX));
+    const spanFrom = (reach: number): { x: number; width: number } => isInput
+        ? { x: textX - reach, width: reach + G.textOffset(true) }
+        : { x: 0, width: G.textOffset(false) + reach };
+
+    // Two rectangles, because clicking and highlighting are not the same extent
+    // — the diagram already draws that distinction and the port was not.
+    // Clicking the type selects its port, exactly as clicking a node's type
+    // caption selects the node; but a node's hover tints only its body, leaving
+    // the caption outside, so a port highlights only its glyph and name.
+    const hit = spanFrom(textReach);
+    const highlight = { ...spanFrom(nameReach), height: G.NAME_LINE_HEIGHT_PX };
 
     const parts: VNode[] = [
         // The whole row is the grab target, so the name belongs to the port
@@ -1086,6 +1080,10 @@ function boundaryPort(isInput: boolean, nodeWidth: number, name: string, type: s
         svg('rect', {
             class: { 'boundary-hit': true },
             attrs: { x: hit.x, y: 0, width: hit.width, height: G.HIT_HEIGHT_PX }
+        }),
+        svg('rect', {
+            class: { 'boundary-highlight': true },
+            attrs: { x: highlight.x, y: 0, width: highlight.width, height: highlight.height }
         }),
         // Both arrows point the way the data flows: into the diagram for an
         // input, into the bar for an output.
