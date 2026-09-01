@@ -1,4 +1,4 @@
-import { WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
 import { URI } from 'vscode-uri';
@@ -783,6 +783,24 @@ export class GraphGModelSource {
             children.push(...filtered);
         }
 
+        // Edges first, so nodes and ports paint over them.
+        //
+        // SVG has no z-index: what covers what is decided by document order, and
+        // that comes straight from this array. Edges were appended last, so a
+        // wire crossing a node was drawn ON TOP of it — over the boundary ports'
+        // names in particular, since those sit at the ends of the wires that
+        // reach them. Moving the edges to the front puts the shapes above the
+        // lines, which is also the order the same click resolves in: a wire
+        // passing behind a node no longer takes the click.
+        //
+        // Both groups keep their own relative order, which the feedback-edge
+        // marking above and the persisted routes both read by id anyway.
+        const isEdge = (child: GModelElement): boolean =>
+            typeof child.type === 'string' && child.type.startsWith('edge:');
+        const ordered = [...children.filter(isEdge), ...children.filter(child => !isEdge(child))];
+        children.length = 0;
+        children.push(...ordered);
+
         const graphArgs: Record<string, unknown> = workflowName
             ? { 'wf:workflowName': workflowName, [WorkflowDiagramMetadata.NETWORK_NAME]: workflowName }
             : {};
@@ -1030,14 +1048,32 @@ export class GraphGModelSource {
     private createBoundaryNode(node: PyGraphNode, stableNodeId: string): GNode {
         const port = node.ports[0];
         const isInput = node.kind === 'wf-input';
-        const size = { width: 120, height: 50 };
+        // One row tall now, not a 50px box — the port is a symbol on the wire's
+        // axis rather than a container. Width stays fixed across every boundary
+        // node so their inner edges, and therefore their glyphs, line up in a
+        // column whatever ELK does with alignment inside the layer; the text
+        // runs outward from that edge into the margin, where overflow is
+        // harmless. See BoundaryPortGeometry.
+        const size = { width: 120, height: BoundaryPortGeometry.ROW_PITCH_PX };
+        const glyph = {
+            width: BoundaryPortGeometry.glyphWidth(isInput),
+            height: BoundaryPortGeometry.SOURCE_ARROW.height
+        };
         const portId = `${stableNodeId}_port_${port?.name ?? 'Port'}`;
         const p: GPort = {
             id: portId,
             type: isInput ? WorkflowDiagramTypes.PORT_OUTPUT : WorkflowDiagramTypes.PORT_INPUT,
             cssClasses: [WorkflowDiagramCss.PORT],
-            position: { x: isInput ? size.width : -8, y: 22 },
-            size: { width: 8, height: 6 },
+            // Sits exactly where the client draws the glyph, so the anchor the
+            // routers compute lands on the arrow's tip: an input's arrow ends at
+            // the node's right edge, an output's begins at its left edge. The y
+            // puts the anchor on the axis — the NAME's line, not the node's
+            // centre, which is what used to run the wire between the two lines.
+            position: {
+                x: isInput ? size.width - glyph.width : 0,
+                y: BoundaryPortGeometry.AXIS_Y_PX - glyph.height / 2
+            },
+            size: glyph,
             args: {
                 [WorkflowDiagramMetadata.PORT_NAME]: port?.name ?? '',
                 [WorkflowDiagramMetadata.PORT_DIRECTION]: isInput ? 'output' : 'input'
@@ -1046,6 +1082,42 @@ export class GraphGModelSource {
         };
 
         const typeText = port?.type ?? '';
+        // Where this port is declared, so "Go to Source" works on a boundary node
+        // the way it already does on every other node. It was never wired at
+        // all: the boundary node took `name` and `type` off its port and read
+        // nothing else.
+        //
+        // Two places carry it, and BOTH are checked because the products differ
+        // on which they fill in. `node.meta.source` is the established one —
+        // every entity node above resolves its navigation from exactly that, so
+        // a sidecar already emitting node source needs no change at all.
+        // `port.source` is the typed field the schema declares on a port, used
+        // by an entity's ports in `mkPort`. Preferring meta means a boundary node
+        // behaves like its neighbours; falling back to the port keeps faith with
+        // the declared schema.
+        //
+        // NOTE this reaches the PORT's declaration, not its type's definition —
+        // navigating to where a type is defined needs a field the schema does
+        // not have. See docs/proposals/structured-port-types.md.
+        const boundaryMetaSource = node.meta?.['source'] as { file?: string; line?: number } | undefined;
+        const boundarySource = boundaryMetaSource?.file && boundaryMetaSource?.line
+            ? boundaryMetaSource
+            : port?.source ?? undefined;
+        const boundarySourceFile = normalizeNavigationFileUri(boundarySource?.file);
+        const boundarySourceLine = boundarySource?.line;
+        const boundaryNavigation = boundarySourceFile && boundarySourceLine
+            ? (() => {
+                const at = {
+                    start: { line: Math.max(0, boundarySourceLine - 1), character: 0 },
+                    end: { line: Math.max(0, boundarySourceLine - 1), character: 0 }
+                };
+                return {
+                    [WorkflowDiagramMetadata.SOURCE_RANGE]: at,
+                    [WorkflowDiagramMetadata.REFERENCED_SOURCE_RANGE]: at,
+                    [WorkflowDiagramMetadata.REFERENCED_URI]: boundarySourceFile
+                };
+            })()
+            : {};
         return {
             id: stableNodeId,
             type: isInput ? WorkflowDiagramTypes.NODE_BOUNDARY_INPUT : WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT,
@@ -1080,7 +1152,8 @@ export class GraphGModelSource {
                 [WorkflowDiagramMetadata.PORT_NAME]: port?.name ?? '',
                 [WorkflowDiagramMetadata.PORT_TYPE]: typeText,
                 'wf:boundaryKind': isInput ? 'input' : 'output',
-                'wf:portName': port?.name ?? ''
+                'wf:portName': port?.name ?? '',
+                ...boundaryNavigation
             }
         };
     }

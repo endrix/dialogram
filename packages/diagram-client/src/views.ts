@@ -42,7 +42,7 @@ import {
 import { EDGE_OPEN_ANCHOR_X_ARG, EDGE_OPEN_ANCHOR_Y_ARG } from './edge-open-mouse-listener';
 import { clientBehavior } from './profile';
 import { isIncidentEdgeInActiveDrag } from './elk-live-drag-router';
-import { WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { WorkflowDiagramConstants } from '@dialogram/shared';
 
 /** Walk to the model root; the drag-active window is tracked per root. */
@@ -88,7 +88,7 @@ const NODE_HEIGHT = 80;
 const HEADER_HEIGHT = WorkflowDiagramConstants.HEADER_HEIGHT_PX;
 const PORT_RADIUS = 5;
 const BOUNDARY_NODE_WIDTH = 80;
-const BOUNDARY_NODE_HEIGHT = 30;
+const BOUNDARY_NODE_HEIGHT = BoundaryPortGeometry.ROW_PITCH_PX;
 
 // Icon size for center node icons
 const NODE_ICON_SIZE = 36;
@@ -687,10 +687,6 @@ export class ActorNodeView extends ShapeView {
         const footerLabelNode = footerLabel
             ? svg('text', {
                 class: { 'type-footer-label': true },
-                style: {
-                    'font-style': 'italic',
-                    'fill': 'var(--vscode-descriptionForeground, #8b8b8b)'
-                },
                 attrs: {
                     x: width / 2,
                     y: bodyHeight + WorkflowDiagramConstants.NODE_FOOTER_LABEL_GAP_PX,
@@ -761,10 +757,6 @@ export class ExternalActorNodeView extends ShapeView {
         const footerLabelNode = footerLabel
             ? svg('text', {
                 class: { 'type-footer-label': true },
-                style: {
-                    'font-style': 'italic',
-                    'fill': 'var(--vscode-descriptionForeground, #8b8b8b)'
-                },
                 attrs: {
                     x: width / 2,
                     y: bodyHeight + WorkflowDiagramConstants.NODE_FOOTER_LABEL_GAP_PX,
@@ -829,10 +821,6 @@ export class NetworkNodeView extends ShapeView {
         const footerLabelNode = footerLabel
             ? svg('text', {
                 class: { 'type-footer-label': true },
-                style: {
-                    'font-style': 'italic',
-                    'fill': 'var(--vscode-descriptionForeground, #8b8b8b)'
-                },
                 attrs: {
                     x: width / 2,
                     y: bodyHeight + WorkflowDiagramConstants.NODE_FOOTER_LABEL_GAP_PX,
@@ -1017,6 +1005,133 @@ export class ProxyNodeView extends ShapeView {
  * Boundary input port node (left margin) - network's input exposed to internal entities
  * Styled as a terminal connector shape with port name centered
  */
+/** Whether an edge terminates on a boundary port, whose glyph is already an arrow. */
+function endsAtBoundaryPort(edge: Readonly<SEdgeImpl>): boolean {
+    let element: any = (edge as any).target;
+    while (element) {
+        if (element.type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT
+            || element.type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+            return true;
+        }
+        element = element.parent;
+    }
+    return false;
+}
+
+/** One of a boundary node's own text values, from the args the server set. */
+function boundaryText(node: unknown, key: string): string {
+    const value = (node as { args?: Record<string, unknown> })?.args?.[key];
+    return typeof value === 'string' ? value : '';
+}
+
+/**
+ * A boundary port, drawn on the wire's axis: glyph, name and type as one object.
+ *
+ * An input is a bare arrow pointing into the diagram; an output is an arrow
+ * that stops against a bar, the way a terminal is drawn on a schematic.
+ *
+ * The hit target is deliberately far larger than the arrow, and deliberately
+ * only as tall as one row: an 8px arrow cannot be grabbed reliably, and
+ * including the type line would move the drag target whenever the type is
+ * hidden at low zoom. It also carries selection now that there is no body to
+ * outline.
+ *
+ * The x it is built at must agree with where the SERVER placed the port, or the
+ * wire misses the arrow — both read `BoundaryPortGeometry` for exactly that
+ * reason.
+ */
+function boundaryPort(isInput: boolean, nodeWidth: number, name: string, type: string): VNode[] {
+    const G = BoundaryPortGeometry;
+    const axis = G.AXIS_Y_PX;
+    const arrow = isInput ? G.SOURCE_ARROW : G.SINK_ARROW;
+    // Inputs occupy the node's right edge, outputs its left.
+    const glyphX = isInput ? nodeWidth - G.glyphWidth(true) : 0;
+    const top = axis - arrow.height / 2;
+    const tipX = glyphX + arrow.width;
+    const textX = isInput ? nodeWidth - G.textOffset(true) : G.textOffset(false);
+    const anchor = isInput ? 'end' : 'start';
+
+    // How far the text reaches, from the glyph outward. Approximate by design —
+    // see approximateTextWidth; it sizes these rectangles and nothing else.
+    const nameReach = G.approximateTextWidth(name, G.NAME_FONT_PX);
+    const textReach = Math.max(nameReach, G.approximateTextWidth(type, G.TYPE_FONT_PX));
+    const spanFrom = (reach: number): { x: number; width: number } => isInput
+        ? { x: textX - reach, width: reach + G.textOffset(true) }
+        : { x: 0, width: G.textOffset(false) + reach };
+
+    // Two rectangles, because clicking and highlighting are not the same extent
+    // — the diagram already draws that distinction and the port was not.
+    // Clicking the type selects its port, exactly as clicking a node's type
+    // caption selects the node; but a node's hover tints only its body, leaving
+    // the caption outside, so a port highlights only its glyph and name.
+    const hit = spanFrom(textReach);
+    const highlight = { ...spanFrom(nameReach), height: G.NAME_LINE_HEIGHT_PX };
+
+    const parts: VNode[] = [
+        // The whole row is the grab target, so the name belongs to the port
+        // rather than sitting beside it — see HIT_HEIGHT_PX. First in the list
+        // so it paints behind the glyph and the text.
+        //
+        // Sized to the text rather than to the node box. The box is a fixed 120
+        // so that the glyph columns line up, which has nothing to do with how
+        // wide any particular port reads: using it made a short name leave dead
+        // clickable space beside it, while a long one overflowed the box and
+        // stopped being clickable at exactly the point it became visible.
+        svg('rect', {
+            class: { 'boundary-hit': true },
+            attrs: { x: hit.x, y: 0, width: hit.width, height: G.HIT_HEIGHT_PX }
+        }),
+        svg('rect', {
+            class: { 'boundary-highlight': true },
+            attrs: { x: highlight.x, y: 0, width: highlight.width, height: highlight.height }
+        }),
+        // Both arrows point the way the data flows: into the diagram for an
+        // input, into the bar for an output.
+        svg('path', {
+            class: { 'boundary-glyph': true },
+            attrs: { d: `M ${glyphX} ${top} L ${tipX} ${axis} L ${glyphX} ${top + arrow.height} Z` }
+        })
+    ];
+    if (!isInput) {
+        parts.push(svg('rect', {
+            class: { 'boundary-glyph': true, 'boundary-glyph-bar': true },
+            attrs: {
+                x: tipX,
+                y: axis - G.SINK_BAR.height / 2,
+                width: G.SINK_BAR.width,
+                height: G.SINK_BAR.height
+            }
+        }));
+    }
+
+    // The name belongs to the symbol, not beside it. It used to be a child
+    // label element positioned by its own view, which is what made it drift off
+    // the glyph — an element with no layout feature still carries a stale
+    // position, and anything that reads it moves the text. Drawn here it cannot
+    // disagree with the arrow it labels.
+    parts.push(svg('text', {
+        class: { 'boundary-name': true },
+        // As an inline style, NOT only as an attribute. A presentation attribute
+        // loses to any stylesheet rule, and upstream GLSP/Sprotty styles set
+        // `text-anchor: middle` — which is why the name kept rendering centred
+        // on its own glyph however the attribute was set. The port labels below
+        // hit this years ago and say so; this is the same fix.
+        style: { 'text-anchor': anchor },
+        attrs: { x: textX, y: axis, 'text-anchor': anchor, 'dominant-baseline': 'middle' }
+    }, name));
+
+    // The type reuses the nodes' own footer treatment, so a port's type reads
+    // exactly like an entity's does rather than inventing a second convention.
+    if (type) {
+        parts.push(svg('text', {
+            class: { 'type-footer-label': true, 'boundary-type': true },
+            style: { 'text-anchor': anchor },
+            attrs: { x: textX, y: G.TYPE_Y_PX, 'text-anchor': anchor, 'dominant-baseline': 'middle' }
+        }, type));
+    }
+    return parts;
+}
+
 @injectable()
 export class BoundaryInputNodeView extends ShapeView {
     override render(node: Readonly<BoundaryInputNode>, context: RenderingContext, args?: IViewArgs): VNode | undefined {
@@ -1025,8 +1140,7 @@ export class BoundaryInputNodeView extends ShapeView {
         }
 
         // Use server-provided size, not Sprotty-computed bounds
-        const { width, height } = getNodeSize(node, BOUNDARY_NODE_WIDTH, BOUNDARY_NODE_HEIGHT);
-        const cornerRadius = height / 2;
+        const { width } = getNodeSize(node, BOUNDARY_NODE_WIDTH, BOUNDARY_NODE_HEIGHT);
 
         return svg('g', {
             class: {
@@ -1039,17 +1153,12 @@ export class BoundaryInputNodeView extends ShapeView {
                 transform: `translate(${node.position.x}, ${node.position.y})`
             }
         },
-            // Rounded terminal shape (left side fully rounded, right side has small radius)
-            svg('rect', {
-                class: { 'boundary-body': true },
-                attrs: {
-                    x: 0, y: 0,
-                    width, height,
-                    rx: cornerRadius,
-                    ry: cornerRadius
-                }
-            }),
-            // Children: boundary labels + output port on right side
+            // No body: the symbol on the axis IS the port — glyph, name and
+            // type together, drawn as one thing.
+            ...boundaryPort(true, width, boundaryText(node, WorkflowDiagramMetadata.PORT_NAME),
+                boundaryText(node, WorkflowDiagramMetadata.PORT_TYPE)),
+            // The port element (an anchor only) and the label elements, which
+            // render nothing — see WorkflowLabelView.
             ...context.renderChildren(node)
         );
     }
@@ -1067,8 +1176,7 @@ export class BoundaryOutputNodeView extends ShapeView {
         }
 
         // Use server-provided size, not Sprotty-computed bounds
-        const { width, height } = getNodeSize(node, BOUNDARY_NODE_WIDTH, BOUNDARY_NODE_HEIGHT);
-        const cornerRadius = height / 2;
+        const { width } = getNodeSize(node, BOUNDARY_NODE_WIDTH, BOUNDARY_NODE_HEIGHT);
 
         return svg('g', {
             class: {
@@ -1081,17 +1189,9 @@ export class BoundaryOutputNodeView extends ShapeView {
                 transform: `translate(${node.position.x}, ${node.position.y})`
             }
         },
-            // Rounded terminal shape (right side fully rounded)
-            svg('rect', {
-                class: { 'boundary-body': true },
-                attrs: {
-                    x: 0, y: 0,
-                    width, height,
-                    rx: cornerRadius,
-                    ry: cornerRadius
-                }
-            }),
-            // Children: boundary labels + input port on left side
+            // No body — see the input view above.
+            ...boundaryPort(false, width, boundaryText(node, WorkflowDiagramMetadata.PORT_NAME),
+                boundaryText(node, WorkflowDiagramMetadata.PORT_TYPE)),
             ...context.renderChildren(node)
         );
     }
@@ -1660,7 +1760,7 @@ export class WorkflowEdgeView extends PolylineEdgeView {
                 }, svg('tspan', {}, toIndexLabel))]
                 : []),
             // Arrow marker at target (use trimmed segments so arrow is at end of visible line)
-            this.renderArrow(normalizedSegments)
+            this.renderArrow(normalizedSegments, edge)
         );
     }
 
@@ -2039,7 +2139,16 @@ export class WorkflowEdgeView extends PolylineEdgeView {
         return path;
     }
 
-    protected renderArrow(segments: { x: number; y: number }[]): VNode {
+    protected renderArrow(segments: { x: number; y: number }[], edge?: Readonly<SEdgeImpl>): VNode {
+        // A boundary port is drawn AS an arrow, so an edge ending at one must
+        // not bring its own. Two arrowheads meeting is not the only problem:
+        // the tip is deliberately nudged past the endpoint to meet the stroke
+        // cap, and the endpoint is the glyph's own edge — so it landed inside
+        // the glyph. The wire is a plain line into the symbol, which is how the
+        // drawing shows it.
+        if (edge && endsAtBoundaryPort(edge)) {
+            return svg('g', {});
+        }
         if (segments.length < 2) {
             return svg('g', {});
         }
@@ -2087,7 +2196,7 @@ export class WorkflowEdgeView extends PolylineEdgeView {
  */
 @injectable()
 export class WorkflowNoArrowEdgeView extends WorkflowEdgeView {
-    protected override renderArrow(_segments: { x: number; y: number }[]): VNode {
+    protected override renderArrow(_segments: { x: number; y: number }[], _edge?: Readonly<SEdgeImpl>): VNode {
         return svg('g', {});
     }
 }
@@ -2131,26 +2240,20 @@ export class WorkflowLabelView implements IView {
         const labelType = (label as any).type as string || '';
         const pos = label.position ?? { x: 0, y: 0 };
 
-        // Boundary labels (name + type) are positioned relative to the boundary node.
+        // Boundary labels render NOTHING here.
+        //
+        // The boundary node view draws its own name and type as part of the port
+        // symbol, so drawing them again from the label elements would double the
+        // text. The elements stay in the model because they are what a rename
+        // addresses (`<node>_label_name`), and because the server owns them —
+        // they simply have no appearance of their own.
+        //
+        // This is also what put the name on top of its glyph. A label positioned
+        // by its own view still carries whatever position it was left with, and
+        // the view applied it; the text and the arrow it belonged to were being
+        // placed by two different pieces of code that had no way to agree.
         if (labelType === WorkflowDiagramTypes.LABEL_BOUNDARY_NAME || labelType === WorkflowDiagramTypes.LABEL_BOUNDARY_TYPE) {
-            const parent: any = (label as any).parent;
-            const parentW = parent?.size?.width ?? parent?.bounds?.width ?? 100;
-            const parentH = parent?.size?.height ?? parent?.bounds?.height ?? 40;
-            const isType = labelType === WorkflowDiagramTypes.LABEL_BOUNDARY_TYPE;
-
-            return svg('g', {
-                attrs: { transform: `translate(${pos.x}, ${pos.y})` }
-            },
-                svg('text', {
-                    class: { 'boundary-label': true, 'boundary-type-label': isType },
-                    attrs: {
-                        x: parentW / 2,
-                        y: isType ? (parentH / 2 + 10) : (parentH / 2 - 2),
-                        'text-anchor': 'middle',
-                        'dominant-baseline': 'middle'
-                    }
-                }, label.text || '')
-            );
+            return undefined;
         }
 
         // Port labels - ELK positions the label box, we handle text anchoring

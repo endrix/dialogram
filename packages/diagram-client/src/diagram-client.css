@@ -324,11 +324,6 @@ body.vscode-high-contrast {
      font-family: var(--vscode-font-family);
 }
 
-.sprotty text {
-     font-family: var(--vscode-font-family);
-     fill: var(--vscode-editor-foreground, #cccccc);
-}
-
 .sprotty-edge {
     stroke: var(--sprotty-edge);
     stroke-width: 2px;
@@ -880,55 +875,61 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
    Boundary node styles (network input/output ports)
    ============================================ */
 
-.boundary-node .boundary-body {
-    stroke-width: 1.5px;
-}
+/* A boundary port is a symbol on the wire, not a box: an arrow glyph on the
+   axis, with the name on that same line and the type below it. All three are
+   drawn by the node's own view — there is no separate label element to style,
+   which is why nothing here reaches for `.boundary-label` any more. Sizes come
+   from BoundaryPortGeometry, which the server reads too, so the glyph and the
+   port anchor land on the same pixel. */
 
-.boundary-node .boundary-label {
-    fill: var(--vscode-editor-foreground, #ffffff);
+.boundary-node .boundary-name {
     font-family: var(--vscode-font-family);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
 }
 
-.boundary-node .boundary-type-label {
-    font-size: 9px;
-    font-weight: 400;
-    opacity: 0.85;
-}
-
-.boundary-input .boundary-body {
-    fill: var(--vscode-charts-green, #89d185);
-    fill-opacity: 0.3;
-    stroke: var(--vscode-charts-green, #89d185);
-}
-
-.boundary-input .boundary-label {
+.boundary-input .boundary-glyph,
+.boundary-input .boundary-name {
     fill: var(--vscode-charts-green, #89d185);
 }
 
-.boundary-output .boundary-body {
-    fill: var(--vscode-charts-blue, #007fd4);
-    fill-opacity: 0.3;
-    stroke: var(--vscode-charts-blue, #007fd4);
-}
-
-.boundary-output .boundary-label {
+.boundary-output .boundary-glyph,
+.boundary-output .boundary-name {
     fill: var(--vscode-charts-blue, #007fd4);
 }
 
-.boundary-node.selected .boundary-body {
+/* The grab target: the whole row, type line included, so clicking a port's type
+   selects it just as clicking a node's type caption selects the node. Never
+   painted — it exists only to be hit. */
+.boundary-node .boundary-hit {
+    fill: transparent;
+    stroke: none;
+}
+
+/* What is actually lit up, and deliberately smaller: the glyph and the name.
+   A node's hover tints its body and leaves its type caption outside, so a port
+   does the same. Clicking and highlighting are different extents. */
+.boundary-node .boundary-highlight {
+    fill: none;
+    stroke: none;
+    pointer-events: none;
+}
+
+.boundary-node.hover .boundary-highlight {
+    fill: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.18));
+}
+
+.boundary-node.selected .boundary-highlight {
+    fill: none;
     stroke: var(--vscode-focusBorder, #007fd4);
-    stroke-width: 2px;
+    stroke-width: 1px;
+    rx: 2px;
 }
 
-.boundary-node.hover .boundary-body {
-    fill-opacity: 0.5;
-}
-
-.boundary-node .direction-arrow {
-    fill: var(--vscode-foreground, #cccccc);
-    opacity: 0.6;
+/* The port element stays in the model as the edge anchor, but the symbol above
+   is what is drawn — rendering both would double the arrow. */
+.boundary-node .workflow-port {
+    display: none;
 }
 
 /* ============================================
@@ -1269,7 +1270,12 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
     font-style: italic;
 }
 
-.type-footer-label {
+/* Qualified with `text` deliberately. `.sprotty text` below sets a fill and is
+   a class PLUS an element, so a lone `.type-footer-label` loses to it and every
+   type rendered in the body colour — which the node views used to hide by also
+   setting fill inline, at each of three call sites. Matching that specificity
+   makes this the one place a type's appearance is decided. */
+.sprotty text.type-footer-label {
     fill: var(--vscode-descriptionForeground, #8b8b8b);
     font-size: 10px;
     font-style: italic;

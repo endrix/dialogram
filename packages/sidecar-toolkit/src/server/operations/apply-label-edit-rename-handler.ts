@@ -1,6 +1,6 @@
 import { Action, ApplyLabelEditOperation, Command, GModelElement, ModelState, OperationHandler } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
-import { WorkflowDiagramMetadata } from '@dialogram/shared';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 
 import { RenameEntityOperation, RenameEntityOperationHandler } from './rename-entity-handler';
 
@@ -58,10 +58,14 @@ export class ApplyLabelEditRenameHandler extends OperationHandler {
     /**
      * Walk up from the edited label to the nearest ancestor whose `args` carry the entity name —
      * that is the node {@link RenameEntityOperationHandler} renames. Returns its id, or `undefined`
-     * when the label belongs to no entity node (e.g. a port/decorator label).
+     * when the label belongs to no entity node (e.g. a port/decorator label), or when the label is
+     * not a NAME (see {@link isRenameableLabel}).
      */
     private resolveEntityElementId(labelId: string): string | undefined {
         let element: GModelElement | undefined = this.modelState.index.find(labelId);
+        if (!this.isRenameableLabel(element)) {
+            return undefined;
+        }
         while (element) {
             const name = element.args?.[WorkflowDiagramMetadata.ENTITY_NAME];
             if (typeof name === 'string' && name.trim() !== '') {
@@ -70,5 +74,30 @@ export class ApplyLabelEditRenameHandler extends OperationHandler {
             element = element.parent;
         }
         return undefined;
+    }
+
+    /**
+     * Whether the edited element is something a rename may act on.
+     *
+     * This handler turns EVERY label edit into a rename of the nearest ancestor carrying an entity
+     * name, which is right for a name label and silently destructive for any other. A boundary
+     * port's TYPE label is the case that bit: it carries only a port name of its own, so the walk
+     * lands on the boundary node — whose entity name is the PORT's name — and the edit went out as
+     * `renameNode { old: <port name>, new: <the type the user typed> }`. Editing a type renamed the
+     * port to that type. An entity node's type subtitle had the same shape.
+     *
+     * So labels are allow-listed by type, not deny-listed: a label type added later is refused
+     * until someone deliberately decides a rename is what editing it means.
+     *
+     * Anything that is not a typed label passes through unchanged — the MCP caller addresses a node
+     * by its label id, but a synthetic or untyped element must keep the original walk-up rather than
+     * be silently dropped.
+     */
+    private isRenameableLabel(element: GModelElement | undefined): boolean {
+        const type = (element as { type?: unknown } | undefined)?.type;
+        if (typeof type !== 'string' || !type.startsWith('label:')) {
+            return true;
+        }
+        return type === WorkflowDiagramTypes.LABEL_NAME || type === WorkflowDiagramTypes.LABEL_BOUNDARY_NAME;
     }
 }

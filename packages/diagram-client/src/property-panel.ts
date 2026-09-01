@@ -4454,20 +4454,17 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                 } as any);
             });
 
-            const typeField = document.createElement('button');
-            typeField.type = 'button';
+            // Read-only, deliberately. This offered "Double-click to change
+            // type", and the edit went out as a label edit — whose only handler
+            // renames the nearest entity, i.e. the port. Changing a type renamed
+            // the port to that type. The handler now refuses non-name labels, so
+            // the edit would be inert instead; either way there is nothing to
+            // offer until a sidecar op can address a boundary port by `workflow`
+            // rather than by an owning `entity`.
+            const typeField = document.createElement('span');
             typeField.className = 'port-field port-type';
-            typeField.title = 'Double-click to change type';
+            typeField.title = `Type: ${portType}`;
             typeField.textContent = portType;
-            typeField.addEventListener('dblclick', (e) => {
-                e.stopPropagation();
-                void this.actionDispatcher.dispatch({
-                    kind: WorkflowPromptLabelEditAction.KIND,
-                    labelId: `${node.id}_label_type`,
-                    title: 'Change Port Type',
-                    value: portType
-                } as any);
-            });
 
             const removeBtn = document.createElement('button');
             removeBtn.type = 'button';

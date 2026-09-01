@@ -447,6 +447,27 @@ export class BoundaryEditableLabel extends WorkflowLabel {
 }
 
 /**
+ * A boundary label that cannot be edited — the type, which has no write path yet.
+ *
+ * The empty feature list is the whole point of this class, and the reason it is
+ * not just `WorkflowLabel`. Sprotty's default label features include
+ * `boundsFeature`, `alignFeature` and `layoutableChildFeature`, and a boundary
+ * label must have NONE of them: `WorkflowLabelView` positions these labels
+ * itself, relative to the parent node, centring the text on the node's own
+ * width. Give the label layout features back and the node's layout engine
+ * claims it instead — it lands in the top-left corner, small, outside the
+ * rounded box. That is exactly what happened when this was first made
+ * non-editable by pointing it at `WorkflowLabel`.
+ *
+ * So: same (absent) features as {@link BoundaryEditableLabel}, minus the two
+ * edit ones. Not selectable either, for the reason described above it — a
+ * selectable label swallows the drag that should move the port.
+ */
+export class BoundaryLabel extends WorkflowLabel {
+    static override readonly DEFAULT_FEATURES = [];
+}
+
+/**
  * CAL Compartment for grouping elements
  */
 export class WorkflowCompartment extends GCompartment {
