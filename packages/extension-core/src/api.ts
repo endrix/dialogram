@@ -37,7 +37,7 @@ export type { ChatCommandContribution, ChatCommandContext, ChatCommandResult };
  * Semver of the API contract. Consumers must check the major version on
  * activation and fail with an actionable message on mismatch.
  */
-export const DIALOGRAM_API_VERSION = "0.6.0";
+export const DIALOGRAM_API_VERSION = "0.7.0";
 
 /** The extension id consumers pass to `vscode.extensions.getExtension`. */
 export const DIALOGRAM_EXTENSION_ID = "ebezati.dialogram";

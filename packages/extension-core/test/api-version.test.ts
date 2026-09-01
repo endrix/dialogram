@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { DIALOGRAM_API_VERSION, isApiVersionCompatible } from '../src/api';
 
 describe('DIALOGRAM_API_VERSION', () => {
-    it('is 0.6.0', () => {
-        expect(DIALOGRAM_API_VERSION).toBe('0.6.0');
+    it('is 0.7.0', () => {
+        expect(DIALOGRAM_API_VERSION).toBe('0.7.0');
     });
 });
 
@@ -24,6 +24,14 @@ describe('isApiVersionCompatible', () => {
         expect(isApiVersionCompatible('0.6.0', '0.6.0')).toBe(true);
         expect(isApiVersionCompatible('0.5.0', '0.6.0')).toBe(false);
         expect(isApiVersionCompatible('0.6.0', '0.5.0')).toBe(false);
+        // A patch never breaks a consumer: only major.minor is compared.
+        expect(isApiVersionCompatible('0.6.1', '0.6.0')).toBe(true);
+        // 0.7.0 forces consumers off the 0.6.0 expectation (exact minor), which
+        // is what a minor bump means here — both shells must raise
+        // EXPECTED_DIALOGRAM_API_VERSION before they can load the platform.
+        expect(isApiVersionCompatible('0.7.0', '0.7.0')).toBe(true);
+        expect(isApiVersionCompatible('0.7.0', '0.6.0')).toBe(false);
+        expect(isApiVersionCompatible('0.6.0', '0.7.0')).toBe(false);
         expect(isApiVersionCompatible('1.0.0', '0.1.0')).toBe(false);
     });
 
