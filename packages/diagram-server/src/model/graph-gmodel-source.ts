@@ -783,6 +783,24 @@ export class GraphGModelSource {
             children.push(...filtered);
         }
 
+        // Edges first, so nodes and ports paint over them.
+        //
+        // SVG has no z-index: what covers what is decided by document order, and
+        // that comes straight from this array. Edges were appended last, so a
+        // wire crossing a node was drawn ON TOP of it — over the boundary ports'
+        // names in particular, since those sit at the ends of the wires that
+        // reach them. Moving the edges to the front puts the shapes above the
+        // lines, which is also the order the same click resolves in: a wire
+        // passing behind a node no longer takes the click.
+        //
+        // Both groups keep their own relative order, which the feedback-edge
+        // marking above and the persisted routes both read by id anyway.
+        const isEdge = (child: GModelElement): boolean =>
+            typeof child.type === 'string' && child.type.startsWith('edge:');
+        const ordered = [...children.filter(isEdge), ...children.filter(child => !isEdge(child))];
+        children.length = 0;
+        children.push(...ordered);
+
         const graphArgs: Record<string, unknown> = workflowName
             ? { 'wf:workflowName': workflowName, [WorkflowDiagramMetadata.NETWORK_NAME]: workflowName }
             : {};
