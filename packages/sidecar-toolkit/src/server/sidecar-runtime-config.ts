@@ -9,7 +9,7 @@
 import { inject, injectable } from 'inversify';
 
 /** The kinds of definition create-node can produce. */
-export type CreateNodeTypeKind = 'workflow' | 'task' | 'tool' | 'agent' | 'viewer';
+export type CreateNodeTypeKind = 'workflow' | 'task' | 'tool' | 'agent' | 'viewer' | 'streamblocks';
 
 /**
  * User-visible vocabulary/messages for the create-node flow. Product-supplied — the toolkit
