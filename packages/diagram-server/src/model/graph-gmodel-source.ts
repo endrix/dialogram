@@ -987,6 +987,11 @@ export class GraphGModelSource {
             classes.push(WorkflowDiagramCss.NODE_NETWORK, 'network-node');
         } else if (this.isExternalNodeKind(node.kind)) {
             classes.push(WorkflowDiagramCss.NODE_EXTERNAL_ACTOR, 'external-actor-node');
+            if (node.kind === 'streamblocks') {
+                // Its own hook, so a StreamBlocks node can be told apart from
+                // the other external kinds it now shares a shape with.
+                classes.push('streamblocks-node');
+            }
             const defAnnots = node.meta?.['definitionAnnotations'] as Array<{ name?: string }> | undefined;
             const annots = Array.isArray(defAnnots) ? defAnnots : undefined;
             const hasTool = annots?.some(a => a?.name === 'tool') ?? false;
@@ -1229,6 +1234,16 @@ export class GraphGModelSource {
     }
 
     private isExternalNodeKind(kind: string): boolean {
-        return kind === 'external' || kind === 'tool' || kind === 'agent' || kind === 'viewer';
+        return kind === 'external' || kind === 'tool' || kind === 'agent' || kind === 'viewer'
+            || kind === 'streamblocks';
     }
+
+    /**
+     * `streamblocks` earns its place here for two reasons, and the second is
+     * easy to miss: besides rendering as an external actor, this predicate is
+     * what gives the node `NODE_EXTERNAL_ACTOR` — and the viewer mouse listener
+     * refuses to look at a node's annotations unless it has exactly that type.
+     * Leave the kind out and the double-click silently does nothing, with no
+     * error to chase.
+     */
 }
