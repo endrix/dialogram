@@ -141,6 +141,25 @@ export type DiagramOpenabilityCheck = (
  * omits `clientAssets`, the provider serves its stock `dist/webview/*` bundle
  * unchanged.
  */
+/**
+ * A palette entry a product contributes to the Entities category.
+ *
+ * Plain data on purpose. The platform's own entries are a fixed list it cannot
+ * be extended from outside, and a platform that has to learn every product's
+ * vocabulary to show its nodes is not neutral. A profile describes an entry;
+ * the platform builds it.
+ */
+export interface EntityPaletteItemSpec {
+    /** The element type to create — one of the platform's node type ids. */
+    elementTypeId: string;
+    label: string;
+    description: string;
+    /** A codicon id, or one of the platform's own icon names. */
+    icon?: string;
+    /** Passed through to the create operation, e.g. to select a variant. */
+    args?: Record<string, string | number | boolean>;
+}
+
 export interface DiagramClientAssets {
     /** Absolute fs path (or file-URI string) of the consumer's client script bundle. */
     scriptPath: string;

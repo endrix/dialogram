@@ -18,7 +18,7 @@ import {
     hasDecorator
 } from '../python-text';
 
-type WorkflowTypeKind = 'workflow' | 'task' | 'tool' | 'agent' | 'viewer';
+type WorkflowTypeKind = 'workflow' | 'task' | 'tool' | 'agent' | 'viewer' | 'streamblocks';
 
 type ProjectTypeCacheEntry = {
     expiresAt: number;
@@ -60,6 +60,11 @@ function discoverWorkflowTypeNamesInSource(sourceText: string, requestedKind: Wo
             discoveredKind = 'viewer';
         } else if (hasDecorator(definition.decorators, 'tool')) {
             discoveredKind = 'tool';
+        } else if (hasDecorator(definition.decorators, 'streamblocks')) {
+            // Before the `task` fallback below, which matches on `class Ports:`
+            // — without this branch a decorated class is discovered as a plain
+            // task, and silently mislabelled rather than missing.
+            discoveredKind = 'streamblocks';
         } else if (hasDecorator(definition.decorators, 'task') || isTaskLikeDefinition(definition)) {
             discoveredKind = 'task';
         }
@@ -229,7 +234,10 @@ export class CreateNodeOperationHandler extends OperationHandler {
                     || operation.args?.['viewerTask'] === true || operation.args?.['viewerTask'] === 'true';
                 const isAgent = elementTypeId === WorkflowDiagramTypes.NODE_EXTERNAL_TASK
                     && (operation.args?.['agentTask'] === true || operation.args?.['agentTask'] === 'true');
-                const isExternal = elementTypeId === WorkflowDiagramTypes.NODE_EXTERNAL_TASK && !isAgent && !isViewer;
+                const isStreamblocks = operation.args?.['streamblocksNode'] === true
+                    || operation.args?.['streamblocksNode'] === 'true';
+                const isExternal = elementTypeId === WorkflowDiagramTypes.NODE_EXTERNAL_TASK
+                    && !isAgent && !isViewer && !isStreamblocks;
                 const isTask = elementTypeId === WorkflowDiagramTypes.NODE_TASK;
                 const isWorkflow = elementTypeId === WorkflowDiagramTypes.NODE_WORKFLOW;
 
@@ -347,9 +355,27 @@ export class CreateNodeOperationHandler extends OperationHandler {
                             return undefined;
                         }
                         typeName = className;
+                        // A node with variants asks which one, the way the
+                        // viewer wizard asks for its action — one palette entry,
+                        // the choice made where the user is already choosing.
+                        const variant = isStreamblocks
+                            ? await this.pickStreamblocksVariant(headless, operation)
+                            : undefined;
+                        if (isStreamblocks && !variant) {
+                            return undefined;
+                        }
+
                         const created = await this.sendSidecarOpDetailed(sourceUri, isWorkflow
                             ? { op: this.sidecar.sidecarOp('createWorkflowType'), args: { name: className } }
-                            : { op: this.sidecar.sidecarOp('createTaskType'), args: { kind: isAgent ? 'agent' : isViewer ? 'viewer' : isExternal ? 'tool' : 'task', name: className } }
+                            : {
+                                op: this.sidecar.sidecarOp('createTaskType'),
+                                args: {
+                                    kind: isStreamblocks ? 'streamblocks'
+                                        : isAgent ? 'agent' : isViewer ? 'viewer' : isExternal ? 'tool' : 'task',
+                                    name: className,
+                                    ...(variant ?? {})
+                                }
+                            }
                         );
                         if (!created.ok) {
                             this.showSidecarFailure(`create ${typeLabel} type '${className}'`, created);
@@ -698,6 +724,100 @@ export class CreateNodeOperationHandler extends OperationHandler {
 
     private typeLabelForPicker(requestedKind: WorkflowTypeKind): string {
         return this.sidecar.createNodeStrings().typeLabel(requestedKind);
+    }
+
+    /**
+     * Which variant of a StreamBlocks node to create, and the network it is for.
+     *
+     * One palette entry rather than two, with the choice made here — the shape
+     * the viewer wizard already uses, where picking an action decides which
+     * follow-up questions get asked.
+     */
+    private async pickStreamblocksVariant(
+        headless: boolean,
+        operation: { args?: Record<string, unknown> }
+    ): Promise<Record<string, string> | undefined> {
+        if (headless) {
+            const facade = String(operation.args?.['facade'] ?? '').trim();
+            const network = String(operation.args?.['network'] ?? '').trim();
+            if (facade !== 'design' && facade !== 'instance') {
+                this.showAgentAmbiguity('create a StreamBlocks node', "pass args.facade as 'design' or 'instance'");
+                return undefined;
+            }
+            if (facade === 'instance' && !network) {
+                this.showAgentAmbiguity('create a StreamBlocks instance', 'pass args.network (the @network file it runs)');
+                return undefined;
+            }
+            return network ? { facade, network } : { facade };
+        }
+
+        const facade = await vscode.window.showQuickPick(
+            [
+                {
+                    label: 'Design',
+                    description: 'A task that produces or works on a design',
+                    detail: 'You declare its ports and actions. Opens what it last produced.'
+                },
+                {
+                    label: 'Instance',
+                    description: 'Compile and run a network',
+                    detail: 'Needs the @network file it runs. Opens that file, before any run.'
+                }
+            ],
+            { placeHolder: 'Which kind of StreamBlocks node?' }
+        );
+        if (!facade) {
+            return undefined;
+        }
+
+        const chosen = facade.label.toLowerCase();
+        // Required for an instance — nothing to compile, run or open without it
+        // — and optional for a design, which may not have one yet.
+        const network = await this.askForNetworkPath(chosen === 'instance');
+        if (chosen === 'instance' && !network) {
+            return undefined;
+        }
+        return network ? { facade: chosen, network } : { facade: chosen };
+    }
+
+    /**
+     * The `@network` file, by picker or by hand.
+     *
+     * Both, because the network may not exist yet — a design that generates
+     * one, or a path filled in later. Whatever the picker returns is made
+     * relative to the workspace, so the declaration survives being opened
+     * somewhere else.
+     */
+    private async askForNetworkPath(required: boolean): Promise<string | undefined> {
+        const BROWSE = 'Browse…';
+        const TYPE = 'Type a path…';
+        const SKIP = 'Skip';
+        const choice = await vscode.window.showQuickPick(
+            [
+                { label: BROWSE, description: 'Choose a Python file containing @network' },
+                { label: TYPE, description: 'For a network that does not exist yet' },
+                ...(required ? [] : [{ label: SKIP, description: 'Set it later' }])
+            ],
+            { placeHolder: required ? 'The @network file to run (required)' : 'The @network file (optional)' }
+        );
+        if (!choice || choice.label === SKIP) {
+            return undefined;
+        }
+
+        if (choice.label === BROWSE) {
+            const picked = await vscode.window.showOpenDialog({
+                canSelectMany: false,
+                openLabel: 'Use this network',
+                filters: { Python: ['py'] }
+            });
+            const file = picked?.[0];
+            return file ? vscode.workspace.asRelativePath(file, false) : undefined;
+        }
+
+        return (await vscode.window.showInputBox({
+            prompt: 'Path to the @network file, relative to the workspace',
+            placeHolder: 'designs/adder.py'
+        }))?.trim() || undefined;
     }
 
     private classNamePlaceholderForPicker(requestedKind: WorkflowTypeKind): string {

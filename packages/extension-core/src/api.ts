@@ -20,10 +20,11 @@ import type {
   DiagramEditBackend,
   DiagramOpenabilityCheck,
   DiagramClientAssets,
+  EntityPaletteItemSpec,
   ExecutionOverlaySink,
 } from "@dialogram/shared";
 
-export type { DiagramClientAssets } from "@dialogram/shared";
+export type { DiagramClientAssets, EntityPaletteItemSpec } from "@dialogram/shared";
 
 import type {
   ChatCommandContribution,
@@ -88,6 +89,9 @@ export interface DiagramStorageOptions {
   settingsNamespace: string;
   operationPrefix: string;
   useAlternateEntityPalette?: boolean;
+  /** Extra Entities-palette entries this product contributes. Plain data; the
+   *  platform builds the actual palette item. */
+  entityPaletteItems?: EntityPaletteItemSpec[];
 }
 
 /**
