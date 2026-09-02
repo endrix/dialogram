@@ -106,6 +106,13 @@ function resolveViewerCommandArgs(args: string[] | undefined, targetUri: string,
     );
 }
 
+/** A path declared in the diagram's own source file, resolved beside it. */
+function resolveAgainstSource(sourceUri: string, relativePath: string): string {
+    const lastSlash = sourceUri.lastIndexOf('/');
+    const directory = lastSlash >= 0 ? sourceUri.slice(0, lastSlash) : sourceUri;
+    return `${directory}/${relativePath}`;
+}
+
 function fileUriFromFsPath(fsPath: string): string {
     const p = fsPath.trim();
     if (p.startsWith('file:')) {
@@ -336,6 +343,13 @@ export class ViewerMouseListener extends MouseListener implements Ranked {
         const inputs = parseStringListLiteralish(argByName.get('inputs'));
         const viewType = parseStringLiteralish(argByName.get('viewType'))
             ?? parseStringLiteralish(argByName.get('view_type'));
+        // Where the target comes from. Everything here has always resolved
+        // through the last token on an input, which is right for a node whose
+        // target is something it PRODUCED — it cannot exist before a run. A
+        // node whose target is a path it declares is openable immediately, and
+        // must not be told to go and run the workflow first.
+        const source = parseStringLiteralish(argByName.get('source')) ?? 'token';
+        const declaredPath = parseStringLiteralish(argByName.get('path'));
         const command = parseStringLiteralish(argByName.get('command'))
             ?? parseStringLiteralish(argByName.get('command_name'));
         const commandArgs = parseStringListLiteralish(argByName.get('args'))
@@ -385,6 +399,29 @@ export class ViewerMouseListener extends MouseListener implements Ranked {
                 }
             })
         ];
+
+        if (source === 'declared') {
+            if (!declaredPath) {
+                return fail('@viewer(source="declared"): missing path="...".');
+            }
+            if (!viewType) {
+                return fail('@viewer(source="declared"): missing viewType="...".');
+            }
+            // Relative to the file the diagram was opened from, which is what a
+            // declaration in that file means.
+            const target = declaredPath.startsWith('/')
+                ? declaredPath
+                : resolveAgainstSource(sourceUri, declaredPath);
+            return [
+                NavigateToExternalTargetAction.create({
+                    uri: target,
+                    args: {
+                        [VIEWER_ACTION_ARG]: 'openWith',
+                        [VIEWER_VIEW_TYPE_ARG]: viewType
+                    }
+                })
+            ];
+        }
 
         if (action === 'diff') {
             if (inputs.length !== 2) {

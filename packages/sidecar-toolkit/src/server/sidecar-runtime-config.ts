@@ -9,7 +9,18 @@
 import { inject, injectable } from 'inversify';
 
 /** The kinds of definition create-node can produce. */
-export type CreateNodeTypeKind = 'workflow' | 'task' | 'tool' | 'agent' | 'viewer';
+/**
+ * The kinds create-node can produce.
+ *
+ * Open on purpose. The named ones are what the platform itself knows about; the
+ * trailing `(string & {})` lets a product introduce a kind of its own and label
+ * it through its profile, without the platform having to learn the word. The
+ * literals still autocomplete.
+ */
+export type CreateNodeTypeKind =
+    | 'workflow' | 'task' | 'tool' | 'agent' | 'viewer'
+    // eslint-disable-next-line @typescript-eslint/ban-types
+    | (string & {});
 
 /**
  * User-visible vocabulary/messages for the create-node flow. Product-supplied — the toolkit
