@@ -61,6 +61,19 @@ export class WorkflowToolPaletteItemProvider extends ToolPaletteItemProvider {
                 this.createNodeItem(WorkflowDiagramTypes.NODE_VIEWER_TASK, 'Viewer', 'Create or instantiate an external task annotated with @viewer (opens last-token files)', 'open-preview', { viewerTask: true }),
                 this.createNodeItem(WorkflowDiagramTypes.NODE_WORKFLOW, 'Workflow', 'Create a Workflow instance', 'symbol-namespace')
             ];
+
+        // Anything the product contributes, after the platform's own. A product
+        // cannot extend the lists above without editing this file, and a
+        // platform that has to learn every product's vocabulary is not neutral.
+        for (const spec of this.storageOptions?.entityPaletteItems ?? []) {
+            entityItems.push(this.createNodeItem(
+                spec.elementTypeId,
+                spec.label,
+                spec.description,
+                spec.icon,
+                spec.args as Args | undefined
+            ));
+        }
         
         items.push({
             id: 'palette-entities',

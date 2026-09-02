@@ -1,3 +1,4 @@
+import type { EntityPaletteItemSpec } from '@dialogram/shared';
 /**
  * Neutral runtime options the source-model storage (and tool palette) need.
  *
@@ -16,6 +17,15 @@ export interface StorageRuntimeOptions {
      * default one. Supplied by the consuming extension; core hardcodes no product discriminator.
      */
     useAlternateEntityPalette?: boolean;
+    /**
+     * Extra entries for the Entities palette, contributed by the product.
+     *
+     * Plain data on purpose. The two lists above are the platform's own, and a
+     * product cannot add to them without editing that file — which is how a
+     * neutral platform ends up learning every product's vocabulary. A profile
+     * describes an entry instead, and the platform builds it.
+     */
+    entityPaletteItems?: EntityPaletteItemSpec[];
 }
 
 export const STORAGE_RUNTIME_OPTIONS = Symbol('StorageRuntimeOptions');

@@ -11,6 +11,7 @@
  * needs no `@dialogram/extension-core` dependency; the shell annotates the
  * result as `DiagramProfile` at the assignment site.
  */
+import type { EntityPaletteItemSpec } from '@dialogram/shared';
 import * as vscode from 'vscode';
 import { invokeSidecarOp } from './sidecar-graph-export.js';
 import { createRegistryChatTools } from './registry-tools.js';
@@ -132,6 +133,8 @@ export interface SidecarProfileInput {
     // Source file + palette.
     sourceExtension: string;
     useAlternateEntityPalette?: boolean;
+    /** Extra Entities-palette entries this product contributes; plain data. */
+    entityPaletteItems?: EntityPaletteItemSpec[];
 
     // Chat edit backend.
     exportOp?: string;
@@ -359,7 +362,8 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         storageOptions: {
             settingsNamespace: input.settingsNamespace,
             operationPrefix: input.sidecarOperationPrefix,
-            useAlternateEntityPalette: input.useAlternateEntityPalette
+            useAlternateEntityPalette: input.useAlternateEntityPalette,
+            entityPaletteItems: input.entityPaletteItems
         },
         watch: { globs: input.watchGlobs ?? [`**/*${input.sourceExtension}`] },
         navigation: createPythonNavigationProvider(),
