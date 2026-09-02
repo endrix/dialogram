@@ -932,16 +932,6 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
     display: none;
 }
 
-/* A streamblocks node stands for a nested dataflow design, so it is coloured
-   apart from the other external kinds it now shares a shape with. The COLOUR
-   belongs here because the kind name is neutral vocabulary; a logo does not,
-   and cannot — the neutrality gates fail on a branded asset in core, so an icon
-   arrives from the shell through the profile's clientAssets. */
-.workflow-node-external-actor.streamblocks-node .external-actor-body {
-    stroke: var(--vscode-charts-purple, #b180d7);
-    fill: color-mix(in srgb, var(--vscode-charts-purple, #b180d7) 12%, transparent);
-}
-
 /* ============================================
    Port styles (rounded squares)
    ============================================ */

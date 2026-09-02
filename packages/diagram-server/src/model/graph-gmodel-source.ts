@@ -306,7 +306,7 @@ export class GraphGModelSource {
                     'elk.portConstraints': 'FIXED_POS'
                 };
             }
-            if (this.isExternalNodeKind(node.kind)) {
+            if (this.isExternalNodeKind(node.kind) || this.isExternalByMeta(node)) {
                 gnode.args = {
                     ...(gnode.args ?? {}),
                     [WorkflowDiagramMetadata.IS_EXTERNAL_ACTOR]: true
@@ -985,12 +985,13 @@ export class GraphGModelSource {
         const classes: string[] = [WorkflowDiagramCss.NODE];
         if (this.isNetworkInstanceNode(node)) {
             classes.push(WorkflowDiagramCss.NODE_NETWORK, 'network-node');
-        } else if (this.isExternalNodeKind(node.kind)) {
+        } else if (this.isExternalNodeKind(node.kind) || this.isExternalByMeta(node)) {
             classes.push(WorkflowDiagramCss.NODE_EXTERNAL_ACTOR, 'external-actor-node');
-            if (node.kind === 'streamblocks') {
-                // Its own hook, so a StreamBlocks node can be told apart from
-                // the other external kinds it now shares a shape with.
-                classes.push('streamblocks-node');
+            // A hook per kind, derived rather than enumerated: every external
+            // node gets `<kind>-node`, so a product can style a kind this file
+            // has never heard of without a change here.
+            if (/^[a-z][a-z0-9-]*$/.test(node.kind)) {
+                classes.push(`${node.kind}-node`);
             }
             const defAnnots = node.meta?.['definitionAnnotations'] as Array<{ name?: string }> | undefined;
             const annots = Array.isArray(defAnnots) ? defAnnots : undefined;
@@ -1218,7 +1219,13 @@ export class GraphGModelSource {
 
     private nodeType(node: PyGraphNode): string {
         if (this.isNetworkInstanceNode(node)) return WorkflowDiagramTypes.NODE_NETWORK;
-        if (this.isExternalNodeKind(node.kind)) return WorkflowDiagramTypes.NODE_EXTERNAL_ACTOR;
+        // The TYPE matters beyond appearance: the viewer mouse listener refuses
+        // to read a node's annotations unless it is NODE_EXTERNAL_ACTOR, so a
+        // node that does not land here cannot be opened by double-click and
+        // fails silently, with nothing logged.
+        if (this.isExternalNodeKind(node.kind) || this.isExternalByMeta(node)) {
+            return WorkflowDiagramTypes.NODE_EXTERNAL_ACTOR;
+        }
         if (node.kind === 'if') return WorkflowDiagramTypes.NODE_STRUCTURE_IF;
         if (node.kind === 'loop') return WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH;
         if (node.kind === 'wf-input') return WorkflowDiagramTypes.NODE_BOUNDARY_INPUT;
@@ -1234,16 +1241,20 @@ export class GraphGModelSource {
     }
 
     private isExternalNodeKind(kind: string): boolean {
-        return kind === 'external' || kind === 'tool' || kind === 'agent' || kind === 'viewer'
-            || kind === 'streamblocks';
+        return kind === 'external' || kind === 'tool' || kind === 'agent' || kind === 'viewer';
     }
 
     /**
-     * `streamblocks` earns its place here for two reasons, and the second is
-     * easy to miss: besides rendering as an external actor, this predicate is
-     * what gives the node `NODE_EXTERNAL_ACTOR` — and the viewer mouse listener
-     * refuses to look at a node's annotations unless it has exactly that type.
-     * Leave the kind out and the double-click silently does nothing, with no
-     * error to chase.
+     * Whether the producer said this node is external.
+     *
+     * Preferred over the kind list above, which a product cannot extend without
+     * editing this file — and a platform that has to learn every product's
+     * vocabulary is not neutral. The exporter already marks nodes this way
+     * through `meta.tool` / `meta.agent` / `meta.viewer`; `meta.external` is the
+     * same idea said plainly, so a product can introduce a kind the platform has
+     * never heard of and still have it rendered and treated as external.
      */
+    private isExternalByMeta(node: PyGraphNode): boolean {
+        return node.meta?.['external'] === true;
+    }
 }
