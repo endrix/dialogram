@@ -306,7 +306,7 @@ export class GraphGModelSource {
                     'elk.portConstraints': 'FIXED_POS'
                 };
             }
-            if (this.isExternalNodeKind(node.kind) || this.isExternalByMeta(node)) {
+            if (this.isExternal(node)) {
                 gnode.args = {
                     ...(gnode.args ?? {}),
                     [WorkflowDiagramMetadata.IS_EXTERNAL_ACTOR]: true
@@ -961,7 +961,7 @@ export class GraphGModelSource {
         }
         if (this.isNetworkInstanceNode(node)) {
             classes.push('header-workflow');
-        } else if (this.isExternalNodeKind(node.kind)) {
+        } else if (this.isExternal(node)) {
             classes.push('header-external');
         } else {
             classes.push('header-task');
@@ -974,7 +974,7 @@ export class GraphGModelSource {
         if (hasTool) classes.push('external-actor-exec');
         if (hasAgent) classes.push('external-actor-agent');
         if (hasViewer) classes.push('external-actor-viewer');
-        if (!hasTool && !hasAgent && !hasViewer && this.isExternalNodeKind(node.kind)) {
+        if (!hasTool && !hasAgent && !hasViewer && this.isExternal(node)) {
             classes.push('external-actor-default');
         }
         return classes;
@@ -985,7 +985,7 @@ export class GraphGModelSource {
         const classes: string[] = [WorkflowDiagramCss.NODE];
         if (this.isNetworkInstanceNode(node)) {
             classes.push(WorkflowDiagramCss.NODE_NETWORK, 'network-node');
-        } else if (this.isExternalNodeKind(node.kind) || this.isExternalByMeta(node)) {
+        } else if (this.isExternal(node)) {
             classes.push(WorkflowDiagramCss.NODE_EXTERNAL_ACTOR, 'external-actor-node');
             // A hook per kind, derived rather than enumerated: every external
             // node gets `<kind>-node`, so a product can style a kind this file
@@ -1223,7 +1223,7 @@ export class GraphGModelSource {
         // to read a node's annotations unless it is NODE_EXTERNAL_ACTOR, so a
         // node that does not land here cannot be opened by double-click and
         // fails silently, with nothing logged.
-        if (this.isExternalNodeKind(node.kind) || this.isExternalByMeta(node)) {
+        if (this.isExternal(node)) {
             return WorkflowDiagramTypes.NODE_EXTERNAL_ACTOR;
         }
         if (node.kind === 'if') return WorkflowDiagramTypes.NODE_STRUCTURE_IF;
@@ -1256,5 +1256,19 @@ export class GraphGModelSource {
      */
     private isExternalByMeta(node: PyGraphNode): boolean {
         return node.meta?.['external'] === true;
+    }
+
+    /**
+     * Whether this node stands for something outside the graph — by a kind the
+     * platform knows, or because the producer said so.
+     *
+     * One question, asked in one place. It used to be asked twice: the body
+     * consulted the producer and the header did not, so a node the producer
+     * called external got an external body and a task header, and the tint its
+     * annotation asks for never applied — those rules are written under
+     * `.header-external`.
+     */
+    private isExternal(node: PyGraphNode): boolean {
+        return this.isExternalNodeKind(node.kind) || this.isExternalByMeta(node);
     }
 }
