@@ -183,6 +183,38 @@ export namespace WorkflowDiagramMetadata {
     export const IS_ERRORED = 'cal:isErrored';
     /** Marks a connection as the one that closes a feedback loop. */
     export const IS_FEEDBACK = 'cal:isFeedback';
+    /**
+     * Set when the PRODUCER named this connection as the loop-closing one,
+     * rather than the platform deriving it from the graph's shape.
+     *
+     * Both are legitimate and they answer slightly different questions. The
+     * derived answer is a fact about the drawing — which edges point backwards
+     * in the order the layout will use — and it is the only answer available
+     * when the producer has no opinion. But a producer often knows something
+     * the shape cannot show: in a synchronous design every loop is closed by a
+     * state element, and which edge that is has a right answer that a
+     * cycle-breaking heuristic can miss, because several edges of one cycle
+     * are equally good candidates by shape alone.
+     *
+     * So the presence of this key anywhere in a document switches the whole
+     * graph to the producer's answer. All-or-nothing on purpose: mixing a
+     * declared set with a derived one would mark a cycle twice — once where
+     * the producer said, once where the heuristic guessed — and a reader
+     * cannot tell which of the two marks means anything.
+     */
+    export const DECLARED_FEEDBACK = 'cal:declaredFeedback';
+    /**
+     * How much a connection carries, when the producer states it.
+     *
+     * A number in whatever unit the producer counts in; the platform displays
+     * it and never interprets it. {@link EDGE_LABEL} says the same thing in the
+     * producer's own words and takes precedence where both are given.
+     */
+    export const EDGE_WIDTH = 'cal:edgeWidth';
+    /** What a connection is for, beyond carrying data. Producer-defined. */
+    export const EDGE_ROLE = 'cal:edgeRole';
+    /** What a port is for, beyond carrying data. Producer-defined. */
+    export const PORT_ROLE = 'cal:portRole';
     /** Marks a node as a proxy (indexed entity reference like c[i]) */
     export const IS_PROXY = 'cal:isProxy';
     /** Index expression for proxy nodes (e.g., "i", "i-1", "nSegs-1") */
