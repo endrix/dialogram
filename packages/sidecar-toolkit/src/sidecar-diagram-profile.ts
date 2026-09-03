@@ -49,6 +49,7 @@ const AGENT_TOOL_OVERRIDES_STATE_KEY = 'workflow.agentToolEntityOverrides';
  * `DiagramClientBehavior`; kept local so the toolkit needs no extension-core dep.
  */
 export interface SidecarClientBehavior {
+    paletteIcons?: Record<string, { dark: string; light?: string }>;
     graphSourceNavigation?: boolean;
     networkPropertySections?: boolean;
     networkNavigationLabels?: boolean;
