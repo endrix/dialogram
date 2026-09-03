@@ -971,10 +971,18 @@ export class GraphGModelSource {
         const hasTool = annots?.some(a => a?.name === 'tool') ?? false;
         const hasAgent = annots?.some(a => a?.name === 'agent') ?? false;
         const hasViewer = annots?.some(a => a?.name === 'viewer') ?? false;
+        // A source carries the openable annotation too — that one says what
+        // double-click does, not what the node is — so it must not be coloured
+        // as the thing it is the opposite of.
+        const hasSource = annots?.some(a => a?.name === 'source') ?? false;
         if (hasTool) classes.push('external-actor-exec');
         if (hasAgent) classes.push('external-actor-agent');
-        if (hasViewer) classes.push('external-actor-viewer');
-        if (!hasTool && !hasAgent && !hasViewer && this.isExternal(node)) {
+        if (hasSource) {
+            classes.push('external-actor-source');
+        } else if (hasViewer) {
+            classes.push('external-actor-viewer');
+        }
+        if (!hasTool && !hasAgent && !hasViewer && !hasSource && this.isExternal(node)) {
             classes.push('external-actor-default');
         }
         return classes;
@@ -998,10 +1006,17 @@ export class GraphGModelSource {
             const hasTool = annots?.some(a => a?.name === 'tool') ?? false;
             const hasAgent = annots?.some(a => a?.name === 'agent') ?? false;
             const hasViewer = annots?.some(a => a?.name === 'viewer') ?? false;
+            // See getHeaderCssClasses: the node's own annotation wins over the
+            // one that only describes double-click.
+            const hasSource = annots?.some(a => a?.name === 'source') ?? false;
             if (hasTool) classes.push('external-actor-exec');
             if (hasAgent) classes.push('external-actor-agent');
-            if (hasViewer) classes.push('external-actor-viewer');
-            if (!hasTool && !hasAgent && !hasViewer) {
+            if (hasSource) {
+                classes.push('external-actor-source');
+            } else if (hasViewer) {
+                classes.push('external-actor-viewer');
+            }
+            if (!hasTool && !hasAgent && !hasViewer && !hasSource) {
                 classes.push('external-actor-default');
             }
         } else {

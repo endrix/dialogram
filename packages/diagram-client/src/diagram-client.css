@@ -48,6 +48,7 @@
     --workflow-color-external-default: #7c8698;
     --workflow-color-external-tool: #b26dff;
     --workflow-color-external-viewer: #49a6b8;
+    --workflow-color-external-source: #4fa97a;
     --workflow-color-external-agent: #ff6f91;
 
     /* Property panel sizing (used for reserving viewport space) */
@@ -682,6 +683,11 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
     fill-opacity: 0.26;
 }
 
+.external-actor-node.external-actor-source .header-compartment.header-external .header-background {
+    fill: var(--workflow-color-external-source); /* a source, the opposite end from a viewer */
+    fill-opacity: 0.26;
+}
+
 .external-actor-node.external-actor-agent .header-compartment.header-external .header-background {
     fill: var(--workflow-color-external-agent); /* Palette A @agent muted rose */
     fill-opacity: 0.26;
@@ -747,6 +753,14 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
 /* Terminal icon — uses the tool accent colour */
 .external-actor-exec .node-icon-terminal {
     fill: var(--workflow-color-external-tool);
+    opacity: 0.22;
+}
+
+/* Source icon — its own accent, because a source and a viewer are opposite
+   ends of a graph and otherwise share a colour: a source carries the viewer
+   annotation too, for double-click. */
+.external-actor-source .node-icon-source {
+    fill: var(--workflow-color-external-source);
     opacity: 0.22;
 }
 
