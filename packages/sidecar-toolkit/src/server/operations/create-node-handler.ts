@@ -300,16 +300,23 @@ export class CreateNodeOperationHandler extends OperationHandler {
                 }
 
                 let typeName = (operation.args?.['type'] as string | undefined)?.trim();
-                if (!typeName && (isAgent || isViewer || isExternal || isTask || isWorkflow)) {
+                // A variant entry is identified by its arg, not its element
+                // type — it borrows a type another kind already uses, and is
+                // excluded from that kind above. Leaving it out here dropped it
+                // past the whole wizard to the bare name box below: no variant
+                // prompt, no type created, and no error either.
+                if (!typeName && (isAgent || isViewer || isExternal || isTask || isWorkflow || isStreamblocks)) {
                     const requestedKind: WorkflowTypeKind = isWorkflow
                         ? 'workflow'
                         : isAgent
                             ? 'agent'
                             : isViewer
                                 ? 'viewer'
-                                : isExternal
-                                    ? 'tool'
-                                    : 'task';
+                                : isStreamblocks
+                                    ? 'streamblocks'
+                                    : isExternal
+                                        ? 'tool'
+                                        : 'task';
                         const typeLabel = this.typeLabelForPicker(requestedKind);
                         if (headless) {
                             this.failAgent(await this.agentMissingTypeMessage(sourceUri, requestedKind));
