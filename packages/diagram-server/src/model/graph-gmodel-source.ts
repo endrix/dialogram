@@ -819,6 +819,10 @@ export class GraphGModelSource {
             if (typeof edgeWidth === 'number' && Number.isFinite(edgeWidth)) {
                 (gedge.args as Record<string, unknown>)[WorkflowDiagramMetadata.EDGE_WIDTH] = edgeWidth;
             }
+            const edgeLabel = edgeMeta?.['label'];
+            if (typeof edgeLabel === 'string' && edgeLabel.trim() !== '') {
+                (gedge.args as Record<string, unknown>)[WorkflowDiagramMetadata.EDGE_LABEL] = edgeLabel.trim();
+            }
             // Producer-declared feedback. Recorded per edge here; whether the
             // document uses declared or derived feedback is decided once, for
             // the whole graph, in `markFeedbackEdges`.

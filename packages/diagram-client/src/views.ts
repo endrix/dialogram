@@ -1633,6 +1633,22 @@ export class WorkflowEdgeView extends PolylineEdgeView {
         const viewerLastTokenText = this.formatViewerLastTokenForTooltip(viewerLastToken);
         const queueSizeRaw = edgeArgs?.[WorkflowDiagramMetadata.QUEUE_SIZE];
         const queueSize = typeof queueSizeRaw === 'number' && Number.isFinite(queueSizeRaw) ? Math.max(0, Math.trunc(queueSizeRaw)) : undefined;
+        // What this connection carries, when the producer says.
+        //
+        // `EDGE_LABEL` is text the producer formatted — a payload type, a
+        // protocol name — and `EDGE_WIDTH` is a bit count. Both describe the
+        // same thing at different resolutions, so only one is drawn: the label
+        // when there is one, the width otherwise. Drawing both would put two
+        // captions on one line for no extra information.
+        const edgeLabelText = (edgeArgs?.[WorkflowDiagramMetadata.EDGE_LABEL] as string | undefined)?.trim();
+        const edgeWidthRaw = edgeArgs?.[WorkflowDiagramMetadata.EDGE_WIDTH];
+        const edgeWidth = typeof edgeWidthRaw === 'number' && Number.isFinite(edgeWidthRaw)
+            ? Math.max(0, Math.trunc(edgeWidthRaw))
+            : undefined;
+        const carriedText = edgeLabelText && edgeLabelText !== ''
+            ? edgeLabelText
+            : edgeWidth !== undefined ? String(edgeWidth) : undefined;
+
         const fromEntity = (edgeArgs?.['wf:from'] as string | undefined) ?? undefined;
         const toEntity = (edgeArgs?.['wf:to'] as string | undefined) ?? undefined;
         const outPort = (edgeArgs?.['wf:outPort'] as string | undefined) ?? undefined;
@@ -1702,6 +1718,13 @@ export class WorkflowEdgeView extends PolylineEdgeView {
             }),
             ...(hasViewerToken ? this.renderEdgeOpenButton(workflowEdge as any, normalizedSegments as any) : []),
             ...(queueSize !== undefined ? this.renderEdgeQueueSizeBadge(normalizedSegments as any, queueSize, hasViewerToken) : []),
+            ...(carriedText
+                ? this.renderEdgeCarriedLabel(
+                    normalizedSegments as any,
+                    carriedText,
+                    hasViewerToken || queueSize !== undefined
+                )
+                : []),
             // Endpoint index labels for list/entity indexing (e.g. bf[0].In)
             ...(fromIndexLabel && fromIndexPos
                 ? [svg('text', {
@@ -2038,6 +2061,44 @@ export class WorkflowEdgeView extends PolylineEdgeView {
                     }
                 }, label)
             )
+        ];
+    }
+
+    /**
+     * What a connection carries, written on it.
+     *
+     * A dataflow diagram's edges are not interchangeable: one may carry far
+     * more than the next, or something of an entirely different kind, and drawn
+     * identically the only way to tell them apart is to click each one. This is
+     * the smallest thing that fixes that.
+     *
+     * Placed ABOVE the line, and higher again when a badge is present, because
+     * those already occupy the midpoint and a caption landing on a queue depth
+     * makes both unreadable. The halo comes from `paint-order` in the
+     * stylesheet rather than a filled pill: every edge stating a width gets one
+     * of these, so a pill would weigh as much as the edges do, while a halo
+     * costs nothing over empty space and only appears where the text would
+     * otherwise be illegible.
+     */
+    protected renderEdgeCarriedLabel(
+        segments: { x: number; y: number }[],
+        text: string,
+        stacked: boolean
+    ): VNode[] {
+        const mid = this.getRouteMidpoint(segments);
+        if (!mid) {
+            return [];
+        }
+        return [
+            svg('text', {
+                class: { 'edge-carried-label': true },
+                attrs: {
+                    x: mid.x,
+                    y: mid.y + (stacked ? -14 : -5),
+                    'text-anchor': 'middle',
+                    'dominant-baseline': 'auto'
+                }
+            }, text)
         ];
     }
 
