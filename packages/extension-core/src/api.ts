@@ -220,6 +220,20 @@ export interface DiagramClientBehavior {
   noneSentinel?: string;
   /** Node `cmd` values (lower-case) that render with the script-tool icon. */
   scriptInterpreterCommands?: string[];
+  /**
+   * Artwork for icon ids this product uses, keyed by id.
+   *
+   * A palette icon is only a CSS class — GLSP renders `<i class="codicon
+   * codicon-<id>">` — so an icon exists only if some rule draws it. The
+   * platform's own rules cannot carry a product's mark, so a product supplies
+   * the image and the webview writes the rule.
+   *
+   * Each value is a complete `url(...)` source: a `data:image/svg+xml,...` URI
+   * is the portable choice, since a webview cannot load arbitrary file paths.
+   * `light`/`dark` are picked by the viewer's theme; give only `dark` and it is
+   * used for both.
+   */
+  paletteIcons?: Record<string, { dark: string; light?: string }>;
 }
 
 export interface DiagramProfile {

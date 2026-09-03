@@ -18,6 +18,7 @@ type DiagramClientBehavior = {
     networkNavigationLabels?: boolean;
     noneSentinel?: string;
     scriptInterpreterCommands?: string[];
+    paletteIcons?: Record<string, { dark: string; light?: string }>;
 };
 
 type DiagramIdentifier = {

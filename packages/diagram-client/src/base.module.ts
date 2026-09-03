@@ -42,6 +42,7 @@ import { EXECUTION_OVERLAY_ACTION_KIND } from '@dialogram/shared';
 import { PostEditSelectionService } from './post-edit-selection-service';
 import { WorkflowCopyPasteHandler } from './copy-paste-handler';
 import { WorkflowGridStartup } from './grid-startup';
+import { WorkflowPaletteIconStartup } from './palette-icons';
 import { InitialViewportService } from './initial-viewport-service';
 import { ViewportPreservingSetModelCommand } from './viewport-preserving-set-model-command';
 import { RunningAgentsBar } from './running-agents-bar';
@@ -75,6 +76,9 @@ export const diagramBaseModule = new ContainerModule((bind, unbind, isBound, reb
 
     // Enable the diagram grid by default.
     bindAsService(context, TYPES.IDiagramStartup, WorkflowGridStartup);
+    // Draws the icons a product contributed. Without it their palette entries
+    // render an empty slot, since a palette icon is only ever a class name.
+    bindAsService(context, TYPES.IDiagramStartup, WorkflowPaletteIconStartup);
 
     // Override copy/paste handler so we can prepare post-paste selection.
     if (isBound(TYPES.ICopyPasteHandler)) {

@@ -175,6 +175,11 @@
         "service": "Symbol(stub.IDiagramStartup)"
     },
     {
+        "op": "bindAsService",
+        "service": "Symbol(stub.IDiagramStartup)",
+        "impl": "WorkflowPaletteIconStartup"
+    },
+    {
         "impl": "WorkflowNetworkNavigationMouseListener",
         "op": "bindAsService",
         "service": "Symbol(stub.MouseListener)"
