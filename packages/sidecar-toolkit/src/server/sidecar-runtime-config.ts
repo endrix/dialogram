@@ -52,10 +52,22 @@ export interface CreateNodeStrings {
  */
 export type CreateNodeVariantInput = 'file' | 'folder' | 'text';
 
+/**
+ * Where a collected answer belongs.
+ *
+ * `type` is a decorator argument: it describes the class, so it is asked once
+ * when the class is written. `instance` is a constructor parameter: it
+ * describes one node, so it is asked every time a node is created — including
+ * when the class already exists, which is the case that is easy to miss.
+ */
+export type CreateNodeVariantTarget = 'type' | 'instance';
+
 /** The value a chosen variant still needs, and how to ask for it. */
 export interface CreateNodeVariantFollowUp {
-    /** Name of the `createTaskType` argument this fills in. */
+    /** Name of the argument this fills in — see `target` for which one. */
     argName: string;
+    /** Defaults to `type`. */
+    target?: CreateNodeVariantTarget;
     /** Refuse to continue without it, rather than creating a node that cannot work. */
     required: boolean;
     input: CreateNodeVariantInput;
@@ -116,6 +128,8 @@ export interface CreateNodeVariant {
     /** One last optional free-text value, asked after the choice is resolved. */
     extra?: {
         argName: string;
+        /** Defaults to `type`. */
+        target?: CreateNodeVariantTarget;
         prompt: string;
         placeHolder?: string;
     };

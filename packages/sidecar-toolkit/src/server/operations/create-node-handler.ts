@@ -11,7 +11,17 @@ import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { AgentCreateNodeOutcomeSink } from '@dialogram/diagram-server/server/agent-create-node-outcome';
 import { SidecarInvoker, SidecarInvocationResult } from './sidecar-invoker';
-import type { CreateNodeVariant, CreateNodeVariantFollowUp } from '../sidecar-runtime-config';
+import type {
+    CreateNodeVariant,
+    CreateNodeVariantFollowUp,
+    CreateNodeVariantTarget
+} from '../sidecar-runtime-config';
+
+/** Answers sorted into the class that is written and the node that is created. */
+interface CollectedVariantArgs {
+    typeArgs: Record<string, string>;
+    instanceParams: Record<string, string>;
+}
 import {
     type PythonDefinition,
     extractTopLevelPythonDefinitions,
@@ -315,6 +325,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
                 }
 
                 let typeName = (operation.args?.['type'] as string | undefined)?.trim();
+                let collectedInstanceParams: Record<string, string> | undefined;
                 // A variant entry is identified by its arg, not its element
                 // type — it borrows a type another kind already uses, and is
                 // excluded from that kind above. Leaving it out here dropped it
@@ -386,6 +397,10 @@ export class CreateNodeOperationHandler extends OperationHandler {
                         if (variant && !variantArgs) {
                             return undefined;
                         }
+                        // The node's own answers are carried past the branch:
+                        // the node is created below, whether or not the class
+                        // was written here.
+                        collectedInstanceParams = variantArgs?.instanceParams;
 
                         const created = await this.sendSidecarOpDetailed(sourceUri, isWorkflow
                             ? { op: this.sidecar.sidecarOp('createWorkflowType'), args: { name: className } }
@@ -395,7 +410,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
                                     kind: variant ? variant.kind
                                         : isAgent ? 'agent' : isViewer ? 'viewer' : isExternal ? 'tool' : 'task',
                                     name: className,
-                                    ...(variantArgs ?? {})
+                                    ...(variantArgs?.typeArgs ?? {})
                                 }
                             }
                         );
@@ -462,8 +477,24 @@ export class CreateNodeOperationHandler extends OperationHandler {
                     }
                     return undefined;
                 }
+                // A constructor parameter describes THIS node, so an existing
+                // class still has to be asked for it — otherwise the second
+                // node of a type silently gets none. Variants with only
+                // class-level answers ask nothing here.
+                if (variant && !collectedInstanceParams && this.hasInstanceParams(variant)) {
+                    const forThisNode = await this.collectVariantArgs(variant, headless, operation, true);
+                    if (!forThisNode) {
+                        return undefined;
+                    }
+                    collectedInstanceParams = forThisNode.instanceParams;
+                }
+
                 const paramsRaw = operation.args?.['params'];
-                const params = (paramsRaw && typeof paramsRaw === 'object') ? (paramsRaw as Record<string, unknown>) : undefined;
+                const givenParams = (paramsRaw && typeof paramsRaw === 'object')
+                    ? (paramsRaw as Record<string, unknown>)
+                    : undefined;
+                const merged = { ...(givenParams ?? {}), ...(collectedInstanceParams ?? {}) };
+                const params = Object.keys(merged).length > 0 ? merged : undefined;
                 const result = await this.sendSidecarOpDetailed(sourceUri, {
                     op: this.sidecar.sidecarOp('createNode'),
                     args: {
@@ -759,8 +790,10 @@ export class CreateNodeOperationHandler extends OperationHandler {
     private async collectVariantArgs(
         variant: CreateNodeVariant,
         headless: boolean,
-        operation: { args?: Record<string, unknown> }
-    ): Promise<Record<string, string> | undefined> {
+        operation: { args?: Record<string, unknown> },
+        /** Skip the answers that describe the class, when the class already exists. */
+        instanceOnly = false
+    ): Promise<CollectedVariantArgs | undefined> {
         const collected: Record<string, string> = {};
 
         if (headless) {
@@ -784,7 +817,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
         }
         Object.assign(collected, choice.args ?? {});
 
-        if (choice.followUp) {
+        if (choice.followUp && !(instanceOnly && (choice.followUp.target ?? 'type') === 'type')) {
             const value = await this.collectFollowUp(choice.followUp);
             if (choice.followUp.required && !value) {
                 // Refused rather than created half-formed: the node cannot work
@@ -797,7 +830,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
             }
         }
 
-        if (variant.extra) {
+        if (variant.extra && !(instanceOnly && (variant.extra.target ?? 'type') === 'type')) {
             const extra = (await vscode.window.showInputBox({
                 prompt: variant.extra.prompt,
                 placeHolder: variant.extra.placeHolder
@@ -809,14 +842,54 @@ export class CreateNodeOperationHandler extends OperationHandler {
             }
         }
 
-        return collected;
+        return this.splitByTarget(variant, collected);
+    }
+
+    /**
+     * Sort the answers into the class and the node.
+     *
+     * A decorator argument and a constructor parameter travel to different
+     * sidecar operations, and neither rejects an argument it does not know —
+     * the far end takes keyword arguments, so a misrouted one surfaced as
+     * "unexpected keyword argument" from inside the sidecar.
+     */
+    private splitByTarget(
+        variant: CreateNodeVariant,
+        collected: Record<string, string>
+    ): CollectedVariantArgs {
+        const targets = new Map<string, CreateNodeVariantTarget>();
+        for (const choice of variant.choices) {
+            if (choice.followUp) {
+                targets.set(choice.followUp.argName, choice.followUp.target ?? 'type');
+            }
+        }
+        if (variant.extra) {
+            targets.set(variant.extra.argName, variant.extra.target ?? 'type');
+        }
+
+        const typeArgs: Record<string, string> = {};
+        const instanceParams: Record<string, string> = {};
+        for (const [name, value] of Object.entries(collected)) {
+            if (targets.get(name) === 'instance') {
+                instanceParams[name] = value;
+            } else {
+                typeArgs[name] = value;
+            }
+        }
+        return { typeArgs, instanceParams };
+    }
+
+    /** Whether any answer this variant collects describes a node rather than the class. */
+    private hasInstanceParams(variant: CreateNodeVariant): boolean {
+        return variant.choices.some(c => (c.followUp?.target ?? 'type') === 'instance')
+            || (variant.extra ? (variant.extra.target ?? 'type') === 'instance' : false);
     }
 
     /** The same answers, passed in rather than asked for. */
     private collectVariantArgsHeadless(
         variant: CreateNodeVariant,
         operation: { args?: Record<string, unknown> }
-    ): Record<string, string> | undefined {
+    ): CollectedVariantArgs | undefined {
         const collected: Record<string, string> = {};
         const argNames = new Set<string>();
         for (const choice of variant.choices) {
@@ -845,7 +918,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
             );
             return undefined;
         }
-        return collected;
+        return this.splitByTarget(variant, collected);
     }
 
     /**

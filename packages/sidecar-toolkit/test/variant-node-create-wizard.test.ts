@@ -82,23 +82,46 @@ const VARIANTS: CreateNodeVariant[] = [
             {
                 label: 'File',
                 followUp: {
-                    argName: 'path', required: true, input: 'file',
+                    argName: 'path', target: 'instance', required: true, input: 'file',
                     prompt: 'The file', allowTypedPath: false
                 }
             },
             {
                 label: 'Folder',
                 followUp: {
-                    argName: 'path', required: true, input: 'folder',
+                    argName: 'path', target: 'instance', required: true, input: 'folder',
                     prompt: 'The folder', allowTypedPath: false
                 }
             },
             {
                 label: 'Web resource',
-                followUp: { argName: 'path', required: true, input: 'text', prompt: 'The address' }
+                followUp: { argName: 'path', target: 'instance', required: true, input: 'text', prompt: 'The address' }
             }
         ],
         extra: { argName: 'viewType', prompt: 'Open with a specific editor (optional)' }
+    },
+    {
+        // A variant that mixes both, which is what makes the class/node split
+        // observable: its follow-up describes the class while its trailing
+        // answer describes the node, so an existing class must ask the second
+        // and not the first.
+        paletteArg: 'mixedNode',
+        kind: 'mixed',
+        decorator: 'mixed',
+        prompt: 'Which mixed?',
+        choices: [
+            {
+                label: 'Only',
+                followUp: {
+                    argName: 'template',
+                    target: 'type',
+                    required: true,
+                    input: 'file',
+                    prompt: 'The template for the class'
+                }
+            }
+        ],
+        extra: { argName: 'label', target: 'instance', prompt: 'A label for this node' }
     }
 ];
 
@@ -632,3 +655,285 @@ describe('a variant type already in the project', () => {
         expect(labels).not.toContain('ExistingGizmo');
     });
 });
+
+/**
+ * Some answers configure the TYPE, others configure the NODE.
+ *
+ * `facade` and `network` are decorator arguments — they belong to the class, so
+ * they go to `createTaskType` and are asked once, when the class is written.
+ * A constructor parameter is not: it belongs to the instance, so it goes to
+ * `createNode` as a param and has to be asked every time one is created,
+ * including when the class already exists.
+ *
+ * Sending one where the other belongs is not a type error anywhere — the sidecar
+ * takes keyword arguments, so it surfaced as
+ * `create_task_type() got an unexpected keyword argument 'path'` at the far end.
+ */
+describe('an answer that belongs to the node, not the type', () => {
+    async function createWith(args: Record<string, unknown>, shape: string, existingTypes: string[] = []) {
+        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'variant-params-'));
+        const file = path.join(dir, 'flow.py');
+        const source = 'from wfpy import workflow\n\n@workflow\ndef Main():\n    pass\n';
+        await fs.writeFile(file, source);
+
+        const handler = new CreateNodeOperationHandler();
+        const workspaceAny = vscode.workspace as any;
+        const windowAny = vscode.window as any;
+        const original = {
+            openTextDocument: workspaceAny.openTextDocument,
+            applyEdit: workspaceAny.applyEdit,
+            asRelativePath: workspaceAny.asRelativePath,
+            showQuickPick: windowAny.showQuickPick,
+            showInputBox: windowAny.showInputBox,
+            showOpenDialog: windowAny.showOpenDialog
+        };
+        const sent: Array<{ op: string; args: Record<string, unknown> }> = [];
+        const asked: string[] = [];
+
+        workspaceAny.openTextDocument = async () => ({
+            uri: { fsPath: file, toString: () => `file://${file}` },
+            getText: () => source
+        });
+        workspaceAny.applyEdit = async () => false;
+        workspaceAny.asRelativePath = (t: any) => String(t?.fsPath ?? t);
+        windowAny.showQuickPick = async (items: Array<{ label: string }>, options?: any) => {
+            asked.push(String(options?.placeHolder ?? options?.title ?? items.map(i => i.label).join('|')));
+            const pick = (n: string) => items.find(i => i.label.includes(n));
+            // Reuse an existing type when the scenario supplies one, so the
+            // class-already-written path is actually exercised rather than
+            // silently creating a fresh one.
+            const existing = existingTypes[0] ? pick(existingTypes[0]) : undefined;
+            return existing ?? pick(shape) ?? pick('Browse') ?? pick('Create new');
+        };
+        windowAny.showInputBox = async (options: any) => {
+            const prompt = String(options?.prompt ?? '');
+            asked.push(prompt);
+            if (prompt.includes('class name')) { return 'Frames'; }
+            if (prompt.includes('Open with')) { return ''; }
+            return 'frames';
+        };
+        windowAny.showOpenDialog = async () => [{ fsPath: 'inputs/frames.yuv' }];
+
+        try {
+            (handler as any).modelState = {
+                root: { args: { sourceUri: `file://${file}`, 'wf:workflowName': 'Main' } }
+            };
+            (handler as any).sidecar = {
+                settingsNamespace: () => 'wfLang',
+                sidecarOp: (op: string) => `wfpy.${op}`,
+                undoLabelSuffix: () => ' (wf)',
+                createNodeStrings: () => STRINGS,
+                createNodeBehavior: () => BEHAVIOR,
+                createNodeVariants: () => VARIANTS
+            };
+            (handler as any).sendSidecarListDetailed = async () => ({
+                ok: true,
+                response: { status: 'ok', diagnostic: { types: existingTypes, names: [] } }
+            });
+            (handler as any).sendSidecarOpDetailed = async (_u: unknown, request: any) => {
+                sent.push({ op: request.op, args: request.args });
+                return { ok: true, response: { status: 'ok' } };
+            };
+
+            const command = handler.createCommand({
+                kind: 'createNode',
+                elementTypeId: WorkflowDiagramTypes.NODE_EXTERNAL_TASK,
+                args
+            } as any);
+            if (command) { await (command as any).execute(); }
+        } finally {
+            Object.assign(workspaceAny, {
+                openTextDocument: original.openTextDocument,
+                applyEdit: original.applyEdit,
+                asRelativePath: original.asRelativePath
+            });
+            Object.assign(windowAny, {
+                showQuickPick: original.showQuickPick,
+                showInputBox: original.showInputBox,
+                showOpenDialog: original.showOpenDialog
+            });
+            await fs.rm(dir, { recursive: true, force: true });
+        }
+        return {
+            createdType: sent.find(r => r.op === 'wfpy.createTaskType'),
+            createdNode: sent.find(r => r.op === 'wfpy.createNode'),
+            asked
+        };
+    }
+
+    it('does not send it as a decorator argument', async () => {
+        const { createdType } = await createWith({ sourceNode: true }, 'File');
+
+        expect(createdType).toBeDefined();
+        expect(createdType!.args).not.toHaveProperty('path');
+    });
+
+    it('sends it as a parameter of the node', async () => {
+        const { createdNode } = await createWith({ sourceNode: true }, 'File');
+
+        expect(createdNode).toBeDefined();
+        expect(createdNode!.args.params).toMatchObject({ path: 'inputs/frames.yuv' });
+    });
+
+    it('still sends the type-level answers to the type', async () => {
+        const { createdType } = await createWith({ gizmoNode: true }, 'Wired');
+
+        expect(createdType!.args.facade).toBe('wired');
+        expect(createdType!.args).not.toHaveProperty('kindOfThing');
+    });
+
+    /**
+     * The half that is easy to miss. A parameter belongs to the node, so
+     * instantiating a class that already exists still has to ask for it —
+     * otherwise the second node of a type silently gets none.
+     */
+    it('asks for it even when the type already exists', async () => {
+        const { createdType, createdNode } = await createWith(
+            { sourceNode: true }, 'File', ['Frames']
+        );
+
+        expect(createdType, 'no new type should be written').toBeUndefined();
+        expect(createdNode!.args.params).toMatchObject({ path: 'inputs/frames.yuv' });
+    });
+
+    /**
+     * And a variant with nothing instance-level must not start asking. Getting
+     * this wrong costs no correctness — the answers are discarded — so only the
+     * prompts themselves show it.
+     */
+    it('asks nothing extra for an existing type with only type-level answers', async () => {
+        const { createdType, createdNode, asked } = await createWith(
+            { gizmoNode: true }, 'Wired', ['ExistingGizmo']
+        );
+
+        expect(createdType).toBeUndefined();
+        expect(createdNode!.args.params ?? {}).toEqual({});
+        expect(asked.join('\n'), 'the class-level question was asked again')
+            .not.toContain('Which kind of gizmo?');
+    });
+
+    it('does not re-ask the class-level questions for an existing type', async () => {
+        const { asked } = await createWith({ sourceNode: true }, 'File', ['Frames']);
+
+        // The shape question IS asked — it decides how to ask for the path —
+        // but the editor belongs to the class and must not come up again.
+        expect(asked.join('\n')).toContain('What does this source hand in?');
+        expect(asked.join('\n')).not.toContain('Open with');
+    });
+});
+
+/**
+ * A variant that collects both kinds of answer.
+ *
+ * With only single-purpose variants the split is unobservable: a class-level
+ * follow-up is never reached for an existing class, because such variants ask
+ * nothing at all there. This one has to ask its node-level answer and skip its
+ * class-level one in the same run.
+ */
+describe('a variant that mixes class- and node-level answers', () => {
+    it('asks only the node-level one when the class exists', async () => {
+        const { createdType, createdNode, asked } = await createWithMixed(['ExistingMixed']);
+
+        expect(createdType, 'the class already exists').toBeUndefined();
+        expect(createdNode!.args.params).toMatchObject({ label: 'a label' });
+        expect(asked.join('\n'), 'the class-level follow-up was asked again')
+            .not.toContain('The template for the class');
+    });
+
+    it('asks both when it writes the class', async () => {
+        const { createdType, createdNode, asked } = await createWithMixed([]);
+
+        expect(asked.join('\n')).toContain('The template for the class');
+        expect(createdType!.args).toHaveProperty('template');
+        expect(createdType!.args).not.toHaveProperty('label');
+        expect(createdNode!.args.params).toMatchObject({ label: 'a label' });
+    });
+});
+
+async function createWithMixed(existingTypes: string[]) {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'variant-mixed-'));
+    const file = path.join(dir, 'flow.py');
+    const source = 'from wfpy import workflow\n\n@workflow\ndef Main():\n    pass\n';
+    await fs.writeFile(file, source);
+
+    const handler = new CreateNodeOperationHandler();
+    const workspaceAny = vscode.workspace as any;
+    const windowAny = vscode.window as any;
+    const original = {
+        openTextDocument: workspaceAny.openTextDocument,
+        applyEdit: workspaceAny.applyEdit,
+        asRelativePath: workspaceAny.asRelativePath,
+        showQuickPick: windowAny.showQuickPick,
+        showInputBox: windowAny.showInputBox,
+        showOpenDialog: windowAny.showOpenDialog
+    };
+    const sent: Array<{ op: string; args: Record<string, unknown> }> = [];
+    const asked: string[] = [];
+
+    workspaceAny.openTextDocument = async () => ({
+        uri: { fsPath: file, toString: () => `file://${file}` },
+        getText: () => source
+    });
+    workspaceAny.applyEdit = async () => false;
+    workspaceAny.asRelativePath = (t: any) => String(t?.fsPath ?? t);
+    windowAny.showQuickPick = async (items: Array<{ label: string }>, options?: any) => {
+        asked.push(String(options?.placeHolder ?? items.map(i => i.label).join('|')));
+        const pick = (n: string) => items.find(i => i.label.includes(n));
+        const existing = existingTypes[0] ? pick(existingTypes[0]) : undefined;
+        return existing ?? pick('Only') ?? pick('Browse') ?? pick('Create new');
+    };
+    windowAny.showInputBox = async (options: any) => {
+        const prompt = String(options?.prompt ?? '');
+        asked.push(prompt);
+        if (prompt.includes('class name')) { return 'Mixed'; }
+        if (prompt.includes('label for this node')) { return 'a label'; }
+        return 'mixed';
+    };
+    windowAny.showOpenDialog = async () => [{ fsPath: 'templates/base.py' }];
+
+    try {
+        (handler as any).modelState = {
+            root: { args: { sourceUri: `file://${file}`, 'wf:workflowName': 'Main' } }
+        };
+        (handler as any).sidecar = {
+            settingsNamespace: () => 'wfLang',
+            sidecarOp: (op: string) => `wfpy.${op}`,
+            undoLabelSuffix: () => ' (wf)',
+            createNodeStrings: () => STRINGS,
+            createNodeBehavior: () => BEHAVIOR,
+            createNodeVariants: () => VARIANTS
+        };
+        (handler as any).sendSidecarListDetailed = async () => ({
+            ok: true,
+            response: { status: 'ok', diagnostic: { types: existingTypes, names: [] } }
+        });
+        (handler as any).sendSidecarOpDetailed = async (_u: unknown, request: any) => {
+            sent.push({ op: request.op, args: request.args });
+            return { ok: true, response: { status: 'ok' } };
+        };
+
+        const command = handler.createCommand({
+            kind: 'createNode',
+            elementTypeId: WorkflowDiagramTypes.NODE_EXTERNAL_TASK,
+            args: { mixedNode: true }
+        } as any);
+        if (command) { await (command as any).execute(); }
+    } finally {
+        Object.assign(workspaceAny, {
+            openTextDocument: original.openTextDocument,
+            applyEdit: original.applyEdit,
+            asRelativePath: original.asRelativePath
+        });
+        Object.assign(windowAny, {
+            showQuickPick: original.showQuickPick,
+            showInputBox: original.showInputBox,
+            showOpenDialog: original.showOpenDialog
+        });
+        await fs.rm(dir, { recursive: true, force: true });
+    }
+    return {
+        createdType: sent.find(r => r.op === 'wfpy.createTaskType'),
+        createdNode: sent.find(r => r.op === 'wfpy.createNode'),
+        asked
+    };
+}
