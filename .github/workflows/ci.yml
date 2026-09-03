@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to a branch cancels the first: the only answer worth waiting for
+# is whether the current tip works.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # The version Volta pins in package.json. A mismatch here would let a
+          # build pass on a Node nobody develops against.
+          node-version: '22.23.1'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Neutrality gates
+        # The rule the whole architecture rests on: no consumer vocabulary in
+        # the core packages. It is enforced by a script precisely because it is
+        # the kind of thing a well-meaning change reintroduces, and a green
+        # test suite says nothing about it.
+        run: npm run check:neutrality
+
+      - name: Package
+        run: npm run package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dialogram-vsix
+          path: '*.vsix'
+          if-no-files-found: error
