@@ -257,13 +257,35 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         for (const ancestor of targetAncestors) {
             if (sourceIds.has(ancestor.id)) {
                 const elkElement = (this as any).idToElkElement.get(ancestor.id);
-                return elkElement as ElkNode | undefined;
+                return this.readyToHoldEdges(elkElement as ElkNode | undefined);
             }
         }
 
         // Fallback: find the graph root
         const graph = this.findParentGraph(sourceNode);
-        return graph ? (this as any).idToElkElement.get(graph.id) as ElkNode : undefined;
+        return graph
+            ? this.readyToHoldEdges((this as any).idToElkElement.get(graph.id) as ElkNode)
+            : undefined;
+    }
+
+    /**
+     * The caller pushes an edge into whatever this returns, so it has to have
+     * somewhere to put it.
+     *
+     * Only the graph is built with an `edges` array; a transformed node gets
+     * `children` and `ports` and nothing else. That is fine while every edge
+     * belongs to the graph, and it is not the moment an edge belongs to a node
+     * — an edge whose endpoints are ports of the SAME node, which is what a
+     * feedback edge is. Then the ancestor found above is that node, and pushing
+     * into it threw `Cannot read properties of undefined (reading 'push')`,
+     * taking the whole layout with it. A compound node's inner edge lands here
+     * for the same reason.
+     */
+    private readyToHoldEdges(elkNode: ElkNode | undefined): ElkNode | undefined {
+        if (elkNode && !elkNode.edges) {
+            elkNode.edges = [];
+        }
+        return elkNode;
     }
 
     private findParentNode(element: GModelElement): GNode | undefined {
