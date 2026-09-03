@@ -85,6 +85,7 @@ export {
     type CreateNodeVariantChoice,
     type CreateNodeVariantFollowUp,
     type CreateNodeVariantInput,
+    type CreateNodeVariantTarget,
     type CreateNodeTypeKind,
     SIDECAR_RUNTIME_CONFIG,
     SidecarRuntimeService,
