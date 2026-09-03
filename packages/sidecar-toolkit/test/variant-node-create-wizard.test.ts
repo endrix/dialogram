@@ -32,6 +32,7 @@ const STRINGS: CreateNodeStrings = {
             case 'viewer': return 'viewer task';
             case 'tool': return 'tool task';
             case 'streamblocks': return 'StreamBlocks node';
+            case 'source': return 'source';
             default: return 'task';
         }
     },
@@ -236,5 +237,177 @@ describe('a variant entry, driven to the end', () => {
         expect(created!.args.kind).toBe('streamblocks');
         expect(created!.args.facade).toBe('instance');
         expect(created!.args.network).toBe('designs/adder.py');
+    });
+});
+
+/**
+ * A source node asks a different question: not which variant, but what shape of
+ * resource — and the answer decides how the resource is asked for. A file and a
+ * folder each have a picker; a web resource has neither.
+ */
+describe('a source palette entry', () => {
+    async function createSource(answers: {
+        shape: string;
+        picked?: string;
+        typed?: string;
+        viewType?: string;
+    }) {
+        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'source-wizard-'));
+        const file = path.join(dir, 'flow.py');
+        await fs.writeFile(file, 'from wfpy import workflow\n\n@workflow\ndef Main():\n    pass\n');
+
+        const handler = new CreateNodeOperationHandler();
+        const workspaceAny = vscode.workspace as any;
+        const windowAny = vscode.window as any;
+        const original = {
+            openTextDocument: workspaceAny.openTextDocument,
+            applyEdit: workspaceAny.applyEdit,
+            asRelativePath: workspaceAny.asRelativePath,
+            showQuickPick: windowAny.showQuickPick,
+            showInputBox: windowAny.showInputBox,
+            showOpenDialog: windowAny.showOpenDialog
+        };
+        const sent: Array<{ op: string; args: Record<string, unknown> }> = [];
+        const dialogs: Array<Record<string, unknown>> = [];
+
+        workspaceAny.openTextDocument = async () => ({
+            uri: { fsPath: file, toString: () => `file://${file}` },
+            getText: () => 'from wfpy import workflow\n\n@workflow\ndef Main():\n    pass\n'
+        });
+        workspaceAny.applyEdit = async () => false;
+        workspaceAny.asRelativePath = (target: any) => String(target?.fsPath ?? target);
+        windowAny.showQuickPick = async (items: Array<{ label: string }>) => {
+            const pick = (needle: string) => items.find(i => i.label.includes(needle));
+            return pick('Create new') ?? pick(answers.shape)
+                ?? (() => { throw new Error(`unanswered: ${items.map(i => i.label).join(', ')}`); })();
+        };
+        windowAny.showInputBox = async (options: any) => {
+            const prompt = String(options?.prompt ?? '');
+            if (prompt.includes('class name')) { return 'Frames'; }
+            if (prompt.includes('address')) { return answers.typed ?? ''; }
+            if (prompt.includes('Open with')) { return answers.viewType ?? ''; }
+            return 'frames';
+        };
+        windowAny.showOpenDialog = async (options: any) => {
+            dialogs.push(options);
+            return answers.picked ? [{ fsPath: answers.picked }] : undefined;
+        };
+
+        try {
+            (handler as any).modelState = {
+                root: { args: { sourceUri: `file://${file}`, 'wf:workflowName': 'Main' } }
+            };
+            (handler as any).sidecar = {
+                settingsNamespace: () => 'wfLang',
+                sidecarOp: (op: string) => `wfpy.${op}`,
+                undoLabelSuffix: () => ' (wf)',
+                createNodeStrings: () => STRINGS,
+                createNodeBehavior: () => BEHAVIOR
+            };
+            (handler as any).sendSidecarListDetailed = async () => ({
+                ok: true,
+                response: { status: 'ok', diagnostic: { types: [], names: [] } }
+            });
+            (handler as any).sendSidecarOpDetailed = async (_uri: unknown, request: any) => {
+                sent.push({ op: request.op, args: request.args });
+                return { ok: true, response: { status: 'ok' } };
+            };
+
+            const command = handler.createCommand({
+                kind: 'createNode',
+                elementTypeId: WorkflowDiagramTypes.NODE_EXTERNAL_TASK,
+                args: { sourceNode: true }
+            } as any);
+            expect(command).toBeTruthy();
+            await (command as any).execute();
+        } finally {
+            Object.assign(workspaceAny, {
+                openTextDocument: original.openTextDocument,
+                applyEdit: original.applyEdit,
+                asRelativePath: original.asRelativePath
+            });
+            Object.assign(windowAny, {
+                showQuickPick: original.showQuickPick,
+                showInputBox: original.showInputBox,
+                showOpenDialog: original.showOpenDialog
+            });
+            await fs.rm(dir, { recursive: true, force: true });
+        }
+
+        return {
+            created: sent.find(r => r.op === 'wfpy.createTaskType'),
+            dialogs
+        };
+    }
+
+    /**
+     * The kind sent to the sidecar and the kind the picker is labelled with are
+     * resolved separately, so one can be right while the other silently reads
+     * "task" — and the user is asked to name a task while a source is built.
+     */
+    it('labels the picker as a source, not a task', async () => {
+        const { quickPickLabels } = await runCreate({ sourceNode: true });
+
+        expect(quickPickLabels).toContain('$(add) Create new source...');
+        expect(quickPickLabels).not.toContain('$(add) Create new task...');
+    });
+
+    it('creates a source type, not a task', async () => {
+        const { created } = await createSource({ shape: 'File', picked: '/w/in/frames.yuv' });
+
+        expect(created, 'no type was created').toBeDefined();
+        expect(created!.args.kind).toBe('source');
+    });
+
+    it('offers a file picker for a file', async () => {
+        const { dialogs } = await createSource({ shape: 'File', picked: '/w/in/frames.yuv' });
+
+        expect(dialogs).toHaveLength(1);
+        expect(dialogs[0].canSelectFiles).toBe(true);
+        expect(dialogs[0].canSelectFolders).toBe(false);
+    });
+
+    it('offers a folder picker for a folder', async () => {
+        const { dialogs } = await createSource({ shape: 'Folder', picked: '/w/designs' });
+
+        expect(dialogs).toHaveLength(1);
+        expect(dialogs[0].canSelectFolders).toBe(true);
+        expect(dialogs[0].canSelectFiles).toBe(false);
+    });
+
+    /** There is nothing on disk to browse to, so a dialog would be a dead end. */
+    it('asks for an address for a web resource, with no picker', async () => {
+        const { dialogs } = await createSource({
+            shape: 'Web resource',
+            typed: 'https://example.com/data.json'
+        });
+
+        expect(dialogs).toHaveLength(0);
+    });
+
+    it('carries the editor when one is named', async () => {
+        const { created } = await createSource({
+            shape: 'File',
+            picked: '/w/in/adder.py',
+            viewType: 'product.diagram'
+        });
+
+        expect(created!.args.viewType).toBe('product.diagram');
+    });
+
+    /**
+     * Skipping the question is the common case, and an empty string written
+     * out would name an editor called "" — which matches nothing.
+     */
+    it('sends no editor when the question is skipped', async () => {
+        const { created } = await createSource({ shape: 'File', picked: '/w/in/frames.yuv' });
+
+        expect(created!.args.viewType).toBeUndefined();
+    });
+
+    it('stops without creating anything when the picker is dismissed', async () => {
+        const { created } = await createSource({ shape: 'File' });
+
+        expect(created).toBeUndefined();
     });
 });
