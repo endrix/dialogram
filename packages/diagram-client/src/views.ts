@@ -8,6 +8,7 @@
  */
 
 /** @jsx svg */
+import type { NodeFamilySpec } from '@dialogram/shared';
 import { injectable } from 'inversify';
 import { VNode } from 'snabbdom';
 import {
@@ -94,101 +95,46 @@ const BOUNDARY_NODE_HEIGHT = BoundaryPortGeometry.ROW_PITCH_PX;
 const NODE_ICON_SIZE = 36;
 
 /**
- * SVG icon definitions for node center icons.
- * Each icon has one or more path `d` strings and a `viewBox` size.
- * Paths are scaled at render time to fit NODE_ICON_SIZE.
- */
-const NodeIconDefs = {
-    /** Agent icon from product SVG spec. 16×16 viewBox. */
-    agent: {
-        viewBox: 16,
-        paths: [
-            'M10.887 15H8.49998C8.22398 15 7.99998 14.776 7.99998 14.5C7.99998 14.224 8.22398 14 8.49998 14H10.887C11.243 14 11.575 13.809 11.752 13.5L14.64 8.5C14.819 8.191 14.819 7.809 14.64 7.5L11.705 2.416C11.557 2.16 11.28 2 10.983 2C10.616 2 10.296 2.236 10.188 2.587L6.76598 13.707C6.52898 14.48 5.82498 15 5.01598 15C4.36398 15 3.75498 14.649 3.42898 14.084L0.494984 9C0.137984 8.383 0.137984 7.617 0.494984 7L3.38198 2C3.73698 1.383 4.40098 1 5.11298 1H7.49998C7.77598 1 7.99998 1.224 7.99998 1.5C7.99998 1.776 7.77598 2 7.49998 2H5.11298C4.75698 2 4.42498 2.191 4.24798 2.5L1.35998 7.5C1.18098 7.809 1.18098 8.191 1.35998 8.5L4.29498 13.584C4.44298 13.841 4.71998 14 5.01698 14C5.38398 14 5.70398 13.764 5.81198 13.412L9.23398 2.293C9.47098 1.52 10.174 1 10.984 1C11.636 1 12.245 1.351 12.571 1.916L15.506 7C15.863 7.617 15.863 8.383 15.506 9.001L12.619 14C12.264 14.617 11.599 15 10.887 15Z',
-        ],
-    },
-    /** Script/interpreter logo. 24x24 viewBox. */
-    script: {
-        viewBox: 24,
-        paths: [
-            'M11.92 2C8.89 2 7.08 3.23 7.08 5.23V7.54H12.08V8.34H5.08C3.06 8.34 2 9.87 2 12C2 14.13 3.06 15.66 5.08 15.66H6.77V13.23C6.77 11.5 8.13 10.08 9.92 10.08H14.08C15.54 10.08 16.77 8.93 16.77 7.46V5.23C16.77 3.23 15 2 11.92 2ZM9.62 3.77C10.17 3.77 10.62 4.22 10.62 4.77C10.62 5.32 10.17 5.77 9.62 5.77C9.07 5.77 8.62 5.32 8.62 4.77C8.62 4.22 9.07 3.77 9.62 3.77ZM12.08 22C15.11 22 16.92 20.77 16.92 18.77V16.46H11.92V15.66H18.92C20.94 15.66 22 14.13 22 12C22 9.87 20.94 8.34 18.92 8.34H17.23V10.77C17.23 12.5 15.87 13.92 14.08 13.92H9.92C8.46 13.92 7.23 15.07 7.23 16.54V18.77C7.23 20.77 9 22 12.08 22ZM14.38 20.23C13.83 20.23 13.38 19.78 13.38 19.23C13.38 18.68 13.83 18.23 14.38 18.23C14.93 18.23 15.38 18.68 15.38 19.23C15.38 19.78 14.93 20.23 14.38 20.23Z',
-        ],
-    },
-    /**
-     * A resource leaving its container – represents a node that emits one.
-     *
-     * Deliberately not a document: a source hands in a folder or a web
-     * resource just as often as a file, and a page glyph would claim
-     * otherwise. 24×24 viewBox.
-     */
-    source: {
-        viewBox: 24,
-        paths: [
-            'M5 3H12V5H6V19H12V21H5C4.45 21 4 20.55 4 20V4C4 3.45 4.45 3 5 3Z',
-            'M14 8L19 12L14 16V13H9V11H14V8Z',
-        ],
-    },
-    /** Terminal prompt icon – represents a shell command. 24×24 viewBox. */
-    terminal: {
-        viewBox: 24,
-        paths: [
-            'M4 4H20C20.55 4 21 4.45 21 5V19C21 19.55 20.55 20 20 20H4C3.45 20 3 19.55 3 19V5C3 4.45 3.45 4 4 4ZM7.5 15L5.5 13L7.5 11L9 12.5L7.5 15ZM6 9L10 13L6 17L7.5 18.5L13 13L7.5 7.5L6 9ZM13 17H18V15H13V17Z',
-        ],
-    },
-} as const;
-
-type NodeIconKind = keyof typeof NodeIconDefs;
-
-/**
- * Determine the icon kind for a node based on its annotations.
+ * The family a node belongs to, and what it looks like.
  *
- * Priority: agent > script-tool > terminal-tool
+ * Both come from the product: `task` and `network` are the platform's own
+ * concepts, but a node that is an agent, a tool or a source belongs to one
+ * product's taxonomy. Holding those here would mean the platform learning one
+ * vocabulary and drawing every other product's graph plain.
+ *
+ * Declaration order decides, so a node in two families lands in the one listed
+ * first — a node can carry the annotation that makes it openable AND the one
+ * that says what it is, and only the second describes the node.
  */
-/** Internals reached by the icon tests; not part of the module's surface. */
-export const __testables = {
-    get NodeIconDefs() { return NodeIconDefs; },
-    resolveNodeIconKind: (
-        annotations: Array<{ name?: string; arguments?: Array<{ name?: string; value?: string }> }> | undefined,
-        hasExternalMembers?: boolean
-    ) => resolveNodeIconKind(annotations, hasExternalMembers)
-};
-
-function resolveNodeIconKind(
+function resolveNodeFamily(
     annotations: Array<{ name?: string; arguments?: Array<{ name?: string; value?: string }> }> | undefined,
-    hasExternalMembers?: boolean
-): NodeIconKind | undefined {
-    if (!annotations || annotations.length === 0) {
-        // Non-external tasks that have external members (agent/tool inside their body)
-        return hasExternalMembers ? 'agent' : undefined;
-    }
-    // First, because it is the annotation that says what the node IS. A node
-    // that emits a declared resource also carries the annotation that makes it
-    // openable, and that one describes what double-click does, not the node.
-    if (annotations.some(a => a?.name === 'source')) {
-        return 'source';
-    }
-
-    const hasAgent = annotations.some(a => a?.name === 'agent');
-    if (hasAgent) return 'agent';
-
-    const toolAnnotation = annotations.find(a => a?.name === 'tool');
-    if (toolAnnotation) {
-        const cmdArg = toolAnnotation.arguments?.find(arg => arg?.name === 'cmd');
-        const cmdValue = cmdArg?.value ?? '';
-        // Strip surrounding quotes from the serialized value
-        const cmd = cmdValue.replace(/^["']|["']$/g, '').toLowerCase();
-        const scriptCommands = clientBehavior().scriptInterpreterCommands ?? [];
-        if (scriptCommands.includes(cmd)) return 'script';
-        return 'terminal';
-    }
-    return undefined;
+    families: readonly NodeFamilySpec[]
+): NodeFamilySpec | undefined {
+    const byName = new Map((annotations ?? []).map(a => [a?.name ?? '', a]));
+    return families.find(family => {
+        const annotation = byName.get(family.annotation);
+        if (!annotation) {
+            return false;
+        }
+        if (!family.match) {
+            return true;
+        }
+        const argument = annotation.arguments?.find(arg => arg?.name === family.match!.argument);
+        // Values arrive serialized, so a string is quoted.
+        const value = (argument?.value ?? '').replace(/^["']|["']$/g, '').toLowerCase();
+        return family.match.oneOf.some(candidate => candidate.toLowerCase() === value);
+    });
 }
+
+/** Internals reached by the family tests; not part of the module's surface. */
+export const __testables = { resolveNodeFamily };
 
 /**
  * Render a semi-transparent SVG icon centered in the node body (below the header).
  * Scales the icon from its native viewBox to NODE_ICON_SIZE.
  */
 function renderNodeCenterIcon(
-    iconKind: NodeIconKind,
+    family: NodeFamilySpec,
     nodeWidth: number,
     nodeHeight: number
 ): VNode {
@@ -198,13 +144,13 @@ function renderNodeCenterIcon(
     const bodyHeight = nodeHeight - bodyTop;
     const cx = nodeWidth / 2;
     const cy = bodyTop + bodyHeight / 2;
-    const def = NodeIconDefs[iconKind];
+    const def = family.icon!;
     const scale = iconSize / def.viewBox;
 
     return svg('g', {
         class: {
             'node-center-icon': true,
-            [`node-icon-${iconKind}`]: true
+            [`node-icon-${family.id ?? family.annotation}`]: true
         },
         attrs: {
             transform: `translate(${cx - iconSize / 2}, ${cy - iconSize / 2}) scale(${scale})`
@@ -708,11 +654,9 @@ export class ActorNodeView extends ShapeView {
         const isFinished = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_FINISHED]) || cssClasses.includes('cal-node-finished');
         const isErrored = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_ERRORED]) || cssClasses.includes('cal-node-error') || cssClasses.includes('cal-node-graph-error');
         const isWarned = !isErrored && cssClasses.includes('cal-node-graph-warning');
-        const hasExternalMembers = Boolean((node as any).args?.[WorkflowDiagramMetadata.HAS_EXTERNAL_MEMBERS]);
 
         const defAnnotations = ((node as any).args?.[WorkflowDiagramMetadata.ENTITY_DEFINITION_ANNOTATIONS] as Array<{ name?: string; arguments?: Array<{ name?: string; value?: string }> }> | undefined) ?? [];
-        const iconKind = resolveNodeIconKind(defAnnotations, hasExternalMembers);
-
+        const family = resolveNodeFamily(defAnnotations, clientBehavior().nodeFamilies ?? []);
         const { height: bodyHeight, footerLabel } = getNodeBody(node as any, { width, height });
         const footerLabelNode = footerLabel
             ? svg('text', {
@@ -729,7 +673,6 @@ export class ActorNodeView extends ShapeView {
             class: {
                 'workflow-node': true,
                 'actor-node': true,
-                'actor-node-agent': hasExternalMembers,
                 'cal-node-active': isExecuting,
                 'cal-node-finished': isFinished,
                 'cal-node-error': isErrored,
@@ -749,7 +692,7 @@ export class ActorNodeView extends ShapeView {
                     rx: 4, ry: 4
                 }
             }),
-            ...(iconKind ? [renderNodeCenterIcon(iconKind, width, bodyHeight)] : []),
+            ...(family?.icon ? [renderNodeCenterIcon(family, width, bodyHeight)] : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
         );
@@ -771,17 +714,12 @@ export class ExternalActorNodeView extends ShapeView {
 
         const defAnnotations = ((node as any).args?.[WorkflowDiagramMetadata.ENTITY_DEFINITION_ANNOTATIONS] as Array<{ name?: string; arguments?: Array<{ name?: string; value?: string }> }> | undefined)
             ?? [];
-        const hasExec = defAnnotations.some(a => a?.name === 'tool');
-        const hasAgent = defAnnotations.some(a => a?.name === 'agent');
-        const hasViewer = defAnnotations.some(a => a?.name === 'viewer');
-        const isDefaultExternal = !hasExec && !hasAgent && !hasViewer;
+        const family = resolveNodeFamily(defAnnotations, clientBehavior().nodeFamilies ?? []);
         const cssClasses = Array.isArray((node as any).cssClasses) ? (node as any).cssClasses as string[] : [];
         const isExecuting = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_EXECUTING]) || cssClasses.includes('cal-node-active');
         const isFinished = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_FINISHED]) || cssClasses.includes('cal-node-finished');
         const isErrored = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_ERRORED]) || cssClasses.includes('cal-node-error') || cssClasses.includes('cal-node-graph-error');
         const isWarned = !isErrored && cssClasses.includes('cal-node-graph-warning');
-
-        const iconKind = resolveNodeIconKind(defAnnotations);
 
         const { height: bodyHeight, footerLabel } = getNodeBody(node as any, { width, height });
         const footerLabelNode = footerLabel
@@ -799,10 +737,8 @@ export class ExternalActorNodeView extends ShapeView {
             class: {
                 'workflow-node': true,
                 'external-actor-node': true,
-                'external-actor-default': isDefaultExternal,
-                'external-actor-exec': hasExec,
-                'external-actor-agent': hasAgent,
-                'external-actor-viewer': hasViewer,
+                'external-actor-default': !family,
+                ...(family ? { [`external-actor-${family.id ?? family.annotation}`]: true } : {}),
                 'cal-node-active': isExecuting,
                 'cal-node-finished': isFinished,
                 'cal-node-error': isErrored,
@@ -822,7 +758,7 @@ export class ExternalActorNodeView extends ShapeView {
                     rx: 4, ry: 4
                 }
             }),
-            ...(iconKind ? [renderNodeCenterIcon(iconKind, width, bodyHeight)] : []),
+            ...(family?.icon ? [renderNodeCenterIcon(family, width, bodyHeight)] : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
         );

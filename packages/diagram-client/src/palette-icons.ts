@@ -18,9 +18,16 @@
  */
 import { IDiagramStartup } from '@eclipse-glsp/client';
 import { injectable } from 'inversify';
+import type { NodeFamilySpec } from '@dialogram/shared';
 import { clientBehavior } from './profile';
 
 const STYLE_ELEMENT_ID = 'dialogram-contributed-palette-icons';
+
+/** Only annotation names a CSS class can safely be built from. */
+const SAFE_FAMILY = /^[a-z][a-z0-9-]*$/;
+
+/** Only colours that cannot escape the declaration they sit in. */
+const SAFE_COLOR = /^#[0-9a-fA-F]{3,8}$|^[a-z]+$|^(rgb|hsl)a?\([0-9.,%\s/]+\)$/;
 
 /** Only ids a CSS class can safely be built from. */
 const SAFE_ICON_ID = /^[a-z][a-z0-9-]*$/;
@@ -77,13 +84,53 @@ export function paletteIconCss(
 }
 
 /**
+ * The CSS for the node families a product declared.
+ *
+ * The accent of a family is the product's — `task` and `network` are the
+ * platform's own concepts, but agent, tool and source belong to one product's
+ * taxonomy, and holding their colours here would mean drawing every other
+ * product's graph plain. So the rules are generated from the declaration, and
+ * the platform names no family.
+ *
+ * Exported for the test; see `installPaletteIcons`.
+ */
+export function nodeFamilyCss(families: readonly NodeFamilySpec[] | undefined): string {
+    const rules: string[] = [];
+    for (const family of families ?? []) {
+        if (!SAFE_FAMILY.test(family.id ?? family.annotation ?? '') || !SAFE_COLOR.test(family.color ?? '')) {
+            continue;
+        }
+        const name = family.id ?? family.annotation;
+        rules.push(`.external-actor-node.external-actor-${name} .header-compartment.header-external .header-background {
+    fill: ${family.color};
+    fill-opacity: 0.26;
+}`);
+        // The header shape itself, a different element from its background.
+        rules.push(`.external-actor-node.external-actor-${name} .node-header.external-actor-header {
+    fill: ${family.color};
+}`);
+        if (family.icon) {
+            rules.push(`.external-actor-${name} .node-icon-${name} {
+    fill: ${family.color};
+    opacity: 0.22;
+}`);
+        }
+    }
+    return rules.join('\n\n');
+}
+
+/**
  * Write the contributed icon rules into the document.
  *
  * Idempotent: reuses its own style element, so a reload replaces the rules
  * rather than stacking another copy of them.
  */
 export function installPaletteIcons(): void {
-    const css = paletteIconCss(clientBehavior().paletteIcons);
+    const behavior = clientBehavior();
+    const css = [
+        paletteIconCss(behavior.paletteIcons),
+        nodeFamilyCss(behavior.nodeFamilies)
+    ].filter(Boolean).join('\n\n');
     if (!css) {
         return;
     }

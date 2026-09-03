@@ -43,13 +43,8 @@
 
     /* Palette Nova (vibrant, high-clarity) node accents. */
     --workflow-color-task: #ffb020;
-    --workflow-color-task-agent: #e87d40;
     --workflow-color-network: #2fa8ff;
     --workflow-color-external-default: #7c8698;
-    --workflow-color-external-tool: #b26dff;
-    --workflow-color-external-viewer: #49a6b8;
-    --workflow-color-external-source: #4fa97a;
-    --workflow-color-external-agent: #ff6f91;
 
     /* Property panel sizing (used for reserving viewport space) */
     --workflow-property-panel-width: 360px;
@@ -579,11 +574,6 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
     fill-opacity: 0.26;
 }
 
-.header-compartment.header-task-agent .header-background {
-    fill: var(--workflow-color-task-agent); /* Palette A task-with-agents tangerine */
-    fill-opacity: 0.26;
-}
-
 .header-compartment.header-network .header-background,
 .header-compartment.header-workflow .header-background {
     fill: var(--workflow-color-network); /* Palette A workflow/network steel blue */
@@ -664,35 +654,11 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
     fill: var(--workflow-color-task);
 }
 
-.actor-node.actor-node-agent .header-compartment {
-    fill: var(--workflow-color-task-agent);
-}
-
 .external-actor-node .header-compartment {
     fill: var(--workflow-color-external-default);
 }
 
 /* External task header colors by annotation */
-.external-actor-node.external-actor-exec .header-compartment.header-external .header-background {
-    fill: var(--workflow-color-external-tool); /* Palette A @tool soft plum */
-    fill-opacity: 0.26;
-}
-
-.external-actor-node.external-actor-viewer .header-compartment.header-external .header-background {
-    fill: var(--workflow-color-external-viewer); /* Palette A @viewer blue-gray */
-    fill-opacity: 0.26;
-}
-
-.external-actor-node.external-actor-source .header-compartment.header-external .header-background {
-    fill: var(--workflow-color-external-source); /* a source, the opposite end from a viewer */
-    fill-opacity: 0.26;
-}
-
-.external-actor-node.external-actor-agent .header-compartment.header-external .header-background {
-    fill: var(--workflow-color-external-agent); /* Palette A @agent muted rose */
-    fill-opacity: 0.26;
-}
-
 .network-node .header-compartment {
     fill: var(--workflow-color-network);
 }
@@ -733,37 +699,6 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
     stroke: none;
 }
 
-/* Agent icon — uses the node's agent accent colour */
-.actor-node-agent .node-icon-agent {
-    fill: var(--workflow-color-task-agent);
-    opacity: 0.22;
-}
-
-.external-actor-agent .node-icon-agent {
-    fill: var(--workflow-color-external-agent);
-    opacity: 0.22;
-}
-
-/* Script/interpreter icon - uses the tool accent colour */
-.external-actor-exec .node-icon-script {
-    fill: var(--workflow-color-external-tool);
-    opacity: 0.22;
-}
-
-/* Terminal icon — uses the tool accent colour */
-.external-actor-exec .node-icon-terminal {
-    fill: var(--workflow-color-external-tool);
-    opacity: 0.22;
-}
-
-/* Source icon — its own accent, because a source and a viewer are opposite
-   ends of a graph and otherwise share a colour: a source carries the viewer
-   annotation too, for double-click. */
-.external-actor-source .node-icon-source {
-    fill: var(--workflow-color-external-source);
-    opacity: 0.22;
-}
-
 /* Default external tasks (no annotation) get no icon boost */
 .external-actor-default .node-center-icon {
     opacity: 0.10;
@@ -772,18 +707,6 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
 /* External actor node styles - header fill handled via header-compartment */
 .external-actor-node .node-header.external-actor-header {
     fill: var(--workflow-color-external-default);
-}
-
-.external-actor-node.external-actor-exec .node-header.external-actor-header {
-    fill: var(--workflow-color-external-tool);
-}
-
-.external-actor-node.external-actor-viewer .node-header.external-actor-header {
-    fill: var(--workflow-color-external-viewer);
-}
-
-.external-actor-node.external-actor-agent .node-header.external-actor-header {
-    fill: var(--workflow-color-external-agent);
 }
 
 .external-actor-node .external-icon {

@@ -1,4 +1,4 @@
-import type { EntityPaletteItemSpec } from '@dialogram/shared';
+import type { EntityPaletteItemSpec, NodeFamilySpec } from '@dialogram/shared';
 /**
  * Neutral runtime options the source-model storage (and tool palette) need.
  *
@@ -26,6 +26,11 @@ export interface StorageRuntimeOptions {
      * describes an entry instead, and the platform builds it.
      */
     entityPaletteItems?: EntityPaletteItemSpec[];
+    /**
+     * The node families the product recognises — see `NodeFamilySpec`.
+     * The class is derived from each annotation, so core names none.
+     */
+    nodeFamilies?: NodeFamilySpec[];
 }
 
 export const STORAGE_RUNTIME_OPTIONS = Symbol('StorageRuntimeOptions');

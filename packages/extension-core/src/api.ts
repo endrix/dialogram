@@ -21,10 +21,11 @@ import type {
   DiagramOpenabilityCheck,
   DiagramClientAssets,
   EntityPaletteItemSpec,
+  NodeFamilySpec,
   ExecutionOverlaySink,
 } from "@dialogram/shared";
 
-export type { DiagramClientAssets, EntityPaletteItemSpec } from "@dialogram/shared";
+export type { DiagramClientAssets, EntityPaletteItemSpec, NodeFamilySpec } from "@dialogram/shared";
 
 import type {
   ChatCommandContribution,
@@ -92,6 +93,7 @@ export interface DiagramStorageOptions {
   /** Extra Entities-palette entries this product contributes. Plain data; the
    *  platform builds the actual palette item. */
   entityPaletteItems?: EntityPaletteItemSpec[];
+  nodeFamilies?: NodeFamilySpec[];
 }
 
 /**
@@ -234,6 +236,7 @@ export interface DiagramClientBehavior {
    * used for both.
    */
   paletteIcons?: Record<string, { dark: string; light?: string }>;
+  nodeFamilies?: NodeFamilySpec[];
 }
 
 export interface DiagramProfile {
