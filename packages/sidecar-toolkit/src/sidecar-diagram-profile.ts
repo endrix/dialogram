@@ -11,7 +11,7 @@
  * needs no `@dialogram/extension-core` dependency; the shell annotates the
  * result as `DiagramProfile` at the assignment site.
  */
-import type { EntityPaletteItemSpec } from '@dialogram/shared';
+import type { EntityPaletteItemSpec, NodeFamilySpec } from '@dialogram/shared';
 import * as vscode from 'vscode';
 import { invokeSidecarOp } from './sidecar-graph-export.js';
 import { createRegistryChatTools } from './registry-tools.js';
@@ -51,6 +51,7 @@ const AGENT_TOOL_OVERRIDES_STATE_KEY = 'workflow.agentToolEntityOverrides';
  */
 export interface SidecarClientBehavior {
     paletteIcons?: Record<string, { dark: string; light?: string }>;
+    nodeFamilies?: NodeFamilySpec[];
     graphSourceNavigation?: boolean;
     networkPropertySections?: boolean;
     networkNavigationLabels?: boolean;
@@ -138,6 +139,7 @@ export interface SidecarProfileInput {
     useAlternateEntityPalette?: boolean;
     /** Extra Entities-palette entries this product contributes; plain data. */
     entityPaletteItems?: EntityPaletteItemSpec[];
+    nodeFamilies?: NodeFamilySpec[];
 
     // Chat edit backend.
     exportOp?: string;
@@ -367,7 +369,8 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             settingsNamespace: input.settingsNamespace,
             operationPrefix: input.sidecarOperationPrefix,
             useAlternateEntityPalette: input.useAlternateEntityPalette,
-            entityPaletteItems: input.entityPaletteItems
+            entityPaletteItems: input.entityPaletteItems,
+            nodeFamilies: input.nodeFamilies
         },
         watch: { globs: input.watchGlobs ?? [`**/*${input.sourceExtension}`] },
         navigation: createPythonNavigationProvider(),

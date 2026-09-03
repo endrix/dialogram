@@ -1,3 +1,4 @@
+import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
 import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
@@ -161,6 +162,14 @@ function normalizeNavigationFileUri(value: string | undefined): string | undefin
 }
 
 export class GraphGModelSource {
+    /**
+     * @param storageOptions the product's runtime options; only the node
+     * families are read here, and a caller with none renders every external
+     * node in the default family, which is what a product that declares none
+     * should get.
+     */
+    constructor(private readonly storageOptions?: StorageRuntimeOptions) {}
+
     transform(doc: PyGraphDocument): { graph: GGraph } {
         const children: GModelElement[] = [];
         const nodeMap = new Map<string, GNode>();
@@ -968,21 +977,10 @@ export class GraphGModelSource {
         }
         const defAnnots = node.meta?.['definitionAnnotations'] as Array<{ name?: string }> | undefined;
         const annots = Array.isArray(defAnnots) ? defAnnots : undefined;
-        const hasTool = annots?.some(a => a?.name === 'tool') ?? false;
-        const hasAgent = annots?.some(a => a?.name === 'agent') ?? false;
-        const hasViewer = annots?.some(a => a?.name === 'viewer') ?? false;
-        // A source carries the openable annotation too — that one says what
-        // double-click does, not what the node is — so it must not be coloured
-        // as the thing it is the opposite of.
-        const hasSource = annots?.some(a => a?.name === 'source') ?? false;
-        if (hasTool) classes.push('external-actor-exec');
-        if (hasAgent) classes.push('external-actor-agent');
-        if (hasSource) {
-            classes.push('external-actor-source');
-        } else if (hasViewer) {
-            classes.push('external-actor-viewer');
-        }
-        if (!hasTool && !hasAgent && !hasViewer && !hasSource && this.isExternal(node)) {
+        const family = this.nodeFamilyOf(annots);
+        if (family) {
+            classes.push(`external-actor-${family}`);
+        } else if (this.isExternal(node)) {
             classes.push('external-actor-default');
         }
         return classes;
@@ -1003,20 +1001,10 @@ export class GraphGModelSource {
             }
             const defAnnots = node.meta?.['definitionAnnotations'] as Array<{ name?: string }> | undefined;
             const annots = Array.isArray(defAnnots) ? defAnnots : undefined;
-            const hasTool = annots?.some(a => a?.name === 'tool') ?? false;
-            const hasAgent = annots?.some(a => a?.name === 'agent') ?? false;
-            const hasViewer = annots?.some(a => a?.name === 'viewer') ?? false;
-            // See getHeaderCssClasses: the node's own annotation wins over the
-            // one that only describes double-click.
-            const hasSource = annots?.some(a => a?.name === 'source') ?? false;
-            if (hasTool) classes.push('external-actor-exec');
-            if (hasAgent) classes.push('external-actor-agent');
-            if (hasSource) {
-                classes.push('external-actor-source');
-            } else if (hasViewer) {
-                classes.push('external-actor-viewer');
-            }
-            if (!hasTool && !hasAgent && !hasViewer && !hasSource) {
+            const family = this.nodeFamilyOf(annots);
+            if (family) {
+                classes.push(`external-actor-${family}`);
+            } else {
                 classes.push('external-actor-default');
             }
         } else {
@@ -1269,6 +1257,39 @@ export class GraphGModelSource {
      * same idea said plainly, so a product can introduce a kind the platform has
      * never heard of and still have it rendered and treated as external.
      */
+    /**
+     * Which family a node belongs to, or nothing if it is in none.
+     *
+     * The families are the product's, declared in its profile — `task` and
+     * `network` are the platform's own, but a node that is an agent or a source
+     * is one product's taxonomy, and knowing those names would mean rendering
+     * every other product's graph plain.
+     *
+     * Declaration order decides, so a node in two families lands in the one the
+     * product listed first. That matters: a node can carry the annotation that
+     * makes it openable AND the one that says what it is, and only the second
+     * describes the node.
+     */
+    private nodeFamilyOf(
+        annotations: Array<{ name?: string; arguments?: Array<{ name?: string; value?: string }> }> | undefined
+    ): string | undefined {
+        const byName = new Map((annotations ?? []).map(a => [a?.name ?? '', a]));
+        const family = (this.storageOptions?.nodeFamilies ?? []).find(candidate => {
+            const annotation = byName.get(candidate.annotation);
+            if (!annotation) {
+                return false;
+            }
+            if (!candidate.match) {
+                return true;
+            }
+            const argument = annotation.arguments?.find(arg => arg?.name === candidate.match!.argument);
+            // Values arrive serialized, so a string is quoted.
+            const value = (argument?.value ?? '').replace(/^["']|["']$/g, '').toLowerCase();
+            return candidate.match!.oneOf.some(value_ => value_.toLowerCase() === value);
+        });
+        return family ? (family.id ?? family.annotation) : undefined;
+    }
+
     private isExternalByMeta(node: PyGraphNode): boolean {
         return node.meta?.['external'] === true;
     }

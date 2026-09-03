@@ -149,6 +149,53 @@ export type DiagramOpenabilityCheck = (
  * vocabulary to show its nodes is not neutral. A profile describes an entry;
  * the platform builds it.
  */
+/**
+ * A family of nodes the product recognises, and how it should look.
+ *
+ * The platform draws a node it is told about; it does not know the kinds a
+ * product has. `task` and `network` are its own — every dataflow graph has
+ * nodes and subgraphs — but a node that is an agent, a tool or a source is
+ * that product's taxonomy, and colouring it would mean the platform learning
+ * one vocabulary and rendering every other product's graph plain.
+ *
+ * The class the platform writes is derived from `annotation`, so it names none
+ * of them: `external-actor-<annotation>`.
+ */
+export interface NodeFamilySpec {
+    /** The definition annotation that puts a node in this family. */
+    annotation: string;
+    /**
+     * Name used to build the family's CSS classes; defaults to `annotation`.
+     *
+     * Needed only when one annotation splits into several families, which
+     * would otherwise derive the same class and be unable to look different.
+     */
+    id?: string;
+    /**
+     * Narrow the family to nodes whose annotation carries a particular value.
+     *
+     * Lets one annotation split into families that look different — a tool that
+     * runs an interpreter against one that runs anything else — by declaring
+     * the narrow entry before the general one, since the first match wins.
+     */
+    match?: {
+        /** Argument of the annotation to read. */
+        argument: string;
+        /** Values that put the node in this family, compared case-insensitively. */
+        oneOf: string[];
+    };
+    /** Accent colour for the node's header and its body icon. */
+    color: string;
+    /**
+     * Watermark icon drawn in the node body, scaled from its own viewBox.
+     * Omit for a family that should carry no icon.
+     */
+    icon?: {
+        viewBox: number;
+        paths: string[];
+    };
+}
+
 export interface EntityPaletteItemSpec {
     /** The element type to create — one of the platform's node type ids. */
     elementTypeId: string;

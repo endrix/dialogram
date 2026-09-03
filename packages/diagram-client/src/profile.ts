@@ -1,3 +1,5 @@
+import type { NodeFamilySpec } from '@dialogram/shared';
+
 type DiagramCommandIds = {
     fitToScreen?: string;
     runWorkflow?: string;
@@ -19,6 +21,7 @@ type DiagramClientBehavior = {
     noneSentinel?: string;
     scriptInterpreterCommands?: string[];
     paletteIcons?: Record<string, { dark: string; light?: string }>;
+    nodeFamilies?: NodeFamilySpec[];
 };
 
 type DiagramIdentifier = {

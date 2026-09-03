@@ -37,8 +37,24 @@ function docWith(kind: string, meta?: Record<string, unknown>): PyGraphDocument 
     };
 }
 
+/**
+ * The families a product declares. The platform holds none — `task` and
+ * `network` are its own concepts, but a node that is a source or a viewer
+ * belongs to a product's taxonomy — so a test that wants one has to say so,
+ * exactly as a profile does.
+ *
+ * Order matters here as it does in a profile: a source carries the openable
+ * annotation too, and only the first match decides.
+ */
+const FAMILIES = [
+    { annotation: 'source', color: '#4fa97a' },
+    { annotation: 'viewer', color: '#49a6b8' },
+    { annotation: 'tool', color: '#b26dff' }
+];
+
 const nodeFor = (kind: string, meta?: Record<string, unknown>): any =>
-    new GraphGModelSource().transform(docWith(kind, meta)).graph.children
+    new GraphGModelSource({ nodeFamilies: FAMILIES } as any)
+        .transform(docWith(kind, meta)).graph.children
         ?.find((child: any) => child.id === 'adder');
 
 describe('a product kind the platform has never heard of', () => {

@@ -369,7 +369,9 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             : this.ensureModelSource()?.analysis?.pickDefaultWorkflowName(filePath, localWorkflowNames);
         const selectedWorkflowName = requestedWorkflowName ?? defaultWorkflowName;
 
-        const graphTransform = new GraphGModelSource();
+        // The families are the product's; without them every external node
+        // renders in the default family.
+        const graphTransform = new GraphGModelSource(this.storageOptions);
         const diagramModel = graphTransform.transform(doc);
         perf?.mark('transform');
         const workflowName = selectedWorkflowName
