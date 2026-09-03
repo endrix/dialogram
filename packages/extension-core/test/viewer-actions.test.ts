@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
-import { executeViewerCommand, executeViewerOpen } from '../../extension-core/src/extension/diagram/viewer-actions';
+import { executeViewerCommand, executeViewerOpen, executeViewerReveal } from '../../extension-core/src/extension/diagram/viewer-actions';
 
 describe('viewer action dispatch', () => {
     afterEach(() => {
@@ -97,5 +97,43 @@ describe('viewer action dispatch', () => {
         await expect(executeViewerOpen(targetUri, 'livePreview.start.preview.atFile'))
             .rejects
             .toThrow("Viewer command 'livePreview.start.preview.atFileString' failed: missing context");
+    });
+});
+/**
+ * Revealing a folder.
+ *
+ * A directory has no editor, so `vscode.open` and `openWith` both fail on one —
+ * a declared folder was unopenable by any route the viewer had.
+ */
+describe('executeViewerReveal', () => {
+    it('reveals the folder in the explorer', async () => {
+        const calls: Array<{ command: string; args: unknown[] }> = [];
+        const original = (vscode.commands as any).executeCommand;
+        (vscode.commands as any).executeCommand = async (command: string, ...args: unknown[]) => {
+            calls.push({ command, args });
+        };
+
+        try {
+            await executeViewerReveal(vscode.Uri.file('/w/designs'));
+        } finally {
+            (vscode.commands as any).executeCommand = original;
+        }
+
+        expect(calls).toHaveLength(1);
+        expect(calls[0].command).toBe('revealInExplorer');
+        expect(String((calls[0].args[0] as any).fsPath ?? calls[0].args[0])).toContain('/w/designs');
+    });
+
+    it('lets the failure through rather than swallowing it', async () => {
+        const original = (vscode.commands as any).executeCommand;
+        (vscode.commands as any).executeCommand = async () => {
+            throw new Error('no explorer');
+        };
+
+        try {
+            await expect(executeViewerReveal(vscode.Uri.file('/w/designs'))).rejects.toThrow('no explorer');
+        } finally {
+            (vscode.commands as any).executeCommand = original;
+        }
     });
 });

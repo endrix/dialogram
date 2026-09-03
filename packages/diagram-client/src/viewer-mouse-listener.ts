@@ -106,6 +106,56 @@ function resolveViewerCommandArgs(args: string[] | undefined, targetUri: string,
     );
 }
 
+/**
+ * Anything with a scheme is already a complete address — a URL, or a URI the
+ * host knows how to route. It must not be treated as a path and glued onto a
+ * directory, which is what turned `https://example.com/x` into
+ * `file:///w/https://example.com/x`.
+ */
+const ABSOLUTE_URI = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
+
+/**
+ * The target a declared path names, or undefined when it cannot be resolved.
+ *
+ * A relative path means "beside the file this was declared in", so with no such
+ * file there is no answer — better said than guessed.
+ */
+function resolveDeclaredTarget(
+    sourceUri: string | undefined,
+    declaredPath: string
+): string | undefined {
+    if (ABSOLUTE_URI.test(declaredPath) || declaredPath.startsWith('/')) {
+        return declaredPath;
+    }
+    return sourceUri ? resolveAgainstSource(sourceUri, declaredPath) : undefined;
+}
+
+/**
+ * What to do with a target, given what it is.
+ *
+ * The kind is decided by whoever exported the graph, because that is where the
+ * filesystem is visible — nothing here can tell a folder from a file by looking
+ * at the string.
+ */
+function actionForDeclaredTarget(
+    target: string,
+    kind: string | undefined,
+    viewType: string | undefined
+): 'open' | 'openWith' | 'reveal' {
+    // A directory has no editor to open in; revealing it is the operation that
+    // exists for one.
+    if (kind === 'folder') {
+        return 'reveal';
+    }
+    // No editor is registered for a remote scheme, so openWith dead-ends there.
+    // Plain open hands it to the host, which launches a browser.
+    const isRemote = ABSOLUTE_URI.test(target) && !target.startsWith('file:');
+    if (isRemote || !viewType) {
+        return 'open';
+    }
+    return 'openWith';
+}
+
 /** A path declared in the diagram's own source file, resolved beside it. */
 function resolveAgainstSource(sourceUri: string, relativePath: string): string {
     const lastSlash = sourceUri.lastIndexOf('/');
@@ -350,6 +400,10 @@ export class ViewerMouseListener extends MouseListener implements Ranked {
         // must not be told to go and run the workflow first.
         const source = parseStringLiteralish(argByName.get('source')) ?? 'token';
         const declaredPath = parseStringLiteralish(argByName.get('path'));
+        // What the target IS — file, folder, http, url — settled by the
+        // producer, which can see the filesystem. Nothing here can tell a
+        // folder from a file by looking at the string.
+        const resourceKind = parseStringLiteralish(argByName.get('kind'));
         const command = parseStringLiteralish(argByName.get('command'))
             ?? parseStringLiteralish(argByName.get('command_name'));
         const commandArgs = parseStringListLiteralish(argByName.get('args'))
@@ -370,20 +424,24 @@ export class ViewerMouseListener extends MouseListener implements Ranked {
             if (!declaredPath) {
                 return fail('@viewer(source="declared"): missing path="...".');
             }
-            if (!viewType) {
-                return fail('@viewer(source="declared"): missing viewType="...".');
-            }
             // Relative to the file the diagram was opened from, which is what a
             // declaration in that file means.
-            const target = declaredPath.startsWith('/')
-                ? declaredPath
-                : resolveAgainstSource(sourceUri, declaredPath);
+            const target = resolveDeclaredTarget(sourceUri, declaredPath);
+            if (!target) {
+                return fail(
+                    `@viewer(source="declared"): cannot resolve the relative path `
+                    + `"${declaredPath}" — the diagram has no source file to resolve it against.`
+                );
+            }
+            const declaredAction = actionForDeclaredTarget(target, resourceKind, viewType);
             return [
                 NavigateToExternalTargetAction.create({
                     uri: target,
                     args: {
-                        [VIEWER_ACTION_ARG]: 'openWith',
-                        [VIEWER_VIEW_TYPE_ARG]: viewType
+                        [VIEWER_ACTION_ARG]: declaredAction,
+                        ...(declaredAction === 'openWith'
+                            ? { [VIEWER_VIEW_TYPE_ARG]: viewType as string }
+                            : {})
                     }
                 })
             ];

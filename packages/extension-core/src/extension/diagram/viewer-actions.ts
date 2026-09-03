@@ -83,6 +83,17 @@ export async function executeViewerCommand(
     }
 }
 
+/**
+ * Show a folder in the explorer.
+ *
+ * A directory has no editor to open in, so every other route here fails on one:
+ * `vscode.open` wants a document and `openWith` wants an editor registered for
+ * the type. Revealing is the operation a folder actually has.
+ */
+export async function executeViewerReveal(targetUri: vscode.Uri): Promise<void> {
+    await vscode.commands.executeCommand('revealInExplorer', targetUri);
+}
+
 export async function executeViewerOpen(targetUri: vscode.Uri, viewType: unknown): Promise<void> {
     if (typeof viewType !== 'string' || viewType === '' || viewType === 'default') {
         await vscode.commands.executeCommand('vscode.open', targetUri);

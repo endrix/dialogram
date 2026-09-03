@@ -32,7 +32,7 @@ import { ExecutionOverlayRegistry } from './execution-overlay';
 import { forwardExecutionOverlayEvents, type ExecutionOverlayWebviewSink } from './execution-overlay-bridge';
 import { resolveDiagramOpenTarget, type DiagramOpenTargetArg } from './open-diagram-target';
 import { normalizeSourceUriKey } from './uri-keys';
-import { executeViewerCommand, executeViewerOpen } from './viewer-actions';
+import { executeViewerCommand, executeViewerOpen, executeViewerReveal } from './viewer-actions';
 import { decideDiagramOpen } from './diagram-open-decision';
 import { readMcpServerUrl } from './mcp-server-url';
 import { type DiagramProfile, type DiagramRunHost } from '../../api';
@@ -538,6 +538,15 @@ export async function activateGlspIntegration(
                             }
                         }
                         void executeViewerCommand(command, targetUri, commandArgs).catch(error => {
+                            const message = error instanceof Error ? error.message : String(error ?? 'unknown error');
+                            void vscode.window.showErrorMessage(message);
+                        });
+                        callback(message, false);
+                        return;
+                    }
+
+                    if (viewerAction === 'reveal') {
+                        void executeViewerReveal(targetUri).catch(error => {
                             const message = error instanceof Error ? error.message : String(error ?? 'unknown error');
                             void vscode.window.showErrorMessage(message);
                         });
