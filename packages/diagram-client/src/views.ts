@@ -113,6 +113,20 @@ const NodeIconDefs = {
             'M11.92 2C8.89 2 7.08 3.23 7.08 5.23V7.54H12.08V8.34H5.08C3.06 8.34 2 9.87 2 12C2 14.13 3.06 15.66 5.08 15.66H6.77V13.23C6.77 11.5 8.13 10.08 9.92 10.08H14.08C15.54 10.08 16.77 8.93 16.77 7.46V5.23C16.77 3.23 15 2 11.92 2ZM9.62 3.77C10.17 3.77 10.62 4.22 10.62 4.77C10.62 5.32 10.17 5.77 9.62 5.77C9.07 5.77 8.62 5.32 8.62 4.77C8.62 4.22 9.07 3.77 9.62 3.77ZM12.08 22C15.11 22 16.92 20.77 16.92 18.77V16.46H11.92V15.66H18.92C20.94 15.66 22 14.13 22 12C22 9.87 20.94 8.34 18.92 8.34H17.23V10.77C17.23 12.5 15.87 13.92 14.08 13.92H9.92C8.46 13.92 7.23 15.07 7.23 16.54V18.77C7.23 20.77 9 22 12.08 22ZM14.38 20.23C13.83 20.23 13.38 19.78 13.38 19.23C13.38 18.68 13.83 18.23 14.38 18.23C14.93 18.23 15.38 18.68 15.38 19.23C15.38 19.78 14.93 20.23 14.38 20.23Z',
         ],
     },
+    /**
+     * A resource leaving its container – represents a node that emits one.
+     *
+     * Deliberately not a document: a source hands in a folder or a web
+     * resource just as often as a file, and a page glyph would claim
+     * otherwise. 24×24 viewBox.
+     */
+    source: {
+        viewBox: 24,
+        paths: [
+            'M5 3H12V5H6V19H12V21H5C4.45 21 4 20.55 4 20V4C4 3.45 4.45 3 5 3Z',
+            'M14 8L19 12L14 16V13H9V11H14V8Z',
+        ],
+    },
     /** Terminal prompt icon – represents a shell command. 24×24 viewBox. */
     terminal: {
         viewBox: 24,
@@ -129,6 +143,15 @@ type NodeIconKind = keyof typeof NodeIconDefs;
  *
  * Priority: agent > script-tool > terminal-tool
  */
+/** Internals reached by the icon tests; not part of the module's surface. */
+export const __testables = {
+    get NodeIconDefs() { return NodeIconDefs; },
+    resolveNodeIconKind: (
+        annotations: Array<{ name?: string; arguments?: Array<{ name?: string; value?: string }> }> | undefined,
+        hasExternalMembers?: boolean
+    ) => resolveNodeIconKind(annotations, hasExternalMembers)
+};
+
 function resolveNodeIconKind(
     annotations: Array<{ name?: string; arguments?: Array<{ name?: string; value?: string }> }> | undefined,
     hasExternalMembers?: boolean
@@ -137,6 +160,13 @@ function resolveNodeIconKind(
         // Non-external tasks that have external members (agent/tool inside their body)
         return hasExternalMembers ? 'agent' : undefined;
     }
+    // First, because it is the annotation that says what the node IS. A node
+    // that emits a declared resource also carries the annotation that makes it
+    // openable, and that one describes what double-click does, not the node.
+    if (annotations.some(a => a?.name === 'source')) {
+        return 'source';
+    }
+
     const hasAgent = annotations.some(a => a?.name === 'agent');
     if (hasAgent) return 'agent';
 

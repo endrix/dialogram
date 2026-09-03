@@ -122,3 +122,59 @@ describe('the header of a node that is external by meta', () => {
         expect(headerOf('internal')).toContain('header-task');
     });
 });
+
+/**
+ * A source is coloured as itself, not as the thing it is the opposite of.
+ *
+ * Double-click is driven by an annotation that a source carries too — that one
+ * says what opening does, not what the node is. Deriving the colour family from
+ * it painted a source in the viewer's accent, so a source and a viewer were
+ * indistinguishable but for the icon, at opposite ends of the graph.
+ */
+describe('the colour family a source node lands in', () => {
+    const classesFor = (annotations: Array<{ name: string }>) => {
+        const node: any = nodeFor('source', {
+            external: true,
+            definitionAnnotations: annotations.map(a => ({ ...a, arguments: [] }))
+        });
+        const header = (node.children ?? []).find((child: any) =>
+            (child.cssClasses ?? []).includes('header-compartment'));
+        return { node: node.cssClasses ?? [], header: header?.cssClasses ?? [] };
+    };
+
+    it('is its own, on the node and the header alike', () => {
+        // Both annotations, exactly as the exporter emits them.
+        const { node, header } = classesFor([{ name: 'viewer' }, { name: 'source' }]);
+
+        expect(node).toContain('external-actor-source');
+        expect(header).toContain('external-actor-source');
+    });
+
+    it('is not the viewer family', () => {
+        const { node, header } = classesFor([{ name: 'viewer' }, { name: 'source' }]);
+
+        expect(node).not.toContain('external-actor-viewer');
+        expect(header).not.toContain('external-actor-viewer');
+    });
+
+    it('does not fall through to the unannotated default', () => {
+        // Without the guard below the family checks, a source would also be
+        // called default and get the dimmed treatment on top of its own.
+        const { node } = classesFor([{ name: 'viewer' }, { name: 'source' }]);
+
+        expect(node).not.toContain('external-actor-default');
+    });
+
+    /** The control: a real viewer keeps the viewer family. */
+    it('leaves an actual viewer in the viewer family', () => {
+        const node: any = nodeFor('viewer', {
+            definitionAnnotations: [{ name: 'viewer', arguments: [] }]
+        });
+
+        expect(node.cssClasses).toContain('external-actor-viewer');
+        expect(node.cssClasses).not.toContain('external-actor-source');
+        // And not ALSO the unannotated default, which dims the icon — an
+        // annotated node landing there is styled as if it had none.
+        expect(node.cssClasses).not.toContain('external-actor-default');
+    });
+});
