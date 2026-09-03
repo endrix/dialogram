@@ -18,7 +18,7 @@ import {
     hasDecorator
 } from '../python-text';
 
-type WorkflowTypeKind = 'workflow' | 'task' | 'tool' | 'agent' | 'viewer' | 'streamblocks';
+type WorkflowTypeKind = 'workflow' | 'task' | 'tool' | 'agent' | 'viewer' | 'streamblocks' | 'source';
 
 type ProjectTypeCacheEntry = {
     expiresAt: number;
@@ -65,6 +65,10 @@ function discoverWorkflowTypeNamesInSource(sourceText: string, requestedKind: Wo
             // — without this branch a decorated class is discovered as a plain
             // task, and silently mislabelled rather than missing.
             discoveredKind = 'streamblocks';
+        } else if (hasDecorator(definition.decorators, 'source')) {
+            // Same reason as above: a source declares `class Ports:` too, so
+            // the task fallback would claim it and mislabel it silently.
+            discoveredKind = 'source';
         } else if (hasDecorator(definition.decorators, 'task') || isTaskLikeDefinition(definition)) {
             discoveredKind = 'task';
         }
@@ -236,8 +240,10 @@ export class CreateNodeOperationHandler extends OperationHandler {
                     && (operation.args?.['agentTask'] === true || operation.args?.['agentTask'] === 'true');
                 const isStreamblocks = operation.args?.['streamblocksNode'] === true
                     || operation.args?.['streamblocksNode'] === 'true';
+                const isSource = operation.args?.['sourceNode'] === true
+                    || operation.args?.['sourceNode'] === 'true';
                 const isExternal = elementTypeId === WorkflowDiagramTypes.NODE_EXTERNAL_TASK
-                    && !isAgent && !isViewer && !isStreamblocks;
+                    && !isAgent && !isViewer && !isStreamblocks && !isSource;
                 const isTask = elementTypeId === WorkflowDiagramTypes.NODE_TASK;
                 const isWorkflow = elementTypeId === WorkflowDiagramTypes.NODE_WORKFLOW;
 
@@ -305,7 +311,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
                 // excluded from that kind above. Leaving it out here dropped it
                 // past the whole wizard to the bare name box below: no variant
                 // prompt, no type created, and no error either.
-                if (!typeName && (isAgent || isViewer || isExternal || isTask || isWorkflow || isStreamblocks)) {
+                if (!typeName && (isAgent || isViewer || isExternal || isTask || isWorkflow || isStreamblocks || isSource)) {
                     const requestedKind: WorkflowTypeKind = isWorkflow
                         ? 'workflow'
                         : isAgent
@@ -314,9 +320,11 @@ export class CreateNodeOperationHandler extends OperationHandler {
                                 ? 'viewer'
                                 : isStreamblocks
                                     ? 'streamblocks'
-                                    : isExternal
-                                        ? 'tool'
-                                        : 'task';
+                                    : isSource
+                                        ? 'source'
+                                        : isExternal
+                                            ? 'tool'
+                                            : 'task';
                         const typeLabel = this.typeLabelForPicker(requestedKind);
                         if (headless) {
                             this.failAgent(await this.agentMissingTypeMessage(sourceUri, requestedKind));
@@ -367,8 +375,10 @@ export class CreateNodeOperationHandler extends OperationHandler {
                         // the choice made where the user is already choosing.
                         const variant = isStreamblocks
                             ? await this.pickStreamblocksVariant(headless, operation)
-                            : undefined;
-                        if (isStreamblocks && !variant) {
+                            : isSource
+                                ? await this.pickSourceResource(headless, operation)
+                                : undefined;
+                        if ((isStreamblocks || isSource) && !variant) {
                             return undefined;
                         }
 
@@ -378,6 +388,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
                                 op: this.sidecar.sidecarOp('createTaskType'),
                                 args: {
                                     kind: isStreamblocks ? 'streamblocks'
+                                        : isSource ? 'source'
                                         : isAgent ? 'agent' : isViewer ? 'viewer' : isExternal ? 'tool' : 'task',
                                     name: className,
                                     ...(variant ?? {})
@@ -731,6 +742,73 @@ export class CreateNodeOperationHandler extends OperationHandler {
 
     private typeLabelForPicker(requestedKind: WorkflowTypeKind): string {
         return this.sidecar.createNodeStrings().typeLabel(requestedKind);
+    }
+
+    /**
+     * What resource a source node hands in, and where it is.
+     *
+     * Three shapes, and the answer decides how it is asked for: a file and a
+     * folder each have a picker, a web resource has neither. Asking for the
+     * shape first is what makes the right one openable — nothing downstream
+     * can tell a folder from a file by looking at the path.
+     */
+    private async pickSourceResource(
+        headless: boolean,
+        operation: { args?: Record<string, unknown> }
+    ): Promise<Record<string, string> | undefined> {
+        if (headless) {
+            const viewType = String(operation.args?.['viewType'] ?? '').trim();
+            return viewType ? { viewType } : {};
+        }
+
+        const FILE = 'File';
+        const FOLDER = 'Folder';
+        const WEB = 'Web resource';
+        const shape = await vscode.window.showQuickPick(
+            [
+                { label: FILE, description: 'A file on disk', detail: 'Opens in an editor.' },
+                { label: FOLDER, description: 'A directory on disk', detail: 'Opens in the explorer.' },
+                { label: WEB, description: 'A URL', detail: 'Opens in a browser.' }
+            ],
+            { placeHolder: 'What does this source hand in?' }
+        );
+        if (!shape) {
+            return undefined;
+        }
+
+        const located = shape.label === WEB
+            ? (await vscode.window.showInputBox({
+                prompt: 'The address of the resource',
+                placeHolder: 'https://example.com/data.json'
+            }))?.trim()
+            : await this.pickWorkspacePath(shape.label === FOLDER);
+        if (!located) {
+            return undefined;
+        }
+
+        // Optional on purpose: naming no editor means the default one, which
+        // is the right answer for most files and the only answer for the other
+        // two shapes.
+        const viewType = (await vscode.window.showInputBox({
+            prompt: 'Open with a specific editor (optional)',
+            placeHolder: 'leave empty for the default editor'
+        }))?.trim();
+
+        return viewType ? { path: located, viewType } : { path: located };
+    }
+
+    /** A file or a folder from the workspace, as a path relative to it. */
+    private async pickWorkspacePath(wantFolder: boolean): Promise<string | undefined> {
+        const picked = await vscode.window.showOpenDialog({
+            canSelectMany: false,
+            canSelectFiles: !wantFolder,
+            canSelectFolders: wantFolder,
+            openLabel: wantFolder ? 'Use this folder' : 'Use this file'
+        });
+        const chosen = picked?.[0];
+        // Relative, so the declaration survives the project being opened
+        // somewhere else.
+        return chosen ? vscode.workspace.asRelativePath(chosen, false) : undefined;
     }
 
     /**
