@@ -225,6 +225,31 @@ export namespace WorkflowDiagramMetadata {
     /** Resolved referenced definition name (not alias text), used for robust drill-down. */
     export const REFERENCED_ENTITY_NAME = 'cal:referencedEntityName';
 
+    /**
+     * Where this element was AUTHORED, when that is a different file again.
+     *
+     * A third navigation target, because two were not enough for a diagram
+     * whose own file nobody wrote by hand.
+     *
+     * `REFERENCED_URI` already answers two questions at once — *drill into this
+     * element* and *show me its source* — and that works only while both have
+     * the same answer. For a diagram generated from something else they come
+     * apart: drilling has to stay inside the generated file, because that is
+     * where the definitions being drilled into live, while "show me the source"
+     * wants the file a person actually typed. Forcing both through one slot
+     * means choosing which of the two features to break.
+     *
+     * So a producer that knows both says so, and neither has to lose. Nothing
+     * here names a language or a toolchain: any product with a compile step
+     * between what someone wrote and what the diagram is built from has exactly
+     * this shape.
+     *
+     * Absent for a diagram whose file IS the authored one, which is the common
+     * case and behaves exactly as before.
+     */
+    export const AUTHORED_URI = 'cal:authoredUri';
+    export const AUTHORED_SOURCE_RANGE = 'cal:authoredSourceRange';
+
     // When an element refers to a definition in another file (e.g. actor/network type),
     // this range points into that referenced document.
     export const REFERENCED_SOURCE_RANGE = 'cal:referencedSourceRange';

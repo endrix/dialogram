@@ -82,6 +82,29 @@ function sourceTargetFromElement(element: GModelElement | undefined, fallbackSou
     return undefined;
 }
 
+/**
+ * Where this element was authored, when that is a third file.
+ *
+ * Deliberately does NOT fall back to anything. The other two targets fall
+ * through to the diagram's own file because a missing range there still means
+ * "somewhere in this document"; here an absent value means the producer did not
+ * claim a separate authored file, and offering the generated one under that
+ * label would be a lie about which file the reader is being sent to.
+ */
+function authoredTargetFromElement(element: GModelElement | undefined): NavigationTarget | undefined {
+    let current: GModelElement | undefined = element;
+    while (current) {
+        const args = (current as unknown as { args?: Args }).args;
+        const authoredUri = args?.[WorkflowDiagramMetadata.AUTHORED_URI];
+        if (typeof authoredUri === 'string') {
+            const range = args?.[WorkflowDiagramMetadata.AUTHORED_SOURCE_RANGE];
+            return isSerializedRange(range) ? { uri: authoredUri, range } : { uri: authoredUri };
+        }
+        current = (current as unknown as { parent?: GModelElement }).parent;
+    }
+    return undefined;
+}
+
 function toNavigateAction(target: NavigationTarget): LabeledAction['actions'][number] {
     return NavigateToExternalTargetAction.create({
         uri: target.uri,
@@ -121,7 +144,8 @@ export class WorkflowGoToSourceContextMenuItemProvider implements IContextMenuIt
         }
         const declarationTarget = selected.length > 0 ? declarationTargetFromElement(selected[0], sourceUri) : undefined;
         const sourceTarget = selected.length > 0 ? sourceTargetFromElement(selected[0], sourceUri) : undefined;
-        if (!declarationTarget && !sourceTarget) {
+        const authoredTarget = selected.length > 0 ? authoredTargetFromElement(selected[0]) : undefined;
+        if (!declarationTarget && !sourceTarget && !authoredTarget) {
             if (debug) {
                 // eslint-disable-next-line no-console
                 console.log('[cal][context-menu] no navigation target (no menu items)');
@@ -145,6 +169,12 @@ export class WorkflowGoToSourceContextMenuItemProvider implements IContextMenuIt
             items.push({
                 label: 'Go to Source',
                 actions: [toNavigateAction(sourceTarget)]
+            });
+        }
+        if (authoredTarget) {
+            items.push({
+                label: 'Go to Authored Source',
+                actions: [toNavigateAction(authoredTarget)]
             });
         }
         return items;
