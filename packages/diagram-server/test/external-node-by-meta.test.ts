@@ -74,3 +74,51 @@ describe('a product kind the platform has never heard of', () => {
         expect(nodeFor('tool').cssClasses ?? []).toContain('tool-node');
     });
 });
+
+/**
+ * The body and the header decide "is this external?" separately, and only the
+ * body asked the producer. So a node external by `meta.external` got an
+ * external body and a TASK header — two colour families on one node — and the
+ * per-annotation tint never applied either, because its rule is written under
+ * `.header-external`.
+ */
+describe('the header of a node that is external by meta', () => {
+    const headerOf = (kind: string, meta?: Record<string, unknown>): string[] => {
+        const node: any = nodeFor(kind, meta);
+        const header = (node.children ?? []).find((child: any) =>
+            (child.cssClasses ?? []).some((c: string) => c.startsWith('header-')));
+        return header?.cssClasses ?? [];
+    };
+
+    it('is styled external, like the rest of the node', () => {
+        const classes = headerOf('streamblocks', { external: true });
+
+        expect(classes).toContain('header-external');
+        expect(classes).not.toContain('header-task');
+    });
+
+    it('matches the header a kind-based external node gets', () => {
+        expect(headerOf('streamblocks', { external: true })).toEqual(headerOf('tool'));
+    });
+
+    /**
+     * The tint rules are written as
+     * `.external-actor-node.external-actor-viewer .header-external`, so the
+     * annotation class alone was never enough.
+     */
+    it('can be tinted by its annotation', () => {
+        const classes = headerOf('source', {
+            external: true,
+            definitionAnnotations: [{ name: 'viewer' }]
+        });
+
+        expect(classes).toContain('header-external');
+        expect(classes).toContain('external-actor-viewer');
+    });
+
+    it('leaves an ordinary node on the task header', () => {
+        // The control: without it the assertions above would pass if every
+        // node were simply called external.
+        expect(headerOf('internal')).toContain('header-task');
+    });
+});
