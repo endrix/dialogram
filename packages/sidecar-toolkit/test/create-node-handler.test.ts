@@ -67,7 +67,9 @@ function calpySidecar() {
         sidecarOp: (opName: string) => `calpy.${opName}`,
         undoLabelSuffix: () => ' (wfpy)',
         createNodeStrings: () => CALPY_CREATE_NODE_STRINGS,
-        createNodeBehavior: () => CALPY_CREATE_NODE_BEHAVIOR
+        createNodeBehavior: () => CALPY_CREATE_NODE_BEHAVIOR,
+        // This product contributes no variant entries.
+        createNodeVariants: () => []
     };
 }
 
@@ -77,7 +79,8 @@ function wfpySidecar() {
         sidecarOp: (opName: string) => `wfpy.${opName}`,
         undoLabelSuffix: () => ' (wfpy)',
         createNodeStrings: () => WFPY_CREATE_NODE_STRINGS,
-        createNodeBehavior: () => WFPY_CREATE_NODE_BEHAVIOR
+        createNodeBehavior: () => WFPY_CREATE_NODE_BEHAVIOR,
+        createNodeVariants: () => []
     };
 }
 
@@ -883,7 +886,8 @@ describe('workflow create node handler', () => {
                     capabilityProbeBeforeCreate: false,
                     mergeProjectDiscoveredTypes: false,
                     surfaceSidecarListErrors: false
-                })
+                }),
+                createNodeVariants: () => []
             };
             (handler as any).sendSidecarListDetailed = async () => ({
                 ok: true,

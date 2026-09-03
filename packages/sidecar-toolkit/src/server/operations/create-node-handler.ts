@@ -11,6 +11,7 @@ import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { AgentCreateNodeOutcomeSink } from '@dialogram/diagram-server/server/agent-create-node-outcome';
 import { SidecarInvoker, SidecarInvocationResult } from './sidecar-invoker';
+import type { CreateNodeVariant, CreateNodeVariantFollowUp } from '../sidecar-runtime-config';
 import {
     type PythonDefinition,
     extractTopLevelPythonDefinitions,
@@ -18,7 +19,9 @@ import {
     hasDecorator
 } from '../python-text';
 
-type WorkflowTypeKind = 'workflow' | 'task' | 'tool' | 'agent' | 'viewer' | 'streamblocks' | 'source';
+// The kinds the toolkit itself distinguishes, open at the end so a product
+// can declare one the toolkit has never heard of (see `CreateNodeVariant`).
+type WorkflowTypeKind = 'workflow' | 'task' | 'tool' | 'agent' | 'viewer' | (string & {});
 
 type ProjectTypeCacheEntry = {
     expiresAt: number;
@@ -46,7 +49,13 @@ function isTaskLikeDefinition(definition: PythonDefinition): boolean {
         || /(^|\n)\s+def\s+(?:run|action|__call__)\s*\(/.test(definition.bodyText);
 }
 
-function discoverWorkflowTypeNamesInSource(sourceText: string, requestedKind: WorkflowTypeKind): string[] {
+function discoverWorkflowTypeNamesInSource(
+    sourceText: string,
+    requestedKind: WorkflowTypeKind,
+    /** Decorator per product-declared kind, so a variant type already written
+     *  in the project is found as what it is. */
+    variants: readonly CreateNodeVariant[] = []
+): string[] {
     const names: string[] = [];
     const seen = new Set<string>();
 
@@ -60,15 +69,13 @@ function discoverWorkflowTypeNamesInSource(sourceText: string, requestedKind: Wo
             discoveredKind = 'viewer';
         } else if (hasDecorator(definition.decorators, 'tool')) {
             discoveredKind = 'tool';
-        } else if (hasDecorator(definition.decorators, 'streamblocks')) {
+        } else if (variants.some(v => hasDecorator(definition.decorators, v.decorator))) {
             // Before the `task` fallback below, which matches on `class Ports:`
-            // — without this branch a decorated class is discovered as a plain
-            // task, and silently mislabelled rather than missing.
-            discoveredKind = 'streamblocks';
-        } else if (hasDecorator(definition.decorators, 'source')) {
-            // Same reason as above: a source declares `class Ports:` too, so
-            // the task fallback would claim it and mislabel it silently.
-            discoveredKind = 'source';
+            // — a variant type declares one too, so without this it is
+            // discovered as a plain task and silently mislabelled rather than
+            // missing, which is the harder failure to notice.
+            discoveredKind = variants.find(v =>
+                hasDecorator(definition.decorators, v.decorator))!.kind;
         } else if (hasDecorator(definition.decorators, 'task') || isTaskLikeDefinition(definition)) {
             discoveredKind = 'task';
         }
@@ -238,12 +245,14 @@ export class CreateNodeOperationHandler extends OperationHandler {
                     || operation.args?.['viewerTask'] === true || operation.args?.['viewerTask'] === 'true';
                 const isAgent = elementTypeId === WorkflowDiagramTypes.NODE_EXTERNAL_TASK
                     && (operation.args?.['agentTask'] === true || operation.args?.['agentTask'] === 'true');
-                const isStreamblocks = operation.args?.['streamblocksNode'] === true
-                    || operation.args?.['streamblocksNode'] === 'true';
-                const isSource = operation.args?.['sourceNode'] === true
-                    || operation.args?.['sourceNode'] === 'true';
+                // A variant entry is marked by an arg the product chose, and
+                // several share one element type — so the arg is the only thing
+                // telling them apart.
+                const variant = this.sidecar.createNodeVariants().find(candidate =>
+                    operation.args?.[candidate.paletteArg] === true
+                    || operation.args?.[candidate.paletteArg] === 'true');
                 const isExternal = elementTypeId === WorkflowDiagramTypes.NODE_EXTERNAL_TASK
-                    && !isAgent && !isViewer && !isStreamblocks && !isSource;
+                    && !isAgent && !isViewer && !variant;
                 const isTask = elementTypeId === WorkflowDiagramTypes.NODE_TASK;
                 const isWorkflow = elementTypeId === WorkflowDiagramTypes.NODE_WORKFLOW;
 
@@ -311,20 +320,18 @@ export class CreateNodeOperationHandler extends OperationHandler {
                 // excluded from that kind above. Leaving it out here dropped it
                 // past the whole wizard to the bare name box below: no variant
                 // prompt, no type created, and no error either.
-                if (!typeName && (isAgent || isViewer || isExternal || isTask || isWorkflow || isStreamblocks || isSource)) {
+                if (!typeName && (isAgent || isViewer || isExternal || isTask || isWorkflow || variant)) {
                     const requestedKind: WorkflowTypeKind = isWorkflow
                         ? 'workflow'
                         : isAgent
                             ? 'agent'
                             : isViewer
                                 ? 'viewer'
-                                : isStreamblocks
-                                    ? 'streamblocks'
-                                    : isSource
-                                        ? 'source'
-                                        : isExternal
-                                            ? 'tool'
-                                            : 'task';
+                                : variant
+                                    ? variant.kind
+                                    : isExternal
+                                        ? 'tool'
+                                        : 'task';
                         const typeLabel = this.typeLabelForPicker(requestedKind);
                         if (headless) {
                             this.failAgent(await this.agentMissingTypeMessage(sourceUri, requestedKind));
@@ -373,12 +380,10 @@ export class CreateNodeOperationHandler extends OperationHandler {
                         // A node with variants asks which one, the way the
                         // viewer wizard asks for its action — one palette entry,
                         // the choice made where the user is already choosing.
-                        const variant = isStreamblocks
-                            ? await this.pickStreamblocksVariant(headless, operation)
-                            : isSource
-                                ? await this.pickSourceResource(headless, operation)
-                                : undefined;
-                        if ((isStreamblocks || isSource) && !variant) {
+                        const variantArgs = variant
+                            ? await this.collectVariantArgs(variant, headless, operation)
+                            : undefined;
+                        if (variant && !variantArgs) {
                             return undefined;
                         }
 
@@ -387,11 +392,10 @@ export class CreateNodeOperationHandler extends OperationHandler {
                             : {
                                 op: this.sidecar.sidecarOp('createTaskType'),
                                 args: {
-                                    kind: isStreamblocks ? 'streamblocks'
-                                        : isSource ? 'source'
+                                    kind: variant ? variant.kind
                                         : isAgent ? 'agent' : isViewer ? 'viewer' : isExternal ? 'tool' : 'task',
                                     name: className,
-                                    ...(variant ?? {})
+                                    ...(variantArgs ?? {})
                                 }
                             }
                         );
@@ -663,7 +667,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
             const candidateFiles = await this.collectProjectPythonFiles(scanRoots, filePath);
             const discovered = new Set<string>();
 
-            for (const typeName of discoverWorkflowTypeNamesInSource(currentSourceText, requestedKind)) {
+            for (const typeName of discoverWorkflowTypeNamesInSource(currentSourceText, requestedKind, this.sidecar.createNodeVariants())) {
                 discovered.add(typeName);
             }
 
@@ -674,7 +678,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
                 } catch {
                     continue;
                 }
-                for (const typeName of discoverWorkflowTypeNamesInSource(sourceText, requestedKind)) {
+                for (const typeName of discoverWorkflowTypeNamesInSource(sourceText, requestedKind, this.sidecar.createNodeVariants())) {
                     discovered.add(typeName);
                 }
             }
@@ -745,166 +749,168 @@ export class CreateNodeOperationHandler extends OperationHandler {
     }
 
     /**
-     * What resource a source node hands in, and where it is.
+     * Ask a variant node which shape it is, and collect what that answer needs.
      *
-     * Three shapes, and the answer decides how it is asked for: a file and a
-     * folder each have a picker, a web resource has neither. Asking for the
-     * shape first is what makes the right one openable — nothing downstream
-     * can tell a folder from a file by looking at the path.
+     * Every word a person reads here comes from the product: the question, the
+     * names of the choices, what each one still needs. The toolkit knows only
+     * that such a question exists and how to ask one — naming the variants
+     * itself is exactly the product vocabulary it must not carry.
      */
-    private async pickSourceResource(
+    private async collectVariantArgs(
+        variant: CreateNodeVariant,
         headless: boolean,
         operation: { args?: Record<string, unknown> }
     ): Promise<Record<string, string> | undefined> {
+        const collected: Record<string, string> = {};
+
         if (headless) {
-            const viewType = String(operation.args?.['viewType'] ?? '').trim();
-            return viewType ? { viewType } : {};
+            return this.collectVariantArgsHeadless(variant, operation);
         }
 
-        const FILE = 'File';
-        const FOLDER = 'Folder';
-        const WEB = 'Web resource';
-        const shape = await vscode.window.showQuickPick(
-            [
-                { label: FILE, description: 'A file on disk', detail: 'Opens in an editor.' },
-                { label: FOLDER, description: 'A directory on disk', detail: 'Opens in the explorer.' },
-                { label: WEB, description: 'A URL', detail: 'Opens in a browser.' }
-            ],
-            { placeHolder: 'What does this source hand in?' }
+        const picked = await vscode.window.showQuickPick(
+            variant.choices.map(choice => ({
+                label: choice.label,
+                description: choice.description,
+                detail: choice.detail
+            })),
+            { placeHolder: variant.prompt }
         );
-        if (!shape) {
+        if (!picked) {
             return undefined;
         }
-
-        const located = shape.label === WEB
-            ? (await vscode.window.showInputBox({
-                prompt: 'The address of the resource',
-                placeHolder: 'https://example.com/data.json'
-            }))?.trim()
-            : await this.pickWorkspacePath(shape.label === FOLDER);
-        if (!located) {
+        const choice = variant.choices.find(c => c.label === picked.label);
+        if (!choice) {
             return undefined;
         }
+        Object.assign(collected, choice.args ?? {});
 
-        // Optional on purpose: naming no editor means the default one, which
-        // is the right answer for most files and the only answer for the other
-        // two shapes.
-        const viewType = (await vscode.window.showInputBox({
-            prompt: 'Open with a specific editor (optional)',
-            placeHolder: 'leave empty for the default editor'
-        }))?.trim();
+        if (choice.followUp) {
+            const value = await this.collectFollowUp(choice.followUp);
+            if (choice.followUp.required && !value) {
+                // Refused rather than created half-formed: the node cannot work
+                // without this, and reporting that later is worse than not
+                // creating it now.
+                return undefined;
+            }
+            if (value) {
+                collected[choice.followUp.argName] = value;
+            }
+        }
 
-        return viewType ? { path: located, viewType } : { path: located };
+        if (variant.extra) {
+            const extra = (await vscode.window.showInputBox({
+                prompt: variant.extra.prompt,
+                placeHolder: variant.extra.placeHolder
+            }))?.trim();
+            // Absent, not empty. An empty string is a value, and products write
+            // it into the file as one.
+            if (extra) {
+                collected[variant.extra.argName] = extra;
+            }
+        }
+
+        return collected;
     }
 
-    /** A file or a folder from the workspace, as a path relative to it. */
-    private async pickWorkspacePath(wantFolder: boolean): Promise<string | undefined> {
-        const picked = await vscode.window.showOpenDialog({
-            canSelectMany: false,
-            canSelectFiles: !wantFolder,
-            canSelectFolders: wantFolder,
-            openLabel: wantFolder ? 'Use this folder' : 'Use this file'
-        });
-        const chosen = picked?.[0];
-        // Relative, so the declaration survives the project being opened
-        // somewhere else.
-        return chosen ? vscode.workspace.asRelativePath(chosen, false) : undefined;
-    }
-
-    /**
-     * Which variant of a StreamBlocks node to create, and the network it is for.
-     *
-     * One palette entry rather than two, with the choice made here — the shape
-     * the viewer wizard already uses, where picking an action decides which
-     * follow-up questions get asked.
-     */
-    private async pickStreamblocksVariant(
-        headless: boolean,
+    /** The same answers, passed in rather than asked for. */
+    private collectVariantArgsHeadless(
+        variant: CreateNodeVariant,
         operation: { args?: Record<string, unknown> }
-    ): Promise<Record<string, string> | undefined> {
-        if (headless) {
-            const facade = String(operation.args?.['facade'] ?? '').trim();
-            const network = String(operation.args?.['network'] ?? '').trim();
-            if (facade !== 'design' && facade !== 'instance') {
-                this.showAgentAmbiguity('create a StreamBlocks node', "pass args.facade as 'design' or 'instance'");
-                return undefined;
+    ): Record<string, string> | undefined {
+        const collected: Record<string, string> = {};
+        const argNames = new Set<string>();
+        for (const choice of variant.choices) {
+            Object.keys(choice.args ?? {}).forEach(name => argNames.add(name));
+            if (choice.followUp) {
+                argNames.add(choice.followUp.argName);
             }
-            if (facade === 'instance' && !network) {
-                this.showAgentAmbiguity('create a StreamBlocks instance', 'pass args.network (the @network file it runs)');
-                return undefined;
+        }
+        if (variant.extra) {
+            argNames.add(variant.extra.argName);
+        }
+        for (const name of argNames) {
+            const value = String(operation.args?.[name] ?? '').trim();
+            if (value) {
+                collected[name] = value;
             }
-            return network ? { facade, network } : { facade };
         }
 
-        const facade = await vscode.window.showQuickPick(
-            [
-                {
-                    label: 'Design',
-                    description: 'A task that produces or works on a design',
-                    detail: 'You declare its ports and actions. Opens what it last produced.'
-                },
-                {
-                    label: 'Instance',
-                    description: 'Compile and run a network',
-                    detail: 'Needs the @network file it runs. Opens that file, before any run.'
-                }
-            ],
-            { placeHolder: 'Which kind of StreamBlocks node?' }
-        );
-        if (!facade) {
+        const chosen = variant.choices.find(choice =>
+            Object.entries(choice.args ?? {}).every(([key, value]) => collected[key] === value));
+        const needed = chosen?.followUp;
+        if (needed?.required && !collected[needed.argName]) {
+            this.showAgentAmbiguity(
+                `create a ${this.typeLabelForPicker(variant.kind)}`,
+                `pass args.${needed.argName}`
+            );
             return undefined;
         }
-
-        const chosen = facade.label.toLowerCase();
-        // Required for an instance — nothing to compile, run or open without it
-        // — and optional for a design, which may not have one yet.
-        const network = await this.askForNetworkPath(chosen === 'instance');
-        if (chosen === 'instance' && !network) {
-            return undefined;
-        }
-        return network ? { facade: chosen, network } : { facade: chosen };
+        return collected;
     }
 
     /**
-     * The `@network` file, by picker or by hand.
+     * The value a chosen variant still needs.
      *
-     * Both, because the network may not exist yet — a design that generates
-     * one, or a path filled in later. Whatever the picker returns is made
-     * relative to the workspace, so the declaration survives being opened
-     * somewhere else.
+     * A `text` input asks for it directly. The dialog kinds offer to browse OR
+     * to type it by hand, because the target may not exist yet — a file the
+     * workflow has still to produce, or a path filled in later.
      */
-    private async askForNetworkPath(required: boolean): Promise<string | undefined> {
-        const BROWSE = 'Browse…';
-        const TYPE = 'Type a path…';
-        const SKIP = 'Skip';
+    private async collectFollowUp(
+        followUp: CreateNodeVariantFollowUp
+    ): Promise<string | undefined> {
+        if (followUp.input === 'text') {
+            return (await vscode.window.showInputBox({
+                prompt: followUp.prompt,
+                placeHolder: followUp.placeHolder
+            }))?.trim();
+        }
+
+        // Nothing to choose between when typing is not on offer and the value
+        // is required: open the dialog rather than asking a one-answer question.
+        if (followUp.allowTypedPath === false && followUp.required) {
+            return this.browseFor(followUp);
+        }
+
+        const BROWSE = followUp.browseLabel ?? 'Browse…';
+        const TYPE = followUp.typeLabel ?? 'Type a path…';
+        const SKIP = followUp.skipLabel ?? 'Skip';
         const choice = await vscode.window.showQuickPick(
             [
-                { label: BROWSE, description: 'Choose a Python file containing @network' },
-                { label: TYPE, description: 'For a network that does not exist yet' },
-                ...(required ? [] : [{ label: SKIP, description: 'Set it later' }])
+                { label: BROWSE },
+                ...(followUp.allowTypedPath === false ? [] : [{ label: TYPE }]),
+                ...(followUp.required ? [] : [{ label: SKIP }])
             ],
-            { placeHolder: required ? 'The @network file to run (required)' : 'The @network file (optional)' }
+            { placeHolder: followUp.prompt }
         );
         if (!choice || choice.label === SKIP) {
             return undefined;
         }
 
         if (choice.label === BROWSE) {
-            const picked = await vscode.window.showOpenDialog({
-                canSelectMany: false,
-                openLabel: 'Use this network',
-                filters: { Python: ['py'] }
-            });
-            const file = picked?.[0];
-            return file ? vscode.workspace.asRelativePath(file, false) : undefined;
+            return this.browseFor(followUp);
         }
 
         return (await vscode.window.showInputBox({
-            prompt: 'Path to the @network file, relative to the workspace',
-            placeHolder: 'designs/adder.py'
-        }))?.trim() || undefined;
+            prompt: followUp.prompt,
+            placeHolder: followUp.placeHolder
+        }))?.trim();
     }
 
+    /** The workspace dialog for a follow-up, as a path relative to the workspace. */
+    private async browseFor(followUp: CreateNodeVariantFollowUp): Promise<string | undefined> {
+        const wantFolder = followUp.input === 'folder';
+        const picked = await vscode.window.showOpenDialog({
+            canSelectMany: false,
+            canSelectFiles: !wantFolder,
+            canSelectFolders: wantFolder,
+            openLabel: followUp.openLabel,
+            ...(followUp.filters && !wantFolder ? { filters: followUp.filters } : {})
+        });
+        const file = picked?.[0];
+        // Relative, so the declaration survives the project being opened
+        // somewhere else.
+        return file ? vscode.workspace.asRelativePath(file, false) : undefined;
+    }
     private classNamePlaceholderForPicker(requestedKind: WorkflowTypeKind): string {
         return this.sidecar.createNodeStrings().classNamePlaceholder(requestedKind);
     }

@@ -39,8 +39,13 @@ else
 fi
 
 echo
-echo '== Gate 2: toolkit content (no wfpy/calpy/calLang) =='
-gate2_hits="$(grep -ri 'wfpy\|calpy\|calLang' packages/sidecar-toolkit/src)"
+# The product names, not a sample of them. This list read `wfpy|calpy|calLang`
+# while the header above claimed "no product vocabulary" — so `streamblocks`
+# passed, and fourteen mentions of it accumulated in the create-node handler,
+# including prompts users read. A gate whose check is narrower than its claim
+# reports success for the thing it was written to prevent.
+echo '== Gate 2: toolkit content (no product vocabulary) =='
+gate2_hits="$(grep -ri 'wfpy\|calpy\|calLang\|streamblocks' packages/sidecar-toolkit/src)"
 if [ -n "${gate2_hits}" ]; then
     echo 'FAIL: product tokens found in sidecar-toolkit:'
     echo "${gate2_hits}"

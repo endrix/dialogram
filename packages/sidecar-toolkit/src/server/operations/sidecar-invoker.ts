@@ -1,7 +1,7 @@
 import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
 import { URI } from 'vscode-uri';
-import { SidecarRuntimeService, type CreateNodeStrings, type CreateNodeBehavior } from '../sidecar-runtime-config';
+import { SidecarRuntimeService, type CreateNodeStrings, type CreateNodeBehavior, CreateNodeVariant } from '../sidecar-runtime-config';
 import { describeChildFailure, runChildProcess } from '../../run-child-process';
 
 export interface SidecarInvocationResult {
@@ -49,6 +49,10 @@ export class SidecarInvoker {
 
     createNodeBehavior(): CreateNodeBehavior {
         return this.runtimeProfile.createNodeBehavior;
+    }
+
+    createNodeVariants(): CreateNodeVariant[] {
+        return this.runtimeProfile.createNodeVariants;
     }
 
     operationKindCreateEntityPort(): string {

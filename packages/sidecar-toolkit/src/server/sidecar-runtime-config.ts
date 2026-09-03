@@ -44,6 +44,84 @@ export interface CreateNodeStrings {
 }
 
 /**
+ * How a follow-up value is collected once a variant is chosen.
+ *
+ * `file` and `folder` open the matching workspace dialog; `text` asks for it
+ * by hand, which is the only option for a value that does not exist on disk —
+ * a URL, or a file the workflow has yet to produce.
+ */
+export type CreateNodeVariantInput = 'file' | 'folder' | 'text';
+
+/** The value a chosen variant still needs, and how to ask for it. */
+export interface CreateNodeVariantFollowUp {
+    /** Name of the `createTaskType` argument this fills in. */
+    argName: string;
+    /** Refuse to continue without it, rather than creating a node that cannot work. */
+    required: boolean;
+    input: CreateNodeVariantInput;
+    /** Shown above the picker, or as the input box's prompt. */
+    prompt: string;
+    placeHolder?: string;
+    /** Confirm label on the open dialog (`file`/`folder` only). */
+    openLabel?: string;
+    /** Extension filter for the open dialog, e.g. `{ Python: ['py'] }`. */
+    filters?: Record<string, string[]>;
+    /**
+     * Offer to type the path by hand instead of browsing to it.
+     *
+     * For a target that may not exist yet — one the workflow has still to
+     * produce, or a path filled in later — that escape is the whole point.
+     * For one that must already exist it is a step in the way, so the dialog
+     * opens directly. Defaults to offering it, which is the safe direction:
+     * an extra choice beats no way to name the file.
+     */
+    allowTypedPath?: boolean;
+    /** Wording for the browse / type-by-hand / skip choices offered before a dialog. */
+    browseLabel?: string;
+    typeLabel?: string;
+    skipLabel?: string;
+}
+
+/** One answer to a variant's question, and what choosing it means. */
+export interface CreateNodeVariantChoice {
+    label: string;
+    description?: string;
+    detail?: string;
+    /** Arguments this answer contributes to `createTaskType`. */
+    args?: Record<string, string>;
+    followUp?: CreateNodeVariantFollowUp;
+}
+
+/**
+ * A palette entry whose shape is chosen in the wizard rather than by its
+ * element type.
+ *
+ * Several such entries share one element type, so the arg is what tells them
+ * apart. Everything a person reads here is product vocabulary — the names of
+ * the variants, the question that picks between them — so it is declared by
+ * the product and the toolkit only runs it. Without this the toolkit would
+ * have to name products in its own prompts, which is exactly what it must not
+ * do.
+ */
+export interface CreateNodeVariant {
+    /** The palette entry's arg that selects this variant, e.g. `myNodeKind`. */
+    paletteArg: string;
+    /** The task kind sent to `createTaskType`. */
+    kind: CreateNodeTypeKind;
+    /** The decorator that identifies one already written in the project. */
+    decorator: string;
+    /** The question that picks between the choices. */
+    prompt: string;
+    choices: CreateNodeVariantChoice[];
+    /** One last optional free-text value, asked after the choice is resolved. */
+    extra?: {
+        argName: string;
+        prompt: string;
+        placeHolder?: string;
+    };
+}
+
+/**
  * Behavior axes the create-node flow branches on. Product-supplied booleans replace the old
  * product-profile checks — the toolkit no longer knows the product, only the behavior.
  */
@@ -83,6 +161,9 @@ export interface SidecarRuntimeConfig {
     createNodeStrings: CreateNodeStrings;
     /** Create-node behavior axes; product-supplied (replaces the old product-profile branches). */
     createNodeBehavior: CreateNodeBehavior;
+    /** Palette entries whose shape is chosen in the wizard; product-supplied, since every
+     *  word in them is product vocabulary. Absent means the product contributes none. */
+    createNodeVariants?: CreateNodeVariant[];
 }
 
 export const SIDECAR_RUNTIME_CONFIG = Symbol('SidecarRuntimeConfig');
@@ -214,6 +295,10 @@ export class SidecarRuntimeService {
 
     get createNodeBehavior(): CreateNodeBehavior {
         return this.cfg.createNodeBehavior;
+    }
+
+    get createNodeVariants(): CreateNodeVariant[] {
+        return this.cfg.createNodeVariants ?? [];
     }
 
     sidecarOp(opName: string): string {

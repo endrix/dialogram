@@ -20,7 +20,11 @@ import { describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 
 import { CreateNodeOperationHandler } from '../src/server/operations/create-node-handler.js';
-import type { CreateNodeStrings, CreateNodeBehavior } from '../src/server/sidecar-runtime-config.js';
+import type {
+    CreateNodeStrings,
+    CreateNodeBehavior,
+    CreateNodeVariant
+} from '../src/server/sidecar-runtime-config.js';
 import { WorkflowDiagramTypes } from '@dialogram/shared';
 
 const STRINGS: CreateNodeStrings = {
@@ -31,17 +35,72 @@ const STRINGS: CreateNodeStrings = {
             case 'agent': return 'agent task';
             case 'viewer': return 'viewer task';
             case 'tool': return 'tool task';
-            case 'streamblocks': return 'StreamBlocks node';
+            case 'gizmo': return 'gizmo';
             case 'source': return 'source';
             default: return 'task';
         }
     },
-    classNamePlaceholder: kind => (kind === 'streamblocks' ? 'MyDesign' : 'MyTask'),
+    classNamePlaceholder: kind => (kind === 'gizmo' ? 'MyGizmo' : 'MyTask'),
     sidecarDisplayName: 'sidecar',
     invalidCapabilitiesResponse: 'invalid capabilities',
     missingCapabilities: ops => `missing: ${ops.join(', ')}`,
     invalidListResponse: (action, field) => `invalid ${action} ${field}`
 };
+
+/**
+ * Two variants for a product the toolkit has never heard of. Everything the
+ * wizard says about them comes from here — if any of it were still built into
+ * the toolkit, these tests would show the toolkit's words instead.
+ */
+const VARIANTS: CreateNodeVariant[] = [
+    {
+        paletteArg: 'gizmoNode',
+        kind: 'gizmo',
+        decorator: 'gizmo',
+        prompt: 'Which kind of gizmo?',
+        choices: [
+            { label: 'Plain', args: { facade: 'plain' } },
+            {
+                label: 'Wired',
+                args: { facade: 'wired' },
+                followUp: {
+                    argName: 'network',
+                    required: true,
+                    input: 'file',
+                    prompt: 'The file it runs (required)',
+                    openLabel: 'Use this file'
+                }
+            }
+        ]
+    },
+    {
+        paletteArg: 'sourceNode',
+        kind: 'source',
+        decorator: 'source',
+        prompt: 'What does this source hand in?',
+        choices: [
+            {
+                label: 'File',
+                followUp: {
+                    argName: 'path', required: true, input: 'file',
+                    prompt: 'The file', allowTypedPath: false
+                }
+            },
+            {
+                label: 'Folder',
+                followUp: {
+                    argName: 'path', required: true, input: 'folder',
+                    prompt: 'The folder', allowTypedPath: false
+                }
+            },
+            {
+                label: 'Web resource',
+                followUp: { argName: 'path', required: true, input: 'text', prompt: 'The address' }
+            }
+        ],
+        extra: { argName: 'viewType', prompt: 'Open with a specific editor (optional)' }
+    }
+];
 
 const BEHAVIOR: CreateNodeBehavior = {
     capabilityProbeBeforeCreate: false,
@@ -50,7 +109,13 @@ const BEHAVIOR: CreateNodeBehavior = {
 };
 
 /** Runs one create-node command, recording every prompt it opens. */
-async function runCreate(args: Record<string, unknown>) {
+async function runCreate(
+    args: Record<string, unknown>,
+    /** Which item to take from each quick pick; undefined cancels there. */
+    answer: (labels: string[]) => string | undefined = () => undefined,
+    /** What to type into each input box; undefined cancels there. */
+    type: (prompt: string) => string | undefined = () => undefined
+) {
     const handler = new CreateNodeOperationHandler();
     const workspaceAny = vscode.workspace as any;
     const windowAny = vscode.window as any;
@@ -74,12 +139,15 @@ async function runCreate(args: Record<string, unknown>) {
     windowAny.showQuickPick = async (items: Array<{ label: string }>, options: any) => {
         if (options?.title) { quickPickTitles.push(String(options.title)); }
         if (options?.placeHolder) { quickPickTitles.push(String(options.placeHolder)); }
-        quickPickLabels.push(...items.map(item => item.label));
-        return undefined;
+        const labels = items.map(item => item.label);
+        quickPickLabels.push(...labels);
+        const wanted = answer(labels);
+        return wanted === undefined ? undefined : items.find(item => item.label === wanted);
     };
     windowAny.showInputBox = async (options: any) => {
-        inputPrompts.push(String(options?.prompt ?? ''));
-        return undefined;
+        const prompt = String(options?.prompt ?? '');
+        inputPrompts.push(prompt);
+        return type(prompt);
     };
 
     try {
@@ -91,7 +159,8 @@ async function runCreate(args: Record<string, unknown>) {
             sidecarOp: (op: string) => `wfpy.${op}`,
             undoLabelSuffix: () => ' (wf)',
             createNodeStrings: () => STRINGS,
-            createNodeBehavior: () => BEHAVIOR
+            createNodeBehavior: () => BEHAVIOR,
+            createNodeVariants: () => VARIANTS
         };
         (handler as any).sendSidecarListDetailed = async () => ({
             ok: true,
@@ -117,17 +186,17 @@ async function runCreate(args: Record<string, unknown>) {
 
 describe('a variant palette entry', () => {
     it('opens the type picker instead of a bare name box', async () => {
-        const { quickPickLabels, inputPrompts } = await runCreate({ streamblocksNode: true });
+        const { quickPickLabels, inputPrompts } = await runCreate({ gizmoNode: true });
 
-        expect(quickPickLabels).toContain('$(add) Create new StreamBlocks node...');
+        expect(quickPickLabels).toContain('$(add) Create new gizmo...');
         expect(inputPrompts).not.toContain('Enter task type name');
     });
 
     it('labels the picker with the variant vocabulary, not the generic one', async () => {
-        const { quickPickTitles, quickPickLabels } = await runCreate({ streamblocksNode: true });
+        const { quickPickTitles, quickPickLabels } = await runCreate({ gizmoNode: true });
 
         const shown = [...quickPickTitles, ...quickPickLabels].join('\n');
-        expect(shown).toContain('StreamBlocks node');
+        expect(shown).toContain('gizmo');
         // 'task' is the fallback label; seeing it means the kind resolved wrong.
         expect(shown).not.toMatch(/\btask\b/);
     });
@@ -143,7 +212,7 @@ describe('the entries that already reached the wizard', () => {
         const { quickPickLabels } = await runCreate({});
 
         expect(quickPickLabels).toContain('$(add) Create new tool task...');
-        expect(quickPickLabels).not.toContain('$(add) Create new StreamBlocks node...');
+        expect(quickPickLabels).not.toContain('$(add) Create new gizmo...');
     });
 
     it('still routes an agent entry to its own vocabulary', async () => {
@@ -187,13 +256,13 @@ describe('a variant entry, driven to the end', () => {
         windowAny.showQuickPick = async (items: Array<{ label: string }>) => {
             const labels = items.map(i => i.label);
             const pick = (needle: string) => items.find(i => i.label.includes(needle));
-            return pick('Create new') ?? pick('Instance') ?? pick('Type a path')
+            return pick('Create new') ?? pick('Wired') ?? pick('Type a path')
                 ?? (() => { throw new Error(`unanswered quick pick: ${labels.join(', ')}`); })();
         };
         windowAny.showInputBox = async (options: any) => {
             const prompt = String(options?.prompt ?? '');
             if (prompt.includes('class name')) { return 'Adder'; }
-            if (prompt.includes('network file')) { return 'designs/adder.py'; }
+            if (prompt.includes('it runs')) { return 'designs/adder.py'; }
             return 'adder';
         };
 
@@ -206,7 +275,8 @@ describe('a variant entry, driven to the end', () => {
                 sidecarOp: (op: string) => `wfpy.${op}`,
                 undoLabelSuffix: () => ' (wf)',
                 createNodeStrings: () => STRINGS,
-                createNodeBehavior: () => BEHAVIOR
+                createNodeBehavior: () => BEHAVIOR,
+                createNodeVariants: () => VARIANTS
             };
             (handler as any).sendSidecarListDetailed = async () => ({
                 ok: true,
@@ -220,7 +290,7 @@ describe('a variant entry, driven to the end', () => {
             const command = handler.createCommand({
                 kind: 'createNode',
                 elementTypeId: WorkflowDiagramTypes.NODE_EXTERNAL_TASK,
-                args: { streamblocksNode: true }
+                args: { gizmoNode: true }
             } as any);
             expect(command).toBeTruthy();
             await (command as any).execute();
@@ -234,8 +304,8 @@ describe('a variant entry, driven to the end', () => {
 
         const created = sent.find(r => r.op === 'wfpy.createTaskType');
         expect(created, 'no type was created — the wizard was never reached').toBeDefined();
-        expect(created!.args.kind).toBe('streamblocks');
-        expect(created!.args.facade).toBe('instance');
+        expect(created!.args.kind).toBe('gizmo');
+        expect(created!.args.facade).toBe('wired');
         expect(created!.args.network).toBe('designs/adder.py');
     });
 });
@@ -302,7 +372,8 @@ describe('a source palette entry', () => {
                 sidecarOp: (op: string) => `wfpy.${op}`,
                 undoLabelSuffix: () => ' (wf)',
                 createNodeStrings: () => STRINGS,
-                createNodeBehavior: () => BEHAVIOR
+                createNodeBehavior: () => BEHAVIOR,
+                createNodeVariants: () => VARIANTS
             };
             (handler as any).sendSidecarListDetailed = async () => ({
                 ok: true,
@@ -409,5 +480,155 @@ describe('a source palette entry', () => {
         const { created } = await createSource({ shape: 'File' });
 
         expect(created).toBeUndefined();
+    });
+});
+
+/**
+ * The toolkit carries none of this vocabulary.
+ *
+ * Everything above runs against a product the toolkit has never heard of, which
+ * is the real assertion: if any of the question, the choices, or the follow-up
+ * wording were still built in, these would show the toolkit's words rather than
+ * the product's. It used to hold all of it — a named product, its two variants,
+ * and the file one of them needs — in prompts users read.
+ */
+describe('the toolkit as a carrier, not an author', () => {
+    const pastTheTypePicker = (labels: string[]) =>
+        labels.find(label => label.includes('Create new'));
+    const named = () => 'Gadget';
+
+    it('asks the question the product wrote', async () => {
+        const { quickPickTitles } = await runCreate({ gizmoNode: true }, pastTheTypePicker, named);
+
+        expect(quickPickTitles).toContain('Which kind of gizmo?');
+    });
+
+    it('offers the choices the product named', async () => {
+        const { quickPickLabels } = await runCreate({ gizmoNode: true }, pastTheTypePicker, named);
+
+        expect(quickPickLabels).toContain('Plain');
+        expect(quickPickLabels).toContain('Wired');
+    });
+
+    /**
+     * The control, and the point. A product the toolkit has never been taught
+     * gets the same wizard as one it might have been.
+     */
+    it('names no product of its own', async () => {
+        const handlerSource = await fs.readFile(
+            path.join(__dirname, '../src/server/operations/create-node-handler.ts'),
+            'utf8'
+        );
+
+        // Not a spelling check — the neutrality gate does that. This says the
+        // flow reads its vocabulary from config rather than holding any.
+        expect(handlerSource).toContain('createNodeVariants()');
+        expect(handlerSource.toLowerCase()).not.toContain('streamblocks');
+    });
+});
+
+/**
+ * A variant type already written in the file has to be discovered as what it
+ * is.
+ *
+ * The picker merges types found by scanning the project, and the fallback that
+ * claims anything with `class Ports:` is a task will claim a variant type too —
+ * so without a branch ahead of it, an existing one is offered under the wrong
+ * kind. Silently: it appears in a list, just the wrong list.
+ */
+describe('a variant type already in the project', () => {
+    async function pickerFor(
+        args: Record<string, unknown>,
+        source: string,
+        elementTypeId: string = WorkflowDiagramTypes.NODE_EXTERNAL_TASK
+    ) {
+        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'variant-scan-'));
+        const file = path.join(dir, 'flow.py');
+        await fs.writeFile(file, source);
+
+        const handler = new CreateNodeOperationHandler();
+        const workspaceAny = vscode.workspace as any;
+        const windowAny = vscode.window as any;
+        const original = {
+            openTextDocument: workspaceAny.openTextDocument,
+            applyEdit: workspaceAny.applyEdit,
+            showQuickPick: windowAny.showQuickPick,
+            showInputBox: windowAny.showInputBox
+        };
+        const labels: string[] = [];
+
+        workspaceAny.openTextDocument = async () => ({
+            uri: { fsPath: file, toString: () => `file://${file}` },
+            getText: () => source
+        });
+        workspaceAny.applyEdit = async () => false;
+        windowAny.showQuickPick = async (items: Array<{ label: string }>) => {
+            labels.push(...items.map(i => i.label));
+            return undefined;
+        };
+        windowAny.showInputBox = async () => undefined;
+
+        try {
+            (handler as any).modelState = {
+                root: { args: { sourceUri: `file://${file}`, 'wf:workflowName': 'Main' } }
+            };
+            (handler as any).sidecar = {
+                settingsNamespace: () => 'wfLang',
+                sidecarOp: (op: string) => `wfpy.${op}`,
+                undoLabelSuffix: () => ' (wf)',
+                createNodeStrings: () => STRINGS,
+                createNodeBehavior: () => BEHAVIOR,
+                createNodeVariants: () => VARIANTS
+            };
+            (handler as any).sendSidecarListDetailed = async () => ({
+                ok: true,
+                response: { status: 'ok', diagnostic: { types: [], names: [] } }
+            });
+            (handler as any).sendSidecarOpDetailed = async () => ({ ok: true, response: { status: 'ok' } });
+
+            const command = handler.createCommand({
+                kind: 'createNode',
+                elementTypeId,
+                args
+            } as any);
+            if (command) { await (command as any).execute(); }
+        } finally {
+            Object.assign(workspaceAny, original);
+            Object.assign(windowAny, original);
+            await fs.rm(dir, { recursive: true, force: true });
+        }
+        return labels;
+    }
+
+    const SOURCE = [
+        'from wfpy import gizmo, task, Port',
+        '',
+        '@gizmo(facade="wired")',
+        'class ExistingGizmo:',
+        '    class Ports:',
+        '        In = Port[int](direction="in")',
+        '',
+        '@task',
+        'class PlainTask:',
+        '    class Ports:',
+        '        In = Port[int](direction="in")',
+        ''
+    ].join('\n');
+
+    it('is offered when creating that variant', async () => {
+        expect(await pickerFor({ gizmoNode: true }, SOURCE)).toContain('ExistingGizmo');
+    });
+
+    /**
+     * The half that actually breaks. Without a branch ahead of the task
+     * fallback it lands here instead, which reads as working until someone
+     * picks it.
+     */
+    it('is not offered as a plain task', async () => {
+        // The plain-task picker, which is the list the fallback would put it in.
+        const labels = await pickerFor({}, SOURCE, WorkflowDiagramTypes.NODE_TASK);
+
+        expect(labels).toContain('PlainTask');
+        expect(labels).not.toContain('ExistingGizmo');
     });
 });
