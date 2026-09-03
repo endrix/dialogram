@@ -356,40 +356,6 @@ export class ViewerMouseListener extends MouseListener implements Ranked {
             ?? parseStringListLiteralish(argByName.get('command_args'));
         const title = parseStringLiteralish(argByName.get('title'));
 
-        if (!inputs || inputs.length === 0) {
-            return [
-                NavigateToExternalTargetAction.create({
-                    uri: this.editorContext.sourceUri ?? 'file:///',
-                    args: {
-                        [VIEWER_ACTION_ARG]: 'error',
-                        [VIEWER_MESSAGE_ARG]: '@viewer: missing inputs=[...] (run the workflow first, then double-click again).'
-                    }
-                })
-            ];
-        }
-
-        const root: any = (node as any).root;
-        const edges = root ? collectEdges(root) : [];
-
-        const overlayRunId = root?.args?.['wf:viewerOverlayRunId'];
-        const overlayOutDir = root?.args?.['wf:viewerOverlayOutDir'];
-        const hasOverlay = typeof overlayRunId === 'string' && overlayRunId.trim() !== '';
-
-        const tokenByInputName = new Map<string, string>();
-        for (const inputName of inputs) {
-            const targetPortId = `${node.id}_port_${inputName}`;
-            const incoming = bestIncomingEdgeForViewerInput(edges, targetPortId);
-            const lastToken = incoming?.args?.[WorkflowDiagramMetadata.VIEWER_LAST_TOKEN];
-            const tokenPath = lastTokenAsPath(lastToken);
-            if (tokenPath) {
-                tokenByInputName.set(inputName, tokenPath);
-            }
-        }
-
-        const getTokenOrError = (name: string): string | undefined => {
-            return tokenByInputName.get(name);
-        };
-
         const fail = (message: string): (Action | Promise<Action>)[] => [
             NavigateToExternalTargetAction.create({
                 uri: this.editorContext.sourceUri ?? 'file:///',
@@ -422,6 +388,37 @@ export class ViewerMouseListener extends MouseListener implements Ranked {
                 })
             ];
         }
+
+        // Below here every route resolves its target from the last token on an
+        // input, so an input is what it needs. This guard used to sit above the
+        // declared branch, where it caught nodes that never wanted a token: a
+        // node that declares its target has no inputs by nature, so it was told
+        // to run the workflow first and could never be opened at all.
+        if (!inputs || inputs.length === 0) {
+            return fail('@viewer: missing inputs=[...] (run the workflow first, then double-click again).');
+        }
+
+        const root: any = (node as any).root;
+        const edges = root ? collectEdges(root) : [];
+
+        const overlayRunId = root?.args?.['wf:viewerOverlayRunId'];
+        const overlayOutDir = root?.args?.['wf:viewerOverlayOutDir'];
+        const hasOverlay = typeof overlayRunId === 'string' && overlayRunId.trim() !== '';
+
+        const tokenByInputName = new Map<string, string>();
+        for (const inputName of inputs) {
+            const targetPortId = `${node.id}_port_${inputName}`;
+            const incoming = bestIncomingEdgeForViewerInput(edges, targetPortId);
+            const lastToken = incoming?.args?.[WorkflowDiagramMetadata.VIEWER_LAST_TOKEN];
+            const tokenPath = lastTokenAsPath(lastToken);
+            if (tokenPath) {
+                tokenByInputName.set(inputName, tokenPath);
+            }
+        }
+
+        const getTokenOrError = (name: string): string | undefined => {
+            return tokenByInputName.get(name);
+        };
 
         if (action === 'diff') {
             if (inputs.length !== 2) {
