@@ -19,6 +19,7 @@ import {
     getSidecarCommand,
     type SidecarRuntimeConfig,
     type CreateNodeStrings,
+    type CreateNodeVariant,
     type CreateNodeBehavior
 } from './server/sidecar-runtime-config.js';
 import { createSidecarModelSource } from './server/cli-graph-model-source.js';
@@ -129,6 +130,7 @@ export interface SidecarProfileInput {
     undoLabelSuffix: string;
     createNodeStrings: CreateNodeStrings;
     createNodeBehavior: CreateNodeBehavior;
+    createNodeVariants?: CreateNodeVariant[];
 
     // Source file + palette.
     sourceExtension: string;
@@ -198,7 +200,8 @@ function sidecarRuntimeConfig(input: SidecarProfileInput): SidecarRuntimeConfig 
         graphExportFailureLabel: input.graphExportFailureLabel,
         undoLabelSuffix: input.undoLabelSuffix,
         createNodeStrings: input.createNodeStrings,
-        createNodeBehavior: input.createNodeBehavior
+        createNodeBehavior: input.createNodeBehavior,
+        createNodeVariants: input.createNodeVariants
     };
 }
 
