@@ -109,27 +109,47 @@ describe('where the ring is drawn', () => {
 
 describe('what makes it turn', () => {
     /**
-     * A custom property is a string to the engine until `@property` gives it a
-     * type. Untyped, it jumps from start to end at the halfway point instead of
-     * sweeping — the ring would blink rather than rotate.
+     * The cost, not the look.
+     *
+     * `conic-gradient(from var(--angle))` with the angle animated is the
+     * shorter way to write this, and it repaints the gradient every frame — per
+     * ring, per glow, per running node. That version slowed the editor down.
+     * Rotating a layer is composited: the gradient is rasterised once and the
+     * frames after it cost nothing to draw.
      */
-    it('declares the angle animatable', () => {
-        const declaration = /@property --wf-ring-angle\s*\{([\s\S]*?)\}/.exec(css)?.[1] ?? '';
-
-        expect(declaration).toContain("syntax: '<angle>'");
-        expect(declaration).toMatch(/initial-value:\s*0deg/);
-    });
-
-    it('sweeps a whole turn', () => {
+    it('rotates a layer rather than repainting the gradient', () => {
         const frames = /@keyframes workflow-node-ring-turn\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
 
-        expect(frames).toMatch(/--wf-ring-angle:\s*360deg/);
+        expect(frames).toMatch(/transform:\s*rotate\(360deg\)/);
+        expect(frames).not.toMatch(/--wf-ring-angle/);
     });
 
-    it('feeds that angle to the gradient', () => {
-        // Without `from`, the gradient is static and the animation drives
-        // nothing that can be seen.
-        expect(css).toMatch(/conic-gradient\(from var\(--wf-ring-angle\)/);
+    it('does not animate the gradient’s own angle anywhere', () => {
+        // Including via `@property`, which only exists to make that animatable.
+        expect(css).not.toContain('--wf-ring-angle');
+        expect(css).not.toMatch(/conic-gradient\(from/);
+    });
+
+    it('gives the turning square its own layer', () => {
+        // Without the hint the browser may keep it on a shared layer and
+        // repaint its neighbours with it.
+        expect(css).toMatch(/\.node-run-ring-spin \{[^}]*will-change:\s*transform/);
+    });
+
+    /**
+     * A square wide enough for the node's diagonal. Anything smaller leaves a
+     * corner uncoloured as it turns, and a rotated rectangle sweeps its own
+     * corners through the ring.
+     */
+    it('turns a square that covers the node’s diagonal', () => {
+        const spanOf = (w: number, h: number) => {
+            // band > spin: the square lives inside the masked box, not beside it.
+            const spin = dataOf(ring(w, h).children[1].children[0]);
+            return Number(/([\d.]+)px/.exec(spin.style['--wf-ring-span'])![1]);
+        };
+
+        expect(spanOf(140, 60)).toBeGreaterThanOrEqual(Math.hypot(140, 60));
+        expect(spanOf(300, 120)).toBeGreaterThanOrEqual(Math.hypot(300, 120));
     });
 
     it('runs at a constant speed', () => {
@@ -170,7 +190,16 @@ describe('the band itself', () => {
 
     it('glows in its own colours rather than one', () => {
         // A drop-shadow floods a single colour; a blurred copy keeps every hue.
-        expect(css).toMatch(/\.node-run-ring-glow \{[^}]*filter:\s*blur/);
+        expect(css).toMatch(/\.node-run-ring-glow \.node-run-ring-spin \{[^}]*filter:\s*blur/);
+    });
+
+    /**
+     * And the blur is on the square, not its container. Blurring a container
+     * re-blurs it on every frame its child moves — which is the cost this
+     * whole approach exists to avoid.
+     */
+    it('blurs the turning square rather than its container', () => {
+        expect(css).not.toMatch(/\.node-run-ring-glow \{[^}]*filter:\s*blur/);
     });
 });
 

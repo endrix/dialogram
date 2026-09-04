@@ -469,19 +469,14 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
 /*
  * A running node is ringed by a colour that turns clockwise.
  *
- * The angle has to be declared to be animatable: a custom property is a string
- * to the engine until `@property` gives it a type, and an untyped one jumps
- * from start to end instead of sweeping.
+ * The gradient is painted once and the layer holding it is rotated. Animating
+ * the gradient's own angle reads better in CSS and repaints the gradient every
+ * frame, per ring, per running node — heavy enough to slow the editor down. A
+ * transform is composited, so a frame costs nothing to draw.
  */
-@property --wf-ring-angle {
-    syntax: '<angle>';
-    initial-value: 0deg;
-    inherits: false;
-}
-
 @keyframes workflow-node-ring-turn {
     to {
-        --wf-ring-angle: 360deg;
+        transform: rotate(360deg);
     }
 }
 
@@ -493,35 +488,57 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
     stroke-opacity: 0.22;
 }
 
-/*
- * The ring lives in a foreignObject, which clips what it holds — hence the
- * inset, which pulls the band back off the bleed and onto the node's own edge.
- */
 .node-run-ring {
     overflow: visible;
     pointer-events: none;
 }
 
+/*
+ * The band and its glow are the same thing twice: a box whose middle is masked
+ * away, leaving only its padding — which IS the ring, and whose width is
+ * therefore the ring's thickness.
+ *
+ * `inset` pulls them back off the bleed the foreignObject was given, onto the
+ * node's own edge.
+ */
 .node-run-ring-band,
 .node-run-ring-glow {
     position: absolute;
     inset: var(--wf-ring-bleed);
     box-sizing: border-box;
     border-radius: 4px;
-    /* The ring IS this padding: the fill covers the box, and masking the
-       content box away leaves only the band around it. */
     padding: var(--wf-ring-width);
-    background: conic-gradient(from var(--wf-ring-angle), var(--wf-ring-colors));
+    /* The mask clips the turning square as well as shaping the band: it covers
+       the border box, so the square's overhang is simply never painted. A
+       further `overflow: hidden` changes nothing — checked against the engine
+       this runs in. */
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
     mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     mask-composite: exclude;
-    animation: workflow-node-ring-turn var(--wf-spin-duration) linear infinite;
 }
 
-/* The same ring, blurred, underneath — a glow that keeps every hue rather than
-   flooding one colour the way a drop-shadow would. */
-.node-run-ring-glow {
+/* The gradient itself: painted once, then turned. */
+.node-run-ring-spin {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--wf-ring-span);
+    height: var(--wf-ring-span);
+    margin-left: calc(var(--wf-ring-span) / -2);
+    margin-top: calc(var(--wf-ring-span) / -2);
+    background: conic-gradient(var(--wf-ring-colors));
+    animation: workflow-node-ring-turn var(--wf-spin-duration) linear infinite;
+    /* Its own layer, so turning it never repaints the gradient. */
+    will-change: transform;
+}
+
+/*
+ * The blur sits on the turning square rather than on its container: blurring a
+ * container re-blurs it on every frame its child moves, while blurring the
+ * square itself is done once and then carried round by the same transform.
+ */
+.node-run-ring-glow .node-run-ring-spin {
     filter: blur(3.5px);
     opacity: 0.6;
 }
@@ -531,8 +548,7 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
  * node is running, so nothing is lost but the movement.
  */
 @media (prefers-reduced-motion: reduce) {
-    .node-run-ring-band,
-    .node-run-ring-glow {
+    .node-run-ring-spin {
         animation: none;
     }
 }

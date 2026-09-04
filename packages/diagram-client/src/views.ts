@@ -140,19 +140,30 @@ const RUN_RING_BLEED_PX = 6;
 /**
  * The colour ring that turns around a node while it is running.
  *
- * A conic gradient, which is what this effect is everywhere else — and which
- * SVG cannot paint: `stroke` takes a colour or an SVG paint server, and there
- * is no conic one. So the ring is an HTML element inside a `foreignObject`,
- * where CSS can paint it directly. One element and a real gradient, rather
- * than the perimeter chopped into slices to fake the colour sweep.
+ * A conic gradient, which is what this effect is everywhere else and which SVG
+ * cannot paint — `stroke` takes a colour or an SVG paint server, and there is
+ * no conic one. So the ring is an HTML element inside a `foreignObject`, where
+ * CSS paints it directly.
  *
- * The ring is the padding of a box whose middle is masked away — the fill
- * covers the whole box, and excluding the content box leaves only the band.
- * Its thickness is that padding, and nothing else needs to know the node's
- * size.
+ * The gradient is painted ONCE and the layer holding it is rotated. Animating
+ * the gradient's own angle is the shorter way to write this and it repaints the
+ * gradient every frame, per ring, per running node — which is what made the
+ * first version heavy enough to slow the editor down. A transform is composited
+ * instead, so a frame costs nothing to draw.
+ *
+ * Rotating a square wide enough to cover the node's diagonal is what keeps the
+ * colours meeting the border squarely at every angle; a rotated rectangle would
+ * sweep its corners through the ring.
  */
 function renderRunRing(width: number, height: number): VNode {
     const bleed = RUN_RING_BLEED_PX;
+    // Cover the diagonal, so no corner of the node is ever left uncoloured as
+    // the square turns.
+    const span = Math.ceil(Math.hypot(width, height)) + 2;
+    const spinner = (): VNode => html('div', {
+        class: { 'node-run-ring-spin': true },
+        style: { '--wf-ring-span': `${span}px` }
+    });
     return svg('foreignObject', {
         class: { 'node-run-ring': true },
         attrs: {
@@ -164,8 +175,8 @@ function renderRunRing(width: number, height: number): VNode {
     },
         // `html`, not `svg`: children of a foreignObject belong to the HTML
         // namespace, and an SVG-namespaced div renders nothing at all.
-        html('div', { class: { 'node-run-ring-glow': true } }),
-        html('div', { class: { 'node-run-ring-band': true } })
+        html('div', { class: { 'node-run-ring-glow': true } }, spinner()),
+        html('div', { class: { 'node-run-ring-band': true } }, spinner())
     );
 }
 
