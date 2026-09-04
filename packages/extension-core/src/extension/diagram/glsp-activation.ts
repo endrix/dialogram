@@ -30,11 +30,13 @@ import { registerWorkflowEditorProvider } from './diagram-editor-provider';
 import type { WorkflowEditorProvider } from './diagram-editor-provider';
 import { ExecutionOverlayRegistry } from './execution-overlay';
 import { forwardExecutionOverlayEvents, type ExecutionOverlayWebviewSink } from './execution-overlay-bridge';
-import { resolveDiagramOpenTarget, type DiagramOpenTargetArg } from './open-diagram-target';
+import { readRequestedNetworkName, resolveDiagramOpenTarget, type DiagramOpenTargetArg } from './open-diagram-target';
+import { matchesSourceExtension, sourceFileNoun } from './source-extensions';
 import { normalizeSourceUriKey } from './uri-keys';
 import { executeViewerCommand, executeViewerOpen, executeViewerReveal } from './viewer-actions';
 import { decideDiagramOpen } from './diagram-open-decision';
 import { readMcpServerUrl } from './mcp-server-url';
+import { composeStorageRuntimeOptions } from './profile-storage-options';
 import { type DiagramProfile, type DiagramRunHost } from '../../api';
 
 // Define the diagram type constant locally to avoid import
@@ -373,13 +375,19 @@ export async function activateGlspIntegration(
     // `mcpServer` config that boots the in-host loopback listener on `initialize`.
     const mcpEnabled = profile.mcp?.enabled === true;
 
+    // The palette-suppression flag lives on the profile ROOT but is read on the
+    // server off the storage runtime options, so it is folded onto that channel
+    // here. See `profile-storage-options.ts` for the one case that is not a
+    // straight pass-through.
+    const storageOptions = composeStorageRuntimeOptions(profile);
+
     // Create the GLSP server (runs in the extension process). Every product
     // detail — model source, extra DI modules, edit operation modules and the
     // neutral storage options — arrives through the profile; core stays neutral.
     const workflowServer = createWorkflowGlspVscodeServer({
         clientId: profile.glspClientId,
         clientName: profile.glspClientName,
-        storageOptions: profile.storageOptions,
+        storageOptions,
         additionalServerModules: (profile.serverModules ?? []) as ContainerModule[],
         edits: profile.edits,
         modelSourceFactory: profile.modelSource,
@@ -998,13 +1006,21 @@ function registerCalDiagramCommands(
         connector.dispatchAction(action);
     };
 
+    // The noun every "which file did you mean?" message in this function uses.
+    // Built from the profile's declaration so the core never writes an extension
+    // of its own into text a user reads; plain "source file" when none is declared.
+    const sourceNoun = sourceFileNoun(profile.sourceExtensions);
+    // A type predicate, so the callers that go on to use the URI still narrow it.
+    const isProfileSource = (uri: vscode.Uri | undefined): uri is vscode.Uri =>
+        !!uri && matchesSourceExtension(uri.fsPath, profile.sourceExtensions);
+
     const getActiveWorkflowUri = (): vscode.Uri | undefined => {
         const diagramUri = getActiveWorkflowDiagramUri();
-        if (diagramUri?.fsPath?.endsWith('.py')) {
+        if (isProfileSource(diagramUri)) {
             return diagramUri;
         }
         const activeEditorUri = vscode.window.activeTextEditor?.document.uri;
-        if (activeEditorUri?.fsPath?.endsWith('.py')) {
+        if (isProfileSource(activeEditorUri)) {
             return activeEditorUri;
         }
         return undefined;
@@ -1093,14 +1109,16 @@ function registerCalDiagramCommands(
             const sourceUri = await resolveDiagramOpenTarget(arg, {
                 getActiveWorkflowUri,
                 openTextDocument: vscode.workspace.openTextDocument,
-                workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+                workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+                sourceExtensions: profile.sourceExtensions
             });
             if (!sourceUri) {
-                vscode.window.showWarningMessage('Please open a .py file first, or pass a .py path/URI to the command.');
+                vscode.window.showWarningMessage(`Please open a ${sourceNoun} first, or pass its path/URI to the command.`);
                 return;
             }
+            const requestedNetwork = readRequestedNetworkName(arg);
             const canOpen = profile.canOpenSource
-                ? await profile.canOpenSource(sourceUri, {})
+                ? await profile.canOpenSource(sourceUri, { requestedName: requestedNetwork })
                 : undefined;
             if (decideDiagramOpen(canOpen, false) === 'text-fallback') {
                 await vscode.window.showTextDocument(sourceUri, {
@@ -1108,6 +1126,13 @@ function registerCalDiagramCommands(
                     preserveFocus: false
                 });
                 return;
+            }
+            // Stash the requested graph the same way a drill-down does, so the
+            // initial model request picks it up. `vscode.openWith` carries no
+            // arbitrary data, so this side channel is the only way a name known
+            // before the editor exists can reach the model source.
+            if (requestedNetwork) {
+                putPending(state.pendingNetworkBySourceUri, sourceUri.toString(), requestedNetwork);
             }
             // Open the source file with the workflow diagram editor
             await vscode.commands.executeCommand(
@@ -1124,14 +1149,16 @@ function registerCalDiagramCommands(
             const sourceUri = await resolveDiagramOpenTarget(arg, {
                 getActiveWorkflowUri,
                 openTextDocument: vscode.workspace.openTextDocument,
-                workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+                workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+                sourceExtensions: profile.sourceExtensions
             });
             if (!sourceUri) {
-                vscode.window.showWarningMessage('Please open a .py file first, or pass a .py path/URI to the command.');
+                vscode.window.showWarningMessage(`Please open a ${sourceNoun} first, or pass its path/URI to the command.`);
                 return;
             }
+            const requestedNetwork = readRequestedNetworkName(arg);
             const canOpen = profile.canOpenSource
-                ? await profile.canOpenSource(sourceUri, {})
+                ? await profile.canOpenSource(sourceUri, { requestedName: requestedNetwork })
                 : undefined;
             if (decideDiagramOpen(canOpen, false) === 'text-fallback') {
                 await vscode.window.showTextDocument(sourceUri, {
@@ -1142,6 +1169,9 @@ function registerCalDiagramCommands(
                 return;
             }
             // Open the source file with the network diagram editor in a split view
+            if (requestedNetwork) {
+                putPending(state.pendingNetworkBySourceUri, sourceUri.toString(), requestedNetwork);
+            }
             await vscode.commands.executeCommand(
                 'vscode.openWith',
                 sourceUri,
@@ -1176,8 +1206,8 @@ function registerCalDiagramCommands(
             profile.commands.renameEntityByName,
             async (args?: { oldName?: string; newName?: string; sourceUri?: string }) => {
                 const sourceUri = args?.sourceUri ? vscode.Uri.parse(args.sourceUri) : getActiveWorkflowUri();
-                if (!sourceUri || !sourceUri.fsPath.endsWith('.py')) {
-                    const message = 'No active .py source found. Focus a workflow diagram or .py editor and try again.';
+                if (!isProfileSource(sourceUri)) {
+                    const message = `No active ${sourceNoun} found. Focus a diagram or an editor on one and try again.`;
                     void vscode.window.showWarningMessage(message);
                     return { ok: false, message };
                 }

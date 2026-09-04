@@ -103,6 +103,20 @@ describe('createSidecarDiagramProfile', () => {
             useAlternateEntityPalette: undefined
         });
         expect(p.watch).toEqual({ globs: ['**/*.py'] });
+        // The same extension reaches the platform as a declaration, so the
+        // open/rename commands filter on it and their warnings name it. Left
+        // unset, the platform accepts any file — right for a profile that cannot
+        // say what its sources are called, wrong for this builder, which can.
+        expect(p.sourceExtensions).toEqual([baseInput().sourceExtension]);
+    });
+
+    it('leaves the creation palette alone unless the product suppresses it', () => {
+        // Default `true` by omission, so the assembler cannot silently empty the
+        // palette of a product that never mentioned it.
+        expect(createSidecarDiagramProfile(baseInput()).supportsElementCreation).toBeUndefined();
+        expect(
+            createSidecarDiagramProfile(baseInput({ supportsElementCreation: false })).supportsElementCreation
+        ).toBe(false);
     });
 
     it('threads the sidecar operation prefix onto the chat carry-over', () => {

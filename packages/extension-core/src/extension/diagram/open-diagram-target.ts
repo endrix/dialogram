@@ -1,16 +1,47 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { matchesSourceExtension } from './source-extensions';
 
 export type DiagramOpenTargetArg = vscode.Uri | string | {
     sourceUri?: string;
     uri?: string;
     filePath?: string;
+    /**
+     * Which named graph inside the file to open at.
+     *
+     * A source file can hold several graphs, and the platform can already show
+     * one by name — but only once a diagram exists, because the name has only
+     * ever arrived on a request the WEBVIEW originates: a drill-down, or a
+     * cross-file navigation. A caller that knows the name BEFORE the editor
+     * exists had nowhere to put it, which is what stopped a consumer from
+     * asking "which module?" and opening at the answer.
+     */
+    networkName?: string;
 };
+
+/**
+ * The named graph an open request asks for, if any.
+ *
+ * Separate from {@link resolveDiagramOpenTarget} because they fail differently:
+ * a target that cannot be resolved means there is nothing to open, while an
+ * absent name simply means "open at the default", which is what every existing
+ * caller already relies on.
+ */
+export function readRequestedNetworkName(arg: DiagramOpenTargetArg | undefined): string | undefined {
+    if (!arg || typeof arg === 'string' || arg instanceof vscode.Uri) {
+        return undefined;
+    }
+    const name = typeof arg.networkName === 'string' ? arg.networkName.trim() : '';
+    return name === '' ? undefined : name;
+}
 
 export type ResolveDiagramOpenTargetOptions = {
     getActiveWorkflowUri: () => vscode.Uri | undefined;
     openTextDocument: (uri: vscode.Uri) => Thenable<{ uri: vscode.Uri }>;
     workspaceRoot?: string;
+    /** The profile's declared source extensions; absent/empty accepts any file
+     *  (see `source-extensions.ts` for why the default is permissive). */
+    sourceExtensions?: readonly string[];
 };
 
 function isUriString(value: string): boolean {
@@ -81,7 +112,7 @@ export async function resolveDiagramOpenTarget(
     const candidate = parseTargetCandidate(arg, options.workspaceRoot);
     const resolved = candidate ?? options.getActiveWorkflowUri();
 
-    if (!resolved || resolved.scheme !== 'file' || !resolved.fsPath.toLowerCase().endsWith('.py')) {
+    if (!resolved || resolved.scheme !== 'file' || !matchesSourceExtension(resolved.fsPath, options.sourceExtensions)) {
         return undefined;
     }
 

@@ -11,6 +11,7 @@
 import type { NodeFamilySpec } from '@dialogram/shared';
 import { injectable } from 'inversify';
 import { VNode } from 'snabbdom';
+import { html } from 'sprotty/lib/lib/jsx';
 import {
     svg,
     IView,
@@ -127,7 +128,60 @@ function resolveNodeFamily(
 }
 
 /** Internals reached by the family tests; not part of the module's surface. */
-export const __testables = { resolveNodeFamily };
+
+/**
+ * Room left around the node for the ring's glow.
+ *
+ * A `foreignObject` clips what it holds, so the blur has to have somewhere to
+ * go — without this the glow is cut off square at the node's edge.
+ */
+const RUN_RING_BLEED_PX = 6;
+
+/**
+ * The colour ring that turns around a node while it is running.
+ *
+ * A conic gradient, which is what this effect is everywhere else and which SVG
+ * cannot paint — `stroke` takes a colour or an SVG paint server, and there is
+ * no conic one. So the ring is an HTML element inside a `foreignObject`, where
+ * CSS paints it directly.
+ *
+ * The gradient is painted ONCE and the layer holding it is rotated. Animating
+ * the gradient's own angle is the shorter way to write this and it repaints the
+ * gradient every frame, per ring, per running node — which is what made the
+ * first version heavy enough to slow the editor down. A transform is composited
+ * instead, so a frame costs nothing to draw.
+ *
+ * Rotating a square wide enough to cover the node's diagonal is what keeps the
+ * colours meeting the border squarely at every angle; a rotated rectangle would
+ * sweep its corners through the ring.
+ */
+function renderRunRing(width: number, height: number): VNode {
+    const bleed = RUN_RING_BLEED_PX;
+    // Cover the diagonal, so no corner of the node is ever left uncoloured as
+    // the square turns.
+    const span = Math.ceil(Math.hypot(width, height)) + 2;
+    const spinner = (): VNode => html('div', {
+        class: { 'node-run-ring-spin': true },
+        style: { '--wf-ring-span': `${span}px` }
+    });
+    return svg('foreignObject', {
+        class: { 'node-run-ring': true },
+        attrs: {
+            x: -bleed,
+            y: -bleed,
+            width: width + 2 * bleed,
+            height: height + 2 * bleed
+        }
+    },
+        // `html`, not `svg`: children of a foreignObject belong to the HTML
+        // namespace, and an SVG-namespaced div renders nothing at all.
+        html('div', { class: { 'node-run-ring-glow': true } }, spinner()),
+        html('div', { class: { 'node-run-ring-band': true } }, spinner())
+    );
+}
+
+/** Internals reached by the family and ring tests; not part of the module's surface. */
+export const __testables = { resolveNodeFamily, renderRunRing, RUN_RING_BLEED_PX };
 
 /**
  * Render a semi-transparent SVG icon centered in the node body (below the header).
@@ -692,6 +746,8 @@ export class ActorNodeView extends ShapeView {
                     rx: 4, ry: 4
                 }
             }),
+            // Above the body so the travelling head is not painted over by it.
+            ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
             ...(family?.icon ? [renderNodeCenterIcon(family, width, bodyHeight)] : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
@@ -758,6 +814,8 @@ export class ExternalActorNodeView extends ShapeView {
                     rx: 4, ry: 4
                 }
             }),
+            // Above the body so the travelling head is not painted over by it.
+            ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
             ...(family?.icon ? [renderNodeCenterIcon(family, width, bodyHeight)] : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
@@ -818,6 +876,8 @@ export class NetworkNodeView extends ShapeView {
                     rx: 4, ry: 4
                 }
             }),
+            // Above the body so the travelling head is not painted over by it.
+            ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
         );

@@ -72,6 +72,37 @@ const RUN_OUTPUT_FALLBACK_EXCLUDE_GLOB =
 const RUN_OUTPUT_FALLBACK_MAX_RESULTS = 50;
 
 /**
+ * Whether a saved layout can be used as it stands, or the diagram has to be
+ * laid out afresh.
+ *
+ * A saved layout suppresses the initial layout run, so this decides for the
+ * whole graph and not just for the nodes the file happens to mention.
+ *
+ * It used to be enough for the layout to place ANY node. The reasoning behind
+ * that threshold was sound as far as it went: a file matching nothing came from
+ * a different runtime and had to be ignored. What it missed is the case in
+ * between, a layout saved while the graph had fewer nodes in it. Such a file
+ * matched some nodes, counted as a layout, and suppressed the run — so every
+ * node it had never heard of kept the position it was born with, which is the
+ * origin. They end up stacked on one another in a corner, joined by edges too
+ * short to see, and because only the last one drawn is visible the diagram
+ * reads as having lost its content rather than never having been placed.
+ *
+ * A graph gains nodes whenever what the producer emits changes: a filter
+ * switched off, a view showing more detail, an edited source file. None of that
+ * is rare, and all of it produced a broken picture with nothing to explain it.
+ *
+ * The cost of requiring full coverage is that gaining one node re-lays-out the
+ * diagram, so a hand-arrangement is lost. That is a genuine loss and still the
+ * better side of the trade: an arrangement the reader chose is worth less than
+ * a diagram they can read, the result is persisted immediately so it happens
+ * once, and this failure is at least visible where the other was silent.
+ */
+export function savedLayoutIsUsable(hasSavedPositions: boolean, unpositionedNodeCount: number): boolean {
+    return hasSavedPositions && unpositionedNodeCount === 0;
+}
+
+/**
  * Source model storage for Workflow diagrams.
  * Acquires the graph via the injected DiagramModelSource seam and transforms it to GModel.
  */
@@ -451,10 +482,10 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             countMissing((diagramModel as any).graph);
         }
 
-        // If the loaded layout has zero matches to current model nodes,
-        // it was created by a different runtime (a different language mode) and
-        // should be treated as a fresh layout.
-        const hasPersistedLayout = loadedLayoutPositions !== undefined && unpositionedNodeCount < totalNodeCount;
+        const hasPersistedLayout = savedLayoutIsUsable(
+            loadedLayoutPositions !== undefined,
+            unpositionedNodeCount
+        );
         const hasPersistedEdgeRoutesEffective = hasPersistedLayout && hasPersistedEdgeRoutes;
 
         this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, {
@@ -466,6 +497,10 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             hasClientBounds: false,
             allowInitialLayoutPersistence: true,
             unpositionedNodeCount,
+            // Recorded next to the count it is judged against, so the decision
+            // above can be read back from the state rather than recomputed from
+            // the model when this goes wrong again.
+            totalNodeCount,
         });
 
         // Advance the agent auto-layout reload generation: a marked agent structural edit becomes
