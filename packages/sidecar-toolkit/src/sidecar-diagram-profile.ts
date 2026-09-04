@@ -360,6 +360,12 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         glspClientId: input.glspClientId,
         glspClientName: input.glspClientName,
         commands: input.commands,
+        // The one extension this builder already knows, handed to the platform so
+        // its open/rename commands and file watchers filter on it — and so the
+        // "please open a ... file" warnings name it. Without this the platform
+        // falls back to accepting anything, which is the right default for a
+        // profile that cannot say, and the wrong one for a builder that can.
+        sourceExtensions: [input.sourceExtension],
         operationKinds: input.operationKinds,
         clientBehavior: input.clientBehavior,
         edits: { operationModules: createSidecarOperationModules(runtimeConfig) },

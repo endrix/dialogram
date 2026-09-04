@@ -31,6 +31,7 @@ import type { WorkflowEditorProvider } from './diagram-editor-provider';
 import { ExecutionOverlayRegistry } from './execution-overlay';
 import { forwardExecutionOverlayEvents, type ExecutionOverlayWebviewSink } from './execution-overlay-bridge';
 import { resolveDiagramOpenTarget, type DiagramOpenTargetArg } from './open-diagram-target';
+import { matchesSourceExtension, sourceFileNoun } from './source-extensions';
 import { normalizeSourceUriKey } from './uri-keys';
 import { executeViewerCommand, executeViewerOpen, executeViewerReveal } from './viewer-actions';
 import { decideDiagramOpen } from './diagram-open-decision';
@@ -998,13 +999,21 @@ function registerCalDiagramCommands(
         connector.dispatchAction(action);
     };
 
+    // The noun every "which file did you mean?" message in this function uses.
+    // Built from the profile's declaration so the core never writes an extension
+    // of its own into text a user reads; plain "source file" when none is declared.
+    const sourceNoun = sourceFileNoun(profile.sourceExtensions);
+    // A type predicate, so the callers that go on to use the URI still narrow it.
+    const isProfileSource = (uri: vscode.Uri | undefined): uri is vscode.Uri =>
+        !!uri && matchesSourceExtension(uri.fsPath, profile.sourceExtensions);
+
     const getActiveWorkflowUri = (): vscode.Uri | undefined => {
         const diagramUri = getActiveWorkflowDiagramUri();
-        if (diagramUri?.fsPath?.endsWith('.py')) {
+        if (isProfileSource(diagramUri)) {
             return diagramUri;
         }
         const activeEditorUri = vscode.window.activeTextEditor?.document.uri;
-        if (activeEditorUri?.fsPath?.endsWith('.py')) {
+        if (isProfileSource(activeEditorUri)) {
             return activeEditorUri;
         }
         return undefined;
@@ -1093,10 +1102,11 @@ function registerCalDiagramCommands(
             const sourceUri = await resolveDiagramOpenTarget(arg, {
                 getActiveWorkflowUri,
                 openTextDocument: vscode.workspace.openTextDocument,
-                workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+                workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+                sourceExtensions: profile.sourceExtensions
             });
             if (!sourceUri) {
-                vscode.window.showWarningMessage('Please open a .py file first, or pass a .py path/URI to the command.');
+                vscode.window.showWarningMessage(`Please open a ${sourceNoun} first, or pass its path/URI to the command.`);
                 return;
             }
             const canOpen = profile.canOpenSource
@@ -1124,10 +1134,11 @@ function registerCalDiagramCommands(
             const sourceUri = await resolveDiagramOpenTarget(arg, {
                 getActiveWorkflowUri,
                 openTextDocument: vscode.workspace.openTextDocument,
-                workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+                workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+                sourceExtensions: profile.sourceExtensions
             });
             if (!sourceUri) {
-                vscode.window.showWarningMessage('Please open a .py file first, or pass a .py path/URI to the command.');
+                vscode.window.showWarningMessage(`Please open a ${sourceNoun} first, or pass its path/URI to the command.`);
                 return;
             }
             const canOpen = profile.canOpenSource
@@ -1176,8 +1187,8 @@ function registerCalDiagramCommands(
             profile.commands.renameEntityByName,
             async (args?: { oldName?: string; newName?: string; sourceUri?: string }) => {
                 const sourceUri = args?.sourceUri ? vscode.Uri.parse(args.sourceUri) : getActiveWorkflowUri();
-                if (!sourceUri || !sourceUri.fsPath.endsWith('.py')) {
-                    const message = 'No active .py source found. Focus a workflow diagram or .py editor and try again.';
+                if (!isProfileSource(sourceUri)) {
+                    const message = `No active ${sourceNoun} found. Focus a diagram or an editor on one and try again.`;
                     void vscode.window.showWarningMessage(message);
                     return { ok: false, message };
                 }

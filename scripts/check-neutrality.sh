@@ -4,8 +4,10 @@
 # dialogram platform packages. Run via `npm run check:neutrality`.
 #
 # The four core packages (diagram-server, diagram-client, extension-core,
-# shared) plus the sidecar-toolkit must carry no product vocabulary. The one
-# sanctioned exception is extension-core's legacy-settings-compat.ts, which is
+# shared) plus the sidecar-toolkit must carry no product vocabulary — including a
+# product's FILE EXTENSION, which reads as punctuation rather than as vocabulary
+# and so slipped past the word-based gates for as long as they have existed. The
+# one sanctioned exception is extension-core's legacy-settings-compat.ts, which is
 # permitted to name legacy settings keys.
 #
 # Exits non-zero if any gate fails.
@@ -87,8 +89,39 @@ else
 fi
 
 echo
+echo '== Gate 5: no product source extension in the core =='
+# The gate the other four missed. One product's source extension was compiled
+# into extension-core in seven places — six path tests and a file-system watcher
+# glob — and every gate above passed the whole time: gates 1 and 2 look for WORDS,
+# and an extension is not a word. A consumer whose files end in anything else got
+# commands that refused every file it gave them, and a warning telling it to open
+# a kind of file it does not have — naming an extension it does not use, in text
+# it could not change.
+#
+# What is banned is narrow on purpose: deciding, from a literal extension, whether
+# a PATH is one of the product's source files. That question belongs to the
+# profile's `sourceExtensions`, which the core reads through
+# `extension-core/src/extension/diagram/source-extensions.ts` — a comparison
+# against a value, which no literal-matching pattern can catch.
+#
+# Deliberately NOT banned: an extension test on something that is not a path into
+# a product's sources — filtering directory entries by name inside a directory the
+# PLATFORM itself defines (`.wf/skills/*.sh`, `.claude/agents/*.md`). That layout
+# is the platform's own, so the platform is the one entitled to name it.
+gate5_hits="$(grep -rnE "(fsPath|[Pp]ath)[^;]*\.endsWith\(\s*['\"]\." "${CORE_SRC[@]}" || true)
+$(grep -rnE "createFileSystemWatcher\(\s*['\"][^'\"]*\*\.[A-Za-z0-9]" "${CORE_SRC[@]}" || true)"
+if [ -n "$(echo "${gate5_hits}" | tr -d '[:space:]')" ]; then
+    echo 'FAIL: the core decides what a source file is from a hardcoded extension;'
+    echo '      ask the profile instead (DiagramProfile.sourceExtensions):'
+    echo "${gate5_hits}"
+    failures=$((failures + 1))
+else
+    echo 'PASS'
+fi
+
+echo
 if [ "${failures}" -ne 0 ]; then
     echo "NEUTRALITY CHECK FAILED (${failures} gate(s) violated)"
     exit 1
 fi
-echo 'NEUTRALITY CHECK PASSED (4/4 gates)'
+echo 'NEUTRALITY CHECK PASSED (5/5 gates)'

@@ -12,6 +12,7 @@ import { statSync } from 'node:fs';
 import { WORKFLOW_DIAGRAM_TYPE } from '@dialogram/shared';
 import { type DiagramProfile } from '../../api';
 import { normalizeSourceUriKey } from './uri-keys';
+import { matchesSourceExtension, sourceWatchGlobs } from './source-extensions';
 
 const RUN_ID_ARG = 'wf:runId';
 
@@ -79,9 +80,9 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      */
     private changeDebounceTimers = new Map<string, NodeJS.Timeout>();
 
-    /** Debounce timer for external (on-disk) .py changes picked up by the watcher. */
+    /** Debounce timer for external (on-disk) source changes picked up by the watcher. */
     private externalRefreshTimer?: NodeJS.Timeout;
-    /** When each .py was last saved through the editor, to skip the watcher's
+    /** When each source file was last saved through the editor, to skip the watcher's
      *  duplicate refresh for an in-editor save (the save handler already refreshed). */
     private lastSavedAt = new Map<string, number>();
 
@@ -98,11 +99,15 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      * so without this filter unrelated generated files thrash the diagram.
      *
      * Incident this guards against: in a CMake-based workspace, the build tool
-     * regenerated `build/test/lit.site.cfg.py` on every configure, which the watcher
-     * treated as a cross-file import edit and force-reloaded the open diagram
+     * regenerated a source file under `build/test/` on every configure, which the
+     * watcher treated as a cross-file import edit and force-reloaded the open diagram
      * 4+ times in seconds — each reload paying 1-2.3s of source-CLI spawn (`acquire`)
      * plus a full webview re-render. A file whose path contains any of these
      * segments is never a legitimate reload trigger.
+     *
+     * It matters more now that the watcher can be told to watch everything: a
+     * profile that declares no source extensions gets `**\/*`, and this filter is
+     * what keeps a build tree from reloading diagrams it has nothing to do with.
      */
     private static readonly ARTIFACT_PATH_SEGMENTS: ReadonlySet<string> = new Set([
         'build', 'dist', 'out', 'wf-out', 'node_modules', '.git', '__pycache__', '.venv', 'venv'
@@ -111,8 +116,8 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     /**
      * True when the URI lives under an artifact / irrelevant directory (see
      * {@link ARTIFACT_PATH_SEGMENTS}). Segment-based, so it matches at any depth
-     * (`.../build/test/lit.site.cfg.py`) without matching filenames that merely
-     * contain a segment word (`build_config.py`).
+     * (`.../build/test/generated-config`) without matching filenames that merely
+     * contain a segment word (`build_config`).
      */
     private isUnderArtifactDir(uri: vscode.Uri): boolean {
         const segments = uri.path.split('/');
@@ -157,15 +162,24 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             })
         );
 
-        // Catch EXTERNAL .py writes — the chat agent editing via the MCP edit backend,
-        // git, a formatter, etc. Those bypass the editor (no onDidChange/Save), so
-        // without this the diagram wouldn't reflect agent-added nodes until a manual
+        // Catch EXTERNAL source writes — the chat agent editing via the MCP edit
+        // backend, git, a formatter, etc. Those bypass the editor (no onDidChange/Save),
+        // so without this the diagram wouldn't reflect agent-added nodes until a manual
         // save/reopen. onDidChangeTextDocument only fires for in-editor edits.
-        const sourceWatcher = vscode.workspace.createFileSystemWatcher('**/*.py');
+        //
+        // What to watch comes from the profile, in that order of specificity:
+        // `watch.globs` is the exact answer when a product has one (it can watch
+        // more than its own sources — a manifest, a generated index); otherwise the
+        // globs are derived from the declared extensions; otherwise everything.
+        // Until this was wired the field existed and nothing read it, and the
+        // watcher was pinned to one product's extension.
         const onExternal = (uri: vscode.Uri) => this.handleExternalFileChange(uri);
-        sourceWatcher.onDidChange(onExternal);
-        sourceWatcher.onDidCreate(onExternal);
-        extensionContext.subscriptions.push(sourceWatcher);
+        for (const glob of profile.watch?.globs ?? sourceWatchGlobs(profile.sourceExtensions)) {
+            const sourceWatcher = vscode.workspace.createFileSystemWatcher(glob);
+            sourceWatcher.onDidChange(onExternal);
+            sourceWatcher.onDidCreate(onExternal);
+            extensionContext.subscriptions.push(sourceWatcher);
+        }
     }
 
     /**
@@ -417,7 +431,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      */
     protected handleDocumentSave(document: vscode.TextDocument): void {
         // Only react to source-file saves.
-        if (!document.uri.path.endsWith('.py')) {
+        if (!matchesSourceExtension(document.uri.path, this.profile.sourceExtensions)) {
             return;
         }
 
@@ -445,7 +459,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     }
 
     /**
-     * React to a .py changing ON DISK from outside the editor — the chat agent
+     * React to a source file changing ON DISK from outside the editor — the chat agent
      * writing via the MCP edit backend, git, a formatter, etc. In-editor edits go
      * through handleDocumentChange/handleDocumentSave instead, so here we:
      *  - skip files open with unsaved edits (the editor owns those), and
@@ -454,15 +468,15 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      * save — refresh every open diagram. Debounced to coalesce edit bursts.
      */
     protected handleExternalFileChange(uri: vscode.Uri): void {
-        if (!uri.path.endsWith('.py') || this.uriToClientId.size === 0) {
+        if (!matchesSourceExtension(uri.path, this.profile.sourceExtensions) || this.uriToClientId.size === 0) {
             return;
         }
         const canonical = this.canonicalizeUriString(uri);
 
         // Always reload when the changed file IS an open diagram's own source. For
-        // any OTHER watched .py, keep the cross-file-import reload but skip build
+        // any OTHER watched file, keep the cross-file-import reload but skip build
         // artifacts / irrelevant trees (see isUnderArtifactDir) so generated files
-        // like CMake's build/test/lit.site.cfg.py don't thrash open diagrams.
+        // under a build tree don't thrash open diagrams.
         const isOwnSource = this.uriToClientId.has(canonical);
         if (!isOwnSource && this.isUnderArtifactDir(uri)) {
             return;

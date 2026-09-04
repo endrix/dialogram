@@ -164,7 +164,7 @@ CSP, esbuild options, timing constraints) is in
 
 | Group | Fields |
 | --- | --- |
-| Identity | `key`, `displayName`, `settingsNamespace`, `customEditorViewType`, `glspClientId`, `glspClientName` |
+| Identity | `key`, `displayName`, `settingsNamespace`, `customEditorViewType`, `glspClientId`, `glspClientName`, `sourceExtensions` (which files this diagram is a view of) |
 | Commands | `commands` (21 consumer-owned command ids), `operationKinds` (port create/delete kind strings) |
 | Model & edits | `modelSource` factory, `edits` (`'read-only'` or a strategy with operation modules), `serverModules`, `serverDiagramModule` (library mode only), `storageOptions` |
 | Client | `clientBehavior` (neutral capability flags injected into the webview), `clientAssets` (custom webview bundle — data only), `onWebviewMessage` (inbound message hook) |
@@ -172,7 +172,9 @@ CSP, esbuild options, timing constraints) is in
 
 Everything optional degrades gracefully: no `chat` → no chat backend, no
 `runDriver` → no run/stop commands or live glow, no `clientAssets` → the
-stock webview bundle.
+stock webview bundle, no `sourceExtensions` → the platform filters by
+extension nowhere and words its "please open a source file" messages without
+naming one.
 
 The returned `DiagramProfileHandle` exposes chat diagnostics plus two
 webview channels: `dispatchToWebview(uri, action)` (host→client GLSP action

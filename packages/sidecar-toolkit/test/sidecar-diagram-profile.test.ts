@@ -103,6 +103,11 @@ describe('createSidecarDiagramProfile', () => {
             useAlternateEntityPalette: undefined
         });
         expect(p.watch).toEqual({ globs: ['**/*.py'] });
+        // The same extension reaches the platform as a declaration, so the
+        // open/rename commands filter on it and their warnings name it. Left
+        // unset, the platform accepts any file — right for a profile that cannot
+        // say what its sources are called, wrong for this builder, which can.
+        expect(p.sourceExtensions).toEqual([baseInput().sourceExtension]);
     });
 
     it('threads the sidecar operation prefix onto the chat carry-over', () => {
