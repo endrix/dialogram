@@ -127,7 +127,33 @@ function resolveNodeFamily(
 }
 
 /** Internals reached by the family tests; not part of the module's surface. */
-export const __testables = { resolveNodeFamily };
+export const __testables = { resolveNodeFamily, renderRunSpinner };
+
+/**
+ * The light that travels around a node while it is running.
+ *
+ * A rounded rect, stroked with a single dash that moves along the border. The
+ * conic-gradient border a chat box uses is not available here — this is SVG,
+ * which has no conic gradient — and a dash travelling the perimeter is the same
+ * effect by the means the medium has.
+ *
+ * The dash pattern and the distance it travels are both derived from ONE
+ * length, so the loop closes seamlessly whatever size the node is: exactness
+ * against the true rounded-corner perimeter does not matter, agreement between
+ * the two does. Get that wrong and the head jumps once per revolution.
+ */
+function renderRunSpinner(width: number, height: number): VNode {
+    const length = 2 * (width + height);
+    return svg('rect', {
+        class: { 'node-run-spinner': true },
+        attrs: {
+            x: 0, y: 0,
+            width, height,
+            rx: 4, ry: 4
+        },
+        style: { '--wf-spin-length': `${length}` }
+    });
+}
 
 /**
  * Render a semi-transparent SVG icon centered in the node body (below the header).
@@ -692,6 +718,8 @@ export class ActorNodeView extends ShapeView {
                     rx: 4, ry: 4
                 }
             }),
+            // Above the body so the travelling head is not painted over by it.
+            ...(isExecuting ? [renderRunSpinner(width, bodyHeight)] : []),
             ...(family?.icon ? [renderNodeCenterIcon(family, width, bodyHeight)] : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
@@ -758,6 +786,8 @@ export class ExternalActorNodeView extends ShapeView {
                     rx: 4, ry: 4
                 }
             }),
+            // Above the body so the travelling head is not painted over by it.
+            ...(isExecuting ? [renderRunSpinner(width, bodyHeight)] : []),
             ...(family?.icon ? [renderNodeCenterIcon(family, width, bodyHeight)] : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
@@ -818,6 +848,8 @@ export class NetworkNodeView extends ShapeView {
                     rx: 4, ry: 4
                 }
             }),
+            // Above the body so the travelling head is not painted over by it.
+            ...(isExecuting ? [renderRunSpinner(width, bodyHeight)] : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
         );
