@@ -1127,6 +1127,9 @@ function registerCalDiagramCommands(
                 });
                 return;
             }
+            // Whether a diagram for this file is already on screen, asked
+            // BEFORE opening, because opening is what makes it true.
+            const alreadyOpen = editorProvider?.getClientIdForDocumentUri(sourceUri) !== undefined;
             // Stash the requested graph the same way a drill-down does, so the
             // initial model request picks it up. `vscode.openWith` carries no
             // arbitrary data, so this side channel is the only way a name known
@@ -1140,6 +1143,26 @@ function registerCalDiagramCommands(
                 sourceUri,
                 profile.customEditorViewType
             );
+            if (requestedNetwork && alreadyOpen) {
+                // The stash above is read by the INITIAL model request, and an
+                // editor that already exists does not make one — `openWith`
+                // focuses it instead. So asking for a different graph inside a
+                // file you were already looking at did nothing at all: the name
+                // was recorded, the tab came forward, and the diagram kept
+                // showing what it showed before.
+                //
+                // That is the ordinary way to move between the graphs in one
+                // file, and the case where nothing happening is hardest to
+                // read, because the command plainly did SOMETHING — the editor
+                // took focus.
+                //
+                // A refresh carries the name into a fresh model request, which
+                // is the mechanism a drill-down already relies on.
+                await refreshActiveDiagramModel({
+                    sourceUri: sourceUri.toString(),
+                    workflowName: requestedNetwork
+                });
+            }
         })
     );
 
@@ -1169,6 +1192,7 @@ function registerCalDiagramCommands(
                 return;
             }
             // Open the source file with the network diagram editor in a split view
+            const alreadyOpenBeside = editorProvider?.getClientIdForDocumentUri(sourceUri) !== undefined;
             if (requestedNetwork) {
                 putPending(state.pendingNetworkBySourceUri, sourceUri.toString(), requestedNetwork);
             }
@@ -1178,6 +1202,15 @@ function registerCalDiagramCommands(
                 profile.customEditorViewType,
                 vscode.ViewColumn.Beside
             );
+            if (requestedNetwork && alreadyOpenBeside) {
+                // Same reasoning as the non-split command above: the stash is
+                // read by the initial model request, and an editor that already
+                // exists does not make one.
+                await refreshActiveDiagramModel({
+                    sourceUri: sourceUri.toString(),
+                    workflowName: requestedNetwork
+                });
+            }
         })
     );
 
