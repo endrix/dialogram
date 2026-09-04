@@ -458,6 +458,23 @@ export class GraphGModelSource {
                         [WorkflowDiagramMetadata.REFERENCED_URI]: referencedSourceMetaFile
                     };
                 }
+                // Where a person wrote this, when the file on screen is not
+                // that file. See `AUTHORED_URI`: it is a third target rather
+                // than a competitor to the other two, because a generated
+                // diagram needs drill-down to stay in the generated file and
+                // still wants "go to source" to reach the source.
+                const authoredSourceMeta = node.meta['authoredSource'] as { file?: string; line?: number } | undefined;
+                const authoredSourceFile = normalizeNavigationFileUri(authoredSourceMeta?.file);
+                if (authoredSourceFile && authoredSourceMeta?.line) {
+                    gnode.args = {
+                        ...(gnode.args ?? {}),
+                        [WorkflowDiagramMetadata.AUTHORED_URI]: authoredSourceFile,
+                        [WorkflowDiagramMetadata.AUTHORED_SOURCE_RANGE]: {
+                            start: { line: Math.max(0, authoredSourceMeta.line - 1), character: 0 },
+                            end: { line: Math.max(0, authoredSourceMeta.line - 1), character: 0 }
+                        }
+                    };
+                }
                 const referencedEntityName = node.meta['referencedEntityName'];
                 if (typeof referencedEntityName === 'string' && referencedEntityName.trim() !== '') {
                     gnode.args = {
