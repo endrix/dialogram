@@ -98,8 +98,38 @@ const RUN_OUTPUT_FALLBACK_MAX_RESULTS = 50;
  * a diagram they can read, the result is persisted immediately so it happens
  * once, and this failure is at least visible where the other was silent.
  */
-export function savedLayoutIsUsable(hasSavedPositions: boolean, unpositionedNodeCount: number): boolean {
-    return hasSavedPositions && unpositionedNodeCount === 0;
+export function savedLayoutIsUsable(
+    hasSavedPositions: boolean,
+    unpositionedNodeCount: number,
+    coincidentNodeCount = 0
+): boolean {
+    return hasSavedPositions && unpositionedNodeCount === 0 && coincidentNodeCount === 0;
+}
+
+/**
+ * How many nodes share a position with another node.
+ *
+ * Covering every node turned out not to be enough. A layout captured before its
+ * nodes were ever placed names all of them and puts several at the same point —
+ * the origin, usually, since that is where a node starts. It passes a coverage
+ * check, suppresses the layout run, and is restored faithfully on every open,
+ * so the diagram opens stacked forever and only a layout by hand fixes it.
+ *
+ * Two nodes at the same coordinates is the reliable signature. No layout engine
+ * ever produces it, and nobody drags one node exactly on top of another, so it
+ * means the positions were recorded rather than computed.
+ */
+export function countCoincidentNodes(positions: Iterable<{ x: number; y: number }>): number {
+    const seen = new Set<string>();
+    let coincident = 0;
+    for (const { x, y } of positions) {
+        const key = `${x},${y}`;
+        if (seen.has(key)) {
+            coincident++;
+        }
+        seen.add(key);
+    }
+    return coincident;
 }
 
 /**
@@ -484,7 +514,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
 
         const hasPersistedLayout = savedLayoutIsUsable(
             loadedLayoutPositions !== undefined,
-            unpositionedNodeCount
+            unpositionedNodeCount,
+            countCoincidentNodes(loadedLayoutPositions?.values() ?? [])
         );
         const hasPersistedEdgeRoutesEffective = hasPersistedLayout && hasPersistedEdgeRoutes;
 

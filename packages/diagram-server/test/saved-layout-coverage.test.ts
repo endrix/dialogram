@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { savedLayoutIsUsable } from '../src/server/source-model-storage';
+import { countCoincidentNodes, savedLayoutIsUsable } from '../src/server/source-model-storage';
 
 /**
  * When a saved layout may stand, and when the diagram must be laid out again.
@@ -41,5 +41,53 @@ describe('savedLayoutIsUsable', () => {
         // Already handled before this change, and still handled: a file written
         // by a different runtime names nothing in this graph.
         expect(savedLayoutIsUsable(true, 9)).toBe(false);
+    });
+
+    it('is false when the layout stacks nodes on one another', () => {
+        // Covering every node is not enough. A layout captured before its nodes
+        // were placed names all of them and puts several at the same point, so
+        // it passes coverage, suppresses the run, and is restored faithfully
+        // every time — the diagram opens stacked forever, and only a layout by
+        // hand ever fixes it.
+        expect(savedLayoutIsUsable(true, 0, 1)).toBe(false);
+        expect(savedLayoutIsUsable(true, 0, 0)).toBe(true);
+    });
+});
+
+describe('countCoincidentNodes', () => {
+    it('counts a node sharing a position with another', () => {
+        expect(
+            countCoincidentNodes([
+                { x: 0, y: 0 },
+                { x: 0, y: 0 },
+                { x: 10, y: 4 }
+            ])
+        ).toBe(1);
+    });
+
+    it('is zero for a layout that placed everything apart', () => {
+        expect(
+            countCoincidentNodes([
+                { x: 0, y: 0 },
+                { x: 10, y: 0 },
+                { x: 0, y: 10 }
+            ])
+        ).toBe(0);
+    });
+
+    it('is zero for nothing at all', () => {
+        // No saved positions is a different case, already handled by the
+        // coverage check, and must not be mistaken for a stacked layout.
+        expect(countCoincidentNodes([])).toBe(0);
+    });
+
+    it('counts every extra at a shared point, not just the pair', () => {
+        expect(
+            countCoincidentNodes([
+                { x: 5, y: 5 },
+                { x: 5, y: 5 },
+                { x: 5, y: 5 }
+            ])
+        ).toBe(2);
     });
 });
