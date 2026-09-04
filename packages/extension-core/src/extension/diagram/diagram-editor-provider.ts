@@ -872,7 +872,15 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             commandIds: this.profile.commands,
             operationKinds: this.profile.operationKinds,
             settingsNamespace: this.profile.settingsNamespace,
-            clientBehavior: this.profile.clientBehavior,
+            clientBehavior: {
+                ...this.profile.clientBehavior,
+                // Derived here rather than taken from the product, because the
+                // client and the host have to agree about this and a field a
+                // product sets by hand is one it can set wrongly. `chat` being
+                // absent is exactly what "the chat backend is not activated"
+                // means, so it is the honest source.
+                chatBackend: this.profile.chat !== undefined
+            },
             // Where the live edge router fetches its WASM binary. The webview
             // cannot read the filesystem, so the URI is resolved host-side.
             libavoidWasmUri: options.libavoidWasmUri?.toString(),

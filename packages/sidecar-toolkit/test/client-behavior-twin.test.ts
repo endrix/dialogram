@@ -31,6 +31,24 @@ function fieldsOf(file: string, name: string): string[] {
     return [...body.matchAll(/^\s*(\w+)\??\s*:/gm)].map(m => m[1]);
 }
 
+/**
+ * Fields the PLATFORM computes and a product must never supply.
+ *
+ * The twin exists so a product-supplied field cannot go missing on the way to
+ * the webview. A derived field is the opposite case: it reaches the webview by
+ * being filled in during forwarding, and a product-facing type that declared it
+ * would invite someone to set it by hand — which is the one way the two halves
+ * could then disagree.
+ *
+ * So these are excluded from the comparison deliberately, and named here rather
+ * than filtered by a pattern, because adding one is a decision worth writing
+ * down.
+ *
+ *   chatBackend  derived from `DiagramProfile.chat` being present, which is
+ *                what decides whether the host activates a chat backend at all
+ */
+const PLATFORM_DERIVED = ['chatBackend'];
+
 describe('sidecar client behavior mirrors the platform', () => {
     const sidecar = fieldsOf(
         path.join(here, '../src/sidecar-diagram-profile.ts'),
@@ -39,7 +57,7 @@ describe('sidecar client behavior mirrors the platform', () => {
     const platform = fieldsOf(
         path.join(here, '../../extension-core/src/api.ts'),
         'DiagramClientBehavior'
-    );
+    ).filter(field => !PLATFORM_DERIVED.includes(field));
 
     it('reads both declarations', () => {
         // Guards the parser itself: an empty list would make every check below
@@ -54,6 +72,15 @@ describe('sidecar client behavior mirrors the platform', () => {
 
     it('declares no field the platform does not have', () => {
         expect(platform).toEqual(expect.arrayContaining(sidecar));
+    });
+
+    it('leaves the platform-derived fields out of the product-facing type', () => {
+        // The exclusion above is only honest if the field is genuinely absent.
+        // Declaring it here would let a product set a value the platform then
+        // overwrites, which is worse than not offering it.
+        for (const derived of PLATFORM_DERIVED) {
+            expect(sidecar, `${derived} is computed by the platform`).not.toContain(derived);
+        }
     });
 
     it('forwards the palette icons a product contributes', () => {
