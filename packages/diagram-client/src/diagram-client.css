@@ -1117,6 +1117,30 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
     pointer-events: all;
 }
 
+/*
+ * What a connection carries, written above it.
+ *
+ * A halo rather than a filled pill. Every edge that states a width or a payload
+ * gets one, so a pill would weigh as much as the edges themselves;
+ * `paint-order: stroke` costs nothing where the text crosses empty space and
+ * only shows up where it would otherwise be unreadable against a line or a box.
+ */
+.workflow-edge .edge-carried-label {
+    font-size: 9px;
+    font-family: var(--vscode-editor-font-family, monospace);
+    fill: var(--vscode-descriptionForeground, #8b949e);
+    stroke: var(--vscode-editor-background, #1e1e1e);
+    stroke-width: 3px;
+    paint-order: stroke fill;
+    pointer-events: none;
+    user-select: none;
+}
+
+.workflow-edge.selected .edge-carried-label,
+.workflow-edge.hover .edge-carried-label {
+    fill: var(--vscode-foreground, #cccccc);
+}
+
 .workflow-edge .edge-queue-badge {
     pointer-events: none;
 }
