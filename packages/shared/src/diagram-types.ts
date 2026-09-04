@@ -211,6 +211,16 @@ export namespace WorkflowDiagramMetadata {
      * producer's own words and takes precedence where both are given.
      */
     export const EDGE_WIDTH = 'cal:edgeWidth';
+    /**
+     * What a connection carries, in the producer's own words.
+     *
+     * Formatted by the producer and displayed verbatim, for the same reason a
+     * port's type is: the platform re-rendering it from anything structural
+     * would drift from how the language actually writes it, and differ between
+     * products. Takes precedence over {@link EDGE_WIDTH}, which describes the
+     * same thing at lower resolution.
+     */
+    export const EDGE_LABEL = 'cal:edgeLabel';
     /** What a connection is for, beyond carrying data. Producer-defined. */
     export const EDGE_ROLE = 'cal:edgeRole';
     /** What a port is for, beyond carrying data. Producer-defined. */
