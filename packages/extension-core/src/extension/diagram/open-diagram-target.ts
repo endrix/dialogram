@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { matchesSourceExtension } from './source-extensions';
 
 export type DiagramOpenTargetArg = vscode.Uri | string | {
     sourceUri?: string;
@@ -38,6 +39,9 @@ export type ResolveDiagramOpenTargetOptions = {
     getActiveWorkflowUri: () => vscode.Uri | undefined;
     openTextDocument: (uri: vscode.Uri) => Thenable<{ uri: vscode.Uri }>;
     workspaceRoot?: string;
+    /** The profile's declared source extensions; absent/empty accepts any file
+     *  (see `source-extensions.ts` for why the default is permissive). */
+    sourceExtensions?: readonly string[];
 };
 
 function isUriString(value: string): boolean {
@@ -108,7 +112,7 @@ export async function resolveDiagramOpenTarget(
     const candidate = parseTargetCandidate(arg, options.workspaceRoot);
     const resolved = candidate ?? options.getActiveWorkflowUri();
 
-    if (!resolved || resolved.scheme !== 'file' || !resolved.fsPath.toLowerCase().endsWith('.py')) {
+    if (!resolved || resolved.scheme !== 'file' || !matchesSourceExtension(resolved.fsPath, options.sourceExtensions)) {
         return undefined;
     }
 

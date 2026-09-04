@@ -248,6 +248,26 @@ export interface DiagramProfile {
   glspClientName: string;
   /** Consumer-owned command ids. */
   commands: DiagramCommandIds;
+  /**
+   * File extensions this product's diagram is a view of — lower-case, leading
+   * dot: `['.foo', '.bar']`.
+   *
+   * Everywhere the platform has to decide whether a URI is one of this
+   * product's sources — the open-diagram commands, the rename command's
+   * "which file is active" lookup, the editor provider's save and on-disk
+   * watchers — it asks this list. User-facing messages are worded from it too,
+   * so a consumer is told to open a `.foo` file rather than whatever the
+   * platform was written against.
+   *
+   * Declaring nothing is legal and deliberately permissive: the platform then
+   * filters by extension nowhere, and phrases those messages without naming an
+   * extension at all. The core cannot know how a product names its files, and a
+   * guess would fail silently — commands refusing every file, indistinguishable
+   * from a workspace with no sources. An unrecognised file instead reaches
+   * {@link DiagramProfile.canOpenSource}, which can refuse it for a reason the
+   * product actually knows.
+   */
+  sourceExtensions?: string[];
   /** Port operation-kind strings injected into the diagram client. */
   operationKinds?: DiagramOperationKinds;
   /** Neutral behavior flags forwarded into the diagram webview. */
