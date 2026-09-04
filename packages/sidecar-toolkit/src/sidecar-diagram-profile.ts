@@ -137,6 +137,9 @@ export interface SidecarProfileInput {
     // Source file + palette.
     sourceExtension: string;
     useAlternateEntityPalette?: boolean;
+    /** `false` empties the creation palette — for a diagram that is a projection
+     *  of a source artifact and so has nothing to create. Default `true`. */
+    supportsElementCreation?: boolean;
     /** Extra Entities-palette entries this product contributes; plain data. */
     entityPaletteItems?: EntityPaletteItemSpec[];
     nodeFamilies?: NodeFamilySpec[];
@@ -360,6 +363,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         glspClientId: input.glspClientId,
         glspClientName: input.glspClientName,
         commands: input.commands,
+        supportsElementCreation: input.supportsElementCreation,
         operationKinds: input.operationKinds,
         clientBehavior: input.clientBehavior,
         edits: { operationModules: createSidecarOperationModules(runtimeConfig) },

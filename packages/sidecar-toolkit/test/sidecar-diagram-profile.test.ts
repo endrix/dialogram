@@ -105,6 +105,15 @@ describe('createSidecarDiagramProfile', () => {
         expect(p.watch).toEqual({ globs: ['**/*.py'] });
     });
 
+    it('leaves the creation palette alone unless the product suppresses it', () => {
+        // Default `true` by omission, so the assembler cannot silently empty the
+        // palette of a product that never mentioned it.
+        expect(createSidecarDiagramProfile(baseInput()).supportsElementCreation).toBeUndefined();
+        expect(
+            createSidecarDiagramProfile(baseInput({ supportsElementCreation: false })).supportsElementCreation
+        ).toBe(false);
+    });
+
     it('threads the sidecar operation prefix onto the chat carry-over', () => {
         const p = createSidecarDiagramProfile(baseInput({ sidecarOperationPrefix: 'calpy' }));
         expect(p.chat?.operationPrefix).toBe('calpy');

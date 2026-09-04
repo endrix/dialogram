@@ -35,6 +35,7 @@ import { normalizeSourceUriKey } from './uri-keys';
 import { executeViewerCommand, executeViewerOpen, executeViewerReveal } from './viewer-actions';
 import { decideDiagramOpen } from './diagram-open-decision';
 import { readMcpServerUrl } from './mcp-server-url';
+import { composeStorageRuntimeOptions } from './profile-storage-options';
 import { type DiagramProfile, type DiagramRunHost } from '../../api';
 
 // Define the diagram type constant locally to avoid import
@@ -373,13 +374,19 @@ export async function activateGlspIntegration(
     // `mcpServer` config that boots the in-host loopback listener on `initialize`.
     const mcpEnabled = profile.mcp?.enabled === true;
 
+    // The palette-suppression flag lives on the profile ROOT but is read on the
+    // server off the storage runtime options, so it is folded onto that channel
+    // here. See `profile-storage-options.ts` for the one case that is not a
+    // straight pass-through.
+    const storageOptions = composeStorageRuntimeOptions(profile);
+
     // Create the GLSP server (runs in the extension process). Every product
     // detail — model source, extra DI modules, edit operation modules and the
     // neutral storage options — arrives through the profile; core stays neutral.
     const workflowServer = createWorkflowGlspVscodeServer({
         clientId: profile.glspClientId,
         clientName: profile.glspClientName,
-        storageOptions: profile.storageOptions,
+        storageOptions,
         additionalServerModules: (profile.serverModules ?? []) as ContainerModule[],
         edits: profile.edits,
         modelSourceFactory: profile.modelSource,
