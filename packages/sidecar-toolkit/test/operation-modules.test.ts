@@ -106,8 +106,26 @@ describe('createSidecarOperationModules — module-injection parity', () => {
         expect(withSidecar.length).toBe(neutralOnly.length + EXPECTED_SIDECAR_HANDLER_NAMES.length);
     });
 
-    it('a read-only module registers no operation handlers', () => {
-        expect(collectRegisteredHandlers('read-only')).toEqual([]);
+    it('a read-only module injects none of the source-editing handlers', () => {
+        const readOnly = collectRegisteredHandlers('read-only').map((ctor) => ctor.name);
+
+        // This used to assert the list was empty, which pinned more than this
+        // suite is about. A read-only session still registers the neutral
+        // in-core handlers, because those only change presentation — where a
+        // node sits, how an edge is routed — and that is written to the
+        // separate layout file rather than to the source document.
+        //
+        // Registering nothing at all meant a read-only diagram could not be
+        // laid out: the layout entries in the context menu are offered
+        // unconditionally, and each dispatched an operation no handler was
+        // bound for, which fails silently.
+        expect(readOnly.length).toBeGreaterThan(0);
+
+        // What read-only actually has to keep out, and the subject of this
+        // file: every handler that edits the source.
+        for (const name of EXPECTED_SIDECAR_HANDLER_NAMES) {
+            expect(readOnly, `${name} must not reach a read-only session`).not.toContain(name);
+        }
     });
 
     it('the injected module set is identical for a calpy-shaped config (same set, same order)', () => {
