@@ -37,7 +37,8 @@
     --workflow-node-active-stroke: var(--vscode-charts-green, #89d185);
     --workflow-node-active-glow: color-mix(in srgb, var(--workflow-node-active-stroke) 75%, transparent);
     /* The travelling head, lifted towards white so it reads against its own track. */
-    --workflow-node-active-head: color-mix(in srgb, var(--workflow-node-active-stroke) 55%, white);
+    /* One lap of the running ring. */
+    --wf-spin-duration: 3.2s;
 
     /* Error state (failed run overlay — static, no animation). */
     --workflow-node-error-stroke: var(--vscode-charts-red, #f14c4c);
@@ -490,31 +491,40 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
 }
 
 /*
- * The light itself. One dash a fifth of the way round, so the head is long
- * enough to read as motion and short enough to leave the track visible.
+ * The ring itself: the perimeter cut into slices, each stroked its own hue.
+ *
+ * The bloom is one filter over the whole group, merged under the source rather
+ * than drawn from a second copy of the ring — the same look for half the
+ * elements.
  */
-.node-run-spinner {
-    fill: none;
-    stroke: var(--workflow-node-active-head, var(--workflow-node-active-stroke));
-    stroke-width: 3px;
-    stroke-linecap: round;
-    stroke-dasharray: calc(var(--wf-spin-length) * 0.2) calc(var(--wf-spin-length) * 0.8);
-    filter: drop-shadow(0 0 5px var(--workflow-node-active-glow));
+.node-run-ring {
     pointer-events: none;
-    animation: workflow-node-spin 2.4s linear infinite;
+    filter: url(#wf-run-ring-bloom);
 }
 
 /*
- * Reduced motion: the state still has to be visible, so the border simply
- * lights up. Stopping the animation without this would leave a node running
- * with one bright fifth of its border and no way to tell why.
+ * Every slice runs the same animation over the same distance. Only the delay
+ * differs, by the fraction of the cycle the slice sits at — which is what makes
+ * them tile the border and turn as one ring instead of chasing each other.
+ */
+.node-run-ring-slice {
+    fill: none;
+    stroke-width: 2.6px;
+    stroke-dasharray:
+        calc(var(--wf-spin-length) * var(--wf-ring-slice))
+        calc(var(--wf-spin-length) * (1 - var(--wf-ring-slice)));
+    animation: workflow-node-spin var(--wf-spin-duration) linear infinite;
+    animation-delay: calc(var(--wf-spin-duration) * var(--wf-ring-phase) * -1);
+}
+
+/*
+ * Reduced motion: the ring stays, it just stops turning. The colours alone say
+ * the node is running, so nothing is lost but the movement — and unlike a
+ * single travelling dash, a stopped ring is still a whole border.
  */
 @media (prefers-reduced-motion: reduce) {
-    .node-run-spinner {
+    .node-run-ring-slice {
         animation: none;
-        stroke-dasharray: none;
-        stroke-opacity: 0.9;
-        stroke-width: 2.5px;
     }
 }
 

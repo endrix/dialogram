@@ -127,33 +127,54 @@ function resolveNodeFamily(
 }
 
 /** Internals reached by the family tests; not part of the module's surface. */
-export const __testables = { resolveNodeFamily, renderRunSpinner };
 
 /**
- * The light that travels around a node while it is running.
+ * How many slices the running ring is cut into.
  *
- * A rounded rect, stroked with a single dash that moves along the border. The
- * conic-gradient border a chat box uses is not available here — this is SVG,
- * which has no conic gradient — and a dash travelling the perimeter is the same
- * effect by the means the medium has.
- *
- * The dash pattern and the distance it travels are both derived from ONE
- * length, so the loop closes seamlessly whatever size the node is: exactness
- * against the true rounded-corner perimeter does not matter, agreement between
- * the two does. Get that wrong and the head jumps once per revolution.
+ * The colour has to change ALONG the border, and SVG has no conic gradient —
+ * so the perimeter is sliced and each slice is stroked its own hue. Fewer
+ * slices band visibly; more cost an element each, on every running node at
+ * once. Thirty-six is where the banding stopped being visible under the bloom.
  */
-function renderRunSpinner(width: number, height: number): VNode {
+const RUN_RING_SLICES = 36;
+
+/**
+ * The colour ring that turns around a node while it is running.
+ *
+ * Every slice carries the same dash — one slice long — and the same animation.
+ * What separates them is a negative delay: slice i starts a fraction i/N into
+ * the cycle, so the slices tile the perimeter and travel as one ring rather
+ * than as chasing dashes.
+ *
+ * The hue wheel is used whole and wraps, because a ring whose palette does not
+ * close shows a seam once a lap, exactly where the last colour meets the first.
+ */
+function renderRunRing(width: number, height: number): VNode {
     const length = 2 * (width + height);
-    return svg('rect', {
-        class: { 'node-run-spinner': true },
-        attrs: {
-            x: 0, y: 0,
-            width, height,
-            rx: 4, ry: 4
-        },
-        style: { '--wf-spin-length': `${length}` }
-    });
+    const slices = [];
+    for (let i = 0; i < RUN_RING_SLICES; i++) {
+        slices.push(svg('rect', {
+            class: { 'node-run-ring-slice': true },
+            attrs: {
+                x: 0, y: 0,
+                width, height,
+                rx: 4, ry: 4,
+                stroke: `hsl(${Math.round((i / RUN_RING_SLICES) * 360)} 72% 62%)`
+            },
+            style: { '--wf-ring-phase': `${i / RUN_RING_SLICES}` }
+        }));
+    }
+    return svg('g', {
+        class: { 'node-run-ring': true },
+        style: {
+            '--wf-spin-length': `${length}`,
+            '--wf-ring-slice': `${1 / RUN_RING_SLICES}`
+        }
+    }, ...slices);
 }
+
+/** Internals reached by the family and ring tests; not part of the module's surface. */
+export const __testables = { resolveNodeFamily, renderRunRing, RUN_RING_SLICES };
 
 /**
  * Render a semi-transparent SVG icon centered in the node body (below the header).
@@ -719,7 +740,7 @@ export class ActorNodeView extends ShapeView {
                 }
             }),
             // Above the body so the travelling head is not painted over by it.
-            ...(isExecuting ? [renderRunSpinner(width, bodyHeight)] : []),
+            ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
             ...(family?.icon ? [renderNodeCenterIcon(family, width, bodyHeight)] : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
@@ -787,7 +808,7 @@ export class ExternalActorNodeView extends ShapeView {
                 }
             }),
             // Above the body so the travelling head is not painted over by it.
-            ...(isExecuting ? [renderRunSpinner(width, bodyHeight)] : []),
+            ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
             ...(family?.icon ? [renderNodeCenterIcon(family, width, bodyHeight)] : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
@@ -849,7 +870,7 @@ export class NetworkNodeView extends ShapeView {
                 }
             }),
             // Above the body so the travelling head is not painted over by it.
-            ...(isExecuting ? [renderRunSpinner(width, bodyHeight)] : []),
+            ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
         );
