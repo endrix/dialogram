@@ -43,7 +43,6 @@ import { PostEditSelectionService } from './post-edit-selection-service';
 import { WorkflowCopyPasteHandler } from './copy-paste-handler';
 import { WorkflowGridStartup } from './grid-startup';
 import { WorkflowPaletteIconStartup } from './palette-icons';
-import { WorkflowRunRingFilterStartup } from './run-ring-filter';
 import { InitialViewportService } from './initial-viewport-service';
 import { ViewportPreservingSetModelCommand } from './viewport-preserving-set-model-command';
 import { RunningAgentsBar } from './running-agents-bar';
@@ -80,9 +79,6 @@ export const diagramBaseModule = new ContainerModule((bind, unbind, isBound, reb
     // Draws the icons a product contributed. Without it their palette entries
     // render an empty slot, since a palette icon is only ever a class name.
     bindAsService(context, TYPES.IDiagramStartup, WorkflowPaletteIconStartup);
-    // Defines the bloom the running ring glows with. Without it the ring still
-    // draws, as a flat rainbow outline.
-    bindAsService(context, TYPES.IDiagramStartup, WorkflowRunRingFilterStartup);
 
     // Override copy/paste handler so we can prepare post-paste selection.
     if (isBound(TYPES.ICopyPasteHandler)) {

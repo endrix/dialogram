@@ -180,11 +180,6 @@
         "impl": "WorkflowPaletteIconStartup"
     },
     {
-        "op": "bindAsService",
-        "service": "Symbol(stub.IDiagramStartup)",
-        "impl": "WorkflowRunRingFilterStartup"
-    },
-    {
         "impl": "WorkflowNetworkNavigationMouseListener",
         "op": "bindAsService",
         "service": "Symbol(stub.MouseListener)"

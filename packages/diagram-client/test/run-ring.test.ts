@@ -1,132 +1,176 @@
 /**
  * The colour ring that turns around a node while it is running.
  *
- * The reference is a conic-gradient border — the ring an assistant shows while
- * it works. SVG has no conic gradient, so the perimeter is cut into slices and
- * each is stroked its own hue. That makes three things load-bearing, and none
- * of them announce themselves when wrong: the palette has to close, the slices
- * have to tile, and the whole ring has to turn as one.
+ * A conic gradient — which is what this effect is everywhere else, and which
+ * SVG cannot paint: `stroke` takes a colour or an SVG paint server, and there
+ * is no conic one. So the ring is an HTML element inside a `foreignObject`,
+ * where CSS paints it directly.
+ *
+ * That choice brings its own ways to be silently wrong, and this pins them: the
+ * element has to be in the HTML namespace, the glow needs somewhere to bleed
+ * into, the angle has to be declared animatable, and the mask has to cut a band
+ * rather than a filled box.
  */
 import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { __testables } from '../src/views';
-import { runRingFilterMarkup, RUN_RING_FILTER_ID } from '../src/run-ring-filter';
 
-const { renderRunRing, RUN_RING_SLICES } = __testables;
-const here = path.dirname(fileURLToPath(import.meta.url));
-const css = readFileSync(path.join(here, '../src/diagram-client.css'), 'utf8');
+const { renderRunRing, RUN_RING_BLEED_PX } = __testables;
+const css = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/diagram-client.css'),
+    'utf8'
+);
 
 const ring = (w = 140, h = 60): any => renderRunRing(w, h);
-const slices = (w = 140, h = 60): any[] => ring(w, h).children;
 
-describe('the ring', () => {
-    it('carries the node’s own perimeter', () => {
-        // The dash and the travel distance both come from this, so they agree
-        // whatever the node's size and the loop closes without a jump.
-        expect(ring().props.style['--wf-spin-length']).toBe(String(2 * (140 + 60)));
-        expect(ring(300, 120).props.style['--wf-spin-length']).toBe('840');
-    });
+/**
+ * The element's tag and data, whichever vnode shape produced it.
+ *
+ * The SVG factory is stubbed in this package's tests and the HTML one is not,
+ * so a node built here can come back in either snabbdom's shape or the stub's.
+ * Reading only one would assert against the harness rather than the view.
+ */
+const tagOf = (vnode: any): string => vnode.sel ?? vnode.tag;
+const dataOf = (vnode: any): any => vnode.data ?? vnode.props;
 
-    it('cuts the border into slices that tile it exactly', () => {
-        const slice = Number(ring().props.style['--wf-ring-slice']);
-
-        expect(slices()).toHaveLength(RUN_RING_SLICES);
-        expect(slice * RUN_RING_SLICES).toBeCloseTo(1, 10);
-    });
-
-    it('traces the node’s own outline', () => {
-        expect(slices()[0].props.attrs).toMatchObject({ width: 140, height: 60, rx: 4, ry: 4 });
-    });
-});
-
-describe('the colours', () => {
-    const hueOf = (s: any) => Number(/hsl\((\d+)/.exec(s.props.attrs.stroke)![1]);
-
-    it('gives every slice its own', () => {
-        const hues = slices().map(hueOf);
-
-        expect(new Set(hues).size).toBe(RUN_RING_SLICES);
+describe('where the ring is drawn', () => {
+    it('is a foreignObject, because CSS cannot paint an SVG stroke', () => {
+        expect(tagOf(ring())).toBe('foreignObject');
     });
 
     /**
-     * A ring whose palette does not close shows a seam once a lap, exactly
-     * where the last colour meets the first — and it turns, so the seam travels
-     * and is impossible to miss once seen.
+     * Children of a foreignObject belong to the HTML namespace. Built with the
+     * SVG factory they are SVG-namespaced `div`s, which render nothing at all —
+     * no error, just an empty node.
      */
-    it('closes the wheel, so the ring has no seam', () => {
-        const hues = slices().map(hueOf);
-        const step = hues[1] - hues[0];
-        const wrap = (360 - hues[hues.length - 1]) + hues[0];
-
-        expect(hues[0]).toBe(0);
-        expect(wrap).toBeCloseTo(step, 5);
-    });
-
-    it('walks the wheel evenly rather than clustering', () => {
-        const hues = slices().map(hueOf);
-        const steps = hues.slice(1).map((h, i) => h - hues[i]);
-
-        expect(Math.max(...steps) - Math.min(...steps)).toBeLessThanOrEqual(1);
-    });
-});
-
-describe('turning as one ring', () => {
-    it('starts each slice a slice further into the cycle', () => {
-        // Same animation, same distance: only the delay differs. Without the
-        // stagger every slice sits on top of the others and the border shows
-        // one colour at a time.
-        const phases = slices().map((s: any) => Number(s.props.style['--wf-ring-phase']));
-
-        expect(phases[0]).toBe(0);
-        for (let i = 1; i < phases.length; i++) {
-            expect(phases[i] - phases[i - 1]).toBeCloseTo(1 / RUN_RING_SLICES, 10);
+    it('holds HTML, not SVG', () => {
+        for (const child of ring().children) {
+            expect(dataOf(child)?.ns, `${tagOf(child)} must not be SVG-namespaced`).toBeUndefined();
         }
     });
 
-    it('turns the delay into a negative offset', () => {
-        // A positive delay would hold every slice still until its turn came.
-        expect(css).toMatch(/animation-delay:\s*calc\(.*--wf-ring-phase.*\*\s*-1\)/);
-    });
-
     /**
-     * `stroke-dashoffset` counts backwards along the path, and a rect's path
-     * runs clockwise from its top-left — so counting DOWN is what sends the
-     * ring clockwise. Counting up is equally valid CSS and reverses it.
+     * The stub cannot see this one.
+     *
+     * `@eclipse-glsp/client`'s SVG factory is stubbed in this package's tests
+     * and produces no namespace, so building the children with it passes here
+     * and renders nothing in the product. These read the REAL factories, where
+     * the difference is the whole point, and then check the source actually
+     * uses the right one.
      */
-    it('counts down, which is what makes it clockwise', () => {
-        const frames = /@keyframes workflow-node-spin\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
+    it('uses a factory that does not namespace what it builds', async () => {
+        const { svg: realSvg, html: realHtml } = await import('sprotty/lib/lib/jsx');
 
-        expect(frames).toContain('stroke-dashoffset');
-        expect(/from\s*\{[^}]*stroke-dashoffset:\s*var\(--wf-spin-length\)/.test(frames)).toBe(true);
-        expect(/to\s*\{[^}]*stroke-dashoffset:\s*0/.test(frames)).toBe(true);
+        expect((realSvg('div', null) as any).data.ns).toBe('http://www.w3.org/2000/svg');
+        expect((realHtml('div', null) as any).data.ns).toBeUndefined();
     });
 
-    it('runs at a constant speed', () => {
-        // Eased, the ring would hesitate at one corner every lap.
-        expect(css).toMatch(/animation:\s*workflow-node-spin[^;]*linear/);
+    it('builds the ring’s children with the HTML factory', () => {
+        const source = readFileSync(
+            path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/views.ts'),
+            'utf8'
+        );
+        const body = /function renderRunRing\([\s\S]*?\n\}/.exec(source)?.[0] ?? '';
+
+        expect(body, 'renderRunRing not found').toContain('foreignObject');
+        expect(body).toContain("html('div'");
+        expect(body).not.toMatch(/svg\('div'/);
+    });
+
+    it('leaves room for the glow to bleed past the node', () => {
+        // A foreignObject clips what it holds, so a glow with no room is cut
+        // off square at the node's edge.
+        const { attrs } = dataOf(ring());
+
+        expect(attrs.x).toBe(-RUN_RING_BLEED_PX);
+        expect(attrs.y).toBe(-RUN_RING_BLEED_PX);
+        expect(attrs.width).toBe(140 + 2 * RUN_RING_BLEED_PX);
+        expect(attrs.height).toBe(60 + 2 * RUN_RING_BLEED_PX);
+    });
+
+    it('pulls the band back onto the node’s own edge', () => {
+        // The bleed pushes the box outwards; the inset has to take it back, or
+        // the ring floats away from the border it is marking.
+        expect(css).toMatch(/inset:\s*var\(--wf-ring-bleed\)/);
+    });
+
+    it('draws the glow under the band', () => {
+        expect(ring().children.map(tagOf)).toEqual(['div', 'div']);
+        expect(dataOf(ring().children[0]).class['node-run-ring-glow']).toBe(true);
+        expect(dataOf(ring().children[1]).class['node-run-ring-band']).toBe(true);
+    });
+
+    it('does not take the pointer from the node underneath', () => {
+        expect(css).toMatch(/\.node-run-ring \{[^}]*pointer-events:\s*none/);
     });
 });
 
-describe('the bloom', () => {
-    it('is what the ring asks for by name', () => {
-        // A ring pointing at a filter nobody defined draws unfiltered — a flat
-        // rainbow outline, with nothing to say the glow went missing.
-        expect(css).toContain(`filter: url(#${RUN_RING_FILTER_ID})`);
-        expect(runRingFilterMarkup()).toContain(`id="${RUN_RING_FILTER_ID}"`);
+describe('what makes it turn', () => {
+    /**
+     * A custom property is a string to the engine until `@property` gives it a
+     * type. Untyped, it jumps from start to end at the halfway point instead of
+     * sweeping — the ring would blink rather than rotate.
+     */
+    it('declares the angle animatable', () => {
+        const declaration = /@property --wf-ring-angle\s*\{([\s\S]*?)\}/.exec(css)?.[1] ?? '';
+
+        expect(declaration).toContain("syntax: '<angle>'");
+        expect(declaration).toMatch(/initial-value:\s*0deg/);
     });
 
-    it('keeps the hues saturated', () => {
-        // The default linearRGB interpolation washes them towards grey, which
-        // is the one thing the ring cannot afford.
-        expect(runRingFilterMarkup()).toContain('color-interpolation-filters="sRGB"');
+    it('sweeps a whole turn', () => {
+        const frames = /@keyframes workflow-node-ring-turn\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
+
+        expect(frames).toMatch(/--wf-ring-angle:\s*360deg/);
     });
 
-    it('lays the blur under the ring rather than over it', () => {
-        const markup = runRingFilterMarkup();
+    it('feeds that angle to the gradient', () => {
+        // Without `from`, the gradient is static and the animation drives
+        // nothing that can be seen.
+        expect(css).toMatch(/conic-gradient\(from var\(--wf-ring-angle\)/);
+    });
 
-        expect(markup.indexOf('in="blurred"')).toBeLessThan(markup.indexOf('in="SourceGraphic"'));
+    it('runs at a constant speed', () => {
+        expect(css).toMatch(/animation:\s*workflow-node-ring-turn[^;]*linear/);
+    });
+});
+
+describe('the band itself', () => {
+    it('is cut from the padding rather than filling the box', () => {
+        // Excluding the content box is what leaves a ring; without it the node
+        // is covered by a solid block of gradient.
+        expect(css).toMatch(/mask-composite:\s*exclude/);
+        expect(css).toMatch(/padding:\s*var\(--wf-ring-width\)/);
+    });
+
+    it('keeps the webkit-prefixed mask beside the standard one', () => {
+        // The webview is Chromium; the prefixed pair is what it honours.
+        expect(css).toContain('-webkit-mask-composite: xor');
+    });
+
+    it('is thin, marking the node rather than framing it', () => {
+        const width = /--wf-ring-width:\s*([\d.]+)px/.exec(css)?.[1];
+
+        expect(Number(width)).toBeLessThanOrEqual(2);
+    });
+
+    /**
+     * A conic gradient wraps, so its first and last stop meet. Different ones
+     * leave a seam that turns with the ring.
+     */
+    it('closes its palette, so the ring has no seam', () => {
+        const colors = (/--wf-ring-colors:\s*([^;]+);/.exec(css)?.[1] ?? '')
+            .split(',').map(c => c.trim());
+
+        expect(colors.length).toBeGreaterThan(2);
+        expect(colors[0]).toBe(colors[colors.length - 1]);
+    });
+
+    it('glows in its own colours rather than one', () => {
+        // A drop-shadow floods a single colour; a blurred copy keeps every hue.
+        expect(css).toMatch(/\.node-run-ring-glow \{[^}]*filter:\s*blur/);
     });
 });
 
@@ -135,15 +179,23 @@ describe('when motion is not wanted', () => {
         .map(m => m[1]).find(block => block.includes('node-run-ring')) ?? '';
 
     it('stops the ring turning but leaves it whole', () => {
-        // Unlike a single travelling dash, a stopped ring is still a complete
-        // border, so the node still reads as running.
         expect(reduced).toMatch(/animation:\s*none/);
-        expect(reduced).not.toMatch(/stroke-dasharray:\s*none/);
     });
 });
 
-describe('the heartbeat it replaces', () => {
-    it('is gone, rather than running underneath', () => {
+describe('what it replaces', () => {
+    it('leaves no heartbeat running underneath', () => {
         expect(css).not.toContain('workflow-node-glow');
+    });
+
+    it('leaves none of the sliced-SVG ring behind', () => {
+        // That version faked the gradient with 36 stroked rects and an SVG
+        // filter; both are gone, not merely unused.
+        expect(css).not.toContain('node-run-ring-slice');
+        expect(css).not.toContain('wf-run-ring-bloom');
+    });
+
+    it('keeps a dim track so a running node reads as one', () => {
+        expect(css).toMatch(/cal-node-active \.node-body \{[^}]*stroke-opacity/);
     });
 });

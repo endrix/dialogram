@@ -11,6 +11,7 @@
 import type { NodeFamilySpec } from '@dialogram/shared';
 import { injectable } from 'inversify';
 import { VNode } from 'snabbdom';
+import { html } from 'sprotty/lib/lib/jsx';
 import {
     svg,
     IView,
@@ -129,52 +130,47 @@ function resolveNodeFamily(
 /** Internals reached by the family tests; not part of the module's surface. */
 
 /**
- * How many slices the running ring is cut into.
+ * Room left around the node for the ring's glow.
  *
- * The colour has to change ALONG the border, and SVG has no conic gradient —
- * so the perimeter is sliced and each slice is stroked its own hue. Fewer
- * slices band visibly; more cost an element each, on every running node at
- * once. Thirty-six is where the banding stopped being visible under the bloom.
+ * A `foreignObject` clips what it holds, so the blur has to have somewhere to
+ * go — without this the glow is cut off square at the node's edge.
  */
-const RUN_RING_SLICES = 36;
+const RUN_RING_BLEED_PX = 6;
 
 /**
  * The colour ring that turns around a node while it is running.
  *
- * Every slice carries the same dash — one slice long — and the same animation.
- * What separates them is a negative delay: slice i starts a fraction i/N into
- * the cycle, so the slices tile the perimeter and travel as one ring rather
- * than as chasing dashes.
+ * A conic gradient, which is what this effect is everywhere else — and which
+ * SVG cannot paint: `stroke` takes a colour or an SVG paint server, and there
+ * is no conic one. So the ring is an HTML element inside a `foreignObject`,
+ * where CSS can paint it directly. One element and a real gradient, rather
+ * than the perimeter chopped into slices to fake the colour sweep.
  *
- * The hue wheel is used whole and wraps, because a ring whose palette does not
- * close shows a seam once a lap, exactly where the last colour meets the first.
+ * The ring is the padding of a box whose middle is masked away — the fill
+ * covers the whole box, and excluding the content box leaves only the band.
+ * Its thickness is that padding, and nothing else needs to know the node's
+ * size.
  */
 function renderRunRing(width: number, height: number): VNode {
-    const length = 2 * (width + height);
-    const slices = [];
-    for (let i = 0; i < RUN_RING_SLICES; i++) {
-        slices.push(svg('rect', {
-            class: { 'node-run-ring-slice': true },
-            attrs: {
-                x: 0, y: 0,
-                width, height,
-                rx: 4, ry: 4,
-                stroke: `hsl(${Math.round((i / RUN_RING_SLICES) * 360)} 72% 62%)`
-            },
-            style: { '--wf-ring-phase': `${i / RUN_RING_SLICES}` }
-        }));
-    }
-    return svg('g', {
+    const bleed = RUN_RING_BLEED_PX;
+    return svg('foreignObject', {
         class: { 'node-run-ring': true },
-        style: {
-            '--wf-spin-length': `${length}`,
-            '--wf-ring-slice': `${1 / RUN_RING_SLICES}`
+        attrs: {
+            x: -bleed,
+            y: -bleed,
+            width: width + 2 * bleed,
+            height: height + 2 * bleed
         }
-    }, ...slices);
+    },
+        // `html`, not `svg`: children of a foreignObject belong to the HTML
+        // namespace, and an SVG-namespaced div renders nothing at all.
+        html('div', { class: { 'node-run-ring-glow': true } }),
+        html('div', { class: { 'node-run-ring-band': true } })
+    );
 }
 
 /** Internals reached by the family and ring tests; not part of the module's surface. */
-export const __testables = { resolveNodeFamily, renderRunRing, RUN_RING_SLICES };
+export const __testables = { resolveNodeFamily, renderRunRing, RUN_RING_BLEED_PX };
 
 /**
  * Render a semi-transparent SVG icon centered in the node body (below the header).
