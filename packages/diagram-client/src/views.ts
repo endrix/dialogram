@@ -11,6 +11,7 @@
 import type { NodeFamilySpec } from '@dialogram/shared';
 import { injectable } from 'inversify';
 import { VNode } from 'snabbdom';
+import { html } from 'sprotty/lib/lib/jsx';
 import {
     svg,
     IView,
@@ -127,33 +128,60 @@ function resolveNodeFamily(
 }
 
 /** Internals reached by the family tests; not part of the module's surface. */
-export const __testables = { resolveNodeFamily, renderRunSpinner };
 
 /**
- * The light that travels around a node while it is running.
+ * Room left around the node for the ring's glow.
  *
- * A rounded rect, stroked with a single dash that moves along the border. The
- * conic-gradient border a chat box uses is not available here — this is SVG,
- * which has no conic gradient — and a dash travelling the perimeter is the same
- * effect by the means the medium has.
- *
- * The dash pattern and the distance it travels are both derived from ONE
- * length, so the loop closes seamlessly whatever size the node is: exactness
- * against the true rounded-corner perimeter does not matter, agreement between
- * the two does. Get that wrong and the head jumps once per revolution.
+ * A `foreignObject` clips what it holds, so the blur has to have somewhere to
+ * go — without this the glow is cut off square at the node's edge.
  */
-function renderRunSpinner(width: number, height: number): VNode {
-    const length = 2 * (width + height);
-    return svg('rect', {
-        class: { 'node-run-spinner': true },
-        attrs: {
-            x: 0, y: 0,
-            width, height,
-            rx: 4, ry: 4
-        },
-        style: { '--wf-spin-length': `${length}` }
+const RUN_RING_BLEED_PX = 6;
+
+/**
+ * The colour ring that turns around a node while it is running.
+ *
+ * A conic gradient, which is what this effect is everywhere else and which SVG
+ * cannot paint — `stroke` takes a colour or an SVG paint server, and there is
+ * no conic one. So the ring is an HTML element inside a `foreignObject`, where
+ * CSS paints it directly.
+ *
+ * The gradient is painted ONCE and the layer holding it is rotated. Animating
+ * the gradient's own angle is the shorter way to write this and it repaints the
+ * gradient every frame, per ring, per running node — which is what made the
+ * first version heavy enough to slow the editor down. A transform is composited
+ * instead, so a frame costs nothing to draw.
+ *
+ * Rotating a square wide enough to cover the node's diagonal is what keeps the
+ * colours meeting the border squarely at every angle; a rotated rectangle would
+ * sweep its corners through the ring.
+ */
+function renderRunRing(width: number, height: number): VNode {
+    const bleed = RUN_RING_BLEED_PX;
+    // Cover the diagonal, so no corner of the node is ever left uncoloured as
+    // the square turns.
+    const span = Math.ceil(Math.hypot(width, height)) + 2;
+    const spinner = (): VNode => html('div', {
+        class: { 'node-run-ring-spin': true },
+        style: { '--wf-ring-span': `${span}px` }
     });
+    return svg('foreignObject', {
+        class: { 'node-run-ring': true },
+        attrs: {
+            x: -bleed,
+            y: -bleed,
+            width: width + 2 * bleed,
+            height: height + 2 * bleed
+        }
+    },
+        // `html`, not `svg`: children of a foreignObject belong to the HTML
+        // namespace, and an SVG-namespaced div renders nothing at all.
+        html('div', { class: { 'node-run-ring-glow': true } }, spinner()),
+        html('div', { class: { 'node-run-ring-band': true } }, spinner())
+    );
 }
+
+/** Internals reached by the family and ring tests; not part of the module's surface. */
+export const __testables = { resolveNodeFamily, renderRunRing, RUN_RING_BLEED_PX };
 
 /**
  * Render a semi-transparent SVG icon centered in the node body (below the header).
@@ -719,7 +747,7 @@ export class ActorNodeView extends ShapeView {
                 }
             }),
             // Above the body so the travelling head is not painted over by it.
-            ...(isExecuting ? [renderRunSpinner(width, bodyHeight)] : []),
+            ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
             ...(family?.icon ? [renderNodeCenterIcon(family, width, bodyHeight)] : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
@@ -787,7 +815,7 @@ export class ExternalActorNodeView extends ShapeView {
                 }
             }),
             // Above the body so the travelling head is not painted over by it.
-            ...(isExecuting ? [renderRunSpinner(width, bodyHeight)] : []),
+            ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
             ...(family?.icon ? [renderNodeCenterIcon(family, width, bodyHeight)] : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
@@ -849,7 +877,7 @@ export class NetworkNodeView extends ShapeView {
                 }
             }),
             // Above the body so the travelling head is not painted over by it.
-            ...(isExecuting ? [renderRunSpinner(width, bodyHeight)] : []),
+            ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
         );

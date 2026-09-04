@@ -37,7 +37,12 @@
     --workflow-node-active-stroke: var(--vscode-charts-green, #89d185);
     --workflow-node-active-glow: color-mix(in srgb, var(--workflow-node-active-stroke) 75%, transparent);
     /* The travelling head, lifted towards white so it reads against its own track. */
-    --workflow-node-active-head: color-mix(in srgb, var(--workflow-node-active-stroke) 55%, white);
+    /* One lap of the running ring. */
+    --wf-spin-duration: 3.2s;
+    /* Thin on purpose: the ring marks a node, it does not frame it. */
+    --wf-ring-width: 1.5px;
+    --wf-ring-bleed: 6px;
+    --wf-ring-colors: #ff5f6d, #ffc371, #f9f871, #6ee7a8, #4dd4e0, #6aa9ff, #b58bff, #ff7ad9, #ff5f6d;
 
     /* Error state (failed run overlay — static, no animation). */
     --workflow-node-error-stroke: var(--vscode-charts-red, #f14c4c);
@@ -462,26 +467,20 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
 }
 
 /*
- * A running node shows a light travelling clockwise around its border.
+ * A running node is ringed by a colour that turns clockwise.
  *
- * `stroke-dashoffset` counts BACKWARDS along the path, so running it down to
- * zero moves the dash forwards — and a rect's path starts at its top-left and
- * goes clockwise. Animating up would send the light the other way.
- *
- * The distance is the node's own perimeter, handed over as `--wf-spin-length`
- * by the view, so every node completes exactly one revolution per cycle no
- * matter its size, and the loop closes without a jump.
+ * The gradient is painted once and the layer holding it is rotated. Animating
+ * the gradient's own angle reads better in CSS and repaints the gradient every
+ * frame, per ring, per running node — heavy enough to slow the editor down. A
+ * transform is composited, so a frame costs nothing to draw.
  */
-@keyframes workflow-node-spin {
-    from {
-        stroke-dashoffset: var(--wf-spin-length);
-    }
+@keyframes workflow-node-ring-turn {
     to {
-        stroke-dashoffset: 0;
+        transform: rotate(360deg);
     }
 }
 
-/* The track the light runs on: the active colour, dimmed to read as unlit. */
+/* The track the ring runs on, so a running node reads as one at a glance. */
 .workflow-node.workflow-node-active .node-body,
 .workflow-node.cal-node-active .node-body {
     stroke: var(--workflow-node-active-stroke);
@@ -489,38 +488,69 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
     stroke-opacity: 0.22;
 }
 
-/*
- * The light itself. One dash a fifth of the way round, so the head is long
- * enough to read as motion and short enough to leave the track visible.
- */
-.node-run-spinner {
-    fill: none;
-    stroke: var(--workflow-node-active-head, var(--workflow-node-active-stroke));
-    stroke-width: 3px;
-    stroke-linecap: round;
-    stroke-dasharray: calc(var(--wf-spin-length) * 0.2) calc(var(--wf-spin-length) * 0.8);
-    filter: drop-shadow(0 0 5px var(--workflow-node-active-glow));
+.node-run-ring {
+    overflow: visible;
     pointer-events: none;
-    animation: workflow-node-spin 2.4s linear infinite;
 }
 
 /*
- * Reduced motion: the state still has to be visible, so the border simply
- * lights up. Stopping the animation without this would leave a node running
- * with one bright fifth of its border and no way to tell why.
+ * The band and its glow are the same thing twice: a box whose middle is masked
+ * away, leaving only its padding — which IS the ring, and whose width is
+ * therefore the ring's thickness.
+ *
+ * `inset` pulls them back off the bleed the foreignObject was given, onto the
+ * node's own edge.
+ */
+.node-run-ring-band,
+.node-run-ring-glow {
+    position: absolute;
+    inset: var(--wf-ring-bleed);
+    box-sizing: border-box;
+    border-radius: 4px;
+    padding: var(--wf-ring-width);
+    /* The mask clips the turning square as well as shaping the band: it covers
+       the border box, so the square's overhang is simply never painted. A
+       further `overflow: hidden` changes nothing — checked against the engine
+       this runs in. */
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+}
+
+/* The gradient itself: painted once, then turned. */
+.node-run-ring-spin {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--wf-ring-span);
+    height: var(--wf-ring-span);
+    margin-left: calc(var(--wf-ring-span) / -2);
+    margin-top: calc(var(--wf-ring-span) / -2);
+    background: conic-gradient(var(--wf-ring-colors));
+    animation: workflow-node-ring-turn var(--wf-spin-duration) linear infinite;
+    /* Its own layer, so turning it never repaints the gradient. */
+    will-change: transform;
+}
+
+/*
+ * The blur sits on the turning square rather than on its container: blurring a
+ * container re-blurs it on every frame its child moves, while blurring the
+ * square itself is done once and then carried round by the same transform.
+ */
+.node-run-ring-glow .node-run-ring-spin {
+    filter: blur(3.5px);
+    opacity: 0.6;
+}
+
+/*
+ * Reduced motion: the ring stays and stops turning. Its colours alone say the
+ * node is running, so nothing is lost but the movement.
  */
 @media (prefers-reduced-motion: reduce) {
-    .node-run-spinner {
+    .node-run-ring-spin {
         animation: none;
-        stroke-dasharray: none;
-        stroke-opacity: 0.9;
-        stroke-width: 2.5px;
     }
-}
-
-.workflow-node.selected.workflow-node-active .node-body,
-.workflow-node.selected.cal-node-active .node-body {
-    stroke: var(--sprotty-edge-selected);
 }
 
 /* Finished state: static green border (no animation) for the last active entity after a successful run. */
