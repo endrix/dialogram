@@ -116,14 +116,34 @@ export class WorkflowDiagramModule extends GModelDiagramModule {
     protected override configureOperationHandlers(
         binding: InstanceMultiBinding<OperationHandlerConstructor>
     ): void {
-        // Read-only sessions never register a write operation handler.
-        if (this.options?.edits === 'read-only') {
-            return;
-        }
-
         // DO NOT call super - it registers default delete/reconnect handlers
         // that would conflict with ours and cause "Key is already registered" warnings
         // super.configureOperationHandlers(binding);
+
+        // A read-only session used to return here, registering nothing at all.
+        //
+        // That read "read-only" as "no operations", when what it has to mean is
+        // "no operations that change the SOURCE". The handlers below the
+        // read-only guard are the ones that do; the handlers above it only ever
+        // touch presentation — where a node sits, how an edge is routed — and
+        // that lives in the separate layout file, never in the document the
+        // diagram was generated from.
+        //
+        // Registering none of them made a read-only diagram one that cannot be
+        // laid out. The three layout entries in the context menu are offered
+        // unconditionally, so all three appeared and all three did nothing when
+        // clicked: no handler was bound for the operation they dispatch, and a
+        // GLSP operation nobody handles fails silently. Dragging a node did not
+        // persist either, so the arrangement someone made by hand to compensate
+        // was gone on the next open.
+        //
+        // A generated diagram is exactly the kind that most needs laying out,
+        // because nobody placed its nodes by hand in the first place.
+        //
+        // Writing back to the source stays impossible regardless of what is
+        // registered here: `ReadOnlySourceModelStorage.saveSourceModel` is a
+        // no-op for these sessions, so this widens what a reader can rearrange
+        // without widening what they can alter.
 
         // Essential handlers from DiagramModule that we must include:
         binding.add(CompoundOperationHandler);
@@ -146,12 +166,18 @@ export class WorkflowDiagramModule extends GModelDiagramModule {
         binding.add(WorkflowResetEdgeRoutesOperationHandler);
         binding.add(WorkflowRerouteEdgesAvoidOverlapsOperationHandler);
 
+        // Everything above is presentation or discovery, and safe for a session
+        // that may not edit. Everything below writes to the source, so this is
+        // where a read-only session stops.
+        if (this.options?.edits === 'read-only') {
+            return;
+        }
+
         // Consumer-supplied operation modules (e.g. the toolkit's source-editing handlers, which
         // live outside core). Each module registers its handlers after the neutral in-core set
         // above; order is irrelevant (every handler responds to a distinct operation kind). Modules
         // arrive as opaque handles on `EditStrategy.operationModules` -- narrow each to the concrete
         // contract before invoking it.
-        // `read-only` already returned above, so any `edits` here carries operation modules.
         const edits = this.options?.edits;
         if (edits) {
             for (const module of edits.operationModules) {
