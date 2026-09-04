@@ -57,12 +57,45 @@ type RunOption = {
     running?: boolean;
 };
 
+/**
+ * What the warning chip says.
+ *
+ * "Partial graph" only when the graph really is partial. Every error used to
+ * earn that prefix, which made a complete and correct picture of something
+ * faulty announce itself as an incomplete picture. Those are opposite claims,
+ * and the wrong one sends a reader hunting for missing nodes instead of reading
+ * the problem being reported — the likelier case by far, since a producer able
+ * to describe a fault precisely usually had no trouble drawing it.
+ *
+ * When the graph is whole the message stands on its own: it already says what
+ * is wrong, and the chip's styling already says it is a warning.
+ *
+ * Exported for its own test. It is one line of string arithmetic, and it is
+ * also the whole difference between telling a reader their picture is missing
+ * something and telling them their subject has a fault.
+ */
+export function graphWarningText(messages: string[], graphIsTruncated: boolean): string {
+    const first = messages[0] ?? 'Graph export completed with recoverable errors.';
+    const extra = Math.max(0, messages.length - 1);
+    const suffix = extra > 0 ? ` (+${extra} more)` : '';
+    return graphIsTruncated ? `Partial graph: ${first}${suffix}` : `${first}${suffix}`;
+}
+
 type RenderMeta = {
     available: string[];
     availableRuns: RunOption[];
     entryWorkflows: string[];
     graphErrors: GraphLoadError[];
     isPartialGraph: boolean;
+    /**
+     * Whether the graph itself is incomplete, as opposed to complete but
+     * describing something that has problems.
+     *
+     * `isPartialGraph` above is "is there anything to warn about" and stays
+     * that, because the overlay keys on it. This is the narrower fact, and it
+     * is the one the wording has to follow.
+     */
+    graphIsTruncated: boolean;
     parentWorkflows: ParentWorkflowOption[];
     renderableNodeCount: number;
     runtimeProfile?: string;
@@ -208,7 +241,8 @@ export class WorkflowNavigationUi {
         const availableRuns = this.parseRunOptions(args['wf:availableRuns']);
         const entryWorkflows = Array.isArray(args['wf:rootWorkflows']) ? args['wf:rootWorkflows'] : [];
         const graphErrors = this.parseGraphLoadErrors(args['wf:errors']);
-        const isPartialGraph = args['wf:partial'] === true || graphErrors.length > 0;
+        const graphIsTruncated = args['wf:partial'] === true;
+        const isPartialGraph = graphIsTruncated || graphErrors.length > 0;
         const renderableNodeCount = this.countRenderableNodes(root);
         const parentWorkflows = this.parseParentWorkflowOptions(args['wf:parentWorkflows'], sourceUri);
         const selected = args['wf:selectedWorkflow'] ?? args['cal:networkName'];
@@ -258,6 +292,7 @@ export class WorkflowNavigationUi {
             entryWorkflows,
             graphErrors,
             isPartialGraph,
+            graphIsTruncated,
             parentWorkflows,
             renderableNodeCount,
             runtimeProfile,
@@ -389,11 +424,10 @@ export class WorkflowNavigationUi {
             document.body.appendChild(chip);
             this.graphWarningEl = chip;
         }
-        const firstMessage = meta.graphErrors[0]?.message ?? 'Graph export completed with recoverable errors.';
-        const extraCount = Math.max(0, meta.graphErrors.length - 1);
-        this.graphWarningEl.textContent = extraCount > 0
-            ? `Partial graph: ${firstMessage} (+${extraCount} more)`
-            : `Partial graph: ${firstMessage}`;
+        this.graphWarningEl.textContent = graphWarningText(
+            meta.graphErrors.map(error => error.message),
+            meta.graphIsTruncated
+        );
         this.graphWarningEl.title = meta.graphErrors.length > 0
             ? meta.graphErrors.map(error => this.describeGraphLoadError(error)).join('\n')
             : 'Graph export completed with recoverable errors.';
