@@ -36,6 +36,8 @@
     /* Active execution glow (live run overlay). */
     --workflow-node-active-stroke: var(--vscode-charts-green, #89d185);
     --workflow-node-active-glow: color-mix(in srgb, var(--workflow-node-active-stroke) 75%, transparent);
+    /* The travelling head, lifted towards white so it reads against its own track. */
+    --workflow-node-active-head: color-mix(in srgb, var(--workflow-node-active-stroke) 55%, white);
 
     /* Error state (failed run overlay — static, no animation). */
     --workflow-node-error-stroke: var(--vscode-charts-red, #f14c4c);
@@ -459,23 +461,61 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
     stroke-width: 2.5px;
 }
 
-@keyframes workflow-node-glow {
-    0% {
-        filter: drop-shadow(0 0 4px var(--workflow-node-active-glow));
+/*
+ * A running node shows a light travelling clockwise around its border.
+ *
+ * `stroke-dashoffset` counts BACKWARDS along the path, so running it down to
+ * zero moves the dash forwards — and a rect's path starts at its top-left and
+ * goes clockwise. Animating up would send the light the other way.
+ *
+ * The distance is the node's own perimeter, handed over as `--wf-spin-length`
+ * by the view, so every node completes exactly one revolution per cycle no
+ * matter its size, and the loop closes without a jump.
+ */
+@keyframes workflow-node-spin {
+    from {
+        stroke-dashoffset: var(--wf-spin-length);
     }
-    50% {
-        filter: drop-shadow(0 0 10px var(--workflow-node-active-glow));
-    }
-    100% {
-        filter: drop-shadow(0 0 4px var(--workflow-node-active-glow));
+    to {
+        stroke-dashoffset: 0;
     }
 }
 
+/* The track the light runs on: the active colour, dimmed to read as unlit. */
 .workflow-node.workflow-node-active .node-body,
 .workflow-node.cal-node-active .node-body {
     stroke: var(--workflow-node-active-stroke);
     stroke-width: 2.5px;
-    animation: workflow-node-glow 1.6s ease-in-out infinite;
+    stroke-opacity: 0.22;
+}
+
+/*
+ * The light itself. One dash a fifth of the way round, so the head is long
+ * enough to read as motion and short enough to leave the track visible.
+ */
+.node-run-spinner {
+    fill: none;
+    stroke: var(--workflow-node-active-head, var(--workflow-node-active-stroke));
+    stroke-width: 3px;
+    stroke-linecap: round;
+    stroke-dasharray: calc(var(--wf-spin-length) * 0.2) calc(var(--wf-spin-length) * 0.8);
+    filter: drop-shadow(0 0 5px var(--workflow-node-active-glow));
+    pointer-events: none;
+    animation: workflow-node-spin 2.4s linear infinite;
+}
+
+/*
+ * Reduced motion: the state still has to be visible, so the border simply
+ * lights up. Stopping the animation without this would leave a node running
+ * with one bright fifth of its border and no way to tell why.
+ */
+@media (prefers-reduced-motion: reduce) {
+    .node-run-spinner {
+        animation: none;
+        stroke-dasharray: none;
+        stroke-opacity: 0.9;
+        stroke-width: 2.5px;
+    }
 }
 
 .workflow-node.selected.workflow-node-active .node-body,
