@@ -128,9 +128,30 @@ function markFeedbackEdges(children: GModelElement[]): void {
     if (edges.length === 0) {
         return;
     }
-    // An endpoint nothing claims is its own node: a boundary port hangs off the
-    // graph itself, and calling two of them the same node would invent a loop.
-    const feedback = findFeedbackEdges(edges, id => ownerByEndpoint.get(id) ?? id);
+
+    // If the producer named any of them, its answer is the whole answer.
+    //
+    // The derived answer below is a fact about the DRAWING: which edges point
+    // backwards in the order the layout will use. That is the right question
+    // when nobody knows better, and it is why this is computed at all. But a
+    // producer often does know better, because in its own terms the loop has a
+    // designated closing element and the shape cannot show which one it is —
+    // several edges of one cycle are equally good candidates by shape alone,
+    // and the heuristic picks among them by degree.
+    //
+    // All-or-nothing, deliberately. Merging the two sets would mark one cycle
+    // twice, once where the producer said and once where the heuristic guessed,
+    // and a reader cannot tell which mark carries meaning. A document that
+    // declares nothing behaves exactly as it did before.
+    const declared = edges.filter(
+        edge => edge.args?.[WorkflowDiagramMetadata.DECLARED_FEEDBACK] === true
+    );
+    const feedback = declared.length > 0
+        ? new Set(declared.map(edge => edge.id))
+        // An endpoint nothing claims is its own node: a boundary port hangs off
+        // the graph itself, and calling two of them the same node would invent
+        // a loop.
+        : findFeedbackEdges(edges, id => ownerByEndpoint.get(id) ?? id);
     for (const edge of edges) {
         if (!feedback.has(edge.id)) {
             continue;
@@ -517,6 +538,9 @@ export class GraphGModelSource {
                         [WorkflowDiagramMetadata.PORT_DIRECTION]: direction,
                         [WorkflowDiagramMetadata.PORT_TYPE]: port.type,
                         [WorkflowDiagramMetadata.IS_INPUT_PORT]: direction === 'input',
+                        [WorkflowDiagramMetadata.PORT_ROLE]: port.role,
+                        // Kept beside the documented key: the property panel and
+                        // the port views already read this one.
                         'wf:portRole': port.role
                     },
                     layoutOptions: {
@@ -529,6 +553,16 @@ export class GraphGModelSource {
                 ];
                 if (port.role === 'control') {
                     gport.cssClasses.push('cal-port-control');
+                }
+                // `control` keeps its established class; every role also gets a
+                // derived one. Without this a producer whose ports carry a role
+                // this file has never heard of can neither style them nor hide
+                // them — and roles are exactly the axis a reader wants to
+                // switch off, because wiring present on every element carries
+                // no information until the moment it does.
+                const portRoleClass = this.derivedCssClass('port-role-', port.role);
+                if (portRoleClass) {
+                    gport.cssClasses.push(portRoleClass);
                 }
                 const labelId = `${portId}_label`;
                 const label: GModelElement = {
@@ -770,6 +804,33 @@ export class GraphGModelSource {
             if (typeof edgeCapacity === 'number' && Number.isFinite(edgeCapacity)) {
                 (gedge.args as Record<string, unknown>)['wf:capacity'] = edgeCapacity;
             }
+            // What this connection IS, as the producer sees it. A dataflow
+            // network can carry several kinds of connection at once — a
+            // token-carrying channel, a plain signal, the wiring that clocks
+            // the whole thing — and drawn identically they can only be told
+            // apart by tracing them. The platform learns none of those words;
+            // it derives a hook and lets the profile's stylesheet name them.
+            const edgeRoleClass = this.derivedCssClass('edge-role-', edgeMeta?.['role'] as string | undefined);
+            if (edgeRoleClass) {
+                gedge.cssClasses = [...(gedge.cssClasses ?? []), edgeRoleClass];
+                (gedge.args as Record<string, unknown>)[WorkflowDiagramMetadata.EDGE_ROLE] = edgeMeta?.['role'];
+            }
+            const edgeWidth = edgeMeta?.['width'];
+            if (typeof edgeWidth === 'number' && Number.isFinite(edgeWidth)) {
+                (gedge.args as Record<string, unknown>)[WorkflowDiagramMetadata.EDGE_WIDTH] = edgeWidth;
+            }
+            // Producer-declared feedback. Recorded per edge here; whether the
+            // document uses declared or derived feedback is decided once, for
+            // the whole graph, in `markFeedbackEdges`.
+            if (edgeMeta?.['feedback'] === true) {
+                (gedge.args as Record<string, unknown>)[WorkflowDiagramMetadata.DECLARED_FEEDBACK] = true;
+            }
+            // An undirected connection. The no-arrow edge type already existed
+            // for structural wiring; this lets a producer ask for it, for a
+            // connection that genuinely has no direction to draw.
+            if (edgeMeta?.['undirected'] === true) {
+                gedge.type = WorkflowDiagramTypes.EDGE_CONNECTION_NO_ARROW;
+            }
             children.push(gedge);
         }
 
@@ -987,18 +1048,39 @@ export class GraphGModelSource {
     }
 
 
+    /**
+     * A styling hook derived from a producer-supplied word.
+     *
+     * `<value>-node`, `port-role-<value>`, `edge-role-<value>` — derived rather
+     * than enumerated, so a product can style something this file has never
+     * heard of. The pattern check is what keeps it from being an injection: the
+     * value is interpolated into a class name, so it has to look like one.
+     */
+    private derivedCssClass(prefix: string, value: string | undefined, suffix = ''): string | undefined {
+        if (typeof value !== 'string' || !/^[a-z][a-z0-9-]*$/.test(value)) {
+            return undefined;
+        }
+        return `${prefix}${value}${suffix}`;
+    }
+
     private getNodeCssClasses(node: PyGraphNode): string[] {
         const classes: string[] = [WorkflowDiagramCss.NODE];
+        // Emitted for EVERY node, not only external ones.
+        //
+        // It used to sit inside the external branch below, which quietly made
+        // the mechanism useless for any kind that is not external: a producer
+        // introducing a kind of its own got a node the platform renders but its
+        // own stylesheet cannot select, with nothing to say why. Nothing about
+        // the hook ever depended on externality — that was just where the first
+        // product happened to need it.
+        const kindClass = this.derivedCssClass('', node.kind, '-node');
+        if (kindClass) {
+            classes.push(kindClass);
+        }
         if (this.isNetworkInstanceNode(node)) {
             classes.push(WorkflowDiagramCss.NODE_NETWORK, 'network-node');
         } else if (this.isExternal(node)) {
             classes.push(WorkflowDiagramCss.NODE_EXTERNAL_ACTOR, 'external-actor-node');
-            // A hook per kind, derived rather than enumerated: every external
-            // node gets `<kind>-node`, so a product can style a kind this file
-            // has never heard of without a change here.
-            if (/^[a-z][a-z0-9-]*$/.test(node.kind)) {
-                classes.push(`${node.kind}-node`);
-            }
             const defAnnots = node.meta?.['definitionAnnotations'] as Array<{ name?: string }> | undefined;
             const annots = Array.isArray(defAnnots) ? defAnnots : undefined;
             const family = this.nodeFamilyOf(annots);

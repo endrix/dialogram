@@ -1,6 +1,17 @@
-node_modules/
-dist/
-out/
+# Trailing slashes deliberately omitted on these three.
+#
+# `node_modules/` matches a DIRECTORY of that name and nothing else, so a
+# SYMLINK named `node_modules` is not ignored and `git add -A` will commit it.
+# That is not a hypothetical: linking `node_modules` into a git worktree is the
+# normal way to avoid a second 350 MB install, and doing it here put six
+# self-referential symlinks into a pull request.
+#
+# Without the slash the pattern matches a file, a symlink or a directory, which
+# is what is actually wanted — none of these three names should ever be tracked
+# in any form.
+node_modules
+dist
+out
 **/src/generated
 *.tsbuildinfo
 *.vsix
