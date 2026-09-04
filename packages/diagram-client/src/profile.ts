@@ -22,6 +22,8 @@ type DiagramClientBehavior = {
     scriptInterpreterCommands?: string[];
     paletteIcons?: Record<string, { dark: string; light?: string }>;
     nodeFamilies?: NodeFamilySpec[];
+    /** Whether the host has a chat backend; derived by the platform. */
+    chatBackend?: boolean;
 };
 
 type DiagramIdentifier = {

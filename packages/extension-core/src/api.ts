@@ -237,6 +237,22 @@ export interface DiagramClientBehavior {
    */
   paletteIcons?: Record<string, { dark: string; light?: string }>;
   nodeFamilies?: NodeFamilySpec[];
+  /**
+   * Whether the host has a chat backend behind this diagram.
+   *
+   * Derived by the platform from `DiagramProfile.chat`, not supplied by a
+   * product: the two must agree, and a field a product sets by hand is a field
+   * it can set wrongly. Read it, do not write it.
+   *
+   * The stock feature module boots a chat panel eagerly. When the host has no
+   * chat backend, that panel opened, sent its first message into a host with no
+   * handler for it, logged an unknown-method error, and timed out five seconds
+   * later — leaving a chat button that could never answer. A consumer that
+   * composes the stock features without configuring chat is a normal thing to
+   * be; the platform documents that module as the stock product's feature set,
+   * which is precisely the case that has to degrade quietly.
+   */
+  chatBackend?: boolean;
 }
 
 export interface DiagramProfile {

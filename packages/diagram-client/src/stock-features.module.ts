@@ -14,6 +14,7 @@ import { ChangeBoundsTool, TYPES, bindAsService, configureActionHandler } from '
 import { MoveAction } from '@eclipse-glsp/sprotty';
 import { PropertyPanel } from './property-panel';
 import { ChatPanel } from './chat-panel-integrated';
+import { clientBehavior } from './profile';
 import { WorkflowNavigationUi } from './navigation-ui';
 import { WorkflowNetworkNavigationMouseListener } from './network-navigation-mouse-listener';
 import { ViewerMouseListener } from './viewer-mouse-listener';
@@ -63,10 +64,24 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     // Bound as an IDiagramStartup so GLSP eagerly instantiates it on diagram
     // startup — a plain singleton binding is never resolved, so the panel and
     // its floating toggle button would never be created.
-    bind(ChatPanel).toSelf().inSingletonScope();
-    bind(TYPES.IDiagramStartup).toService(ChatPanel);
-    // Track the live diagram selection and mirror it into the chat runtime.
-    bind(TYPES.ISelectionListener).toService(ChatPanel);
+    //
+    // Only when the host has a chat backend to answer it. That eager startup is
+    // what made the difference visible: with no backend the panel opened, sent
+    // its first message to a host with no handler for it, logged an
+    // unknown-method error, and gave up five seconds later — leaving a chat
+    // button that could never answer.
+    //
+    // This module is the stock product's feature set, and a consumer composing
+    // it without configuring chat is a normal thing to be: the header above
+    // says as much. So the absence of a backend has to read as "no panel"
+    // rather than as a panel that fails. The flag is derived by the platform
+    // from the profile, so the two halves cannot disagree.
+    if (clientBehavior().chatBackend !== false) {
+        bind(ChatPanel).toSelf().inSingletonScope();
+        bind(TYPES.IDiagramStartup).toService(ChatPanel);
+        // Track the live diagram selection and mirror it into the chat runtime.
+        bind(TYPES.ISelectionListener).toService(ChatPanel);
+    }
 
     // Double-click navigation into nested networks.
     bindAsService(context, TYPES.MouseListener, WorkflowNetworkNavigationMouseListener);

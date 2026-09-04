@@ -168,7 +168,7 @@ describe('WorkflowEditorProvider default webview assets (no clientAssets)', () =
               <script nonce="NONCE">
                   // Pass diagram identifier to the client. Serialized as one JSON literal
                   // with '<' escaped so no value (e.g. a URI) can break out of the script.
-                  window.diagramIdentifier = {"clientId":"client-0","diagramType":"cal-network-diagram","uri":"file:///workspace/pipeline.py","settingsNamespace":"test","libavoidWasmUri":"https://webview/fake-ext/dist/webview/libavoid.wasm","libavoidModuleUri":"https://webview/fake-ext/dist/webview/libavoid.mjs"};
+                  window.diagramIdentifier = {"clientId":"client-0","diagramType":"cal-network-diagram","uri":"file:///workspace/pipeline.py","settingsNamespace":"test","clientBehavior":{"chatBackend":false},"libavoidWasmUri":"https://webview/fake-ext/dist/webview/libavoid.wasm","libavoidModuleUri":"https://webview/fake-ext/dist/webview/libavoid.mjs"};
 
                   // Optional debug config injected from the extension host (launch.json env).
                   try {
