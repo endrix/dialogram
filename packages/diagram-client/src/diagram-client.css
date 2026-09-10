@@ -774,6 +774,28 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
     opacity: 0.10;
 }
 
+/* ── Node center images (a family's own mark, in its own colours) ──
+ * Light and dark are separate images, as on the palette; VS Code stamps the
+ * theme on the body. The dark one is the base, so a mark with only one image
+ * shows it in every theme. */
+.node-center-image {
+    pointer-events: none;
+}
+
+.node-center-image-light {
+    display: none;
+}
+
+body.vscode-light .node-center-image.has-light .node-center-image-dark,
+body.vscode-high-contrast-light .node-center-image.has-light .node-center-image-dark {
+    display: none;
+}
+
+body.vscode-light .node-center-image-light,
+body.vscode-high-contrast-light .node-center-image-light {
+    display: inline;
+}
+
 /* External actor node styles - header fill handled via header-compartment */
 .external-actor-node .node-header.external-actor-header {
     fill: var(--workflow-color-external-default);

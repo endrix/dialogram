@@ -194,6 +194,15 @@ export interface NodeFamilySpec {
         viewBox: number;
         paths: string[];
     };
+    /**
+     * The family's own full-colour mark, drawn in the node body where an icon
+     * would be — the image a palette entry shows, one per theme (`dark` is the
+     * base, `light` is optional).
+     */
+    image?: {
+        dark: string;
+        light?: string;
+    };
 }
 
 export interface EntityPaletteItemSpec {

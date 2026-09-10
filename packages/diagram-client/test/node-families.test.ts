@@ -120,3 +120,37 @@ describe('the CSS a declaration generates', () => {
         expect(nodeFamilyCss(undefined)).toBe('');
     });
 });
+
+/**
+ * A family can wear its own full-colour mark — the image its palette entry
+ * shows — where an icon family draws a watermark.
+ */
+describe('a family drawn with its own mark', () => {
+    const { renderNodeCenterImage } = __testables;
+    const DARK = 'data:image/svg+xml,dark';
+    const LIGHT = 'data:image/svg+xml,light';
+    const family = { annotation: 'streamblocks', color: '#818a94', image: { dark: DARK, light: LIGHT } };
+
+    // The same reading as the ring tests: the factory keeps its data on `data`
+    // or `props` depending on where it runs.
+    const dataOf = (vnode: any): any => vnode.data ?? vnode.props;
+    const classesOf = (vnode: any) =>
+        Object.entries(dataOf(vnode)?.class ?? {}).filter(([, on]) => on).map(([name]) => name);
+    const hrefOf = (vnode: any) => dataOf(vnode).attrs.href;
+
+    it('lays down both images for the theme to choose between', () => {
+        const [group] = renderNodeCenterImage(family, 200, 100) as any[];
+        const images = group.children as any[];
+
+        expect(classesOf(group)).toContain('has-light');
+        expect(images.map(hrefOf)).toEqual([DARK, LIGHT]);
+        expect(images.map(classesOf)).toEqual([['node-center-image-dark'], ['node-center-image-light']]);
+    });
+
+    it('shows the dark one everywhere when there is no light one', () => {
+        const [group] = renderNodeCenterImage({ ...family, image: { dark: DARK } }, 200, 100) as any[];
+
+        expect(classesOf(group)).not.toContain('has-light');
+        expect((group.children as any[]).map(hrefOf)).toEqual([DARK]);
+    });
+});
