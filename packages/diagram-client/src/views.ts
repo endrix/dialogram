@@ -180,8 +180,47 @@ function renderRunRing(width: number, height: number): VNode {
     );
 }
 
-/** Internals reached by the family and ring tests; not part of the module's surface. */
-export const __testables = { resolveNodeFamily, renderRunRing, RUN_RING_BLEED_PX };
+/** Internals reached by the family, mark and ring tests; not part of the module's surface. */
+export const __testables = { resolveNodeFamily, renderRunRing, renderNodeCenterImage, RUN_RING_BLEED_PX };
+
+/**
+ * Draw a family's own full-colour mark centred in the node body, where an icon
+ * family draws its watermark — the image its palette entry shows.
+ *
+ * Light and dark are separate images, as on the palette, so both are laid down
+ * and CSS shows the one for the theme (`has-light` says there is a light one
+ * to switch to).
+ */
+function renderNodeCenterImage(
+    family: NodeFamilySpec,
+    nodeWidth: number,
+    nodeHeight: number
+): VNode[] {
+    const image = family.image;
+    if (!image?.dark) {
+        return [];
+    }
+    const size = NODE_ICON_SIZE;
+    const bodyTop = HEADER_HEIGHT;
+    const x = nodeWidth / 2 - size / 2;
+    const y = bodyTop + (nodeHeight - bodyTop) / 2 - size / 2;
+    const hasLight = Boolean(image.light);
+    const place = (href: string, theme: 'dark' | 'light'): VNode => svg('image', {
+        class: { [`node-center-image-${theme}`]: true },
+        attrs: { href, x, y, width: size, height: size, preserveAspectRatio: 'xMidYMid meet' }
+    });
+
+    return [svg('g', {
+        class: {
+            'node-center-image': true,
+            [`node-image-${family.id ?? family.annotation}`]: true,
+            'has-light': hasLight
+        }
+    },
+        place(image.dark, 'dark'),
+        ...(hasLight ? [place(image.light!, 'light')] : [])
+    )];
+}
 
 /**
  * Render a semi-transparent SVG icon centered in the node body (below the header).
@@ -749,6 +788,7 @@ export class ActorNodeView extends ShapeView {
             // Above the body so the travelling head is not painted over by it.
             ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
             ...(family?.icon ? [renderNodeCenterIcon(family, width, bodyHeight)] : []),
+            ...(family?.image ? renderNodeCenterImage(family, width, bodyHeight) : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
         );
@@ -817,6 +857,7 @@ export class ExternalActorNodeView extends ShapeView {
             // Above the body so the travelling head is not painted over by it.
             ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
             ...(family?.icon ? [renderNodeCenterIcon(family, width, bodyHeight)] : []),
+            ...(family?.image ? renderNodeCenterImage(family, width, bodyHeight) : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
         );
