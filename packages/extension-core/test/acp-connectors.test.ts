@@ -1,4 +1,4 @@
-// The platform reads the connectors the way wfpy does: the known agents,
+// The platform reads the connectors the way the runtime does: the known agents,
 // available when on the PATH; the user's file; the workspace's file at the
 // project root, each overriding the last by name. Real files and a real
 // PATH directory here, so what is tested is the reading, not a mock of it.
@@ -15,6 +15,7 @@ import {
     workspaceRoot
 } from '../src/extension/chat/acp-connectors';
 
+const FILES = { user: 'wfpy/connectors.toml', workspace: '.wfpy/connectors.toml' };
 let dir: string;
 let bin: string;
 function executable(name: string): string {
@@ -40,7 +41,7 @@ afterEach(() => {
 describe('loadAcpConnectors', () => {
     it('knows the four agents, available when their command is on the PATH', () => {
         executable('opencode');
-        const found = loadAcpConnectors({ workspaceDir: dir, userFile: path.join(dir, 'none'), workspaceFile: path.join(dir, 'none'), pathDirs: [bin] });
+        const found = loadAcpConnectors({ files: FILES, workspaceDir: dir, userFile: path.join(dir, 'none'), workspaceFile: path.join(dir, 'none'), pathDirs: [bin] });
         expect(found.map(c => [c.name, c.available, c.source, c.command, c.httpApi])).toEqual([
             ['claude', false, 'discovered', 'claude-agent-acp', false],
             ['codex', false, 'discovered', 'codex-acp', false],
@@ -70,7 +71,7 @@ mode = "plan"
         const sub = path.join(root, 'flows', 'deep');
         fs.mkdirSync(sub, { recursive: true });
 
-        const found = loadAcpConnectors({ workspaceDir: sub, userFile, pathDirs: [bin] });
+        const found = loadAcpConnectors({ files: FILES, workspaceDir: sub, userFile, pathDirs: [bin] });
         const by = Object.fromEntries(found.map(c => [c.name, c]));
         expect(by.claude).toMatchObject({ source: 'user', available: false, command: 'claude-agent-acp', model: 'sonnet', mode: null });
         expect(by.mine).toMatchObject({ source: 'workspace', available: true, command: `${mine} --flag`, mode: 'plan', env: { API_KEY: 'k' } });
@@ -80,10 +81,10 @@ mode = "plan"
 
     it('names the file and the line when one does not parse, or a connector has no command', () => {
         const bad = write(path.join(dir, 'bad.toml'), '[connectors.x]\ncommand = "oops');
-        expect(() => loadAcpConnectors({ workspaceDir: dir, userFile: bad, workspaceFile: path.join(dir, 'none'), pathDirs: [] }))
+        expect(() => loadAcpConnectors({ files: FILES, workspaceDir: dir, userFile: bad, workspaceFile: path.join(dir, 'none'), pathDirs: [] }))
             .toThrow(new RegExp(`${bad.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: line 2: unterminated string`));
         const empty = write(path.join(dir, 'empty.toml'), '[connectors.x]\nmodel = "m"');
-        expect(() => loadAcpConnectors({ workspaceDir: dir, userFile: empty, workspaceFile: path.join(dir, 'none'), pathDirs: [] }))
+        expect(() => loadAcpConnectors({ files: FILES, workspaceDir: dir, userFile: empty, workspaceFile: path.join(dir, 'none'), pathDirs: [] }))
             .toThrow(/connector 'x' names no command/);
     });
 });
@@ -99,8 +100,20 @@ describe('the files', () => {
     });
 
     it("locates the user's file under XDG_CONFIG_HOME, else ~/.config", () => {
-        expect(userConnectorsFile({ XDG_CONFIG_HOME: '/x' })).toBe(path.join('/x', 'wfpy', 'connectors.toml'));
-        expect(userConnectorsFile({})).toBe(path.join(os.homedir(), '.config', 'wfpy', 'connectors.toml'));
+        expect(userConnectorsFile(FILES.user, { XDG_CONFIG_HOME: '/x' })).toBe(path.join('/x', 'wfpy', 'connectors.toml'));
+        expect(userConnectorsFile(FILES.user, {})).toBe(path.join(os.homedir(), '.config', 'wfpy', 'connectors.toml'));
+    });
+
+    it('reads the workspace file the declaration names, and no other', () => {
+        const root = path.join(dir, 'p');
+        fs.mkdirSync(path.join(root, '.git'), { recursive: true });
+        write(path.join(root, '.wfpy', 'connectors.toml'), '[connectors.a]\ncommand = "a"');
+        write(path.join(root, '.other', 'connectors.toml'), '[connectors.b]\ncommand = "b"');
+        const names = (files: typeof FILES) =>
+            loadAcpConnectors({ files, workspaceDir: root, userFile: path.join(dir, 'none'), pathDirs: [] }).map(c => c.name);
+        expect(names(FILES)).toContain('a');
+        expect(names(FILES)).not.toContain('b');
+        expect(names({ ...FILES, workspace: '.other/connectors.toml' })).toContain('b');
     });
 });
 
@@ -119,7 +132,8 @@ describe('resolveChatAgent', () => {
 
     it('says why a connector cannot be used', () => {
         expect(() => resolveChatAgent('claude', listed)).toThrow(/not available.*claude-agent-acp.*PATH/);
-        expect(() => resolveChatAgent('nope', listed)).toThrow(/not known.*known: claude, mine, opencode/);
+        expect(() => resolveChatAgent('nope', listed)).toThrow(/not known \(known: claude, mine, opencode\)$/);
+        expect(() => resolveChatAgent('nope', listed, FILES)).toThrow(/declare it in .*wfpy\/connectors\.toml or the workspace's \.wfpy\/connectors\.toml/);
         expect(resolveChatAgent('opencode', undefined)).toBeUndefined();
         expect(() => resolveChatAgent('claude', undefined)).toThrow(/no ACP connectors could be listed/);
     });
@@ -132,7 +146,7 @@ describe('resolveChatAgent', () => {
         const xdg = process.env.XDG_CONFIG_HOME;
         process.env.XDG_CONFIG_HOME = path.join(dir, 'no-config');
         try {
-            const resolve = createAcpAgentResolver('mlir', { settingKey: 'acp.connector' });
+            const resolve = createAcpAgentResolver('mlir', { settingKey: 'acp.connector', files: FILES });
             await expect(resolve(dir)).resolves.toMatchObject({ name: 'opencode', argv: ['opencode', 'acp'], httpApi: true });
         } finally {
             if (xdg === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = xdg;

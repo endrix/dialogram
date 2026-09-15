@@ -176,13 +176,17 @@ export interface SidecarProfileInput {
     /** The setting naming the ACP connector (`<namespace>.<key>`, e.g.
      *  `acp.connector`): the one the chat talks to, offered by the property
      *  panel, and, with `runAcpFlags` on, the run's default (`--acp-connector`).
-     *  The platform reads the connectors itself (the known agents on the
-     *  PATH, wfpy's user and workspace files). */
+     *  The platform reads the connectors itself: the known agents on the
+     *  PATH, then the runtime's two connectors files, `acpConnectorFiles`. */
     acpConnectorSettingKey?: string;
+    /** The runtime's connectors files, relative: `user` under `~/.config`
+     *  (`$XDG_CONFIG_HOME`), `workspace` under the project root. Required
+     *  with `acpConnectorSettingKey`. */
+    acpConnectorFiles?: { user: string; workspace: string };
     /** The setting the run driver forwards as `--agent-cli-acp-permissions`. */
     acpPermissionsSettingKey?: string;
-    /** Whether the run driver forwards the two ACP settings to `<cli> run`
-     *  (wfpy's flags). Default true; a product whose run is not wfpy's sets
+    /** Whether the run driver forwards the two ACP settings to `<cli> run`.
+     *  Default true; a product whose `run` is not the workflow runtime's sets
      *  false, and the connector then serves the chat and the panel only. */
     runAcpFlags?: boolean;
 
@@ -417,8 +421,8 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             sourceMimeType: 'text/x-python',
             // The ACP connector: the setting the chat and the property panel
             // read. Without it the chat keeps its opencode default.
-            acpConnector: input.acpConnectorSettingKey
-                ? { settingKey: input.acpConnectorSettingKey }
+            acpConnector: input.acpConnectorSettingKey && input.acpConnectorFiles
+                ? { settingKey: input.acpConnectorSettingKey, files: input.acpConnectorFiles }
                 : undefined
         },
         runDriver,

@@ -1,9 +1,8 @@
 /**
- * The TOML a connectors file uses (`wfpy`'s `~/.config/wfpy/connectors.toml`
- * and `.wfpy/connectors.toml`): tables and dotted keys, strings, booleans,
- * numbers, arrays and inline tables, comments. Enough to read what wfpy
- * reads, without a dependency; an array of tables (`[[x]]`) is refused by
- * name, since the file has no use for one.
+ * The TOML a connectors file uses: tables and dotted keys, strings,
+ * booleans, numbers, arrays and inline tables, comments. Enough to read what
+ * the runtime reads, without a dependency; an array of tables (`[[x]]`) is
+ * refused by name, since the file has no use for one.
  */
 export type TomlTable = { [key: string]: TomlValue };
 export type TomlValue = string | number | boolean | TomlValue[] | TomlTable;

@@ -36,8 +36,8 @@ import type {
 export type { ChatCommandContribution, ChatCommandContext, ChatCommandResult };
 import type { AcpAgentSpec } from "./extension/acp-client";
 export type { AcpAgentSpec };
-import type { AcpConnectorConfig } from "./extension/chat/acp-connectors";
-export type { AcpConnectorConfig };
+import type { AcpConnectorConfig, AcpConnectorFiles } from "./extension/chat/acp-connectors";
+export type { AcpConnectorConfig, AcpConnectorFiles };
 
 /**
  * Semver of the API contract. Consumers must check the major version on
@@ -163,12 +163,13 @@ export interface DiagramChatConfig {
   /**
    * The ACP connector the chat talks to, declared as the product's setting
    * (`<settingsNamespace>.<settingKey>`, user level with a workspace
-   * override). The platform reads the connectors the way wfpy does (the
-   * known agents on the PATH, `~/.config/wfpy/connectors.toml`, the
-   * workspace's `.wfpy/connectors.toml`), resolves the chat's agent from
-   * them when the chat connects, and offers them on an agent node's
-   * `connector` in the property panel ({@link DiagramClientBehavior.acpConnectors}).
-   * Absent, the chat talks to opencode.
+   * override) and its runtime's two connectors files. The platform reads the
+   * connectors the way that runtime does (the known agents on the PATH, the
+   * user's file under `~/.config`, the workspace's file at the project
+   * root), resolves the chat's agent from them when the chat connects, and
+   * offers them on an agent node's `connector` in the property panel
+   * ({@link DiagramClientBehavior.acpConnectors}). Absent, the chat talks to
+   * opencode.
    */
   acpConnector?: AcpConnectorConfig;
 }
@@ -191,8 +192,8 @@ export interface DiagramLiveOverlaySource {
  * never holds the connector), the run output channel, and a hook to register the
  * driver's live-overlay signature source with the editor provider.
  */
-/** A running agent's question to the user (wfpy's elicitation over the run
- *  driver's socket): the toolkit's `RunQuestion`. */
+/** A running agent's question to the user (the runtime's elicitation over
+ *  the run driver's socket): the toolkit's `RunQuestion`. */
 export interface DiagramRunQuestion {
   id: number | string;
   agent: string;
@@ -249,8 +250,8 @@ export type DiagramRunDriverFactory = (
  * behavior; the consumer supplies the per-product truth value. Core/client code
  * consults these flags instead of comparing a product-identity string.
  */
-/** One ACP connector as the runtime discovered or the user declared it
- *  (wfpy: `wfpy connectors --json`): what an agent node may name. */
+/** One ACP connector as the platform read it (the known agents, the user's
+ *  and the workspace's files): what an agent node may name. */
 export interface AcpConnectorInfo {
   name: string;
   /** The connector's command resolves on the PATH. */

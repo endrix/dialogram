@@ -792,7 +792,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         }
         const dir = workspaceDirFor(vscode.Uri.parse(documentUri).fsPath);
         const deadline = new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 8000));
-        void Promise.race([listAcpConnectors(dir), deadline])
+        void Promise.race([listAcpConnectors(acpConnector, dir), deadline])
             .then((acpConnectors) => {
                 if (acpConnectors) {
                     const extras: Partial<DiagramClientBehavior> = { acpConnectors };

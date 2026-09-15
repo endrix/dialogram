@@ -134,8 +134,8 @@ export declare interface ACPClientService {
 }
 
 /**
- * The agent the chat spawns: an ACP connector as the runtime lists it
- * (wfpy: `wfpy connectors --json`). `argv` is the command and its arguments;
+ * The agent the chat spawns: an ACP connector as the platform reads it
+ * (`chat/acp-connectors.ts`). `argv` is the command and its arguments;
  * `httpApi` says the process also serves opencode's HTTP API, which the
  * client then pins to a port for the capabilities ACP does not expose
  * (revert / unrevert / message ids). Without it those stay off.

@@ -90,8 +90,8 @@ export interface CliRunDriverConfig {
     agentToolTimeoutMsSettingKey: string;
     agentToolRegistrySettingKey: string;
     agentMcpBridgeCmdSettingKey: string;
-    /** The ACP connector a run's agents spawn when they name none (wfpy's
-     *  `--acp-connector`, `wfpy connectors` lists them) and what their permission
+    /** The ACP connector a run's agents spawn when they name none (the runtime's
+     *  `--acp-connector`) and what their permission
      *  requests get when no user answers (`--agent-cli-acp-permissions`); both
      *  optional, a shell without them passes nothing. */
     acpConnectorSettingKey?: string;
@@ -99,7 +99,7 @@ export interface CliRunDriverConfig {
     /** Host the run's questions on a Unix socket (`--elicit-socket`): an
      *  agent's `ask_user` question or, over ACP, a permission request reaches
      *  {@link CliRunDriverHost.askUser}, or a VS Code prompt when the host has
-     *  none. Default true; never on Windows, where wfpy's side is AF_UNIX. */
+     *  none. Default true; never on Windows, where the runtime's side is AF_UNIX. */
     elicitSocket?: boolean;
     runWorkflowCommandId: string;
     stopWorkflowCommandId: string;
@@ -116,8 +116,8 @@ export interface CliRunDriverConfig {
     };
 }
 
-/** A question a running agent puts to the user (wfpy's elicitation channel,
- *  one JSON object a line on the socket; `SocketElicitationHandler` in wfpy
+/** A question a running agent puts to the user (the runtime's elicitation channel,
+ *  one JSON object a line on the socket; `SocketElicitationHandler` in the runtime
  *  documents the wire format). A permission request over ACP arrives as one:
  *  the tool call's title as the question, the agent's options as the choices. */
 export interface RunQuestion {
@@ -466,13 +466,13 @@ export class CliRunDriver {
 
     /** Listen for the run's questions on a fresh Unix socket; returns its path
      *  for `--elicit-socket`. One connection per run, one question at a time
-     *  (wfpy serializes them); each is answered on the same connection as one
+     *  (the runtime serializes them); each is answered on the same connection as one
      *  JSON line, `{id, answer}` or `{id, declined, reason}`. */
     private async startElicitSocket(sourceUri: string): Promise<string | undefined> {
         this.stopElicitSocket();
         this.elicitSourceUri = sourceUri;
         // AF_UNIX paths are short (108 bytes on Linux): the tmp dir, not the run dir.
-        const socketPath = path.join(os.tmpdir(), `wfpy-elicit-${process.pid}-${Date.now().toString(36)}.sock`);
+        const socketPath = path.join(os.tmpdir(), `acp-elicit-${process.pid}-${Date.now().toString(36)}.sock`);
         const server = net.createServer((conn) => {
             conn.setEncoding('utf8');
             const lines = readline.createInterface({ input: conn });

@@ -1,21 +1,20 @@
 /**
  * The ACP connectors, for every dialogram product: what the chat spawns and
- * what an agent node may name (the property panel's list). Read the way
- * wfpy reads them (`wfpy.connectors`), in the platform itself so no product
- * needs a runtime on the PATH to know them:
+ * what an agent node may name (the property panel's list). Read the way the
+ * product's runtime reads them, in the platform itself so no product needs
+ * that runtime on the PATH to know them:
  *
  *  1. the known agents, available when their command is on the PATH
  *     (`opencode acp`, Zed's `claude-agent-acp` for Claude Code, `codex-acp`,
  *     `gemini --experimental-acp`);
- *  2. the user's file, `$XDG_CONFIG_HOME/wfpy/connectors.toml`
- *     (`~/.config/wfpy/connectors.toml`), adding or overriding;
- *  3. the workspace's file, `.wfpy/connectors.toml` at the project root (the
- *     first directory up with a `pyproject.toml` or a `.git`), overriding
- *     both.
+ *  2. the user's connectors file, under `$XDG_CONFIG_HOME` (`~/.config`),
+ *     adding or overriding;
+ *  3. the workspace's connectors file, under the project root (the first
+ *     directory up with a `pyproject.toml` or a `.git`), overriding both.
  *
- * One table per connector: `command` (split as a shell would), `model`,
- * `mode`, `http_api`, `env`. A product declares one setting naming the
- * chat's connector ({@link AcpConnectorConfig}); the platform does the rest.
+ * The product names the two files ({@link AcpConnectorConfig.files}), since
+ * they are its runtime's. One TOML table per connector: `command` (split as
+ * a shell would), `model`, `mode`, `http_api`, `env`.
  */
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -27,11 +26,21 @@ import { parseTomlSubset, type TomlTable, type TomlValue } from "./toml-subset.j
 /**
  * A product's declaration on its chat config: the setting, under the
  * profile's settings namespace, naming the chat's connector (user level,
- * workspace override). Empty, or `opencode`, is the chat's own default.
+ * workspace override), and the runtime's two connectors files. Empty, or
+ * `opencode`, is the chat's own default.
  */
 export interface AcpConnectorConfig {
     /** e.g. `'acp.connector'` for `<namespace>.acp.connector`. */
     settingKey: string;
+    /** The connectors files the product's runtime reads, as relative paths:
+     *  `user` under `$XDG_CONFIG_HOME` (`~/.config`), `workspace` under the
+     *  project root. */
+    files: AcpConnectorFiles;
+}
+
+export interface AcpConnectorFiles {
+    user: string;
+    workspace: string;
 }
 
 export interface AcpConnectorInfo {
@@ -51,7 +60,7 @@ export interface AcpConnectorInfo {
 /** What the chat spawns for a connector: {@link AcpAgentSpec}. */
 export type ChatAgentSpec = AcpAgentSpec & { httpApi: boolean };
 
-/** The agents known without being told; the same table as wfpy's. */
+/** The agents known without being told; the same table as the runtime's. */
 export const KNOWN_CONNECTORS: Readonly<Record<string, { command: string; httpApi: boolean }>> = {
     opencode: { command: "opencode acp", httpApi: true },
     claude: { command: "claude-agent-acp", httpApi: false },
@@ -60,18 +69,20 @@ export const KNOWN_CONNECTORS: Readonly<Record<string, { command: string; httpAp
 };
 
 export interface LoadAcpConnectorsOptions {
+    /** The runtime's two connectors files, relative ({@link AcpConnectorFiles}). */
+    files: AcpConnectorFiles;
     /** Where the workspace file is looked for: the source file's directory. */
     workspaceDir: string;
-    /** Overrides, for tests: the two files and the PATH to probe. */
+    /** Overrides, for tests: the two files resolved, and the PATH to probe. */
     userFile?: string;
     workspaceFile?: string;
     pathDirs?: string[];
 }
 
-/** `$XDG_CONFIG_HOME/wfpy/connectors.toml`, `~/.config` without the variable. */
-export function userConnectorsFile(env: NodeJS.ProcessEnv = process.env): string {
+/** The user's file: `$XDG_CONFIG_HOME/<relative>`, `~/.config` without the variable. */
+export function userConnectorsFile(relative: string, env: NodeJS.ProcessEnv = process.env): string {
     const base = env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
-    return path.join(base, "wfpy", "connectors.toml");
+    return path.join(base, relative);
 }
 
 /** The project root above `start`: the first directory up with a
@@ -97,8 +108,8 @@ export function workspaceRoot(start: string): string | undefined {
     }
 }
 
-export function workspaceConnectorsFile(root: string | undefined): string | undefined {
-    return root ? path.join(root, ".wfpy", "connectors.toml") : undefined;
+export function workspaceConnectorsFile(root: string | undefined, relative: string): string | undefined {
+    return root ? path.join(root, relative) : undefined;
 }
 
 /** The directory the listing is asked for: the source file's. */
@@ -121,22 +132,23 @@ export function loadAcpConnectors(options: LoadAcpConnectorsOptions): AcpConnect
             command: spec.command, httpApi: spec.httpApi, model: null, mode: null,
         });
     }
-    const userFile = options.userFile ?? userConnectorsFile();
+    const userFile = options.userFile ?? userConnectorsFile(options.files.user);
     for (const [name, table] of readConnectorsFile(userFile)) {
         found.set(name, fromTable(name, table, "user", found.get(name), userFile, pathDirs));
     }
-    const wsFile = options.workspaceFile ?? workspaceConnectorsFile(workspaceRoot(options.workspaceDir));
+    const wsFile = options.workspaceFile ?? workspaceConnectorsFile(workspaceRoot(options.workspaceDir), options.files.workspace);
     for (const [name, table] of readConnectorsFile(wsFile)) {
         found.set(name, fromTable(name, table, "workspace", found.get(name), wsFile!, pathDirs));
     }
     return [...found.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** The connectors for a workspace directory; `undefined` when a file is
- *  unreadable (logged), so a caller that only lists falls back to nothing. */
-export async function listAcpConnectors(workspaceDir: string): Promise<AcpConnectorInfo[] | undefined> {
+/** The connectors a product's declaration sees for a workspace directory;
+ *  `undefined` when a file is unreadable (logged), so a caller that only
+ *  lists falls back to nothing. */
+export async function listAcpConnectors(config: AcpConnectorConfig, workspaceDir: string): Promise<AcpConnectorInfo[] | undefined> {
     try {
-        return loadAcpConnectors({ workspaceDir });
+        return loadAcpConnectors({ files: config.files, workspaceDir });
     } catch (err) {
         console.warn("[dialogram] ACP connectors:", err instanceof Error ? err.message : String(err));
         return undefined;
@@ -157,7 +169,7 @@ export function createAcpAgentResolver(
         const name = (vscode.workspace
             .getConfiguration(settingsNamespace, vscode.Uri.file(cwd))
             .get<string>(config.settingKey, "") ?? "").trim();
-        return resolveChatAgent(name, loadAcpConnectors({ workspaceDir: cwd }));
+        return resolveChatAgent(name, loadAcpConnectors({ files: config.files, workspaceDir: cwd }), config.files);
     };
 }
 
@@ -165,7 +177,7 @@ export function createAcpAgentResolver(
  * The agent the chat spawns for the connector a setting names. Throws with
  * the reason a reader can act on.
  */
-export function resolveChatAgent(name: string, connectors: AcpConnectorInfo[] | undefined): ChatAgentSpec | undefined {
+export function resolveChatAgent(name: string, connectors: AcpConnectorInfo[] | undefined, files?: AcpConnectorFiles): ChatAgentSpec | undefined {
     const wanted = name.trim() || "opencode";
     if (!connectors) {
         if (wanted === "opencode") return undefined;
@@ -174,7 +186,8 @@ export function resolveChatAgent(name: string, connectors: AcpConnectorInfo[] | 
     const found = connectors.find((c) => c.name === wanted);
     if (!found) {
         const known = connectors.map((c) => c.name).join(", ") || "none";
-        throw new Error(`ACP connector "${wanted}" is not known (known: ${known}); declare it in ${userConnectorsFile()} or the workspace's .wfpy/connectors.toml`);
+        const where = files ? `; declare it in ${userConnectorsFile(files.user)} or the workspace's ${files.workspace}` : "";
+        throw new Error(`ACP connector "${wanted}" is not known (known: ${known})${where}`);
     }
     if (!found.available) {
         throw new Error(`ACP connector "${wanted}" is not available: "${found.command}" is not on the PATH`);

@@ -84,7 +84,7 @@ describe('assembleChatRuntimeConfig', () => {
     });
 
     it('a declared ACP connector becomes the runtime\'s agent resolver; none means opencode', () => {
-        const declared = assembleChatRuntimeConfig(makeProfile({ acpConnector: { settingKey: 'acp.connector' } }), undefined);
+        const declared = assembleChatRuntimeConfig(makeProfile({ acpConnector: { settingKey: 'acp.connector', files: { user: 'r/connectors.toml', workspace: '.r/connectors.toml' } } }), undefined);
         expect(typeof declared.acpAgent).toBe('function');
         const plain = assembleChatRuntimeConfig(makeProfile({}), undefined);
         expect(plain.acpAgent).toBeUndefined();

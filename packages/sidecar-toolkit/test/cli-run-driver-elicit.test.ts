@@ -143,7 +143,7 @@ describe('CliRunDriver: the ACP connector, the permission policy and the human p
         expect(args.slice(args.indexOf('--acp-connector'), args.indexOf('--acp-connector') + 2)).toEqual(['--acp-connector', 'claude']);
         expect(args[args.indexOf('--agent-cli-acp-permissions') + 1]).toBe('reject');
         const socketPath = args[args.indexOf('--elicit-socket') + 1];
-        expect(socketPath).toMatch(/wfpy-elicit-.*\.sock$/);
+        expect(socketPath).toMatch(/acp-elicit-.*\.sock$/);
         expect(fs.existsSync(socketPath)).toBe(true);
         finishRun!();
         await run;
