@@ -11,6 +11,7 @@ import * as vscode from 'vscode';
 import { statSync } from 'node:fs';
 import { WORKFLOW_DIAGRAM_TYPE } from '@dialogram/shared';
 import { type DiagramClientBehavior, type DiagramProfile } from '../../api';
+import { listAcpConnectors, workspaceDirFor } from '../chat/acp-connectors';
 import { normalizeSourceUriKey } from './uri-keys';
 import { matchesSourceExtension, sourceWatchGlobs } from './source-extensions';
 
@@ -776,26 +777,29 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      * and initializes it with the diagram identifier.
      */
     /**
-     * {@link DiagramProfile.clientBehaviorFor}: the behavior that depends on
-     * the machine or the workspace, resolved after the webview is up (this
-     * setup is synchronous, and the hook may spawn the runtime) and posted to
-     * it as `dialogram.clientBehavior.merge`, which the client folds into its
+     * The behavior that depends on the machine or the workspace rather than on
+     * the product: the ACP connectors the profile's declaration lists for the
+     * document's directory. Resolved after the webview is up (this setup is
+     * synchronous, and the listing spawns a command) and posted to it as
+     * `dialogram.clientBehavior.merge`, which the client folds into its
      * `clientBehavior()`. Bounded and never failing: without an answer the
      * static behavior stands.
      */
     private postClientBehaviorExtras(documentUri: string, webview: vscode.Webview): void {
-        const hook = this.profile.clientBehaviorFor;
-        if (!hook) {
+        const acpConnector = this.profile.chat?.acpConnector;
+        if (!acpConnector) {
             return;
         }
-        const deadline = new Promise<Partial<DiagramClientBehavior>>((resolve) => setTimeout(() => resolve({}), 8000));
-        void Promise.race([hook.call(this.profile, documentUri), deadline])
-            .then((extras) => {
-                if (extras && Object.keys(extras).length > 0) {
+        const dir = workspaceDirFor(vscode.Uri.parse(documentUri).fsPath);
+        const deadline = new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 8000));
+        void Promise.race([listAcpConnectors(acpConnector, dir), deadline])
+            .then((acpConnectors) => {
+                if (acpConnectors) {
+                    const extras: Partial<DiagramClientBehavior> = { acpConnectors };
                     void webview.postMessage({ type: 'dialogram.clientBehavior.merge', payload: extras });
                 }
             })
-            .catch((err) => console.warn('[dialogram provider] clientBehaviorFor failed:', err));
+            .catch((err) => console.warn('[dialogram provider] listing the ACP connectors failed:', err));
     }
 
     protected getWebviewContent(

@@ -16,6 +16,7 @@ import type * as vscode from "vscode";
 import type { DiagramProfile, DiagramProfileHandle } from "../api";
 import { activateGlspIntegration } from "./diagram/glsp-activation";
 import { ChatRuntime, type ChatRuntimeConfig } from "./chat/chat-runtime";
+import { createAcpAgentResolver } from "./chat/acp-connectors";
 import { createViewerEditorsTool } from "./chat/viewer-editors-tool";
 import {
   createEditChatCapability,
@@ -118,7 +119,9 @@ export function assembleChatRuntimeConfig(
       ? (f) => capability.graphContextProvider(f)
       : chat.graphContextProvider,
     turnContextProvider: chat.turnContextProvider,
-    acpAgent: chat.acpAgent,
+    acpAgent: chat.acpConnector
+      ? createAcpAgentResolver(profile.settingsNamespace, chat.acpConnector)
+      : undefined,
     selectionContext: chat.selectionContext,
     // The profile's own tools, plus the platform's: "what can open this file"
     // is a question about the EDITOR, not about any one product's graph, so it

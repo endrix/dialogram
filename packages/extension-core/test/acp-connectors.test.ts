@@ -1,11 +1,19 @@
-// The property panel's connector list comes from the CLI (`wfpy connectors
-// --json`): a real child here, a script standing in for the CLI, so what is
-// tested is the spawn, the parse and the fallbacks, not a mock of them.
+// The platform's connector service: the listing comes from a real child here
+// (a script standing in for `wfpy connectors --json`), so what is tested is
+// the spawn, the parse, the cache and the fallbacks, not a mock of them; the
+// chat's agent then follows from the product's setting and that listing.
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { discoverAcpConnectors, resetAcpConnectorsCache, resolveChatAgent, splitCommand } from '../src/acp-connectors';
+import {
+    createAcpAgentResolver,
+    defaultAcpConnectorListing,
+    discoverAcpConnectors,
+    resetAcpConnectorsCache,
+    resolveChatAgent,
+    splitCommand
+} from '../src/extension/chat/acp-connectors';
 
 let dir: string;
 function fakeCli(body: string): string {
@@ -38,24 +46,24 @@ afterEach(() => {
 });
 
 describe('discoverAcpConnectors', () => {
-    it('runs the CLI with the given arguments and parses its JSON listing', async () => {
+    it('runs the listing command and parses its JSON', async () => {
         const cli = fakeCli(`
             const args = process.argv.slice(2);
-            if (args.join(' ') !== 'connectors --json --workspace ${dir.replace(/\\\\/g, '\\\\\\\\')}') { process.stderr.write('bad args ' + args.join(' ')); process.exit(2); }
+            if (args.join(' ') !== 'connectors --json --workspace ' + ${JSON.stringify(dir)}) { process.stderr.write('bad args ' + args.join(' ')); process.exit(2); }
             process.stdout.write(${JSON.stringify(JSON.stringify(LISTING))});
         `);
         const found = await discoverAcpConnectors({
-            cmd: process.execPath, argsPrefix: [cli], args: ['connectors', '--json', '--workspace', dir], cwd: dir
+            cmd: process.execPath, args: [cli, 'connectors', '--json', '--workspace', dir], cwd: dir
         });
         expect(found).toEqual(PARSED);
     });
 
-    it('is undefined when the CLI has no such command, or prints no JSON', async () => {
+    it('is undefined when the command fails, prints no JSON, or does not exist', async () => {
         const failing = fakeCli(`process.stderr.write('usage: wfpy ...'); process.exit(2);`);
-        expect(await discoverAcpConnectors({ cmd: process.execPath, argsPrefix: [failing], args: ['connectors'], cwd: dir })).toBeUndefined();
+        expect(await discoverAcpConnectors({ cmd: process.execPath, args: [failing, 'connectors'], cwd: dir })).toBeUndefined();
         const garbage = fakeCli(`process.stdout.write('not json');`);
-        expect(await discoverAcpConnectors({ cmd: process.execPath, argsPrefix: [garbage], args: ['connectors'], cwd: dir })).toBeUndefined();
-        expect(await discoverAcpConnectors({ cmd: path.join(dir, 'no-such-cli'), argsPrefix: [], args: ['connectors'], cwd: dir })).toBeUndefined();
+        expect(await discoverAcpConnectors({ cmd: process.execPath, args: [garbage, 'connectors'], cwd: dir })).toBeUndefined();
+        expect(await discoverAcpConnectors({ cmd: path.join(dir, 'no-such-cli'), args: ['connectors'], cwd: dir })).toBeUndefined();
     });
 
     it('caches a listing per command and workspace', async () => {
@@ -66,7 +74,7 @@ describe('discoverAcpConnectors', () => {
             fs.writeFileSync(${JSON.stringify(counter)}, String(n));
             process.stdout.write(JSON.stringify({ connectors: [{ name: 'c' + n, available: true, source: 'discovered', command: 'c' }] }));
         `);
-        const opts = { cmd: process.execPath, argsPrefix: [cli], args: ['connectors', '--json'], cwd: dir };
+        const opts = { cmd: process.execPath, args: [cli, 'connectors', '--json'], cwd: dir };
         const first = await discoverAcpConnectors(opts);
         const second = await discoverAcpConnectors(opts);
         expect(first?.[0].name).toBe('c1');
@@ -96,6 +104,23 @@ describe('resolveChatAgent', () => {
         expect(resolveChatAgent('opencode', undefined)).toBeUndefined();
         expect(resolveChatAgent('', undefined)).toBeUndefined();
         expect(() => resolveChatAgent('claude', undefined)).toThrow(/lists no ACP connectors/);
+    });
+});
+
+describe('the product declaration', () => {
+    it('defaults to wfpy on the PATH for the listing', () => {
+        expect(defaultAcpConnectorListing('/w')).toEqual({ cmd: 'wfpy', args: ['connectors', '--json', '--workspace', '/w'] });
+    });
+
+    it('resolves the chat agent from the setting and the declared listing', async () => {
+        // The vscode mock's settings answer with the default: an empty name,
+        // which is the chat's opencode, taken from the listing.
+        const cli = fakeCli(`process.stdout.write(${JSON.stringify(JSON.stringify(LISTING))});`);
+        const resolve = createAcpAgentResolver('mlir', {
+            settingKey: 'acp.connector',
+            listing: (workspaceDir) => ({ cmd: process.execPath, args: [cli, workspaceDir] })
+        });
+        await expect(resolve(dir)).resolves.toEqual({ name: 'opencode', argv: ['opencode', 'acp'], httpApi: true });
     });
 });
 

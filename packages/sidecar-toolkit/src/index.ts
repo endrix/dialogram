@@ -56,16 +56,7 @@ export {
     type RunQuestion,
     type RunAnswer
 } from './cli-run-driver.js';
-export {
-    discoverAcpConnectors,
-    resetAcpConnectorsCache,
-    resolveChatAgent,
-    splitCommand,
-    workspaceDirFor,
-    type AcpConnectorInfo,
-    type ChatAgentSpec,
-    type DiscoverAcpConnectorsOptions
-} from './acp-connectors.js';
+export { wfpyConnectorListing, type ConnectorListing } from './wfpy-connector-listing.js';
 
 export {
     extractDecoratedDefinitionNames,

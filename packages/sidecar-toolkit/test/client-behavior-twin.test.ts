@@ -46,10 +46,10 @@ function fieldsOf(file: string, name: string): string[] {
  *
  *   chatBackend    derived from `DiagramProfile.chat` being present, which is
  *                  what decides whether the host activates a chat backend at all
- *   acpConnectors  resolved per document by `DiagramProfile.clientBehaviorFor`
- *                  (the sidecar profile asks the CLI, `acpConnectorsArgs`) and
- *                  posted to the webview; a product declaring it by hand would
- *                  name connectors the machine may not have
+ *   acpConnectors  listed per document by the platform from the profile's
+ *                  `chat.acpConnector` declaration and posted to the webview;
+ *                  a product declaring it by hand would name connectors the
+ *                  machine may not have
  */
 const PLATFORM_DERIVED = ['chatBackend', 'acpConnectors'];
 

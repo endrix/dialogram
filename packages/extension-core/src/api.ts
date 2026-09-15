@@ -36,6 +36,8 @@ import type {
 export type { ChatCommandContribution, ChatCommandContext, ChatCommandResult };
 import type { AcpAgentSpec } from "./extension/acp-client";
 export type { AcpAgentSpec };
+import type { AcpConnectorConfig, AcpConnectorListing } from "./extension/chat/acp-connectors";
+export type { AcpConnectorConfig, AcpConnectorListing };
 
 /**
  * Semver of the API contract. Consumers must check the major version on
@@ -159,12 +161,15 @@ export interface DiagramChatConfig {
    */
   slashCommands?: ChatCommandContribution[];
   /**
-   * The ACP agent the chat spawns for a workspace, resolved when the chat
-   * connects (a setting naming a connector, looked up in what the runtime
-   * lists). Undefined, or no hook, means opencode. A rejection is shown as
-   * the connection error.
+   * The ACP connector the chat talks to, declared as the product's setting
+   * (`<settingsNamespace>.<settingKey>`, user level with a workspace override)
+   * and, optionally, how to list the connectors (wfpy on the PATH otherwise).
+   * The platform resolves the chat's agent from it when the chat connects and
+   * offers the listed connectors on an agent node's `connector` in the
+   * property panel ({@link DiagramClientBehavior.acpConnectors}). Absent, the
+   * chat talks to opencode.
    */
-  acpAgent?: (cwd: string) => Promise<AcpAgentSpec | undefined>;
+  acpConnector?: AcpConnectorConfig;
 }
 
 /**
@@ -260,7 +265,7 @@ export interface AcpConnectorInfo {
 
 export interface DiagramClientBehavior {
   /** The ACP connectors the property panel offers on an agent's `connector`;
-   *  resolved per document by {@link DiagramProfile.clientBehaviorFor}. */
+   *  listed per document by the platform from {@link DiagramChatConfig.acpConnector}. */
   acpConnectors?: AcpConnectorInfo[];
   /** Cross-file drill-down navigation resolves through the graph source model. */
   graphSourceNavigation?: boolean;
@@ -338,12 +343,6 @@ export interface DiagramProfile {
   operationKinds?: DiagramOperationKinds;
   /** Neutral behavior flags forwarded into the diagram webview. */
   clientBehavior?: DiagramClientBehavior;
-  /** Behavior resolved per document once its webview is up and posted to it,
-   *  merged over {@link clientBehavior} on the client: what depends on the
-   *  machine or the workspace rather than on the product, such as the ACP
-   *  connectors the runtime discovered. Best effort: a rejection or a slow
-   *  answer leaves the static behavior as it is. */
-  clientBehaviorFor?(documentUri: string): Promise<Partial<DiagramClientBehavior>>;
   /** Consumer-supplied webview bundle (script/style/resource-roots). When absent,
    *  the provider serves its stock `dist/webview/*` bundle. DATA ONLY — path/URI
    *  strings, never code objects. */

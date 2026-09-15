@@ -83,6 +83,13 @@ describe('assembleChatRuntimeConfig', () => {
         expect(cfg.slashCommands![2].description).toBe('profile-layout');
     });
 
+    it('a declared ACP connector becomes the runtime\'s agent resolver; none means opencode', () => {
+        const declared = assembleChatRuntimeConfig(makeProfile({ acpConnector: { settingKey: 'acp.connector' } }), undefined);
+        expect(typeof declared.acpAgent).toBe('function');
+        const plain = assembleChatRuntimeConfig(makeProfile({}), undefined);
+        expect(plain.acpAgent).toBeUndefined();
+    });
+
     it('absent optional fields stay undefined', () => {
         const cfg = assembleChatRuntimeConfig(makeProfile({}), undefined);
         // `tools` is the one optional that is no longer absent: the platform

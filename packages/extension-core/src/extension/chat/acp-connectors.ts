@@ -1,12 +1,36 @@
 /**
- * The ACP connectors the runtime knows: what an agent node may name, offered
- * by the property panel. Asked of the CLI (`wfpy connectors --json`), which
- * is the one place that knows what the machine has on its PATH and what the
- * user or the workspace declared. Cached briefly per command and workspace,
- * since every diagram open would otherwise spawn it.
+ * The ACP connectors the runtime knows, for every dialogram product: what the
+ * chat spawns and what an agent node may name (the property panel's list).
+ * Asked of a listing command (`wfpy connectors --json --workspace <dir>`),
+ * the one place that knows what the machine has on its PATH and what the user
+ * or the workspace declared. A product declares one setting naming the
+ * connector ({@link AcpConnectorConfig}); the platform does the rest. Cached
+ * briefly per command and workspace, since every diagram open would
+ * otherwise spawn it.
  */
-import * as path from 'node:path';
-import { runChildProcess } from './run-child-process.js';
+import { execFile } from "node:child_process";
+import * as path from "node:path";
+import * as vscode from "vscode";
+import type { AcpAgentSpec } from "../acp-client.js";
+
+/** One listing command: `cmd args...`, run in the workspace directory. */
+export interface AcpConnectorListing {
+    cmd: string;
+    args: string[];
+}
+
+/**
+ * A product's declaration on its chat config: the setting (under the
+ * profile's settings namespace) naming the chat's connector, and optionally
+ * how to list the connectors for a workspace directory. Without `listing`,
+ * wfpy on the PATH lists them.
+ */
+export interface AcpConnectorConfig {
+    /** e.g. `'acp.connector'` for `<namespace>.acp.connector`; user level,
+     *  workspace override. Empty, or `opencode`, is the chat's own default. */
+    settingKey: string;
+    listing?: (workspaceDir: string) => AcpConnectorListing | undefined;
+}
 
 export interface AcpConnectorInfo {
     name: string;
@@ -19,18 +43,10 @@ export interface AcpConnectorInfo {
     mode?: string | null;
 }
 
-/** What the chat spawns for a connector (extension-core `AcpAgentSpec`). */
-export interface ChatAgentSpec {
-    name: string;
-    argv: string[];
-    httpApi: boolean;
-}
+/** What the chat spawns for a connector: {@link AcpAgentSpec}. */
+export type ChatAgentSpec = AcpAgentSpec & { httpApi: boolean };
 
-export interface DiscoverAcpConnectorsOptions {
-    cmd: string;
-    argsPrefix: string[];
-    /** The CLI's own arguments, e.g. `['connectors', '--json', '--workspace', dir]`. */
-    args: string[];
+export interface DiscoverAcpConnectorsOptions extends AcpConnectorListing {
     cwd: string;
     timeoutMs?: number;
 }
@@ -71,23 +87,50 @@ function parseConnectors(stdout: string): AcpConnectorInfo[] | undefined {
 /** Run the CLI's connector listing and parse it; `undefined` when the CLI has
  *  no such command, fails, or times out, so a caller falls back to nothing. */
 export async function discoverAcpConnectors(options: DiscoverAcpConnectorsOptions): Promise<AcpConnectorInfo[] | undefined> {
-    const key = JSON.stringify([options.cmd, options.argsPrefix, options.args, options.cwd]);
+    const key = JSON.stringify([options.cmd, options.args, options.cwd]);
     const cached = cache.get(key);
     if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
         return cached.value;
     }
-    const value = (async () => {
-        const result = await runChildProcess(options.cmd, [...options.argsPrefix, ...options.args], {
-            cwd: options.cwd,
-            timeoutMs: options.timeoutMs ?? 8000
-        });
-        if (result.spawnError || result.timedOut || result.code !== 0) {
-            return undefined;
-        }
-        return parseConnectors(result.stdout);
-    })();
+    const value = new Promise<AcpConnectorInfo[] | undefined>((resolve) => {
+        execFile(
+            options.cmd,
+            options.args,
+            { cwd: options.cwd, timeout: options.timeoutMs ?? 8000, maxBuffer: 4 * 1024 * 1024, windowsHide: true },
+            (error, stdout) => resolve(error ? undefined : parseConnectors(String(stdout)))
+        );
+    });
     cache.set(key, { at: Date.now(), value });
     return value;
+}
+
+/** The platform's default listing: wfpy on the PATH. */
+export function defaultAcpConnectorListing(workspaceDir: string): AcpConnectorListing {
+    return { cmd: "wfpy", args: ["connectors", "--json", "--workspace", workspaceDir] };
+}
+
+/** The connectors a product's declaration lists for a workspace directory. */
+export function listAcpConnectors(config: AcpConnectorConfig, workspaceDir: string): Promise<AcpConnectorInfo[] | undefined> {
+    const listing = config.listing?.(workspaceDir) ?? defaultAcpConnectorListing(workspaceDir);
+    return discoverAcpConnectors({ ...listing, cwd: workspaceDir });
+}
+
+/**
+ * The chat's agent for a workspace, from a product's declaration: the
+ * connector its setting names (read at the workspace's scope), resolved in
+ * the listing. Rejects with the reason the chat shows as its connection error.
+ */
+export function createAcpAgentResolver(
+    settingsNamespace: string,
+    config: AcpConnectorConfig
+): (cwd: string) => Promise<AcpAgentSpec | undefined> {
+    return async (cwd: string) => {
+        const name = (vscode.workspace
+            .getConfiguration(settingsNamespace, vscode.Uri.file(cwd))
+            .get<string>(config.settingKey, "") ?? "").trim();
+        const connectors = await listAcpConnectors(config, cwd);
+        return resolveChatAgent(name, connectors);
+    };
 }
 
 /**
