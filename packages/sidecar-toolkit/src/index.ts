@@ -56,7 +56,6 @@ export {
     type RunQuestion,
     type RunAnswer
 } from './cli-run-driver.js';
-export { wfpyConnectorListing, type ConnectorListing } from './wfpy-connector-listing.js';
 
 export {
     extractDecoratedDefinitionNames,

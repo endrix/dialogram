@@ -445,7 +445,7 @@ export class ChatRuntime {
       this.clearConnectWatchdog();
       this.postToWebview(uri, {
         type: "chat.connectionStatus",
-        data: { connected: true },
+        data: { connected: true, agent: this.acp.agent },
       });
       return true;
     } catch (err) {
@@ -453,7 +453,7 @@ export class ChatRuntime {
       this.output.appendLine(message);
       this.postToWebview(uri, {
         type: "chat.connectionStatus",
-        data: { connected: false, reason: String(err) },
+        data: { connected: false, reason: String(err), agent: this.acp.agent },
       });
       this.postToWebview(uri, { type: "chat.error", data: { message } });
       return false;
@@ -490,7 +490,7 @@ export class ChatRuntime {
         // handshake must not wait out an opencode spawn.
         this.postToWebview(uri, {
           type: "chat.connectionStatus",
-          data: { connected: this.acp.isClientConnected() },
+          data: { connected: this.acp.isClientConnected(), agent: this.acp.agent },
         });
         this.armConnectWatchdog();
         this.sendSessions(uri, file);

@@ -12,6 +12,8 @@ import type { TurnPart } from '../acp-client.js';
 export interface AcpEmitterLike {
     on(event: string, fn: (...a: any[]) => void): any;
     off(event: string, fn: (...a: any[]) => void): any;
+    /** The name of the ACP connector the client spawned, for the status. */
+    readonly agent?: string;
 }
 
 export interface AcpEventSinks {
@@ -89,9 +91,11 @@ export function attachAcpEventForwarding(acp: AcpEmitterLike, sinks: AcpEventSin
         sinks.onTurnComplete(data);
     };
     const onPermissionRequest = (data: any) => sinks.broadcast({ type: 'chat.permissionRequest', data });
-    const onConnected = () => sinks.broadcast({ type: 'chat.connectionStatus', data: { connected: true } });
+    const agentName = () => acp.agent ?? 'agent';
+    const onConnected = () =>
+        sinks.broadcast({ type: 'chat.connectionStatus', data: { connected: true, agent: agentName() } });
     const onDisconnected = () =>
-        sinks.broadcast({ type: 'chat.connectionStatus', data: { connected: false, reason: 'opencode disconnected' } });
+        sinks.broadcast({ type: 'chat.connectionStatus', data: { connected: false, reason: `${agentName()} disconnected`, agent: agentName() } });
     const onError = (err: any) =>
         sinks.broadcast({ type: 'chat.error', data: { message: err?.message ?? String(err) } });
 

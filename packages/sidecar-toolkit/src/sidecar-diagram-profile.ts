@@ -14,7 +14,6 @@
 import type { EntityPaletteItemSpec, NodeFamilySpec } from '@dialogram/shared';
 import * as vscode from 'vscode';
 import { invokeSidecarOp } from './sidecar-graph-export.js';
-import { wfpyConnectorListing } from './wfpy-connector-listing.js';
 import { createRegistryChatTools } from './registry-tools.js';
 import { getCliInvocation,
     getSidecarCommand,
@@ -175,8 +174,10 @@ export interface SidecarProfileInput {
     agentToolRegistrySettingKey: string;
     agentMcpBridgeCmdSettingKey: string;
     /** The setting naming the ACP connector (`<namespace>.<key>`, e.g.
-     *  `acp.connector`): the one the chat talks to, listed for the property
-     *  panel, and, with `runAcpFlags` on, the run's default (`--acp-connector`). */
+     *  `acp.connector`): the one the chat talks to, offered by the property
+     *  panel, and, with `runAcpFlags` on, the run's default (`--acp-connector`).
+     *  The platform reads the connectors itself (the known agents on the
+     *  PATH, wfpy's user and workspace files). */
     acpConnectorSettingKey?: string;
     /** The setting the run driver forwards as `--agent-cli-acp-permissions`. */
     acpPermissionsSettingKey?: string;
@@ -184,11 +185,6 @@ export interface SidecarProfileInput {
      *  (wfpy's flags). Default true; a product whose run is not wfpy's sets
      *  false, and the connector then serves the chat and the panel only. */
     runAcpFlags?: boolean;
-    /** The product CLI's arguments listing the ACP connectors as JSON for a
-     *  workspace directory (wfpy: `['connectors', '--json', '--workspace', dir]`).
-     *  Absent, wfpy beside the product CLI lists them (the same venv), else
-     *  wfpy on the PATH. */
-    acpConnectorsArgs?: (workspaceDir: string) => string[];
 
     // Chat carry-overs.
     chat: {
@@ -420,18 +416,9 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             // The libcst edit backend rewrites Python source; agents get the file as text/x-python.
             sourceMimeType: 'text/x-python',
             // The ACP connector: the setting the chat and the property panel
-            // read, listed by the product CLI when it can (wfpy), else by wfpy
-            // beside it. Without the setting the chat keeps its opencode default.
+            // read. Without it the chat keeps its opencode default.
             acpConnector: input.acpConnectorSettingKey
-                ? {
-                    settingKey: input.acpConnectorSettingKey,
-                    listing: (workspaceDir: string) => {
-                        const { cmd, argsPrefix } = getCliInvocation(runtimeConfig, vscode, vscode.Uri.file(workspaceDir));
-                        return input.acpConnectorsArgs
-                            ? { cmd, args: [...argsPrefix, ...input.acpConnectorsArgs(workspaceDir)] }
-                            : wfpyConnectorListing(cmd, workspaceDir);
-                    }
-                }
+                ? { settingKey: input.acpConnectorSettingKey }
                 : undefined
         },
         runDriver,

@@ -778,9 +778,9 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      */
     /**
      * The behavior that depends on the machine or the workspace rather than on
-     * the product: the ACP connectors the profile's declaration lists for the
-     * document's directory. Resolved after the webview is up (this setup is
-     * synchronous, and the listing spawns a command) and posted to it as
+     * the product: the ACP connectors the document's workspace sees, for a
+     * profile that declares the connector setting. Resolved after the webview
+     * is up (this setup is synchronous) and posted to it as
      * `dialogram.clientBehavior.merge`, which the client folds into its
      * `clientBehavior()`. Bounded and never failing: without an answer the
      * static behavior stands.
@@ -792,7 +792,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         }
         const dir = workspaceDirFor(vscode.Uri.parse(documentUri).fsPath);
         const deadline = new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 8000));
-        void Promise.race([listAcpConnectors(acpConnector, dir), deadline])
+        void Promise.race([listAcpConnectors(dir), deadline])
             .then((acpConnectors) => {
                 if (acpConnectors) {
                     const extras: Partial<DiagramClientBehavior> = { acpConnectors };

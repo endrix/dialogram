@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { attachAcpEventForwarding, type AcpEventSinks } from '../src/extension/chat/acp-event-forwarding';
 
 class FakeAcp {
+    agent = 'opencode';
     private listeners = new Map<string, Array<(...a: any[]) => void>>();
     on(ev: string, fn: (...a: any[]) => void) {
         const arr = this.listeners.get(ev) ?? [];
@@ -88,8 +89,8 @@ describe('attachAcpEventForwarding', () => {
         acp.emit('disconnected');
         acp.emit('error', new Error('boom'));
         expect(broadcasts).toEqual([
-            { type: 'chat.connectionStatus', data: { connected: true } },
-            { type: 'chat.connectionStatus', data: { connected: false, reason: 'opencode disconnected' } },
+            { type: 'chat.connectionStatus', data: { connected: true, agent: 'opencode' } },
+            { type: 'chat.connectionStatus', data: { connected: false, reason: 'opencode disconnected', agent: 'opencode' } },
             { type: 'chat.error', data: { message: 'boom' } }
         ]);
     });

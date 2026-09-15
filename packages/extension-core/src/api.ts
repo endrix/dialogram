@@ -36,8 +36,8 @@ import type {
 export type { ChatCommandContribution, ChatCommandContext, ChatCommandResult };
 import type { AcpAgentSpec } from "./extension/acp-client";
 export type { AcpAgentSpec };
-import type { AcpConnectorConfig, AcpConnectorListing } from "./extension/chat/acp-connectors";
-export type { AcpConnectorConfig, AcpConnectorListing };
+import type { AcpConnectorConfig } from "./extension/chat/acp-connectors";
+export type { AcpConnectorConfig };
 
 /**
  * Semver of the API contract. Consumers must check the major version on
@@ -162,12 +162,13 @@ export interface DiagramChatConfig {
   slashCommands?: ChatCommandContribution[];
   /**
    * The ACP connector the chat talks to, declared as the product's setting
-   * (`<settingsNamespace>.<settingKey>`, user level with a workspace override)
-   * and, optionally, how to list the connectors (wfpy on the PATH otherwise).
-   * The platform resolves the chat's agent from it when the chat connects and
-   * offers the listed connectors on an agent node's `connector` in the
-   * property panel ({@link DiagramClientBehavior.acpConnectors}). Absent, the
-   * chat talks to opencode.
+   * (`<settingsNamespace>.<settingKey>`, user level with a workspace
+   * override). The platform reads the connectors the way wfpy does (the
+   * known agents on the PATH, `~/.config/wfpy/connectors.toml`, the
+   * workspace's `.wfpy/connectors.toml`), resolves the chat's agent from
+   * them when the chat connects, and offers them on an agent node's
+   * `connector` in the property panel ({@link DiagramClientBehavior.acpConnectors}).
+   * Absent, the chat talks to opencode.
    */
   acpConnector?: AcpConnectorConfig;
 }
@@ -261,6 +262,7 @@ export interface AcpConnectorInfo {
   httpApi?: boolean;
   model?: string | null;
   mode?: string | null;
+  env?: Record<string, string>;
 }
 
 export interface DiagramClientBehavior {

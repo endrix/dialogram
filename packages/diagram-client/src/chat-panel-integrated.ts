@@ -179,6 +179,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   private reverted = false;
   private connection: 'unknown' | 'connected' | 'disconnected' = 'unknown';
   private connectionReason = '';
+  /** The ACP connector the chat is (or was) connected to, as the host names it. */
+  private connectionAgent = '';
   private inputValue = '';
 
   /** Live diagram selection (node ids), mirrored to the host for chat context. */
@@ -478,7 +480,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         break;
 
       case 'chat.connectionStatus':
-        this.setConnectionStatus(!!data?.connected, data?.reason);
+        this.setConnectionStatus(!!data?.connected, data?.reason, data?.agent);
         break;
 
       case 'chat.commands':
@@ -691,7 +693,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   // ── Connection status ──────────────────────────────────────────────────
 
-  private setConnectionStatus(connected: boolean, reason?: string): void {
+  private setConnectionStatus(connected: boolean, reason?: string, agent?: string): void {
     this.receivedStatus = true;
     if (this.statusHandshakeTimer !== null) {
       clearTimeout(this.statusHandshakeTimer);
@@ -699,6 +701,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     }
     this.connection = connected ? 'connected' : 'disconnected';
     this.connectionReason = reason ?? '';
+    if (typeof agent === 'string' && agent) this.connectionAgent = agent;
 
     // Surface a state change once in the timeline so the reason is visible.
     const stateKey = `${connected}:${reason ?? ''}`;
@@ -1207,12 +1210,21 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   private topbarTemplate(): TemplateResult {
     const status = this.connection;
+    const agent = this.connectionAgent;
     const statusLabel =
-      status === 'connected' ? 'Connected' : status === 'disconnected' ? 'Disconnected' : 'Connecting…';
+      status === 'connected'
+        ? agent
+          ? `Connected · ${agent}`
+          : 'Connected'
+        : status === 'disconnected'
+          ? 'Disconnected'
+          : 'Connecting…';
     const statusTitle =
       status === 'disconnected' && this.connectionReason
-        ? `agent: ${this.connectionReason}`
-        : 'agent connection';
+        ? `${agent || 'agent'}: ${this.connectionReason}`
+        : status === 'connected' && agent
+          ? `Connected to the ${agent} ACP connector`
+          : 'agent connection';
     return html`
       <header class="chat-topbar">
         <span class="chat-title">

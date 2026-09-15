@@ -144,6 +144,25 @@ export interface AcpAgentSpec {
   name: string;
   argv: string[];
   httpApi?: boolean;
+  /** Extra environment for the process, from the connector's `env` table. */
+  env?: Record<string, string>;
+}
+
+/**
+ * Where the agents usually install, ahead of the inherited PATH when the
+ * chat spawns one and when the connectors are checked for availability:
+ * the VS Code extension host frequently does NOT inherit the user's shell
+ * PATH (e.g. when launched from a GUI).
+ */
+export function agentInstallDirs(): string[] {
+  const home = os.homedir();
+  return [
+    path.join(home, ".opencode", "bin"),
+    "/usr/local/bin",
+    "/opt/homebrew/bin",
+    path.join(home, ".local", "bin"),
+    path.join(home, "bin"),
+  ];
 }
 
 const OPENCODE_AGENT: AcpAgentSpec = {
@@ -306,14 +325,7 @@ export class ACPClientService extends EventEmitter {
    * user's shell PATH (e.g. when launched from a GUI).
    */
   private augmentedEnv(): { env: NodeJS.ProcessEnv; candidateDirs: string[] } {
-    const home = os.homedir();
-    const candidateDirs = [
-      path.join(home, ".opencode", "bin"),
-      "/usr/local/bin",
-      "/opt/homebrew/bin",
-      path.join(home, ".local", "bin"),
-      path.join(home, "bin"),
-    ];
+    const candidateDirs = agentInstallDirs();
     const env: NodeJS.ProcessEnv = { ...process.env };
     const sep = process.platform === "win32" ? ";" : ":";
     const existingPath = env.PATH ?? env.Path ?? "";
@@ -343,10 +355,12 @@ export class ACPClientService extends EventEmitter {
     try {
       // opencode's binary is looked for in its install locations too; any
       // other agent is the command the connector names, on the augmented PATH.
-      const { command, env } =
+      const resolved =
         spec.argv[0] === "opencode"
           ? this.resolveOpencodeCommand()
           : { command: spec.argv[0], env: this.augmentedEnv().env };
+      const command = resolved.command;
+      const env = { ...resolved.env, ...(spec.env ?? {}) };
       const args = spec.argv.slice(1);
 
       // An agent with opencode's HTTP API gets it pinned to a free port, so
