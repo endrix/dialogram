@@ -18,10 +18,16 @@ import { RunAgentStreamActionHandler, type LiveAgentState } from './editing-acti
 export class RunningAgentsBar implements IDiagramStartup {
     private host?: HTMLElement;
     private scheduled = false;
+    /** The chat panel shows a running agent: one place for the run, not two. */
+    private behindChat = false;
 
     postModelInitialization(): void {
         this.ensureHost();
         window.addEventListener('dialogram.runAgents.updated', () => this.scheduleRender());
+        window.addEventListener('dialogram.chat.runView', (e) => {
+            this.behindChat = Boolean((e as CustomEvent<{ visible?: boolean }>).detail?.visible);
+            this.scheduleRender();
+        });
         this.scheduleRender();
         // eslint-disable-next-line no-console
         console.log('[wf-lang overlay] RunningAgentsBar mounted; listening for dialogram.runAgents.updated');
@@ -55,7 +61,7 @@ export class RunningAgentsBar implements IDiagramStartup {
         }
         const agents = RunAgentStreamActionHandler.getAgents();
         const active = RunAgentStreamActionHandler.isRunActive();
-        const visible = active || agents.length > 0;
+        const visible = !this.behindChat && (active || agents.length > 0);
         // eslint-disable-next-line no-console
         console.log(`[wf-lang overlay] RunningAgentsBar render: agents=${agents.length} active=${active} visible=${visible}`);
         this.host.classList.toggle('hidden', !visible);
@@ -96,7 +102,11 @@ export class RunningAgentsBar implements IDiagramStartup {
 
     private card(a: LiveAgentState): TemplateResult {
         return html`
-            <div class="wf-rab-card ${a.status}">
+            <div
+                class="wf-rab-card ${a.status}"
+                title="Open in the chat"
+                @click=${() => window.dispatchEvent(new CustomEvent('dialogram.chat.showAgent', { detail: { instance: a.instance } }))}
+            >
                 <div class="wf-rab-card-head">
                     <span class="wf-rab-dot ${a.status}"></span>
                     <span class="wf-rab-name" title=${a.instance}>${a.instance}</span>

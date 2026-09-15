@@ -939,14 +939,40 @@ export interface RunStreamEvent {
     [key: string]: unknown;
 }
 
+/** A running agent's question to the user (the run driver's human port). */
+export interface LiveAgentQuestion {
+    id: number | string;
+    agent: string;
+    model?: string;
+    question: string;
+    context?: string;
+    choices: string[];
+    resolved?: { answer?: string; declined?: boolean };
+}
+
+/** One entry of an agent's transcript, in arrival order. */
+export type LiveAgentPart =
+    | { kind: 'turn'; index: number }
+    | { kind: 'reasoning'; text: string }
+    | { kind: 'text'; text: string }
+    | { kind: 'tool'; name: string; status?: string; id?: string }
+    | { kind: 'question'; question: LiveAgentQuestion };
+
 export interface LiveAgentState {
     instance: string;
+    /** The current turn's text, reasoning and tool calls (the bar's summary). */
     text: string;
     reasoning: string;
     status: 'running' | 'done';
     toolCalls: string[];
     lastSeq: number;
     updatedAt: number;
+    /** Turns (firings) seen so far. */
+    turns: number;
+    /** The whole run's transcript of this agent: every turn, in order. */
+    parts: LiveAgentPart[];
+    /** Questions of this agent still waiting for an answer. */
+    pendingQuestions: number;
 }
 
 
@@ -962,6 +988,53 @@ export class RunAgentStreamActionHandler implements IActionHandler {
 
     static isRunActive(): boolean {
         return RunAgentStreamActionHandler.runActive;
+    }
+
+    static getAgent(instance: string): LiveAgentState | undefined {
+        return RunAgentStreamActionHandler.agents.get(instance);
+    }
+
+    /** Questions of every agent still waiting for an answer. */
+    static pendingQuestionCount(): number {
+        let n = 0;
+        for (const a of RunAgentStreamActionHandler.agents.values()) n += a.pendingQuestions;
+        return n;
+    }
+
+    /** A running agent's question, into its transcript (the agent is created
+     *  when its stream has not reached the client yet). */
+    static addQuestion(instance: string, question: LiveAgentQuestion): void {
+        const state = RunAgentStreamActionHandler.ensure(instance);
+        state.parts.push({ kind: 'question', question });
+        state.pendingQuestions += 1;
+        state.updatedAt = Date.now();
+        RunAgentStreamActionHandler.notify();
+    }
+
+    /** The user's answer, onto the question in the transcript. */
+    static resolveQuestion(instance: string, id: number | string, resolved: { answer?: string; declined?: boolean }): void {
+        const state = RunAgentStreamActionHandler.agents.get(instance);
+        if (!state) return;
+        for (const part of state.parts) {
+            if (part.kind === 'question' && part.question.id === id && !part.question.resolved) {
+                part.question.resolved = resolved;
+                state.pendingQuestions = Math.max(0, state.pendingQuestions - 1);
+                break;
+            }
+        }
+        RunAgentStreamActionHandler.notify();
+    }
+
+    private static ensure(instance: string): LiveAgentState {
+        let state = RunAgentStreamActionHandler.agents.get(instance);
+        if (!state) {
+            state = {
+                instance, text: '', reasoning: '', status: 'running', toolCalls: [], lastSeq: 0, updatedAt: 0,
+                turns: 0, parts: [], pendingQuestions: 0
+            };
+            RunAgentStreamActionHandler.agents.set(instance, state);
+        }
+        return state;
     }
 
     /** Clear all live state (e.g. when a new run starts or the panel is dismissed). */
@@ -1029,13 +1102,10 @@ export class RunAgentStreamActionHandler implements IActionHandler {
         if (!instance) {
             return;
         }
-        let state = store.get(instance);
-        if (!state) {
-            state = { instance, text: '', reasoning: '', status: 'running', toolCalls: [], lastSeq: 0, updatedAt: 0 };
-            store.set(instance, state);
-        }
+        const state = RunAgentStreamActionHandler.ensure(instance);
         state.lastSeq = typeof ev.seq === 'number' ? ev.seq : state.lastSeq;
         state.updatedAt = Date.now();
+        const last = state.parts[state.parts.length - 1];
         switch (type) {
             case 'agent.message.start':
                 // New firing: reset the in-progress message so the view shows the current turn.
@@ -1043,20 +1113,51 @@ export class RunAgentStreamActionHandler implements IActionHandler {
                 state.text = '';
                 state.reasoning = '';
                 state.toolCalls = [];
+                state.turns += 1;
+                state.parts.push({ kind: 'turn', index: state.turns });
                 break;
-            case 'agent.message.delta':
+            case 'agent.message.delta': {
+                const delta = String(ev.delta ?? '');
                 if (ev.field === 'reasoning') {
-                    state.reasoning += String(ev.delta ?? '');
+                    state.reasoning += delta;
+                    if (last && last.kind === 'reasoning') last.text += delta;
+                    else state.parts.push({ kind: 'reasoning', text: delta });
                 } else {
-                    state.text += String(ev.delta ?? '');
+                    state.text += delta;
+                    if (last && last.kind === 'text') last.text += delta;
+                    else state.parts.push({ kind: 'text', text: delta });
                 }
                 break;
+            }
             case 'agent.tool_call': {
                 // The runtime names the call (`name`); an ACP agent's call has
                 // a title ("Write choice-a.txt") where the name may be missing.
                 const label = ev.name ?? ev.title ?? ev.kind;
                 if (label) {
                     state.toolCalls.push(String(label));
+                    state.parts.push({
+                        kind: 'tool', name: String(label),
+                        status: typeof ev.status === 'string' ? ev.status : undefined,
+                        id: ev.id !== undefined && ev.id !== null ? String(ev.id) : undefined
+                    });
+                }
+                break;
+            }
+            case 'agent.tool_call_update': {
+                // The call it updates: by id, else the latest call.
+                const id = ev.id !== undefined && ev.id !== null ? String(ev.id) : undefined;
+                let target: Extract<LiveAgentPart, { kind: 'tool' }> | undefined;
+                for (let i = state.parts.length - 1; i >= 0; i--) {
+                    const p = state.parts[i];
+                    if (p.kind === 'tool' && (id === undefined || p.id === id)) {
+                        target = p;
+                        break;
+                    }
+                }
+                if (target) {
+                    if (typeof ev.status === 'string') target.status = ev.status;
+                    const label = ev.name ?? ev.title;
+                    if (label && (target.name === 'tool' || target.name === target.status)) target.name = String(label);
                 }
                 break;
             }
