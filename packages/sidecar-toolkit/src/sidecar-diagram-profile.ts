@@ -13,9 +13,10 @@
  */
 import type { EntityPaletteItemSpec, NodeFamilySpec } from '@dialogram/shared';
 import * as vscode from 'vscode';
+import { discoverAcpConnectors, resolveChatAgent, workspaceDirFor } from './acp-connectors.js';
 import { invokeSidecarOp } from './sidecar-graph-export.js';
 import { createRegistryChatTools } from './registry-tools.js';
-import {
+import { getCliInvocation,
     getSidecarCommand,
     type SidecarRuntimeConfig,
     type CreateNodeStrings,
@@ -173,6 +174,14 @@ export interface SidecarProfileInput {
     agentToolTimeoutMsSettingKey: string;
     agentToolRegistrySettingKey: string;
     agentMcpBridgeCmdSettingKey: string;
+    /** Optional: the ACP connector and permission-policy settings the run
+     *  driver forwards to `wfpy run` (`--acp-connector`, `--agent-cli-acp-permissions`). */
+    acpConnectorSettingKey?: string;
+    acpPermissionsSettingKey?: string;
+    /** The CLI's arguments listing the ACP connectors as JSON for a workspace
+     *  directory (wfpy: `['connectors', '--json', '--workspace', dir]`); when
+     *  given, the property panel offers them on an agent's `connector`. */
+    acpConnectorsArgs?: (workspaceDir: string) => string[];
 
     // Chat carry-overs.
     chat: {
@@ -308,6 +317,8 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             agentToolTimeoutMsSettingKey: input.agentToolTimeoutMsSettingKey,
             agentToolRegistrySettingKey: input.agentToolRegistrySettingKey,
             agentMcpBridgeCmdSettingKey: input.agentMcpBridgeCmdSettingKey,
+            acpConnectorSettingKey: input.acpConnectorSettingKey,
+            acpPermissionsSettingKey: input.acpPermissionsSettingKey,
             runWorkflowCommandId: input.commands.runWorkflow,
             stopWorkflowCommandId: input.commands.stopWorkflow,
             agentToolConfigCommands: {
@@ -373,6 +384,17 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         operationKinds: input.operationKinds,
         clientBehavior: input.clientBehavior,
         edits: { operationModules: createSidecarOperationModules(runtimeConfig) },
+        clientBehaviorFor: input.acpConnectorsArgs
+            ? async (documentUri: string) => {
+                const uri = vscode.Uri.parse(documentUri);
+                const { cmd, argsPrefix } = getCliInvocation(runtimeConfig, vscode, uri);
+                const dir = workspaceDirFor(uri.fsPath);
+                const acpConnectors = await discoverAcpConnectors({
+                    cmd, argsPrefix, args: input.acpConnectorsArgs!(dir), cwd: dir
+                });
+                return acpConnectors ? { acpConnectors } : {};
+            }
+            : undefined,
         modelSource: () => createSidecarModelSource(runtimeConfig),
         serverModules: [createSidecarServerModule(runtimeConfig)],
         storageOptions: {
@@ -400,7 +422,23 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             // Read-only sidecar-registry tools bridged to GLSP-MCP by the platform adapter.
             tools: chatTools,
             // The libcst edit backend rewrites Python source; agents get the file as text/x-python.
-            sourceMimeType: 'text/x-python'
+            sourceMimeType: 'text/x-python',
+            // The chat's agent: the connector the `<ns>.<acpConnectorSettingKey>`
+            // setting names (user level, workspace override), resolved in what
+            // the CLI lists for that workspace. Without both inputs the chat
+            // keeps its opencode default.
+            acpAgent: input.acpConnectorSettingKey && input.acpConnectorsArgs
+                ? async (cwd: string) => {
+                    const scope = vscode.Uri.file(cwd);
+                    const name = (vscode.workspace.getConfiguration(input.settingsNamespace, scope)
+                        .get<string>(input.acpConnectorSettingKey!, '') ?? '').trim();
+                    const { cmd, argsPrefix } = getCliInvocation(runtimeConfig, vscode, scope);
+                    const connectors = await discoverAcpConnectors({
+                        cmd, argsPrefix, args: input.acpConnectorsArgs!(cwd), cwd
+                    });
+                    return resolveChatAgent(name, connectors);
+                }
+                : undefined
         },
         runDriver,
         newSourceFile

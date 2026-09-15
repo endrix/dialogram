@@ -10,7 +10,7 @@ import { RequestModelAction } from '@eclipse-glsp/protocol';
 import * as vscode from 'vscode';
 import { statSync } from 'node:fs';
 import { WORKFLOW_DIAGRAM_TYPE } from '@dialogram/shared';
-import { type DiagramProfile } from '../../api';
+import { type DiagramClientBehavior, type DiagramProfile } from '../../api';
 import { normalizeSourceUriKey } from './uri-keys';
 import { matchesSourceExtension, sourceWatchGlobs } from './source-extensions';
 
@@ -423,6 +423,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             clientId,
             documentUri: document.uri.toString()
         });
+        this.postClientBehaviorExtras(document.uri.toString(), webview);
     }
 
     /**
@@ -774,6 +775,29 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      * This creates a minimal HTML page that loads the GLSP diagram client
      * and initializes it with the diagram identifier.
      */
+    /**
+     * {@link DiagramProfile.clientBehaviorFor}: the behavior that depends on
+     * the machine or the workspace, resolved after the webview is up (this
+     * setup is synchronous, and the hook may spawn the runtime) and posted to
+     * it as `dialogram.clientBehavior.merge`, which the client folds into its
+     * `clientBehavior()`. Bounded and never failing: without an answer the
+     * static behavior stands.
+     */
+    private postClientBehaviorExtras(documentUri: string, webview: vscode.Webview): void {
+        const hook = this.profile.clientBehaviorFor;
+        if (!hook) {
+            return;
+        }
+        const deadline = new Promise<Partial<DiagramClientBehavior>>((resolve) => setTimeout(() => resolve({}), 8000));
+        void Promise.race([hook.call(this.profile, documentUri), deadline])
+            .then((extras) => {
+                if (extras && Object.keys(extras).length > 0) {
+                    void webview.postMessage({ type: 'dialogram.clientBehavior.merge', payload: extras });
+                }
+            })
+            .catch((err) => console.warn('[dialogram provider] clientBehaviorFor failed:', err));
+    }
+
     protected getWebviewContent(
         webview: vscode.Webview,
         options: {

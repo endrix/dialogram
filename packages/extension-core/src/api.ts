@@ -34,6 +34,8 @@ import type {
 } from "./extension/chat/slash-commands";
 
 export type { ChatCommandContribution, ChatCommandContext, ChatCommandResult };
+import type { AcpAgentSpec } from "./extension/acp-client";
+export type { AcpAgentSpec };
 
 /**
  * Semver of the API contract. Consumers must check the major version on
@@ -156,6 +158,13 @@ export interface DiagramChatConfig {
    * the profile's registration wins (registry map semantics).
    */
   slashCommands?: ChatCommandContribution[];
+  /**
+   * The ACP agent the chat spawns for a workspace, resolved when the chat
+   * connects (a setting naming a connector, looked up in what the runtime
+   * lists). Undefined, or no hook, means opencode. A rejection is shown as
+   * the connection error.
+   */
+  acpAgent?: (cwd: string) => Promise<AcpAgentSpec | undefined>;
 }
 
 /**
@@ -176,8 +185,31 @@ export interface DiagramLiveOverlaySource {
  * never holds the connector), the run output channel, and a hook to register the
  * driver's live-overlay signature source with the editor provider.
  */
+/** A running agent's question to the user (wfpy's elicitation over the run
+ *  driver's socket): the toolkit's `RunQuestion`. */
+export interface DiagramRunQuestion {
+  id: number | string;
+  agent: string;
+  model?: string;
+  runId?: string;
+  question: string;
+  context?: string;
+  choices?: string[];
+  timeoutMs?: number;
+}
+
+export interface DiagramRunAnswer {
+  answer?: string;
+  declined?: boolean;
+  reason?: string;
+}
+
 export interface DiagramRunHost {
   overlay: ExecutionOverlaySink;
+  /** Puts a running agent's question to the user in the chat panel open on
+   *  the diagram at `sourceUri`; `undefined` when no chat can take it (the
+   *  driver then asks through a VS Code prompt). */
+  askUser(question: DiagramRunQuestion, sourceUri: string): Promise<DiagramRunAnswer | undefined>;
   requestRefresh(
     sourceUri: string,
     kind: "full" | "agentContextOnly",
@@ -211,7 +243,25 @@ export type DiagramRunDriverFactory = (
  * behavior; the consumer supplies the per-product truth value. Core/client code
  * consults these flags instead of comparing a product-identity string.
  */
+/** One ACP connector as the runtime discovered or the user declared it
+ *  (wfpy: `wfpy connectors --json`): what an agent node may name. */
+export interface AcpConnectorInfo {
+  name: string;
+  /** The connector's command resolves on the PATH. */
+  available: boolean;
+  /** discovered | user | workspace */
+  source: string;
+  command: string;
+  /** The process also serves opencode's HTTP API (revert, message ids). */
+  httpApi?: boolean;
+  model?: string | null;
+  mode?: string | null;
+}
+
 export interface DiagramClientBehavior {
+  /** The ACP connectors the property panel offers on an agent's `connector`;
+   *  resolved per document by {@link DiagramProfile.clientBehaviorFor}. */
+  acpConnectors?: AcpConnectorInfo[];
   /** Cross-file drill-down navigation resolves through the graph source model. */
   graphSourceNavigation?: boolean;
   /** Property panel renders the network-model sections and labels. */
@@ -288,6 +338,12 @@ export interface DiagramProfile {
   operationKinds?: DiagramOperationKinds;
   /** Neutral behavior flags forwarded into the diagram webview. */
   clientBehavior?: DiagramClientBehavior;
+  /** Behavior resolved per document once its webview is up and posted to it,
+   *  merged over {@link clientBehavior} on the client: what depends on the
+   *  machine or the workspace rather than on the product, such as the ACP
+   *  connectors the runtime discovered. Best effort: a rejection or a slow
+   *  answer leaves the static behavior as it is. */
+  clientBehaviorFor?(documentUri: string): Promise<Partial<DiagramClientBehavior>>;
   /** Consumer-supplied webview bundle (script/style/resource-roots). When absent,
    *  the provider serves its stock `dist/webview/*` bundle. DATA ONLY — path/URI
    *  strings, never code objects. */

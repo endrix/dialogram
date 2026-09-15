@@ -52,8 +52,20 @@ export {
     CliRunDriver,
     type CliRunDriverConfig,
     type CliRunDriverHost,
-    type AgentToolEntitySettings
+    type AgentToolEntitySettings,
+    type RunQuestion,
+    type RunAnswer
 } from './cli-run-driver.js';
+export {
+    discoverAcpConnectors,
+    resetAcpConnectorsCache,
+    resolveChatAgent,
+    splitCommand,
+    workspaceDirFor,
+    type AcpConnectorInfo,
+    type ChatAgentSpec,
+    type DiscoverAcpConnectorsOptions
+} from './acp-connectors.js';
 
 export {
     extractDecoratedDefinitionNames,

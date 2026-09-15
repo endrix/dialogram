@@ -134,11 +134,33 @@ export declare interface ACPClientService {
 }
 
 /**
- * ACP Client Service for communicating with opencode via ACP protocol.
+ * The agent the chat spawns: an ACP connector as the runtime lists it
+ * (wfpy: `wfpy connectors --json`). `argv` is the command and its arguments;
+ * `httpApi` says the process also serves opencode's HTTP API, which the
+ * client then pins to a port for the capabilities ACP does not expose
+ * (revert / unrevert / message ids). Without it those stay off.
+ */
+export interface AcpAgentSpec {
+  name: string;
+  argv: string[];
+  httpApi?: boolean;
+}
+
+const OPENCODE_AGENT: AcpAgentSpec = {
+  name: "opencode",
+  argv: ["opencode", "acp"],
+  httpApi: true,
+};
+
+/**
+ * ACP Client Service for communicating with an ACP agent (opencode by
+ * default; any connector the runtime knows, see {@link AcpAgentSpec}).
  * Uses TypeScript SDK exclusively (no external-process fallback or CLI mode).
  */
 export class ACPClientService extends EventEmitter {
   private process: ChildProcess | null = null;
+  /** The agent's name, for messages: what the chat is (or is not) talking to. */
+  private agentName: string = OPENCODE_AGENT.name;
   private connection: ClientSideConnection | null = null;
   private sessions: Map<string, SessionInfo> = new Map();
   /**
@@ -260,22 +282,8 @@ export class ACPClientService extends EventEmitter {
     command: string;
     env: NodeJS.ProcessEnv;
   } {
-    const home = os.homedir();
     const binName = process.platform === "win32" ? "opencode.cmd" : "opencode";
-    const candidateDirs = [
-      path.join(home, ".opencode", "bin"),
-      "/usr/local/bin",
-      "/opt/homebrew/bin",
-      path.join(home, ".local", "bin"),
-      path.join(home, "bin"),
-    ];
-
-    const env: NodeJS.ProcessEnv = { ...process.env };
-    const sep = process.platform === "win32" ? ";" : ":";
-    const existingPath = env.PATH ?? env.Path ?? "";
-    const merged = [...candidateDirs, existingPath].filter(Boolean).join(sep);
-    env.PATH = merged;
-    if ("Path" in env) env.Path = merged;
+    const { env, candidateDirs } = this.augmentedEnv();
 
     const override = process.env.WORKFLOW_OPENCODE_PATH;
     if (override && existsSync(override)) {
@@ -292,34 +300,72 @@ export class ACPClientService extends EventEmitter {
     return { command: binName, env };
   }
 
-  async start(cwd: string): Promise<void> {
+  /**
+   * The child's environment with the usual install directories ahead of the
+   * inherited PATH: the VS Code extension host frequently does NOT inherit the
+   * user's shell PATH (e.g. when launched from a GUI).
+   */
+  private augmentedEnv(): { env: NodeJS.ProcessEnv; candidateDirs: string[] } {
+    const home = os.homedir();
+    const candidateDirs = [
+      path.join(home, ".opencode", "bin"),
+      "/usr/local/bin",
+      "/opt/homebrew/bin",
+      path.join(home, ".local", "bin"),
+      path.join(home, "bin"),
+    ];
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    const sep = process.platform === "win32" ? ";" : ":";
+    const existingPath = env.PATH ?? env.Path ?? "";
+    const merged = [...candidateDirs, existingPath].filter(Boolean).join(sep);
+    env.PATH = merged;
+    if ("Path" in env) env.Path = merged;
+    return { env, candidateDirs };
+  }
+
+  /** The name of the agent this client spawned (or will spawn). */
+  get agent(): string {
+    return this.agentName;
+  }
+
+  /**
+   * Spawn the agent and connect. `agent` names any ACP connector; without it
+   * the chat talks to opencode, resolved as before.
+   */
+  async start(cwd: string, agent?: AcpAgentSpec): Promise<void> {
     if (this.isConnected) {
       throw new Error("ACP client is already connected");
     }
     this.workspaceCwd = cwd;
+    const spec = agent && agent.argv.length > 0 ? agent : OPENCODE_AGENT;
+    this.agentName = spec.name;
 
     try {
-      // Resolve the opencode binary. The VS Code extension host frequently does
-      // NOT inherit the user's shell PATH (e.g. when launched from a GUI), so a
-      // bare 'opencode' can fail with ENOENT even though it works in a terminal.
-      const { command, env } = this.resolveOpencodeCommand();
+      // opencode's binary is looked for in its install locations too; any
+      // other agent is the command the connector names, on the augmented PATH.
+      const { command, env } =
+        spec.argv[0] === "opencode"
+          ? this.resolveOpencodeCommand()
+          : { command: spec.argv[0], env: this.augmentedEnv().env };
+      const args = spec.argv.slice(1);
 
-      // `opencode acp` also serves the full HTTP API. Pin it to a free port so
-      // we can drive HTTP-only capabilities (revert/unrevert/message ids)
-      // against the same process the ACP session uses.
-      const httpPort = await this.findFreePort();
-      this.http = new OpencodeHttpClient(`http://127.0.0.1:${httpPort}`);
+      // An agent with opencode's HTTP API gets it pinned to a free port, so
+      // the HTTP-only capabilities (revert/unrevert/message ids) drive the
+      // same process the ACP session uses. Without one they stay off.
+      if (spec.httpApi) {
+        const httpPort = await this.findFreePort();
+        this.http = new OpencodeHttpClient(`http://127.0.0.1:${httpPort}`);
+        args.push("--hostname", "127.0.0.1", "--port", String(httpPort));
+      } else {
+        this.http = null;
+      }
 
-      // Spawn opencode acp subprocess
-      this.process = spawn(
-        command,
-        ["acp", "--hostname", "127.0.0.1", "--port", String(httpPort)],
-        {
-          cwd,
-          stdio: ["pipe", "pipe", "pipe"],
-          env,
-        },
-      );
+      // Spawn the agent subprocess
+      this.process = spawn(command, args, {
+        cwd,
+        stdio: ["pipe", "pipe", "pipe"],
+        env,
+      });
 
       // Handle process errors
       this.process.on("error", (error) => {
@@ -331,7 +377,7 @@ export class ACPClientService extends EventEmitter {
         if (code !== 0 && code !== null) {
           this.emit(
             "error",
-            new Error(`OpenCode process exited with code ${code}`),
+            new Error(`${this.agentName} process exited with code ${code}`),
           );
         }
         this.handleDisconnect();

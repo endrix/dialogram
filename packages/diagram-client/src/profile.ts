@@ -24,6 +24,19 @@ type DiagramClientBehavior = {
     nodeFamilies?: NodeFamilySpec[];
     /** Whether the host has a chat backend; derived by the platform. */
     chatBackend?: boolean;
+    /** The ACP connectors the runtime discovered or the user declared, for an
+     *  agent's `connector` (extension-core `AcpConnectorInfo`). */
+    acpConnectors?: AcpConnectorInfo[];
+};
+
+export type AcpConnectorInfo = {
+    name: string;
+    available: boolean;
+    source: string;
+    command: string;
+    httpApi?: boolean;
+    model?: string | null;
+    mode?: string | null;
 };
 
 type DiagramIdentifier = {
@@ -99,4 +112,27 @@ export function feedbackEdgesVisibleStorageKey(): string {
 export function clientBehavior(): DiagramClientBehavior {
     const configured = getDiagramIdentifier().clientBehavior;
     return configured && typeof configured === 'object' ? configured : {};
+}
+
+/**
+ * The host resolves part of the behavior after the webview is up (what depends
+ * on the machine or the workspace, e.g. the ACP connectors the runtime knows)
+ * and posts it as `dialogram.clientBehavior.merge`; it is folded into the
+ * injected identifier so every later {@link clientBehavior} call sees it.
+ */
+export function mergeClientBehavior(extras: Partial<DiagramClientBehavior>): void {
+    const g = globalThis as any;
+    if (!g.diagramIdentifier || typeof g.diagramIdentifier !== 'object') {
+        g.diagramIdentifier = {};
+    }
+    g.diagramIdentifier.clientBehavior = { ...(g.diagramIdentifier.clientBehavior ?? {}), ...extras };
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('message', (event: MessageEvent) => {
+        const data = event.data as { type?: string; payload?: unknown } | undefined;
+        if (data?.type === 'dialogram.clientBehavior.merge' && data.payload && typeof data.payload === 'object') {
+            mergeClientBehavior(data.payload as Partial<DiagramClientBehavior>);
+        }
+    });
 }

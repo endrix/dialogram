@@ -37,7 +37,7 @@ import { executeViewerCommand, executeViewerOpen, executeViewerReveal } from './
 import { decideDiagramOpen } from './diagram-open-decision';
 import { readMcpServerUrl } from './mcp-server-url';
 import { composeStorageRuntimeOptions } from './profile-storage-options';
-import { type DiagramProfile, type DiagramRunHost } from '../../api';
+import { type DiagramProfile, type DiagramRunAnswer, type DiagramRunHost, type DiagramRunQuestion } from '../../api';
 
 // Define the diagram type constant locally to avoid import
 const WORKFLOW_DIAGRAM_TYPE = 'cal-network-diagram';
@@ -300,6 +300,8 @@ function serializedRangeToVscodeRange(range: SerializedRange): vscode.Range {
  * the helper functions that previously read/wrote module-level singletons.
  */
 interface GlspActivationState {
+    /** See {@link GlspIntegrationHandle.setRunQuestionHandler}. */
+    runQuestionHandler?: RunQuestionHandler;
     context: vscode.ExtensionContext;
     profile: DiagramProfile;
     // Transient cross-file drill-down handoff, scoped to this activation (per profile instance).
@@ -332,7 +334,16 @@ export interface GlspIntegrationHandle extends vscode.Disposable {
      * initialize result (no stdout parsing). The chat runtime hands it to the agent clients.
      */
     mcpServerUrl?: string;
+    /**
+     * Who answers a running agent's question for a diagram. The run driver is
+     * wired here, before the chat runtime exists; the profile runtime installs
+     * the chat as the answerer once it is up. Unset, or `undefined` back, and
+     * the driver falls back to a VS Code prompt.
+     */
+    setRunQuestionHandler(handler: RunQuestionHandler | undefined): void;
 }
+
+export type RunQuestionHandler = (question: DiagramRunQuestion, sourceUri: string) => Promise<DiagramRunAnswer | undefined>;
 
 /**
  * Activate the GLSP integration for Workflow diagrams.
@@ -960,6 +971,9 @@ export async function activateGlspIntegration(
         editorProvider,
         executionOverlay,
         mcpServerUrl,
+        setRunQuestionHandler: (handler) => {
+            state.runQuestionHandler = handler;
+        },
         dispose: () => disposable.dispose()
     };
 }
@@ -1428,6 +1442,7 @@ function registerCalDiagramCommands(
         // registers its source through the host so core does not hold the driver.
         const host: DiagramRunHost = {
             overlay: executionOverlay,
+            askUser: async (question, sourceUri) => state.runQuestionHandler?.(question, sourceUri),
             requestRefresh: requestRunRefresh,
             output: runOutput,
             useLiveOverlaySignatureSource: (source) => {

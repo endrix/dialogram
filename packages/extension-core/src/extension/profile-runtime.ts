@@ -65,8 +65,12 @@ export async function activateProfileRuntime(
       capability,
       glsp.mcpServerUrl,
     );
-    chatRuntime = new ChatRuntime(context, config, transport.sink);
+    chatRuntime = new ChatRuntime(context, config, transport.sink, transport.canReach);
     transport.connect(chatRuntime);
+    // The run driver's human port: a running agent's question goes to the
+    // chat panel open on the diagram (the chat is the run's viewer there).
+    const runtime = chatRuntime;
+    glsp.setRunQuestionHandler((question, uri) => runtime.askRunQuestion(uri, question));
     context.subscriptions.push(chatRuntime, {
       dispose: () => {
         transport?.dispose();
@@ -114,6 +118,7 @@ export function assembleChatRuntimeConfig(
       ? (f) => capability.graphContextProvider(f)
       : chat.graphContextProvider,
     turnContextProvider: chat.turnContextProvider,
+    acpAgent: chat.acpAgent,
     selectionContext: chat.selectionContext,
     // The profile's own tools, plus the platform's: "what can open this file"
     // is a question about the EDITOR, not about any one product's graph, so it

@@ -26,6 +26,9 @@ const CONNECTOR_RETRY_MAX = 20;
 export interface GlspChatTransport {
     /** Per-URI reply sink handed to the ChatRuntime constructor. */
     sink: ChatMessageSink;
+    /** Whether a panel has spoken for `uri` on this connection, i.e. the sink
+     *  can reach it: a question posted to nobody would wait for ever. */
+    canReach(uri: string): boolean;
     /** Install the messenger listener and start forwarding to the runtime. */
     connect(runtime: { handleMessage(uri: string, payload: ChatPayload): Promise<void> }): void;
     dispose(): void;
@@ -92,6 +95,7 @@ export function createGlspChatTransport(opts: {
 
     return {
         sink,
+        canReach: (uri) => Boolean(messenger && participantByUri.has(uri)),
         connect(runtime): void {
             wire(runtime);
         },

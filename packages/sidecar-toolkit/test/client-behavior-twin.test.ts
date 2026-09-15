@@ -44,10 +44,14 @@ function fieldsOf(file: string, name: string): string[] {
  * than filtered by a pattern, because adding one is a decision worth writing
  * down.
  *
- *   chatBackend  derived from `DiagramProfile.chat` being present, which is
- *                what decides whether the host activates a chat backend at all
+ *   chatBackend    derived from `DiagramProfile.chat` being present, which is
+ *                  what decides whether the host activates a chat backend at all
+ *   acpConnectors  resolved per document by `DiagramProfile.clientBehaviorFor`
+ *                  (the sidecar profile asks the CLI, `acpConnectorsArgs`) and
+ *                  posted to the webview; a product declaring it by hand would
+ *                  name connectors the machine may not have
  */
-const PLATFORM_DERIVED = ['chatBackend'];
+const PLATFORM_DERIVED = ['chatBackend', 'acpConnectors'];
 
 describe('sidecar client behavior mirrors the platform', () => {
     const sidecar = fieldsOf(

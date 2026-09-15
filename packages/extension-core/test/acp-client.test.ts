@@ -187,6 +187,25 @@ describe('ACPClientService', () => {
       expect(client.isClientConnected()).toBe(true);
     });
 
+    it('spawns the given agent as its own command, without the HTTP port', async () => {
+      await client.start('/test/workspace', { name: 'claude', argv: ['claude-agent-acp', '--verbose'], httpApi: false });
+
+      expect(spawn).toHaveBeenCalledWith(
+        'claude-agent-acp',
+        ['--verbose'],
+        expect.objectContaining({
+          cwd: '/test/workspace',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: expect.objectContaining({ PATH: expect.any(String) }),
+        })
+      );
+      expect(client.agent).toBe('claude');
+      expect(client.isClientConnected()).toBe(true);
+      // The HTTP-only capabilities stay off rather than failing.
+      await expect(client.getMessagesWithIds('s1')).resolves.toEqual([]);
+      await expect(client.getRevertState('s1')).resolves.toBe(false);
+    });
+
     it('should throw error if already connected', async () => {
       await client.start('/test/workspace');
 
@@ -218,7 +237,7 @@ describe('ACPClientService', () => {
 
       expect(errorSpy).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: 'OpenCode process exited with code 1',
+          message: 'opencode process exited with code 1',
         })
       );
     });
