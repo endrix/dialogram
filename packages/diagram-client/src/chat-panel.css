@@ -545,50 +545,78 @@
   font-size: 12px;
 }
 
-/* ── The run's agents, as the chat's read-only viewer ── */
-.chat-run {
-  margin: 8px 16px;
+/* ── Session | Run: which conversation the panel shows ── */
+.chat-segments {
+  display: inline-flex;
   border: 1px solid var(--chat-border);
   border-radius: 4px;
+  overflow: hidden;
+  flex: none;
 }
-.chat-run-head {
-  display: flex;
+.chat-segment {
+  display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 10px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  gap: 6px;
+  padding: 2px 10px;
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 11.5px;
+  cursor: pointer;
   opacity: 0.8;
-  border-bottom: 1px solid var(--chat-border);
 }
-.chat-run-live {
-  margin-left: auto;
-  font-size: 10px;
-  padding: 1px 6px;
+.chat-segment + .chat-segment {
+  border-left: 1px solid var(--chat-border);
+}
+.chat-segment:hover:not(:disabled) {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.15));
+}
+.chat-segment.active {
+  opacity: 1;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+.chat-segment:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.chat-segment-badge {
+  min-width: 16px;
+  padding: 0 5px;
   border-radius: 8px;
+  background: var(--vscode-inputValidation-infoBorder, #007acc);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+.chat-segment.active .chat-segment-badge {
+  background: var(--vscode-button-foreground);
+  color: var(--vscode-button-background);
+}
+.chat-segment-live {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
   background: var(--vscode-testing-iconPassed, #3fb950);
-  color: var(--vscode-editor-background, #1e1e1e);
-  text-transform: none;
-  letter-spacing: 0;
 }
-.chat-run-empty {
-  padding: 8px 10px;
-  font-size: 12px;
-  opacity: 0.7;
+.chat-agent-select {
+  min-width: 160px;
+  max-width: 260px;
 }
-.chat-run-agent {
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--chat-border);
-}
-.chat-run-agent:last-child {
-  border-bottom: none;
+
+/* ── A running agent's transcript, read only ── */
+.chat-run-transcript {
+  padding: 4px 16px 8px;
 }
 .chat-run-agent-head {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--chat-border);
   margin-bottom: 4px;
 }
 .chat-run-dot {
@@ -611,13 +639,66 @@
   font-size: 11px;
   opacity: 0.7;
 }
+.chat-run-empty {
+  padding: 8px 0;
+  font-size: 12px;
+  opacity: 0.7;
+}
+.chat-run-turn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+}
+.chat-run-turn::before,
+.chat-run-turn::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--chat-border);
+}
+.chat-run-transcript .chat-question {
+  margin: 8px 0;
+}
 .chat-run-text {
   white-space: pre-wrap;
   word-break: break-word;
   font-size: 12px;
   line-height: 1.4;
-  max-height: 200px;
-  overflow-y: auto;
+  margin: 4px 0;
+}
+.chat-viewer-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--chat-border);
+  font-size: 12px;
+  opacity: 0.9;
+}
+.chat-viewer-bar span:nth-child(2) {
+  flex: 1;
+}
+.chat-run-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--vscode-inputValidation-infoBorder, #007acc);
+  border-left-width: 3px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--vscode-inputValidation-infoBackground, #063b49) 60%, transparent);
+  font-size: 12px;
+}
+.chat-run-banner-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Composer ── */

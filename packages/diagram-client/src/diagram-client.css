@@ -3186,6 +3186,7 @@ details[open] > summary .agent-chat-expand-arrow {
     gap: 6px;
 }
 .wf-rab-empty { opacity: 0.6; padding: 8px; }
+.wf-rab-card { cursor: pointer; }
 .wf-rab-card {
     border: 1px solid var(--vscode-panel-border);
     border-radius: 6px;

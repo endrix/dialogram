@@ -8,7 +8,12 @@ import { repeat } from 'lit/directives/repeat.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { renderMarkdownSafe } from './markdown';
 import { shouldStick } from './chat-scroll';
-import { RunAgentStreamActionHandler, type LiveAgentState } from './editing-action-handlers';
+import {
+  RunAgentStreamActionHandler,
+  type LiveAgentPart,
+  type LiveAgentQuestion,
+  type LiveAgentState
+} from './editing-action-handlers';
 
 /**
  * Memoized markdown → HTML. The chat template runs `renderMarkdownSafe` for every
@@ -109,20 +114,13 @@ interface PermissionItem {
   resolved?: 'allowed' | 'denied';
 }
 
-/** A running agent's question to the user (the run driver's human port),
- *  answered here: the chat is the run's viewer, not its session. */
-interface QuestionItem {
-  kind: 'question';
-  id: number | string;
-  agent: string;
-  model?: string;
-  question: string;
-  context?: string;
-  choices: string[];
-  resolved?: { answer?: string; declined?: boolean };
-}
+type TimelineItem = MessageItem | ToolItem | PermissionItem;
 
-type TimelineItem = MessageItem | ToolItem | PermissionItem | QuestionItem;
+/**
+ * What the panel shows: the diagram's own session with its agent, or one of
+ * the run's agents, read only (its transcript and its questions).
+ */
+type ChatView = { kind: 'session' } | { kind: 'agent'; instance: string };
 
 interface SessionEntry {
   id: string;
@@ -182,6 +180,10 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   /** The ACP connector the chat is (or was) connected to, as the host names it. */
   private connectionAgent = '';
   private inputValue = '';
+  private view: ChatView = { kind: 'session' };
+  /** A running agent's question that arrived while the user was typing in
+   *  the session: shown as a banner instead of switching the view. */
+  private runBanner: LiveAgentQuestion | null = null;
 
   /** Live diagram selection (node ids), mirrored to the host for chat context. */
   private selectedNodeIds: string[] = [];
@@ -259,9 +261,50 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     // bar renders; the panel shows them too, as a read-only viewer.
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
       window.addEventListener('dialogram.runAgents.updated', () => this.update());
+      window.addEventListener('dialogram.chat.showAgent', (e) => {
+        const instance = (e as CustomEvent<{ instance?: string }>).detail?.instance;
+        if (instance) this.showAgent(instance);
+      });
     }
     this.update();
     this.requestState();
+  }
+
+  // ── The view: the session, or one of the run's agents ─────────────────
+
+  /** Show a running agent's transcript (and open the panel). */
+  showAgent(instance: string): void {
+    this.view = { kind: 'agent', instance };
+    if (this.runBanner?.agent === instance) this.runBanner = null;
+    this.show();
+    this.update();
+    this.announceRunView();
+  }
+
+  /** Back to the diagram's own session. */
+  showSession(): void {
+    this.view = { kind: 'session' };
+    this.update();
+    this.announceRunView();
+  }
+
+  /** The Run segment: the agent with a question waiting, else the latest. */
+  private openRun(): void {
+    const agents = RunAgentStreamActionHandler.getAgents();
+    const target = agents.find((a) => a.pendingQuestions > 0) ?? agents[0];
+    if (target) this.showAgent(target.instance);
+  }
+
+  /** The bar on the canvas hides while the panel shows a running agent. */
+  private announceRunView(): void {
+    if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+    const visible = this.isVisible && this.view.kind === 'agent';
+    window.dispatchEvent(new CustomEvent('dialogram.chat.runView', { detail: { visible } }));
+  }
+
+  /** The user is in the middle of a message to the session. */
+  private isComposing(): boolean {
+    return this.view.kind === 'session' && this.inputValue.trim().length > 0;
   }
 
   // ── Transport ───────────────────────────────────────────────────────────
@@ -496,17 +539,25 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
       case 'chat.runQuestion':
         if (data && (typeof data.id === 'number' || typeof data.id === 'string') && typeof data.question === 'string') {
-          this.timeline.push({
-            kind: 'question',
+          const question: LiveAgentQuestion = {
             id: data.id,
-            agent: typeof data.agent === 'string' && data.agent ? data.agent : 'An agent',
+            agent: typeof data.agent === 'string' && data.agent ? data.agent : 'agent',
             model: typeof data.model === 'string' ? data.model : undefined,
             question: data.question,
             context: typeof data.context === 'string' && data.context ? data.context : undefined,
             choices: Array.isArray(data.choices) ? data.choices.map(String) : [],
-          });
-          this.update();
+          };
+          RunAgentStreamActionHandler.addQuestion(question.agent, question);
+          if (this.isComposing()) {
+            // Do not pull the user out of a message: a banner, and the Run segment's badge.
+            this.runBanner = question;
+            this.update();
+          } else {
+            this.view = { kind: 'agent', instance: question.agent };
+            this.update();
+          }
           this.autoShow('run-question');
+          this.announceRunView();
         }
         break;
 
@@ -882,15 +933,18 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   }
 
   /** Answer a running agent's question (or decline it, `answer` undefined). */
-  private answerRunQuestion(item: QuestionItem, answer: string | undefined): void {
-    if (item.resolved) return;
+  private answerRunQuestion(q: LiveAgentQuestion, answer: string | undefined): void {
+    if (q.resolved) return;
+    let resolved: { answer?: string; declined?: boolean };
     if (answer === undefined) {
-      this.sendToHost('chat.runAnswer', { id: item.id, declined: true, reason: 'declined in the chat' });
-      item.resolved = { declined: true };
+      this.sendToHost('chat.runAnswer', { id: q.id, declined: true, reason: 'declined in the chat' });
+      resolved = { declined: true };
     } else {
-      this.sendToHost('chat.runAnswer', { id: item.id, answer });
-      item.resolved = { answer };
+      this.sendToHost('chat.runAnswer', { id: q.id, answer });
+      resolved = { answer };
     }
+    RunAgentStreamActionHandler.resolveQuestion(q.agent, q.id, resolved);
+    if (this.runBanner?.id === q.id) this.runBanner = null;
     this.update();
   }
 
@@ -980,6 +1034,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     document.body.classList.add(ChatPanel.VISIBLE_BODY_CLASS);
     this.isVisible = true;
     this.focusInput();
+    this.announceRunView();
   }
 
   hide(): void {
@@ -987,6 +1042,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     this.panel.classList.remove('visible');
     document.body.classList.remove(ChatPanel.VISIBLE_BODY_CLASS);
     this.isVisible = false;
+    this.announceRunView();
   }
 
   toggle(): void {
@@ -1107,17 +1163,11 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     return (
       !this.currentSessionId &&
       this.timeline.length === 0 &&
-      !this.hasRunView &&
       !this.streamingText &&
       !this.streamingThinking &&
       !this.showTyping &&
       !this.isLoadingSession
     );
-  }
-
-  /** Whether a run's agents are (or were, this run) streaming: the viewer shows. */
-  private get hasRunView(): boolean {
-    return RunAgentStreamActionHandler.isRunActive() || RunAgentStreamActionHandler.getAgents().length > 0;
   }
 
   /** Placeholder copy for the empty state — varies on whether sessions exist. */
@@ -1167,44 +1217,48 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       <div class="chat-resize-handle" @mousedown=${(e: MouseEvent) => this.startResize(e)}></div>
       ${this.topbarTemplate()}
       <div class="chat-scroll">
-        ${this.isEmptyState
-          ? html`<div class="chat-empty-state">
-              <span class="codicon codicon-comment-discussion"></span>
-              <span>${this.emptyStateText}</span>
-            </div>`
-          : nothing}
-        ${this.isLoadingSession
-          ? html`<div class="chat-loading-session">
-              <span class="codicon codicon-loading codicon-modifier-spin"></span>
-              <span>${this.loadingLabel}</span>
-            </div>`
-          : nothing}
-        ${this.runViewerTemplate()}
-        ${repeat(
-          this.timeline,
-          (item, i) =>
-            item.kind === 'tool'
-              ? `t${item.id}`
-              : item.kind === 'permission'
-                ? `p${item.requestId}`
-                : item.kind === 'question'
-                  ? `q${item.id}`
-                  : `m${i}`,
-          (item) => this.itemTemplate(item)
-        )}
-        ${this.streamingText || this.streamingThinking ? this.streamingTemplate() : nothing}
-        ${this.showTyping ? html`<div class="chat-typing"><span></span><span></span><span></span></div>` : nothing}
+        ${this.view.kind === 'agent' ? this.agentTranscriptTemplate(this.view.instance) : this.sessionBodyTemplate()}
       </div>
-      ${this.reverted
-        ? html`<div class="chat-redo-banner">
-            <span class="codicon codicon-history"></span>
-            <span>Session reverted — messages and file changes were undone.</span>
-            <button class="chat-redo-btn" @click=${() => this.requestUnrevert()}>
-              <span class="codicon codicon-redo"></span> Redo
-            </button>
+      ${this.view.kind === 'agent'
+        ? this.viewerBarTemplate()
+        : html`
+            ${this.reverted
+              ? html`<div class="chat-redo-banner">
+                  <span class="codicon codicon-history"></span>
+                  <span>Session reverted — messages and file changes were undone.</span>
+                  <button class="chat-redo-btn" @click=${() => this.requestUnrevert()}>
+                    <span class="codicon codicon-redo"></span> Redo
+                  </button>
+                </div>`
+              : nothing}
+            ${this.runBannerTemplate()}
+            ${this.composerTemplate()}
+          `}
+    `;
+  }
+
+  /** The session's timeline: messages, tool calls, its own permission requests. */
+  private sessionBodyTemplate(): TemplateResult {
+    return html`
+      ${this.isEmptyState
+        ? html`<div class="chat-empty-state">
+            <span class="codicon codicon-comment-discussion"></span>
+            <span>${this.emptyStateText}</span>
           </div>`
         : nothing}
-      ${this.composerTemplate()}
+      ${this.isLoadingSession
+        ? html`<div class="chat-loading-session">
+            <span class="codicon codicon-loading codicon-modifier-spin"></span>
+            <span>${this.loadingLabel}</span>
+          </div>`
+        : nothing}
+      ${repeat(
+        this.timeline,
+        (item, i) => (item.kind === 'tool' ? `t${item.id}` : item.kind === 'permission' ? `p${item.requestId}` : `m${i}`),
+        (item) => this.itemTemplate(item)
+      )}
+      ${this.streamingText || this.streamingThinking ? this.streamingTemplate() : nothing}
+      ${this.showTyping ? html`<div class="chat-typing"><span></span><span></span><span></span></div>` : nothing}
     `;
   }
 
@@ -1231,30 +1285,35 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
           <span class="codicon codicon-comment-discussion"></span>
           <span class="chat-title-text">Chat</span>
         </span>
-        <vscode-single-select
-          class="chat-session-select"
-          title="Session"
-          @change=${(e: Event) => {
-            const value = (e.target as any).value as string;
-            if (value && value !== this.currentSessionId) this.loadSession(value);
-          }}
-        >
-          ${!this.currentSessionId
-            ? html`<vscode-option value="" ?selected=${true}>${this.sessions.length === 0 ? 'No session' : 'Select a session'}</vscode-option>`
-            : nothing}
-          ${this.sessions.map(
-            (s) => html`<vscode-option value=${s.id} ?selected=${s.id === this.currentSessionId}>${s.name}</vscode-option>`
-          )}
-        </vscode-single-select>
-        <button class="chat-ibtn" title="New session" @click=${() => this.createNewSession()}>
-          <span class="codicon codicon-add"></span>
-        </button>
-        <button class="chat-ibtn" title="Rename session" @click=${() => this.renameCurrentSession()}>
-          <span class="codicon codicon-edit"></span>
-        </button>
-        <button class="chat-ibtn" title="Delete session" @click=${() => this.deleteCurrentSession()}>
-          <span class="codicon codicon-trash"></span>
-        </button>
+        ${this.segmentsTemplate()}
+        ${this.view.kind === 'session'
+          ? html`
+              <vscode-single-select
+                class="chat-session-select"
+                title="Session"
+                @change=${(e: Event) => {
+                  const value = (e.target as any).value as string;
+                  if (value && value !== this.currentSessionId) this.loadSession(value);
+                }}
+              >
+                ${!this.currentSessionId
+                  ? html`<vscode-option value="" ?selected=${true}>${this.sessions.length === 0 ? 'No session' : 'Select a session'}</vscode-option>`
+                  : nothing}
+                ${this.sessions.map(
+                  (s) => html`<vscode-option value=${s.id} ?selected=${s.id === this.currentSessionId}>${s.name}</vscode-option>`
+                )}
+              </vscode-single-select>
+              <button class="chat-ibtn" title="New session" @click=${() => this.createNewSession()}>
+                <span class="codicon codicon-add"></span>
+              </button>
+              <button class="chat-ibtn" title="Rename session" @click=${() => this.renameCurrentSession()}>
+                <span class="codicon codicon-edit"></span>
+              </button>
+              <button class="chat-ibtn" title="Delete session" @click=${() => this.deleteCurrentSession()}>
+                <span class="codicon codicon-trash"></span>
+              </button>
+            `
+          : this.agentSelectTemplate(this.view.instance)}
         <div class="chat-topbar-spacer"></div>
         <span class="chat-status status-${status}" title=${statusTitle}>
           <span class="chat-status-dot"></span>${statusLabel}
@@ -1269,89 +1328,167 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     `;
   }
 
-  /**
-   * The run's agents, read-only: the same live state (text, reasoning, tool
-   * calls) the "Running agents" bar folds from the run's event stream. Their
-   * questions arrive as `question` items below, answered from here.
-   */
-  private runViewerTemplate(): TemplateResult | typeof nothing {
+  // ── The run's agents ────────────────────────────────────────────────
+
+  /** Session | Run · n, with a badge for the questions waiting. */
+  private segmentsTemplate(): TemplateResult {
     const agents = RunAgentStreamActionHandler.getAgents();
     const active = RunAgentStreamActionHandler.isRunActive();
-    if (!active && agents.length === 0) return nothing;
+    const pending = RunAgentStreamActionHandler.pendingQuestionCount();
+    const isAgent = this.view.kind === 'agent';
     return html`
-      <div class="chat-run">
-        <div class="chat-run-head">
-          <span class="codicon codicon-broadcast"></span>
-          <span>Running agents</span>
-          ${active ? html`<span class="chat-run-live">live</span>` : nothing}
-        </div>
-        ${agents.length === 0
-          ? html`<div class="chat-run-empty">Waiting for agents…</div>`
-          : agents.map((a) => this.runAgentTemplate(a))}
+      <div class="chat-segments" role="tablist">
+        <button class="chat-segment ${!isAgent ? 'active' : ''}" role="tab" title="The diagram's own session" @click=${() => this.showSession()}>
+          Session
+        </button>
+        <button
+          class="chat-segment ${isAgent ? 'active' : ''}"
+          role="tab"
+          title=${agents.length ? "The run's agents, read only" : 'No run yet'}
+          ?disabled=${agents.length === 0}
+          @click=${() => this.openRun()}
+        >
+          Run${agents.length ? ` · ${agents.length}` : ''}
+          ${pending > 0
+            ? html`<span class="chat-segment-badge" title="${pending} question${pending === 1 ? '' : 's'} waiting">${pending}</span>`
+            : active
+              ? html`<span class="chat-segment-live" title="live"></span>`
+              : nothing}
+        </button>
       </div>
     `;
   }
 
-  private runAgentTemplate(a: LiveAgentState): TemplateResult {
+  /** The run's agents, one selected: what the topbar shows in the agent view. */
+  private agentSelectTemplate(instance: string): TemplateResult {
+    const agents = RunAgentStreamActionHandler.getAgents();
+    const label = (a: LiveAgentState): string =>
+      `${a.instance}${a.pendingQuestions > 0 ? ' (asking…)' : a.status === 'running' ? ' (streaming…)' : ' (done)'}`;
     return html`
-      <div class="chat-run-agent ${a.status}">
+      <vscode-single-select
+        class="chat-agent-select"
+        title="Running agent"
+        @change=${(e: Event) => {
+          const value = (e.target as any).value as string;
+          if (value && value !== instance) this.showAgent(value);
+        }}
+      >
+        ${agents.map((a) => html`<vscode-option value=${a.instance} ?selected=${a.instance === instance}>${label(a)}</vscode-option>`)}
+      </vscode-single-select>
+    `;
+  }
+
+  /** A running agent's transcript: its turns, reasoning, text, tool calls and questions, in order. */
+  private agentTranscriptTemplate(instance: string): TemplateResult {
+    const a = RunAgentStreamActionHandler.getAgent(instance);
+    if (!a) {
+      return html`<div class="chat-empty-state">
+        <span class="codicon codicon-broadcast"></span>
+        <span>No agent “${instance}” in this run.</span>
+      </div>`;
+    }
+    const lastReasoning = [...a.parts].reverse().find((p) => p.kind === 'reasoning');
+    return html`
+      <div class="chat-run-transcript">
         <div class="chat-run-agent-head">
           <span class="chat-run-dot ${a.status}"></span>
           <span class="chat-run-name" title=${a.instance}>${a.instance}</span>
-          <span class="chat-run-status">${a.status === 'running' ? 'streaming…' : 'done'}</span>
+          <span class="chat-run-status">${a.pendingQuestions > 0 ? 'asking…' : a.status === 'running' ? 'streaming…' : 'done'}</span>
         </div>
-        ${a.reasoning ? this.thinkingTemplate(a.reasoning) : nothing}
-        ${a.toolCalls.length
-          ? html`<div class="chat-tool">
-              <span class="codicon codicon-tools"></span>
-              <span class="chat-tool-title">${a.toolCalls.join(', ')}</span>
+        ${a.parts.length === 0 ? html`<div class="chat-run-empty">Waiting for the agent…</div>` : nothing}
+        ${a.parts.map((p) => this.partTemplate(p, p === lastReasoning && a.status === 'running'))}
+      </div>
+    `;
+  }
+
+  private partTemplate(p: LiveAgentPart, open: boolean): TemplateResult {
+    switch (p.kind) {
+      case 'turn':
+        return html`<div class="chat-run-turn"><span>turn ${p.index}</span></div>`;
+      case 'reasoning':
+        return this.thinkingTemplate(p.text, { open });
+      case 'text':
+        return html`<div class="chat-run-text">${p.text}</div>`;
+      case 'tool': {
+        const icon = p.status === 'completed' ? 'codicon-check' : p.status === 'failed' ? 'codicon-warning' : 'codicon-tools';
+        const statusText = p.status && p.status !== 'completed' ? ` — ${p.status.replace('_', ' ')}` : '';
+        return html`
+          <div class="chat-tool ${p.status === 'failed' ? 'failed' : ''}">
+            <span class="codicon ${icon}"></span>
+            <span class="chat-tool-title">${p.name}</span>
+            <span class="chat-tool-status">${statusText}</span>
+          </div>
+        `;
+      }
+      case 'question':
+        return this.questionTemplate(p.question);
+    }
+  }
+
+  /** The footer under a running agent: no prompt, answers only. */
+  private viewerBarTemplate(): TemplateResult {
+    return html`
+      <footer class="chat-viewer-bar">
+        <span class="codicon codicon-eye"></span>
+        <span>Viewer of a running agent: its questions are answered above; it takes no prompt.</span>
+        <button class="chat-permission-btn" @click=${() => this.showSession()}>Back to the session</button>
+      </footer>
+    `;
+  }
+
+  /** A question that arrived while the user was typing: a way to it. */
+  private runBannerTemplate(): TemplateResult | typeof nothing {
+    const q = this.runBanner;
+    if (!q || q.resolved) return nothing;
+    return html`
+      <div class="chat-run-banner">
+        <span class="codicon codicon-question"></span>
+        <span class="chat-run-banner-text">${q.agent} asks: ${q.question}</span>
+        <button class="chat-permission-btn" @click=${() => this.showAgent(q.agent)}>Go</button>
+      </div>
+    `;
+  }
+
+  private questionTemplate(q: LiveAgentQuestion): TemplateResult {
+    const who = q.model ? `${q.agent} (${q.model})` : q.agent;
+    const readInput = (e: Event): string =>
+      ((e.currentTarget as HTMLElement | null)?.closest('.chat-question')?.querySelector('input') as HTMLInputElement | null)
+        ?.value ?? '';
+    return html`
+      <div class="chat-question ${q.resolved ? 'resolved' : ''}">
+        <div class="chat-question-title">
+          <span class="codicon codicon-question"></span>
+          <span>${who} asks</span>
+        </div>
+        <div class="chat-question-text">${q.question}</div>
+        ${q.context ? html`<div class="chat-question-context">${q.context}</div>` : nothing}
+        ${q.resolved
+          ? html`<div class="chat-question-answer">
+              ${q.resolved.declined ? 'Declined' : `Answered: ${q.resolved.answer}`}
             </div>`
-          : nothing}
-        <div class="chat-run-text">${a.text || (a.status === 'running' ? '…' : '')}</div>
+          : q.choices.length > 0
+            ? html`<div class="chat-permission-actions">
+                ${q.choices.map(
+                  (c) => html`<button class="chat-permission-btn" @click=${() => this.answerRunQuestion(q, c)}>${c}</button>`
+                )}
+                <button class="chat-permission-btn deny" @click=${() => this.answerRunQuestion(q, undefined)}>Decline</button>
+              </div>`
+            : html`<div class="chat-permission-actions">
+                <input
+                  class="chat-question-input"
+                  placeholder="Your answer"
+                  @keydown=${(e: KeyboardEvent) => {
+                    if (e.key === 'Enter') this.answerRunQuestion(q, (e.currentTarget as HTMLInputElement).value);
+                  }}
+                />
+                <button class="chat-permission-btn" @click=${(e: Event) => this.answerRunQuestion(q, readInput(e))}>Answer</button>
+                <button class="chat-permission-btn deny" @click=${() => this.answerRunQuestion(q, undefined)}>Decline</button>
+              </div>`}
       </div>
     `;
   }
 
   private itemTemplate(item: TimelineItem): TemplateResult {
-    if (item.kind === 'question') {
-      const who = item.model ? `${item.agent} (${item.model})` : item.agent;
-      const readInput = (e: Event): string =>
-        ((e.currentTarget as HTMLElement | null)?.closest('.chat-question')?.querySelector('input') as HTMLInputElement | null)
-          ?.value ?? '';
-      return html`
-        <div class="chat-question ${item.resolved ? 'resolved' : ''}">
-          <div class="chat-question-title">
-            <span class="codicon codicon-question"></span>
-            <span>${who} asks</span>
-          </div>
-          <div class="chat-question-text">${item.question}</div>
-          ${item.context ? html`<div class="chat-question-context">${item.context}</div>` : nothing}
-          ${item.resolved
-            ? html`<div class="chat-question-answer">
-                ${item.resolved.declined ? 'Declined' : `Answered: ${item.resolved.answer}`}
-              </div>`
-            : item.choices.length > 0
-              ? html`<div class="chat-permission-actions">
-                  ${item.choices.map(
-                    (c) => html`<button class="chat-permission-btn" @click=${() => this.answerRunQuestion(item, c)}>${c}</button>`
-                  )}
-                  <button class="chat-permission-btn deny" @click=${() => this.answerRunQuestion(item, undefined)}>Decline</button>
-                </div>`
-              : html`<div class="chat-permission-actions">
-                  <input
-                    class="chat-question-input"
-                    placeholder="Your answer"
-                    @keydown=${(e: KeyboardEvent) => {
-                      if (e.key === 'Enter') this.answerRunQuestion(item, (e.currentTarget as HTMLInputElement).value);
-                    }}
-                  />
-                  <button class="chat-permission-btn" @click=${(e: Event) => this.answerRunQuestion(item, readInput(e))}>Answer</button>
-                  <button class="chat-permission-btn deny" @click=${() => this.answerRunQuestion(item, undefined)}>Decline</button>
-                </div>`}
-        </div>
-      `;
-    }
-
     if (item.kind === 'tool') {
       const icon =
         item.status === 'completed'

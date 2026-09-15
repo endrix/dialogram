@@ -341,7 +341,10 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         const driver = new CliRunDriver(config, {
             overlay: host.overlay,
             requestRefresh: host.requestRefresh,
-            output: host.output
+            output: host.output,
+            // The human port: a running agent's question goes to the platform
+            // (the chat panel on the diagram); without it the driver prompts.
+            askUser: host.askUser ? (question, sourceUri) => host.askUser!(question, sourceUri) : undefined
         });
         driver.registerCommands(context);
         host.useLiveOverlaySignatureSource({
