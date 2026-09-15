@@ -1300,7 +1300,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
           <span class="chat-run-name" title=${a.instance}>${a.instance}</span>
           <span class="chat-run-status">${a.status === 'running' ? 'streaming…' : 'done'}</span>
         </div>
-        ${a.reasoning ? this.thinkingTemplate(a.reasoning) : nothing}
+        ${a.reasoning ? this.thinkingTemplate(a.reasoning, { open: a.status === 'running' }) : nothing}
         ${a.toolCalls.length
           ? html`<div class="chat-tool">
               <span class="codicon codicon-tools"></span>

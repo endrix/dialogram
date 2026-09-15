@@ -1051,11 +1051,15 @@ export class RunAgentStreamActionHandler implements IActionHandler {
                     state.text += String(ev.delta ?? '');
                 }
                 break;
-            case 'agent.tool_call':
-                if (ev.name) {
-                    state.toolCalls.push(String(ev.name));
+            case 'agent.tool_call': {
+                // The runtime names the call (`name`); an ACP agent's call has
+                // a title ("Write choice-a.txt") where the name may be missing.
+                const label = ev.name ?? ev.title ?? ev.kind;
+                if (label) {
+                    state.toolCalls.push(String(label));
                 }
                 break;
+            }
             case 'agent.message.end':
                 state.status = 'done';
                 break;
