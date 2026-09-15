@@ -14,7 +14,8 @@
  */
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { ACPClientService, type TurnPart } from "../acp-client.js";
+import { ACPClientService, type AcpAgentSpec, type TurnPart } from "../acp-client.js";
+import type { DiagramRunAnswer, DiagramRunQuestion } from "../../api";
 import { SessionManager } from "../session-manager.js";
 import type {
   ChatMessageSink,
@@ -42,6 +43,11 @@ export interface ChatRuntimeConfig {
   key: string;
   /** Human-readable name, used for the output channel ("<name> Chat"). */
   displayName: string;
+  /**
+   * The ACP agent the chat spawns for a workspace; undefined (or no hook)
+   * means opencode. A rejection is the connect error the panel shows.
+   */
+  acpAgent?: (cwd: string) => Promise<AcpAgentSpec | undefined>;
   /** Settings section read for `opencodePath` and `enableMcpTools`. */
   settingsSection: string;
   /** Domain primer injected into each session's context. */
@@ -112,10 +118,18 @@ export class ChatRuntime {
   /** The watchdog dialog fires at most once per runtime — no per-diagram nagging. */
   private connectWarned = false;
 
+  /** A running agent's question, waiting for the panel's `chat.runAnswer`. */
+  private readonly pendingRunQuestions = new Map<
+    string,
+    { resolve: (answer: DiagramRunAnswer) => void; timer?: ReturnType<typeof setTimeout> }
+  >();
+
   constructor(
     context: vscode.ExtensionContext,
     private readonly config: ChatRuntimeConfig,
     private readonly postToWebview: ChatMessageSink,
+    /** Whether the sink can reach a panel for a URI; absent means "assume so". */
+    private readonly canReach?: (uri: string) => boolean,
   ) {
     this.context = context;
     this.registry = new SlashCommandRegistry(config.slashCommands ?? []);
@@ -226,7 +240,7 @@ export class ChatRuntime {
       );
       void vscode.window
         .showWarningMessage(
-          `${this.config.displayName} chat could not connect to opencode within 30 seconds. ` +
+          `${this.config.displayName} chat could not connect to its agent (${this.acp.agent}) within 30 seconds. ` +
             "The agent may not be installed or on PATH.",
           "Show Log",
           "Run Diagnostics",
@@ -251,8 +265,8 @@ export class ChatRuntime {
   private async ensureStarted(cwd: string): Promise<void> {
     if (this.started) return;
     if (!this.startPromise) {
-      this.startPromise = this.acp
-        .start(cwd)
+      this.startPromise = Promise.resolve(this.config.acpAgent?.(cwd))
+        .then((agent) => this.acp.start(cwd, agent))
         .then(async () => {
           // Stand up the HTTP tool server before any session is created,
           // so mcpServersProvider can attach it synchronously.
@@ -431,15 +445,15 @@ export class ChatRuntime {
       this.clearConnectWatchdog();
       this.postToWebview(uri, {
         type: "chat.connectionStatus",
-        data: { connected: true },
+        data: { connected: true, agent: this.acp.agent },
       });
       return true;
     } catch (err) {
-      const message = `Could not start opencode: ${String(err)}`;
+      const message = `Could not start the chat agent (${this.acp.agent}): ${String(err)}`;
       this.output.appendLine(message);
       this.postToWebview(uri, {
         type: "chat.connectionStatus",
-        data: { connected: false, reason: String(err) },
+        data: { connected: false, reason: String(err), agent: this.acp.agent },
       });
       this.postToWebview(uri, { type: "chat.error", data: { message } });
       return false;
@@ -476,7 +490,7 @@ export class ChatRuntime {
         // handshake must not wait out an opencode spawn.
         this.postToWebview(uri, {
           type: "chat.connectionStatus",
-          data: { connected: this.acp.isClientConnected() },
+          data: { connected: this.acp.isClientConnected(), agent: this.acp.agent },
         });
         this.armConnectWatchdog();
         this.sendSessions(uri, file);
@@ -770,9 +784,47 @@ export class ChatRuntime {
       case "chat.permissionResponse":
         this.acp.respondToPermission(data.requestId, data.optionId ?? null);
         return;
+      case "chat.runAnswer": {
+        const pending = this.pendingRunQuestions.get(String(data?.id));
+        if (!pending) return;
+        this.pendingRunQuestions.delete(String(data.id));
+        if (pending.timer) clearTimeout(pending.timer);
+        pending.resolve(
+          data?.declined
+            ? { declined: true, reason: typeof data.reason === "string" ? data.reason : "declined" }
+            : { answer: String(data?.answer ?? "") },
+        );
+        return;
+      }
       default:
         return;
     }
+  }
+
+  /**
+   * Put a running agent's question (the run driver's elicitation) to the chat
+   * panel open on `uri`, and wait for its `chat.runAnswer`. The chat is a
+   * viewer of the run here, not a session: nothing goes to the agent process.
+   * `undefined` when no panel can be reached, so the driver falls back to a
+   * VS Code prompt; declined on the question's own timeout.
+   */
+  askRunQuestion(uri: string, question: DiagramRunQuestion): Promise<DiagramRunAnswer | undefined> {
+    if (this.canReach && !this.canReach(uri)) {
+      this.logLine(`run question ${question.id} from ${question.agent}: no chat panel on ${uri}`);
+      return Promise.resolve(undefined);
+    }
+    const key = String(question.id);
+    return new Promise((resolve) => {
+      const timer = question.timeoutMs && question.timeoutMs > 0
+        ? setTimeout(() => {
+            if (this.pendingRunQuestions.delete(key)) {
+              resolve({ declined: true, reason: "timeout" });
+            }
+          }, question.timeoutMs)
+        : undefined;
+      this.pendingRunQuestions.set(key, { resolve, timer });
+      this.postToWebview(uri, { type: "chat.runQuestion", data: { ...question } });
+    });
   }
 
   /** The last model the user explicitly chose (migrated from the legacy key). */

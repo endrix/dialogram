@@ -1270,6 +1270,8 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                                     const useSkillHooks = argsMap.get('useSkillHooks')?.trim();
                                     const truncationStrategy = argsMap.get('truncationStrategy')?.trim();
                                     const transport = argsMap.get('transport')?.trim();
+                                    const connector = argsMap.get('connector')?.trim();
+                                    const mode = argsMap.get('mode')?.trim();
                                     const cliToolsMode = argsMap.get('cliToolsMode')?.trim();
                                     const reasoningEffort = argsMap.get('reasoningEffort')?.trim();
                                     const fireableWithoutInput = argsMap.get('fireableWithoutInput')?.trim();
@@ -1290,12 +1292,14 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                                     if (useSkillHooks) ordered.push(['useSkillHooks', useSkillHooks]);
                                     if (truncationStrategy) ordered.push(['truncationStrategy', truncationStrategy]);
                                     if (transport) ordered.push(['transport', transport]);
+                                    if (connector) ordered.push(['connector', connector]);
+                                    if (mode) ordered.push(['mode', mode]);
                                     if (cliToolsMode) ordered.push(['cliToolsMode', cliToolsMode]);
                                     if (reasoningEffort) ordered.push(['reasoningEffort', reasoningEffort]);
                                     if (fireableWithoutInput) ordered.push(['fireableWithoutInput', fireableWithoutInput]);
 
                                     for (const [k, v] of pairs) {
-                                        if (['prompt', 'claudeAgent', 'skill', 'model', 'provider', 'endpoint', 'timeoutMs', 'contextBudget', 'stateful', 'useClaudeAgent', 'useSkill', 'usePrompt', 'useSkillHooks', 'truncationStrategy', 'transport', 'cliToolsMode', 'reasoningEffort', 'fireableWithoutInput'].includes(k) || guiOnlyKeys.has(k)) continue;
+                                        if (['prompt', 'claudeAgent', 'skill', 'model', 'provider', 'endpoint', 'timeoutMs', 'contextBudget', 'stateful', 'useClaudeAgent', 'useSkill', 'usePrompt', 'useSkillHooks', 'truncationStrategy', 'transport', 'connector', 'mode', 'cliToolsMode', 'reasoningEffort', 'fireableWithoutInput'].includes(k) || guiOnlyKeys.has(k)) continue;
                                         ordered.push([k, v]);
                                     }
 
@@ -3343,7 +3347,8 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
 
                         // 7. Backend transport. Three distinct categories — a REST API call
                         // (http), a one-shot CLI subprocess (*-cli), or a persistent ACP protocol
-                        // session (opencode-acp) — so they're grouped, and the CLI-only tooling
+                        // session (acp, with a connector naming the agent; opencode-acp is the
+                        // OpenCode-only spelling) — so they're grouped, and the CLI-only tooling
                         // below dims when the HTTP API is selected (it doesn't apply there).
                         const backendGrid = document.createElement('div');
                         backendGrid.style.display = 'grid';
@@ -3364,7 +3369,54 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                             { value: 'max', label: 'max' }
                         ], '');
 
-                        // CLI Tools / Reasoning apply to the CLI + ACP transports, not the HTTP API.
+                        // The ACP connector: the agent the session speaks to. The list is what
+                        // the runtime discovered on this machine plus what the user declared
+                        // (clientBehavior.acpConnectors, resolved per document); a value the
+                        // list lacks is kept as its own option so a file written elsewhere
+                        // round-trips. Empty means the run's default (--acp-connector).
+                        const currentConnector = this.stripQuotesIfStringLiteral(argsMap.get('connector') ?? '').trim();
+                        const connectorOptions: Array<{ value: string; label: string; group?: string }> = [
+                            { value: '', label: "(run's default)" }
+                        ];
+                        for (const c of clientBehavior().acpConnectors ?? []) {
+                            const detail = c.available ? '' : ' (not on PATH)';
+                            connectorOptions.push({ value: c.name, label: `${c.name}${detail}`, group: c.source === 'discovered' ? 'Discovered' : `Declared (${c.source})` });
+                        }
+                        if (currentConnector && !connectorOptions.some((o) => o.value === currentConnector)) {
+                            connectorOptions.push({ value: currentConnector, label: `${currentConnector} (unknown)` });
+                        }
+                        const connectorWrap = createSelect('connector', 'Connector', connectorOptions, '');
+                        if (!clientBehavior().acpConnectors?.length) {
+                            connectorWrap.title = 'No ACP connectors reported by the runtime; the run\'s --acp-connector applies';
+                        }
+
+                        // The ACP session mode (e.g. Claude: default / acceptEdits / plan /
+                        // dontAsk / bypassPermissions): free text, since each agent has its own.
+                        const modeWrapper = document.createElement('div');
+                        modeWrapper.style.display = 'flex';
+                        modeWrapper.style.flexDirection = 'column';
+                        modeWrapper.style.gap = '4px';
+                        const modeLabel = document.createElement('div');
+                        modeLabel.textContent = 'Session mode';
+                        modeLabel.style.fontSize = '10px';
+                        modeLabel.style.opacity = '0.8';
+                        modeLabel.style.fontWeight = '500';
+                        const modeInput = document.createElement('input');
+                        modeInput.className = 'annotation-input';
+                        modeInput.placeholder = "agent's default";
+                        modeInput.style.width = '100%';
+                        modeInput.style.boxSizing = 'border-box';
+                        modeInput.value = this.stripQuotesIfStringLiteral(argsMap.get('mode') ?? '').trim();
+                        modeInput.addEventListener('input', () => {
+                            const val = modeInput.value.trim();
+                            if (val) argsMap.set('mode', this.toWfStringLiteral(val));
+                            else argsMap.delete('mode');
+                        });
+                        modeWrapper.appendChild(modeLabel);
+                        modeWrapper.appendChild(modeInput);
+
+                        // CLI Tools / Reasoning apply to the CLI + ACP transports, not the HTTP API;
+                        // Connector / Session mode apply to the ACP transports only.
                         const updateBackendRelevance = (transportVal: string): void => {
                             const isHttp = (transportVal || 'http') === 'http';
                             for (const w of [cliToolsWrap, reasoningWrap]) {
@@ -3373,10 +3425,18 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                                 const s = w.querySelector('select') as HTMLSelectElement | null;
                                 if (s) s.disabled = isHttp;
                             }
+                            const isAcp = transportVal === 'acp' || transportVal === 'opencode-acp';
+                            for (const w of [connectorWrap, modeWrapper]) {
+                                w.style.opacity = isAcp ? '1' : '0.45';
+                                const s = w.querySelector('select, input') as HTMLSelectElement | HTMLInputElement | null;
+                                if (s) s.disabled = !isAcp;
+                            }
+                            if (!isAcp) connectorWrap.title = 'Applies to the ACP transports';
                         };
 
                         const transportWrap = createSelect('transport', 'Transport', [
                             { value: 'http', label: 'http', group: 'REST API' },
+                            { value: 'acp', label: 'acp (connector)', group: 'ACP (protocol session)' },
                             { value: 'opencode-acp', label: 'opencode-acp', group: 'ACP (protocol session)' },
                             { value: 'opencode-cli', label: 'opencode-cli', group: 'CLI (subprocess)' },
                             { value: 'claude-cli', label: 'claude-cli', group: 'CLI (subprocess)' },
@@ -3385,6 +3445,8 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                         updateBackendRelevance(this.stripQuotesIfStringLiteral(argsMap.get('transport') ?? '').trim() || 'http');
 
                         backendGrid.appendChild(transportWrap);
+                        backendGrid.appendChild(connectorWrap);
+                        backendGrid.appendChild(modeWrapper);
                         backendGrid.appendChild(cliToolsWrap);
                         backendGrid.appendChild(reasoningWrap);
                         body.appendChild(backendGrid);
@@ -3559,7 +3621,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                                     'prompt', 'claudeAgent', 'skill', 'model', 'provider', 'endpoint',
                                     'timeoutMs', 'contextBudget', 'stateful',
                                     // Backend / runtime controls (dropdowns above)
-                                    'truncationStrategy', 'fireableWithoutInput', 'transport', 'cliToolsMode', 'reasoningEffort',
+                                    'truncationStrategy', 'fireableWithoutInput', 'transport', 'connector', 'mode', 'cliToolsMode', 'reasoningEffort',
                                     // Sub-block toggles
                                     'useClaudeAgent', 'useSkill', 'usePrompt', 'useSkillHooks',
                                     // MCP block

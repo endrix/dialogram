@@ -495,6 +495,131 @@
   color: var(--vscode-button-secondaryForeground, #fff);
 }
 
+/* ── A running agent's question (the run's human port) ── */
+.chat-question {
+  margin: 8px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--vscode-inputValidation-infoBorder, #007acc);
+  border-left-width: 3px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--vscode-inputValidation-infoBackground, #063b49) 60%, transparent);
+}
+.chat-question.resolved {
+  opacity: 0.65;
+  border-color: var(--chat-border);
+  background: transparent;
+}
+.chat-question-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.chat-question-text {
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  margin-bottom: 6px;
+}
+.chat-question-context {
+  font-size: 11.5px;
+  opacity: 0.8;
+  white-space: pre-wrap;
+  max-height: 160px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+.chat-question-answer {
+  font-size: 12px;
+  opacity: 0.85;
+}
+.chat-question-input {
+  flex: 1 1 160px;
+  min-width: 120px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--vscode-input-border, transparent);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font-size: 12px;
+}
+
+/* ── The run's agents, as the chat's read-only viewer ── */
+.chat-run {
+  margin: 8px 16px;
+  border: 1px solid var(--chat-border);
+  border-radius: 4px;
+}
+.chat-run-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+  border-bottom: 1px solid var(--chat-border);
+}
+.chat-run-live {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--vscode-testing-iconPassed, #3fb950);
+  color: var(--vscode-editor-background, #1e1e1e);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.chat-run-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+.chat-run-agent {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--chat-border);
+}
+.chat-run-agent:last-child {
+  border-bottom: none;
+}
+.chat-run-agent-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.chat-run-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--vscode-descriptionForeground, #8b949e);
+}
+.chat-run-dot.running {
+  background: var(--vscode-testing-iconPassed, #3fb950);
+}
+.chat-run-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-run-status {
+  margin-left: auto;
+  font-size: 11px;
+  opacity: 0.7;
+}
+.chat-run-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.4;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
 /* ── Composer ── */
 .chat-composer-wrap {
   position: relative;

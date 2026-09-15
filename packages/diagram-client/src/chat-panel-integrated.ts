@@ -8,6 +8,7 @@ import { repeat } from 'lit/directives/repeat.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { renderMarkdownSafe } from './markdown';
 import { shouldStick } from './chat-scroll';
+import { RunAgentStreamActionHandler, type LiveAgentState } from './editing-action-handlers';
 
 /**
  * Memoized markdown → HTML. The chat template runs `renderMarkdownSafe` for every
@@ -108,7 +109,20 @@ interface PermissionItem {
   resolved?: 'allowed' | 'denied';
 }
 
-type TimelineItem = MessageItem | ToolItem | PermissionItem;
+/** A running agent's question to the user (the run driver's human port),
+ *  answered here: the chat is the run's viewer, not its session. */
+interface QuestionItem {
+  kind: 'question';
+  id: number | string;
+  agent: string;
+  model?: string;
+  question: string;
+  context?: string;
+  choices: string[];
+  resolved?: { answer?: string; declined?: boolean };
+}
+
+type TimelineItem = MessageItem | ToolItem | PermissionItem | QuestionItem;
 
 interface SessionEntry {
   id: string;
@@ -165,6 +179,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   private reverted = false;
   private connection: 'unknown' | 'connected' | 'disconnected' = 'unknown';
   private connectionReason = '';
+  /** The ACP connector the chat is (or was) connected to, as the host names it. */
+  private connectionAgent = '';
   private inputValue = '';
 
   /** Live diagram selection (node ids), mirrored to the host for chat context. */
@@ -239,6 +255,11 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     this.createHost();
     this.createToggleButton();
     this.setupMessageListener();
+    // The run's agents stream into the same live state the "Running agents"
+    // bar renders; the panel shows them too, as a read-only viewer.
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('dialogram.runAgents.updated', () => this.update());
+    }
     this.update();
     this.requestState();
   }
@@ -459,7 +480,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         break;
 
       case 'chat.connectionStatus':
-        this.setConnectionStatus(!!data?.connected, data?.reason);
+        this.setConnectionStatus(!!data?.connected, data?.reason, data?.agent);
         break;
 
       case 'chat.commands':
@@ -470,6 +491,22 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         if (!data?.sessionId || data.sessionId === this.currentSessionId) {
           this.finishStreamingMessage();
           this.setStreaming(false);
+        }
+        break;
+
+      case 'chat.runQuestion':
+        if (data && (typeof data.id === 'number' || typeof data.id === 'string') && typeof data.question === 'string') {
+          this.timeline.push({
+            kind: 'question',
+            id: data.id,
+            agent: typeof data.agent === 'string' && data.agent ? data.agent : 'An agent',
+            model: typeof data.model === 'string' ? data.model : undefined,
+            question: data.question,
+            context: typeof data.context === 'string' && data.context ? data.context : undefined,
+            choices: Array.isArray(data.choices) ? data.choices.map(String) : [],
+          });
+          this.update();
+          this.autoShow('run-question');
         }
         break;
 
@@ -656,7 +693,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   // ── Connection status ──────────────────────────────────────────────────
 
-  private setConnectionStatus(connected: boolean, reason?: string): void {
+  private setConnectionStatus(connected: boolean, reason?: string, agent?: string): void {
     this.receivedStatus = true;
     if (this.statusHandshakeTimer !== null) {
       clearTimeout(this.statusHandshakeTimer);
@@ -664,6 +701,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     }
     this.connection = connected ? 'connected' : 'disconnected';
     this.connectionReason = reason ?? '';
+    if (typeof agent === 'string' && agent) this.connectionAgent = agent;
 
     // Surface a state change once in the timeline so the reason is visible.
     const stateKey = `${connected}:${reason ?? ''}`;
@@ -840,6 +878,19 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     if (item.resolved) return;
     this.sendToHost('chat.permissionResponse', { requestId: item.requestId, optionId });
     item.resolved = optionId ? 'allowed' : 'denied';
+    this.update();
+  }
+
+  /** Answer a running agent's question (or decline it, `answer` undefined). */
+  private answerRunQuestion(item: QuestionItem, answer: string | undefined): void {
+    if (item.resolved) return;
+    if (answer === undefined) {
+      this.sendToHost('chat.runAnswer', { id: item.id, declined: true, reason: 'declined in the chat' });
+      item.resolved = { declined: true };
+    } else {
+      this.sendToHost('chat.runAnswer', { id: item.id, answer });
+      item.resolved = { answer };
+    }
     this.update();
   }
 
@@ -1056,11 +1107,17 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     return (
       !this.currentSessionId &&
       this.timeline.length === 0 &&
+      !this.hasRunView &&
       !this.streamingText &&
       !this.streamingThinking &&
       !this.showTyping &&
       !this.isLoadingSession
     );
+  }
+
+  /** Whether a run's agents are (or were, this run) streaming: the viewer shows. */
+  private get hasRunView(): boolean {
+    return RunAgentStreamActionHandler.isRunActive() || RunAgentStreamActionHandler.getAgents().length > 0;
   }
 
   /** Placeholder copy for the empty state — varies on whether sessions exist. */
@@ -1122,9 +1179,17 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
               <span>${this.loadingLabel}</span>
             </div>`
           : nothing}
+        ${this.runViewerTemplate()}
         ${repeat(
           this.timeline,
-          (item, i) => (item.kind === 'tool' ? `t${item.id}` : item.kind === 'permission' ? `p${item.requestId}` : `m${i}`),
+          (item, i) =>
+            item.kind === 'tool'
+              ? `t${item.id}`
+              : item.kind === 'permission'
+                ? `p${item.requestId}`
+                : item.kind === 'question'
+                  ? `q${item.id}`
+                  : `m${i}`,
           (item) => this.itemTemplate(item)
         )}
         ${this.streamingText || this.streamingThinking ? this.streamingTemplate() : nothing}
@@ -1145,12 +1210,21 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   private topbarTemplate(): TemplateResult {
     const status = this.connection;
+    const agent = this.connectionAgent;
     const statusLabel =
-      status === 'connected' ? 'Connected' : status === 'disconnected' ? 'Disconnected' : 'Connecting…';
+      status === 'connected'
+        ? agent
+          ? `Connected · ${agent}`
+          : 'Connected'
+        : status === 'disconnected'
+          ? 'Disconnected'
+          : 'Connecting…';
     const statusTitle =
       status === 'disconnected' && this.connectionReason
-        ? `opencode: ${this.connectionReason}`
-        : 'opencode connection';
+        ? `${agent || 'agent'}: ${this.connectionReason}`
+        : status === 'connected' && agent
+          ? `Connected to the ${agent} ACP connector`
+          : 'agent connection';
     return html`
       <header class="chat-topbar">
         <span class="chat-title">
@@ -1195,7 +1269,89 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     `;
   }
 
+  /**
+   * The run's agents, read-only: the same live state (text, reasoning, tool
+   * calls) the "Running agents" bar folds from the run's event stream. Their
+   * questions arrive as `question` items below, answered from here.
+   */
+  private runViewerTemplate(): TemplateResult | typeof nothing {
+    const agents = RunAgentStreamActionHandler.getAgents();
+    const active = RunAgentStreamActionHandler.isRunActive();
+    if (!active && agents.length === 0) return nothing;
+    return html`
+      <div class="chat-run">
+        <div class="chat-run-head">
+          <span class="codicon codicon-broadcast"></span>
+          <span>Running agents</span>
+          ${active ? html`<span class="chat-run-live">live</span>` : nothing}
+        </div>
+        ${agents.length === 0
+          ? html`<div class="chat-run-empty">Waiting for agents…</div>`
+          : agents.map((a) => this.runAgentTemplate(a))}
+      </div>
+    `;
+  }
+
+  private runAgentTemplate(a: LiveAgentState): TemplateResult {
+    return html`
+      <div class="chat-run-agent ${a.status}">
+        <div class="chat-run-agent-head">
+          <span class="chat-run-dot ${a.status}"></span>
+          <span class="chat-run-name" title=${a.instance}>${a.instance}</span>
+          <span class="chat-run-status">${a.status === 'running' ? 'streaming…' : 'done'}</span>
+        </div>
+        ${a.reasoning ? this.thinkingTemplate(a.reasoning) : nothing}
+        ${a.toolCalls.length
+          ? html`<div class="chat-tool">
+              <span class="codicon codicon-tools"></span>
+              <span class="chat-tool-title">${a.toolCalls.join(', ')}</span>
+            </div>`
+          : nothing}
+        <div class="chat-run-text">${a.text || (a.status === 'running' ? '…' : '')}</div>
+      </div>
+    `;
+  }
+
   private itemTemplate(item: TimelineItem): TemplateResult {
+    if (item.kind === 'question') {
+      const who = item.model ? `${item.agent} (${item.model})` : item.agent;
+      const readInput = (e: Event): string =>
+        ((e.currentTarget as HTMLElement | null)?.closest('.chat-question')?.querySelector('input') as HTMLInputElement | null)
+          ?.value ?? '';
+      return html`
+        <div class="chat-question ${item.resolved ? 'resolved' : ''}">
+          <div class="chat-question-title">
+            <span class="codicon codicon-question"></span>
+            <span>${who} asks</span>
+          </div>
+          <div class="chat-question-text">${item.question}</div>
+          ${item.context ? html`<div class="chat-question-context">${item.context}</div>` : nothing}
+          ${item.resolved
+            ? html`<div class="chat-question-answer">
+                ${item.resolved.declined ? 'Declined' : `Answered: ${item.resolved.answer}`}
+              </div>`
+            : item.choices.length > 0
+              ? html`<div class="chat-permission-actions">
+                  ${item.choices.map(
+                    (c) => html`<button class="chat-permission-btn" @click=${() => this.answerRunQuestion(item, c)}>${c}</button>`
+                  )}
+                  <button class="chat-permission-btn deny" @click=${() => this.answerRunQuestion(item, undefined)}>Decline</button>
+                </div>`
+              : html`<div class="chat-permission-actions">
+                  <input
+                    class="chat-question-input"
+                    placeholder="Your answer"
+                    @keydown=${(e: KeyboardEvent) => {
+                      if (e.key === 'Enter') this.answerRunQuestion(item, (e.currentTarget as HTMLInputElement).value);
+                    }}
+                  />
+                  <button class="chat-permission-btn" @click=${(e: Event) => this.answerRunQuestion(item, readInput(e))}>Answer</button>
+                  <button class="chat-permission-btn deny" @click=${() => this.answerRunQuestion(item, undefined)}>Decline</button>
+                </div>`}
+        </div>
+      `;
+    }
+
     if (item.kind === 'tool') {
       const icon =
         item.status === 'completed'

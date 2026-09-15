@@ -29,6 +29,10 @@
  */
 import * as vscode from 'vscode';
 import * as cp from 'node:child_process';
+import { unlinkSync } from 'node:fs';
+import * as net from 'node:net';
+import * as os from 'node:os';
+import * as readline from 'node:readline';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { ExecutionOverlaySink } from '@dialogram/shared';
@@ -86,6 +90,17 @@ export interface CliRunDriverConfig {
     agentToolTimeoutMsSettingKey: string;
     agentToolRegistrySettingKey: string;
     agentMcpBridgeCmdSettingKey: string;
+    /** The ACP connector a run's agents spawn when they name none (the runtime's
+     *  `--acp-connector`) and what their permission
+     *  requests get when no user answers (`--agent-cli-acp-permissions`); both
+     *  optional, a shell without them passes nothing. */
+    acpConnectorSettingKey?: string;
+    acpPermissionsSettingKey?: string;
+    /** Host the run's questions on a Unix socket (`--elicit-socket`): an
+     *  agent's `ask_user` question or, over ACP, a permission request reaches
+     *  {@link CliRunDriverHost.askUser}, or a VS Code prompt when the host has
+     *  none. Default true; never on Windows, where the runtime's side is AF_UNIX. */
+    elicitSocket?: boolean;
     runWorkflowCommandId: string;
     stopWorkflowCommandId: string;
     /** The two non-run config command ids the driver registers to mutate/read
@@ -101,9 +116,36 @@ export interface CliRunDriverConfig {
     };
 }
 
+/** A question a running agent puts to the user (the runtime's elicitation channel,
+ *  one JSON object a line on the socket; `SocketElicitationHandler` in the runtime
+ *  documents the wire format). A permission request over ACP arrives as one:
+ *  the tool call's title as the question, the agent's options as the choices. */
+export interface RunQuestion {
+    id: number;
+    agent: string;
+    model?: string;
+    runId?: string;
+    question: string;
+    context?: string | null;
+    choices?: string[] | null;
+    timeoutMs?: number;
+}
+
+/** The user's answer: one of the choices (or free text), or a refusal. */
+export interface RunAnswer {
+    answer?: string;
+    declined?: boolean;
+    reason?: string;
+}
+
 export interface CliRunDriverHost {
     /** Neutral execution-overlay sink; the SSE flush publishes batches here. */
     overlay: ExecutionOverlaySink;
+    /** Answers a running agent's question for the diagram at `sourceUri`.
+     *  Optional, and may resolve `undefined` (no one there to ask, e.g. no chat
+     *  open on that diagram): then, as without it, the driver asks through a
+     *  VS Code quick pick (choices) or input box (free text). */
+    askUser?(question: RunQuestion, sourceUri: string): Promise<RunAnswer | undefined>;
     /** Core-owned diagram refresh (the driver must not hold the connector).
      *  Core builds the exact `RequestModelAction` for `kind` — request-id prefix
      *  `refresh-during-run-*` (full) / `refresh-agent-ctx-*` (agentContextOnly) —
@@ -418,6 +460,116 @@ export class CliRunDriver {
         return undefined;
     }
 
+    private elicitSourceUri: string | undefined;
+    private elicitServer: net.Server | undefined;
+    private elicitSocketPath: string | undefined;
+
+    /** Listen for the run's questions on a fresh Unix socket; returns its path
+     *  for `--elicit-socket`. One connection per run, one question at a time
+     *  (the runtime serializes them); each is answered on the same connection as one
+     *  JSON line, `{id, answer}` or `{id, declined, reason}`. */
+    private async startElicitSocket(sourceUri: string): Promise<string | undefined> {
+        this.stopElicitSocket();
+        this.elicitSourceUri = sourceUri;
+        // AF_UNIX paths are short (108 bytes on Linux): the tmp dir, not the run dir.
+        const socketPath = path.join(os.tmpdir(), `acp-elicit-${process.pid}-${Date.now().toString(36)}.sock`);
+        const server = net.createServer((conn) => {
+            conn.setEncoding('utf8');
+            const lines = readline.createInterface({ input: conn });
+            let chain: Promise<void> = Promise.resolve();
+            lines.on('line', (line) => {
+                chain = chain.then(async () => {
+                    let question: RunQuestion;
+                    try {
+                        question = JSON.parse(line) as RunQuestion;
+                    } catch {
+                        this.host.output.appendLine(`[wf-lang ask] not JSON: ${line.slice(0, 200)}`);
+                        return;
+                    }
+                    if ((question as { type?: string }).type !== 'question' && typeof question.question !== 'string') {
+                        return;
+                    }
+                    const answer = await this.answerQuestion(question);
+                    const reply = answer.declined || answer.answer === undefined
+                        ? { id: question.id, declined: true, reason: answer.reason ?? 'declined' }
+                        : { id: question.id, answer: answer.answer };
+                    if (!conn.destroyed) {
+                        conn.write(JSON.stringify(reply) + '\n');
+                    }
+                });
+            });
+        });
+        await new Promise<void>((resolve, reject) => {
+            server.once('error', reject);
+            server.listen(socketPath, () => {
+                server.off('error', reject);
+                resolve();
+            });
+        }).catch((err: unknown) => {
+            this.host.output.appendLine(`[wf-lang ask] no socket: ${err instanceof Error ? err.message : String(err)}`);
+            return undefined;
+        });
+        if (!server.listening) {
+            return undefined;
+        }
+        this.elicitServer = server;
+        this.elicitSocketPath = socketPath;
+        return socketPath;
+    }
+
+    private stopElicitSocket(): void {
+        const server = this.elicitServer;
+        const socketPath = this.elicitSocketPath;
+        this.elicitServer = undefined;
+        this.elicitSocketPath = undefined;
+        if (server) {
+            server.close();
+        }
+        if (socketPath) {
+            try {
+                unlinkSync(socketPath);
+            } catch {
+                // already gone
+            }
+        }
+    }
+
+    /** The host's `askUser`, else a VS Code prompt: a quick pick over the
+     *  choices, an input box otherwise; dismissing either declines. */
+    private async answerQuestion(question: RunQuestion): Promise<RunAnswer> {
+        const who = question.agent ? `Agent ${question.agent}` : 'An agent';
+        this.host.output.appendLine(`[wf-lang ask] ${who}: ${question.question}`
+            + (question.choices?.length ? ` [${question.choices.join(' | ')}]` : ''));
+        let answer: RunAnswer | undefined;
+        try {
+            if (this.host.askUser) {
+                answer = await this.host.askUser(question, this.elicitSourceUri ?? '');
+            }
+            if (answer) {
+                // answered by the host
+            } else if (question.choices && question.choices.length > 0) {
+                const picked = await vscode.window.showQuickPick(question.choices, {
+                    title: `${who} asks`,
+                    placeHolder: question.question,
+                    ignoreFocusOut: true
+                });
+                answer = picked === undefined ? { declined: true, reason: 'dismissed' } : { answer: picked };
+            } else {
+                const typed = await vscode.window.showInputBox({
+                    title: `${who} asks`,
+                    prompt: question.question,
+                    placeHolder: question.context ?? undefined,
+                    ignoreFocusOut: true
+                });
+                answer = typed === undefined ? { declined: true, reason: 'dismissed' } : { answer: typed };
+            }
+        } catch (err: unknown) {
+            answer = { declined: true, reason: err instanceof Error ? err.message : String(err) };
+        }
+        this.host.output.appendLine(`[wf-lang ask] -> ${answer.declined ? `declined (${answer.reason ?? ''})` : answer.answer}`);
+        return answer;
+    }
+
     private async resolveCliInvocation(forUri: vscode.Uri, isPython: boolean): Promise<{ cmd: string; argsPrefix: string[]; cwd: string } | undefined> {
         const startDir = await this.resolveRunRoot(forUri);
         if (!startDir) {
@@ -648,6 +800,29 @@ export class CliRunDriver {
             cliArgs.push('--agent-mcp-bridge-cmd', agentMcpBridgeCmd);
         }
 
+        // The ACP connector and the permission policy, from the shell's settings.
+        if (this.config.acpConnectorSettingKey) {
+            const connector = (wfConfig.get<string>(this.config.acpConnectorSettingKey, '') ?? '').trim();
+            if (connector) {
+                cliArgs.push('--acp-connector', connector);
+            }
+        }
+        if (this.config.acpPermissionsSettingKey) {
+            const permissions = (wfConfig.get<string>(this.config.acpPermissionsSettingKey, '') ?? '').trim();
+            if (permissions) {
+                cliArgs.push('--agent-cli-acp-permissions', permissions);
+            }
+        }
+
+        // The human port: the run's questions come in on a Unix socket this
+        // driver listens on, and go to the host's `askUser` or a VS Code prompt.
+        const elicitSocketPath = this.config.elicitSocket !== false && process.platform !== 'win32'
+            ? await this.startElicitSocket(sourceUri.toString())
+            : undefined;
+        if (elicitSocketPath) {
+            cliArgs.push('--elicit-socket', elicitSocketPath);
+        }
+
         const title = workflowName ? `Running workflow ${workflowName}` : 'Running workflow';
         const liveGlowEnabled = vscode.workspace
             .getConfiguration(this.config.settingsNamespace, sourceUri)
@@ -771,6 +946,7 @@ export class CliRunDriver {
             flushStreamEvents();
             streamClient?.stop();
             streamClient = undefined;
+            this.stopElicitSocket();
         };
 
         const exitCode = await vscode.window.withProgress(

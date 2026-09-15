@@ -52,7 +52,9 @@ export {
     CliRunDriver,
     type CliRunDriverConfig,
     type CliRunDriverHost,
-    type AgentToolEntitySettings
+    type AgentToolEntitySettings,
+    type RunQuestion,
+    type RunAnswer
 } from './cli-run-driver.js';
 
 export {
