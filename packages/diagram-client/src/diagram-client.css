@@ -2737,6 +2737,35 @@ details[open] > summary .agent-chat-expand-arrow {
 /* A value too long or too structured for one line: a diff, or any string
    with newlines in it. Kept out of Markdown, which would read a diff's
    removed lines as a bullet list. */
+/* An agent's outputs, formatted, inside the live run viewer. */
+.chat-run-outputs h3 {
+    margin: 8px 0 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--vscode-descriptionForeground, #888);
+    text-transform: none;
+}
+.chat-run-outputs ul {
+    margin: 0 0 6px;
+    padding-left: 18px;
+}
+.chat-run-outputs li {
+    margin: 2px 0;
+}
+.chat-run-outputs pre {
+    margin: 4px 0;
+    padding: 6px 8px;
+    max-height: 22em;
+    overflow: auto;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 11.5px;
+    line-height: 1.45;
+    white-space: pre;
+    background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.1));
+    border: 1px solid var(--vscode-widget-border, rgba(127, 127, 127, 0.25));
+    border-radius: 3px;
+}
+
 .agent-json-pre {
     margin: 4px 0 0;
     padding: 6px 8px;

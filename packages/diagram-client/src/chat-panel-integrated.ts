@@ -1418,8 +1418,15 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         return html`<div class="chat-run-turn"><span>turn ${p.index}</span></div>`;
       case 'reasoning':
         return this.thinkingTemplate(p.text, { open });
-      case 'text':
-        return html`<div class="chat-run-text">${p.text}</div>`;
+      case 'text': {
+        // An agent's last text is usually its outputs object, whose port
+        // values are themselves JSON. Format that; leave ordinary text as
+        // typed, which is what the viewer has always shown.
+        const outputs = formatAgentOutputs(p.text);
+        return outputs
+          ? html`<div class="chat-run-text chat-run-outputs">${unsafeHTML(renderMarkdownMemo(outputs))}</div>`
+          : html`<div class="chat-run-text">${p.text}</div>`;
+      }
       case 'tool': {
         const icon = p.status === 'completed' ? 'codicon-check' : p.status === 'failed' ? 'codicon-warning' : 'codicon-tools';
         const statusText = p.status && p.status !== 'completed' ? ` — ${p.status.replace('_', ' ')}` : '';
