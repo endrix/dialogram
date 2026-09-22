@@ -7,6 +7,7 @@ import { html, render, nothing, TemplateResult } from 'lit';
 import { repeat } from 'lit/directives/repeat.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { renderMarkdownSafe } from './markdown';
+import { formatAgentOutputs } from './agent-outputs';
 import { shouldStick } from './chat-scroll';
 import {
   RunAgentStreamActionHandler,
@@ -23,6 +24,16 @@ import {
  */
 const markdownCache = new Map<string, string>();
 const MARKDOWN_CACHE_MAX = 500;
+/**
+ * An agent's answer arrives as one JSON object whose port values are
+ * themselves JSON, so a diff reaches the chat escaped twice and renders as a
+ * paragraph of `\n`. Reformat that as Markdown before parsing it; anything
+ * else is returned unchanged.
+ */
+function readable(content: string): string {
+  return formatAgentOutputs(content) ?? content;
+}
+
 function renderMarkdownMemo(md: string): string {
   const cached = markdownCache.get(md);
   if (cached !== undefined) {
@@ -1572,7 +1583,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         </div>
         ${!isUser && item.thinking ? this.thinkingTemplate(item.thinking) : nothing}
         <div class="chat-row-body">
-          ${isUser ? item.content : unsafeHTML(renderMarkdownMemo(item.content))}
+          ${isUser ? item.content : unsafeHTML(renderMarkdownMemo(readable(item.content)))}
         </div>
       </div>
     `;

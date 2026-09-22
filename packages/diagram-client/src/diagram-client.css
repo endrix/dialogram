@@ -2734,6 +2734,28 @@ details[open] > summary .agent-chat-expand-arrow {
     font-style: italic;
 }
 
+/* A value too long or too structured for one line: a diff, or any string
+   with newlines in it. Kept out of Markdown, which would read a diff's
+   removed lines as a bullet list. */
+.agent-json-pre {
+    margin: 4px 0 0;
+    padding: 6px 8px;
+    max-height: 22em;
+    overflow: auto;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 11.5px;
+    line-height: 1.45;
+    white-space: pre;
+    tab-size: 4;
+    color: var(--vscode-editor-foreground, #ccc);
+    background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.1));
+    border: 1px solid var(--vscode-widget-border, rgba(127, 127, 127, 0.25));
+    border-radius: 3px;
+}
+.agent-json-diff {
+    color: var(--vscode-editor-foreground, #ccc);
+}
+
 /* ── Markdown rendering inside agent chat ──────────────────────────── */
 
 .agent-md-content {
