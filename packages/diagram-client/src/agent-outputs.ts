@@ -1,8 +1,8 @@
 /**
  * An agent's answer, formatted for reading.
  *
- * A wfpy agent finishes a turn by writing its ports, and the runtime reports
- * that as one JSON object, `{"outputs": {"<port>": "<value>"}}`. A port's
+ * An agent finishes a turn by writing its ports, and the runtime reports that
+ * as one JSON object, `{"outputs": {"<port>": "<value>"}}`. A port's
  * value is itself usually JSON, so the text that reaches the chat is escaped
  * twice: a unified diff arrives as one line of `\n` and `\"` and renders as a
  * single unreadable paragraph.
