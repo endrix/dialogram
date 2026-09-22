@@ -15,12 +15,12 @@
  */
 
 /** A value that reads better as a block than as a line. */
-function isBlock(value: string): boolean {
+export function isBlock(value: string): boolean {
   return value.includes('\n') || value.length > 160;
 }
 
 /** Whether a string is a unified diff, i.e. worth syntax colouring as one. */
-function isDiff(value: string): boolean {
+export function looksLikeDiff(value: string): boolean {
   return /^---\s+\S/m.test(value) && /^\+\+\+\s+\S/m.test(value) || /^@@ -\d/m.test(value);
 }
 
@@ -42,7 +42,7 @@ function field(key: string, value: unknown): string {
   if (typeof value === 'boolean' || typeof value === 'number') return `- **${key}** \`${value}\``;
   if (typeof value === 'string') {
     if (!value) return `- **${key}** \`""\``;
-    if (isBlock(value)) return `**${key}**\n\n${block(value, isDiff(value) ? 'diff' : '')}`;
+    if (isBlock(value)) return `**${key}**\n\n${block(value, looksLikeDiff(value) ? 'diff' : '')}`;
     // Prose keeps its punctuation; anything else reads as a value.
     const prose = /\s/.test(value) && /[.,;]/.test(value);
     return prose ? `- **${key}** ${value}` : `- **${key}** \`${value}\``;
@@ -51,18 +51,23 @@ function field(key: string, value: unknown): string {
 }
 
 /** One port: its name, then its fields, scalars before blocks. */
-function port(name: string, value: unknown): string {
-  let inner: unknown = value;
-  if (typeof value === 'string') {
-    const text = value.trim();
-    if (text.startsWith('{') || text.startsWith('[')) {
-      try {
-        inner = JSON.parse(text);
-      } catch {
-        inner = value;
-      }
-    }
+/**
+ * A string that is itself JSON, parsed; otherwise the string. A port's value
+ * arrives escaped inside the outputs object, so this is the second unwrap.
+ */
+export function parseEmbedded(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const text = value.trim();
+  if (!text.startsWith('{') && !text.startsWith('[')) return value;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return value;
   }
+}
+
+function port(name: string, value: unknown): string {
+  const inner: unknown = parseEmbedded(value);
   if (inner === null || typeof inner !== 'object' || Array.isArray(inner)) {
     return `### ${name}\n\n${field('value', inner).replace(/^- \*\*value\*\* /, '')}`;
   }

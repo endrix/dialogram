@@ -1,4 +1,5 @@
 import { inject, injectable } from 'inversify';
+import { looksLikeDiff, isBlock, parseEmbedded } from './agent-outputs';
 import { ISelectionListener, IActionDispatcher, TYPES } from '@eclipse-glsp/client';
 import {
     renderMarkdownSafe,
@@ -738,6 +739,22 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             return;
         }
         if (typeof value === 'string') {
+            // A port's value is itself JSON: unwrap it and show its fields
+            // rather than one escaped line.
+            const embedded = parseEmbedded(value);
+            if (embedded !== value) {
+                this.renderJsonTree(container, embedded, depth);
+                return;
+            }
+            // A diff must not go through Markdown: its removed lines begin
+            // with `-` and would render as a bullet list.
+            if (looksLikeDiff(value) || isBlock(value)) {
+                const pre = document.createElement('pre');
+                pre.className = looksLikeDiff(value) ? 'agent-json-pre agent-json-diff' : 'agent-json-pre';
+                pre.textContent = value.replace(/\s+$/, '');
+                container.appendChild(pre);
+                return;
+            }
             // Detect markdown content and render as formatted HTML.
             if (this.looksLikeMarkdown(value)) {
                 const mdDiv = document.createElement('div');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatAgentOutputs } from '../src/agent-outputs';
+import { formatAgentOutputs, looksLikeDiff, isBlock, parseEmbedded } from '../src/agent-outputs';
 
 /** The shape the runtime reports when an agent writes its ports. */
 const planner = JSON.stringify({
@@ -52,5 +52,28 @@ describe('formatAgentOutputs', () => {
         const ticks = JSON.stringify({ outputs: { Note: JSON.stringify({ body: 'a\n```\nfence\n```\ninside' }) } });
         const out = formatAgentOutputs(ticks)!;
         expect(out).toContain('````');
+    });
+});
+
+describe('the helpers the property panel shares', () => {
+    it('knows a diff from prose, and from a bullet list', () => {
+        expect(looksLikeDiff('--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-a\n+b')).toBe(true);
+        expect(looksLikeDiff('@@ -704,7 +704,7 @@\n-old\n+new')).toBe(true);
+        expect(looksLikeDiff('- one\n- two\n- three')).toBe(false);
+        expect(looksLikeDiff('a short reason.')).toBe(false);
+    });
+
+    it('unwraps a port value that is itself JSON, and leaves other strings alone', () => {
+        expect(parseEmbedded('{"a": 1}')).toEqual({ a: 1 });
+        expect(parseEmbedded('[1, 2]')).toEqual([1, 2]);
+        expect(parseEmbedded('not json')).toBe('not json');
+        expect(parseEmbedded('{ broken')).toBe('{ broken');
+        expect(parseEmbedded(7)).toBe(7);
+    });
+
+    it('calls a value a block when it has newlines or runs long', () => {
+        expect(isBlock('one\ntwo')).toBe(true);
+        expect(isBlock('x'.repeat(200))).toBe(true);
+        expect(isBlock('ftd=auto')).toBe(false);
     });
 });
