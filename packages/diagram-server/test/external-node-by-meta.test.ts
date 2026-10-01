@@ -194,3 +194,34 @@ describe('the colour family a source node lands in', () => {
         expect(node.cssClasses).not.toContain('external-actor-default');
     });
 });
+
+/**
+ * A subgraph in a product's family.
+ *
+ * A network is the platform's own concept, but a product can still mark one
+ * as something it draws differently — a subgraph answered from a past run,
+ * say. Without the class its stylesheet has nothing to select it by.
+ */
+describe('the colour family of a network node', () => {
+    const networkWith = (meta?: Record<string, unknown>): any =>
+        new GraphGModelSource({ nodeFamilies: [{ annotation: 'instance', id: 'recorded', color: '#c9a227' }] } as any)
+            .transform(docWith('workflow', meta)).graph.children
+            ?.find((child: any) => child.id === 'adder');
+
+    it('is on the node and its header when the product declared it', () => {
+        const node = networkWith({ definitionAnnotations: [{ name: 'instance', arguments: [] }] });
+        const header = (node.children ?? []).find((child: any) =>
+            (child.cssClasses ?? []).includes('header-compartment'));
+
+        expect(node.cssClasses).toContain('network-node');
+        expect(node.cssClasses).toContain('external-actor-recorded');
+        expect(header.cssClasses).toContain('external-actor-recorded');
+    });
+
+    it('leaves a plain network the platform’s own', () => {
+        const node = networkWith();
+
+        expect(node.cssClasses).toContain('network-node');
+        expect(node.cssClasses.some((c: string) => c.startsWith('external-actor-'))).toBe(false);
+    });
+});

@@ -95,6 +95,14 @@ describe('the CSS a declaration generates', () => {
         expect(without).not.toContain('node-icon');
     });
 
+    /** A subgraph in the family wears the accent too: header and border. */
+    it('colours a network node in the family', () => {
+        const css = nodeFamilyCss([{ annotation: 'instance', id: 'recorded', color: '#c9a227' }]);
+
+        expect(css).toContain('.network-node.external-actor-recorded .header-compartment.header-workflow');
+        expect(css).toContain('.network-node.external-actor-recorded .node-body.network-border');
+    });
+
     it('keys on the id when one annotation splits', () => {
         const css = nodeFamilyCss([FAMILIES[1]]);
 

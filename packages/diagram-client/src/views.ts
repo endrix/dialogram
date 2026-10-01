@@ -882,6 +882,9 @@ export class NetworkNodeView extends ShapeView {
         const isErrored = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_ERRORED]) || cssClasses.includes('cal-node-error') || cssClasses.includes('cal-node-graph-error');
         const isWarned = !isErrored && cssClasses.includes('cal-node-graph-warning');
 
+        // A subgraph in a product's family wears its mark, as an actor does.
+        const defAnnotations = ((node as any).args?.[WorkflowDiagramMetadata.ENTITY_DEFINITION_ANNOTATIONS] as Array<{ name?: string; arguments?: Array<{ name?: string; value?: string }> }> | undefined) ?? [];
+        const family = resolveNodeFamily(defAnnotations, clientBehavior().nodeFamilies ?? []);
         const { height: bodyHeight, footerLabel } = getNodeBody(node as any, { width, height });
         const footerLabelNode = footerLabel
             ? svg('text', {
@@ -919,6 +922,8 @@ export class NetworkNodeView extends ShapeView {
             }),
             // Above the body so the travelling head is not painted over by it.
             ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
+            ...(family?.icon ? [renderNodeCenterIcon(family, width, bodyHeight)] : []),
+            ...(family?.image ? renderNodeCenterImage(family, width, bodyHeight) : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
         );

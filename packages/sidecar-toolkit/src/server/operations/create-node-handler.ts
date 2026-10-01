@@ -13,7 +13,9 @@ import { AgentCreateNodeOutcomeSink } from '@dialogram/diagram-server/server/age
 import { SidecarInvoker, SidecarInvocationResult } from './sidecar-invoker';
 import type {
     CreateNodeVariant,
+    CreateNodeVariantCandidate,
     CreateNodeVariantFollowUp,
+    CreateNodeVariantPick,
     CreateNodeVariantTarget
 } from '../sidecar-runtime-config';
 
@@ -326,6 +328,17 @@ export class CreateNodeOperationHandler extends OperationHandler {
 
                 let typeName = (operation.args?.['type'] as string | undefined)?.trim();
                 let collectedInstanceParams: Record<string, string> | undefined;
+                // What a picked candidate still needs `createNode` to know.
+                let pickedNodeArgs: Record<string, string> | undefined;
+                if (variant?.pick) {
+                    const picked = await this.pickCandidate(sourceUri, variant, variant.pick, headless, operation, typeName);
+                    if (!picked) {
+                        return undefined;
+                    }
+                    typeName = picked.type;
+                    collectedInstanceParams = { [variant.pick.argName]: picked.value };
+                    pickedNodeArgs = picked.nodeArgs;
+                }
                 // A variant entry is identified by its arg, not its element
                 // type — it borrows a type another kind already uses, and is
                 // excluded from that kind above. Leaving it out here dropped it
@@ -498,6 +511,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
                 const result = await this.sendSidecarOpDetailed(sourceUri, {
                     op: this.sidecar.sidecarOp('createNode'),
                     args: {
+                        ...(pickedNodeArgs ?? {}),
                         workflow: workflowName,
                         type: finalTypeName,
                         name: entityName,
@@ -843,6 +857,70 @@ export class CreateNodeOperationHandler extends OperationHandler {
         }
 
         return this.splitByTarget(variant, collected);
+    }
+
+    /**
+     * The candidate a picked variant's node is made from.
+     *
+     * Interactively, the sidecar's candidates are offered as they come. An
+     * agent names one instead — its type and its value — and is told the
+     * candidates when it does not, as it is told the types for a plain node.
+     */
+    private async pickCandidate(
+        sourceUri: string,
+        variant: CreateNodeVariant,
+        pick: CreateNodeVariantPick,
+        headless: boolean,
+        operation: { args?: Record<string, unknown> },
+        givenType: string | undefined
+    ): Promise<CreateNodeVariantCandidate | undefined> {
+        const result = await this.sendSidecarListDetailed(sourceUri, {
+            op: this.sidecar.sidecarOp(pick.op),
+            args: {}
+        });
+        const raw = result.ok ? result.response?.diagnostic?.['candidates'] : undefined;
+        const candidates: CreateNodeVariantCandidate[] = Array.isArray(raw)
+            ? raw.filter((c: any): c is CreateNodeVariantCandidate =>
+                c && typeof c.label === 'string' && typeof c.type === 'string' && typeof c.value === 'string')
+            : [];
+
+        if (headless) {
+            const params = operation.args?.['params'];
+            const givenValue = String(
+                operation.args?.[pick.argName]
+                ?? (params && typeof params === 'object' ? (params as Record<string, unknown>)[pick.argName] : '')
+                ?? ''
+            ).trim();
+            if (!givenType || !givenValue) {
+                const offered = candidates.map(c => `${c.type} (${pick.argName}=${c.value})`).join(', ');
+                this.failAgent(this.agentAmbiguityMessage(
+                    `create a ${this.typeLabelForPicker(variant.kind)}`,
+                    `pass args.type and args.${pick.argName}`
+                ) + (offered ? ` Available: ${offered}.` : ''));
+                return undefined;
+            }
+            const known = candidates.find(c => c.type === givenType && c.value === givenValue);
+            return known ?? { label: givenType, type: givenType, value: givenValue };
+        }
+
+        if (!result.ok) {
+            this.showSidecarFailure(`list ${this.typeLabelForPicker(variant.kind)} candidates`, result);
+            return undefined;
+        }
+        if (candidates.length === 0) {
+            void vscode.window.showInformationMessage(pick.emptyMessage);
+            return undefined;
+        }
+        const chosen = await vscode.window.showQuickPick(
+            candidates.map(candidate => ({
+                label: candidate.label,
+                description: candidate.description,
+                detail: candidate.detail,
+                candidate
+            })),
+            { placeHolder: pick.prompt, matchOnDescription: true, matchOnDetail: true }
+        );
+        return chosen?.candidate;
     }
 
     /**
