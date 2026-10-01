@@ -109,6 +109,18 @@ export function nodeFamilyCss(families: readonly NodeFamilySpec[] | undefined): 
         rules.push(`.external-actor-node.external-actor-${name} .node-header.external-actor-header {
     fill: ${family.color};
 }`);
+        // The same accent on a subgraph in the family: its header, and the
+        // border a network draws in the platform's colour otherwise.
+        rules.push(`.network-node.external-actor-${name} .header-compartment.header-workflow .header-background {
+    fill: ${family.color};
+    fill-opacity: 0.26;
+}`);
+        rules.push(`.network-node.external-actor-${name} .node-header.network-header {
+    fill: ${family.color};
+}`);
+        rules.push(`.network-node.external-actor-${name} .node-body.network-border {
+    stroke: ${family.color};
+}`);
         if (family.icon) {
             rules.push(`.external-actor-${name} .node-icon-${name} {
     fill: ${family.color};

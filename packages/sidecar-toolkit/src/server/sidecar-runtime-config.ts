@@ -105,6 +105,44 @@ export interface CreateNodeVariantChoice {
 }
 
 /**
+ * One thing the sidecar found that a node can be made from.
+ *
+ * The sidecar answers the variant's `pick.op` with these in
+ * `diagnostic.candidates`. Choosing one decides the node's type and the value
+ * of its `pick.argName` parameter at once, so the type list is never shown.
+ */
+export interface CreateNodeVariantCandidate {
+    label: string;
+    description?: string;
+    detail?: string;
+    /** The type the node is made of. */
+    type: string;
+    /** The node's `pick.argName` constructor parameter. */
+    value: string;
+    /** Extra arguments `createNode` needs for it — an import, say. */
+    nodeArgs?: Record<string, string>;
+}
+
+/**
+ * Make the node from something the sidecar finds rather than from a type.
+ *
+ * For a node that stands for a thing that already exists in the project — a
+ * file a past run left, say — the type list is the wrong question: the thing
+ * decides the type. Only the product knows how to find such things, so the
+ * sidecar is asked, and the toolkit only shows what comes back.
+ */
+export interface CreateNodeVariantPick {
+    /** The sidecar query (bare op name) whose `diagnostic.candidates` are offered. */
+    op: string;
+    /** Constructor parameter the chosen candidate's `value` fills in. */
+    argName: string;
+    /** Shown above the list. */
+    prompt: string;
+    /** Shown instead of an empty list. */
+    emptyMessage: string;
+}
+
+/**
  * A palette entry whose shape is chosen in the wizard rather than by its
  * element type.
  *
@@ -125,6 +163,11 @@ export interface CreateNodeVariant {
     /** The question that picks between the choices. */
     prompt: string;
     choices: CreateNodeVariantChoice[];
+    /**
+     * Pick the node from what the sidecar finds, in place of the type list
+     * and the choices (leave `choices` empty).
+     */
+    pick?: CreateNodeVariantPick;
     /** One last optional free-text value, asked after the choice is resolved. */
     extra?: {
         argName: string;

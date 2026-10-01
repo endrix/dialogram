@@ -1100,6 +1100,15 @@ export class GraphGModelSource {
         }
         if (this.isNetworkInstanceNode(node)) {
             classes.push(WorkflowDiagramCss.NODE_NETWORK, 'network-node');
+            // A subgraph can be in a product's family too — one the product
+            // draws differently from the rest, say — and without the class its
+            // stylesheet has nothing to select it by. No default class here:
+            // an unannotated network is the platform's own, already styled.
+            const defAnnots = node.meta?.['definitionAnnotations'] as Array<{ name?: string }> | undefined;
+            const family = this.nodeFamilyOf(Array.isArray(defAnnots) ? defAnnots : undefined);
+            if (family) {
+                classes.push(`external-actor-${family}`);
+            }
         } else if (this.isExternal(node)) {
             classes.push(WorkflowDiagramCss.NODE_EXTERNAL_ACTOR, 'external-actor-node');
             const defAnnots = node.meta?.['definitionAnnotations'] as Array<{ name?: string }> | undefined;
