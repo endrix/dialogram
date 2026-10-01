@@ -110,6 +110,18 @@ describe('createSidecarDiagramProfile', () => {
         expect(p.sourceExtensions).toEqual([baseInput().sourceExtension]);
     });
 
+    it('turns on resuming at a step exactly when the product says how', () => {
+        const without = createSidecarDiagramProfile(baseInput({ clientBehavior: { noneSentinel: 'x' } }));
+        expect((without.clientBehavior as any)?.resumeAtStep).toBeUndefined();
+
+        const withResume = createSidecarDiagramProfile(baseInput({
+            clientBehavior: { noneSentinel: 'x' },
+            cliResumeArgs: (runDir: string, step: number) => ['--resume-from', runDir, '--at-step', String(step)]
+        }));
+        // Derived, and the product's own flags kept beside it.
+        expect(withResume.clientBehavior).toMatchObject({ noneSentinel: 'x', resumeAtStep: true });
+    });
+
     it('leaves the creation palette alone unless the product suppresses it', () => {
         // Default `true` by omission, so the assembler cannot silently empty the
         // palette of a product that never mentioned it.

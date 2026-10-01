@@ -2,7 +2,7 @@ import { TYPES, type IActionDispatcher, EditorContextService } from '@eclipse-gl
 import { NavigateToExternalTargetAction, RequestModelAction } from '@eclipse-glsp/sprotty';
 import { inject, injectable } from 'inversify';
 import { VscodeUi } from './vscode-ui';
-import { clientBehavior, queueTraceVisibleStorageKey } from './profile';
+import { clientBehavior, commandId, queueTraceVisibleStorageKey } from './profile';
 import {
     computeGraphLoadIssueOverlayState,
     type GraphLoadError,
@@ -43,12 +43,17 @@ type RootArgs = {
     'wf:queueTraceStep'?: number;
     'wf:queueTraceStepCount'?: number;
     'wf:queueTraceActor'?: string;
+    'wf:queueTraceResumable'?: boolean;
+    'wf:viewerOverlayOutDir'?: string;
 };
 
 type QueueTraceMeta = {
     step: number;
     stepCount: number;
     actor?: string;
+    /** The run the trace is of, and whether it can be resumed at a step. */
+    runDir?: string;
+    resumable?: boolean;
 };
 
 type RunOption = {
@@ -151,6 +156,25 @@ function navigationEntityLabel(plural = false): string {
         return plural ? 'Networks' : 'Network';
     }
     return plural ? 'Workflows' : 'Workflow';
+}
+
+/**
+ * What the stepper's resume button runs, or nothing when it has none.
+ *
+ * Shown only when the product can resume at a step and the run's trace can be
+ * resumed. The step is the one shown: the trace's step numbers are the index
+ * plus one, which is the number a resume at a step takes.
+ */
+export function stepperResumeRequest(
+    queueTrace: { step: number; stepCount: number; runDir?: string; resumable?: boolean } | undefined,
+    productCanResume: boolean,
+    sourceUri: string,
+    workflowName: string
+): { sourceUri: string; workflowName: string; resumeFrom: string; atStep: number } | undefined {
+    if (!productCanResume || !queueTrace?.resumable || !queueTrace.runDir || queueTrace.stepCount <= 0) {
+        return undefined;
+    }
+    return { sourceUri, workflowName, resumeFrom: queueTrace.runDir, atStep: queueTrace.step + 1 };
 }
 
 @injectable()
@@ -260,8 +284,12 @@ export class WorkflowNavigationUi {
         const actor = typeof args['wf:queueTraceActor'] === 'string' && args['wf:queueTraceActor'].trim() !== ''
             ? args['wf:queueTraceActor'].trim()
             : undefined;
+        const runDir = typeof args['wf:viewerOverlayOutDir'] === 'string' && args['wf:viewerOverlayOutDir'].trim() !== ''
+            ? args['wf:viewerOverlayOutDir'].trim()
+            : undefined;
+        const resumable = args['wf:queueTraceResumable'] === true;
         if (isQueueTraceVisible() && stepCount > 0) {
-            this.queueTraceBySourceUri.set(sourceUri, { step, stepCount, actor });
+            this.queueTraceBySourceUri.set(sourceUri, { step, stepCount, actor, runDir, resumable });
         } else {
             this.queueTraceBySourceUri.delete(sourceUri);
         }
@@ -274,7 +302,9 @@ export class WorkflowNavigationUi {
                 runtimeProfile: typeof args['wf:runtimeProfile'] === 'string' ? args['wf:runtimeProfile'] : undefined,
                 namespaceName: args['wf:namespace'],
                 selectedRunId,
-                queueTraceVisible: isQueueTraceVisible()
+                queueTraceVisible: isQueueTraceVisible(),
+                // The run a "Rerun from here" resumes: the one the overlay shows.
+                runDir: resumable ? runDir : undefined
             };
         } catch {
             // ignore
@@ -864,6 +894,23 @@ export class WorkflowNavigationUi {
         container.appendChild(prev);
         container.appendChild(status);
         container.appendChild(next);
+
+        const resumeRequest = stepperResumeRequest(
+            queueTrace,
+            clientBehavior().resumeAtStep === true,
+            sourceUri,
+            meta.selected
+        );
+        if (resumeRequest) {
+            const resume = document.createElement('button');
+            resume.className = 'workflow-wf-nav-button workflow-wf-nav-resume';
+            resume.textContent = '⟲';
+            resume.title = `Resume the run from step ${resumeRequest.atStep}: the firings up to it are replayed, the rest run`;
+            resume.addEventListener('click', () => {
+                void VscodeUi.instance.executeCommand(commandId('runWorkflow'), [resumeRequest]);
+            });
+            container.appendChild(resume);
+        }
     }
 
     private parseRunOptions(raw: unknown): RunOption[] {

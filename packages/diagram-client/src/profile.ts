@@ -27,6 +27,8 @@ type DiagramClientBehavior = {
     /** The ACP connectors the runtime discovered or the user declared, for an
      *  agent's `connector` (extension-core `AcpConnectorInfo`). */
     acpConnectors?: AcpConnectorInfo[];
+    /** Whether a run can be resumed at a step of its queue trace. */
+    resumeAtStep?: boolean;
 };
 
 export type AcpConnectorInfo = {

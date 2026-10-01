@@ -30,6 +30,11 @@
         "op": "actionHandler"
     },
     {
+        "handler": "WorkflowRerunFromHereActionHandler",
+        "kind": "dialogram.rerunFromHere",
+        "op": "actionHandler"
+    },
+    {
         "handler": "WorkflowShowAgentSkillsActionHandler",
         "kind": "dialogram.showAgentSkills",
         "op": "actionHandler"

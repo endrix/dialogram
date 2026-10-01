@@ -36,6 +36,7 @@ import * as readline from 'node:readline';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { ExecutionOverlaySink } from '@dialogram/shared';
+import { resumeStepFor } from './resume-at-step.js';
 import { requestWorkflowStop, spawnWorkflowProcess } from './process-control.js';
 import { RunEventStreamClient, type RunStreamEvent } from './run-event-stream-client.js';
 
@@ -43,6 +44,12 @@ type RunWorkflowArgs = {
     sourceUri?: string;
     workflowName?: string;
     namespaceName?: string;
+    /** Resume the run in this directory instead of starting a new one. */
+    resumeFrom?: string;
+    /** With `resumeFrom`: the step of its queue trace to resume at. */
+    atStep?: number;
+    /** With `resumeFrom`: resume at the step before this node's last firing. */
+    resumeAtActor?: string;
 };
 
 /**
@@ -103,6 +110,9 @@ export interface CliRunDriverConfig {
     elicitSocket?: boolean;
     runWorkflowCommandId: string;
     stopWorkflowCommandId: string;
+    /** The run arguments that resume the run in `runDir` at `step` (the
+     *  product's syntax). Without it a run cannot be resumed at a step. */
+    cliResumeArgs?: (runDir: string, step: number) => string[];
     /** The two non-run config command ids the driver registers to mutate/read
      *  the per-entity agent-tool overrides (from the profile). */
     agentToolConfigCommands: { set: string; get: string };
@@ -757,6 +767,27 @@ export class CliRunDriver {
         }
         if (namespaceName && !workflowName) {
             cliArgs.push('--namespace', namespaceName);
+        }
+
+        // Resume a run at a step the stepper shows, or before a node's last
+        // firing: the firings up to it are replayed by the runtime, not run.
+        const resumeFrom = typeof args?.resumeFrom === 'string' && args.resumeFrom.trim() ? args.resumeFrom.trim() : undefined;
+        if (resumeFrom) {
+            if (!this.config.cliResumeArgs) {
+                const message = 'This runtime cannot resume a run at a step.';
+                vscode.window.showErrorMessage(message);
+                return { error: message };
+            }
+            const resolved = await resumeStepFor(resumeFrom, {
+                atStep: args?.atStep,
+                actor: typeof args?.resumeAtActor === 'string' && args.resumeAtActor.trim() ? args.resumeAtActor.trim() : undefined
+            });
+            if ('error' in resolved) {
+                vscode.window.showErrorMessage(resolved.error);
+                return { error: resolved.error };
+            }
+            cliArgs.push(...this.config.cliResumeArgs(resumeFrom, resolved.step));
+            output.appendLine(`[wf-lang] Resuming ${path.basename(resumeFrom)} at step ${resolved.step}`);
         }
 
         // Agent tool-calling settings (global settings + per-entity overrides from context menu).

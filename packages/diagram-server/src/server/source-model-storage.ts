@@ -1022,12 +1022,14 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             if (queueTrace) {
                 (root as any).args['wf:queueTraceStep'] = queueTrace.selectedStep;
                 (root as any).args['wf:queueTraceStepCount'] = queueTrace.stepCount;
+                (root as any).args['wf:queueTraceResumable'] = queueTrace.resumable;
                 if (queueTrace.actorInstanceName) {
                     (root as any).args['wf:queueTraceActor'] = queueTrace.actorInstanceName;
                 }
             } else {
                 delete (root as any).args['wf:queueTraceStep'];
                 delete (root as any).args['wf:queueTraceStepCount'];
+                delete (root as any).args['wf:queueTraceResumable'];
                 delete (root as any).args['wf:queueTraceActor'];
             }
 
@@ -2077,6 +2079,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
     ): Promise<{
         selectedStep: number;
         stepCount: number;
+        /** Every step carries a journal position: the run can be resumed at any of them. */
+        resumable: boolean;
         actorInstanceName?: string;
         queues: Array<{
             astPath?: string;
@@ -2156,9 +2160,13 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             ? step.actorInstanceName
             : undefined;
 
+        const resumable = trace.steps.every((entry: any) =>
+            typeof entry?.journalSeq === 'number' && Number.isFinite(entry.journalSeq));
+
         return {
             selectedStep,
             stepCount,
+            resumable,
             actorInstanceName,
             queues
         };

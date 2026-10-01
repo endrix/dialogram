@@ -127,6 +127,12 @@ export interface SidecarProfileInput {
     graphAcquisition: 'sidecar-export' | 'cli-plan';
     cliGraphArgs?: (file: string, requestedWorkflow?: string) => string[];
     graphExportFailureLabel?: string;
+    /**
+     * The run arguments that resume the run in `runDir` at `step` of its queue
+     * trace (the step the stepper shows). Product syntax, so the product says
+     * it; without it the stepper offers no resume.
+     */
+    cliResumeArgs?: (runDir: string, step: number) => string[];
 
     // User-visible strings / behavior (Task 1 config, now product-supplied here).
     undoLabelSuffix: string;
@@ -328,6 +334,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             acpPermissionsSettingKey: input.runAcpFlags === false ? undefined : input.acpPermissionsSettingKey,
             runWorkflowCommandId: input.commands.runWorkflow,
             stopWorkflowCommandId: input.commands.stopWorkflow,
+            cliResumeArgs: input.cliResumeArgs,
             agentToolConfigCommands: {
                 set: input.commands.setAgentToolConfig,
                 get: input.commands.getAgentToolConfig
@@ -392,7 +399,9 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         sourceExtensions: [input.sourceExtension],
         supportsElementCreation: input.supportsElementCreation,
         operationKinds: input.operationKinds,
-        clientBehavior: input.clientBehavior,
+        clientBehavior: input.cliResumeArgs
+            ? { ...input.clientBehavior, resumeAtStep: true }
+            : input.clientBehavior,
         edits: { operationModules: createSidecarOperationModules(runtimeConfig) },
         modelSource: () => createSidecarModelSource(runtimeConfig),
         serverModules: [createSidecarServerModule(runtimeConfig)],
