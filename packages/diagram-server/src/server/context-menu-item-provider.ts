@@ -19,6 +19,7 @@ const NAVIGATE_SYMBOL_ARG = 'wf:navigateSymbol';
 const PROMPT_LABEL_EDIT_KIND = 'dialogram.promptLabelEdit';
 const EDIT_PARAMETERS_KIND = 'dialogram.editParameters';
 const PROMPT_RENAME_ENTITY_KIND = 'dialogram.promptRenameEntity';
+const RERUN_FROM_HERE_KIND = 'dialogram.rerunFromHere';
 const RESET_EDGE_ROUTES_KIND = 'dialogram.resetEdgeRoutes';
 const REROUTE_EDGES_AVOID_OVERLAPS_KIND = 'dialogram.rerouteEdgesAvoidOverlaps';
 const LAYOUT_BOUNDARY_FLOW_KIND = 'dialogram.layoutBoundaryFlow';
@@ -288,6 +289,20 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
             elementType === WorkflowDiagramTypes.NODE_EXTERNAL_ACTOR
         ) {
             const entityName = elementArgs?.[WorkflowDiagramMetadata.ENTITY_NAME];
+            // The run the overlay shows can be resumed at a step: offer to
+            // resume it just before this node's last firing, so it fires again.
+            const rootArgs = (this.modelState.root as any)?.args as Args | undefined;
+            if (
+                typeof entityName === 'string' && entityName.trim() !== '' &&
+                rootArgs?.['wf:queueTraceResumable'] === true
+            ) {
+                items.push({
+                    id: 'dialogram.rerunFromHere',
+                    label: 'Rerun from Here',
+                    sortString: 'a9',
+                    actions: [{ kind: RERUN_FROM_HERE_KIND, entityName } as any]
+                });
+            }
             if (typeof entityName === 'string' && entityName.trim() !== '') {
                 items.push({
                     id: 'dialogram.renameEntity',

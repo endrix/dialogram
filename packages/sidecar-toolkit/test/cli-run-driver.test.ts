@@ -261,3 +261,116 @@ describe('CliRunDriver live-overlay signature', () => {
         expect(events.length).toBe(0);
     });
 });
+
+
+describe('CliRunDriver resuming a run at a step', () => {
+    beforeEach(() => {
+        resetRegisteredCommands();
+        spawnCalls.length = 0;
+    });
+
+    const resumeArgs = (runDir: string, step: number) => ['--resume-from', runDir, '--at-step', String(step)];
+
+    function fixture(steps: Array<Record<string, unknown>>): { file: string; runDir: string } {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-run-driver-resume-'));
+        const file = path.join(dir, 'pipeline.py');
+        fs.writeFileSync(file, '# fixture\n', 'utf8');
+        const runDir = path.join(dir, 'wf-out', 'first');
+        fs.mkdirSync(runDir, { recursive: true });
+        fs.writeFileSync(path.join(runDir, 'run.wf-queues.json'), JSON.stringify({ version: 1, steps }), 'utf8');
+        return { file, runDir };
+    }
+
+    const STEPS = [
+        { step: 1, actorInstanceName: 'c', journalSeq: 1 },
+        { step: 2, actorInstanceName: 'p', journalSeq: 2 },
+        { step: 3, actorInstanceName: 'c', journalSeq: 3 },
+        { step: 4, actorInstanceName: 'p', journalSeq: 4 }
+    ];
+
+    function driverWith(cliResumeArgs?: CliRunDriverConfig['cliResumeArgs']) {
+        const driver = new CliRunDriver({ ...makeConfig(makeOverrideState()), cliResumeArgs }, makeHost() as any);
+        driver.registerCommands(makeContext());
+        return driver;
+    }
+
+    it('passes the product\'s resume arguments for the step shown', async () => {
+        driverWith(resumeArgs);
+        const { file, runDir } = fixture(STEPS);
+
+        await vscode.commands.executeCommand(RUN_CMD, { sourceUri: `file://${file}`, resumeFrom: runDir, atStep: 3 });
+
+        expect(spawnCalls.length).toBe(1);
+        const args = spawnCalls[0].args;
+        expect(args.slice(args.indexOf('--resume-from'))).toEqual(
+            expect.arrayContaining(['--resume-from', runDir, '--at-step', '3'])
+        );
+    });
+
+    it('resumes before a node\'s last firing, so it fires again', async () => {
+        driverWith(resumeArgs);
+        const { file, runDir } = fixture(STEPS);
+
+        await vscode.commands.executeCommand(RUN_CMD, { sourceUri: `file://${file}`, resumeFrom: runDir, resumeAtActor: 'c' });
+
+        const args = spawnCalls[0].args;
+        expect(args[args.indexOf('--at-step') + 1]).toBe('2');
+    });
+
+    it('starts nothing for a node that never fired', async () => {
+        driverWith(resumeArgs);
+        const { file, runDir } = fixture(STEPS);
+
+        const result: any = await vscode.commands.executeCommand(RUN_CMD, {
+            sourceUri: `file://${file}`, resumeFrom: runDir, resumeAtActor: 'nobody'
+        });
+
+        expect(spawnCalls.length).toBe(0);
+        expect(result.error).toMatch(/nobody did not fire/);
+    });
+
+    it('starts nothing for a step the run does not have', async () => {
+        driverWith(resumeArgs);
+        const { file, runDir } = fixture(STEPS);
+
+        const result: any = await vscode.commands.executeCommand(RUN_CMD, {
+            sourceUri: `file://${file}`, resumeFrom: runDir, atStep: 9
+        });
+
+        expect(spawnCalls.length).toBe(0);
+        expect(result.error).toMatch(/no step 9; its steps are 1 to 4/);
+    });
+
+    it('starts nothing for a trace whose steps carry no journal position', async () => {
+        driverWith(resumeArgs);
+        const { file, runDir } = fixture(STEPS.map(({ journalSeq: _drop, ...step }) => step));
+
+        const result: any = await vscode.commands.executeCommand(RUN_CMD, {
+            sourceUri: `file://${file}`, resumeFrom: runDir, atStep: 1
+        });
+
+        expect(spawnCalls.length).toBe(0);
+        expect(result.error).toMatch(/cannot resume at a step/);
+    });
+
+    it('starts nothing when the product gives no resume arguments', async () => {
+        driverWith(undefined);
+        const { file, runDir } = fixture(STEPS);
+
+        const result: any = await vscode.commands.executeCommand(RUN_CMD, {
+            sourceUri: `file://${file}`, resumeFrom: runDir, atStep: 1
+        });
+
+        expect(spawnCalls.length).toBe(0);
+        expect(result.error).toMatch(/cannot resume a run at a step/);
+    });
+
+    it('runs as before without a resume', async () => {
+        driverWith(resumeArgs);
+        const { file } = fixture(STEPS);
+
+        await vscode.commands.executeCommand(RUN_CMD, { sourceUri: `file://${file}` });
+
+        expect(spawnCalls[0].args).not.toContain('--resume-from');
+    });
+});

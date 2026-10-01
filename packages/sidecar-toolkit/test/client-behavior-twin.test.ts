@@ -50,8 +50,11 @@ function fieldsOf(file: string, name: string): string[] {
  *                  `chat.acpConnector` declaration and posted to the webview;
  *                  a product declaring it by hand would name connectors the
  *                  machine may not have
+ *   resumeAtStep   derived by the toolkit from the product's `cliResumeArgs`:
+ *                  the button is there exactly when the run driver can build
+ *                  the arguments it needs
  */
-const PLATFORM_DERIVED = ['chatBackend', 'acpConnectors'];
+const PLATFORM_DERIVED = ['chatBackend', 'acpConnectors', 'resumeAtStep'];
 
 describe('sidecar client behavior mirrors the platform', () => {
     const sidecar = fieldsOf(

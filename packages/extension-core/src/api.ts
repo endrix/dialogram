@@ -311,6 +311,12 @@ export interface DiagramClientBehavior {
    * which is precisely the case that has to degrade quietly.
    */
   chatBackend?: boolean;
+  /**
+   * Whether a run can be resumed at a step of its queue trace, which turns on
+   * the stepper's resume button and "Rerun from here". Derived from the
+   * product's run arguments for it (`cliResumeArgs`), not set by hand.
+   */
+  resumeAtStep?: boolean;
 }
 
 export interface DiagramProfile {

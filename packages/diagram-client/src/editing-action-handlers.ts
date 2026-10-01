@@ -2,7 +2,7 @@ import { inject, injectable, optional } from 'inversify';
 import { EditorContextService, IActionDispatcher, IGridManager, TYPES } from '@eclipse-glsp/client';
 import { Action as GlspAction, ApplyLabelEditOperation, ICommand, IActionHandler } from '@eclipse-glsp/sprotty';
 import { VscodeUi, type VscodeQuickPickItem } from './vscode-ui';
-import { settingsNamespace } from './profile';
+import { clientBehavior, commandId, settingsNamespace } from './profile';
 import { EXECUTION_OVERLAY_ACTION_KIND, type ExecutionOverlayActionPayload } from '@dialogram/shared';
 
 export type WorkflowWorkspaceEntity = {
@@ -70,6 +70,20 @@ export namespace WorkflowPromptRenameEntityAction {
 
     export function is(action: unknown): action is Action {
         return !!action && typeof action === 'object' && (action as any).kind === KIND;
+    }
+}
+
+export namespace WorkflowRerunFromHereAction {
+    export const KIND = 'dialogram.rerunFromHere';
+
+    export interface Action extends GlspAction {
+        kind: typeof KIND;
+        entityName: string;
+    }
+
+    export function is(action: unknown): action is Action {
+        return !!action && typeof action === 'object' && (action as any).kind === KIND
+            && typeof (action as any).entityName === 'string';
     }
 }
 
@@ -1167,5 +1181,36 @@ export class RunAgentStreamActionHandler implements IActionHandler {
             default:
                 break;
         }
+    }
+}
+
+
+/**
+ * "Rerun from Here": resume the run the diagram shows at the step before the
+ * node's last firing, so that firing and everything after it run again, and
+ * everything before it is replayed. The run driver finds the step in the run's
+ * queue trace.
+ */
+@injectable()
+export class WorkflowRerunFromHereActionHandler implements IActionHandler {
+    handle(action: GlspAction): ICommand | GlspAction | void {
+        if (!WorkflowRerunFromHereAction.is(action)) {
+            return;
+        }
+        const context = (globalThis as any).__calDiagramContext as
+            | { sourceUri?: string; workflowName?: string; runDir?: string }
+            | undefined;
+        // The menu offers it only for a run that can be resumed; anything the
+        // run driver then finds wrong with it, the driver reports.
+        if (!context?.sourceUri || !context.runDir || !clientBehavior().resumeAtStep) {
+            console.warn('[workflow] Rerun from Here: no resumable run is shown');
+            return;
+        }
+        void VscodeUi.instance.executeCommand(commandId('runWorkflow'), [{
+            sourceUri: context.sourceUri,
+            workflowName: context.workflowName,
+            resumeFrom: context.runDir,
+            resumeAtActor: action.entityName
+        }]);
     }
 }
