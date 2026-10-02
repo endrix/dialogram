@@ -150,6 +150,7 @@ export class HierarchyOutlinePanel {
         const body = document.getElementById(BODY_ID);
         body?.addEventListener('click', event => this.onRowClick(event, false));
         body?.addEventListener('dblclick', event => this.onRowClick(event, true));
+        window.addEventListener('resize', () => this.placeNearButton());
         document.addEventListener('keydown', event => {
             const target = event.target as HTMLElement | null;
             const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
@@ -176,6 +177,8 @@ export class HierarchyOutlinePanel {
         if (panel) {
             panel.hidden = !available || !this.open;
         }
+        // The button may have moved (the stack grows and shrinks): follow it.
+        requestAnimationFrame(() => this.placeNearButton());
     }
 
     private setOpen(open: boolean): void {
@@ -187,8 +190,26 @@ export class HierarchyOutlinePanel {
         }
         document.getElementById(TOGGLE_ID)?.classList.toggle('active', open);
         if (open) {
+            this.placeNearButton();
             this.render();
         }
+    }
+
+    /** Open the panel beside its button, wherever the button stack put it. */
+    private placeNearButton(): void {
+        const panel = document.getElementById(PANEL_ID);
+        const toggle = document.getElementById(TOGGLE_ID);
+        if (!panel || !toggle || panel.hidden || toggle.hidden) {
+            return;
+        }
+        const rect = toggle.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) {
+            return;
+        }
+        const place = panelPlacement(rect, { width: window.innerWidth, height: window.innerHeight });
+        panel.style.right = `${place.right}px`;
+        panel.style.bottom = `${place.bottom}px`;
+        panel.style.maxHeight = `${place.maxHeight}px`;
     }
 
     // ── Rows ────────────────────────────────────────────────────────────
@@ -360,6 +381,25 @@ export class HierarchyOutlinePanel {
         void this.dispatcher.dispatch(SelectAction.create({ selectedElementsIDs: [id] }) as never);
         void this.dispatcher.dispatch(CenterAction.create([id], { animate: true, retainZoom: true }) as never);
     }
+}
+
+/** Space between the button and the panel, and kept from the window's top edge. */
+const PANEL_GAP_PX = 8;
+
+/**
+ * Where the panel opens: just left of its button, bottom-aligned with it, and
+ * growing upward -- as tall as the room above the button allows. In the
+ * coordinates `position: fixed` takes (`right`/`bottom` from the window edges).
+ */
+export function panelPlacement(
+    button: { left: number; bottom: number },
+    window: { width: number; height: number }
+): { right: number; bottom: number; maxHeight: number } {
+    return {
+        right: Math.max(PANEL_GAP_PX, window.width - button.left + PANEL_GAP_PX),
+        bottom: Math.max(PANEL_GAP_PX, window.height - button.bottom),
+        maxHeight: Math.max(160, button.bottom - PANEL_GAP_PX * 2)
+    };
 }
 
 /**
