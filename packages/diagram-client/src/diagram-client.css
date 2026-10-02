@@ -245,6 +245,12 @@ body.workflow-queue-hidden .edge-queue-badge {
     display: none;
 }
 
+/* The queue-size badges are the stepper's: shown only while the Debug button
+   is pressed (navigation-ui `showQueueBadges`). */
+body:not(.workflow-debug-expanded) .edge-queue-badge {
+    display: none;
+}
+
 /* Theme-specific tuning: VS Code sets one of these classes on the webview body. */
 body.vscode-light {
     /* Keep light theme fills unmodified (the VS Code theme already picks a good widget background). */

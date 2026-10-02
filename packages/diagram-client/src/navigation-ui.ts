@@ -135,6 +135,21 @@ function isQueueTraceVisible(): boolean {
     }
 }
 
+/** The body class that shows the queue-size badges on the edges. */
+export const DEBUG_EXPANDED_CLASS = 'workflow-debug-expanded';
+
+/**
+ * Show the queue-size badges exactly while the Debug button is pressed.
+ *
+ * The badges are the stepper's: how many tokens sat on each edge at the step
+ * shown. Drawn all the time they cover the graph with numbers nobody asked to
+ * read, so they follow the button that opens the stepper. The stylesheet hides
+ * them unless the body carries the class.
+ */
+export function showQueueBadges(body: { classList: { toggle(name: string, force?: boolean): unknown } } | undefined, shown: boolean): void {
+    body?.classList.toggle(DEBUG_EXPANDED_CLASS, shown);
+}
+
 function labelForParentWorkflow(option: { sourceUri: string; workflowName: string }, currentSourceUri: string): string {
     if (normalizeSourceUriKey(option.sourceUri) === normalizeSourceUriKey(currentSourceUri)) {
         return option.workflowName;
@@ -754,11 +769,13 @@ export class WorkflowNavigationUi {
             this.debugClusterEl.hidden = true;
             this.debugClusterEl.replaceChildren();
             this.debugExpanded = false;
+            showQueueBadges(globalThis.document?.body, false);
             return;
         }
 
         this.debugRowEl.hidden = false;
         this.debugFabEl.classList.toggle('active', this.debugExpanded);
+        showQueueBadges(globalThis.document?.body, this.debugExpanded);
 
         if (!this.debugExpanded) {
             this.debugClusterEl.hidden = true;
