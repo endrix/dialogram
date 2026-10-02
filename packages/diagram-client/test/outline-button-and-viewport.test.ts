@@ -4,7 +4,7 @@
  * instead of to the default scroll, which put the graph off-center.
  */
 import { describe, expect, it } from 'vitest';
-import { placeInButtonStack } from '../src/hierarchy-outline';
+import { panelPlacement, placeInButtonStack } from '../src/hierarchy-outline';
 import { modelViewportKey, settleViewport } from '../src/viewport-preserving-set-model-command';
 
 /** A minimal element tree: enough for parent/sibling bookkeeping. */
@@ -110,5 +110,21 @@ describe('the viewport across a model change', () => {
         const refreshed = view('top');
         expect(settleViewport(view('top', undefined, { zoom: 1.2, scroll: { x: 5, y: 6 } }), refreshed, new Map())).toBeUndefined();
         expect({ zoom: refreshed.zoom, scroll: refreshed.scroll }).toEqual({ zoom: 1.2, scroll: { x: 5, y: 6 } });
+    });
+});
+
+describe('the hierarchy panel', () => {
+    it('opens just left of its button, bottom-aligned with it, growing upward', () => {
+        // A 1200x800 window; the button 32px wide, 14px from the right edge,
+        // its bottom 16px above the window's.
+        const place = panelPlacement({ left: 1154, bottom: 784 }, { width: 1200, height: 800 });
+
+        expect(place.right).toBe(1200 - 1154 + 8);
+        expect(place.bottom).toBe(16);
+        expect(place.maxHeight).toBe(784 - 16);
+    });
+
+    it('keeps a usable height when the button sits low in a short window', () => {
+        expect(panelPlacement({ left: 400, bottom: 100 }, { width: 500, height: 120 }).maxHeight).toBe(160);
     });
 });
