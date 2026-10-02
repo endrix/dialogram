@@ -85,3 +85,70 @@ describe('refreshing an editor that navigates in place', () => {
         expect(options.content).toBe('top.py text');
     });
 });
+
+/**
+ * A nested workflow's file, edited in a text editor without saving: the views
+ * showing it preview the change, as an editor's own document always did.
+ */
+describe('live preview of a file shown in another editor', () => {
+    const change = (uri: vscode.Uri, text: string) => ({
+        document: { uri, getText: () => text },
+        contentChanges: [{ text: 'x' }]
+    });
+
+    it('refreshes the view showing it, with that file’s text', () => {
+        vi.useFakeTimers();
+        try {
+            const { provider, dispatched } = makeProvider();
+            provider.setRefreshContext(ROOT, { shownSourceUri: CHILD.toString(), networkName: 'block' });
+
+            provider.handleDocumentChange(change(CHILD, 'block.py, unsaved'));
+            vi.runAllTimers();
+
+            expect(dispatched).toHaveLength(1);
+            const options = dispatched[0].action.options;
+            expect(dispatched[0].clientId).toBe('client-top');
+            expect(options.sourceUri).toBe(CHILD.toString());
+            expect(options.content).toBe('block.py, unsaved');
+            expect(options.forceReloadFromDisk).toBeUndefined();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('leaves alone an editor that is not showing it', () => {
+        vi.useFakeTimers();
+        try {
+            const { provider, dispatched } = makeProvider();
+            provider.setRefreshContext(ROOT, { shownSourceUri: ROOT.toString(), networkName: 'top' });
+
+            provider.handleDocumentChange(change(CHILD, 'block.py, unsaved'));
+            vi.runAllTimers();
+
+            expect(dispatched).toHaveLength(0);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+});
+
+describe('a nested workflow’s file changed on disk', () => {
+    it('reloads the view showing it, at its trail', () => {
+        vi.useFakeTimers();
+        try {
+            const { provider, dispatched } = makeProvider();
+            provider.setRefreshContext(ROOT, { shownSourceUri: CHILD.toString(), networkName: 'block', navTrail: trail });
+
+            provider.handleExternalFileChange(CHILD);
+            vi.runAllTimers();
+
+            expect(dispatched).toHaveLength(1);
+            const options = dispatched[0].action.options;
+            expect(options.sourceUri).toBe(CHILD.toString());
+            expect(options['wf:navTrail']).toBe(trail);
+            expect(options.forceReloadFromDisk).toBe(true);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+});
