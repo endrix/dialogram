@@ -119,7 +119,7 @@ describe('a run that fails', () => {
         expect(task.name).toBe('Fix: x (in m › i)');
         expect(task.prompt).toContain('instance path `m/i/x`');
         expect(task.prompt).toContain('Traceback (most recent call last):');
-        expect(task.prompt).toContain('resumed from where it failed');
+        expect(task.prompt).toContain('call the `resume_failed_run` tool');
     });
 
     it('offers no fix without a chat behind the diagram', async () => {

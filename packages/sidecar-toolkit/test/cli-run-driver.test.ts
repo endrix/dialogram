@@ -106,13 +106,13 @@ describe('CliRunDriver agent-tool overrides', () => {
         vi.restoreAllMocks();
     });
 
-    it('registers both config commands alongside run/stop', () => {
+    it('registers both config commands alongside run/stop/resume', () => {
         const overrideState = makeOverrideState();
         const driver = new CliRunDriver(makeConfig(overrideState), makeHost() as any);
         const context = makeContext();
         driver.registerCommands(context);
-        // run + stop + set + get
-        expect(context.subscriptions.length).toBe(4);
+        // run + stop + resume-failed + set + get
+        expect(context.subscriptions.length).toBe(5);
     });
 
     it('set mutates + persists via the accessor, get reads current', async () => {
