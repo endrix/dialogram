@@ -72,6 +72,7 @@ export async function activateProfileRuntime(
     // chat panel open on the diagram (the chat is the run's viewer there).
     const runtime = chatRuntime;
     glsp.setRunQuestionHandler((question, uri) => runtime.askRunQuestion(uri, question));
+    glsp.setChatTaskHandler(async (task, uri) => runtime.startTask(uri, task));
     context.subscriptions.push(chatRuntime, {
       dispose: () => {
         transport?.dispose();

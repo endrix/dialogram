@@ -881,6 +881,21 @@ export class ChatRuntime {
     });
   }
 
+  /**
+   * Start a task in the chat panel open on `uri`: a new session named
+   * `task.name`, in `task.mode`, whose first message is `task.prompt` -- sent by
+   * the panel as if typed, so the person sees what was asked. `false` when no
+   * panel can be reached there.
+   */
+  startTask(uri: string, task: { name: string; mode: "plan" | "build"; prompt: string }): boolean {
+    if (this.canReach && !this.canReach(uri)) {
+      this.logLine(`chat task "${task.name}": no chat panel on ${uri}`);
+      return false;
+    }
+    this.postToWebview(uri, { type: "chat.startTask", data: { ...task } });
+    return true;
+  }
+
   /** The last model the user explicitly chose (migrated from the legacy key). */
   private getPreferredModel(): string | undefined {
     return readStateWithFallback<string | undefined>(
