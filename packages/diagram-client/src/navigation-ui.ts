@@ -135,6 +135,51 @@ function isQueueTraceVisible(): boolean {
     }
 }
 
+/** Whether a nested workflow in another file opens in this editor, not its own. */
+export function navigatesInPlace(): boolean {
+    return clientBehavior().nestedNavigation === 'in-place';
+}
+
+/**
+ * The workflow this editor runs: the root of its hierarchy, not the view.
+ *
+ * Navigating in place, the root is the first crumb, the editor's own document.
+ * Otherwise a stack can start in another editor's file (a drill-down passes its
+ * trail along), so the root is the first crumb in this editor's document -- the
+ * top of what this editor shows. Without a stack, the view is the root.
+ */
+export function rootOfStack(
+    stack: Array<{ sourceUri: string; workflowName: string }>,
+    editorSourceUri: string | undefined,
+    inPlace: boolean,
+    shown: { sourceUri: string; workflowName: string }
+): { sourceUri: string; workflowName: string } {
+    if (stack.length === 0) {
+        return shown;
+    }
+    if (inPlace) {
+        return { sourceUri: stack[0].sourceUri, workflowName: stack[0].workflowName };
+    }
+    const editorKey = editorSourceUri ? normalizeSourceUriKey(editorSourceUri) : shown.sourceUri;
+    const first = stack.find(crumb => crumb.sourceUri === editorKey);
+    return first ? { sourceUri: first.sourceUri, workflowName: first.workflowName } : shown;
+}
+
+/**
+ * The node a "Rerun from Here" reruns, as the run's trace names it.
+ *
+ * The trace has a step per firing of the root workflow's own actors. A node
+ * inside a nested view is not one of them: the instance the view is inside,
+ * at the root's level, is -- rerunning it reruns the node.
+ */
+export function rerunActorFor(
+    entityName: string,
+    stack: Array<{ workflowInstanceName?: string }>
+): string {
+    const top = stack.slice(1).find(crumb => typeof crumb.workflowInstanceName === 'string' && crumb.workflowInstanceName.trim() !== '');
+    return top?.workflowInstanceName?.trim() ?? entityName;
+}
+
 /** The body class that shows the queue-size badges on the edges. */
 export const DEBUG_EXPANDED_CLASS = 'workflow-debug-expanded';
 
@@ -215,6 +260,27 @@ export class WorkflowNavigationUi {
         @inject(EditorContextService) private readonly editorContext: EditorContextService
     ) {}
 
+    /**
+     * The navigation stack a view belongs to.
+     *
+     * Navigating in place, every view in this editor -- in any file -- is a view
+     * of one hierarchy, rooted at the editor's own document, so they share its
+     * stack. Opening a nested file in its own editor, the stack is the shown
+     * file's, as it always was.
+     */
+    private stackKey(sourceUri: string): string {
+        const root = this.editorContext.sourceUri;
+        return normalizeSourceUriKey(navigatesInPlace() && root ? root : sourceUri);
+    }
+
+    private getStack(sourceUri: string): NavigationCrumb[] | undefined {
+        return this.stacksBySourceUri.get(this.stackKey(sourceUri));
+    }
+
+    private setStack(sourceUri: string, stack: NavigationCrumb[]): void {
+        this.stacksBySourceUri.set(this.stackKey(sourceUri), stack);
+    }
+
     buildNavigationTrail(
         currentSourceUri: string | undefined,
         targetSourceUri: string,
@@ -223,7 +289,7 @@ export class WorkflowNavigationUi {
     ): NavigationCrumb[] {
         const currentSourceKey = currentSourceUri ? normalizeSourceUriKey(currentSourceUri) : undefined;
         const targetSourceKey = normalizeSourceUriKey(targetSourceUri);
-        const fromCurrent = currentSourceKey ? (this.stacksBySourceUri.get(currentSourceKey) ?? []) : [];
+        const fromCurrent = currentSourceKey ? (this.getStack(currentSourceKey) ?? []) : [];
         const trail = [...fromCurrent];
 
         if (trail.length === 0 && currentSourceKey) {
@@ -252,20 +318,20 @@ export class WorkflowNavigationUi {
         const sourceKey = normalizeSourceUriKey(sourceUri);
 
         if (Array.isArray(trail) && trail.length > 0) {
-            this.stacksBySourceUri.set(sourceKey, this.normalizeTrail(trail));
+            this.setStack(sourceKey, this.normalizeTrail(trail));
             return;
         }
 
-        const stack = this.stacksBySourceUri.get(sourceKey) ?? [];
+        const stack = this.getStack(sourceKey) ?? [];
         if (stack.length === 0) {
-            this.stacksBySourceUri.set(sourceKey, [{ sourceUri: sourceKey, workflowName }]);
+            this.setStack(sourceKey, [{ sourceUri: sourceKey, workflowName }]);
             return;
         }
         const last = stack[stack.length - 1];
         if (last?.sourceUri === sourceKey && last?.workflowName === workflowName) {
             return;
         }
-        this.stacksBySourceUri.set(sourceKey, [...stack, { sourceUri: sourceKey, workflowName }]);
+        this.setStack(sourceKey, [...stack, { sourceUri: sourceKey, workflowName }]);
     }
 
     onModelChanged(root: unknown): void {
@@ -327,7 +393,20 @@ export class WorkflowNavigationUi {
 
         const incomingTrail = this.parseTrail(args[NAV_TRAIL_ARG]);
         const nextStack = this.reconcileStack(sourceUri, selected, entryWorkflows, incomingTrail);
-        this.stacksBySourceUri.set(sourceUri, nextStack);
+        this.setStack(sourceUri, nextStack);
+
+        // What ▶ Run, "Rerun from Here" and the stepper's ⟲ act on: the root of
+        // this editor's hierarchy, whatever view is on screen.
+        const hierarchyRoot = rootOfStack(nextStack, this.editorContext.sourceUri, navigatesInPlace(), { sourceUri, workflowName: selected });
+        try {
+            Object.assign((globalThis as any).__calDiagramContext ?? {}, {
+                rootSourceUri: hierarchyRoot.sourceUri,
+                rootWorkflowName: hierarchyRoot.workflowName,
+                trail: nextStack
+            });
+        } catch {
+            // ignore
+        }
 
         const runtimeProfile = typeof args['wf:runtimeProfile'] === 'string' ? args['wf:runtimeProfile'] : undefined;
 
@@ -362,7 +441,7 @@ export class WorkflowNavigationUi {
             }
         }
 
-        const current = this.stacksBySourceUri.get(sourceUri) ?? [];
+        const current = this.getStack(sourceUri) ?? [];
         if (current.length === 0) {
             return [{ sourceUri, workflowName: selected }];
         }
@@ -418,7 +497,7 @@ export class WorkflowNavigationUi {
             }
             this.setStoredEntryWorkflow(sourceUri, picked);
             const nextTrail = [{ sourceUri, workflowName: picked }];
-            this.stacksBySourceUri.set(sourceUri, nextTrail);
+            this.setStack(sourceUri, nextTrail);
             void this.actionDispatcher.dispatch(this.requestModel(sourceUri, picked, undefined, nextTrail));
         });
     }
@@ -508,7 +587,7 @@ export class WorkflowNavigationUi {
             btn.className = 'workflow-wf-breadcrumb';
             const displayName = entry.workflowInstanceName || entry.workflowName;
             btn.textContent = displayName;
-            const isCrossFile = entry.sourceUri !== currentSourceKey;
+            const isCrossFile = entry.sourceUri !== currentSourceKey && !navigatesInPlace();
             btn.title = idx === stack.length - 1
                 ? `Current: ${displayName}`
                 : (isCrossFile ? `Open ${displayName} in referenced file` : `Go back to ${displayName}`);
@@ -516,8 +595,8 @@ export class WorkflowNavigationUi {
             btn.addEventListener('click', () => {
                 const nextTrail = stack.slice(0, idx + 1);
                 const next = nextTrail[nextTrail.length - 1];
-                this.stacksBySourceUri.set(next.sourceUri, nextTrail);
-                if (next.sourceUri === currentSourceKey) {
+                this.setStack(next.sourceUri, nextTrail);
+                if (next.sourceUri === currentSourceKey || navigatesInPlace()) {
                     void this.actionDispatcher.dispatch(this.requestModel(next.sourceUri, next.workflowName, undefined, nextTrail, selectedRunId));
                     return;
                 }
@@ -801,7 +880,7 @@ export class WorkflowNavigationUi {
         }
         this.setStoredEntryWorkflow(sourceUri, picked);
         const nextTrail = [{ sourceUri, workflowName: picked }];
-        this.stacksBySourceUri.set(sourceUri, nextTrail);
+        this.setStack(sourceUri, nextTrail);
         void this.actionDispatcher.dispatch(this.requestModel(sourceUri, picked, undefined, nextTrail, meta.selectedRunId));
     }
 
@@ -827,7 +906,29 @@ export class WorkflowNavigationUi {
         const nextTrail = existingParentIndex >= 0
             ? stack.slice(0, existingParentIndex + 1)
             : [{ sourceUri: selectedParent.sourceUri, workflowName: selectedParent.workflowName }];
-        this.stacksBySourceUri.set(selectedParent.sourceUri, nextTrail);
+        if (navigatesInPlace()) {
+            const editorRoot = this.editorContext.sourceUri ? normalizeSourceUriKey(this.editorContext.sourceUri) : sourceUri;
+            // An ancestor already in this editor's trail, or a workflow of the
+            // editor's own document: a view of this editor, shown in place.
+            if (existingParentIndex >= 0 || selectedParent.sourceUri === editorRoot) {
+                this.setStack(sourceUri, nextTrail);
+                void this.actionDispatcher.dispatch(this.requestModel(selectedParent.sourceUri, selectedParent.workflowName, undefined, nextTrail, meta.selectedRunId));
+                return;
+            }
+            // A caller in another file is a root of its own: its own editor, and
+            // no trail of this one, which keeps its root, chat and run.
+            void this.actionDispatcher.dispatch(
+                NavigateToExternalTargetAction.create({
+                    uri: selectedParent.sourceUri,
+                    args: {
+                        [OPEN_DIAGRAM_ARG]: true,
+                        [NETWORK_NAME_ARG]: selectedParent.workflowName
+                    }
+                })
+            );
+            return;
+        }
+        this.setStack(selectedParent.sourceUri, nextTrail);
         if (selectedParent.sourceUri === sourceUri) {
             void this.actionDispatcher.dispatch(this.requestModel(sourceUri, selectedParent.workflowName, undefined, nextTrail, meta.selectedRunId));
             return;
@@ -912,11 +1013,13 @@ export class WorkflowNavigationUi {
         container.appendChild(status);
         container.appendChild(next);
 
+        // The run is the root's, so a resume is too, whatever view is shown.
+        const context = (globalThis as any).__calDiagramContext;
         const resumeRequest = stepperResumeRequest(
             queueTrace,
             clientBehavior().resumeAtStep === true,
-            sourceUri,
-            meta.selected
+            typeof context?.rootSourceUri === 'string' ? context.rootSourceUri : sourceUri,
+            typeof context?.rootWorkflowName === 'string' ? context.rootWorkflowName : meta.selected
         );
         if (resumeRequest) {
             const resume = document.createElement('button');

@@ -295,6 +295,10 @@ export interface DiagramClientBehavior {
    */
   paletteIcons?: Record<string, { dark: string; light?: string }>;
   nodeFamilies?: NodeFamilySpec[];
+  /** Where a nested workflow defined in another file opens: `in-place` shows it in
+   *  this editor, as a view of the editor's root (one editor per hierarchy);
+   *  `new-editor` (the default) opens the file in its own editor. */
+  nestedNavigation?: 'in-place' | 'new-editor';
   /**
    * Whether the host has a chat backend behind this diagram.
    *

@@ -1,6 +1,6 @@
 # Proposal: one editor for a whole workflow hierarchy
 
-**Status:** proposal. Nothing here is implemented.
+**Status:** phases 1 and 2 are implemented (in-place navigation, the root's run, and the view in the chat's context). The GLSP-MCP root/view split, phases 3 to 5 and the outline are not.
 **Affects:** dialogram (most of it), wfpy (a hierarchy export), wfpy-ide (one
 profile flag).
 
@@ -197,13 +197,25 @@ comes from the same export, and is the cheap part of it: names, files and sizes.
 
 ## Phasing
 
-1. **In-place navigation.** The profile flag, drill-down / breadcrumb / "Used
-   By" in place, the host's per-editor trail and refresh context, and "Open in
-   its own editor".
-2. **The root runs, the chat knows the view.** Root fields in the diagram
-   context, and Run, Rerun from Here and ⟲ from the root. The run driver and
-   refresh keyed by the editor. The trail in the chat's turn context, and the
-   GLSP-MCP root/view split.
+1. **In-place navigation.** *Done.* `clientBehavior.nestedNavigation`
+   (`'in-place'` / `'new-editor'`, default `'new-editor'`). Drill-down and the
+   breadcrumb stay in the editor for any file. "Used By" navigates in place to
+   an ancestor in the trail or to a workflow of the editor's own document, and
+   opens a caller in another file as a new root with no trail. The client's
+   navigation stack is keyed by the editor's root. The host keys the refresh
+   context by the editor (from the request's client) and remembers the shown
+   file, so a save, an external change or a live preview refreshes the view
+   shown. For another file it reloads from disk, since live-preview content is
+   the root's text. A node menu item opens a nested workflow's file in its own
+   editor.
+2. **The root runs, the chat knows the view.** *Done, except the GLSP-MCP
+   split.* The diagram context carries `rootSourceUri`, `rootWorkflowName` and
+   the trail. ▶ Run, ⟲ and "Rerun from Here" use the root, and inside a nested
+   view "Rerun from Here" reruns the root-level instance the view is in. The
+   refresh during and after a run reloads the editor's current view (file,
+   workflow, trail) rather than jumping to the root. The chat panel sends the
+   view's trail with the selection and each message, and the turn context names
+   the nested view and the file defining it.
 3. **Editing nested views.** Secondary documents saved after undo/redo, the root
    editor watching every file in its trail, and the concurrency behaviour
    tested.

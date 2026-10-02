@@ -57,6 +57,10 @@ export interface SidecarClientBehavior {
     networkNavigationLabels?: boolean;
     noneSentinel?: string;
     scriptInterpreterCommands?: string[];
+    /** Where a nested workflow defined in another file opens: `in-place` shows it in
+     *  this editor, as a view of the editor's root (one editor per hierarchy);
+     *  `new-editor` (the default) opens the file in its own editor. */
+    nestedNavigation?: 'in-place' | 'new-editor';
 }
 
 /** The 24 consumer-owned command ids a sidecar diagram profile carries. */

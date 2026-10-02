@@ -8,6 +8,9 @@ type DiagramContext = {
     runtimeProfile?: string;
     namespaceName?: string;
     queueTraceVisible?: boolean;
+    /** The root of the editor's hierarchy: what runs (navigation-ui `rootOfStack`). */
+    rootSourceUri?: string;
+    rootWorkflowName?: string;
 };
 
 const QUEUE_TRACE_VISIBLE_STORAGE_KEY = queueTraceVisibleStorageKey();
@@ -186,7 +189,12 @@ function patchHeaderTools(headerTools: HTMLElement): void {
             void (async () => {
                 const ctx = getDiagramContext();
                 if (ctx?.sourceUri && ctx?.workflowName) {
-                    await exec(commandId('runWorkflow'), [ctx]);
+                    // The root of the hierarchy runs, not the nested view on screen.
+                    await exec(commandId('runWorkflow'), [{
+                        ...ctx,
+                        sourceUri: ctx.rootSourceUri ?? ctx.sourceUri,
+                        workflowName: ctx.rootWorkflowName ?? ctx.workflowName
+                    }]);
                 } else {
                     // Fallback: host command uses active diagram tab.
                     await exec(commandId('runWorkflow'));

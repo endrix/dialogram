@@ -160,6 +160,20 @@ interface CommandEntry {
  * Communication with the extension host happens over the GLSP vscode-messenger
  * channel (the diagram webview's raw postMessage is owned by GLSP).
  */
+
+/**
+ * The view on screen, as a trail from the editor's root, when it is not the
+ * root itself.
+ *
+ * The chat is the root's for the whole hierarchy, so without this the agent
+ * cannot tell that the diagram shows a nested workflow -- nor which instance
+ * the selected nodes belong to.
+ */
+export function currentViewTrail(): Array<{ sourceUri: string; workflowName: string; workflowInstanceName?: string }> | undefined {
+  const trail = (globalThis as any).__calDiagramContext?.trail;
+  return Array.isArray(trail) && trail.length > 1 ? trail : undefined;
+}
+
 @injectable()
 export class ChatPanel implements IDiagramStartup, ISelectionListener {
   /** Run after the diagram model is ready so the webview DOM exists. */
@@ -258,7 +272,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
    */
   selectionChanged(_root: unknown, selectedElements: string[]): void {
     this.selectedNodeIds = selectedElements ?? [];
-    this.sendToHost('chat.selection', { selectedNodeIds: this.selectedNodeIds });
+    this.sendToHost('chat.selection', { selectedNodeIds: this.selectedNodeIds, viewTrail: currentViewTrail() });
     if (this.initialized) this.update();
   }
 
@@ -811,6 +825,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       sessionId: this.currentSessionId,
       mode: this.currentMode,
       selectedNodeIds: this.selectedNodeIds,
+      viewTrail: currentViewTrail(),
     });
 
     if (!ok) {

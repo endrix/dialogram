@@ -54,7 +54,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     private uriToClientId = new Map<string, string>();
     /** Per-URI webview handles, for the profile's raw `postToWebview` channel. */
     private uriToWebview = new Map<string, vscode.Webview>();
-    private uriToRefreshContext = new Map<string, { networkName?: string; navTrail?: string; queueTraceVisible?: boolean; runId?: string }>();
+    private uriToRefreshContext = new Map<string, { networkName?: string; navTrail?: string; queueTraceVisible?: boolean; runId?: string; shownSourceUri?: string }>();
     private uriToLiveOverlaySignature = new Map<string, string | undefined>();
 
     /**
@@ -566,17 +566,28 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     ): void {
         const refreshContext = this.getRefreshContext(sourceUri);
 
+        // The editor refreshes the view it shows. Navigating in place that can be
+        // a workflow in another file than the editor's own document: refresh that
+        // file, from disk -- live-preview `content` is the editor document's text,
+        // which is not the shown file's.
+        const shownSourceUri = refreshContext?.shownSourceUri;
+        const showsOtherFile = typeof shownSourceUri === 'string'
+            && this.canonicalizeUriString(shownSourceUri) !== this.canonicalizeUriString(sourceUri);
+        const effectiveOptions = showsOtherFile && options.content !== undefined
+            ? { forceReloadFromDisk: true }
+            : options;
+
         // Create a RequestModelAction to refresh the diagram
         const action = RequestModelAction.create({
             requestId: 'refresh-' + Date.now(),
             options: {
-                sourceUri,
+                sourceUri: showsOtherFile ? shownSourceUri : sourceUri,
                 diagramType: this.diagramType,
                 ...(typeof refreshContext?.queueTraceVisible === 'boolean' ? { queueTraceVisible: refreshContext.queueTraceVisible } : {}),
                 ...(refreshContext?.networkName ? { networkName: refreshContext.networkName } : {}),
                 ...(refreshContext?.navTrail ? { 'wf:navTrail': refreshContext.navTrail } : {}),
                 ...(refreshContext?.runId ? { [RUN_ID_ARG]: refreshContext.runId } : {}),
-                ...options
+                ...effectiveOptions
             }
         });
 
@@ -587,7 +598,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
 
     setRefreshContext(
         documentUri: vscode.Uri | string,
-        context: { networkName?: string; navTrail?: string; queueTraceVisible?: boolean; runId?: string }
+        context: { networkName?: string; navTrail?: string; queueTraceVisible?: boolean; runId?: string; shownSourceUri?: string }
     ): void {
         const key = this.canonicalizeUriString(documentUri);
         const next = {
@@ -595,7 +606,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             ...context
         };
 
-        if (!next.networkName && !next.navTrail && typeof next.queueTraceVisible !== 'boolean' && !next.runId) {
+        if (!next.networkName && !next.navTrail && typeof next.queueTraceVisible !== 'boolean' && !next.runId && !next.shownSourceUri) {
             this.uriToRefreshContext.delete(key);
             return;
         }
@@ -603,7 +614,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         this.uriToRefreshContext.set(key, next);
     }
 
-    getRefreshContext(documentUri: vscode.Uri | string): { networkName?: string; navTrail?: string; queueTraceVisible?: boolean; runId?: string } | undefined {
+    getRefreshContext(documentUri: vscode.Uri | string): { networkName?: string; navTrail?: string; queueTraceVisible?: boolean; runId?: string; shownSourceUri?: string } | undefined {
         return this.uriToRefreshContext.get(this.canonicalizeUriString(documentUri));
     }
 
@@ -1024,6 +1035,16 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      * Resolve the GLSP client/session id for a given CAL document URI.
      * Useful for dispatching actions when the diagram tab is not the active webview.
      */
+    /** The document an editor's client was opened on: its root. */
+    getDocumentUriForClientId(clientId: string): string | undefined {
+        for (const [uri, id] of this.uriToClientId) {
+            if (id === clientId) {
+                return uri;
+            }
+        }
+        return undefined;
+    }
+
     getClientIdForDocumentUri(uri: vscode.Uri): string | undefined {
         return this.uriToClientId.get(this.canonicalizeUriString(uri));
     }

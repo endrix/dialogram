@@ -29,6 +29,10 @@ type DiagramClientBehavior = {
     acpConnectors?: AcpConnectorInfo[];
     /** Whether a run can be resumed at a step of its queue trace. */
     resumeAtStep?: boolean;
+    /** Where a nested workflow defined in another file opens: `in-place` shows it in
+     *  this editor, as a view of the editor's root (one editor per hierarchy);
+     *  `new-editor` (the default) opens the file in its own editor. */
+    nestedNavigation?: 'in-place' | 'new-editor';
 };
 
 export type AcpConnectorInfo = {

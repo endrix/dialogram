@@ -17,7 +17,8 @@ vi.mock('@eclipse-glsp/client', () => ({
 }));
 
 vi.mock('../../diagram-client/src/navigation-ui', () => ({
-    WorkflowNavigationUi: class {}
+    WorkflowNavigationUi: class {},
+    navigatesInPlace: () => (globalThis as any).diagramIdentifier?.clientBehavior?.nestedNavigation === 'in-place'
 }));
 
 vi.mock('@eclipse-glsp/sprotty', () => ({
@@ -141,5 +142,55 @@ describe('WorkflowNetworkNavigationMouseListener', () => {
 
         const actions = listener.doubleClick(target, {} as MouseEvent);
         expect(actions).toEqual([]);
+    });
+});
+
+/**
+ * A nested workflow defined in another file: a new editor by default, a view in
+ * this editor when the product navigates in place.
+ */
+describe('cross-file drill-down', () => {
+    const root = 'file:///workspace/top.py';
+    const child = 'file:///workspace/layers/block.py';
+    const navTrail = [
+        { sourceUri: root, workflowName: 'top' },
+        { sourceUri: child, workflowName: 'block', workflowInstanceName: 'b2' }
+    ];
+
+    function drillDown(nestedNavigation?: string) {
+        const listener = new WorkflowNetworkNavigationMouseListener();
+        (listener as any).editorContext = { sourceUri: root, diagramType: 'workflow-diagram' };
+        (listener as any).workflowNavUi = { buildNavigationTrail: () => navTrail, noteNavigate: () => {} };
+        (globalThis as any).diagramIdentifier = {
+            clientBehavior: nestedNavigation ? { nestedNavigation } : {}
+        };
+        (globalThis as any).__calDiagramContext = { workflowName: 'top' };
+        return listener.doubleClick({
+            type: WorkflowDiagramTypes.NODE_NETWORK,
+            args: {
+                [WorkflowDiagramMetadata.IS_NETWORK_INSTANCE]: true,
+                [WorkflowDiagramMetadata.REFERENCED_URI]: child,
+                [WorkflowDiagramMetadata.REFERENCED_ENTITY_NAME]: 'block',
+                'wf:entityInstanceName': 'b2'
+            }
+        } as any, {} as MouseEvent);
+    }
+
+    it('opens a new editor by default', () => {
+        const actions = drillDown();
+        expect(actions).toHaveLength(1);
+        expect((actions[0] as any).kind).toBe('navigateToExternalTarget');
+    });
+
+    it('shows the nested workflow in this editor when navigating in place', () => {
+        const actions = drillDown('in-place');
+
+        expect(actions).toHaveLength(1);
+        expect(RequestModelAction.is(actions[0] as any)).toBe(true);
+        const request = actions[0] as any;
+        // The defining file is what is rendered; the trail keeps the root first.
+        expect(request.options.sourceUri).toBe(child);
+        expect(request.options.networkName).toBe('block');
+        expect(JSON.parse(request.options[NAV_TRAIL_ARG])[0]).toEqual({ sourceUri: root, workflowName: 'top' });
     });
 });

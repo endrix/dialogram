@@ -863,7 +863,14 @@ export async function activateGlspIntegration(
                 };
                 if (typeof sourceUri === 'string') {
                     const finalOptions = (patched.action.options as any) ?? {};
-                    editorProvider?.setRefreshContext(sourceUri, {
+                    // Keyed by the editor the request came from, not the file it
+                    // asks for: navigating in place, an editor shows workflows of
+                    // other files, and refreshes them as views of its own root.
+                    const editorDocumentUri = typeof (message as any).clientId === 'string'
+                        ? editorProvider?.getDocumentUriForClientId((message as any).clientId)
+                        : undefined;
+                    editorProvider?.setRefreshContext(editorDocumentUri ?? sourceUri, {
+                        shownSourceUri: sourceUri,
                         ...(typeof finalOptions.networkName === 'string' && finalOptions.networkName.trim() !== ''
                             ? { networkName: finalOptions.networkName.trim() }
                             : {}),
@@ -1422,14 +1429,21 @@ function registerCalDiagramCommands(
                 runOutput.appendLine(`[wf-lang live] SKIP ${kind === 'agentContextOnly' ? 'agent-ctx' : 'full'} refresh: provider=true clientId=undefined`);
                 return;
             }
+            // The run is the root's; the view may be a nested workflow under it,
+            // in another file. Refresh the view the editor shows -- its file,
+            // workflow and trail -- or a run would pull it back to the root.
+            const view = editorProvider.getRefreshContext(uri);
             const refreshAction = RequestModelAction.create({
                 requestId: (kind === 'agentContextOnly' ? 'refresh-agent-ctx-' : 'refresh-during-run-') + Date.now(),
                 options: {
-                    sourceUri: uri.toString(),
+                    sourceUri: view?.shownSourceUri ?? uri.toString(),
                     diagramType: WORKFLOW_DIAGRAM_TYPE,
                     ...(kind === 'agentContextOnly' ? { agentContextOnly: true } : {}),
                     queueTraceVisible: getQueueTraceVisible(),
-                    ...(networkName ? { networkName } : {})
+                    ...(view?.networkName
+                        ? { networkName: view.networkName }
+                        : (networkName ? { networkName } : {})),
+                    ...(view?.navTrail ? { [NAV_TRAIL_ARG]: view.navTrail } : {})
                 }
             });
             runOutput.appendLine(`[wf-lang live] dispatching ${kind === 'agentContextOnly' ? 'agent-ctx-only refresh' : 'full refresh'}`);

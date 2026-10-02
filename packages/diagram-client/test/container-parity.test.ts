@@ -15,11 +15,12 @@
  *
  * The baseline is no longer a pure capture of that commit: features added since
  * the split are appended to it deliberately, and the fixture currently carries
- * four additions — `IEdgeRouter -> LibavoidEdgeRouter` (the client-side live
+ * five additions — `IEdgeRouter -> LibavoidEdgeRouter` (the client-side live
  * routing tier), `ChangeBoundsTool -> WorkflowChangeBoundsTool` (the mouse-drag
  * threshold) and `IDiagramStartup -> WorkflowPaletteIconStartup` (draws the
- * palette icons a product contributed), and the `dialogram.rerunFromHere` action handler
- * (resumes the shown run before a node's last firing) — plus one change: `label:boundary:type` is bound to
+ * palette icons a product contributed), the `dialogram.rerunFromHere` action handler
+ * (resumes the shown run before a node's last firing) and the `dialogram.openInOwnEditor`
+ * one (opens a nested workflow's file as a root of its own) — plus one change: `label:boundary:type` is bound to
  * the non-editable `BoundaryLabel`, because editing it renamed the port.
  * The oracle still does its job: it fails on any binding this composition gains
  * or loses, and updating the fixture is the deliberate act of accepting one.
