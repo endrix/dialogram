@@ -50,6 +50,7 @@ export {
 
 export {
     CliRunDriver,
+    resumeFailedRunCommandId,
     type CliRunDriverConfig,
     type CliRunDriverHost,
     type AgentToolEntitySettings,

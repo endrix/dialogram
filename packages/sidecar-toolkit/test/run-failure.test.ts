@@ -51,13 +51,14 @@ describe('the task the chat is asked to start', () => {
         expect(task.prompt).toContain('- Error: ValueError: deep down');
         expect(task.prompt).toContain('/w/wf-out/r1');
         expect(task.prompt).toContain('```text\nTraceback (most recent call last):');
-        expect(task.prompt).toContain('resumed from where it failed');
+        expect(task.prompt).toContain('Once the fix is applied, call the `resume_failed_run` tool');
+        expect(task.prompt).toContain('resume the run from where it failed');
     });
 
     it('says nothing of resuming when the run cannot be resumed', () => {
         const plain = fixTask({ sourceFile: '/w/top.py', failure: undefined, exitCode: 2, stderrTail: '', canResume: false });
         expect(plain.prompt).toContain('- Error: the run exited with code 2');
-        expect(plain.prompt).not.toContain('resumed');
+        expect(plain.prompt).not.toContain('resume_failed_run');
         expect(plain.prompt).not.toContain('```text');
     });
 });

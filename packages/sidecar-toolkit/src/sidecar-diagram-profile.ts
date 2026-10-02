@@ -14,7 +14,8 @@
 import type { EntityPaletteItemSpec, NodeFamilySpec } from '@dialogram/shared';
 import * as vscode from 'vscode';
 import { invokeSidecarOp } from './sidecar-graph-export.js';
-import { createRegistryChatTools } from './registry-tools.js';
+import { createRegistryChatTools, type RegistryChatTool } from './registry-tools.js';
+import { RESUME_TOOL } from './run-failure.js';
 import { getCliInvocation,
     getSidecarCommand,
     type SidecarRuntimeConfig,
@@ -32,6 +33,7 @@ import { registerSidecarCommands } from './sidecar-commands.js';
 import { registerNewSourceFileCommand } from './new-source-file-command.js';
 import {
     CliRunDriver,
+    resumeFailedRunCommandId,
     type CliRunDriverConfig,
     type CliRunDriverHost,
     type AgentToolEntitySettings
@@ -326,6 +328,12 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
                 args
             )
     });
+    // A product that can resume runs gives the chat a way to offer it: the
+    // agent that fixed a failed run proposes resuming it, and the person says
+    // yes or no.
+    if (input.cliResumeArgs) {
+        chatTools.push(resumeFailedRunTool(input.commands.runWorkflow));
+    }
 
     const runDriver = (context: vscode.ExtensionContext, host: RunHost): vscode.Disposable => {
         const config: CliRunDriverConfig = {
@@ -461,4 +469,28 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         enumerable: false
     });
     return profile;
+}
+
+
+/**
+ * The chat tool that resumes a failed run once the agent's fix is in. It asks
+ * the person first (the run driver's `resumeFailedRun`); the agent learns the
+ * answer, and the run's outcome shows on the diagram.
+ */
+export function resumeFailedRunTool(runWorkflowCommandId: string): RegistryChatTool {
+    return {
+        name: RESUME_TOOL,
+        description:
+            'After fixing the cause of a failed workflow run, offer the user to resume that run from where it failed. '
+            + 'The user is asked to confirm; what ran before the failure is replayed, not run again. '
+            + 'Call it once the fix is applied to the files -- not before, and not to start a new run.',
+        inputSchema: { type: 'object', properties: {} },
+        handler: async (file) => {
+            const result = await vscode.commands.executeCommand<string>(
+                resumeFailedRunCommandId(runWorkflowCommandId),
+                { file }
+            );
+            return typeof result === 'string' ? result : 'The resume could not be offered.';
+        }
+    };
 }

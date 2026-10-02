@@ -23,6 +23,9 @@ export interface FixTask {
     prompt: string;
 }
 
+/** The chat tool that resumes the failed run once a fix is in. */
+export const RESUME_TOOL = 'resume_failed_run';
+
 /** At most this much of the run's stderr goes to the agent: the end, where the traceback is. */
 export const STDERR_TAIL_CHARS = 8000;
 
@@ -81,13 +84,14 @@ export function fixTask(opts: {
     if (tail) {
         lines.push('', 'The end of the run\'s error output:', '', '```text', tail, '```');
     }
-    lines.push(
-        '',
-        'Explain the cause first, then propose the change, and say which file it goes in.'
-            + (opts.canResume
-                ? ' Once it is fixed, the run can be resumed from where it failed rather than started over.'
-                : '')
-    );
+    lines.push('', 'Explain the cause first, then propose the change, and say which file it goes in.');
+    if (opts.canResume) {
+        lines.push(
+            '',
+            `Once the fix is applied, call the \`${RESUME_TOOL}\` tool: it offers the user to resume the run from where it failed, `
+                + 'with what ran before replayed rather than run again.'
+        );
+    }
     const where = failureWhere(opts.failure);
     return {
         name: `Fix: ${where ?? opts.workflowName ?? 'failed run'}`,

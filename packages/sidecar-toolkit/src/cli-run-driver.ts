@@ -37,7 +37,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { ExecutionOverlaySink } from '@dialogram/shared';
 import { resumeStepFor } from './resume-at-step.js';
-import { appendTail, failureHeadline, fixTask, type FixTask, type RunFailure } from './run-failure.js';
+import { appendTail, failureHeadline, failureWhere, fixTask, type FixTask, type RunFailure } from './run-failure.js';
 import { requestWorkflowStop, spawnWorkflowProcess } from './process-control.js';
 import { RunEventStreamClient, type RunStreamEvent } from './run-event-stream-client.js';
 
@@ -51,7 +51,14 @@ type RunWorkflowArgs = {
     atStep?: number;
     /** With `resumeFrom`: resume at the step before this node's last firing. */
     resumeAtActor?: string;
+    /** With `resumeFrom`: resume at its last completed step -- where it failed. */
+    resumeAtLastStep?: boolean;
 };
+
+/** The command the chat's `resume_failed_run` tool runs (see `CliRunDriver.resumeFailedRun`). */
+export function resumeFailedRunCommandId(runWorkflowCommandId: string): string {
+    return `${runWorkflowCommandId}.resumeFailed`;
+}
 
 /**
  * Per-entity agent tool-calling settings, keyed by entity instance name.
@@ -177,6 +184,9 @@ export interface LiveOverlaySubscription {
 
 export class CliRunDriver {
     private activeRun: ActiveWorkflowRun | undefined;
+    /** The last failed run of each workflow file (by fsPath), until it runs clean. */
+    private readonly failedRuns = new Map<string, { sourceUri: vscode.Uri; workflowName?: string; runDir: string; failure?: RunFailure }>();
+    private lastFailedFile: string | undefined;
     /** Per-entity agent-tool overrides; mutated by the config commands and read
      *  when building run args. Persisted through `config.overrideState`. */
     private readonly agentToolOverrides = new Map<string, AgentToolEntitySettings>();
@@ -209,6 +219,15 @@ export class CliRunDriver {
         // Command: Stop currently running workflow process.
         context.subscriptions.push(
             vscode.commands.registerCommand(this.config.stopWorkflowCommandId, async () => this.stopWorkflow())
+        );
+
+        // Command: resume the last failed run, at the user's word -- what the
+        // chat's `resume_failed_run` tool runs once the agent's fix is in.
+        context.subscriptions.push(
+            vscode.commands.registerCommand(
+                resumeFailedRunCommandId(this.config.runWorkflowCommandId),
+                async (args?: { file?: string }) => this.resumeFailedRun(args?.file)
+            )
         );
 
         // Command: Run workflow (invokes the configured runtime CLI)
@@ -728,6 +747,48 @@ export class CliRunDriver {
         });
     }
 
+    /**
+     * Resume the last failed run of `file`'s workflow from where it failed, if
+     * the person agrees. Returns what happened, in words, for the agent that
+     * asked: it proposed this after fixing the failure.
+     *
+     * `file` is the chat session's file. Navigating a hierarchy in place that
+     * can be a nested workflow's file, not the root that ran; then the last run
+     * that failed is the one meant.
+     */
+    async resumeFailedRun(file?: string): Promise<string> {
+        if (!this.config.cliResumeArgs) {
+            return 'This runtime cannot resume a run; ask the user to run the workflow again.';
+        }
+        const failed = (file ? this.failedRuns.get(file) : undefined)
+            ?? (this.lastFailedFile ? this.failedRuns.get(this.lastFailedFile) : undefined);
+        if (!failed) {
+            return 'There is no failed run to resume: the workflow has run clean since, or has not failed in this session.';
+        }
+        if (this.activeRun) {
+            return 'A run is already in progress; the failed run can be resumed once it ends.';
+        }
+        const RESUME = 'Resume';
+        const where = failureWhere(failed.failure);
+        const choice = await vscode.window.showInformationMessage(
+            `The chat's fix is in. Resume the run${failed.workflowName ? ` of ${failed.workflowName}` : ''} from where it failed${where ? ` (${where})` : ''}? What ran before is replayed, not run again.`,
+            RESUME,
+            'Not now'
+        );
+        if (choice !== RESUME) {
+            return 'The user chose not to resume the run now.';
+        }
+        // Not awaited: a run can outlast a tool call. Its outcome shows on the
+        // diagram, and a new failure is offered for fixing again.
+        void this.runWorkflow({
+            sourceUri: failed.sourceUri.toString(),
+            workflowName: failed.workflowName,
+            resumeFrom: failed.runDir,
+            resumeAtLastStep: true
+        });
+        return 'The run is resuming from where it failed. Its result will show on the diagram; if it fails again, the user is offered a new fix.';
+    }
+
     /** The error a run recorded, if its record has one. */
     private async readRunFailure(runDir: string): Promise<RunFailure | undefined> {
         try {
@@ -862,6 +923,7 @@ export class CliRunDriver {
             }
             const resolved = await resumeStepFor(resumeFrom, {
                 atStep: args?.atStep,
+                atLastStep: args?.resumeAtLastStep === true,
                 actor: typeof args?.resumeAtActor === 'string' && args.resumeAtActor.trim() ? args.resumeAtActor.trim() : undefined
             });
             if ('error' in resolved) {
@@ -1123,12 +1185,19 @@ export class CliRunDriver {
                 workflowName
             });
             const failure = runDir ? await this.readRunFailure(runDir) : undefined;
+            if (runDir) {
+                // What the agent's fix resumes (`resume_failed_run`).
+                this.failedRuns.set(sourceUri.fsPath, { sourceUri, workflowName, runDir, failure });
+                this.lastFailedFile = sourceUri.fsPath;
+            }
             void this.reportFailure({ sourceUri, workflowName, failure, exitCode, stderrTail, runDir, output });
             return { error: failureHeadline(failure, exitCode) };
         }
 
         // Refresh diagram so overlay decorations can pick up the new run artifacts.
         await refreshDiagram(true);
+        // It ran clean: nothing left to resume for it.
+        this.failedRuns.delete(sourceUri.fsPath);
 
         const queueTracePath = await this.findLatestQueueTracePath({
             baseOutDir: runOutDir,

@@ -7,6 +7,8 @@ export interface ResumeRequest {
     atStep?: number;
     /** A node: resume at the step before its last firing, so that firing happens again. */
     actor?: string;
+    /** The run's last completed step: where it stopped, every firing before replayed. */
+    atLastStep?: boolean;
 }
 
 export type ResumeStep = { step: number } | { error: string };
@@ -32,6 +34,10 @@ export async function resumeStepFor(runDir: string, request: ResumeRequest): Pro
     }
     if (!steps.every(step => typeof step.journalSeq === 'number')) {
         return { error: `The run in ${runDir} was made by a runtime that cannot resume at a step.` };
+    }
+
+    if (request.atLastStep) {
+        return { step: steps.length };
     }
 
     if (request.actor !== undefined) {
