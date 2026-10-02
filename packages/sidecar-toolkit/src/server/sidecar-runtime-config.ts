@@ -208,6 +208,13 @@ export interface SidecarRuntimeConfig {
     graphAcquisition: 'sidecar-export' | 'cli-plan';
     /** argv builder for the 'cli-plan' path, e.g. (file) => ['plan', file, '--format', 'graph', '--best-effort']. */
     cliGraphArgs?: (file: string, requestedWorkflow?: string) => string[];
+    /**
+     * The runtime arguments that export the whole hierarchy rooted at
+     * `rootWorkflow` in `file` (product syntax). With it, a view of a nested
+     * workflow, and the outline, are read from one cached export per root
+     * instead of a plan per view (see `hierarchy-cache.ts`).
+     */
+    cliHierarchyArgs?: (file: string, rootWorkflow: string) => string[];
     /** Product-specific label prefix for the sidecar-export failure message (the toolkit carries no
      *  product literal); defaults to a neutral 'Graph export failed' when unset. */
     graphExportFailureLabel?: string;

@@ -18,7 +18,12 @@ import type {
     GraphSourceAnalysis,
     ModelSourceOptions
 } from '@dialogram/shared';
-import { GRAPH_SOURCE_URI_ARG } from '@dialogram/diagram-server/server/graph-load-request-options';
+import {
+    GRAPH_SOURCE_URI_ARG,
+    NAV_TRAIL_ARG,
+    parseNavigationTrailArg
+} from '@dialogram/diagram-server/server/graph-load-request-options';
+import { HierarchyCache, findInstance, outlineOf } from './hierarchy-cache';
 import { extractWorkflowDefinitionNames, normalizeSourceUriKey } from './source-analysis';
 import {
     type SidecarRuntimeConfig,
@@ -44,6 +49,9 @@ export class CliGraphModelSource implements DiagramModelSource {
      */
     private readonly planGraphCache = new Map<string, string>();
     private static readonly PLAN_GRAPH_CACHE_MAX = 24;
+
+    /** One export per hierarchy root, when the runtime can make one. */
+    private readonly hierarchyCache = new HierarchyCache((rootFile, rootWorkflow) => this.exportHierarchy(rootFile, rootWorkflow));
 
     constructor(
         private readonly cfg: SidecarRuntimeConfig,
@@ -78,6 +86,11 @@ export class CliGraphModelSource implements DiagramModelSource {
             ? undefined
             : this.fallback.analysis.pickDefaultWorkflowName(workflowFilePath, localWorkflowNames);
         const selectedWorkflowName = requestedWorkflowName ?? defaultWorkflowName;
+
+        const fromHierarchy = await this.viewFromHierarchy(sourceUri, workflowFilePath, selectedWorkflowName, opts);
+        if (fromHierarchy) {
+            return this.fallback.attachDiagnostics({ ...fromHierarchy, resolvedOptions: opts });
+        }
 
         const args: string[] = [...cliInvocation.argsPrefix, ...this.cfg.cliGraphArgs(workflowFilePath, selectedWorkflowName)];
         if (selectedWorkflowName) {
@@ -195,6 +208,73 @@ export class CliGraphModelSource implements DiagramModelSource {
         }
 
         return nodeIdentitiesFromDoc(JSON.parse(result.stdout));
+    }
+
+    /**
+     * The view, read from its hierarchy's export, with the outline attached.
+     *
+     * The root is the trail's first crumb, or the view itself without a trail;
+     * the view is the instance at the trail's instance path. Anything that does
+     * not line up -- no export, an instance that did not elaborate, unsaved
+     * text being previewed -- leaves the view to a plan of its own.
+     */
+    private async viewFromHierarchy(
+        sourceUri: string,
+        workflowFilePath: string,
+        workflowName: string | undefined,
+        opts: Record<string, unknown>
+    ): Promise<GraphDocument | undefined> {
+        if (!this.cfg.cliHierarchyArgs || typeof opts.content === 'string') {
+            return undefined;
+        }
+        const trail = parseNavigationTrailArg(opts[NAV_TRAIL_ARG]);
+        const root = trail.length > 0
+            ? { file: URI.parse(trail[0].sourceUri).fsPath, workflow: trail[0].workflowName }
+            : workflowName ? { file: workflowFilePath, workflow: workflowName } : undefined;
+        if (!root) {
+            return undefined;
+        }
+        const exported = await this.hierarchyCache.get(root.file, root.workflow);
+        if (!exported) {
+            return undefined;
+        }
+        const path = trail.slice(1).map(crumb => crumb.workflowInstanceName ?? crumb.workflowName);
+        const outline = outlineOf(exported.hierarchy);
+        if (path.length === 0) {
+            if (workflowFilePath !== root.file || (workflowName && workflowName !== root.workflow)) {
+                return undefined;
+            }
+            const { hierarchy: _tree, ...rootDoc } = exported;
+            return { ...(rootDoc as unknown as GraphDocument), hierarchy: outline };
+        }
+        const instance = findInstance(exported.hierarchy, path);
+        if (
+            !instance?.graph
+            || (workflowName && instance.workflowName !== workflowName)
+            || (instance.sourcePath && URI.file(instance.sourcePath).fsPath !== workflowFilePath)
+        ) {
+            return undefined;
+        }
+        return { ...(instance.graph as GraphDocument), hierarchy: outline };
+    }
+
+    /** Runs the runtime's hierarchy export; its stdout, or undefined when it fails. */
+    private async exportHierarchy(rootFile: string, rootWorkflow: string): Promise<string | undefined> {
+        if (!this.cfg.cliHierarchyArgs) {
+            return undefined;
+        }
+        const cliInvocation = this.getCliInvocation();
+        const result = await runChildProcess(
+            cliInvocation.cmd,
+            [...cliInvocation.argsPrefix, ...this.cfg.cliHierarchyArgs(rootFile, rootWorkflow)],
+            { timeoutMs: this.graphLoadTimeoutMs(rootFile) }
+        );
+        const failure = describeChildFailure(cliInvocation.cmd, result);
+        if (failure || result.stdout.trim() === '') {
+            console.warn(`[CliGraphModelSource] Hierarchy export failed for ${rootFile}#${rootWorkflow}: ${failure ?? 'no output'}`);
+            return undefined;
+        }
+        return result.stdout;
     }
 
     /** Produce a well-formed failure document when acquisition is impossible; delegates to the fallback. */
