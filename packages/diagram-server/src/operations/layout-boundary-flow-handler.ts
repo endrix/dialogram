@@ -11,7 +11,6 @@ import {
     GModelSerializer
 } from '@eclipse-glsp/server';
 import { inject, injectable, optional } from 'inversify';
-import { URI } from 'vscode-uri';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { WORKFLOW_LAYOUT_PERSISTENCE_KEY, WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
@@ -22,6 +21,7 @@ import {
     WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND,
     WorkflowRerouteEdgesAvoidOverlapsOperationHandler
 } from './reroute-edges-avoid-overlaps-handler';
+import { layoutTargetOf } from '../server/layout-target';
 
 export const WORKFLOW_LAYOUT_BOUNDARY_FLOW_OPERATION_KIND = 'dialogram.layoutBoundaryFlow' as const;
 
@@ -94,11 +94,7 @@ export class WorkflowLayoutBoundaryFlowOperationHandler extends OperationHandler
             return;
         }
 
-        const workflowFilePath = URI.parse(diagramModel.documentUri).fsPath;
-        const explicitName = (diagramModel as any).workflowName as string | undefined;
-        const networkId = explicitName && explicitName.trim() !== ''
-            ? explicitName.trim()
-            : 'unknown';
+        const { filePath: workflowFilePath, networkId } = layoutTargetOf(diagramModel as any);
         const positions = this.collectNodePositions(this.modelState.root);
         const routes = this.collectEdgeRoutes(this.modelState.root);
         await this.layoutPersistence.saveLayoutImmediate(workflowFilePath, networkId, positions, routes);

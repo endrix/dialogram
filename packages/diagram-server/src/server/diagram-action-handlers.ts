@@ -41,7 +41,6 @@ import {
     UpdateModelAction
 } from '@eclipse-glsp/protocol';
 import { inject, injectable, optional } from 'inversify';
-import { URI } from 'vscode-uri';
 import {
     WorkflowDiagramMetadata,
     type WorkflowDiagramModel,
@@ -59,6 +58,7 @@ import {
 import { clearAllEdgeRoutingPoints } from '../routing/clear-edge-routes';
 import { releaseBoundaryNodeConstraints, restoreNodeLayoutOptions, runBoundaryFlowLayout } from '../operations/boundary-flow-layout';
 import { perfNow } from './graph-load-perf';
+import { layoutTargetOf } from './layout-target';
 
 /**
  * Custom ModelSubmissionHandler - minimal logging version.
@@ -1747,11 +1747,7 @@ export class WorkflowLayoutOperationHandler extends OperationHandler {
             return;
         }
 
-        const workflowFilePath = URI.parse(diagramModel.documentUri).fsPath;
-        const explicitName = (diagramModel as any)?.workflowName as string | undefined;
-        const networkId = explicitName && explicitName.trim() !== ''
-            ? explicitName.trim()
-            : 'unknown';
+        const { filePath: workflowFilePath, networkId } = layoutTargetOf(diagramModel as any);
         const positions = this.collectNodePositions(this.modelState.root);
         const routes = this.collectEdgeRoutes(this.modelState.root);
         await this.layoutPersistence.saveLayoutImmediate(workflowFilePath, networkId, positions, routes);

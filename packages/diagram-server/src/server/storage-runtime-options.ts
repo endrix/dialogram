@@ -32,6 +32,12 @@ export interface StorageRuntimeOptions {
      */
     nodeFamilies?: NodeFamilySpec[];
     /**
+     * How the product navigates nested workflows (`clientBehavior.nestedNavigation`).
+     * In place, a nested view's layout is the root's, stored per instance in the
+     * root file's layout (see `layout-target.ts`).
+     */
+    nestedNavigation?: 'in-place' | 'new-editor';
+    /**
      * Whether the tool palette offers anything to create. Default `true`.
      *
      * `false` empties it — the platform's Entities/Ports/Connections categories

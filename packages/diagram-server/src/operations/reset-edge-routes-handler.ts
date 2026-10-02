@@ -8,12 +8,12 @@ import {
     type MaybePromise
 } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
-import { URI } from 'vscode-uri';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
 import { GModelSerializer } from '@eclipse-glsp/server';
+import { layoutTargetOf } from '../server/layout-target';
 
 export const WORKFLOW_RESET_EDGE_ROUTES_OPERATION_KIND = 'dialogram.resetEdgeRoutes' as const;
 
@@ -119,11 +119,7 @@ export class WorkflowResetEdgeRoutesOperationHandler extends OperationHandler {
             return;
         }
 
-        const workflowFilePath = URI.parse(diagramModel.documentUri).fsPath;
-        const explicitName = (diagramModel as any).workflowName as string | undefined;
-        const networkId = explicitName && explicitName.trim() !== ''
-            ? explicitName.trim()
-            : 'unknown';
+        const { filePath: workflowFilePath, networkId } = layoutTargetOf(diagramModel as any);
 
         // Prefer the already-persisted node map (it uses stable keys), falling back to the
         // current model snapshot if no layout file exists yet.

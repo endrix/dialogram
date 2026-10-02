@@ -10,7 +10,6 @@ import { GEdge, GNode, GPort } from '@eclipse-glsp/graph';
 import { ChangeBoundsOperation } from '@eclipse-glsp/protocol';
 import { GModelChangeBoundsOperationHandler, GModelSerializer, GModelRecordingCommand, type Command, type MaybePromise } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
-import { URI } from 'vscode-uri';
 
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
@@ -20,6 +19,7 @@ import {
     WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND,
     WorkflowRerouteEdgesAvoidOverlapsOperationHandler
 } from './reroute-edges-avoid-overlaps-handler';
+import { layoutTargetOf } from '../server/layout-target';
 
 @injectable()
 export class WorkflowChangeBoundsOperationHandler extends GModelChangeBoundsOperationHandler {
@@ -66,8 +66,7 @@ export class WorkflowChangeBoundsOperationHandler extends GModelChangeBoundsOper
             return;
         }
 
-        const workflowFilePath = URI.parse(diagramModel.documentUri).fsPath;
-        const networkId = this.getNetworkId(diagramModel);
+        const { filePath: workflowFilePath, networkId } = layoutTargetOf(diagramModel as any);
 
         void (async () => {
             const positions = (await this.layoutPersistence.loadLayout(workflowFilePath, networkId)) ?? new Map();
@@ -196,13 +195,5 @@ export class WorkflowChangeBoundsOperationHandler extends GModelChangeBoundsOper
             return portName;
         }
         return undefined;
-    }
-
-    private getNetworkId(diagramModel: WorkflowDiagramModel): string {
-        const explicit = (diagramModel as any)?.workflowName as string | undefined;
-        if (typeof explicit === 'string' && explicit.trim() !== '') {
-            return explicit.trim();
-        }
-        return 'unknown';
     }
 }

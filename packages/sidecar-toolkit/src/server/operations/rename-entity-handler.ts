@@ -2,7 +2,7 @@ import { Action, Command, ModelState, OperationHandler } from '@eclipse-glsp/ser
 import { inject, injectable } from 'inversify';
 import { URI } from 'vscode-uri';
 import * as vscode from 'vscode';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { WORKFLOW_NETWORK_MODEL_KEY, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { LayoutPersistenceService } from '@dialogram/diagram-server/services/layout-persistence-service';
 
 import { ReversibleMultiWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-multi-workspace-edit-command';
@@ -93,6 +93,21 @@ export class RenameEntityOperationHandler extends OperationHandler {
                             renameInfo.oldName,
                             renameInfo.newName
                         );
+                        // A nested view in place keeps its layout per instance,
+                        // in the root's store: the node is renamed there too.
+                        const diagramModel = this.modelState.get(WORKFLOW_NETWORK_MODEL_KEY) as any;
+                        const target = diagramModel?.layoutTarget as { filePath: string; networkId: string } | undefined;
+                        if (
+                            target
+                            && (target.filePath !== URI.parse(renameInfo.sourceUri).fsPath || target.networkId !== networkId)
+                        ) {
+                            await this.layoutPersistence.renameNode(
+                                target.filePath,
+                                target.networkId,
+                                renameInfo.oldName,
+                                renameInfo.newName
+                            );
+                        }
                     } catch {
                         // Ignore layout migration errors; rename already applied.
                     }
