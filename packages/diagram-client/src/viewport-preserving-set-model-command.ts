@@ -17,8 +17,13 @@ type RootArgs = {
 /** One-shot guard for the always-on `firstSetModel` webview breadcrumb (see below). */
 let firstSetModelLogged = false;
 
-function modelViewportKey(root: unknown): string | undefined {
-    const args = ((root as any)?.args ?? {}) as RootArgs;
+/**
+ * Which view a model root is: its file, its workflow, and -- for a nested
+ * workflow shown in place -- the instance path that reached it, so two
+ * instances of one workflow are two views.
+ */
+export function modelViewportKey(root: unknown): string | undefined {
+    const args = ((root as any)?.args ?? {}) as RootArgs & { 'wf:navTrail'?: unknown };
     const sourceUri = typeof args.sourceUri === 'string' ? args.sourceUri : undefined;
     const workflowName =
         (typeof args['wf:selectedWorkflow'] === 'string' ? args['wf:selectedWorkflow'] : undefined)
@@ -27,7 +32,68 @@ function modelViewportKey(root: unknown): string | undefined {
     if (!sourceUri || !workflowName) {
         return undefined;
     }
-    return `${sourceUri}::${workflowName}`;
+    return `${sourceUri}::${workflowName}${instancePathKey(args['wf:navTrail'])}`;
+}
+
+function instancePathKey(rawTrail: unknown): string {
+    try {
+        const trail = typeof rawTrail === 'string' ? JSON.parse(rawTrail) : rawTrail;
+        if (!Array.isArray(trail) || trail.length < 2) {
+            return '';
+        }
+        return '::' + trail.slice(1).map((crumb: any) => crumb?.workflowInstanceName ?? crumb?.workflowName ?? '').join('/');
+    } catch {
+        return '';
+    }
+}
+
+/**
+ * The viewport each view was last left at, so navigating back to one returns
+ * to where it was -- as a browser's back does -- rather than to the default
+ * scroll, which puts the graph off-center. Per webview: one editor's views.
+ */
+const viewportsByView = new Map<string, { zoom: number; scroll: { x: number; y: number } }>();
+
+type Viewport = { zoom: number; scroll: { x: number; y: number } };
+type ViewportRoot = { zoom?: number; scroll?: { x: number; y: number } };
+
+/**
+ * Where the new model's viewport should be, decided across a `SetModelAction`:
+ *
+ * - the same view refreshed (a save, a run, a live preview): kept as it is;
+ * - a view navigated to that this editor showed before: back where it was left;
+ * - a view never shown here: centered (returns `'center'`).
+ *
+ * The view left is remembered in `store` first. Sets `newRoot`'s zoom and
+ * scroll in place for the first two cases.
+ */
+export function settleViewport(
+    previousRoot: ViewportRoot,
+    newRoot: ViewportRoot,
+    store: Map<string, Viewport>
+): 'center' | undefined {
+    const previousKey = modelViewportKey(previousRoot);
+    const nextKey = modelViewportKey(newRoot);
+    const sameView = !!previousKey && !!nextKey && previousKey === nextKey;
+    const hasViewport = (root: ViewportRoot): root is Viewport => typeof root.zoom === 'number' && !!root.scroll;
+
+    if (sameView) {
+        if (hasViewport(previousRoot) && hasViewport(newRoot)) {
+            newRoot.zoom = previousRoot.zoom;
+            newRoot.scroll = { ...previousRoot.scroll };
+        }
+        return undefined;
+    }
+    if (previousKey && hasViewport(previousRoot)) {
+        store.set(previousKey, { zoom: previousRoot.zoom, scroll: { ...previousRoot.scroll } });
+    }
+    const remembered = nextKey ? store.get(nextKey) : undefined;
+    if (remembered) {
+        newRoot.zoom = remembered.zoom;
+        newRoot.scroll = { ...remembered.scroll };
+        return undefined;
+    }
+    return 'center';
 }
 
 /**
@@ -83,24 +149,9 @@ export class ViewportPreservingSetModelCommand extends FeedbackAwareSetModelComm
         };
 
         this.workflowNavUi?.onModelChanged(newRoot);
-        this.initialViewport.maybeCenterOnInitialModel(newRoot);
 
-        const previousKey = modelViewportKey(previousRoot);
-        const nextKey = modelViewportKey(newRoot);
-        const sameWorkflowModel = !!previousKey && !!nextKey && previousKey === nextKey;
-
-        // Preserve viewport (scroll/zoom) if present on both roots.
-        // Important: do NOT carry viewport across workflow switches (e.g. parent -> child),
-        // otherwise nested workflows inherit stale parent viewport framing.
-        if (
-            sameWorkflowModel &&
-            typeof previousRoot.zoom === 'number' &&
-            previousRoot.scroll &&
-            typeof newRoot.zoom === 'number' &&
-            newRoot.scroll
-        ) {
-            newRoot.zoom = previousRoot.zoom;
-            newRoot.scroll = { ...previousRoot.scroll };
+        if (settleViewport(previousRoot, newRoot, viewportsByView) === 'center') {
+            this.initialViewport.centerSoon();
         }
 
         const idsToSelect = this.postEditSelection.consumeMatchingIds(newRoot);
