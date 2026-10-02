@@ -231,6 +231,23 @@ export interface DiagramRunHost {
    *  `task.mode`, named `task.name`, whose first message is `task.prompt`.
    *  `false` when no chat can take it there. */
   startChatTask?(task: DiagramChatTask, sourceUri: string): Promise<boolean>;
+  /** Asks the person to confirm, in the chat session shown on the diagram at
+   *  `sourceUri`: a card with `confirm.choices` as buttons. The answer's
+   *  `choice` is the button pressed, absent when declined; `undefined` when no
+   *  chat can ask there. */
+  confirmInChat?(confirm: DiagramChatConfirm, sourceUri: string): Promise<DiagramChatConfirmAnswer | undefined>;
+}
+
+/** A confirmation the platform puts to the person in a diagram's chat (see `DiagramRunHost.confirmInChat`). */
+export interface DiagramChatConfirm {
+  title: string;
+  text: string;
+  choices: string[];
+}
+
+/** The person's answer to a {@link DiagramChatConfirm}: the button pressed, none when declined. */
+export interface DiagramChatConfirmAnswer {
+  choice?: string;
 }
 
 /** A task the platform asks a diagram's chat to start (see `DiagramRunHost.startChatTask`). */

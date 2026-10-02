@@ -88,8 +88,8 @@ export function fixTask(opts: {
     if (opts.canResume) {
         lines.push(
             '',
-            `Once the fix is applied, call the \`${RESUME_TOOL}\` tool: it offers the user to resume the run from where it failed, `
-                + 'with what ran before replayed rather than run again.'
+            `Once the fix is applied, call the \`${RESUME_TOOL}\` tool: it asks the user, here in the chat, whether to resume the run `
+                + 'from where it failed, with what ran before replayed rather than run again. Do not ask them yourself first.'
         );
     }
     const where = failureWhere(opts.failure);

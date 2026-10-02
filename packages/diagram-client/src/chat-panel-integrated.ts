@@ -125,7 +125,18 @@ interface PermissionItem {
   resolved?: 'allowed' | 'denied';
 }
 
-type TimelineItem = MessageItem | ToolItem | PermissionItem;
+/** The platform asking the person to confirm something the session's agent proposed. */
+interface ConfirmItem {
+  kind: 'confirm';
+  id: string;
+  title: string;
+  text: string;
+  choices: string[];
+  /** The button pressed, or `null` once declined. */
+  resolved?: string | null;
+}
+
+type TimelineItem = MessageItem | ToolItem | PermissionItem | ConfirmItem;
 
 /**
  * What the panel shows: the diagram's own session with its agent, or one of
@@ -617,6 +628,22 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         }
         break;
 
+      case 'chat.confirm':
+        if (data && typeof data.id === 'string' && typeof data.text === 'string' && Array.isArray(data.choices)) {
+          this.timeline.push({
+            kind: 'confirm',
+            id: data.id,
+            title: typeof data.title === 'string' ? data.title : 'Confirm',
+            text: data.text,
+            choices: data.choices.map(String),
+          });
+          // It is the session's agent that proposed it: show the session.
+          if (this.view.kind !== 'session') this.showSession();
+          else this.update();
+          this.autoShow('confirm');
+        }
+        break;
+
       case 'chat.permissionRequest':
         if (data?.requestId) {
           this.showTyping = false;
@@ -989,6 +1016,14 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     this.update();
   }
 
+  /** Answer a confirmation with the button pressed (`null`: declined). */
+  private answerConfirm(item: ConfirmItem, choice: string | null): void {
+    if (item.resolved !== undefined) return;
+    this.sendToHost('chat.confirmAnswer', choice === null ? { id: item.id } : { id: item.id, choice });
+    item.resolved = choice;
+    this.update();
+  }
+
   /** Answer a running agent's question (or decline it, `answer` undefined). */
   private answerRunQuestion(q: LiveAgentQuestion, answer: string | undefined): void {
     if (q.resolved) return;
@@ -1311,7 +1346,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         : nothing}
       ${repeat(
         this.timeline,
-        (item, i) => (item.kind === 'tool' ? `t${item.id}` : item.kind === 'permission' ? `p${item.requestId}` : `m${i}`),
+        (item, i) => (item.kind === 'tool' ? `t${item.id}` : item.kind === 'permission' ? `p${item.requestId}` : item.kind === 'confirm' ? `c${item.id}` : `m${i}`),
         (item) => this.itemTemplate(item)
       )}
       ${this.streamingText || this.streamingThinking ? this.streamingTemplate() : nothing}
@@ -1566,6 +1601,30 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
           <span class="codicon ${icon}"></span>
           <span class="chat-tool-title">${item.title}</span>
           <span class="chat-tool-status">${statusText}</span>
+        </div>
+      `;
+    }
+
+    if (item.kind === 'confirm') {
+      return html`
+        <div class="chat-permission chat-confirm ${item.resolved !== undefined ? 'resolved' : ''}">
+          <div class="chat-permission-title">
+            <span class="codicon codicon-debug-continue"></span>
+            <span>${item.title}</span>
+          </div>
+          <div class="chat-question-text">${item.text}</div>
+          ${item.resolved === undefined
+            ? html`<div class="chat-permission-actions">
+                ${item.choices.map(
+                  (c, i) => html`<button
+                    class="chat-permission-btn ${i === item.choices.length - 1 && item.choices.length > 1 ? 'deny' : ''}"
+                    @click=${() => this.answerConfirm(item, c)}
+                  >
+                    ${c}
+                  </button>`
+                )}
+              </div>`
+            : html`<div class="chat-question-answer">${item.resolved ?? 'Declined'}</div>`}
         </div>
       `;
     }

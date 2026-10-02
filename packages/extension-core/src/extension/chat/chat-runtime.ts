@@ -15,7 +15,7 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { ACPClientService, type AcpAgentSpec, type TurnPart } from "../acp-client.js";
-import type { DiagramRunAnswer, DiagramRunQuestion } from "../../api";
+import type { DiagramChatConfirm, DiagramChatConfirmAnswer, DiagramRunAnswer, DiagramRunQuestion } from "../../api";
 import { SessionManager } from "../session-manager.js";
 import type {
   ChatMessageSink,
@@ -160,6 +160,10 @@ export class ChatRuntime {
     string,
     { resolve: (answer: DiagramRunAnswer) => void; timer?: ReturnType<typeof setTimeout> }
   >();
+
+  /** A confirmation put to the person in a session, waiting for the panel's `chat.confirmAnswer`. */
+  private readonly pendingConfirms = new Map<string, (answer: DiagramChatConfirmAnswer) => void>();
+  private nextConfirmId = 1;
 
   constructor(
     context: vscode.ExtensionContext,
@@ -838,6 +842,13 @@ export class ChatRuntime {
       case "chat.permissionResponse":
         this.acp.respondToPermission(data.requestId, data.optionId ?? null);
         return;
+      case "chat.confirmAnswer": {
+        const resolve = this.pendingConfirms.get(String(data?.id));
+        if (!resolve) return;
+        this.pendingConfirms.delete(String(data.id));
+        resolve(typeof data?.choice === "string" ? { choice: data.choice } : {});
+        return;
+      }
       case "chat.runAnswer": {
         const pending = this.pendingRunQuestions.get(String(data?.id));
         if (!pending) return;
@@ -878,6 +889,24 @@ export class ChatRuntime {
         : undefined;
       this.pendingRunQuestions.set(key, { resolve, timer });
       this.postToWebview(uri, { type: "chat.runQuestion", data: { ...question } });
+    });
+  }
+
+  /**
+   * Ask the person to confirm, in the session shown by the chat panel open on
+   * `uri`: a card in its timeline with `confirm.choices` as buttons. Resolves
+   * with the button pressed (none when declined); `undefined` when no panel can
+   * be reached, so the caller asks another way.
+   */
+  confirmInChat(uri: string, confirm: DiagramChatConfirm): Promise<DiagramChatConfirmAnswer | undefined> {
+    if (this.canReach && !this.canReach(uri)) {
+      this.logLine(`confirm "${confirm.title}": no chat panel on ${uri}`);
+      return Promise.resolve(undefined);
+    }
+    const id = String(this.nextConfirmId++);
+    return new Promise((resolve) => {
+      this.pendingConfirms.set(id, resolve);
+      this.postToWebview(uri, { type: "chat.confirm", data: { id, ...confirm } });
     });
   }
 
@@ -1163,6 +1192,9 @@ export class ChatRuntime {
 
   dispose(): void {
     this.clearConnectWatchdog();
+    // Nobody is left to answer: a pending confirmation is declined.
+    for (const resolve of this.pendingConfirms.values()) resolve({});
+    this.pendingConfirms.clear();
     this.acpForwardingDisposer();
     this.acp.stop();
     this.mcpHttp?.stop();

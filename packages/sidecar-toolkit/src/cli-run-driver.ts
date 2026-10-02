@@ -175,6 +175,10 @@ export interface CliRunDriverHost {
      *  `task.mode`, its first message `task.prompt`); `false` when no chat can.
      *  Without it a failed run is reported, and nothing is offered. */
     startChatTask?(task: FixTask, sourceUri: string): Promise<boolean>;
+    /** Asks the person to confirm in the chat session on the diagram at
+     *  `sourceUri` (`choices` as buttons): the button pressed, none when
+     *  declined, `undefined` when no chat can ask -- then a VS Code prompt does. */
+    confirmInChat?(confirm: { title: string; text: string; choices: string[] }, sourceUri: string): Promise<{ choice?: string } | undefined>;
 }
 
 /** Subscription handle returned by the driver's live-overlay APIs. */
@@ -769,12 +773,18 @@ export class CliRunDriver {
             return 'A run is already in progress; the failed run can be resumed once it ends.';
         }
         const RESUME = 'Resume';
+        const NOT_NOW = 'Not now';
         const where = failureWhere(failed.failure);
-        const choice = await vscode.window.showInformationMessage(
-            `The chat's fix is in. Resume the run${failed.workflowName ? ` of ${failed.workflowName}` : ''} from where it failed${where ? ` (${where})` : ''}? What ran before is replayed, not run again.`,
-            RESUME,
-            'Not now'
-        );
+        const text = `Resume the run${failed.workflowName ? ` of ${failed.workflowName}` : ''} from where it failed${where ? ` (${where})` : ''}? `
+            + 'What ran before is replayed, not run again.';
+        // Asked in the chat that made the fix, where the person is; a VS Code
+        // prompt only when no chat can ask.
+        const answer = this.host.confirmInChat
+            ? await this.host.confirmInChat({ title: 'Resume the failed run', text, choices: [RESUME, NOT_NOW] }, failed.sourceUri.toString())
+            : undefined;
+        const choice = answer
+            ? answer.choice
+            : await vscode.window.showInformationMessage(`The chat's fix is in. ${text}`, RESUME, NOT_NOW);
         if (choice !== RESUME) {
             return 'The user chose not to resume the run now.';
         }
