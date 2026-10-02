@@ -2936,7 +2936,8 @@ details[open] > summary .agent-chat-expand-arrow {
 .workflow-fab-btn[hidden] {
   display: none;
 }
-.workflow-debug-toggle-btn.active {
+.workflow-debug-toggle-btn.active,
+.workflow-hierarchy-outline-toggle.active {
   color: var(--vscode-focusBorder, #4daafc);
   border-color: var(--vscode-focusBorder, #4daafc);
 }
@@ -3273,23 +3274,13 @@ details[open] > summary .agent-chat-expand-arrow {
 
 /* ── Hierarchy outline (hierarchy-outline.ts) ─────────────────────────── */
 
-.workflow-hierarchy-outline-toggle {
+/* The toggle lives in the floating button stack, under the chat button. Until
+   the stack exists it floats on its own, where the stack will be. */
+.workflow-hierarchy-outline-toggle.floating {
     position: fixed;
-    top: 44px;
-    left: 8px;
-    z-index: 30;
-    width: 28px;
-    height: 28px;
-    border: 1px solid var(--vscode-editorWidget-border, #454545);
-    border-radius: 4px;
-    background: var(--vscode-editorWidget-background, #252526);
-    color: var(--vscode-foreground, #cccccc);
-    cursor: pointer;
-}
-
-.workflow-hierarchy-outline-toggle.active,
-.workflow-hierarchy-outline-toggle:hover {
-    background: var(--vscode-toolbar-hoverBackground, #2a2d2e);
+    bottom: calc(var(--workflow-wf-nav-height, 0px) + 16px);
+    right: 14px;
+    z-index: 1002;
 }
 
 .workflow-hierarchy-outline {

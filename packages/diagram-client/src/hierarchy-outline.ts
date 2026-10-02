@@ -121,7 +121,7 @@ export class HierarchyOutlinePanel {
                        placeholder="Filter instances…" aria-label="Filter instances" spellcheck="false" />
                 <div id="${BODY_ID}" class="workflow-hierarchy-outline-body" role="tree"></div>
             </aside>
-            <button id="${TOGGLE_ID}" class="workflow-hierarchy-outline-toggle" type="button"
+            <button id="${TOGGLE_ID}" class="workflow-fab-btn workflow-hierarchy-outline-toggle floating" type="button"
                     title="Hierarchy (O)" aria-label="Toggle hierarchy outline" hidden>
                 <span class="codicon codicon-type-hierarchy"></span>
             </button>`;
@@ -168,6 +168,10 @@ export class HierarchyOutlinePanel {
         const panel = document.getElementById(PANEL_ID);
         if (toggle) {
             toggle.hidden = !available;
+            placeInButtonStack(toggle);
+            // The stack and the chat button may be put in place after this
+            // listener runs; place it again once they are.
+            requestAnimationFrame(() => placeInButtonStack(toggle));
         }
         if (panel) {
             panel.hidden = !available || !this.open;
@@ -355,6 +359,32 @@ export class HierarchyOutlinePanel {
         }
         void this.dispatcher.dispatch(SelectAction.create({ selectedElementsIDs: [id] }) as never);
         void this.dispatcher.dispatch(CenterAction.create([id], { animate: true, retainZoom: true }) as never);
+    }
+}
+
+/**
+ * Put the hierarchy button in the floating button stack, directly under the
+ * chat button. The stack is a reversed column -- what comes first in it sits
+ * lowest -- so "under chat" is just before it. Without a stack yet, the button
+ * floats on its own until one exists.
+ */
+export function placeInButtonStack(
+    toggle: HTMLElement,
+    doc: Pick<Document, 'querySelector' | 'getElementById'> = document
+): void {
+    const stack = doc.querySelector('.workflow-fab-stack');
+    if (!stack) {
+        toggle.classList.add('floating');
+        return;
+    }
+    toggle.classList.remove('floating');
+    const chat = doc.getElementById('workflow-chat-toggle-btn');
+    if (chat && chat.parentElement === stack) {
+        if (toggle.nextElementSibling !== chat) {
+            stack.insertBefore(toggle, chat);
+        }
+    } else if (toggle.parentElement !== stack) {
+        stack.appendChild(toggle);
     }
 }
 
