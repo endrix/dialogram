@@ -3,7 +3,7 @@
  * testable headlessly (the panel imports GLSP values and cannot load without a
  * DOM) -- the split mlir-viewer's outline uses, for the same reason.
  */
-import type { HierarchyOutlineEntry } from '@dialogram/shared';
+import { hierarchyEntryAt, hierarchyTrailTo, type HierarchyOutlineEntry } from '@dialogram/shared';
 
 export interface OutlineCrumb {
     sourceUri: string;
@@ -37,30 +37,14 @@ export function outlineMatches(entry: HierarchyOutlineEntry, query: string): boo
 }
 
 /** The entry at `path`, if the outline has it. */
-export function entryAt(root: HierarchyOutlineEntry, path: string[]): HierarchyOutlineEntry | undefined {
-    let current: HierarchyOutlineEntry | undefined = root;
-    for (const name of path) {
-        current = current?.children.find(child => child.path[child.path.length - 1] === name);
-    }
-    return current;
-}
+export const entryAt = hierarchyEntryAt;
 
 /**
- * The navigation trail to the instance at `path`: the root, then one crumb per
- * instance on the way. What a breadcrumb and a drill-down produce, so a view
- * opened from the outline is the same view either way would open.
+ * The navigation trail to the instance at `path` -- see `hierarchyTrailTo`,
+ * shared with the server's "Go to Error".
  */
-export function trailTo(root: HierarchyOutlineEntry, rootSourceUri: string, path: string[]): OutlineCrumb[] | undefined {
-    const trail: OutlineCrumb[] = [{ sourceUri: root.sourceUri ?? rootSourceUri, workflowName: root.workflowName }];
-    for (let i = 1; i <= path.length; i++) {
-        const entry = entryAt(root, path.slice(0, i));
-        if (!entry?.sourceUri) {
-            return undefined;
-        }
-        trail.push({ sourceUri: entry.sourceUri, workflowName: entry.workflowName, workflowInstanceName: path[i - 1] });
-    }
-    return trail;
-}
+export const trailTo: (root: HierarchyOutlineEntry, rootSourceUri: string, path: string[]) => OutlineCrumb[] | undefined =
+    hierarchyTrailTo;
 
 /** The path the shown view is at, from its trail. */
 export function pathOfTrail(trail: Array<{ workflowName: string; workflowInstanceName?: string }>): string[] {

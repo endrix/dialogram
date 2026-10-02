@@ -8,7 +8,13 @@ import {
     NavigateToExternalTargetAction,
     Point
 } from '@eclipse-glsp/protocol';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import {
+    hierarchyTrailTo,
+    WorkflowDiagramMetadata,
+    WorkflowDiagramTypes,
+    type HierarchyCrumb,
+    type HierarchyOutlineEntry
+} from '@dialogram/shared';
 
 const SHOW_OPTIONS_ARG = 'jsonOpenerOptions';
 const NAVIGATE_PREFER_DEFINITION_ARG = 'wf:navigatePreferDefinition';
@@ -21,6 +27,46 @@ const EDIT_PARAMETERS_KIND = 'dialogram.editParameters';
 const PROMPT_RENAME_ENTITY_KIND = 'dialogram.promptRenameEntity';
 const RERUN_FROM_HERE_KIND = 'dialogram.rerunFromHere';
 const OPEN_IN_OWN_EDITOR_KIND = 'dialogram.openInOwnEditor';
+const GO_TO_ERROR_KIND = 'dialogram.goToError';
+
+/**
+ * "Go to Error": the action that opens the view where the shown run failed and
+ * selects the node that did, built from the hierarchy on the root (`wf:hierarchy`)
+ * and the failure's instance path (`wf:errorPath`). Nothing when the root does
+ * not carry both, or the failure is already in the view shown.
+ */
+export function goToErrorAction(rootArgs: Args | undefined): { kind: string; trail: HierarchyCrumb[]; nodeName: string } | undefined {
+    const errorPath = rootArgs?.['wf:errorPath'] as unknown;
+    const rawHierarchy = rootArgs?.['wf:hierarchy'];
+    if (!Array.isArray(errorPath) || errorPath.length === 0 || typeof rawHierarchy !== 'string') {
+        return undefined;
+    }
+    let outline: HierarchyOutlineEntry;
+    try {
+        outline = JSON.parse(rawHierarchy);
+    } catch {
+        return undefined;
+    }
+    const viewPath = (() => {
+        try {
+            const trail = JSON.parse(String(rootArgs?.['wf:navTrail'] ?? '[]'));
+            return Array.isArray(trail)
+                ? trail.map((c: any) => (typeof c?.workflowInstanceName === 'string' ? c.workflowInstanceName : '')).filter(Boolean)
+                : [];
+        } catch {
+            return [];
+        }
+    })();
+    const parentPath = (errorPath as string[]).slice(0, -1);
+    if (parentPath.join('/') === viewPath.join('/')) {
+        return undefined;
+    }
+    const trail = hierarchyTrailTo(outline, outline.sourceUri ?? '', parentPath);
+    if (!trail) {
+        return undefined;
+    }
+    return { kind: GO_TO_ERROR_KIND, trail, nodeName: (errorPath as string[])[errorPath.length - 1] };
+}
 const RESET_EDGE_ROUTES_KIND = 'dialogram.resetEdgeRoutes';
 const REROUTE_EDGES_AVOID_OVERLAPS_KIND = 'dialogram.rerouteEdgesAvoidOverlaps';
 const LAYOUT_BOUNDARY_FLOW_KIND = 'dialogram.layoutBoundaryFlow';
@@ -296,6 +342,14 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
             elementType === WorkflowDiagramTypes.NODE_EXTERNAL_ACTOR
         ) {
             const entityName = elementArgs?.[WorkflowDiagramMetadata.ENTITY_NAME];
+            // The node a failure deep down is inside: go to where it failed.
+            const errorWithin = elementArgs?.['wf:errorWithin'] as unknown;
+            if (Array.isArray(errorWithin) && errorWithin.length > 0) {
+                const goToError = goToErrorAction((this.modelState.root as any)?.args as Args | undefined);
+                if (goToError) {
+                    items.push({ id: 'dialogram.goToError', label: 'Go to Error', sortString: 'a0', actions: [goToError as any] });
+                }
+            }
             // A nested workflow defined in another file can be opened as a root
             // of its own: its own editor, chat and runs. Navigating in place, a
             // double-click shows it here instead, so this is the way to the old
@@ -419,6 +473,11 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
         }
 
         if (selectedElementIds.length === 0) {
+            // The shown run failed somewhere this view does not show.
+            const goToError = goToErrorAction((this.modelState.root as any)?.args as Args | undefined);
+            if (goToError) {
+                items.push({ id: 'dialogram.goToError', label: 'Go to Error', sortString: 'a0', actions: [goToError as any] });
+            }
             items.push({
                 id: 'dialogram.layoutDiagramBoundaryFlow',
                 label: 'Layout Diagram',
