@@ -23,6 +23,7 @@ import { WhitespaceRootPropertiesMouseListener } from './whitespace-root-propert
 import { WorkflowElkLiveDragRouter } from './elk-live-drag-router';
 import { WorkflowChangeBoundsTool } from './change-bounds-drag-threshold';
 import { LibavoidEdgeRouter } from './libavoid-edge-router';
+import { HierarchyOutlinePanel } from './hierarchy-outline';
 import { preloadLibavoid } from './libavoid-loader';
 import {
     WorkflowPromptLabelEditAction,
@@ -63,6 +64,12 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     bind(PropertyPanel).toSelf().inSingletonScope();
     bind(TYPES.ISelectionListener).toService(PropertyPanel);
     bind(TYPES.IGModelRootListener).toService(PropertyPanel);
+
+    // The hierarchy outline, fed by the root model's `wf:hierarchy`. Shown only
+    // when the product navigates nested workflows in place and the model
+    // carries a hierarchy.
+    bind(HierarchyOutlinePanel).toSelf().inSingletonScope();
+    bind(TYPES.IGModelRootListener).toService(HierarchyOutlinePanel);
 
     // Register integrated chat panel (slides up from bottom of diagram).
     // Bound as an IDiagramStartup so GLSP eagerly instantiates it on diagram

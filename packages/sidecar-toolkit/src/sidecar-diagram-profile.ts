@@ -130,6 +130,13 @@ export interface SidecarProfileInput {
     acceptedOperationPrefixes: string[];
     graphAcquisition: 'sidecar-export' | 'cli-plan';
     cliGraphArgs?: (file: string, requestedWorkflow?: string) => string[];
+    /**
+     * The runtime arguments that export the whole hierarchy rooted at
+     * `rootWorkflow` in `file` (product syntax). With it, a view of a nested
+     * workflow, and the outline, are read from one cached export per root
+     * instead of a plan per view (see `hierarchy-cache.ts`).
+     */
+    cliHierarchyArgs?: (file: string, rootWorkflow: string) => string[];
     graphExportFailureLabel?: string;
     /**
      * The run arguments that resume the run in `runDir` at `step` of its queue
@@ -229,6 +236,7 @@ function sidecarRuntimeConfig(input: SidecarProfileInput): SidecarRuntimeConfig 
         acceptedOperationPrefixes: input.acceptedOperationPrefixes,
         graphAcquisition: input.graphAcquisition,
         cliGraphArgs: input.cliGraphArgs,
+        cliHierarchyArgs: input.cliHierarchyArgs,
         graphExportFailureLabel: input.graphExportFailureLabel,
         undoLabelSuffix: input.undoLabelSuffix,
         createNodeStrings: input.createNodeStrings,

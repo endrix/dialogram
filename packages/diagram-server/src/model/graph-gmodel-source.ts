@@ -55,6 +55,7 @@ export type PyGraphDocument = {
     graph: PyGraph;
     partial?: boolean;
     errors?: Array<{ message?: string; file?: string; line?: number; column?: number }>;
+    hierarchy?: unknown;
 };
 
 export type GModelElement = {
@@ -908,6 +909,11 @@ export class GraphGModelSource {
         }
         if (Array.isArray(doc.errors) && doc.errors.length > 0) {
             graphArgs['wf:errors'] = doc.errors;
+        }
+        // The outline of the hierarchy this view is part of, as JSON: plain
+        // data the client renders without laying anything out.
+        if (doc.hierarchy && typeof doc.hierarchy === 'object') {
+            graphArgs['wf:hierarchy'] = JSON.stringify(doc.hierarchy);
         }
         if (workflowDefinitionSource) {
             const definitionRange = {

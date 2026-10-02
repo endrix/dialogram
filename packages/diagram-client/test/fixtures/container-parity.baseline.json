@@ -385,5 +385,16 @@
         "op": "modelElement",
         "typeId": "port:output",
         "view": "WorkflowOutputPortView"
+    },
+    {
+        "id": "HierarchyOutlinePanel",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "id": "Symbol(stub.IGModelRootListener)",
+        "op": "bind",
+        "to": "service:HierarchyOutlinePanel"
     }
 ]

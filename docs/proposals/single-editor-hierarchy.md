@@ -1,6 +1,6 @@
 # Proposal: one editor for a whole workflow hierarchy
 
-**Status:** phases 1 to 4 are implemented (in-place navigation, the root's run, the view in the chat's context, editing nested views, and per-instance layout). Phase 5 (the hierarchy export and the outline) is not.
+**Status:** implemented, all five phases: in-place navigation, the root's run and chat context, editing nested views, per-instance layout, and the hierarchy export with its cache and outline. Rows do not yet carry a run's state (see phase 5).
 **Affects:** dialogram (most of it), wfpy (a hierarchy export), wfpy-ide (one
 profile flag).
 
@@ -233,8 +233,22 @@ comes from the same export, and is the cheap part of it: names, files and sizes.
    recomputed the key from the shown workflow's name, so a hierarchical
    runtime's per-instance layouts were read per instance and saved per
    workflow. A rename also moves the node in the instance's layout.
-5. **The hierarchy export, the cache and the outline.** wfpy `--hierarchy`,
-   instance-elaborated nested graphs, the server cache, then the outline panel.
+5. **The hierarchy export, the cache and the outline.** *Done.*
+   - wfpy: `wfpy plan --format graph --hierarchy` (huawei-csl/wfpy#45) exports
+     the root and every nested instance, each elaborated as its parent built
+     it.
+   - The cache: a product gives `cliHierarchyArgs`, and `CliGraphModelSource`
+     reads every view, root or nested, from one export per root
+     (`hierarchy-cache.ts`). The export is kept while every file it came from is
+     unchanged on disk. An instance that did not elaborate, or unsaved text
+     being previewed, still gets a plan of its own.
+   - The outline: the tree without graphs reaches the root model as
+     `wf:hierarchy`. The panel (`hierarchy-outline.ts`, helpers in
+     `hierarchy-outline-tree.ts`) has a toggle and the O key, a filter that
+     keeps ancestors, a single click that selects and centers the instance in
+     the view containing it, a double click that opens its view, and the
+     current row highlighted.
+   - Not yet: a run's state (running / done / failed, fire counts) on the rows.
 
 Each phase is usable on its own. 1 and 2 together are what removes the
 editor-per-level problem.

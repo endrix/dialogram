@@ -80,6 +80,28 @@ export interface GraphDocument {
     errors?: Array<{ message?: string; file?: string; line?: number; column?: number }>;
     /** Normalized diagnostics; storage publishes these verbatim (no product-shaped walking). */
     diagnostics?: GraphDiagnostic[];
+    /**
+     * The hierarchy this graph is part of, from its root: the outline a client
+     * shows to navigate it. Published on the root model as `wf:hierarchy`.
+     */
+    hierarchy?: HierarchyOutlineEntry;
+}
+
+/**
+ * One instance in a workflow hierarchy, for an outline: where it is (its
+ * `path` of instance names from the root, `[]` for the root), what it
+ * instantiates, the file defining it, its node in the parent's graph, and how
+ * big it is. No graph: an outline is light enough to ride on every view.
+ */
+export interface HierarchyOutlineEntry {
+    path: string[];
+    workflowName: string;
+    sourceUri?: string;
+    nodeId?: string;
+    nodeCount?: number;
+    error?: string;
+    truncated?: boolean;
+    children: HierarchyOutlineEntry[];
 }
 
 export interface ModelSourceOptions {
