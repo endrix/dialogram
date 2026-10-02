@@ -396,5 +396,21 @@
         "id": "Symbol(stub.IGModelRootListener)",
         "op": "bind",
         "to": "service:HierarchyOutlinePanel"
+    },
+    {
+        "handler": "WorkflowGoToErrorActionHandler",
+        "kind": "dialogram.goToError",
+        "op": "actionHandler"
+    },
+    {
+        "id": "FocusAfterLoadService",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "id": "Symbol(stub.IGModelRootListener)",
+        "op": "bind",
+        "to": "service:FocusAfterLoadService"
     }
 ]

@@ -18,6 +18,7 @@ import { RequestModelAction, SaveModelAction } from '@eclipse-glsp/protocol';
 import { inject, injectable, optional } from 'inversify';
 import { URI } from 'vscode-uri';
 import { instanceLayoutFor, type LayoutTarget } from './layout-target';
+import { errorInView } from '@dialogram/shared';
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import {
@@ -1135,9 +1136,28 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             // The failure happened after the trace's last step: at an earlier
             // step the node had not failed yet.
             const showsLastStep = !queueTrace || queueTrace.selectedStep >= queueTrace.stepCount - 1;
-            const errorEntityName = showsLastStep && typeof overlay.error?.entityInstanceName === 'string'
-                ? overlay.error.entityInstanceName.trim()
-                : undefined;
+            // Where the run failed, by instance path from the root. In this
+            // view it shows on the node it is in: the actor that failed, or the
+            // nested workflow containing it (which "Go to Error" opens). A run
+            // whose error carries no path is matched by name, as before.
+            const rawErrorPath = overlay.error?.entityInstancePath;
+            const errorPath = showsLastStep && Array.isArray(rawErrorPath)
+                ? rawErrorPath.filter((part): part is string => typeof part === 'string' && part.trim() !== '')
+                : [];
+            const viewInstancePath = navigationTrail
+                .map(entry => entry.workflowInstanceName?.trim() ?? '')
+                .filter(part => part !== '');
+            const errorLocation = errorPath.length > 0 ? errorInView(errorPath, viewInstancePath) : undefined;
+            const errorEntityName = errorPath.length > 0
+                ? errorLocation?.nodeName
+                : showsLastStep && typeof overlay.error?.entityInstanceName === 'string'
+                    ? overlay.error.entityInstanceName.trim()
+                    : undefined;
+            if (errorPath.length > 0) {
+                (root as any).args['wf:errorPath'] = errorPath;
+            } else {
+                delete (root as any).args['wf:errorPath'];
+            }
 
             // ── Pre-pass: clear stale execution-glow state synchronously ─────
             // This MUST happen immediately before the visitor that re-applies
@@ -1235,6 +1255,10 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                     if (matchesError && errorEntityName) {
                         element.args = element.args || {};
                         (element.args as any)[WorkflowDiagramMetadata.IS_ERRORED] = true;
+                        if (errorLocation && errorLocation.within.length > 0) {
+                            // The failure is inside this node, this far down.
+                            (element.args as any)['wf:errorWithin'] = errorLocation.within;
+                        }
                         const cssClasses = Array.isArray(element.cssClasses) ? element.cssClasses : [];
                         if (!cssClasses.includes('cal-node-error')) {
                             element.cssClasses = [...cssClasses, 'cal-node-error'];
@@ -2225,7 +2249,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         running: boolean;
         edges: Record<string, { lastToken?: unknown }>;
         active?: Array<{ entityInstanceName?: string; entityInstancePath?: string[] }>;
-        error?: { entityInstanceName?: string; message?: string };
+        error?: { entityInstanceName?: string; entityInstancePath?: string[]; message?: string };
     } | undefined> {
         const vscode = await import('vscode');
         const fs = await import('fs/promises');
@@ -2270,7 +2294,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             running: boolean;
             edges: Record<string, { lastToken?: unknown }>;
             active?: Array<{ entityInstanceName?: string; entityInstancePath?: string[] }>;
-            error?: { entityInstanceName?: string; message?: string };
+            error?: { entityInstanceName?: string; entityInstancePath?: string[]; message?: string };
         } | undefined> => {
             let overlayText: string;
             try {
@@ -2332,6 +2356,11 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             const error = errorRaw && typeof errorRaw === 'object'
                 ? {
                     entityInstanceName: typeof errorRaw.entityInstanceName === 'string' ? errorRaw.entityInstanceName : undefined,
+                    // Where it failed under the nested workflows: what places
+                    // the error in each view and what "Go to Error" follows.
+                    ...(Array.isArray(errorRaw.entityInstancePath)
+                        ? { entityInstancePath: errorRaw.entityInstancePath.filter((p: unknown): p is string => typeof p === 'string') }
+                        : {}),
                     message: typeof errorRaw.message === 'string' ? errorRaw.message : undefined
                 }
                 : undefined;
@@ -2352,7 +2381,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             running: boolean;
             edges: Record<string, { lastToken?: unknown }>;
             active?: Array<{ entityInstanceName?: string; entityInstancePath?: string[] }>;
-            error?: { entityInstanceName?: string; message?: string };
+            error?: { entityInstanceName?: string; entityInstancePath?: string[]; message?: string };
         } | undefined> => {
             if (preferredRunId && entry.runId !== preferredRunId) {
                 return undefined;

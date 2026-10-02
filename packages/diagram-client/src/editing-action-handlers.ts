@@ -1,10 +1,11 @@
 import { inject, injectable, optional } from 'inversify';
 import { EditorContextService, IActionDispatcher, IGridManager, TYPES } from '@eclipse-glsp/client';
-import { Action as GlspAction, ApplyLabelEditOperation, ICommand, IActionHandler, NavigateToExternalTargetAction } from '@eclipse-glsp/sprotty';
+import { Action as GlspAction, ApplyLabelEditOperation, ICommand, IActionHandler, NavigateToExternalTargetAction, RequestModelAction } from '@eclipse-glsp/sprotty';
 import { VscodeUi, type VscodeQuickPickItem } from './vscode-ui';
 import { clientBehavior, commandId, settingsNamespace } from './profile';
 import { rerunActorFor } from './navigation-ui';
 import { NETWORK_NAME_ARG, OPEN_DIAGRAM_ARG } from './network-navigation-target';
+import { FocusAfterLoadService } from './focus-after-load';
 import { EXECUTION_OVERLAY_ACTION_KIND, type ExecutionOverlayActionPayload } from '@dialogram/shared';
 
 export type WorkflowWorkspaceEntity = {
@@ -101,6 +102,24 @@ export namespace WorkflowOpenInOwnEditorAction {
     export function is(action: unknown): action is Action {
         return !!action && typeof action === 'object' && (action as any).kind === KIND
             && typeof (action as any).uri === 'string' && typeof (action as any).workflowName === 'string';
+    }
+}
+
+export namespace WorkflowGoToErrorAction {
+    export const KIND = 'dialogram.goToError';
+
+    export interface Action extends GlspAction {
+        kind: typeof KIND;
+        /** From the editor's root to the view the failure is in. */
+        trail: Array<{ sourceUri: string; workflowName: string; workflowInstanceName?: string }>;
+        /** The node in that view that failed. */
+        nodeName: string;
+    }
+
+    export function is(action: unknown): action is Action {
+        return !!action && typeof action === 'object' && (action as any).kind === KIND
+            && Array.isArray((action as any).trail) && (action as any).trail.length > 0
+            && typeof (action as any).nodeName === 'string';
     }
 }
 
@@ -1262,6 +1281,40 @@ export class WorkflowOpenInOwnEditorActionHandler implements IActionHandler {
             args: {
                 [OPEN_DIAGRAM_ARG]: true,
                 [NETWORK_NAME_ARG]: action.workflowName
+            }
+        }) as never);
+    }
+}
+
+
+/**
+ * "Go to Error": open the view where the shown run failed, at the trail a
+ * drill-down would give it, and select the node that failed once it loads.
+ */
+@injectable()
+export class WorkflowGoToErrorActionHandler implements IActionHandler {
+    @inject(TYPES.IActionDispatcher)
+    protected readonly actionDispatcher!: IActionDispatcher;
+
+    @inject(EditorContextService)
+    protected readonly editorContext!: EditorContextService;
+
+    @inject(FocusAfterLoadService)
+    protected readonly focusAfterLoad!: FocusAfterLoadService;
+
+    handle(action: GlspAction): ICommand | GlspAction | void {
+        if (!WorkflowGoToErrorAction.is(action)) {
+            return;
+        }
+        const view = action.trail[action.trail.length - 1];
+        this.focusAfterLoad.focusWhenLoaded(action.nodeName);
+        void this.actionDispatcher.dispatch(RequestModelAction.create({
+            requestId: `go-to-error-${Date.now()}`,
+            options: {
+                sourceUri: view.sourceUri,
+                diagramType: this.editorContext.diagramType,
+                networkName: view.workflowName,
+                'wf:navTrail': JSON.stringify(action.trail)
             }
         }) as never);
     }

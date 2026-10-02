@@ -24,6 +24,7 @@ import { WorkflowElkLiveDragRouter } from './elk-live-drag-router';
 import { WorkflowChangeBoundsTool } from './change-bounds-drag-threshold';
 import { LibavoidEdgeRouter } from './libavoid-edge-router';
 import { HierarchyOutlinePanel } from './hierarchy-outline';
+import { FocusAfterLoadService } from './focus-after-load';
 import { preloadLibavoid } from './libavoid-loader';
 import {
     WorkflowPromptLabelEditAction,
@@ -36,6 +37,8 @@ import {
     WorkflowRerunFromHereActionHandler,
     WorkflowOpenInOwnEditorAction,
     WorkflowOpenInOwnEditorActionHandler,
+    WorkflowGoToErrorAction,
+    WorkflowGoToErrorActionHandler,
     WorkflowEditParametersAction,
     WorkflowEditParametersActionHandler,
     WorkflowEditAnnotationsAction,
@@ -70,6 +73,10 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     // carries a hierarchy.
     bind(HierarchyOutlinePanel).toSelf().inSingletonScope();
     bind(TYPES.IGModelRootListener).toService(HierarchyOutlinePanel);
+
+    // Selects a node once the view it is in has loaded ("Go to Error").
+    bind(FocusAfterLoadService).toSelf().inSingletonScope();
+    bind(TYPES.IGModelRootListener).toService(FocusAfterLoadService);
 
     // Register integrated chat panel (slides up from bottom of diagram).
     // Bound as an IDiagramStartup so GLSP eagerly instantiates it on diagram
@@ -112,6 +119,7 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     configureActionHandler(context, WorkflowPromptRenameEntityAction.KIND, WorkflowPromptRenameEntityActionHandler);
     configureActionHandler(context, WorkflowRerunFromHereAction.KIND, WorkflowRerunFromHereActionHandler);
     configureActionHandler(context, WorkflowOpenInOwnEditorAction.KIND, WorkflowOpenInOwnEditorActionHandler);
+    configureActionHandler(context, WorkflowGoToErrorAction.KIND, WorkflowGoToErrorActionHandler);
     configureActionHandler(context, WorkflowEditParametersAction.KIND, WorkflowEditParametersActionHandler);
     configureActionHandler(context, WorkflowEditAnnotationsAction.KIND, WorkflowEditAnnotationsActionHandler);
     configureActionHandler(context, WorkflowShowWorkspaceEntitiesAction.KIND, WorkflowShowWorkspaceEntitiesActionHandler);

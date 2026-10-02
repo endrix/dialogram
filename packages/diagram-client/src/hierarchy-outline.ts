@@ -17,7 +17,8 @@
  */
 import { inject, injectable } from 'inversify';
 import { EditorContextService, TYPES, type IActionDispatcher } from '@eclipse-glsp/client';
-import { CenterAction, RequestModelAction, SelectAction } from '@eclipse-glsp/sprotty';
+import { RequestModelAction } from '@eclipse-glsp/sprotty';
+import { CenterAction, SelectAction } from '@eclipse-glsp/protocol';
 import { WorkflowDiagramMetadata, type HierarchyOutlineEntry } from '@dialogram/shared';
 import { navigatesInPlace } from './navigation-ui';
 import {
