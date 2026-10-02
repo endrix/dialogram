@@ -33,6 +33,8 @@ import {
     WorkflowPromptRenameEntityActionHandler,
     WorkflowRerunFromHereAction,
     WorkflowRerunFromHereActionHandler,
+    WorkflowOpenInOwnEditorAction,
+    WorkflowOpenInOwnEditorActionHandler,
     WorkflowEditParametersAction,
     WorkflowEditParametersActionHandler,
     WorkflowEditAnnotationsAction,
@@ -102,6 +104,7 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     configureActionHandler(context, WorkflowToggleGridAction.KIND, WorkflowToggleGridActionHandler);
     configureActionHandler(context, WorkflowPromptRenameEntityAction.KIND, WorkflowPromptRenameEntityActionHandler);
     configureActionHandler(context, WorkflowRerunFromHereAction.KIND, WorkflowRerunFromHereActionHandler);
+    configureActionHandler(context, WorkflowOpenInOwnEditorAction.KIND, WorkflowOpenInOwnEditorActionHandler);
     configureActionHandler(context, WorkflowEditParametersAction.KIND, WorkflowEditParametersActionHandler);
     configureActionHandler(context, WorkflowEditAnnotationsAction.KIND, WorkflowEditAnnotationsActionHandler);
     configureActionHandler(context, WorkflowShowWorkspaceEntitiesAction.KIND, WorkflowShowWorkspaceEntitiesActionHandler);

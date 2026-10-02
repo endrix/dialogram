@@ -20,6 +20,7 @@ const PROMPT_LABEL_EDIT_KIND = 'dialogram.promptLabelEdit';
 const EDIT_PARAMETERS_KIND = 'dialogram.editParameters';
 const PROMPT_RENAME_ENTITY_KIND = 'dialogram.promptRenameEntity';
 const RERUN_FROM_HERE_KIND = 'dialogram.rerunFromHere';
+const OPEN_IN_OWN_EDITOR_KIND = 'dialogram.openInOwnEditor';
 const RESET_EDGE_ROUTES_KIND = 'dialogram.resetEdgeRoutes';
 const REROUTE_EDGES_AVOID_OVERLAPS_KIND = 'dialogram.rerouteEdgesAvoidOverlaps';
 const LAYOUT_BOUNDARY_FLOW_KIND = 'dialogram.layoutBoundaryFlow';
@@ -134,6 +135,12 @@ function workflowDefinitionTargetFromRoot(rootElement: unknown, fallbackSourceUr
     }
 
     return undefined;
+}
+
+/** Whether two source URIs name the same file, ignoring query and fragment. */
+function sameSourceFile(a: string, b: string): boolean {
+    const strip = (uri: string): string => uri.trim().replace(/[?#].*$/, '');
+    return strip(a) === strip(b);
 }
 
 function displayNameFromQualifiedName(qualifiedName: string): string {
@@ -289,6 +296,30 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
             elementType === WorkflowDiagramTypes.NODE_EXTERNAL_ACTOR
         ) {
             const entityName = elementArgs?.[WorkflowDiagramMetadata.ENTITY_NAME];
+            // A nested workflow defined in another file can be opened as a root
+            // of its own: its own editor, chat and runs. Navigating in place, a
+            // double-click shows it here instead, so this is the way to the old
+            // behaviour on purpose.
+            const referencedUri = elementArgs?.[WorkflowDiagramMetadata.REFERENCED_URI];
+            const referencedName = elementArgs?.[WorkflowDiagramMetadata.REFERENCED_ENTITY_NAME]
+                ?? elementArgs?.[WorkflowDiagramMetadata.ENTITY_TYPE];
+            if (
+                elementArgs?.[WorkflowDiagramMetadata.IS_NETWORK_INSTANCE] === true
+                && typeof referencedUri === 'string' && referencedUri.trim() !== ''
+                && typeof referencedName === 'string' && referencedName.trim() !== ''
+                && !sameSourceFile(referencedUri, sourceUri)
+            ) {
+                items.push({
+                    id: 'dialogram.openInOwnEditor',
+                    label: 'Open in Its Own Editor',
+                    sortString: 'a8',
+                    actions: [{
+                        kind: OPEN_IN_OWN_EDITOR_KIND,
+                        uri: referencedUri,
+                        workflowName: displayNameFromQualifiedName(referencedName.trim())
+                    } as any]
+                });
+            }
             // The run the overlay shows can be resumed at a step: offer to
             // resume it just before this node's last firing, so it fires again.
             const rootArgs = (this.modelState.root as any)?.args as Args | undefined;

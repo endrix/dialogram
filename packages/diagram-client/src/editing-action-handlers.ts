@@ -1,8 +1,10 @@
 import { inject, injectable, optional } from 'inversify';
 import { EditorContextService, IActionDispatcher, IGridManager, TYPES } from '@eclipse-glsp/client';
-import { Action as GlspAction, ApplyLabelEditOperation, ICommand, IActionHandler } from '@eclipse-glsp/sprotty';
+import { Action as GlspAction, ApplyLabelEditOperation, ICommand, IActionHandler, NavigateToExternalTargetAction } from '@eclipse-glsp/sprotty';
 import { VscodeUi, type VscodeQuickPickItem } from './vscode-ui';
 import { clientBehavior, commandId, settingsNamespace } from './profile';
+import { rerunActorFor } from './navigation-ui';
+import { NETWORK_NAME_ARG, OPEN_DIAGRAM_ARG } from './network-navigation-target';
 import { EXECUTION_OVERLAY_ACTION_KIND, type ExecutionOverlayActionPayload } from '@dialogram/shared';
 
 export type WorkflowWorkspaceEntity = {
@@ -84,6 +86,21 @@ export namespace WorkflowRerunFromHereAction {
     export function is(action: unknown): action is Action {
         return !!action && typeof action === 'object' && (action as any).kind === KIND
             && typeof (action as any).entityName === 'string';
+    }
+}
+
+export namespace WorkflowOpenInOwnEditorAction {
+    export const KIND = 'dialogram.openInOwnEditor';
+
+    export interface Action extends GlspAction {
+        kind: typeof KIND;
+        uri: string;
+        workflowName: string;
+    }
+
+    export function is(action: unknown): action is Action {
+        return !!action && typeof action === 'object' && (action as any).kind === KIND
+            && typeof (action as any).uri === 'string' && typeof (action as any).workflowName === 'string';
     }
 }
 
@@ -1198,7 +1215,14 @@ export class WorkflowRerunFromHereActionHandler implements IActionHandler {
             return;
         }
         const context = (globalThis as any).__calDiagramContext as
-            | { sourceUri?: string; workflowName?: string; runDir?: string }
+            | {
+                sourceUri?: string;
+                workflowName?: string;
+                runDir?: string;
+                rootSourceUri?: string;
+                rootWorkflowName?: string;
+                trail?: Array<{ workflowInstanceName?: string }>;
+            }
             | undefined;
         // The menu offers it only for a run that can be resumed; anything the
         // run driver then finds wrong with it, the driver reports.
@@ -1206,11 +1230,39 @@ export class WorkflowRerunFromHereActionHandler implements IActionHandler {
             console.warn('[workflow] Rerun from Here: no resumable run is shown');
             return;
         }
+        // The root's run, at the root's step: inside a nested view, the node is
+        // rerun by rerunning the instance it is in.
         void VscodeUi.instance.executeCommand(commandId('runWorkflow'), [{
-            sourceUri: context.sourceUri,
-            workflowName: context.workflowName,
+            sourceUri: context.rootSourceUri ?? context.sourceUri,
+            workflowName: context.rootWorkflowName ?? context.workflowName,
             resumeFrom: context.runDir,
-            resumeAtActor: action.entityName
+            resumeAtActor: rerunActorFor(action.entityName, context.trail ?? [])
         }]);
+    }
+}
+
+
+/**
+ * "Open in Its Own Editor": open a nested workflow's file as a root of its own.
+ *
+ * No trail goes with it, on purpose: the new editor's root is that file, with
+ * its own chat and runs, not a view of this editor's hierarchy.
+ */
+@injectable()
+export class WorkflowOpenInOwnEditorActionHandler implements IActionHandler {
+    @inject(TYPES.IActionDispatcher)
+    protected readonly actionDispatcher!: IActionDispatcher;
+
+    handle(action: GlspAction): ICommand | GlspAction | void {
+        if (!WorkflowOpenInOwnEditorAction.is(action)) {
+            return;
+        }
+        void this.actionDispatcher.dispatch(NavigateToExternalTargetAction.create({
+            uri: action.uri,
+            args: {
+                [OPEN_DIAGRAM_ARG]: true,
+                [NETWORK_NAME_ARG]: action.workflowName
+            }
+        }) as never);
     }
 }

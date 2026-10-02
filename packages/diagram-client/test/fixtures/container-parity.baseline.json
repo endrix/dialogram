@@ -35,6 +35,11 @@
         "op": "actionHandler"
     },
     {
+        "handler": "WorkflowOpenInOwnEditorActionHandler",
+        "kind": "dialogram.openInOwnEditor",
+        "op": "actionHandler"
+    },
+    {
         "handler": "WorkflowShowAgentSkillsActionHandler",
         "kind": "dialogram.showAgentSkills",
         "op": "actionHandler"

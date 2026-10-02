@@ -9,7 +9,7 @@ import {
 } from '@eclipse-glsp/sprotty';
 import { inject, injectable } from 'inversify';
 import { WorkflowDiagramTypes, WorkflowDiagramMetadata } from '@dialogram/shared';
-import { WorkflowNavigationUi } from './navigation-ui';
+import { navigatesInPlace, WorkflowNavigationUi } from './navigation-ui';
 import { clientBehavior } from './profile';
 import {
     buildCrossFileNavigationTarget,
@@ -164,8 +164,13 @@ export class WorkflowNetworkNavigationMouseListener extends MouseListener implem
             ? navTrail[0]?.workflowName?.trim() || currentWorkflowName
             : undefined;
 
-        // Same-file: switch diagram model within the current editor.
-        if (normalizedCurrentSourceUri && normalizedReferencedUri === normalizedCurrentSourceUri) {
+        // Same file, or any file when navigating in place: switch the diagram
+        // model within the current editor. The request names the defining file;
+        // the trail keeps the editor's root at its head.
+        if (
+            (normalizedCurrentSourceUri && normalizedReferencedUri === normalizedCurrentSourceUri)
+            || navigatesInPlace()
+        ) {
             this.workflowNavUi.noteNavigate(referencedUri, targetNetworkName, navTrail);
             const includeGraphSourceFallback = useGraphSourceNavigation
                 && !!normalizedCurrentSourceUri

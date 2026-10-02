@@ -91,6 +91,41 @@ export interface ChatRuntimeConfig {
   postTurnHook?: (file: string, text: string) => Promise<void>;
 }
 
+/** One step of the trail from the root workflow down to the view on screen. */
+export interface ViewCrumb {
+  sourceUri?: string;
+  workflowName: string;
+  workflowInstanceName?: string;
+}
+
+/**
+ * Tell the agent which nested workflow the diagram is showing.
+ *
+ * The chat session is the root's for the whole hierarchy: the agent reads the
+ * root file and its graph. Navigating in place, the diagram can show a nested
+ * workflow, possibly defined in another file -- and the selected node ids are
+ * that view's. Nothing when the root itself is on screen.
+ */
+export function viewContextText(trail: ViewCrumb[] | undefined): string | undefined {
+  if (!trail || trail.length < 2) {
+    return undefined;
+  }
+  const path = trail
+    .map((crumb, i) =>
+      i === 0
+        ? crumb.workflowName
+        : `${crumb.workflowInstanceName ?? crumb.workflowName} (${crumb.workflowName})`,
+    )
+    .join(" › ");
+  const shown = trail[trail.length - 1];
+  const file = shown.sourceUri ? decodeURIComponent(shown.sourceUri.replace(/^file:\/\//, "")) : undefined;
+  return (
+    `The diagram is showing a nested workflow, not the root: ${path}.` +
+    (file ? ` It is defined in ${file}.` : "") +
+    " Selected nodes belong to this view."
+  );
+}
+
 export class ChatRuntime {
   private readonly acp = new ACPClientService();
   private readonly sessions: SessionManager;
@@ -110,6 +145,8 @@ export class ChatRuntime {
   private pendingModel: string | undefined;
   /** Latest diagram selection (node ids) per file, fed to the turn context. */
   private readonly selectionByFile = new Map<string, string[]>();
+  /** The nested view on screen per file, when it is not the root (see `viewContextText`). */
+  private readonly viewTrailByFile = new Map<string, ViewCrumb[]>();
   private readonly output: vscode.OutputChannel;
   /** Tears down the ACP -> webview event forwarding registered in the ctor. */
   private readonly acpForwardingDisposer: () => void;
@@ -151,6 +188,10 @@ export class ChatRuntime {
     }
     this.acp.setTurnContextBlocksProvider(async (file) => {
       const blocks: any[] = [];
+      const view = file ? viewContextText(this.viewTrailByFile.get(file)) : undefined;
+      if (view) {
+        blocks.push({ type: "text", text: view });
+      }
       if (file && this.config.selectionContext !== false) {
         const selected = this.selectionByFile.get(file) ?? [];
         if (selected.length > 0) {
@@ -467,6 +508,17 @@ export class ChatRuntime {
     await this.sendModels(uri);
   }
 
+  private setViewTrail(file: string, raw: unknown): void {
+    const trail = Array.isArray(raw)
+      ? raw.filter((c: any) => c && typeof c.workflowName === "string")
+      : [];
+    if (trail.length > 1) {
+      this.viewTrailByFile.set(file, trail as ViewCrumb[]);
+    } else {
+      this.viewTrailByFile.delete(file);
+    }
+  }
+
   private fileFor(uri: string): string {
     return vscode.Uri.parse(uri).fsPath;
   }
@@ -650,11 +702,13 @@ export class ChatRuntime {
             ? data.selectedNodeIds.map(String)
             : [],
         );
+        this.setViewTrail(file, data?.viewTrail);
         return;
       case "chat.sendMessage": {
         if (Array.isArray(data?.selectedNodeIds)) {
           this.selectionByFile.set(file, data.selectedNodeIds.map(String));
         }
+        this.setViewTrail(file, data?.viewTrail);
         await this.ensureStarted(cwd);
         // Fall back to the current session if the panel didn't pass one.
         let sessionId: string | undefined =
