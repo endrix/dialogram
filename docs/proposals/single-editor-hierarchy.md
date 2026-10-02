@@ -1,6 +1,6 @@
 # Proposal: one editor for a whole workflow hierarchy
 
-**Status:** phases 1 and 2 are implemented (in-place navigation, the root's run, and the view in the chat's context). The GLSP-MCP root/view split, phases 3 to 5 and the outline are not.
+**Status:** phases 1 to 3 are implemented (in-place navigation, the root's run, the view in the chat's context, and editing nested views). Phases 4 and 5 (per-instance layout, the hierarchy export and the outline) are not.
 **Affects:** dialogram (most of it), wfpy (a hierarchy export), wfpy-ide (one
 profile flag).
 
@@ -117,21 +117,22 @@ Editable, in the file that defines it, which the edit handlers already do. What
 the host has to add:
 
 - **Secondary documents never stay dirty.** The sidecar writes an edit straight
-  to disk. Undo and redo instead apply a `WorkspaceEdit` to the file's
-  `TextDocument` and leave it unsaved. That is fine for the root, whose custom
-  editor saves it, and wrong for a nested file: the next sidecar edit and the
-  next `wfpy plan` read the stale file on disk. After an undo or redo applies to
-  a document other than the root, the host saves that document. The rule is
-  simple: a file shown inside another file's editor is never left dirty.
-- **The root editor refreshes when any file in its trail changes.** Today the
-  external-change and live-preview refreshes fire only for a document that has
-  its own client. The root editor watches every file in its current trail, and
-  refreshes its view at the trail when one changes, whether by an edit made here,
-  in a text editor, or by git.
+  to disk, and undo and redo save the document they change, whatever file it is
+  (`ReversibleWorkspaceEditCommand.persist`). A nested file is therefore never
+  left dirty by the diagram. This needed nothing new: an earlier draft of this
+  section said undo left it unsaved, which was wrong.
+- **The root editor refreshes when a file it shows changes.** A save, or a
+  change on disk from git, a formatter or the agent, already refreshed every
+  open diagram. Since phase 1 that refresh reloads the view an editor shows, at
+  its trail. Only unsaved typing in a nested file's text editor previewed
+  nothing, because live preview fired only for an editor's own document. It now
+  also previews in every editor showing that file, with that file's text
+  (`previewInViewsShowing`).
 - **Concurrent editors.** The same nested file may also be open in its own
   editor ("Open in its own editor", or because someone opened it directly). Both
-  edit through the sidecar's optimistic concurrency (content-hash revisions), so
-  a stale edit is refused rather than lost, and each editor refreshes from disk.
+  refresh from disk on every save. Undo and redo refuse when the document no
+  longer holds the text they left, so an edit made in one editor is not undone
+  over one made in the other.
 
 ### 5. Layout per instance, owned by the root
 
@@ -208,17 +209,19 @@ comes from the same export, and is the cheap part of it: names, files and sizes.
    shown. For another file it reloads from disk, since live-preview content is
    the root's text. A node menu item opens a nested workflow's file in its own
    editor.
-2. **The root runs, the chat knows the view.** *Done, except the GLSP-MCP
-   split.* The diagram context carries `rootSourceUri`, `rootWorkflowName` and
+2. **The root runs, the chat knows the view.** *Done.* The diagram context carries `rootSourceUri`, `rootWorkflowName` and
    the trail. ▶ Run, ⟲ and "Rerun from Here" use the root, and inside a nested
    view "Rerun from Here" reruns the root-level instance the view is in. The
    refresh during and after a run reloads the editor's current view (file,
    workflow, trail) rather than jumping to the root. The chat panel sends the
    view's trail with the selection and each message, and the turn context names
-   the nested view and the file defining it.
-3. **Editing nested views.** Secondary documents saved after undo/redo, the root
-   editor watching every file in its trail, and the concurrency behaviour
-   tested.
+   the nested view and the file defining it. The diagram's GLSP-MCP tools act on
+   the view's file, which is what the user sees. The turn context says so, rather
+   than splitting the tools between root and view.
+3. **Editing nested views.** *Done.* Undo and redo already saved any file they
+   changed. A save or an on-disk change already refreshed every editor, and now
+   reaches the view shown. Unsaved edits to a nested file preview in the views
+   showing it.
 4. **Layout per instance**, in the root's layout file, falling back to the
    defining file's.
 5. **The hierarchy export, the cache and the outline.** wfpy `--hierarchy`,

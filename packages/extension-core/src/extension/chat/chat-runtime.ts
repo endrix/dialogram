@@ -122,7 +122,7 @@ export function viewContextText(trail: ViewCrumb[] | undefined): string | undefi
   return (
     `The diagram is showing a nested workflow, not the root: ${path}.` +
     (file ? ` It is defined in ${file}.` : "") +
-    " Selected nodes belong to this view."
+    " Selected nodes belong to this view, and the diagram tools act on its file."
   );
 }
 

@@ -520,9 +520,11 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         const uriString = this.canonicalizeUriString(event.document.uri);
 
         const clientId = this.uriToClientId.get(uriString);
-        
-        // Only process if this document has an open diagram
+
+        // Not an editor's own document, but possibly a nested workflow's file
+        // shown in another editor's view: preview it there.
         if (!clientId) {
+            this.previewInViewsShowing(event);
             return;
         }
         
@@ -553,6 +555,36 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     }
 
     /**
+     * Live preview for a file that is not an editor's document but is shown in
+     * one: a nested workflow navigated into in place. Each editor showing it is
+     * refreshed with that file's current text, debounced as its own document is.
+     */
+    protected previewInViewsShowing(event: vscode.TextDocumentChangeEvent): void {
+        if (event.contentChanges.length === 0) {
+            return;
+        }
+        const changed = this.canonicalizeUriString(event.document.uri);
+        for (const [editorUri, editorClientId] of this.uriToClientId) {
+            const shown = this.uriToRefreshContext.get(editorUri)?.shownSourceUri;
+            if (!shown || this.canonicalizeUriString(shown) !== changed) {
+                continue;
+            }
+            const timerKey = `${editorUri}::${changed}`;
+            const existing = this.changeDebounceTimers.get(timerKey);
+            if (existing) {
+                clearTimeout(existing);
+            }
+            this.changeDebounceTimers.set(timerKey, setTimeout(() => {
+                this.changeDebounceTimers.delete(timerKey);
+                this.dispatchModelRefresh(editorClientId, editorUri, {
+                    content: event.document.getText(),
+                    contentUri: changed
+                });
+            }, WorkflowEditorProvider.CHANGE_DEBOUNCE_MS));
+        }
+    }
+
+    /**
      * Dispatch a RequestModelAction to refresh the diagram.
      * 
      * @param clientId - The GLSP client session ID
@@ -562,7 +594,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     protected dispatchModelRefresh(
         clientId: string,
         sourceUri: string,
-        options: { content?: string; forceReloadFromDisk?: boolean } = {}
+        options: { content?: string; forceReloadFromDisk?: boolean; contentUri?: string } = {}
     ): void {
         const refreshContext = this.getRefreshContext(sourceUri);
 
@@ -573,9 +605,14 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         const shownSourceUri = refreshContext?.shownSourceUri;
         const showsOtherFile = typeof shownSourceUri === 'string'
             && this.canonicalizeUriString(shownSourceUri) !== this.canonicalizeUriString(sourceUri);
-        const effectiveOptions = showsOtherFile && options.content !== undefined
+        // `content` is the text of `contentUri` when given, of the editor's
+        // document otherwise. It previews the view only if it is the shown file's.
+        const { contentUri, ...rest } = options;
+        const contentFile = this.canonicalizeUriString(contentUri ?? sourceUri);
+        const shownFile = this.canonicalizeUriString(showsOtherFile ? shownSourceUri! : sourceUri);
+        const effectiveOptions = rest.content !== undefined && contentFile !== shownFile
             ? { forceReloadFromDisk: true }
-            : options;
+            : rest;
 
         // Create a RequestModelAction to refresh the diagram
         const action = RequestModelAction.create({
