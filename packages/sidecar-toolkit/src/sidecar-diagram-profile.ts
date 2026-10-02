@@ -414,7 +414,8 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             operationPrefix: input.sidecarOperationPrefix,
             useAlternateEntityPalette: input.useAlternateEntityPalette,
             entityPaletteItems: input.entityPaletteItems,
-            nodeFamilies: input.nodeFamilies
+            nodeFamilies: input.nodeFamilies,
+            nestedNavigation: input.clientBehavior?.nestedNavigation
         },
         watch: { globs: input.watchGlobs ?? [`**/*${input.sourceExtension}`] },
         navigation: createPythonNavigationProvider(),

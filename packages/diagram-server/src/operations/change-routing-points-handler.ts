@@ -10,7 +10,6 @@ import {
     type MaybePromise
 } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
-import { URI } from 'vscode-uri';
 
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
@@ -18,6 +17,7 @@ import { WORKFLOW_LAYOUT_PERSISTENCE_KEY, WORKFLOW_NETWORK_MODEL_KEY } from '@di
 import { WorkflowDiagramConstants } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { GModelSerializer } from '@eclipse-glsp/server';
+import { layoutTargetOf } from '../server/layout-target';
 
 @injectable()
 export class WorkflowChangeRoutingPointsOperationHandler extends OperationHandler {
@@ -280,11 +280,7 @@ export class WorkflowChangeRoutingPointsOperationHandler extends OperationHandle
             return;
         }
 
-        const workflowFilePath = URI.parse(diagramModel.documentUri).fsPath;
-        const explicitName = (diagramModel as any).workflowName as string | undefined;
-        const networkId = explicitName && explicitName.trim() !== ''
-            ? explicitName.trim()
-            : 'unknown';
+        const { filePath: workflowFilePath, networkId } = layoutTargetOf(diagramModel as any);
 
         // Prefer persisted positions (stable keys) and only update routes.
         const persistedPositions = await this.layoutPersistence.loadLayout(workflowFilePath, networkId);

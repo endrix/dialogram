@@ -1,6 +1,6 @@
 # Proposal: one editor for a whole workflow hierarchy
 
-**Status:** phases 1 to 3 are implemented (in-place navigation, the root's run, the view in the chat's context, and editing nested views). Phases 4 and 5 (per-instance layout, the hierarchy export and the outline) are not.
+**Status:** phases 1 to 4 are implemented (in-place navigation, the root's run, the view in the chat's context, editing nested views, and per-instance layout). Phase 5 (the hierarchy export and the outline) is not.
 **Affects:** dialogram (most of it), wfpy (a hierarchy export), wfpy-ide (one
 profile flag).
 
@@ -222,8 +222,17 @@ comes from the same export, and is the cheap part of it: names, files and sizes.
    changed. A save or an on-disk change already refreshed every editor, and now
    reaches the view shown. Unsaved edits to a nested file preview in the views
    showing it.
-4. **Layout per instance**, in the root's layout file, falling back to the
-   defining file's.
+4. **Layout per instance.** *Done.* With `nestedNavigation: 'in-place'`
+   (now also in the storage options), a view at a trail of two or more crumbs
+   reads its layout from the root file's store, keyed
+   `root/<instance path>/<workflow>` (`layout-target.ts`). Until it has one, it
+   starts from the workflow's standalone layout. The target is recorded on the
+   diagram model at load (`layoutTarget`), and every handler that saves a
+   layout uses it (`layoutTargetOf`): moving a node, rerouting, resetting
+   routes, the layout commands, placing new nodes. Eight of them had each
+   recomputed the key from the shown workflow's name, so a hierarchical
+   runtime's per-instance layouts were read per instance and saved per
+   workflow. A rename also moves the node in the instance's layout.
 5. **The hierarchy export, the cache and the outline.** wfpy `--hierarchy`,
    instance-elaborated nested graphs, the server cache, then the outline panel.
 

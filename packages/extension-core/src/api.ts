@@ -98,6 +98,9 @@ export interface DiagramStorageOptions {
    *  platform builds the actual palette item. */
   entityPaletteItems?: EntityPaletteItemSpec[];
   nodeFamilies?: NodeFamilySpec[];
+  /** How nested workflows are navigated; in place, a nested view's layout is
+   *  the root's, per instance (diagram-server `layout-target.ts`). */
+  nestedNavigation?: 'in-place' | 'new-editor';
 }
 
 /**

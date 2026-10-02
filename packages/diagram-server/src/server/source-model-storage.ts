@@ -17,6 +17,7 @@ import {
 import { RequestModelAction, SaveModelAction } from '@eclipse-glsp/protocol';
 import { inject, injectable, optional } from 'inversify';
 import { URI } from 'vscode-uri';
+import { instanceLayoutFor, type LayoutTarget } from './layout-target';
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import {
@@ -440,7 +441,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         (diagramModel as any).workflowName = workflowName;
         (diagramModel as any).documentUri = sourceUri;
 
-        const workflowFilePath = filePath;
+        let workflowFilePath = filePath;
         // Qualify hierarchical network IDs so each instance-path gets its own layout
         // (e.g. "qwen35_model/decoder_block/decoder_layer"). Only a hierarchical runtime ever
         // supplies the root-workflow arg, so gating on its presence (rather than the settings
@@ -449,13 +450,32 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         const hierarchicalRoot = typeof opts[ROOT_WORKFLOW_ARG] === 'string' && String(opts[ROOT_WORKFLOW_ARG]).trim() !== ''
             ? String(opts[ROOT_WORKFLOW_ARG]).trim()
             : undefined;
+        let fallbackLayout: LayoutTarget | undefined;
         if (hierarchicalRoot) {
             const hierarchicalInstancePath = parseStringListArg(opts[INSTANCE_PATH_ARG]);
             const parts = [hierarchicalRoot, ...hierarchicalInstancePath, networkId];
             networkId = parts.join('/');
+        } else if (this.storageOptions?.nestedNavigation === 'in-place') {
+            // A nested workflow shown in place is an instance of the editor's
+            // root: its layout is the root's, per instance, falling back to the
+            // workflow's standalone layout until it has one of its own.
+            const instance = instanceLayoutFor(
+                this.parseNavigationTrailArg(opts[NAV_TRAIL_ARG]),
+                { filePath: workflowFilePath, workflowName: networkId },
+                uri => URI.parse(uri).fsPath
+            );
+            if (instance) {
+                workflowFilePath = instance.target.filePath;
+                networkId = instance.target.networkId;
+                fallbackLayout = instance.fallback;
+            }
         }
-        const loadedLayoutPositions = await this.layoutPersistence.loadLayout(workflowFilePath, networkId);
-        const edgeRoutes = await this.layoutPersistence.loadEdgeRoutes(workflowFilePath, networkId);
+        let loadedLayoutPositions = await this.layoutPersistence.loadLayout(workflowFilePath, networkId);
+        let edgeRoutes = await this.layoutPersistence.loadEdgeRoutes(workflowFilePath, networkId);
+        if (!loadedLayoutPositions && fallbackLayout) {
+            loadedLayoutPositions = await this.layoutPersistence.loadLayout(fallbackLayout.filePath, fallbackLayout.networkId);
+            edgeRoutes = await this.layoutPersistence.loadEdgeRoutes(fallbackLayout.filePath, fallbackLayout.networkId);
+        }
         const hasPersistedEdgeRoutes = edgeRoutes !== undefined;
         perf?.mark('layoutIO');
 
@@ -518,6 +538,9 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             countCoincidentNodes(loadedLayoutPositions?.values() ?? [])
         );
         const hasPersistedEdgeRoutesEffective = hasPersistedLayout && hasPersistedEdgeRoutes;
+
+        // Where every handler that saves this view's layout saves it.
+        (diagramModel as any).layoutTarget = { filePath: workflowFilePath, networkId };
 
         this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, {
             workflowFilePath,

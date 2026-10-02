@@ -11,7 +11,6 @@ import {
     type MaybePromise
 } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
-import { URI } from 'vscode-uri';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
@@ -19,6 +18,7 @@ import { WorkflowDiagramMetadata } from '@dialogram/shared';
 import { WorkflowDiagramConstants, portAnchor } from '@dialogram/shared';
 import { GModelSerializer } from '@eclipse-glsp/server';
 import { routeOrthogonal, type RouterConnector, type RouterObstacle } from '../routing/libavoid-router';
+import { layoutTargetOf } from '../server/layout-target';
 
 /** Every segment axis-aligned? A diagonal means the polyline is not a valid route. */
 export function isOrthogonalPolyline(points: readonly { x: number; y: number }[]): boolean {
@@ -1029,8 +1029,7 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
                 if (!operation.preview) {
                     const dm = this.modelState.get(WORKFLOW_NETWORK_MODEL_KEY) as WorkflowDiagramModel | undefined;
                     if (dm) {
-                        const workflowFilePath = URI.parse(dm.documentUri).fsPath;
-                        const networkId = (dm as any).workflowName ?? 'unknown';
+                        const { filePath: workflowFilePath, networkId } = layoutTargetOf(dm as any);
                         const positions = this.collectNodePositions(root);
                         const routes = this.collectEdgeRoutes(root);
                         await this.layoutPersistence.saveLayoutImmediate(workflowFilePath, networkId, positions, routes);
@@ -1232,8 +1231,7 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
         const dm = this.modelState.get(WORKFLOW_NETWORK_MODEL_KEY) as WorkflowDiagramModel | undefined;
         if (!dm) { return; }
 
-        const workflowFilePath = URI.parse(dm.documentUri).fsPath;
-        const networkId = (dm as any).workflowName ?? 'unknown';
+        const { filePath: workflowFilePath, networkId } = layoutTargetOf(dm as any);
 
         const positions = this.collectNodePositions(root);
         const routes = this.collectEdgeRoutes(root);
