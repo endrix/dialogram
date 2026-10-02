@@ -77,8 +77,10 @@ by the instance. The breadcrumb and "Used By" do the same for any crumb, in any
 file. "Same file" stops being a question. `editorContext.sourceUri` (the root)
 and the shown file are different things, and navigation never compares them.
 
-**Open in its own editor** stays available, as a node context-menu item and a
-breadcrumb modifier, for someone who wants the old behaviour on purpose.
+**Open in Its Own Editor** stays available as a node context-menu item. It
+opens the defining file as its own root, today's behaviour on request. "Used By"
+navigates *up*, out of the root, so it keeps opening the caller as a new root in
+its own editor. Only the views *below* the root are in place.
 
 This changes how every product using the platform navigates, so it is a profile
 choice: `nestedNavigation: 'in-place' | 'new-editor'`, default `'new-editor'`
@@ -213,16 +215,17 @@ comes from the same export, and is the cheap part of it: names, files and sizes.
 Each phase is usable on its own. 1 and 2 together are what removes the
 editor-per-level problem.
 
+## Decided
+
+- **Nested views are editable**, in their own files (section 4).
+- **Layout is per instance**, in the root's layout file (section 5).
+- **"Open in its own editor" opens the nested file as its own root.** It gets
+  its own chat, its own runs and its standalone layout: today's behaviour, made
+  explicit. A second editor on the same root is not offered.
+- **"Used By" opens the caller as a new root**, in its own editor. This editor
+  keeps its root, chat and run: navigating up never re-anchors it.
+
 ## Open questions
 
-- **A node used by two roots.** `child.py` is opened as its own root, and also
-  shown inside `top.py`'s editor. Its standalone layout (today's key) and its
-  per-instance layout under `top` are different by design. Should "Open in its
-  own editor" from inside `top` open it as its own root, or as a second editor on
-  the same root at that trail?
-- **Breadcrumb across roots.** "Used By" can navigate *up* from the root to a
-  workflow that uses it. Does that re-root the editor (its root becomes the
-  caller), or open the caller as a new root? Re-rooting keeps one editor;
-  opening keeps the chat and run anchored where they were.
 - **How large is the cached hierarchy** for the biggest real workflows, and
   does the outline need the node budget mlir-viewer's has (`truncated`)?
