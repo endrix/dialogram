@@ -363,7 +363,9 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             output: host.output,
             // The human port: a running agent's question goes to the platform
             // (the chat panel on the diagram); without it the driver prompts.
-            askUser: host.askUser ? (question, sourceUri) => host.askUser!(question, sourceUri) : undefined
+            askUser: host.askUser ? (question, sourceUri) => host.askUser!(question, sourceUri) : undefined,
+            // "Fix with AI" on a failed run: a task for the diagram's chat.
+            startChatTask: host.startChatTask ? (task, sourceUri) => host.startChatTask!(task, sourceUri) : undefined
         });
         driver.registerCommands(context);
         host.useLiveOverlaySignatureSource({

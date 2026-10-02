@@ -37,6 +37,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { ExecutionOverlaySink } from '@dialogram/shared';
 import { resumeStepFor } from './resume-at-step.js';
+import { appendTail, failureHeadline, fixTask, type FixTask, type RunFailure } from './run-failure.js';
 import { requestWorkflowStop, spawnWorkflowProcess } from './process-control.js';
 import { RunEventStreamClient, type RunStreamEvent } from './run-event-stream-client.js';
 
@@ -163,6 +164,10 @@ export interface CliRunDriverHost {
     requestRefresh(sourceUri: string, kind: 'full' | 'agentContextOnly', networkName?: string): void;
     /** Run output channel, owned by core. */
     output: vscode.OutputChannel;
+    /** Starts a task in the chat on the diagram at `sourceUri` (a new session in
+     *  `task.mode`, its first message `task.prompt`); `false` when no chat can.
+     *  Without it a failed run is reported, and nothing is offered. */
+    startChatTask?(task: FixTask, sourceUri: string): Promise<boolean>;
 }
 
 /** Subscription handle returned by the driver's live-overlay APIs. */
@@ -611,7 +616,8 @@ export class CliRunDriver {
         return { cmd: cliCommand, argsPrefix: [], cwd: startDir };
     }
 
-    private async findLatestQueueTracePath(opts: {
+    /** The directory of the latest run of this workflow that started after `startedAfterMs`. */
+    private async findLatestRunDir(opts: {
         baseOutDir: string;
         sourcePath: string;
         startedAfterMs: number;
@@ -660,11 +666,21 @@ export class CliRunDriver {
             }
         }
 
-        if (!latest?.outDir) {
+        return latest?.outDir;
+    }
+
+    private async findLatestQueueTracePath(opts: {
+        baseOutDir: string;
+        sourcePath: string;
+        startedAfterMs: number;
+        workflowName?: string;
+    }): Promise<string | undefined> {
+        const runDir = await this.findLatestRunDir(opts);
+        if (!runDir) {
             return undefined;
         }
 
-        const queueTracePath = path.join(latest.outDir, 'run.wf-queues.json');
+        const queueTracePath = path.join(runDir, 'run.wf-queues.json');
         if (!(await this.fileExists(queueTracePath))) {
             return undefined;
         }
@@ -675,7 +691,8 @@ export class CliRunDriver {
         inv: { cmd: string; args: string[]; cwd: string },
         output: vscode.OutputChannel,
         onSpawn?: (child: cp.ChildProcessWithoutNullStreams) => void,
-        wasStopRequested?: () => boolean
+        wasStopRequested?: () => boolean,
+        onStderr?: (text: string) => void
     ): Promise<number> {
         return await new Promise<number>((resolve) => {
             const child = spawnWorkflowProcess(inv);
@@ -685,7 +702,11 @@ export class CliRunDriver {
             }
 
             child.stdout.on('data', (d) => output.append(d.toString()));
-            child.stderr.on('data', (d) => output.append(d.toString()));
+            child.stderr.on('data', (d) => {
+                const text = d.toString();
+                output.append(text);
+                onStderr?.(text);
+            });
             child.on('close', (code, signal) => {
                 const exitSummary = `\n[wf-lang] Process exited (code=${code ?? 'null'}${signal ? `, signal=${signal}` : ''})\n`;
                 output.append(exitSummary);
@@ -705,6 +726,67 @@ export class CliRunDriver {
                 resolve(1);
             });
         });
+    }
+
+    /** The error a run recorded, if its record has one. */
+    private async readRunFailure(runDir: string): Promise<RunFailure | undefined> {
+        try {
+            const record = JSON.parse(await fs.readFile(path.join(runDir, 'run.wf-run.json'), 'utf-8'));
+            const error = record?.error;
+            if (!error || typeof error !== 'object') {
+                return undefined;
+            }
+            return {
+                ...(typeof error.message === 'string' ? { message: error.message } : {}),
+                ...(typeof error.entityInstanceName === 'string' ? { entityInstanceName: error.entityInstanceName } : {}),
+                ...(Array.isArray(error.entityInstancePath)
+                    ? { entityInstancePath: error.entityInstancePath.filter((p: unknown): p is string => typeof p === 'string') }
+                    : {})
+            };
+        } catch {
+            return undefined;
+        }
+    }
+
+    /**
+     * Tell the person the run failed, and where. With a chat behind the
+     * diagram, offer to have the chat find the cause and propose a fix: a new
+     * session in plan mode, its first message the failure.
+     */
+    private async reportFailure(opts: {
+        sourceUri: vscode.Uri;
+        workflowName?: string;
+        failure: RunFailure | undefined;
+        exitCode: number;
+        stderrTail: string;
+        runDir?: string;
+        output: vscode.OutputChannel;
+    }): Promise<void> {
+        const headline = failureHeadline(opts.failure, opts.exitCode);
+        const FIX = 'Fix with AI';
+        const OUTPUT = 'Show Output';
+        const actions = this.host.startChatTask ? [FIX, OUTPUT] : [OUTPUT];
+        const choice = await vscode.window.showErrorMessage(headline, ...actions);
+        if (choice === OUTPUT) {
+            opts.output.show(true);
+            return;
+        }
+        if (choice !== FIX || !this.host.startChatTask) {
+            return;
+        }
+        const task: FixTask = fixTask({
+            workflowName: opts.workflowName,
+            sourceFile: opts.sourceUri.fsPath,
+            failure: opts.failure,
+            exitCode: opts.exitCode,
+            stderrTail: opts.stderrTail,
+            runDir: opts.runDir,
+            canResume: !!this.config.cliResumeArgs && !!opts.runDir
+        });
+        const started = await this.host.startChatTask(task, opts.sourceUri.toString());
+        if (!started) {
+            void vscode.window.showWarningMessage('Open the chat on this diagram to have the failure looked at.');
+        }
     }
 
     private async stopWorkflow(): Promise<{ ok: boolean; message: string }> {
@@ -980,6 +1062,8 @@ export class CliRunDriver {
             this.stopElicitSocket();
         };
 
+        // The end of what the run wrote to stderr -- its traceback, when it fails.
+        let stderrTail = '';
         const exitCode = await vscode.window.withProgress(
             {
                 location: vscode.ProgressLocation.Notification,
@@ -1007,7 +1091,10 @@ export class CliRunDriver {
                             stopRequested: false
                         };
                     },
-                    () => this.activeRun?.stopRequested === true
+                    () => this.activeRun?.stopRequested === true,
+                    (text) => {
+                        stderrTail = appendTail(stderrTail, text);
+                    }
                 );
             }
         );
@@ -1026,9 +1113,18 @@ export class CliRunDriver {
         }
 
         if (exitCode !== 0) {
-            const msg = `Workflow run failed (exit code ${exitCode}). See 'wf-lang Run' output.`;
-            vscode.window.showErrorMessage(msg);
-            return { error: msg };
+            // Show where it failed on the diagram, then say so -- and, with a
+            // chat behind the diagram, offer to have it looked at.
+            await refreshDiagram(true);
+            const runDir = await this.findLatestRunDir({
+                baseOutDir: runOutDir,
+                sourcePath: sourceUri.fsPath,
+                startedAfterMs: runStartedAtMs,
+                workflowName
+            });
+            const failure = runDir ? await this.readRunFailure(runDir) : undefined;
+            void this.reportFailure({ sourceUri, workflowName, failure, exitCode, stderrTail, runDir, output });
+            return { error: failureHeadline(failure, exitCode) };
         }
 
         // Refresh diagram so overlay decorations can pick up the new run artifacts.

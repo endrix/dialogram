@@ -193,6 +193,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   private isVisible = false;
   private isCompact = false;
   private currentMode: 'plan' | 'build' = 'build';
+  /** A task the host asked for (`chat.startTask`), sent once its session exists. */
+  private pendingTask: { name: string; mode: 'plan' | 'build'; prompt: string } | undefined;
   private currentSessionId: string | null = null;
   private timeline: TimelineItem[] = [];
   private sessions: SessionEntry[] = [];
@@ -494,11 +496,40 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
           this.pushMessage('system', `Created session: ${data.session.name ?? data.session.id}`);
         }
         this.update();
+        // A task's session: send its message, as if typed, so it is in the
+        // transcript like any other.
+        if (data?.session?.id && this.pendingTask) {
+          const task = this.pendingTask;
+          this.pendingTask = undefined;
+          this.inputValue = task.prompt;
+          this.sendMessage();
+        }
+        break;
+
+      case 'chat.startTask':
+        // The host asks for a task in a new session: "Fix with AI" on a run
+        // that failed. Open the panel, start the session in the task's mode,
+        // and send its message once the session exists.
+        if (data && typeof data.prompt === 'string' && data.prompt.trim() !== '') {
+          const mode: 'plan' | 'build' = data.mode === 'build' ? 'build' : 'plan';
+          this.pendingTask = {
+            name: typeof data.name === 'string' && data.name.trim() !== '' ? data.name : 'Task',
+            mode,
+            prompt: data.prompt
+          };
+          this.currentMode = mode;
+          this.isLoadingSession = true;
+          this.loadingLabel = 'Creating session…';
+          this.autoShow('task');
+          this.update();
+          this.sendToHost('chat.createSession', { mode, name: this.pendingTask.name });
+        }
         break;
 
       case 'chat.sessionCreateAborted':
         // Name prompt cancelled — drop the "Creating session…" spinner.
         this.isLoadingSession = false;
+        this.pendingTask = undefined;
         this.update();
         break;
 

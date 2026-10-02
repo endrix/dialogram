@@ -227,6 +227,17 @@ export interface DiagramRunHost {
   ): void;
   output: vscode.OutputChannel;
   useLiveOverlaySignatureSource(source: DiagramLiveOverlaySource): void;
+  /** Starts a task in the chat on the diagram at `sourceUri`: a new session in
+   *  `task.mode`, named `task.name`, whose first message is `task.prompt`.
+   *  `false` when no chat can take it there. */
+  startChatTask?(task: DiagramChatTask, sourceUri: string): Promise<boolean>;
+}
+
+/** A task the platform asks a diagram's chat to start (see `DiagramRunHost.startChatTask`). */
+export interface DiagramChatTask {
+  name: string;
+  mode: "plan" | "build";
+  prompt: string;
 }
 
 /**
