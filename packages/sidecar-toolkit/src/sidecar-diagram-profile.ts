@@ -373,7 +373,9 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             // (the chat panel on the diagram); without it the driver prompts.
             askUser: host.askUser ? (question, sourceUri) => host.askUser!(question, sourceUri) : undefined,
             // "Fix with AI" on a failed run: a task for the diagram's chat.
-            startChatTask: host.startChatTask ? (task, sourceUri) => host.startChatTask!(task, sourceUri) : undefined
+            startChatTask: host.startChatTask ? (task, sourceUri) => host.startChatTask!(task, sourceUri) : undefined,
+            // Resuming the run the chat fixed: confirmed in that chat.
+            confirmInChat: host.confirmInChat ? (confirm, sourceUri) => host.confirmInChat!(confirm, sourceUri) : undefined
         });
         driver.registerCommands(context);
         host.useLiveOverlaySignatureSource({
@@ -474,7 +476,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
 
 /**
  * The chat tool that resumes a failed run once the agent's fix is in. It asks
- * the person first (the run driver's `resumeFailedRun`); the agent learns the
+ * the person first, in the chat (the run driver's `resumeFailedRun`); the agent learns the
  * answer, and the run's outcome shows on the diagram.
  */
 export function resumeFailedRunTool(runWorkflowCommandId: string): RegistryChatTool {
@@ -482,7 +484,7 @@ export function resumeFailedRunTool(runWorkflowCommandId: string): RegistryChatT
         name: RESUME_TOOL,
         description:
             'After fixing the cause of a failed workflow run, offer the user to resume that run from where it failed. '
-            + 'The user is asked to confirm; what ran before the failure is replayed, not run again. '
+            + 'The user is asked to confirm in this chat (do not ask them yourself first); what ran before the failure is replayed, not run again. '
             + 'Call it once the fix is applied to the files -- not before, and not to start a new run.',
         inputSchema: { type: 'object', properties: {} },
         handler: async (file) => {

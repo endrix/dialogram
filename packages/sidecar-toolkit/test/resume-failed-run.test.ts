@@ -51,7 +51,7 @@ import { resumeFailedRunTool } from '../src/sidecar-diagram-profile';
 
 const RUN_CMD = 'test.resume.runWorkflow';
 
-function makeDriver(canResume = true) {
+function makeDriver(canResume = true, confirmInChat?: (confirm: any, sourceUri: string) => Promise<{ choice?: string } | undefined>) {
     const config: CliRunDriverConfig = {
         settingsNamespace: 'wfLang', customEditorViewType: 'workflow.networkDiagram',
         cliCommandSettingKey: 'wfpyCommand', cliCommandDefault: 'fake-wfpy', cliPythonModule: undefined,
@@ -68,7 +68,8 @@ function makeDriver(canResume = true) {
     const driver = new CliRunDriver(config, {
         overlay: { emitEvents: () => {} },
         requestRefresh: () => {},
-        output: { show: () => {}, append: () => {}, appendLine: () => {} }
+        output: { show: () => {}, append: () => {}, appendLine: () => {} },
+        confirmInChat
     } as any);
     driver.registerCommands({ subscriptions: [] } as any);
     return driver;
@@ -161,6 +162,46 @@ describe('resuming a failed run when the agent proposes it', () => {
         const file = await failRun();
         const result = await vscode.commands.executeCommand<string>(resumeFailedRunCommandId(RUN_CMD), { file });
         expect(result).toContain('cannot resume');
+    });
+});
+
+describe('asked in the chat', () => {
+    it('asks in the chat on the run\u2019s diagram, not with a notification', async () => {
+        const confirms: Array<{ confirm: any; sourceUri: string }> = [];
+        makeDriver(true, async (confirm, sourceUri) => {
+            confirms.push({ confirm, sourceUri });
+            return { choice: 'Resume' };
+        });
+        const file = await failRun();
+
+        const result = await vscode.commands.executeCommand<string>(resumeFailedRunCommandId(RUN_CMD), { file });
+        await settle();
+
+        expect(confirms).toHaveLength(1);
+        expect(confirms[0].sourceUri).toContain('top.py');
+        expect(confirms[0].confirm.choices).toEqual(['Resume', 'Not now']);
+        expect(confirms[0].confirm.text).toContain('from where it failed (x (in m))');
+        expect(asked.some(q => q.startsWith("The chat's fix"))).toBe(false);
+        expect(result).toContain('resuming');
+        expect(spawns).toHaveLength(2);
+    });
+
+    it('takes a decline in the chat as not now', async () => {
+        makeDriver(true, async () => ({}));
+        const file = await failRun();
+        const result = await vscode.commands.executeCommand<string>(resumeFailedRunCommandId(RUN_CMD), { file });
+        expect(result).toContain('chose not to resume');
+        expect(spawns).toHaveLength(1);
+    });
+
+    it('falls back to a notification when no chat can ask', async () => {
+        makeDriver(true, async () => undefined);
+        const file = await failRun();
+        answer = 'Resume';
+        await vscode.commands.executeCommand(resumeFailedRunCommandId(RUN_CMD), { file });
+        await settle();
+        expect(asked.some(q => q.startsWith("The chat's fix"))).toBe(true);
+        expect(spawns).toHaveLength(2);
     });
 });
 

@@ -73,6 +73,7 @@ export async function activateProfileRuntime(
     const runtime = chatRuntime;
     glsp.setRunQuestionHandler((question, uri) => runtime.askRunQuestion(uri, question));
     glsp.setChatTaskHandler(async (task, uri) => runtime.startTask(uri, task));
+    glsp.setChatConfirmHandler((confirm, uri) => runtime.confirmInChat(uri, confirm));
     context.subscriptions.push(chatRuntime, {
       dispose: () => {
         transport?.dispose();

@@ -37,7 +37,7 @@ import { executeViewerCommand, executeViewerOpen, executeViewerReveal } from './
 import { decideDiagramOpen } from './diagram-open-decision';
 import { readMcpServerUrl } from './mcp-server-url';
 import { composeStorageRuntimeOptions } from './profile-storage-options';
-import { type DiagramChatTask, type DiagramProfile, type DiagramRunAnswer, type DiagramRunHost, type DiagramRunQuestion } from '../../api';
+import { type DiagramChatConfirm, type DiagramChatConfirmAnswer, type DiagramChatTask, type DiagramProfile, type DiagramRunAnswer, type DiagramRunHost, type DiagramRunQuestion } from '../../api';
 
 // Define the diagram type constant locally to avoid import
 const WORKFLOW_DIAGRAM_TYPE = 'cal-network-diagram';
@@ -304,6 +304,8 @@ interface GlspActivationState {
     runQuestionHandler?: RunQuestionHandler;
     /** See {@link GlspIntegrationHandle.setChatTaskHandler}. */
     chatTaskHandler?: ChatTaskHandler;
+    /** See {@link GlspIntegrationHandle.setChatConfirmHandler}. */
+    chatConfirmHandler?: ChatConfirmHandler;
     context: vscode.ExtensionContext;
     profile: DiagramProfile;
     // Transient cross-file drill-down handoff, scoped to this activation (per profile instance).
@@ -345,10 +347,14 @@ export interface GlspIntegrationHandle extends vscode.Disposable {
     setRunQuestionHandler(handler: RunQuestionHandler | undefined): void;
     /** Where the run driver's chat tasks go ("Fix with AI" on a failed run). */
     setChatTaskHandler(handler: ChatTaskHandler | undefined): void;
+    /** Where the run driver's confirmations go (resuming a run the chat fixed). */
+    setChatConfirmHandler(handler: ChatConfirmHandler | undefined): void;
 }
 
 export type RunQuestionHandler = (question: DiagramRunQuestion, sourceUri: string) => Promise<DiagramRunAnswer | undefined>;
 export type ChatTaskHandler = (task: DiagramChatTask, sourceUri: string) => Promise<boolean>;
+
+export type ChatConfirmHandler = (confirm: DiagramChatConfirm, sourceUri: string) => Promise<DiagramChatConfirmAnswer | undefined>;
 
 /**
  * Activate the GLSP integration for Workflow diagrams.
@@ -989,6 +995,9 @@ export async function activateGlspIntegration(
         setChatTaskHandler: (handler) => {
             state.chatTaskHandler = handler;
         },
+        setChatConfirmHandler: (handler) => {
+            state.chatConfirmHandler = handler;
+        },
         dispose: () => disposable.dispose()
     };
 }
@@ -1468,7 +1477,10 @@ function registerCalDiagramCommands(
             // Only a profile with a chat can take a task; without one a failed
             // run is reported and nothing is offered.
             ...(profile.chat
-                ? { startChatTask: async (task: DiagramChatTask, sourceUri: string) => (await state.chatTaskHandler?.(task, sourceUri)) ?? false }
+                ? {
+                    startChatTask: async (task: DiagramChatTask, sourceUri: string) => (await state.chatTaskHandler?.(task, sourceUri)) ?? false,
+                    confirmInChat: async (confirm: DiagramChatConfirm, sourceUri: string) => state.chatConfirmHandler?.(confirm, sourceUri)
+                }
                 : {}),
             requestRefresh: requestRunRefresh,
             output: runOutput,
