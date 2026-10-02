@@ -1109,7 +1109,10 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 ? WorkflowDiagramMetadata.IS_EXECUTING
                 : (activeGlowClass === 'cal-node-finished' ? WorkflowDiagramMetadata.IS_FINISHED : undefined);
 
-            const errorEntityName = typeof overlay.error?.entityInstanceName === 'string'
+            // The failure happened after the trace's last step: at an earlier
+            // step the node had not failed yet.
+            const showsLastStep = !queueTrace || queueTrace.selectedStep >= queueTrace.stepCount - 1;
+            const errorEntityName = showsLastStep && typeof overlay.error?.entityInstanceName === 'string'
                 ? overlay.error.entityInstanceName.trim()
                 : undefined;
 
@@ -1127,13 +1130,15 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                     const args = element.args as Record<string, unknown> | undefined;
                     let queueSizeForEdge: number | undefined;
                     let queueTokenForEdge: unknown;
+                    // The token the edge carried by the end of the run.
+                    let finalToken: unknown;
+                    let hasFinalToken = false;
                     const astPathCandidates = astPathCandidatesForEdge(args);
                     for (const astPath of astPathCandidates) {
                         const entry = overlay.edges[astPath];
-                        if (entry && Object.prototype.hasOwnProperty.call(entry, 'lastToken')) {
-                            element.args = element.args || {};
-                            (element.args as any)[WorkflowDiagramMetadata.VIEWER_LAST_TOKEN] = (entry as any).lastToken;
-                            break;
+                        if (!hasFinalToken && entry && Object.prototype.hasOwnProperty.call(entry, 'lastToken')) {
+                            finalToken = (entry as any).lastToken;
+                            hasFinalToken = true;
                         }
                         const qSize = queueByAstPath.get(astPath);
                         if (queueSizeForEdge === undefined && typeof qSize === 'number') {
@@ -1145,10 +1150,10 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                     }
 
                     const signature = signatureCandidatesForEdge(args)
-                        .find(candidate => overlayBySignature.has(candidate));
-                    if (signature) {
-                        element.args = element.args || {};
-                        (element.args as any)[WorkflowDiagramMetadata.VIEWER_LAST_TOKEN] = overlayBySignature.get(signature);
+                        .find(candidate => overlayBySignature.has(candidate) || queueBySignature.has(candidate));
+                    if (signature && overlayBySignature.has(signature)) {
+                        finalToken = overlayBySignature.get(signature);
+                        hasFinalToken = true;
                     }
                     if (queueSizeForEdge === undefined && signature) {
                         const qSize = queueBySignature.get(signature);
@@ -1159,13 +1164,26 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                     if (queueTokenForEdge === undefined && signature && queueTokenBySignature.has(signature)) {
                         queueTokenForEdge = queueTokenBySignature.get(signature);
                     }
+
+                    // A step is shown and the trace knows this edge: draw it as
+                    // it was then. The run's final token would paint an edge as
+                    // carried at a step no token had reached it yet, so going
+                    // back through the trace would change nothing on the edges.
+                    // An edge the trace does not know keeps the final token.
+                    const atStep = queueTrace !== undefined && queueSizeForEdge !== undefined;
+                    const shownToken = atStep ? queueTokenForEdge : (queueTokenForEdge ?? finalToken);
+                    const hasShownToken = atStep
+                        ? queueTokenForEdge !== undefined
+                        : queueTokenForEdge !== undefined || hasFinalToken;
+                    if (hasShownToken) {
+                        element.args = element.args || {};
+                        (element.args as any)[WorkflowDiagramMetadata.VIEWER_LAST_TOKEN] = shownToken;
+                    } else if (element.args) {
+                        delete (element.args as any)[WorkflowDiagramMetadata.VIEWER_LAST_TOKEN];
+                    }
                     if (queueSizeForEdge !== undefined) {
                         element.args = element.args || {};
                         (element.args as any)[WorkflowDiagramMetadata.QUEUE_SIZE] = queueSizeForEdge;
-                    }
-                    if (queueTokenForEdge !== undefined) {
-                        element.args = element.args || {};
-                        (element.args as any)[WorkflowDiagramMetadata.VIEWER_LAST_TOKEN] = queueTokenForEdge;
                     }
                 }
                 if (element instanceof GNode) {
