@@ -660,6 +660,16 @@
   flex: 1;
   border-top: 1px solid var(--chat-border);
 }
+/* A finished turn's session: open in the agent's CLI, copy its id. */
+.chat-run-turn .chat-run-session-btn {
+  padding: 0 2px;
+  margin-left: -4px;
+  font-size: 11px;
+  text-transform: none;
+}
+.chat-run-turn:hover {
+  opacity: 0.9;
+}
 .chat-run-transcript .chat-question {
   margin: 8px 0;
 }

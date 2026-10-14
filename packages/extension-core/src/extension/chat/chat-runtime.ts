@@ -28,6 +28,7 @@ import {
 } from "./slash-commands";
 import { attachAcpEventForwarding } from "./acp-event-forwarding";
 import { copySessionId, openSessionNatively, type NativeSession } from "./native-session.js";
+import { KNOWN_CONNECTORS } from "./acp-connectors.js";
 import {
   LEGACY_KEYS,
   readStateWithFallback,
@@ -49,6 +50,12 @@ export interface ChatRuntimeConfig {
    * means opencode. A rejection is the connect error the panel shows.
    */
   acpAgent?: (cwd: string) => Promise<AcpAgentSpec | undefined>;
+  /**
+   * A named connector's `resume` template as a workspace sees it (for a run's
+   * agents, which name their connector); undefined (or no hook) falls back to
+   * the known connectors'.
+   */
+  connectorResume?: (connector: string, cwd: string) => string | undefined;
   /** Settings section read for `opencodePath` and `enableMcpTools`. */
   settingsSection: string;
   /** Domain primer injected into each session's context. */
@@ -854,6 +861,28 @@ export class ChatRuntime {
           cwd: this.acp.sessionCwd(sessionId),
         };
         await (type === "chat.copySessionId" ? copySessionId(session) : openSessionNatively(session));
+        return;
+      }
+      case "chat.openAgentSession":
+      case "chat.copyAgentSession": {
+        // A run's agent: its firing named the connector and the directory.
+        const sessionId = typeof data?.sessionId === "string" ? data.sessionId : "";
+        if (!sessionId) return;
+        const connector = typeof data?.connector === "string" && data.connector ? data.connector : undefined;
+        const cwd = typeof data?.cwd === "string" && data.cwd ? data.cwd : undefined;
+        const session: NativeSession = {
+          agent: connector ?? "agent",
+          sessionId,
+          cwd,
+          // The workspace's connectors files decide (they can clear one);
+          // the known connectors' only without them.
+          resume: !connector
+            ? undefined
+            : this.config.connectorResume
+              ? this.config.connectorResume(connector, cwd ?? process.cwd())
+              : KNOWN_CONNECTORS[connector]?.resume,
+        };
+        await (type === "chat.copyAgentSession" ? copySessionId(session) : openSessionNatively(session));
         return;
       }
       case "chat.confirmAnswer": {

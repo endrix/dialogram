@@ -1001,8 +1001,17 @@ export interface LiveAgentQuestion {
 }
 
 /** One entry of an agent's transcript, in arrival order. */
+/** The agent session a firing talked to, as the runtime reports it. */
+export interface LiveAgentSession {
+    id: string;
+    /** The connector that ran it; absent for an explicit command line. */
+    connector?: string;
+    /** The directory it ran in. */
+    cwd?: string;
+}
+
 export type LiveAgentPart =
-    | { kind: 'turn'; index: number }
+    | { kind: 'turn'; index: number; session?: LiveAgentSession }
     | { kind: 'reasoning'; text: string }
     | { kind: 'text'; text: string }
     | { kind: 'tool'; name: string; status?: string; id?: string }
@@ -1025,6 +1034,19 @@ export interface LiveAgentState {
     pendingQuestions: number;
 }
 
+
+/** A run event's `session`, if it names one. */
+export function liveAgentSession(raw: unknown): LiveAgentSession | undefined {
+    if (!raw || typeof raw !== 'object') return undefined;
+    const r = raw as Record<string, unknown>;
+    const id = typeof r.id === 'string' ? r.id.trim() : '';
+    if (!id) return undefined;
+    return {
+        id,
+        ...(typeof r.connector === 'string' && r.connector ? { connector: r.connector } : {}),
+        ...(typeof r.cwd === 'string' && r.cwd ? { cwd: r.cwd } : {})
+    };
+}
 
 @injectable()
 export class RunAgentStreamActionHandler implements IActionHandler {
@@ -1211,9 +1233,22 @@ export class RunAgentStreamActionHandler implements IActionHandler {
                 }
                 break;
             }
-            case 'agent.message.end':
+            case 'agent.message.end': {
                 state.status = 'done';
+                // The firing's session, on its turn: it can be opened in the
+                // agent's own CLI once the firing is over.
+                const session = liveAgentSession(ev.session);
+                if (session) {
+                    for (let i = state.parts.length - 1; i >= 0; i--) {
+                        const p = state.parts[i];
+                        if (p.kind === 'turn') {
+                            p.session = session;
+                            break;
+                        }
+                    }
+                }
                 break;
+            }
             default:
                 break;
         }

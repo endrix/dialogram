@@ -1517,8 +1517,28 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   private partTemplate(p: LiveAgentPart, open: boolean): TemplateResult {
     switch (p.kind) {
-      case 'turn':
-        return html`<div class="chat-run-turn"><span>turn ${p.index}</span></div>`;
+      case 'turn': {
+        const session = p.session;
+        return html`<div class="chat-run-turn">
+          <span>turn ${p.index}</span>
+          ${session
+            ? html`<button
+                  class="chat-ibtn chat-run-session-btn"
+                  title=${`Open this turn's session in ${session.connector ?? 'the agent'}'s own CLI, in a terminal`}
+                  @click=${() => this.sendToHost('chat.openAgentSession', { sessionId: session.id, connector: session.connector, cwd: session.cwd })}
+                >
+                  <span class="codicon codicon-terminal"></span>
+                </button>
+                <button
+                  class="chat-ibtn chat-run-session-btn"
+                  title=${`Copy this turn's session id (${session.id})`}
+                  @click=${() => this.sendToHost('chat.copyAgentSession', { sessionId: session.id, connector: session.connector, cwd: session.cwd })}
+                >
+                  <span class="codicon codicon-copy"></span>
+                </button>`
+            : nothing}
+        </div>`;
+      }
       case 'reasoning':
         return this.thinkingTemplate(p.text, { open });
       case 'text': {
