@@ -27,6 +27,7 @@ import {
   type ChatCommandContribution,
 } from "./slash-commands";
 import { attachAcpEventForwarding } from "./acp-event-forwarding";
+import { copySessionId, openSessionNatively, type NativeSession } from "./native-session.js";
 import {
   LEGACY_KEYS,
   readStateWithFallback,
@@ -842,6 +843,19 @@ export class ChatRuntime {
       case "chat.permissionResponse":
         this.acp.respondToPermission(data.requestId, data.optionId ?? null);
         return;
+      case "chat.openSessionNatively":
+      case "chat.copySessionId": {
+        const sessionId = typeof data?.sessionId === "string" ? data.sessionId : "";
+        if (!sessionId) return;
+        const session: NativeSession = {
+          agent: this.acp.agent,
+          sessionId,
+          resume: this.acp.resumeTemplate,
+          cwd: this.acp.sessionCwd(sessionId),
+        };
+        await (type === "chat.copySessionId" ? copySessionId(session) : openSessionNatively(session));
+        return;
+      }
       case "chat.confirmAnswer": {
         const resolve = this.pendingConfirms.get(String(data?.id));
         if (!resolve) return;

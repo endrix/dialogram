@@ -126,7 +126,34 @@ export class EventEmitter<T> {
     }
 }
 
+/** Terminals the code under test opened, with what was typed into them. */
+export const createdTerminals: Array<{ options: any; sent: string[]; shown: boolean }> = [];
+/** What the code under test wrote to the clipboard, last write last. */
+export const clipboardWrites: string[] = [];
+
+export const env = {
+    clipboard: {
+        writeText: async (text: string): Promise<void> => {
+            clipboardWrites.push(text);
+        },
+        readText: async (): Promise<string> => clipboardWrites[clipboardWrites.length - 1] ?? ''
+    }
+};
+
 export const window = {
+    createTerminal: (options: any) => {
+        const record = { options, sent: [] as string[], shown: false };
+        createdTerminals.push(record);
+        return {
+            show: () => {
+                record.shown = true;
+            },
+            sendText: (text: string) => {
+                record.sent.push(text);
+            },
+            dispose: () => undefined
+        };
+    },
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     showErrorMessage: async (_message: string): Promise<void> => {
         // no-op for tests

@@ -55,15 +55,21 @@ export interface AcpConnectorInfo {
     model?: string | null;
     mode?: string | null;
     env?: Record<string, string>;
+    /** The agent's own command line that opens one of its sessions,
+     *  `{sessionId}` standing for the id; none when it has no such command. */
+    resume?: string;
 }
 
 /** What the chat spawns for a connector: {@link AcpAgentSpec}. */
 export type ChatAgentSpec = AcpAgentSpec & { httpApi: boolean };
 
 /** The agents known without being told; the same table as the runtime's. */
-export const KNOWN_CONNECTORS: Readonly<Record<string, { command: string; httpApi: boolean }>> = {
-    opencode: { command: "opencode acp", httpApi: true },
-    claude: { command: "claude-agent-acp", httpApi: false },
+export const KNOWN_CONNECTORS: Readonly<Record<string, { command: string; httpApi: boolean; resume?: string }>> = {
+    // Both adapters keep the agent's own session id as the ACP one, so its
+    // CLI opens the chat's session: `claude --resume` (from the session's
+    // directory), `opencode -s`.
+    opencode: { command: "opencode acp", httpApi: true, resume: "opencode -s {sessionId}" },
+    claude: { command: "claude-agent-acp", httpApi: false, resume: "claude --resume {sessionId}" },
     codex: { command: "codex-acp", httpApi: false },
     gemini: { command: "gemini --experimental-acp", httpApi: false },
 };
@@ -130,6 +136,7 @@ export function loadAcpConnectors(options: LoadAcpConnectorsOptions): AcpConnect
         found.set(name, {
             name, source: "discovered", available: isOnPath(argv[0], pathDirs),
             command: spec.command, httpApi: spec.httpApi, model: null, mode: null,
+            ...(spec.resume ? { resume: spec.resume } : {}),
         });
     }
     const userFile = options.userFile ?? userConnectorsFile(options.files.user);
@@ -196,7 +203,7 @@ export function resolveChatAgent(name: string, connectors: AcpConnectorInfo[] | 
     if (argv.length === 0) {
         throw new Error(`ACP connector "${wanted}" has an empty command`);
     }
-    return { name: found.name, argv, httpApi: found.httpApi, env: found.env };
+    return { name: found.name, argv, httpApi: found.httpApi, env: found.env, ...(found.resume ? { resume: found.resume } : {}) };
 }
 
 /**
@@ -291,7 +298,20 @@ function fromTable(
         model: str(table.model, base?.model),
         mode: str(table.mode, base?.mode),
         env: Object.keys(env).length ? env : undefined,
+        ...(table.resume !== undefined
+            ? (table.resume ? { resume: String(table.resume) } : {})
+            : base?.resume ? { resume: base.resume } : {}),
     };
+}
+
+/**
+ * The command line that opens `sessionId` in the agent's own CLI, from a
+ * connector's `resume` template; undefined without one.
+ */
+export function resumeCommandFor(template: string | undefined, sessionId: string): string | undefined {
+    if (!template || !template.includes("{sessionId}")) return undefined;
+    const quoted = /^[A-Za-z0-9_.:-]+$/.test(sessionId) ? sessionId : `'${sessionId.replace(/'/g, `'\\''`)}'`;
+    return template.split("{sessionId}").join(quoted);
 }
 
 // ── the PATH ───────────────────────────────────────────────────────────

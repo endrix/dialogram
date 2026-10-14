@@ -1016,6 +1016,16 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     this.update();
   }
 
+  /** Open the shown session in the agent's own CLI (the host opens a terminal). */
+  private openSessionNatively(): void {
+    if (this.currentSessionId) this.sendToHost('chat.openSessionNatively', { sessionId: this.currentSessionId });
+  }
+
+  /** Copy the shown session's id (the host writes the clipboard). */
+  private copySessionId(): void {
+    if (this.currentSessionId) this.sendToHost('chat.copySessionId', { sessionId: this.currentSessionId });
+  }
+
   /** Answer a confirmation with the button pressed (`null`: declined). */
   private answerConfirm(item: ConfirmItem, choice: string | null): void {
     if (item.resolved !== undefined) return;
@@ -1404,6 +1414,18 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
               <button class="chat-ibtn" title="Delete session" @click=${() => this.deleteCurrentSession()}>
                 <span class="codicon codicon-trash"></span>
               </button>
+              ${this.currentSessionId
+                ? html`<button
+                      class="chat-ibtn"
+                      title=${`Open this session in ${this.connectionAgent || 'the agent'}'s own CLI, in a terminal`}
+                      @click=${() => this.openSessionNatively()}
+                    >
+                      <span class="codicon codicon-terminal"></span>
+                    </button>
+                    <button class="chat-ibtn" title="Copy the session id" @click=${() => this.copySessionId()}>
+                      <span class="codicon codicon-copy"></span>
+                    </button>`
+                : nothing}
             `
           : this.agentSelectTemplate(this.view.instance)}
         <div class="chat-topbar-spacer"></div>
