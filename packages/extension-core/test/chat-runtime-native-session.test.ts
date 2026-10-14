@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { ChatRuntime } from '../src/extension/chat/chat-runtime';
 import { clipboardWrites, createdTerminals } from './vscode-mock';
 
-function makeRuntime(cwd: string) {
+function makeRuntime(cwd: string, connectorResume?: (connector: string, cwd: string) => string | undefined) {
     const memento = {
         get: <T>(_key: string, defaultValue?: T): T | undefined => defaultValue,
         update: async (): Promise<void> => undefined,
@@ -17,7 +17,7 @@ function makeRuntime(cwd: string) {
     };
     const runtime = new ChatRuntime(
         { workspaceState: memento } as any,
-        { key: 'test', displayName: 'Test', settingsSection: 'test.chat' } as any,
+        { key: 'test', displayName: 'Test', settingsSection: 'test.chat', connectorResume } as any,
         () => undefined,
         () => true
     );
@@ -53,5 +53,42 @@ describe('opening the chat’s session natively', () => {
         await runtime.handleMessage('file:///w/top.py', { type: 'chat.openSessionNatively', data: {} });
         expect(clipboardWrites).toEqual(['abc-1']);
         expect(createdTerminals).toHaveLength(0);
+    });
+});
+
+describe('opening a run agent\u2019s session natively', () => {
+    it('uses the connector the firing named, as the workspace\u2019s connectors declare it', async () => {
+        const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'run-native-'));
+        try {
+            const asked: string[][] = [];
+            const runtime = makeRuntime('/elsewhere', (connector, dir) => {
+                asked.push([connector, dir]);
+                return connector === 'opencode' ? 'opencode -s {sessionId}' : undefined;
+            });
+            await runtime.handleMessage('file:///w/top.py', {
+                type: 'chat.openAgentSession',
+                data: { sessionId: 'ses_1', connector: 'opencode', cwd }
+            });
+            expect(asked).toEqual([['opencode', cwd]]);
+            expect(createdTerminals[0].options.cwd).toBe(cwd);
+            expect(createdTerminals[0].sent).toEqual(['opencode -s ses_1']);
+        } finally {
+            fs.rmSync(cwd, { recursive: true, force: true });
+        }
+    });
+
+    it('falls back to the known connectors without a resolver, and copies without a connector', async () => {
+        const runtime = makeRuntime('/w');
+        await runtime.handleMessage('file:///w/top.py', { type: 'chat.openAgentSession', data: { sessionId: 'c1', connector: 'claude' } });
+        expect(createdTerminals[0].sent).toEqual(['claude --resume c1']);
+
+        await runtime.handleMessage('file:///w/top.py', { type: 'chat.openAgentSession', data: { sessionId: 'x9' } });
+        expect(createdTerminals).toHaveLength(1);
+        expect(clipboardWrites).toEqual(['x9']);
+    });
+
+    it('copies a run agent\u2019s session id', async () => {
+        await makeRuntime('/w').handleMessage('file:///w/top.py', { type: 'chat.copyAgentSession', data: { sessionId: 'c1', connector: 'claude' } });
+        expect(clipboardWrites).toEqual(['c1']);
     });
 });

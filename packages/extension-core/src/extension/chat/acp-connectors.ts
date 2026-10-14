@@ -181,6 +181,21 @@ export function createAcpAgentResolver(
 }
 
 /**
+ * A named connector's `resume` template, as the connectors files of the
+ * workspace at `cwd` declare it; undefined when it has none or the files do
+ * not read.
+ */
+export function createConnectorResumeResolver(config: AcpConnectorConfig): (connector: string, cwd: string) => string | undefined {
+    return (connector: string, cwd: string) => {
+        try {
+            return loadAcpConnectors({ files: config.files, workspaceDir: cwd }).find((c) => c.name === connector)?.resume;
+        } catch {
+            return KNOWN_CONNECTORS[connector]?.resume;
+        }
+    };
+}
+
+/**
  * The agent the chat spawns for the connector a setting names. Throws with
  * the reason a reader can act on.
  */
