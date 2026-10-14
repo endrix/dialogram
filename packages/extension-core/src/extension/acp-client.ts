@@ -146,6 +146,8 @@ export interface AcpAgentSpec {
   httpApi?: boolean;
   /** Extra environment for the process, from the connector's `env` table. */
   env?: Record<string, string>;
+  /** The agent's CLI command opening one of its sessions (`{sessionId}`). */
+  resume?: string;
 }
 
 /**
@@ -169,6 +171,7 @@ const OPENCODE_AGENT: AcpAgentSpec = {
   name: "opencode",
   argv: ["opencode", "acp"],
   httpApi: true,
+  resume: "opencode -s {sessionId}",
 };
 
 /**
@@ -180,6 +183,8 @@ export class ACPClientService extends EventEmitter {
   private process: ChildProcess | null = null;
   /** The agent's name, for messages: what the chat is (or is not) talking to. */
   private agentName: string = OPENCODE_AGENT.name;
+  /** The connector's `resume` template, for opening a session in the agent's own CLI. */
+  private agentResume: string | undefined = OPENCODE_AGENT.resume;
   private connection: ClientSideConnection | null = null;
   private sessions: Map<string, SessionInfo> = new Map();
   /**
@@ -340,6 +345,16 @@ export class ACPClientService extends EventEmitter {
     return this.agentName;
   }
 
+  /** The agent's `resume` template ({@link AcpAgentSpec.resume}), if it has one. */
+  get resumeTemplate(): string | undefined {
+    return this.agentResume;
+  }
+
+  /** The directory a session runs in, or the workspace's when it is not known. */
+  sessionCwd(sessionId: string): string | undefined {
+    return this.sessions.get(sessionId)?.cwd ?? this.workspaceCwd;
+  }
+
   /**
    * Spawn the agent and connect. `agent` names any ACP connector; without it
    * the chat talks to opencode, resolved as before.
@@ -351,6 +366,7 @@ export class ACPClientService extends EventEmitter {
     this.workspaceCwd = cwd;
     const spec = agent && agent.argv.length > 0 ? agent : OPENCODE_AGENT;
     this.agentName = spec.name;
+    this.agentResume = spec.resume;
 
     try {
       // opencode's binary is looked for in its install locations too; any
