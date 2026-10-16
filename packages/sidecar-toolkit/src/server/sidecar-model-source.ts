@@ -162,9 +162,21 @@ export class SidecarModelSource implements DiagramModelSource {
      * returned `graph`.
      */
     attachDiagnostics(result: SidecarModelSourceResult, rawPayload?: unknown): SidecarModelSourceResult {
-        const payload = rawPayload && typeof rawPayload === 'object'
+        let payload = rawPayload && typeof rawPayload === 'object'
             ? rawPayload as Record<string, unknown>
             : (result.graph && typeof result.graph === 'object' ? result.graph as Record<string, unknown> : {});
+        // A document's own `errors` sit beside `graph`, not in it, so the walk
+        // over the graph never sees them: on the CLI path a Python runtime's
+        // load errors stay in the overlay, and diagnostics-parity.test.ts pins
+        // that. A compiler's errors are a different matter, and a product that
+        // says so gets them in the Problems panel with their file and line.
+        if (this.cfg.documentErrorsToProblems && !rawPayload) {
+            const docErrors = Array.isArray((result as { errors?: unknown }).errors) ? (result as { errors: unknown[] }).errors : [];
+            if (docErrors.length > 0) {
+                const graphErrors = Array.isArray(payload.errors) ? payload.errors : [];
+                payload = { ...payload, errors: [...docErrors, ...graphErrors] };
+            }
+        }
         return { ...result, diagnostics: this.normalizeGraphDiagnostics(payload) };
     }
 

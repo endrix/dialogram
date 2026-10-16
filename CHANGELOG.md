@@ -33,6 +33,11 @@ platform API version.
   the label pass, the client hit areas and a mirrored boundary glyph
   (`cal:boundarySide`). Absent, everything is as before. An edge whose
   `meta.role` is `bidirectional` is drawn without an arrowhead.
+- `documentErrorsToProblems` on the sidecar toolkit's profile input and runtime
+  config: `true` publishes a loaded document's own root-level `errors` to the
+  Problems panel with their file, line and column. Default `false`: a Python
+  runtime's load errors stay in the diagram's overlay, as the diagnostics
+  parity tests pin.
 
 ## [0.7.0] - 2026-09-01
 

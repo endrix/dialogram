@@ -208,6 +208,14 @@ export interface SidecarProfileInput {
      */
     navigation?: 'python' | 'none';
 
+    /**
+     * Whether a loaded document's own `errors` go to the Problems panel with
+     * their file, line and column. A compiler's errors belong there; a Python
+     * runtime's recoverable load errors stay in the diagram's overlay. Default
+     * `false`.
+     */
+    documentErrorsToProblems?: boolean;
+
     // Run driver.
     runOutputDirSettingKey: string;
     liveExecutionGlowSettingKey: string;
@@ -277,7 +285,8 @@ function sidecarRuntimeConfig(input: SidecarProfileInput): SidecarRuntimeConfig 
         createNodeStrings: input.createNodeStrings,
         createNodeBehavior: input.createNodeBehavior,
         createNodeVariants: input.createNodeVariants,
-        navigation: input.navigation
+        navigation: input.navigation,
+        documentErrorsToProblems: input.documentErrorsToProblems
     };
 }
 
