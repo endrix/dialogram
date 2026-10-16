@@ -131,6 +131,13 @@ export function graphPayloadToDoc(graphPayload: Record<string, unknown>): GraphD
                     name: String(port?.name ?? ''),
                     direction: (port?.direction === 'in' ? 'in' : 'out') as 'in' | 'out',
                     type: typeof port?.type === 'string' ? port.type : undefined,
+                    // A producer's facts about the port, passed through as the
+                    // document schema has them: what it is for, the bundle it
+                    // travels with and the side that bundle puts it on, its width.
+                    ...(typeof port?.role === 'string' ? { role: port.role } : {}),
+                    ...(typeof port?.side === 'string' ? { side: port.side } : {}),
+                    ...(typeof port?.group === 'string' ? { group: port.group } : {}),
+                    ...(typeof port?.width === 'number' ? { width: port.width } : {}),
                     source: port?.location && typeof port.location === 'object'
                         ? {
                             file: typeof port.location.file === 'string' ? port.location.file : undefined,

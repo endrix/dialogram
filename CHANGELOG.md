@@ -23,6 +23,16 @@ platform API version.
   scanning for a decorator); `navigation: 'none'` installs no Python navigation
   provider and skips the Python caller scan; `chat.sourceMimeType` names what
   the agent receives the file as.
+- A producer may place a port with its bundle instead of by its direction. A
+  port's `side` (`west`/`east`) and a boundary node's `meta.side` say where it
+  sits; `group` names the bundle. A handshake's `ready` then sits beside the
+  `valid` and `data` it answers, and the wire between two nodes is a straight
+  segment with the arrow pointing back instead of a loop around both. The
+  direction is untouched: a `ready` output stays an output. The side reaches
+  the shared port anchor (`cal:portSide`), ELK's port sides and row ordering,
+  the label pass, the client hit areas and a mirrored boundary glyph
+  (`cal:boundarySide`). Absent, everything is as before. An edge whose
+  `meta.role` is `bidirectional` is drawn without an arrowhead.
 
 ## [0.7.0] - 2026-09-01
 

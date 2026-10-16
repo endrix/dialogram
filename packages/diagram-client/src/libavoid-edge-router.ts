@@ -124,6 +124,7 @@ function anchorOf(port: any): { x: number; y: number; side: PortSide } | undefin
         absolute: absolutePosition(port),
         size: port.size ?? port.bounds,
         direction: port.args?.['cal:portDirection'] as string | undefined,
+        side: port.args?.['cal:portSide'] as string | undefined,
         type: port.type
     });
 }

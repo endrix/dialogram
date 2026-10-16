@@ -44,7 +44,7 @@ import {
 import { EDGE_OPEN_ANCHOR_X_ARG, EDGE_OPEN_ANCHOR_Y_ARG } from './edge-open-mouse-listener';
 import { clientBehavior } from './profile';
 import { isIncidentEdgeInActiveDrag } from './elk-live-drag-router';
-import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide } from '@dialogram/shared';
 import { WorkflowDiagramConstants } from '@dialogram/shared';
 
 /** Walk to the model root; the drag-active window is tracked per root. */
@@ -1077,6 +1077,12 @@ export class ProxyNodeView extends ShapeView {
  * Boundary input port node (left margin) - network's input exposed to internal entities
  * Styled as a terminal connector shape with port name centered
  */
+/** Whether the producer marked the connection as carrying data both ways (`edge-role-bidirectional`). */
+function isBidirectionalEdge(edge: Readonly<SEdgeImpl>): boolean {
+    const classes = (edge as { cssClasses?: unknown }).cssClasses;
+    return Array.isArray(classes) && classes.includes('edge-role-bidirectional');
+}
+
 /** Whether an edge terminates on a boundary port, whose glyph is already an arrow. */
 function endsAtBoundaryPort(edge: Readonly<SEdgeImpl>): boolean {
     let element: any = (edge as any).target;
@@ -1088,6 +1094,18 @@ function endsAtBoundaryPort(edge: Readonly<SEdgeImpl>): boolean {
         element = element.parent;
     }
     return false;
+}
+
+/** Whether the server placed this boundary node in the margin opposite its direction (`cal:boundarySide`). */
+function boundaryMirrored(node: unknown, isInput: boolean): boolean {
+    const margin = normalizePortSide((node as { args?: Record<string, unknown> })?.args?.[WorkflowDiagramMetadata.BOUNDARY_SIDE]);
+    return margin !== undefined && margin !== (isInput ? 'WEST' : 'EAST');
+}
+
+/** Which side of its node a port sits on, as the server placed it: `cal:portSide`, else its direction. */
+function portSideOf(port: unknown, fallbackEast: boolean): 'WEST' | 'EAST' {
+    return normalizePortSide((port as { args?: Record<string, unknown> })?.args?.[WorkflowDiagramMetadata.PORT_SIDE])
+        ?? (fallbackEast ? 'EAST' : 'WEST');
 }
 
 /** One of a boundary node's own text values, from the args the server set. */
@@ -1112,24 +1130,31 @@ function boundaryText(node: unknown, key: string): string {
  * wire misses the arrow — both read `BoundaryPortGeometry` for exactly that
  * reason.
  */
-function boundaryPort(isInput: boolean, nodeWidth: number, name: string, type: string): VNode[] {
+function boundaryPort(isInput: boolean, nodeWidth: number, name: string, type: string, mirrored = false): VNode[] {
     const G = BoundaryPortGeometry;
     const axis = G.AXIS_Y_PX;
     const arrow = isInput ? G.SOURCE_ARROW : G.SINK_ARROW;
-    // Inputs occupy the node's right edge, outputs its left.
-    const glyphX = isInput ? nodeWidth - G.glyphWidth(true) : 0;
+    // Inputs occupy the node's right edge, outputs its left — unless the
+    // producer placed the node in the other margin with its bundle
+    // (`cal:boundarySide`), when everything mirrors: the glyph takes the
+    // other edge and points the other way, the text runs out the other side.
+    // The shape (bare arrow or arrow and bar) still says input or output.
+    const glyphEast = isInput !== mirrored;
+    const pointsEast = !mirrored;
+    const glyphX = glyphEast ? nodeWidth - G.glyphWidth(isInput) : 0;
     const top = axis - arrow.height / 2;
-    const tipX = glyphX + arrow.width;
-    const textX = isInput ? nodeWidth - G.textOffset(true) : G.textOffset(false);
-    const anchor = isInput ? 'end' : 'start';
+    const tipX = pointsEast ? glyphX + arrow.width : glyphX;
+    const baseX = pointsEast ? glyphX : glyphX + arrow.width;
+    const textX = glyphEast ? nodeWidth - G.textOffset(isInput) : G.textOffset(isInput);
+    const anchor = glyphEast ? 'end' : 'start';
 
     // How far the text reaches, from the glyph outward. Approximate by design —
     // see approximateTextWidth; it sizes these rectangles and nothing else.
     const nameReach = G.approximateTextWidth(name, G.NAME_FONT_PX);
     const textReach = Math.max(nameReach, G.approximateTextWidth(type, G.TYPE_FONT_PX));
-    const spanFrom = (reach: number): { x: number; width: number } => isInput
-        ? { x: textX - reach, width: reach + G.textOffset(true) }
-        : { x: 0, width: G.textOffset(false) + reach };
+    const spanFrom = (reach: number): { x: number; width: number } => glyphEast
+        ? { x: textX - reach, width: reach + G.textOffset(isInput) }
+        : { x: 0, width: G.textOffset(isInput) + reach };
 
     // Two rectangles, because clicking and highlighting are not the same extent
     // — the diagram already draws that distinction and the port was not.
@@ -1161,14 +1186,14 @@ function boundaryPort(isInput: boolean, nodeWidth: number, name: string, type: s
         // input, into the bar for an output.
         svg('path', {
             class: { 'boundary-glyph': true },
-            attrs: { d: `M ${glyphX} ${top} L ${tipX} ${axis} L ${glyphX} ${top + arrow.height} Z` }
+            attrs: { d: `M ${baseX} ${top} L ${tipX} ${axis} L ${baseX} ${top + arrow.height} Z` }
         })
     ];
     if (!isInput) {
         parts.push(svg('rect', {
             class: { 'boundary-glyph': true, 'boundary-glyph-bar': true },
             attrs: {
-                x: tipX,
+                x: pointsEast ? tipX : tipX - G.SINK_BAR.width,
                 y: axis - G.SINK_BAR.height / 2,
                 width: G.SINK_BAR.width,
                 height: G.SINK_BAR.height
@@ -1228,7 +1253,7 @@ export class BoundaryInputNodeView extends ShapeView {
             // No body: the symbol on the axis IS the port — glyph, name and
             // type together, drawn as one thing.
             ...boundaryPort(true, width, boundaryText(node, WorkflowDiagramMetadata.PORT_NAME),
-                boundaryText(node, WorkflowDiagramMetadata.PORT_TYPE)),
+                boundaryText(node, WorkflowDiagramMetadata.PORT_TYPE), boundaryMirrored(node, true)),
             // The port element (an anchor only) and the label elements, which
             // render nothing — see WorkflowLabelView.
             ...context.renderChildren(node)
@@ -1263,7 +1288,7 @@ export class BoundaryOutputNodeView extends ShapeView {
         },
             // No body — see the input view above.
             ...boundaryPort(false, width, boundaryText(node, WorkflowDiagramMetadata.PORT_NAME),
-                boundaryText(node, WorkflowDiagramMetadata.PORT_TYPE)),
+                boundaryText(node, WorkflowDiagramMetadata.PORT_TYPE), boundaryMirrored(node, false)),
             ...context.renderChildren(node)
         );
     }
@@ -1286,8 +1311,9 @@ export class WorkflowInputPortView extends ShapeView {
         // IMPORTANT: Do not expand the hit area past the node boundary.
         // If the hit target extends outward, edge anchoring can use the larger bounds,
         // which makes connections (and thus labels) look "far" from the visible port.
-        // For input ports (left side), expand inward (to the right).
-        const hitX = 0;
+        // For input ports (left side), expand inward (to the right) — or to the
+        // left when the producer placed this input on the east side with its bundle.
+        const hitX = portSideOf(port, false) === 'EAST' ? portWidth - hitSize : 0;
         const hitY = (portHeight - hitSize) / 2;
         
         const children: VNode[] = [
@@ -1365,8 +1391,9 @@ export class WorkflowOutputPortView extends ShapeView {
         // Non-visual hit target to make connecting reliable without changing visible port size.
         const hitSize = Math.max(14, portWidth, portHeight);
         // For output ports (right side), expand inward (to the left) so the hit area right edge
-        // matches the visible port right edge.
-        const hitX = portWidth - hitSize;
+        // matches the visible port right edge — or to the right when the producer placed
+        // this output on the west side with its bundle.
+        const hitX = portSideOf(port, true) === 'EAST' ? portWidth - hitSize : 0;
         const hitY = (portHeight - hitSize) / 2;
         
         const children: VNode[] = [
@@ -2282,6 +2309,11 @@ export class WorkflowEdgeView extends PolylineEdgeView {
         if (edge && endsAtBoundaryPort(edge)) {
             return svg('g', {});
         }
+        // A wire that carries data both ways (`role: bidirectional`, an HDL
+        // `inout` net) has no head: an arrow would claim a direction it lacks.
+        if (edge && isBidirectionalEdge(edge)) {
+            return svg('g', {});
+        }
         if (segments.length < 2) {
             return svg('g', {});
         }
@@ -2396,7 +2428,10 @@ export class WorkflowLabelView implements IView {
             const direction = parentPort?.args?.['cal:portDirection'] as string | undefined;
             const parentType = parentPort?.type as string | undefined;
             const isOutputByType = parentType?.includes('output') ?? false;
-            const isOutput = direction === 'output' || isOutputByType;
+            // "Output" here means the EAST side: where the label anchors depends on
+            // which edge the port sits on, which is its direction unless the producer
+            // placed it with its bundle (`cal:portSide`).
+            const isOutput = portSideOf(parentPort, direction === 'output' || isOutputByType) === 'EAST';
 
             // Input labels: do not add extra inner padding. The label box already has a
             // PORT_LABEL_GAP_PX from the port marker; additional inset makes inputs look

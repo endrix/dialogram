@@ -14,7 +14,7 @@ import { inject, injectable } from 'inversify';
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { WORKFLOW_LAYOUT_PERSISTENCE_KEY, WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
-import { WorkflowDiagramConstants } from '@dialogram/shared';
+import { WorkflowDiagramConstants, portSide } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { GModelSerializer } from '@eclipse-glsp/server';
 import { layoutTargetOf } from '../server/layout-target';
@@ -140,12 +140,12 @@ export class WorkflowChangeRoutingPointsOperationHandler extends OperationHandle
         const w = (port.size?.width && port.size.width > 0) ? port.size.width : fallbackPortWidth;
         const h = (port.size?.height && port.size.height > 0) ? port.size.height : fallbackPortHeight;
 
-        const direction = (port as any).args?.['cal:portDirection'] as string | undefined;
-        const side = direction === 'output' ? 'EAST'
-            : direction === 'input' ? 'WEST'
-            : (port.type as string | undefined)?.includes('output') ? 'EAST'
-            : (port.type as string | undefined)?.includes('input') ? 'WEST'
-            : 'WEST';
+        const side = portSide({
+            absolute: nodeAbs,
+            direction: (port as any).args?.['cal:portDirection'] as string | undefined,
+            side: (port as any).args?.['cal:portSide'] as string | undefined,
+            type: port.type as string | undefined
+        });
 
         const absPortX = nodeAbs.x + (portRel.x ?? 0);
         const absPortY = nodeAbs.y + (portRel.y ?? 0);

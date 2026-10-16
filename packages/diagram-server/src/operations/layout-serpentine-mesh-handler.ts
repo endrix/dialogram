@@ -22,7 +22,7 @@ import {
 import { WORKFLOW_LAYOUT_PERSISTENCE_KEY, WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
-import { WorkflowDiagramConstants } from '@dialogram/shared';
+import { WorkflowDiagramConstants, portSide } from '@dialogram/shared';
 import { layoutTargetOf } from '../server/layout-target';
 
 export const WORKFLOW_LAYOUT_SERPENTINE_MESH_OPERATION_KIND = 'dialogram.layoutSerpentineMesh' as const;
@@ -742,12 +742,12 @@ export class WorkflowLayoutSerpentineMeshOperationHandler extends OperationHandl
         const w = port.size?.width && port.size.width > 0 ? port.size.width : WorkflowDiagramConstants.PORT_WIDTH_PX;
         const h = port.size?.height && port.size.height > 0 ? port.size.height : WorkflowDiagramConstants.PORT_HEIGHT_PX;
 
-        const direction = (port as any).args?.[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined;
-        const side = direction === 'output' ? 'EAST'
-            : direction === 'input' ? 'WEST'
-            : port.type?.includes('output') ? 'EAST'
-            : port.type?.includes('input') ? 'WEST'
-            : 'WEST';
+        const side = portSide({
+            absolute: nodePos,
+            direction: (port as any).args?.[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined,
+            side: (port as any).args?.[WorkflowDiagramMetadata.PORT_SIDE] as string | undefined,
+            type: port.type
+        });
 
         const absPortX = nodePos.x + portPos.x;
         const absPortY = nodePos.y + portPos.y;
