@@ -18,6 +18,16 @@ export interface SidecarCommandsConfig {
     sidecarCommandDefault: string;
     /** Extension a file must have for the edit command to operate on it (e.g. '.py'). */
     sourceFileExtension: string;
+    /** Every accepted extension, for a language with several; `sourceFileExtension` alone when absent. */
+    sourceFileExtensions?: string[];
+}
+
+function isSourceFile(fsPath: string, config: SidecarCommandsConfig): boolean {
+    const extensions = config.sourceFileExtensions && config.sourceFileExtensions.length > 0
+        ? config.sourceFileExtensions
+        : [config.sourceFileExtension];
+    const lower = fsPath.toLowerCase();
+    return extensions.some(ext => lower.endsWith(ext.toLowerCase()));
 }
 
 export function registerSidecarCommands(
@@ -27,8 +37,10 @@ export function registerSidecarCommands(
     context.subscriptions.push(
         vscode.commands.registerCommand(config.editCommandId, async () => {
             const fileUri = vscode.window.activeTextEditor?.document.uri;
-            if (!fileUri || !fileUri.fsPath.endsWith(config.sourceFileExtension)) {
-                void vscode.window.showWarningMessage('Open a Python workflow file to use sidecar edits.');
+            if (!fileUri || !isSourceFile(fileUri.fsPath, config)) {
+                void vscode.window.showWarningMessage(
+                    `Open a ${config.sourceFileExtensions?.join(' / ') ?? config.sourceFileExtension} source file to use sidecar edits.`
+                );
                 return;
             }
             const op = await vscode.window.showInputBox({

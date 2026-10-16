@@ -154,7 +154,16 @@ export interface SidecarProfileInput {
     createNodeVariants?: CreateNodeVariant[];
 
     // Source file + palette.
+    /** The extension the product's source files have, with the dot (`.py`). */
     sourceExtension: string;
+    /**
+     * Every extension the product's source files may have (`['.sv', '.v']`),
+     * for a language with more than one. The platform's open/rename commands,
+     * the file watcher, the openability probe and the raw sidecar commands
+     * accept any of them; new files take the first. `sourceExtension` stays
+     * honoured: alone it is the one extension, beside this it is ignored.
+     */
+    sourceExtensions?: string[];
     useAlternateEntityPalette?: boolean;
     /** `false` empties the creation palette — for a diagram that is a projection
      *  of a source artifact and so has nothing to create. Default `true`. */
@@ -217,8 +226,14 @@ export interface SidecarProfileInput {
         nodeCommands?: Array<{ command: string; nodeType: string; description: string }>;
     };
 
-    // Diagram source-file watch globs (default derived from sourceExtension).
+    // Diagram source-file watch globs (default derived from the source extensions).
     watchGlobs?: string[];
+}
+
+/** The product's source extensions: `sourceExtensions` when given, else the one `sourceExtension`. */
+export function sourceExtensionsOf(input: Pick<SidecarProfileInput, 'sourceExtension' | 'sourceExtensions'>): string[] {
+    const many = (input.sourceExtensions ?? []).map(ext => ext.trim()).filter(ext => ext !== '');
+    return many.length > 0 ? many : [input.sourceExtension];
 }
 
 /** Build the neutral {@link SidecarRuntimeConfig} the toolkit model source needs. */
@@ -278,6 +293,8 @@ export interface SidecarDialogramApi {
 
 export function createSidecarDiagramProfile(input: SidecarProfileInput) {
     const runtimeConfig = sidecarRuntimeConfig(input);
+    const sourceExtensions = sourceExtensionsOf(input);
+    const primarySourceExtension = sourceExtensions[0];
 
     const canOpenSource = input.openability
         ? createDiagramOpenabilityCheck({
@@ -286,7 +303,8 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             sidecarCommandDefault: input.sidecarCommandDefault,
             sidecarOperationPrefix: input.sidecarOperationPrefix,
             probeOp: input.openability.probeOp,
-            sourceExtension: input.sourceExtension,
+            sourceExtension: primarySourceExtension,
+            sourceExtensions,
             decoratorName: input.openability.decoratorName
         })
         : undefined;
@@ -393,13 +411,14 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             settingsNamespace: input.settingsNamespace,
             sidecarCommandSettingKey: input.sidecarCommandSettingKey,
             sidecarCommandDefault: input.sidecarCommandDefault,
-            sourceFileExtension: input.sourceExtension
+            sourceFileExtension: primarySourceExtension,
+            sourceFileExtensions: sourceExtensions
         });
         registerNewSourceFileCommand(context, input.commands.createNewContainer, input.customEditorViewType, {
             label: input.newContainer.label,
             decorator: input.newContainer.decorator,
             importLine: input.newContainer.importLine,
-            sourceExtension: input.sourceExtension,
+            sourceExtension: primarySourceExtension,
             identifierNoun: input.identifierNoun
         });
         // Both commands self-register on `context.subscriptions`; the returned
@@ -415,12 +434,12 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         glspClientId: input.glspClientId,
         glspClientName: input.glspClientName,
         commands: input.commands,
-        // The one extension this builder already knows, handed to the platform so
-        // its open/rename commands and file watchers filter on it — and so the
-        // "please open a ... file" warnings name it. Without this the platform
+        // The extensions this builder already knows, handed to the platform so
+        // its open/rename commands and file watchers filter on them — and so the
+        // "please open a ... file" warnings name them. Without this the platform
         // falls back to accepting anything, which is the right default for a
         // profile that cannot say, and the wrong one for a builder that can.
-        sourceExtensions: [input.sourceExtension],
+        sourceExtensions,
         supportsElementCreation: input.supportsElementCreation,
         operationKinds: input.operationKinds,
         clientBehavior: input.cliResumeArgs
@@ -437,7 +456,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             nodeFamilies: input.nodeFamilies,
             nestedNavigation: input.clientBehavior?.nestedNavigation
         },
-        watch: { globs: input.watchGlobs ?? [`**/*${input.sourceExtension}`] },
+        watch: { globs: input.watchGlobs ?? sourceExtensions.map(ext => `**/*${ext}`) },
         navigation: createPythonNavigationProvider(),
         canOpenSource,
         editBackend,

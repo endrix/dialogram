@@ -29,6 +29,9 @@ export interface DiagramOpenabilityConfig {
     probeOp?: string;
     /** Source-file extension the diagram editor handles (e.g. `.py`). */
     sourceExtension: string;
+    /** Every extension it handles, for a language with several (`['.sv', '.v']`);
+     *  `sourceExtension` alone when absent. */
+    sourceExtensions?: string[];
     /** Decorator name the fallback checker scans for (e.g. `network`/`workflow`). */
     decoratorName: string;
 }
@@ -45,6 +48,13 @@ export type DecoratedDefinitionChecker = (
     requestedName?: string
 ) => Promise<boolean>;
 
+/** Whether `fsPath` has one of the extensions the config names. */
+export function hasSourceExtension(fsPath: string, cfg: Pick<DiagramOpenabilityConfig, 'sourceExtension' | 'sourceExtensions'>): boolean {
+    const lower = fsPath.toLowerCase();
+    const extensions = cfg.sourceExtensions && cfg.sourceExtensions.length > 0 ? cfg.sourceExtensions : [cfg.sourceExtension];
+    return extensions.some(ext => lower.endsWith(ext.toLowerCase()));
+}
+
 async function probeDiagramOpenability(
     targetUri: vscode.Uri,
     cfg: DiagramOpenabilityConfig,
@@ -53,7 +63,7 @@ async function probeDiagramOpenability(
     if (
         !cfg.probeOp
         || targetUri.scheme !== 'file'
-        || !targetUri.fsPath.toLowerCase().endsWith(cfg.sourceExtension)
+        || !hasSourceExtension(targetUri.fsPath, cfg)
     ) {
         return undefined;
     }
@@ -114,7 +124,7 @@ export async function shouldOpenDiagram(
     probe: DiagramOpenabilityProbe = probeDiagramOpenability,
     definitionChecker: DecoratedDefinitionChecker = hasRequestedDecoratedDefinition
 ): Promise<boolean> {
-    if (targetUri.scheme !== 'file' || !targetUri.fsPath.toLowerCase().endsWith(cfg.sourceExtension)) {
+    if (targetUri.scheme !== 'file' || !hasSourceExtension(targetUri.fsPath, cfg)) {
         return false;
     }
 
