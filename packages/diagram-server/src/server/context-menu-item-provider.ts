@@ -71,6 +71,8 @@ const RESET_EDGE_ROUTES_KIND = 'dialogram.resetEdgeRoutes';
 const REROUTE_EDGES_AVOID_OVERLAPS_KIND = 'dialogram.rerouteEdgesAvoidOverlaps';
 const LAYOUT_BOUNDARY_FLOW_KIND = 'dialogram.layoutBoundaryFlow';
 const LAYOUT_SERPENTINE_MESH_KIND = 'dialogram.layoutSerpentineMesh';
+const LAYOUT_UNTANGLED_KIND = 'dialogram.layoutUntangled';
+const LAYOUT_FREE_PORTS_KIND = 'dialogram.layoutFreePorts';
 const WORKFLOW_SOURCE_URI_ARG = 'wf:workflowSourceUri';
 const WORKFLOW_SOURCE_RANGE_ARG = 'wf:workflowSourceRange';
 
@@ -507,6 +509,32 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
                 actions: [
                     {
                         kind: LAYOUT_SERPENTINE_MESH_KIND,
+                        isOperation: true
+                    } as any
+                ]
+            });
+
+            items.push({
+                id: 'dialogram.layoutDiagramUntangled',
+                label: 'Untangled Layout',
+                sortString: 'g2.4',
+                group: 'layout',
+                actions: [
+                    {
+                        kind: LAYOUT_UNTANGLED_KIND,
+                        isOperation: true
+                    } as any
+                ]
+            });
+
+            items.push({
+                id: 'dialogram.layoutDiagramFreePorts',
+                label: 'Free Ports Layout',
+                sortString: 'g2.5',
+                group: 'layout',
+                actions: [
+                    {
+                        kind: LAYOUT_FREE_PORTS_KIND,
                         isOperation: true
                     } as any
                 ]

@@ -59,6 +59,11 @@ export class WorkflowLayoutBoundaryFlowOperationHandler extends OperationHandler
         return new GModelRecordingCommand(this.modelState, this.serializer, () => this.executeOperation(operation));
     }
 
+    /** The whole layout, for a handler that sets the graph's options first (see layout-tuned-handler.ts). */
+    runLayout(operation: WorkflowLayoutBoundaryFlowOperation): Promise<void> {
+        return this.executeOperation(operation);
+    }
+
     private async executeOperation(operation: WorkflowLayoutBoundaryFlowOperation): Promise<void> {
         const selectedMovableNodeIds = this.getSelectedMovableNodeIds(operation.elementIds);
         const hasSelection = selectedMovableNodeIds.size > 0;

@@ -53,6 +53,7 @@ import { WorkflowResetEdgeRoutesOperationHandler } from '../operations/reset-edg
 import { WorkflowRerouteEdgesAvoidOverlapsOperationHandler } from '../operations/reroute-edges-avoid-overlaps-handler';
 import { WorkflowLayoutBoundaryFlowOperationHandler } from '../operations/layout-boundary-flow-handler';
 import { WorkflowLayoutSerpentineMeshOperationHandler } from '../operations/layout-serpentine-mesh-handler';
+import { WorkflowLayoutFreePortsOperationHandler, WorkflowLayoutUntangledOperationHandler } from '../operations/layout-tuned-handler';
 import { WorkflowChangeRoutingPointsOperationHandler } from '../operations/change-routing-points-handler';
 import { isDiagramOperationModule } from './operation-modules';
 
@@ -163,6 +164,8 @@ export class WorkflowDiagramModule extends GModelDiagramModule {
         // Routing utilities
         binding.add(WorkflowLayoutBoundaryFlowOperationHandler);
         binding.add(WorkflowLayoutSerpentineMeshOperationHandler);
+        binding.add(WorkflowLayoutUntangledOperationHandler);
+        binding.add(WorkflowLayoutFreePortsOperationHandler);
         binding.add(WorkflowResetEdgeRoutesOperationHandler);
         binding.add(WorkflowRerouteEdgesAvoidOverlapsOperationHandler);
 

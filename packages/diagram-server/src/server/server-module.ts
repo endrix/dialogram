@@ -34,6 +34,7 @@ import { LayoutPersistenceService } from '../services/layout-persistence-service
 import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
 import { AgentCreateNodeOutcomeSink } from './agent-create-node-outcome';
 import { WorkflowRerouteEdgesAvoidOverlapsOperationHandler } from '../operations/reroute-edges-avoid-overlaps-handler';
+import { WorkflowLayoutBoundaryFlowOperationHandler } from '../operations/layout-boundary-flow-handler';
 import { DIAGRAM_MODEL_SOURCE } from './model-source-token';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
 import { WorkflowServerLogger } from './disposed-request-logger';
@@ -165,6 +166,11 @@ export function createWorkflowServerModules(
     const operationHandlerSelfModule = new ContainerModule((bind, _unbind, isBound) => {
         if (!isBound(WorkflowRerouteEdgesAvoidOverlapsOperationHandler)) {
             bind(WorkflowRerouteEdgesAvoidOverlapsOperationHandler).toSelf().inSingletonScope();
+        }
+        // The Untangled and Free Ports layouts run the boundary-flow layout with the
+        // graph's options set (layout-tuned-handler.ts), so they inject it by class.
+        if (!isBound(WorkflowLayoutBoundaryFlowOperationHandler)) {
+            bind(WorkflowLayoutBoundaryFlowOperationHandler).toSelf().inSingletonScope();
         }
     });
     additionalModules.push(operationHandlerSelfModule);
