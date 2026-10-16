@@ -11,6 +11,7 @@ export {
 
 export {
     registerNewSourceFileCommand,
+    scaffoldSource,
     type NewSourceFileConfig
 } from './new-source-file-command.js';
 

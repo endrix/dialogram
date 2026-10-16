@@ -8,6 +8,11 @@ platform API version.
 
 ### Added
 
+- `newContainer.template` on the sidecar toolkit's profile input: the whole
+  text of a new source file, from its name, for a product whose file is not a
+  decorated Python function (a SystemVerilog module, a VHDL entity). Absent,
+  the scaffold is the import line, the decorator and an empty function, as
+  before.
 - `SidecarProfileInput.sourceExtensions`: a sidecar-backed product whose source
   files have more than one extension (`.sv` and `.v`, `.vhd` and `.vhdl`) names
   them all. The platform's open/rename filters, the file watcher's default

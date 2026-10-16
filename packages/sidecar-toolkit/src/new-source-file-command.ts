@@ -30,9 +30,20 @@ export type NewSourceFileConfig = {
      * `'Python'`. When omitted the message reads "a valid identifier".
      */
     identifierNoun?: string;
+    /**
+     * The whole text of the new file, from its name, for a product whose
+     * source is not a decorated Python function (a SystemVerilog module, a
+     * VHDL entity). Absent, the scaffold is the import line, the decorator
+     * and an empty function, as before.
+     */
+    template?: (name: string) => string;
 };
 
-function scaffold(config: NewSourceFileConfig, fnName: string): string {
+/** The text a new source file starts with. */
+export function scaffoldSource(config: NewSourceFileConfig, fnName: string): string {
+    if (config.template) {
+        return config.template(fnName);
+    }
     return (
         `${config.importLine}\n\n\n` +
         `@${config.decorator}\n` +
@@ -107,7 +118,7 @@ export function registerNewSourceFileCommand(
             const fnName = name.trim();
             const target = vscode.Uri.joinPath(targetDir, `${fnName}${ext}`);
             try {
-                await vscode.workspace.fs.writeFile(target, new TextEncoder().encode(scaffold(config, fnName)));
+                await vscode.workspace.fs.writeFile(target, new TextEncoder().encode(scaffoldSource(config, fnName)));
             } catch (err) {
                 vscode.window.showErrorMessage(
                     `Failed to create ${config.label}: ${err instanceof Error ? err.message : String(err)}`
