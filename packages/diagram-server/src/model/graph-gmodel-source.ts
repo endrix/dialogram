@@ -59,6 +59,11 @@ export type PyGraph = {
     meta?: Record<string, unknown>;
 };
 
+/**
+ * A graph document. A location (`source`, `referencedSource`, `authoredSource`
+ * on a node, `source` on a port or an edge) may leave out its `file` when it
+ * is the graph's own, `graph.meta.file`; see `resolveSourceFiles`.
+ */
 export type PyGraphDocument = {
     version: string;
     graph: PyGraph;
@@ -202,6 +207,7 @@ export class GraphGModelSource {
     constructor(private readonly storageOptions?: StorageRuntimeOptions) {}
 
     transform(doc: PyGraphDocument): { graph: GGraph } {
+        doc = resolveSourceFiles(doc);
         const children: GModelElement[] = [];
         const nodeMap = new Map<string, GNode>();
         const portIdMap = new Map<string, string>();
@@ -1451,4 +1457,51 @@ export class GraphGModelSource {
     private isExternal(node: PyGraphNode): boolean {
         return this.isExternalNodeKind(node.kind) || this.isExternalByMeta(node);
     }
+}
+
+type SourceLocation = { file?: string; line?: number } | null | undefined;
+
+/**
+ * A location without a `file` is in the graph's own file.
+ *
+ * A hierarchy export repeats one absolute path on every node, port and edge of
+ * every graph; a producer may leave it out where it is the graph's `meta.file`
+ * (a third of a large netlist's export), and this puts it back before anything
+ * reads a location. A document whose locations all name their file, or whose
+ * graph names no file, is returned as it is.
+ */
+export function resolveSourceFiles(doc: PyGraphDocument): PyGraphDocument {
+    const own = doc.graph?.meta?.['file'];
+    if (typeof own !== 'string' || own === '') {
+        return doc;
+    }
+    let changed = false;
+    const fill = (loc: unknown): unknown => {
+        const at = loc as SourceLocation;
+        if (at && typeof at === 'object' && typeof at.line === 'number' && typeof at.file !== 'string') {
+            changed = true;
+            return { ...at, file: own };
+        }
+        return loc;
+    };
+    const fillKeys = <T extends Record<string, unknown>>(obj: T, keys: string[]): T => {
+        let out: Record<string, unknown> = obj;
+        for (const key of keys) {
+            if (key in out) {
+                const filled = fill(out[key]);
+                if (filled !== out[key]) {
+                    out = out === obj ? { ...obj } : out;
+                    out[key] = filled;
+                }
+            }
+        }
+        return out as T;
+    };
+    const nodes = (doc.graph.nodes ?? []).map(node => {
+        const meta = node.meta ? fillKeys(node.meta, ['source', 'referencedSource', 'authoredSource']) : node.meta;
+        const ports = (node.ports ?? []).map(port => fillKeys(port, ['source']));
+        return meta === node.meta && ports.every((port, i) => port === node.ports[i]) ? node : { ...node, meta, ports };
+    });
+    const edges = (doc.graph.edges ?? []).map(edge => fillKeys(edge, ['source']));
+    return changed ? { ...doc, graph: { ...doc.graph, nodes, edges } } : doc;
 }

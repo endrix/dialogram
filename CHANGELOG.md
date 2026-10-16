@@ -38,6 +38,12 @@ platform API version.
   Problems panel with their file, line and column. Default `false`: a Python
   runtime's load errors stay in the diagram's overlay, as the diagnostics
   parity tests pin.
+- A location in a graph document (`source`, `referencedSource`, `authoredSource`
+  on a node, `source` on a port or an edge) may leave out its `file` when it is
+  the graph's own, `graph.meta.file`; the reader puts it back before anything
+  navigates. A hierarchy export of a large netlist repeated one absolute path on
+  every element, a third of the export. A document with every file spelled out
+  reads exactly as before.
 
 ## [0.7.0] - 2026-09-01
 
