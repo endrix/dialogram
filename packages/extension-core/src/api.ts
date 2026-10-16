@@ -97,6 +97,9 @@ export interface DiagramStorageOptions {
   /** Extra Entities-palette entries this product contributes. Plain data; the
    *  platform builds the actual palette item. */
   entityPaletteItems?: EntityPaletteItemSpec[];
+  /** Whether the platform's own Entities entries are offered beside them.
+   *  Default `true`; `false` leaves the Entities category to the product's. */
+  platformEntityItems?: boolean;
   nodeFamilies?: NodeFamilySpec[];
   /** How nested workflows are navigated; in place, a nested view's layout is
    *  the root's, per instance (diagram-server `layout-target.ts`). */

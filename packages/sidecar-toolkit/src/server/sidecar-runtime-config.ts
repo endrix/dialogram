@@ -200,6 +200,9 @@ export interface SidecarRuntimeConfig {
     cliCommandSettingKey: string;
     cliCommandDefault: string;
     cliPythonModule?: string;
+    /** `'none'` turns off the Python caller scan (`discoverCrossFileWorkflowCallers`)
+     *  and the `.py` workspace walk behind it; default `'python'`. */
+    navigation?: 'python' | 'none';
     operationKinds: { createEntityPort: string; deleteEntityPort: string };
     /** Op prefixes this runtime accepts when rewriting foreign-prefixed ops
      *  (replaces the hardcoded product-prefix literal check). */

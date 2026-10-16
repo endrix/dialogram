@@ -14,6 +14,15 @@ platform API version.
   globs, the openability probe and the raw sidecar commands accept any of them;
   the new-file scaffold takes the first. `sourceExtension` stays honoured and is
   all a Python product needs.
+- `DiagramStorageOptions.platformEntityItems` (and the same on the toolkit's
+  profile input): `false` leaves the palette's Entities category to the
+  product's own `entityPaletteItems`, for a product whose nodes are none of the
+  platform's kinds. Default `true`, so every existing palette is unchanged.
+- Sidecar toolkit, for a sidecar that is not Python: `openability.decoratorName`
+  is optional (with only a probe, an undecidable probe opens the file instead of
+  scanning for a decorator); `navigation: 'none'` installs no Python navigation
+  provider and skips the Python caller scan; `chat.sourceMimeType` names what
+  the agent receives the file as.
 
 ## [0.7.0] - 2026-09-01
 

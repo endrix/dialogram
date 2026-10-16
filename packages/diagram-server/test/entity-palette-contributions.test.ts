@@ -44,6 +44,20 @@ describe('entity palette contributions', () => {
         expect(contributed.actions[0].args).toEqual({ streamblocksNode: true });
     });
 
+    it('offers the product’s entries alone when it says the platform’s are not its kinds', async () => {
+        const entities = await entitiesOf(providerWith({
+            settingsNamespace: 'hw',
+            operationPrefix: 'hw',
+            useAlternateEntityPalette: true,
+            platformEntityItems: false,
+            entityPaletteItems: [{ elementTypeId: 'node:actor', label: 'Module Instance', description: 'x' }]
+        }));
+        expect(entities.map((i: any) => i.label)).toEqual(['Module Instance']);
+        // Ports and connections are still the platform's to offer.
+        const items = await providerWith({ settingsNamespace: 'hw', operationPrefix: 'hw', platformEntityItems: false }).getItems();
+        expect(items.map((i: any) => i.id)).toEqual(['palette-entities', 'palette-ports', 'palette-connections']);
+    });
+
     it('keeps the platform’s own entries', async () => {
         const entities = await entitiesOf(providerWith({
             settingsNamespace: 'wfpy',

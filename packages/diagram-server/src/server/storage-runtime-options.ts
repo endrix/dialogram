@@ -27,6 +27,15 @@ export interface StorageRuntimeOptions {
      */
     entityPaletteItems?: EntityPaletteItemSpec[];
     /**
+     * Whether the platform's own Entities entries (either of the two lists
+     * above) are offered. Default `true`. `false` leaves the Entities category
+     * to {@link entityPaletteItems} alone: a product whose nodes are none of
+     * the platform's kinds would otherwise offer entries that mean nothing in
+     * it, and the platform naming that product's kinds instead is the thing a
+     * neutral platform does not do.
+     */
+    platformEntityItems?: boolean;
+    /**
      * The node families the product recognises — see `NodeFamilySpec`.
      * The class is derived from each annotation, so core names none.
      */
