@@ -18,6 +18,123 @@ function boundaryMargin(node: GNode): 'WEST' | 'EAST' | undefined {
 }
 
 /**
+ * Layout presets by graph size.
+ *
+ * ELK's layered algorithm with the default preset below lays out a diagram of a
+ * few dozen nodes in well under a second, and that preset is what every test and
+ * every persisted layout was tuned against. It does not scale: measured
+ * standalone on the exact graphs the engine hands to `elk.layout`, four real
+ * netlist modules of a hardware product,
+ *
+ * | nodes | edges | default | middle | fast  |
+ * | ----: | ----: | ------: | -----: | ----: |
+ * |   212 |   445 |   5.8 s |  ~1 s  | 0.9 s |
+ * |   344 |   936 |    41 s |  1.7 s | 1.3 s |
+ * |  1528 |  3617 |   334 s |  9.3 s | 3.8 s |
+ * |  3293 |  8112 | RangeError: Maximum call stack size exceeded inside ELK | | 10 s |
+ *
+ * Two options carry the cost. `nodePlacement.strategy: NETWORK_SIMPLEX` is the
+ * dominant one: switching it alone takes the 344-node module from 41 s to
+ * 3.8 s. `considerModelOrder.strategy: NODES_AND_EDGES` is the other, a
+ * ten-fold factor on the cheap presets. Crossing minimisation is not the cost.
+ * Edge routing is, once placement is simple: the fast preset with ORTHOGONAL
+ * routing takes 2.7 s on the 344-node module, 31 s on 1528 and 2289 s on 3293,
+ * against 0.9 s, 3.8 s and 11.5 s with POLYLINE. So the fast preset routes
+ * polylines, the one place the platform does; the middle preset stays
+ * orthogonal, where POLYLINE was the slower of the two.
+ *
+ * So the graph's size picks the preset. Up to {@link LAYOUT_TIER_MIDDLE_NODES}
+ * nodes and {@link LAYOUT_TIER_MIDDLE_EDGES} edges the options are exactly the
+ * default preset, byte for byte. Above that the middle preset gives up model
+ * order and network-simplex placement, which is what makes the 344-node module
+ * open in under two seconds instead of forty. Above
+ * {@link LAYOUT_TIER_FAST_NODES} nodes or {@link LAYOUT_TIER_FAST_EDGES} edges
+ * the fast preset also gives up crossing minimisation and orthogonal routing
+ * and takes simple placement: a rough layout in seconds for a graph the
+ * default preset cannot lay out at all. The rule depends on nothing but node and edge counts.
+ *
+ * The tier applies wherever the configurator does: the initial layout on open,
+ * Layout Diagram, the boundary-flow, Untangled and Free Ports layouts, and the
+ * Free Ports probe. A layout that sets options on the graph (see
+ * UNTANGLED_ELK_OPTIONS in operations/layout-tuned-handler.ts) is merged over
+ * the preset by the engine, except in the fast tier, where the engine re-asserts
+ * the fast preset: the default options crash on the largest graphs, so there
+ * the tier wins.
+ */
+export type LayoutTier = 'default' | 'middle' | 'fast';
+
+/** Above this many nodes the middle preset applies. */
+export const LAYOUT_TIER_MIDDLE_NODES = 150;
+/** Above this many edges the middle preset applies, whatever the node count. */
+export const LAYOUT_TIER_MIDDLE_EDGES = 400;
+/** Above this many nodes the fast preset applies. */
+export const LAYOUT_TIER_FAST_NODES = 1000;
+/** Above this many edges the fast preset applies, whatever the node count. */
+export const LAYOUT_TIER_FAST_EDGES = 3000;
+
+/** The middle preset: the default without model order and network-simplex placement. */
+export const MIDDLE_LAYOUT_OPTIONS: Readonly<Record<string, string>> = {
+    'elk.layered.considerModelOrder.strategy': 'NONE',
+    'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+    'elk.layered.thoroughness': '3'
+};
+
+/** The fast preset: the middle without crossing minimisation, with simple placement and polyline routing. */
+export const FAST_LAYOUT_OPTIONS: Readonly<Record<string, string>> = {
+    ...MIDDLE_LAYOUT_OPTIONS,
+    'elk.layered.crossingMinimization.strategy': 'NONE',
+    'elk.layered.nodePlacement.strategy': 'SIMPLE',
+    'elk.layered.thoroughness': '1',
+    'elk.edgeRouting': 'POLYLINE'
+};
+
+/** What each tier lays over the default preset; the default tier lays nothing. */
+export const LAYOUT_TIER_OPTIONS: Readonly<Record<LayoutTier, Readonly<Record<string, string>>>> = {
+    default: {},
+    middle: MIDDLE_LAYOUT_OPTIONS,
+    fast: FAST_LAYOUT_OPTIONS
+};
+
+export interface LayoutGraphSize {
+    nodes: number;
+    edges: number;
+}
+
+/**
+ * The nodes and edges a layout has to place: every GNode at any depth that is
+ * not a compartment (a header or port row is a GNode in some products and never
+ * laid out by ELK as a node) and every GEdge at any depth.
+ */
+export function countLayoutElements(root: GModelElement): LayoutGraphSize {
+    const size: LayoutGraphSize = { nodes: 0, edges: 0 };
+    const visit = (element: GModelElement): void => {
+        if (element instanceof GNode && !element.type.startsWith('comp:')) {
+            size.nodes++;
+        } else if (element instanceof GEdge) {
+            size.edges++;
+        }
+        for (const child of element.children ?? []) {
+            visit(child);
+        }
+    };
+    for (const child of root.children ?? []) {
+        visit(child);
+    }
+    return size;
+}
+
+/** The tier a graph of this size lays out in. */
+export function layoutTierFor(size: LayoutGraphSize): LayoutTier {
+    if (size.nodes > LAYOUT_TIER_FAST_NODES || size.edges > LAYOUT_TIER_FAST_EDGES) {
+        return 'fast';
+    }
+    if (size.nodes > LAYOUT_TIER_MIDDLE_NODES || size.edges > LAYOUT_TIER_MIDDLE_EDGES) {
+        return 'middle';
+    }
+    return 'default';
+}
+
+/**
  * Workflow-specific layout configurator for ELK.
  * 
  * Provides layout options for Workflow network diagrams using the ELK Layered algorithm,
@@ -80,7 +197,10 @@ export class WorkflowLayoutConfigurator extends AbstractLayoutConfigurator {
             };
         }
 
-        // Standard 'layered' configuration
+        // Standard 'layered' configuration. The graph's size picks the tier laid
+        // over it; the default tier lays nothing over it, so a graph under the
+        // first threshold gets exactly these options.
+        const tier = layoutTierFor(countLayoutElements(graph));
         return {
             // Core algorithm
             'elk.algorithm': 'layered',
@@ -137,7 +257,9 @@ export class WorkflowLayoutConfigurator extends AbstractLayoutConfigurator {
             'elk.separateConnectedComponents': 'false',
             
             // Use feedback edges option - routes backward edges around nodes
-            'elk.layered.feedbackEdges': 'true'
+            'elk.layered.feedbackEdges': 'true',
+
+            ...LAYOUT_TIER_OPTIONS[tier]
         };
     }
 

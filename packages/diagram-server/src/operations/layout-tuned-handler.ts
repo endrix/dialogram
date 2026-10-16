@@ -17,6 +17,12 @@ import { WORKFLOW_LAYOUT_BOUNDARY_FLOW_OPERATION_KIND, WorkflowLayoutBoundaryFlo
  *
  * Both run the boundary-flow layout with the graph's options set for the run
  * and restored after it, so Layout Diagram itself is unchanged.
+ *
+ * The engine merges these over the preset the graph's size picked (see
+ * layout-configurator.ts). In the middle tier that changes nothing of note:
+ * Brandes-Koepf is the middle preset's placement already. In the fast tier the
+ * engine re-asserts the fast preset over them, so Untangled and Free Ports lay
+ * out as roughly as Layout Diagram does there, in seconds rather than minutes.
  */
 export const UNTANGLED_ELK_OPTIONS: Record<string, string> = {
     'elk.layered.crossingMinimization.greedySwitchHierarchical.type': 'TWO_SIDED',

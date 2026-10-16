@@ -15,6 +15,7 @@ import {
     ConsoleLogger,
     getRequestParentName,
     LayoutEngine,
+    ActionDispatcher,
     ModelState,
     DiagramModule,
     ActionDispatchScope,
@@ -138,7 +139,8 @@ export function createWorkflowServerModules(
         const filter = container.get<ElementFilter>(ElementFilter);
         const configurator = container.get<LayoutConfigurator>(LayoutConfigurator);
         const modelState = container.get<ModelState>(ModelState);
-        return new WorkflowElkLayoutEngine(elkFactory, filter, configurator, modelState);
+        const actionDispatcher = container.isBound(ActionDispatcher) ? container.get<ActionDispatcher>(ActionDispatcher) : undefined;
+        return new WorkflowElkLayoutEngine(elkFactory, filter, configurator, modelState, actionDispatcher);
     };
 
     // Add custom layout engine module with edge routing coordinate translation
