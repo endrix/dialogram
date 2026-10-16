@@ -18,6 +18,38 @@ const PORT_W = WorkflowDiagramConstants.PORT_WIDTH_PX;
 const ROW_H = WorkflowDiagramConstants.PORT_HEIGHT_PX + WorkflowDiagramConstants.PORT_ROW_VERTICAL_GAP_PX;
 const Y0 = WorkflowDiagramConstants.HEADER_HEIGHT_PX + WorkflowDiagramConstants.PORT_AREA_PADDING_PX;
 
+describe('ELK is told the side the producer placed the port on', () => {
+    // The configurator's port options are the only side ELK sees. Derived
+    // from the direction alone, a west-placed output was routed to as an east
+    // port: the wire came around the far side of the margin and crossed the
+    // whole node, label and all, to reach the glyph.
+    // The transform yields plain objects, so call the port rule directly rather than through `apply`'s instanceof dispatch.
+    const elkSide = (port: any): string | undefined => (new WorkflowLayoutConfigurator() as any).portOptions(port)?.['elk.port.side'] as string | undefined;
+
+    it('for an instance port with a side', () => {
+        const node = transform([{
+            id: 'node:c', kind: 'instance', label: 'c', scope: 'root',
+            ports: [
+                { id: 'p:c:ready', name: 's_ready', direction: 'out', side: 'west' },
+                { id: 'p:c:q', name: 'q', direction: 'out' }
+            ]
+        }])[0];
+        expect(elkSide(node.children.find((c: any) => c.id === 'c_port_s_ready'))).toBe('WEST');
+        expect(elkSide(node.children.find((c: any) => c.id === 'c_port_q'))).toBe('EAST');
+    });
+
+    it('for a boundary node placed in the other margin', () => {
+        const [west, east] = transform([
+            { id: 'wf:output:ready', kind: 'wf-output', label: 'ready', scope: 'root', meta: { side: 'west' },
+              ports: [{ id: 'p:ready', name: 'ready', direction: 'in' }] },
+            { id: 'wf:input:m_ready', kind: 'wf-input', label: 'm_ready', scope: 'root', meta: { side: 'east' },
+              ports: [{ id: 'p:m_ready', name: 'm_ready', direction: 'out' }] }
+        ]);
+        expect(elkSide(west.children.find((c: any) => c.type.startsWith('port')))).toBe('EAST');
+        expect(elkSide(east.children.find((c: any) => c.type.startsWith('port')))).toBe('WEST');
+    });
+});
+
 describe('port side from the producer', () => {
     const consumer: PyGraphNode = {
         id: 'node:c', kind: 'instance', label: 'c', scope: 'root',

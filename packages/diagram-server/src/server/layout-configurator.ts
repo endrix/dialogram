@@ -326,8 +326,14 @@ export class WorkflowLayoutConfigurator extends AbstractLayoutConfigurator {
      * Configure port side based on direction and let ELK handle label placement.
      */
     protected override portOptions(port: GPort): LayoutOptions | undefined {
-        const direction = (port as any).args?.['cal:portDirection'] as string | undefined;
-        const side = direction === 'output' ? 'EAST' : 'WEST';
+        // The side the producer placed the port on wins over its direction
+        // (`cal:portSide`, a bundle's `ready` beside its `valid`); this is the
+        // side ELK routes to, so it has to be the one the anchor and the
+        // glyph use, or a wire reaches the port from across its own node.
+        // Without one, the direction decides exactly as before.
+        const args = (port as any).args as Record<string, unknown> | undefined;
+        const direction = args?.['cal:portDirection'] as string | undefined;
+        const side = normalizePortSide(args?.[WorkflowDiagramMetadata.PORT_SIDE]) ?? (direction === 'output' ? 'EAST' : 'WEST');
 
         return {
             'elk.port.side': side,

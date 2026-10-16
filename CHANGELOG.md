@@ -45,6 +45,14 @@ platform API version.
   every element, a third of the export. A document with every file spelled out
   reads exactly as before.
 
+### Fixed
+
+- ELK is told the side the producer placed a port on. It was told the side
+  from the direction alone, so a bundle's `ready`, placed in the other margin,
+  was routed to as if it sat on the far edge: the wire came around the outside
+  of the margin and crossed the whole node, label included, to reach the glyph.
+  It now arrives from the side the glyph faces, in one straight run.
+
 ## [0.7.0] - 2026-09-01
 
 Edge routing, and boundary ports as schematic symbols. (#6-#23)
