@@ -24,6 +24,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 /** Graph layout option: `free` lets a layout choose each node's port order against crossings. */
 export const PORT_ORDER_OPTION = 'dialogram.portOrder';
 export const PORT_ORDER_FREE = 'free';
+/** On a port the Free Ports pass has moved: the row the server gave it from the declaration. */
+export const DECLARED_ROW_ARG = 'wf:declaredRowY';
 
 /**
  * Minimal CAL extension of the standard GLSP ELK layout engine.
@@ -99,6 +101,10 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
                 } catch (e) {
                     console.warn('[cal-elk] port ordering skipped:', e);
                 }
+            } else {
+                // A layout that does not ask for the pass lays the ports out as the
+                // source declares them, even after a Free Ports layout moved them.
+                this.restoreDeclaredRows(root);
             }
 
             // Re-implement base `layout` so we can dump the exact object passed to elk.layout().
@@ -205,9 +211,29 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
             }
             order.forEach((ep, k) => {
                 const port = byId.get(ep.id)!;
+                const args = (port.args ?? {}) as Record<string, unknown>;
+                if (args[DECLARED_ROW_ARG] === undefined) {
+                    port.args = { ...args, [DECLARED_ROW_ARG]: port.position?.y ?? 0 };
+                }
                 port.position = { x: port.position?.x ?? 0, y: rows[k] };
             });
         }
+    }
+
+    /** Every port the pass has moved goes back on its declared row. */
+    private restoreDeclaredRows(root: GGraph): void {
+        const visit = (element: GModelElement): void => {
+            if (element instanceof GPort) {
+                const row = (element.args as Record<string, unknown> | undefined)?.[DECLARED_ROW_ARG];
+                if (typeof row === 'number') {
+                    element.position = { x: element.position?.x ?? 0, y: row };
+                }
+            }
+            for (const child of element.children ?? []) {
+                visit(child);
+            }
+        };
+        visit(root);
     }
 
     private async dumpElkInputGraph(elkGraph: ElkNode): Promise<void> {
