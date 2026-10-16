@@ -110,6 +110,21 @@ describe('createSidecarDiagramProfile', () => {
         expect(p.sourceExtensions).toEqual([baseInput().sourceExtension]);
     });
 
+    it('accepts several source extensions, the first being the one new files take', () => {
+        // A language with two spellings of its files (`.sv` and `.v`, `.vhd` and
+        // `.vhdl`) names them all; the platform filters on every one and the
+        // watcher covers every one. The single `sourceExtension` is then ignored,
+        // so a shell can leave it at the first for older platforms.
+        const p = createSidecarDiagramProfile(baseInput({ sourceExtension: '.sv', sourceExtensions: ['.sv', '.v'] }));
+        expect(p.sourceExtensions).toEqual(['.sv', '.v']);
+        expect(p.watch).toEqual({ globs: ['**/*.sv', '**/*.v'] });
+        // An explicit watch list still wins.
+        const explicit = createSidecarDiagramProfile(baseInput({ sourceExtensions: ['.sv', '.v'], watchGlobs: ['**/*.sv', '**/hdl.json'] }));
+        expect(explicit.watch).toEqual({ globs: ['**/*.sv', '**/hdl.json'] });
+        // Blank entries do not count as an extension.
+        expect(createSidecarDiagramProfile(baseInput({ sourceExtensions: [' ', ''] })).sourceExtensions).toEqual(['.py']);
+    });
+
     it('turns on resuming at a step exactly when the product says how', () => {
         const without = createSidecarDiagramProfile(baseInput({ clientBehavior: { noneSentinel: 'x' } }));
         expect((without.clientBehavior as any)?.resumeAtStep).toBeUndefined();

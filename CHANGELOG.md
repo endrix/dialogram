@@ -6,6 +6,15 @@ platform API version.
 
 ## [Unreleased]
 
+### Added
+
+- `SidecarProfileInput.sourceExtensions`: a sidecar-backed product whose source
+  files have more than one extension (`.sv` and `.v`, `.vhd` and `.vhdl`) names
+  them all. The platform's open/rename filters, the file watcher's default
+  globs, the openability probe and the raw sidecar commands accept any of them;
+  the new-file scaffold takes the first. `sourceExtension` stays honoured and is
+  all a Python product needs.
+
 ## [0.7.0] - 2026-09-01
 
 Edge routing, and boundary ports as schematic symbols. (#6-#23)

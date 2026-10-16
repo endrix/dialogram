@@ -76,8 +76,7 @@ function declaredOrder(root: GGraph): Map<string, number> {
     return rows;
 }
 
-async function layoutFixture(options: Record<string, string> = {}): Promise<{ root: GGraph; declared: Map<string, number> }> {
-    const root = loadFixture();
+async function layoutFixture(options: Record<string, string> = {}, root: GGraph = loadFixture()): Promise<{ root: GGraph; declared: Map<string, number> }> {
     const declared = declaredOrder(root);
     (root as any).layoutOptions = { ...options };
     const modelState: any = {
@@ -145,6 +144,21 @@ describe('WorkflowElkLayoutEngine port order', () => {
                 const before = side.map(p => declared.get(p.id)!).sort((a, b) => a - b);
                 expect(rows).toEqual(before); // the same rows, permuted at most
             }
+        }
+        for (const edge of collect<GEdge>(root, GEdge)) {
+            expect(((edge as any).routingPoints as Point[]).length).toBeGreaterThanOrEqual(2);
+        }
+    });
+
+    it('puts every port back on its declared row when a plain layout follows Free Ports', async () => {
+        const root = loadFixture();
+        const declared = declaredOrder(root);
+        await layoutFixture({ [PORT_ORDER_OPTION]: PORT_ORDER_FREE }, root);
+        const moved = collect<GPort>(root, GPort).filter(p => p.position!.y !== declared.get(p.id)).length;
+        expect(moved).toBeGreaterThan(0);
+        await layoutFixture({}, root);
+        for (const port of collect<GPort>(root, GPort)) {
+            expect(port.position!.y).toBe(declared.get(port.id));
         }
         for (const edge of collect<GEdge>(root, GEdge)) {
             expect(((edge as any).routingPoints as Point[]).length).toBeGreaterThanOrEqual(2);
