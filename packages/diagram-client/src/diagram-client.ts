@@ -29,6 +29,7 @@ import { createDiagramContainer } from './container';
 import { workflowViewsModule } from './stock-views.module';
 import { workflowFeaturesModule } from './stock-features.module';
 import { installToolPaletteHeaderControls } from './tool-palette-header-controls';
+import { installSvgExportRequests } from './svg-export-command';
 import { installDiagramWebviewChannel } from './webview-channel';
 import { installExecutionOverlayRouting } from './execution-overlay-message-bridge';
 
@@ -107,3 +108,4 @@ try {
 
 // Patch GLSP tool palette header (Run button + fit/center behavior)
 installToolPaletteHeaderControls();
+installSvgExportRequests();

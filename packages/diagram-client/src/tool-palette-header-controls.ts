@@ -1,5 +1,6 @@
 import { codiconCSSClasses } from '@eclipse-glsp/sprotty';
 import { VscodeUi } from './vscode-ui';
+import { exportDiagramSvg } from './svg-export-command';
 import { commandId, feedbackEdgesVisibleStorageKey, queueTraceVisibleStorageKey } from './profile';
 
 type DiagramContext = {
@@ -98,6 +99,9 @@ function classifyHeaderTool(icon: HTMLElement, index: number): { order: number; 
     // Layout/viewport cluster.
     if (hasCodicon(icon, 'screen-normal')) {
         return { order: 30, group: 'layout' };
+    }
+    if (icon.classList.contains('cal-export-svg')) {
+        return { order: 31, group: 'layout' };
     }
     if (hasCodicon(icon, 'symbol-property')) {
         return { order: 31, group: 'layout' };
@@ -291,6 +295,19 @@ function patchHeaderTools(headerTools: HTMLElement): void {
         };
 
         headerTools.insertBefore(loopIcon, headerTools.firstChild);
+    }
+
+    // 5b) Export the rendered diagram as an SVG file (svg-export.ts).
+    if (!headerTools.querySelector('i.codicon.codicon-export.cal-export-svg')) {
+        const exportIcon = createHeaderIcon('export');
+        exportIcon.classList.add('cal-export-svg');
+        exportIcon.title = 'Export diagram as SVG';
+        exportIcon.setAttribute('aria-label', exportIcon.title);
+        exportIcon.onclick = () => {
+            exportDiagramSvg();
+            exportIcon.focus();
+        };
+        headerTools.appendChild(exportIcon);
     }
 
     // 6) Normalize icon order + visual grouping separators.
