@@ -8,6 +8,7 @@
 import { GlspEditorProvider, GlspVscodeConnector } from '@eclipse-glsp/vscode-integration';
 import { RequestModelAction } from '@eclipse-glsp/protocol';
 import * as vscode from 'vscode';
+import * as path from 'node:path';
 import { statSync } from 'node:fs';
 import { WORKFLOW_DIAGRAM_TYPE } from '@dialogram/shared';
 import { type DiagramClientBehavior, type DiagramProfile } from '../../api';
@@ -271,6 +272,17 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
                         type: 'dialogram.ui.response',
                         payload: { requestId, result }
                     });
+                    return;
+                }
+
+                if (message?.type === 'dialogram.svg.extracted') {
+                    await this.saveExtractedSvg(canonicalDocumentUri, message.payload ?? {});
+                    return;
+                }
+
+                if (message?.type === 'dialogram.svg.failed') {
+                    const reason = message.payload?.reason as string | undefined;
+                    void vscode.window.showWarningMessage(`Could not export the diagram as SVG${reason ? `: ${reason}` : '.'}`);
                     return;
                 }
 
@@ -1123,6 +1135,55 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      * profile handle's `postToWebview` (cursor-sync / graph-era channel). No-op
      * when no panel is registered for the URI.
      */
+    /**
+     * Save the SVG the webview extracted (diagram-client/src/svg-export.ts), as
+     * the mlir-viewer does: VS Code's own dialog, so it lands where the user's
+     * files land and on whatever filesystem the workspace is on, defaulting
+     * beside the file the diagram came from and named after the workflow.
+     */
+    private async saveExtractedSvg(
+        documentUri: string,
+        payload: { svg?: unknown; name?: unknown; elementCount?: unknown }
+    ): Promise<void> {
+        if (typeof payload.svg !== 'string' || payload.svg.length === 0) {
+            return;
+        }
+        const base = typeof payload.name === 'string' && payload.name ? payload.name : 'diagram';
+        const source = vscode.Uri.parse(documentUri);
+        const folder = source.scheme === 'file' ? path.dirname(source.fsPath) : undefined;
+
+        const target = await vscode.window.showSaveDialog({
+            title: 'Export diagram as SVG',
+            defaultUri: folder ? vscode.Uri.file(path.join(folder, `${base}.svg`)) : vscode.Uri.file(`${base}.svg`),
+            filters: { 'SVG image': ['svg'] },
+            saveLabel: 'Export'
+        });
+        if (!target) {
+            return;
+        }
+        try {
+            await vscode.workspace.fs.writeFile(target, Buffer.from(payload.svg, 'utf8'));
+        } catch (error) {
+            void vscode.window.showErrorMessage(
+                `Could not write ${target.fsPath}: ${error instanceof Error ? error.message : String(error)}`
+            );
+            return;
+        }
+        const count = typeof payload.elementCount === 'number' ? ` (${payload.elementCount} elements)` : '';
+        const open = 'Open';
+        const reveal = 'Reveal in Explorer';
+        const choice = await vscode.window.showInformationMessage(
+            `Exported ${path.basename(target.fsPath)}${count}.`,
+            open,
+            reveal
+        );
+        if (choice === open) {
+            await vscode.commands.executeCommand('vscode.open', target);
+        } else if (choice === reveal) {
+            await vscode.commands.executeCommand('revealInExplorer', target);
+        }
+    }
+
     postToWebview(uri: string, message: unknown): void {
         const webview = this.uriToWebview.get(this.canonicalizeUriString(uri));
         if (!webview) {

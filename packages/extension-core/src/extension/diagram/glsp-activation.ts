@@ -19,7 +19,6 @@ import {
     TriggerLayoutAction,
     FitToScreenAction,
     CenterAction,
-    RequestExportSvgAction,
     UndoAction,
     RedoAction
 } from '@eclipse-glsp/protocol';
@@ -1370,10 +1369,18 @@ function registerCalDiagramCommands(
         })
     );
 
-    // Command: Export diagram as SVG
+    // Command: Export diagram as SVG. The webview extracts the rendered diagram
+    // with its computed styles inlined (diagram-client/src/svg-export.ts) and the
+    // editor provider saves it, as the mlir-viewer does; the stock GLSP exporter
+    // left the styles behind in the stylesheet.
     context.subscriptions.push(
         vscode.commands.registerCommand(profile.commands.exportSvg, async () => {
-            connector.dispatchAction(RequestExportSvgAction.create());
+            const uri = getActiveWorkflowDiagramUri();
+            if (!uri || !editorProvider) {
+                vscode.window.showWarningMessage('No active diagram found. Focus an open diagram tab and try again.');
+                return;
+            }
+            editorProvider.postToWebview(uri.toString(), { type: 'dialogram.svg.extract' });
         })
     );
 
