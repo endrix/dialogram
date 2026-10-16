@@ -1,0 +1,4875 @@
+{
+ "version": "1.1",
+ "graph": {
+  "id": "wf:speculation",
+  "nodes": [
+   {
+    "id": "node:scope:root:conformance",
+    "kind": "internal",
+    "label": "conformance",
+    "type": "Conformance",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:conformance:In",
+      "name": "In",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/conformance.py",
+       "line": 36
+      }
+     },
+     {
+      "id": "port:node:scope:root:conformance:Verdict",
+      "name": "Verdict",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/conformance.py",
+       "line": 37
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "internal",
+     "parameters": [
+      {
+       "name": "python",
+       "kind": "value",
+       "type": "str",
+       "value": "'/home/endrix/git/dataflow/streamblocks/streamblocks-mlir/.venv/bin/python'"
+      },
+      {
+       "name": "env",
+       "kind": "value",
+       "type": "dict",
+       "value": "{'DYNAMATIC': '/home/endrix/git/dataflow/streamblocks/streamblocks-mlir/.venv/lib/python3.14/site-packages/calpy_tools/dynamatic', 'LD_LIBRARY_PATH': '/home/endrix/git/dataflow/streamblocks/streamblocks-mlir/.venv/lib/python3.14/site-packages/calpy_tools/lib', 'SB_LLVM_LIB': '/home/endrix/git/dataflow/streamblocks/streamblocks-mlir/.venv/lib/python3.14/site-packages/calpy_tools/lib', 'SB_TOOLCHAIN_INFO': '{\"version\": \"0.1.0+dynamatic\", \"streamblocks-mlir\": \"2a217429aa7d2b8d098d52ae0a660a889c52aaf3\", \"dynamatic\": \"fee80b4e47e7637465183eb6977aeeee07769aa4\"}', 'PICORV32_REGS_INIT_ZERO': '1'}"
+      }
+     ],
+     "definitionParams": [
+      {
+       "name": "python",
+       "kind": "value",
+       "type": "str"
+      },
+      {
+       "name": "env",
+       "kind": "value",
+       "type": "dict"
+      }
+     ],
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 138
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/conformance.py",
+      "line": 26
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:main_sieve",
+    "kind": "source",
+    "label": "main_sieve",
+    "type": "FileSource",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:main_sieve:Out",
+      "name": "Out",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/file_source.py",
+       "line": 11
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "source",
+     "definitionAnnotations": [
+      {
+       "name": "viewer",
+       "arguments": [
+        {
+         "name": "action",
+         "value": "\"open\""
+        },
+        {
+         "name": "inputs",
+         "value": "[]"
+        },
+        {
+         "name": "source",
+         "value": "\"declared\""
+        },
+        {
+         "name": "path",
+         "value": "\"/home/endrix/git/dataflow/chips/workflow/programs/sieve/main.c\""
+        },
+        {
+         "name": "kind",
+         "value": "\"file\""
+        }
+       ]
+      },
+      {
+       "name": "source",
+       "arguments": [
+        {
+         "name": "port",
+         "value": "Out"
+        }
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "name": "path",
+       "kind": "value",
+       "type": "File",
+       "value": "File(path='/home/endrix/git/dataflow/chips/workflow/programs/sieve/main.c', ext='', validate=[], kind='file')"
+      }
+     ],
+     "definitionParams": [
+      {
+       "name": "path",
+       "kind": "value",
+       "type": "File"
+      }
+     ],
+     "external": true,
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 146
+     },
+     "annotations": {
+      "viewer": {
+       "action": "open",
+       "source": "declared",
+       "inputs": []
+      },
+      "source": {
+       "port": "Out"
+      }
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/file_source.py",
+      "line": 5
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:image_sieve",
+    "kind": "workflow",
+    "label": "image_sieve",
+    "type": "program_image",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:image_sieve:Start",
+      "name": "Start",
+      "direction": "in",
+      "type": "File(ext='.S')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:image_sieve:Main",
+      "name": "Main",
+      "direction": "in",
+      "type": "File(ext='.c')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:image_sieve:Elf",
+      "name": "Elf",
+      "direction": "out",
+      "type": "File(ext='.elf')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:image_sieve:Image",
+      "name": "Image",
+      "direction": "out",
+      "type": "File(ext='.bin')",
+      "role": "data"
+     }
+    ],
+    "meta": {
+     "taskKind": "workflow",
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 147
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/workflows/program_image.py",
+      "line": 21
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:program_sieve",
+    "kind": "internal",
+    "label": "program_sieve",
+    "type": "ProgramRound",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:program_sieve:Image",
+      "name": "Image",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 17
+      }
+     },
+     {
+      "id": "port:node:scope:root:program_sieve:Model",
+      "name": "Model",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 18
+      }
+     },
+     {
+      "id": "port:node:scope:root:program_sieve:Network",
+      "name": "Network",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 19
+      }
+     },
+     {
+      "id": "port:node:scope:root:program_sieve:Program",
+      "name": "Program",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 20
+      }
+     },
+     {
+      "id": "port:node:scope:root:program_sieve:Name",
+      "name": "Name",
+      "direction": "out",
+      "type": "str",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 21
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "internal",
+     "parameters": [
+      {
+       "name": "name",
+       "kind": "value",
+       "type": "str",
+       "value": "'sieve'"
+      }
+     ],
+     "definitionParams": [
+      {
+       "name": "name",
+       "kind": "value",
+       "type": "str"
+      }
+     ],
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 151
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+      "line": 9
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:check_sieve",
+    "kind": "workflow",
+    "label": "check_sieve",
+    "type": "program_check",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:check_sieve:Network",
+      "name": "Network",
+      "direction": "in",
+      "type": "File(ext='.py')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:check_sieve:Image",
+      "name": "Image",
+      "direction": "in",
+      "type": "File(ext='.bin')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:check_sieve:Name",
+      "name": "Name",
+      "direction": "in",
+      "type": "str",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:check_sieve:Check",
+      "name": "Check",
+      "direction": "out",
+      "type": "File(ext='.json')",
+      "role": "data"
+     }
+    ],
+    "meta": {
+     "taskKind": "workflow",
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 152
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/workflows/program_check.py",
+      "line": 25
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:live_sieve",
+    "kind": "internal",
+    "label": "live_sieve",
+    "type": "UnpackLive",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:live_sieve:Live",
+      "name": "Live",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 19
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_sieve:Hex",
+      "name": "Hex",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 20
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_sieve:Trace",
+      "name": "Trace",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 21
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_sieve:TurnusNetwork",
+      "name": "TurnusNetwork",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 22
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_sieve:SwWeights",
+      "name": "SwWeights",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 23
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_sieve:Reference",
+      "name": "Reference",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 24
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_sieve:Name",
+      "name": "Name",
+      "direction": "out",
+      "type": "str",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 25
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "internal",
+     "parameters": [],
+     "definitionParams": [],
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 154
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+      "line": 10
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:measure_sieve",
+    "kind": "workflow",
+    "label": "measure_sieve",
+    "type": "program_measure",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:measure_sieve:Build",
+      "name": "Build",
+      "direction": "in",
+      "type": "Resource(ext='', kind='folder')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sieve:Synthesis",
+      "name": "Synthesis",
+      "direction": "in",
+      "type": "File(ext='.json')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sieve:Hex",
+      "name": "Hex",
+      "direction": "in",
+      "type": "File(ext='.hex')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sieve:Trace",
+      "name": "Trace",
+      "direction": "in",
+      "type": "File(ext='.tracez')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sieve:TurnusNetwork",
+      "name": "TurnusNetwork",
+      "direction": "in",
+      "type": "File(ext='.json')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sieve:SwWeights",
+      "name": "SwWeights",
+      "direction": "in",
+      "type": "File(ext='.exdf')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sieve:Reference",
+      "name": "Reference",
+      "direction": "in",
+      "type": "File(ext='.json')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sieve:Name",
+      "name": "Name",
+      "direction": "in",
+      "type": "str",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sieve:Hw",
+      "name": "Hw",
+      "direction": "in",
+      "type": "File(ext='.mlir')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sieve:Measure",
+      "name": "Measure",
+      "direction": "out",
+      "type": "File(ext='.json')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sieve:Weights",
+      "name": "Weights",
+      "direction": "out",
+      "type": "File(ext='.exdf')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sieve:Comm",
+      "name": "Comm",
+      "direction": "out",
+      "type": "File(ext='.cxdf')",
+      "role": "data"
+     }
+    ],
+    "meta": {
+     "taskKind": "workflow",
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 155
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/workflows/program_measure.py",
+      "line": 34
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:main_hello",
+    "kind": "source",
+    "label": "main_hello",
+    "type": "FileSource",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:main_hello:Out",
+      "name": "Out",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/file_source.py",
+       "line": 11
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "source",
+     "definitionAnnotations": [
+      {
+       "name": "viewer",
+       "arguments": [
+        {
+         "name": "action",
+         "value": "\"open\""
+        },
+        {
+         "name": "inputs",
+         "value": "[]"
+        },
+        {
+         "name": "source",
+         "value": "\"declared\""
+        },
+        {
+         "name": "path",
+         "value": "\"/home/endrix/git/dataflow/chips/workflow/programs/hello/main.c\""
+        },
+        {
+         "name": "kind",
+         "value": "\"file\""
+        }
+       ]
+      },
+      {
+       "name": "source",
+       "arguments": [
+        {
+         "name": "port",
+         "value": "Out"
+        }
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "name": "path",
+       "kind": "value",
+       "type": "File",
+       "value": "File(path='/home/endrix/git/dataflow/chips/workflow/programs/hello/main.c', ext='', validate=[], kind='file')"
+      }
+     ],
+     "definitionParams": [
+      {
+       "name": "path",
+       "kind": "value",
+       "type": "File"
+      }
+     ],
+     "external": true,
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 146
+     },
+     "annotations": {
+      "viewer": {
+       "action": "open",
+       "source": "declared",
+       "inputs": []
+      },
+      "source": {
+       "port": "Out"
+      }
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/file_source.py",
+      "line": 5
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:image_hello",
+    "kind": "workflow",
+    "label": "image_hello",
+    "type": "program_image",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:image_hello:Start",
+      "name": "Start",
+      "direction": "in",
+      "type": "File(ext='.S')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:image_hello:Main",
+      "name": "Main",
+      "direction": "in",
+      "type": "File(ext='.c')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:image_hello:Elf",
+      "name": "Elf",
+      "direction": "out",
+      "type": "File(ext='.elf')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:image_hello:Image",
+      "name": "Image",
+      "direction": "out",
+      "type": "File(ext='.bin')",
+      "role": "data"
+     }
+    ],
+    "meta": {
+     "taskKind": "workflow",
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 147
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/workflows/program_image.py",
+      "line": 21
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:program_hello",
+    "kind": "internal",
+    "label": "program_hello",
+    "type": "ProgramRound",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:program_hello:Image",
+      "name": "Image",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 17
+      }
+     },
+     {
+      "id": "port:node:scope:root:program_hello:Model",
+      "name": "Model",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 18
+      }
+     },
+     {
+      "id": "port:node:scope:root:program_hello:Network",
+      "name": "Network",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 19
+      }
+     },
+     {
+      "id": "port:node:scope:root:program_hello:Program",
+      "name": "Program",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 20
+      }
+     },
+     {
+      "id": "port:node:scope:root:program_hello:Name",
+      "name": "Name",
+      "direction": "out",
+      "type": "str",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 21
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "internal",
+     "parameters": [
+      {
+       "name": "name",
+       "kind": "value",
+       "type": "str",
+       "value": "'hello'"
+      }
+     ],
+     "definitionParams": [
+      {
+       "name": "name",
+       "kind": "value",
+       "type": "str"
+      }
+     ],
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 151
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+      "line": 9
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:check_hello",
+    "kind": "workflow",
+    "label": "check_hello",
+    "type": "program_check",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:check_hello:Network",
+      "name": "Network",
+      "direction": "in",
+      "type": "File(ext='.py')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:check_hello:Image",
+      "name": "Image",
+      "direction": "in",
+      "type": "File(ext='.bin')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:check_hello:Name",
+      "name": "Name",
+      "direction": "in",
+      "type": "str",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:check_hello:Check",
+      "name": "Check",
+      "direction": "out",
+      "type": "File(ext='.json')",
+      "role": "data"
+     }
+    ],
+    "meta": {
+     "taskKind": "workflow",
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 152
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/workflows/program_check.py",
+      "line": 25
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:live_hello",
+    "kind": "internal",
+    "label": "live_hello",
+    "type": "UnpackLive",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:live_hello:Live",
+      "name": "Live",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 19
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_hello:Hex",
+      "name": "Hex",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 20
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_hello:Trace",
+      "name": "Trace",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 21
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_hello:TurnusNetwork",
+      "name": "TurnusNetwork",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 22
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_hello:SwWeights",
+      "name": "SwWeights",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 23
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_hello:Reference",
+      "name": "Reference",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 24
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_hello:Name",
+      "name": "Name",
+      "direction": "out",
+      "type": "str",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 25
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "internal",
+     "parameters": [],
+     "definitionParams": [],
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 154
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+      "line": 10
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:measure_hello",
+    "kind": "workflow",
+    "label": "measure_hello",
+    "type": "program_measure",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:measure_hello:Build",
+      "name": "Build",
+      "direction": "in",
+      "type": "Resource(ext='', kind='folder')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_hello:Synthesis",
+      "name": "Synthesis",
+      "direction": "in",
+      "type": "File(ext='.json')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_hello:Hex",
+      "name": "Hex",
+      "direction": "in",
+      "type": "File(ext='.hex')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_hello:Trace",
+      "name": "Trace",
+      "direction": "in",
+      "type": "File(ext='.tracez')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_hello:TurnusNetwork",
+      "name": "TurnusNetwork",
+      "direction": "in",
+      "type": "File(ext='.json')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_hello:SwWeights",
+      "name": "SwWeights",
+      "direction": "in",
+      "type": "File(ext='.exdf')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_hello:Reference",
+      "name": "Reference",
+      "direction": "in",
+      "type": "File(ext='.json')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_hello:Name",
+      "name": "Name",
+      "direction": "in",
+      "type": "str",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_hello:Weights",
+      "name": "Weights",
+      "direction": "in",
+      "type": "File(ext='.exdf')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_hello:Comm",
+      "name": "Comm",
+      "direction": "in",
+      "type": "File(ext='.cxdf')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_hello:Measure",
+      "name": "Measure",
+      "direction": "out",
+      "type": "File(ext='.json')",
+      "role": "data"
+     }
+    ],
+    "meta": {
+     "taskKind": "workflow",
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 155
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/workflows/program_measure.py",
+      "line": 34
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:main_sort",
+    "kind": "source",
+    "label": "main_sort",
+    "type": "FileSource",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:main_sort:Out",
+      "name": "Out",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/file_source.py",
+       "line": 11
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "source",
+     "definitionAnnotations": [
+      {
+       "name": "viewer",
+       "arguments": [
+        {
+         "name": "action",
+         "value": "\"open\""
+        },
+        {
+         "name": "inputs",
+         "value": "[]"
+        },
+        {
+         "name": "source",
+         "value": "\"declared\""
+        },
+        {
+         "name": "path",
+         "value": "\"/home/endrix/git/dataflow/chips/workflow/programs/sort/main.c\""
+        },
+        {
+         "name": "kind",
+         "value": "\"file\""
+        }
+       ]
+      },
+      {
+       "name": "source",
+       "arguments": [
+        {
+         "name": "port",
+         "value": "Out"
+        }
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "name": "path",
+       "kind": "value",
+       "type": "File",
+       "value": "File(path='/home/endrix/git/dataflow/chips/workflow/programs/sort/main.c', ext='', validate=[], kind='file')"
+      }
+     ],
+     "definitionParams": [
+      {
+       "name": "path",
+       "kind": "value",
+       "type": "File"
+      }
+     ],
+     "external": true,
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 146
+     },
+     "annotations": {
+      "viewer": {
+       "action": "open",
+       "source": "declared",
+       "inputs": []
+      },
+      "source": {
+       "port": "Out"
+      }
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/file_source.py",
+      "line": 5
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:image_sort",
+    "kind": "workflow",
+    "label": "image_sort",
+    "type": "program_image",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:image_sort:Start",
+      "name": "Start",
+      "direction": "in",
+      "type": "File(ext='.S')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:image_sort:Main",
+      "name": "Main",
+      "direction": "in",
+      "type": "File(ext='.c')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:image_sort:Elf",
+      "name": "Elf",
+      "direction": "out",
+      "type": "File(ext='.elf')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:image_sort:Image",
+      "name": "Image",
+      "direction": "out",
+      "type": "File(ext='.bin')",
+      "role": "data"
+     }
+    ],
+    "meta": {
+     "taskKind": "workflow",
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 147
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/workflows/program_image.py",
+      "line": 21
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:program_sort",
+    "kind": "internal",
+    "label": "program_sort",
+    "type": "ProgramRound",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:program_sort:Image",
+      "name": "Image",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 17
+      }
+     },
+     {
+      "id": "port:node:scope:root:program_sort:Model",
+      "name": "Model",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 18
+      }
+     },
+     {
+      "id": "port:node:scope:root:program_sort:Network",
+      "name": "Network",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 19
+      }
+     },
+     {
+      "id": "port:node:scope:root:program_sort:Program",
+      "name": "Program",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 20
+      }
+     },
+     {
+      "id": "port:node:scope:root:program_sort:Name",
+      "name": "Name",
+      "direction": "out",
+      "type": "str",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 21
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "internal",
+     "parameters": [
+      {
+       "name": "name",
+       "kind": "value",
+       "type": "str",
+       "value": "'sort'"
+      }
+     ],
+     "definitionParams": [
+      {
+       "name": "name",
+       "kind": "value",
+       "type": "str"
+      }
+     ],
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 151
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+      "line": 9
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:check_sort",
+    "kind": "workflow",
+    "label": "check_sort",
+    "type": "program_check",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:check_sort:Network",
+      "name": "Network",
+      "direction": "in",
+      "type": "File(ext='.py')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:check_sort:Image",
+      "name": "Image",
+      "direction": "in",
+      "type": "File(ext='.bin')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:check_sort:Name",
+      "name": "Name",
+      "direction": "in",
+      "type": "str",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:check_sort:Check",
+      "name": "Check",
+      "direction": "out",
+      "type": "File(ext='.json')",
+      "role": "data"
+     }
+    ],
+    "meta": {
+     "taskKind": "workflow",
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 152
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/workflows/program_check.py",
+      "line": 25
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:live_sort",
+    "kind": "internal",
+    "label": "live_sort",
+    "type": "UnpackLive",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:live_sort:Live",
+      "name": "Live",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 19
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_sort:Hex",
+      "name": "Hex",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 20
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_sort:Trace",
+      "name": "Trace",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 21
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_sort:TurnusNetwork",
+      "name": "TurnusNetwork",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 22
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_sort:SwWeights",
+      "name": "SwWeights",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 23
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_sort:Reference",
+      "name": "Reference",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 24
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_sort:Name",
+      "name": "Name",
+      "direction": "out",
+      "type": "str",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 25
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "internal",
+     "parameters": [],
+     "definitionParams": [],
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 154
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+      "line": 10
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:measure_sort",
+    "kind": "workflow",
+    "label": "measure_sort",
+    "type": "program_measure",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:measure_sort:Build",
+      "name": "Build",
+      "direction": "in",
+      "type": "Resource(ext='', kind='folder')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sort:Synthesis",
+      "name": "Synthesis",
+      "direction": "in",
+      "type": "File(ext='.json')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sort:Hex",
+      "name": "Hex",
+      "direction": "in",
+      "type": "File(ext='.hex')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sort:Trace",
+      "name": "Trace",
+      "direction": "in",
+      "type": "File(ext='.tracez')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sort:TurnusNetwork",
+      "name": "TurnusNetwork",
+      "direction": "in",
+      "type": "File(ext='.json')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sort:SwWeights",
+      "name": "SwWeights",
+      "direction": "in",
+      "type": "File(ext='.exdf')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sort:Reference",
+      "name": "Reference",
+      "direction": "in",
+      "type": "File(ext='.json')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sort:Name",
+      "name": "Name",
+      "direction": "in",
+      "type": "str",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sort:Weights",
+      "name": "Weights",
+      "direction": "in",
+      "type": "File(ext='.exdf')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sort:Comm",
+      "name": "Comm",
+      "direction": "in",
+      "type": "File(ext='.cxdf')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_sort:Measure",
+      "name": "Measure",
+      "direction": "out",
+      "type": "File(ext='.json')",
+      "role": "data"
+     }
+    ],
+    "meta": {
+     "taskKind": "workflow",
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 155
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/workflows/program_measure.py",
+      "line": 34
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:main_fib",
+    "kind": "source",
+    "label": "main_fib",
+    "type": "FileSource",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:main_fib:Out",
+      "name": "Out",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/file_source.py",
+       "line": 11
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "source",
+     "definitionAnnotations": [
+      {
+       "name": "viewer",
+       "arguments": [
+        {
+         "name": "action",
+         "value": "\"open\""
+        },
+        {
+         "name": "inputs",
+         "value": "[]"
+        },
+        {
+         "name": "source",
+         "value": "\"declared\""
+        },
+        {
+         "name": "path",
+         "value": "\"/home/endrix/git/dataflow/chips/workflow/programs/fib/main.c\""
+        },
+        {
+         "name": "kind",
+         "value": "\"file\""
+        }
+       ]
+      },
+      {
+       "name": "source",
+       "arguments": [
+        {
+         "name": "port",
+         "value": "Out"
+        }
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "name": "path",
+       "kind": "value",
+       "type": "File",
+       "value": "File(path='/home/endrix/git/dataflow/chips/workflow/programs/fib/main.c', ext='', validate=[], kind='file')"
+      }
+     ],
+     "definitionParams": [
+      {
+       "name": "path",
+       "kind": "value",
+       "type": "File"
+      }
+     ],
+     "external": true,
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 146
+     },
+     "annotations": {
+      "viewer": {
+       "action": "open",
+       "source": "declared",
+       "inputs": []
+      },
+      "source": {
+       "port": "Out"
+      }
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/file_source.py",
+      "line": 5
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:image_fib",
+    "kind": "workflow",
+    "label": "image_fib",
+    "type": "program_image",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:image_fib:Start",
+      "name": "Start",
+      "direction": "in",
+      "type": "File(ext='.S')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:image_fib:Main",
+      "name": "Main",
+      "direction": "in",
+      "type": "File(ext='.c')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:image_fib:Elf",
+      "name": "Elf",
+      "direction": "out",
+      "type": "File(ext='.elf')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:image_fib:Image",
+      "name": "Image",
+      "direction": "out",
+      "type": "File(ext='.bin')",
+      "role": "data"
+     }
+    ],
+    "meta": {
+     "taskKind": "workflow",
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 147
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/workflows/program_image.py",
+      "line": 21
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:program_fib",
+    "kind": "internal",
+    "label": "program_fib",
+    "type": "ProgramRound",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:program_fib:Image",
+      "name": "Image",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 17
+      }
+     },
+     {
+      "id": "port:node:scope:root:program_fib:Model",
+      "name": "Model",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 18
+      }
+     },
+     {
+      "id": "port:node:scope:root:program_fib:Network",
+      "name": "Network",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 19
+      }
+     },
+     {
+      "id": "port:node:scope:root:program_fib:Program",
+      "name": "Program",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 20
+      }
+     },
+     {
+      "id": "port:node:scope:root:program_fib:Name",
+      "name": "Name",
+      "direction": "out",
+      "type": "str",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+       "line": 21
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "internal",
+     "parameters": [
+      {
+       "name": "name",
+       "kind": "value",
+       "type": "str",
+       "value": "'fib'"
+      }
+     ],
+     "definitionParams": [
+      {
+       "name": "name",
+       "kind": "value",
+       "type": "str"
+      }
+     ],
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 151
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/program_round.py",
+      "line": 9
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:check_fib",
+    "kind": "workflow",
+    "label": "check_fib",
+    "type": "program_check",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:check_fib:Network",
+      "name": "Network",
+      "direction": "in",
+      "type": "File(ext='.py')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:check_fib:Image",
+      "name": "Image",
+      "direction": "in",
+      "type": "File(ext='.bin')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:check_fib:Name",
+      "name": "Name",
+      "direction": "in",
+      "type": "str",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:check_fib:Check",
+      "name": "Check",
+      "direction": "out",
+      "type": "File(ext='.json')",
+      "role": "data"
+     }
+    ],
+    "meta": {
+     "taskKind": "workflow",
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 152
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/workflows/program_check.py",
+      "line": 25
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:live_fib",
+    "kind": "internal",
+    "label": "live_fib",
+    "type": "UnpackLive",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:live_fib:Live",
+      "name": "Live",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 19
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_fib:Hex",
+      "name": "Hex",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 20
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_fib:Trace",
+      "name": "Trace",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 21
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_fib:TurnusNetwork",
+      "name": "TurnusNetwork",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 22
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_fib:SwWeights",
+      "name": "SwWeights",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 23
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_fib:Reference",
+      "name": "Reference",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 24
+      }
+     },
+     {
+      "id": "port:node:scope:root:live_fib:Name",
+      "name": "Name",
+      "direction": "out",
+      "type": "str",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+       "line": 25
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "internal",
+     "parameters": [],
+     "definitionParams": [],
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 154
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/unpack_live.py",
+      "line": 10
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:measure_fib",
+    "kind": "workflow",
+    "label": "measure_fib",
+    "type": "program_measure",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:measure_fib:Build",
+      "name": "Build",
+      "direction": "in",
+      "type": "Resource(ext='', kind='folder')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_fib:Synthesis",
+      "name": "Synthesis",
+      "direction": "in",
+      "type": "File(ext='.json')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_fib:Hex",
+      "name": "Hex",
+      "direction": "in",
+      "type": "File(ext='.hex')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_fib:Trace",
+      "name": "Trace",
+      "direction": "in",
+      "type": "File(ext='.tracez')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_fib:TurnusNetwork",
+      "name": "TurnusNetwork",
+      "direction": "in",
+      "type": "File(ext='.json')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_fib:SwWeights",
+      "name": "SwWeights",
+      "direction": "in",
+      "type": "File(ext='.exdf')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_fib:Reference",
+      "name": "Reference",
+      "direction": "in",
+      "type": "File(ext='.json')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_fib:Name",
+      "name": "Name",
+      "direction": "in",
+      "type": "str",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_fib:Weights",
+      "name": "Weights",
+      "direction": "in",
+      "type": "File(ext='.exdf')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_fib:Comm",
+      "name": "Comm",
+      "direction": "in",
+      "type": "File(ext='.cxdf')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:measure_fib:Measure",
+      "name": "Measure",
+      "direction": "out",
+      "type": "File(ext='.json')",
+      "role": "data"
+     }
+    ],
+    "meta": {
+     "taskKind": "workflow",
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 155
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/workflows/program_measure.py",
+      "line": 34
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:model",
+    "kind": "streamblocks",
+    "label": "model",
+    "type": "CalpyNetwork",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:model:Out",
+      "name": "Out",
+      "direction": "out",
+      "type": "Any",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/calpy_network.py",
+       "line": 20
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "streamblocks",
+     "definitionAnnotations": [
+      {
+       "name": "streamblocks",
+       "arguments": [
+        {
+         "name": "facade",
+         "value": "instance"
+        },
+        {
+         "name": "run",
+         "value": "False"
+        }
+       ]
+      },
+      {
+       "name": "viewer",
+       "arguments": [
+        {
+         "name": "action",
+         "value": "\"openWith\""
+        },
+        {
+         "name": "viewType",
+         "value": "\"calpy.networkDiagram\""
+        },
+        {
+         "name": "source",
+         "value": "\"declared\""
+        },
+        {
+         "name": "path",
+         "value": "\"/mnt/data/claude-scratch/spec-model/picorv32/gen/network/top.py\""
+        },
+        {
+         "name": "kind",
+         "value": "\"file\""
+        }
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "name": "network",
+       "kind": "value",
+       "type": "File",
+       "value": "File(path='/mnt/data/claude-scratch/spec-model/picorv32/gen/network/top.py', ext='', validate=[], kind='file')"
+      }
+     ],
+     "definitionParams": [
+      {
+       "name": "network",
+       "kind": "value",
+       "type": "File"
+      }
+     ],
+     "streamblocks": {
+      "facade": "instance",
+      "run": false
+     },
+     "external": true,
+     "annotations": {
+      "streamblocks": {
+       "facade": "instance",
+       "run": false
+      },
+      "viewer": {
+       "action": "openWith",
+       "viewType": "calpy.networkDiagram",
+       "source": "declared"
+      }
+     },
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 124
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/calpy_network.py",
+      "line": 7
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:tb",
+    "kind": "source",
+    "label": "tb",
+    "type": "FileSource",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:tb:Out",
+      "name": "Out",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/file_source.py",
+       "line": 11
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "source",
+     "definitionAnnotations": [
+      {
+       "name": "viewer",
+       "arguments": [
+        {
+         "name": "action",
+         "value": "\"open\""
+        },
+        {
+         "name": "inputs",
+         "value": "[]"
+        },
+        {
+         "name": "source",
+         "value": "\"declared\""
+        },
+        {
+         "name": "path",
+         "value": "\"/mnt/data/claude-scratch/spec-model/picorv32/gen/rtl/tb_core.cpp\""
+        },
+        {
+         "name": "kind",
+         "value": "\"file\""
+        }
+       ]
+      },
+      {
+       "name": "source",
+       "arguments": [
+        {
+         "name": "port",
+         "value": "Out"
+        }
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "name": "path",
+       "kind": "value",
+       "type": "File",
+       "value": "File(path='/mnt/data/claude-scratch/spec-model/picorv32/gen/rtl/tb_core.cpp', ext='', validate=[], kind='file')"
+      }
+     ],
+     "definitionParams": [
+      {
+       "name": "path",
+       "kind": "value",
+       "type": "File"
+      }
+     ],
+     "external": true,
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 125
+     },
+     "annotations": {
+      "viewer": {
+       "action": "open",
+       "source": "declared",
+       "inputs": []
+      },
+      "source": {
+       "port": "Out"
+      }
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/file_source.py",
+      "line": 5
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:front_options",
+    "kind": "internal",
+    "label": "front_options",
+    "type": "Text",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:front_options:Out",
+      "name": "Out",
+      "direction": "out",
+      "type": "str",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/text.py",
+       "line": 18
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "internal",
+     "parameters": [
+      {
+       "name": "text",
+       "kind": "value",
+       "type": "str",
+       "value": "'ftd=auto'"
+      }
+     ],
+     "definitionParams": [
+      {
+       "name": "text",
+       "kind": "value",
+       "type": "str"
+      }
+     ],
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 126
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/text.py",
+      "line": 5
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:handshake_options",
+    "kind": "internal",
+    "label": "handshake_options",
+    "type": "Text",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:handshake_options:Out",
+      "name": "Out",
+      "direction": "out",
+      "type": "str",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/text.py",
+       "line": 18
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "internal",
+     "parameters": [
+      {
+       "name": "text",
+       "kind": "value",
+       "type": "str",
+       "value": "'target=asap7 decision-slots=4 ready-slots-outside-loops=false constant-selects=true token-wires=true sourced-constants=true'"
+      }
+     ],
+     "definitionParams": [
+      {
+       "name": "text",
+       "kind": "value",
+       "type": "str"
+      }
+     ],
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 127
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/text.py",
+      "line": 5
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:goal_file",
+    "kind": "source",
+    "label": "goal_file",
+    "type": "FileSource",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:goal_file:Out",
+      "name": "Out",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/file_source.py",
+       "line": 11
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "source",
+     "definitionAnnotations": [
+      {
+       "name": "viewer",
+       "arguments": [
+        {
+         "name": "action",
+         "value": "\"open\""
+        },
+        {
+         "name": "inputs",
+         "value": "[]"
+        },
+        {
+         "name": "source",
+         "value": "\"declared\""
+        },
+        {
+         "name": "path",
+         "value": "\"/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_goal.json\""
+        },
+        {
+         "name": "kind",
+         "value": "\"file\""
+        }
+       ]
+      },
+      {
+       "name": "source",
+       "arguments": [
+        {
+         "name": "port",
+         "value": "Out"
+        }
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "name": "path",
+       "kind": "value",
+       "type": "File",
+       "value": "File(path='/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_goal.json', ext='', validate=[], kind='file')"
+      }
+     ],
+     "definitionParams": [
+      {
+       "name": "path",
+       "kind": "value",
+       "type": "File"
+      }
+     ],
+     "external": true,
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 128
+     },
+     "annotations": {
+      "viewer": {
+       "action": "open",
+       "source": "declared",
+       "inputs": []
+      },
+      "source": {
+       "port": "Out"
+      }
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/file_source.py",
+      "line": 5
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:start",
+    "kind": "source",
+    "label": "start",
+    "type": "FileSource",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:start:Out",
+      "name": "Out",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/file_source.py",
+       "line": 11
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "source",
+     "definitionAnnotations": [
+      {
+       "name": "viewer",
+       "arguments": [
+        {
+         "name": "action",
+         "value": "\"open\""
+        },
+        {
+         "name": "inputs",
+         "value": "[]"
+        },
+        {
+         "name": "source",
+         "value": "\"declared\""
+        },
+        {
+         "name": "path",
+         "value": "\"/home/endrix/git/dataflow/chips/workflow/programs/rt/start.S\""
+        },
+        {
+         "name": "kind",
+         "value": "\"file\""
+        }
+       ]
+      },
+      {
+       "name": "source",
+       "arguments": [
+        {
+         "name": "port",
+         "value": "Out"
+        }
+       ]
+      }
+     ],
+     "parameters": [
+      {
+       "name": "path",
+       "kind": "value",
+       "type": "File",
+       "value": "File(path='/home/endrix/git/dataflow/chips/workflow/programs/rt/start.S', ext='', validate=[], kind='file')"
+      }
+     ],
+     "definitionParams": [
+      {
+       "name": "path",
+       "kind": "value",
+       "type": "File"
+      }
+     ],
+     "external": true,
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 129
+     },
+     "annotations": {
+      "viewer": {
+       "action": "open",
+       "source": "declared",
+       "inputs": []
+      },
+      "source": {
+       "port": "Out"
+      }
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/sources/file_source.py",
+      "line": 5
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:coordinator",
+    "kind": "internal",
+    "label": "coordinator",
+    "type": "SpeculationCoordinator",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:coordinator:Goal",
+      "name": "Goal",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_coordinator.py",
+       "line": 29
+      }
+     },
+     {
+      "id": "port:node:scope:root:coordinator:Model",
+      "name": "Model",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_coordinator.py",
+       "line": 30
+      }
+     },
+     {
+      "id": "port:node:scope:root:coordinator:Testbench",
+      "name": "Testbench",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_coordinator.py",
+       "line": 31
+      }
+     },
+     {
+      "id": "port:node:scope:root:coordinator:FrontOptions",
+      "name": "FrontOptions",
+      "direction": "in",
+      "type": "str",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_coordinator.py",
+       "line": 32
+      }
+     },
+     {
+      "id": "port:node:scope:root:coordinator:HandshakeOptions",
+      "name": "HandshakeOptions",
+      "direction": "in",
+      "type": "str",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_coordinator.py",
+       "line": 33
+      }
+     },
+     {
+      "id": "port:node:scope:root:coordinator:Next",
+      "name": "Next",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_coordinator.py",
+       "line": 34
+      }
+     },
+     {
+      "id": "port:node:scope:root:coordinator:Config",
+      "name": "Config",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_coordinator.py",
+       "line": 35
+      }
+     },
+     {
+      "id": "port:node:scope:root:coordinator:Network",
+      "name": "Network",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_coordinator.py",
+       "line": 36
+      }
+     },
+     {
+      "id": "port:node:scope:root:coordinator:Tb",
+      "name": "Tb",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_coordinator.py",
+       "line": 37
+      }
+     },
+     {
+      "id": "port:node:scope:root:coordinator:Front",
+      "name": "Front",
+      "direction": "out",
+      "type": "str",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_coordinator.py",
+       "line": 38
+      }
+     },
+     {
+      "id": "port:node:scope:root:coordinator:Handshake",
+      "name": "Handshake",
+      "direction": "out",
+      "type": "str",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_coordinator.py",
+       "line": 39
+      }
+     },
+     {
+      "id": "port:node:scope:root:coordinator:Stop",
+      "name": "Stop",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_coordinator.py",
+       "line": 40
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "internal",
+     "parameters": [
+      {
+       "name": "model_root",
+       "kind": "value",
+       "type": "str",
+       "value": "'/mnt/data/claude-scratch/spec-model/picorv32'"
+      }
+     ],
+     "definitionParams": [
+      {
+       "name": "model_root",
+       "kind": "value",
+       "type": "str"
+      }
+     ],
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 130
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_coordinator.py",
+      "line": 11
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:patched",
+    "kind": "internal",
+    "label": "patched",
+    "type": "ModelPatch",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:patched:Config",
+      "name": "Config",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/model_patch.py",
+       "line": 116
+      }
+     },
+     {
+      "id": "port:node:scope:root:patched:Network",
+      "name": "Network",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/model_patch.py",
+       "line": 117
+      }
+     },
+     {
+      "id": "port:node:scope:root:patched:Patched",
+      "name": "Patched",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/model_patch.py",
+       "line": 118
+      }
+     },
+     {
+      "id": "port:node:scope:root:patched:Note",
+      "name": "Note",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/model_patch.py",
+       "line": 119
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "internal",
+     "parameters": [
+      {
+       "name": "root",
+       "kind": "value",
+       "type": "str",
+       "value": "'/mnt/data/claude-scratch/spec-model/picorv32'"
+      },
+      {
+       "name": "frontend",
+       "kind": "value",
+       "type": "str",
+       "value": "''"
+      }
+     ],
+     "definitionParams": [
+      {
+       "name": "root",
+       "kind": "value",
+       "type": "str"
+      },
+      {
+       "name": "frontend",
+       "kind": "value",
+       "type": "str"
+      }
+     ],
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 131
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/model_patch.py",
+      "line": 102
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:ats",
+    "kind": "workflow",
+    "label": "ats",
+    "type": "calpy_to_ats",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:ats:Network",
+      "name": "Network",
+      "direction": "in",
+      "type": "File(ext='.py')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:ats:Out",
+      "name": "Out",
+      "direction": "out",
+      "type": "File(ext='.mlir')",
+      "role": "data"
+     }
+    ],
+    "meta": {
+     "taskKind": "workflow",
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 132
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/workflows/calpy_to_ats.py",
+      "line": 23
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:gate",
+    "kind": "internal",
+    "label": "gate",
+    "type": "SpeculationGate",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:gate:Ats",
+      "name": "Ats",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Brief",
+      "name": "Brief",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Check1",
+      "name": "Check1",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Check2",
+      "name": "Check2",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Check3",
+      "name": "Check3",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Check4",
+      "name": "Check4",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Config",
+      "name": "Config",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Final",
+      "name": "Final",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:FrontOptions",
+      "name": "FrontOptions",
+      "direction": "in",
+      "type": "str",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Goal",
+      "name": "Goal",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:HandshakeOptions",
+      "name": "HandshakeOptions",
+      "direction": "in",
+      "type": "str",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:History",
+      "name": "History",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Live1",
+      "name": "Live1",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Live2",
+      "name": "Live2",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Live3",
+      "name": "Live3",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Live4",
+      "name": "Live4",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:LiveAts",
+      "name": "LiveAts",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:LiveFrontOptions",
+      "name": "LiveFrontOptions",
+      "direction": "out",
+      "type": "str",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:LiveHandshakeOptions",
+      "name": "LiveHandshakeOptions",
+      "direction": "out",
+      "type": "str",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:LiveTb",
+      "name": "LiveTb",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Measure1",
+      "name": "Measure1",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Measure2",
+      "name": "Measure2",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Measure3",
+      "name": "Measure3",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Measure4",
+      "name": "Measure4",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Note",
+      "name": "Note",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Result",
+      "name": "Result",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Stop",
+      "name": "Stop",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": null
+     },
+     {
+      "id": "port:node:scope:root:gate:Tb",
+      "name": "Tb",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": null
+     }
+    ],
+    "meta": {
+     "taskKind": "internal",
+     "parameters": [],
+     "definitionParams": [],
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 133
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_gate.py",
+      "line": 43
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:build",
+    "kind": "workflow",
+    "label": "build",
+    "type": "circuit_build",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:build:Ats",
+      "name": "Ats",
+      "direction": "in",
+      "type": "File(ext='.mlir')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:build:Tb",
+      "name": "Tb",
+      "direction": "in",
+      "type": "File(ext='.cpp')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:build:FrontOptions",
+      "name": "FrontOptions",
+      "direction": "in",
+      "type": "str",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:build:HandshakeOptions",
+      "name": "HandshakeOptions",
+      "direction": "in",
+      "type": "str",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:build:Hw",
+      "name": "Hw",
+      "direction": "out",
+      "type": "File(ext='.mlir')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:build:Buffered",
+      "name": "Buffered",
+      "direction": "out",
+      "type": "File(ext='.mlir')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:build:Synthesis",
+      "name": "Synthesis",
+      "direction": "out",
+      "type": "File(ext='.json')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:build:Build",
+      "name": "Build",
+      "direction": "out",
+      "type": "Resource(ext='', kind='folder')",
+      "role": "data"
+     },
+     {
+      "id": "port:node:scope:root:build:Rtl",
+      "name": "Rtl",
+      "direction": "out",
+      "type": "Resource(ext='', kind='folder')",
+      "role": "data"
+     }
+    ],
+    "meta": {
+     "taskKind": "workflow",
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 134
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/workflows/circuit_build.py",
+      "line": 24
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:analyst",
+    "kind": "agent",
+    "label": "analyst",
+    "type": "SpeculationAnalyst",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:analyst:In",
+      "name": "In",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_analyst.py",
+       "line": 48
+      }
+     },
+     {
+      "id": "port:node:scope:root:analyst:Report",
+      "name": "Report",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_analyst.py",
+       "line": 49
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "agent",
+     "parameters": [],
+     "definitionParams": [],
+     "agent": {
+      "prompt": "You are the analyst of a hardware design loop on a RISC-V core (a CalPy\nactor model lowered to Dynamatic handshake circuits and synthesized on\nASAP7). The loop changes the model's fetch chain: speculation on what to\nfetch, so that the fetch's round trip is hidden. The input is one round, a\nJSON file: the configuration and the model's note (the patch, whether it\napplied), every program's software verdict (commit stream against the\nreference, liveness, coverage), the gate's verdict, the run's numbers (the\ncycles per program and in all, cells, flip-flops, critical path) and, per\nprogram, the busiest actions and Turnus's analyses on the circuit's\nmeasured weights: the critical path with every action's share, the impact\nof shortening each action by half or entirely, which critical actions\ncould be pipelined and what that would gain.\n\nThe fetch round trip is `mif.start_read`, `mif.finish_ifetch` (and\n`finish_prefetch`, `finish_second`, `finish_straddle`), `mif.hold_take`;\ntheir share of the critical path is the most any speculation can hide, the\nbudget. Say, per program and in all, with the numbers: the budget in\npercent and in cycles, how much of it the latest round hid against the\nbaseline, whether fetch is still on the path or the path has moved\nelsewhere (then speculation is done and pipelining decode is the next\nlever), which programs gain and which lose, and what the data does not\nshow. Be concrete and skeptical.\n\nAnswer with a JSON object on the Report port: {\"report\": <at most 300\nwords>, \"budget\": {\"<program>\": {\"pct\": <fetch's share of the path>,\n\"cycles\": <that share in cycles>}, ...}, \"hidden_so_far\": <percent of the\nbudget the latest round hid, 0 for the baseline>, \"path_moved\": <true when\nfetch is no longer the largest share>, \"targets\": [{\"actor\": ...,\n\"action\": ..., \"gain\": <percent>, \"how\": <one sentence>}, ...]}.\n",
+      "model": "opus"
+     },
+     "definitionAnnotations": [
+      {
+       "name": "agent",
+       "arguments": [
+        {
+         "name": "prompt",
+         "value": "\"You are the analyst of a hardware design loop on a RISC-V core (a CalPy\\nactor model lowered to Dynamatic handshake circuits and synthesized on\\nASAP7). The loop changes the model's fetch chain: speculation on what to\\nfetch, so that the fetch's round trip is hidden. The input is one round, a\\nJSON file: the configuration and the model's note (the patch, whether it\\napplied), every program's software verdict (commit stream against the\\nreference, liveness, coverage), the gate's verdict, the run's numbers (the\\ncycles per program and in all, cells, flip-flops, critical path) and, per\\nprogram, the busiest actions and Turnus's analyses on the circuit's\\nmeasured weights: the critical path with every action's share, the impact\\nof shortening each action by half or entirely, which critical actions\\ncould be pipelined and what that would gain.\\n\\nThe fetch round trip is `mif.start_read`, `mif.finish_ifetch` (and\\n`finish_prefetch`, `finish_second`, `finish_straddle`), `mif.hold_take`;\\ntheir share of the critical path is the most any speculation can hide, the\\nbudget. Say, per program and in all, with the numbers: the budget in\\npercent and in cycles, how much of it the latest round hid against the\\nbaseline, whether fetch is still on the path or the path has moved\\nelsewhere (then speculation is done and pipelining decode is the next\\nlever), which programs gain and which lose, and what the data does not\\nshow. Be concrete and skeptical.\\n\\nAnswer with a JSON object on the Report port: {\\\"report\\\": <at most 300\\nwords>, \\\"budget\\\": {\\\"<program>\\\": {\\\"pct\\\": <fetch's share of the path>,\\n\\\"cycles\\\": <that share in cycles>}, ...}, \\\"hidden_so_far\\\": <percent of the\\nbudget the latest round hid, 0 for the baseline>, \\\"path_moved\\\": <true when\\nfetch is no longer the largest share>, \\\"targets\\\": [{\\\"actor\\\": ...,\\n\\\"action\\\": ..., \\\"gain\\\": <percent>, \\\"how\\\": <one sentence>}, ...]}.\\n\""
+        },
+        {
+         "name": "model",
+         "value": "\"opus\""
+        },
+        {
+         "name": "timeoutMs",
+         "value": "1800000"
+        },
+        {
+         "name": "contextBudget",
+         "value": "50"
+        },
+        {
+         "name": "useClaudeAgent",
+         "value": "false"
+        },
+        {
+         "name": "useSkill",
+         "value": "true"
+        },
+        {
+         "name": "usePrompt",
+         "value": "true"
+        },
+        {
+         "name": "stateful",
+         "value": "false"
+        },
+        {
+         "name": "truncationStrategy",
+         "value": "\"sliding\""
+        },
+        {
+         "name": "transport",
+         "value": "\"claude-cli\""
+        },
+        {
+         "name": "reasoningEffort",
+         "value": "\"None\""
+        }
+       ]
+      }
+     ],
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 135
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_analyst.py",
+      "line": 46
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:architect",
+    "kind": "agent",
+    "label": "architect",
+    "type": "SpeculationArchitect",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:architect:Brief",
+      "name": "Brief",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_architect.py",
+       "line": 80
+      }
+     },
+     {
+      "id": "port:node:scope:root:architect:Report",
+      "name": "Report",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_architect.py",
+       "line": 81
+      }
+     },
+     {
+      "id": "port:node:scope:root:architect:Next",
+      "name": "Next",
+      "direction": "out",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_architect.py",
+       "line": 82
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "agent",
+     "parameters": [],
+     "definitionParams": [],
+     "agent": {
+      "prompt": "You are the architect of a hardware design loop, driving a RISC-V core (a\nCalPy actor model lowered to Dynamatic handshake circuits and synthesized\non ASAP7) toward fewer cycles on a set of compiled programs by SPECULATING\nON FETCH. The input is two JSON files: the gate's brief (the goal, the\ncell bound, the program set, the invariants, the levels of speculation,\nthe model's root directory, round one's cycles per program as the\nbaseline, the history of every round with its patch, verdict and numbers,\nand the latest round's record with every program's software verdict,\ncoverage and Turnus analyses) and the analyst's report with the budget.\n\nWhat you change is the model, as a unified diff against the root directory\nthe brief names as `model_root`, the whole design tree whose `gen/` is the\nmodel package: paths as `git diff` writes them, from that root, so\n`--- a/gen/core/cpu.py` and `+++ b/gen/core/cpu.py`. You have tools: read\nthe model's files under the root before proposing, in particular\n`gen/core/cpu.py` (the `launch` action and its `expect`, the `discard`\naction, the `to_*` actions that convert the prefetch, `jal`, `to_retirq`),\n`gen/membus/memif.py` (the memory interface: `start_read`, `finish_ifetch`,\n`finish_prefetch`, `hold_take`) and `gen/core/decode.py`, and the reference\n`gen/harness/refmodel.py` for what the architecture must retire. Keep a patch small and exact: one\nthat does not apply is a lost round.\n\nThe model already speculates on fetch, and only on fetch: `launch`\nprefetches the fall-through (`expect`), a taken branch issues its target\nfrom the execute path, and the wrong word arrives and is dropped by\n`discard`. Speculative FETCH without speculative STATE is the invariant\nyou keep: nothing architectural (a register, memory, the counters, the\nIRQ state) is ever written on a guessed path, so the commit stream stays\nidentical to the reference by construction. The gate holds every program's\ncommit stream identical to the reference's, every trace live (a wrong-path\ntoken the design never consumes fills a queue and deadlocks, and Turnus\njudges that on the software trace before any circuit), the cells within\nthe bound, and no program's cycles above round one's; a rejected round\ncosts one round, not the run, and the record says why.\n\nThe levels, in order of risk: (1) issue the fall-through fetch earlier, at\ndecode, when the PC is known; (2) a predictor for conditional branches, a\nstatic rule (backward taken) or a small table keyed by PC, so a branch\nprefetches its predicted target, with a mispredict costing what a taken\nbranch costs today; (3) two fetches in flight, which needs the responses\ntold apart (the memory answers in order and `expect` holds one address).\nTake the smallest level whose budget the analyst's numbers support, and\nmove up only when the gate passed the round. Never repeat a patch in the\nhistory. When you cannot predict a change, the gate is there so that you\nmay try. Stop when the fetch round trip is off the critical path on every\nprogram, when the last two rounds gained nothing, or at the round limit.\n\nAnswer with a JSON object on the Next port: {\"model_patch\": <the unified\ndiff as one string, or null>, \"design_note\": <what the change speculates on\nand how a wrong guess is discarded, in five sentences>, \"reason\": <one\nsentence with the expected gain per program>, \"stop\": <true when you are\ndone, with the best round named in the reason>}.\n\nMODEL (a unified diff against `model_root` in the brief, paths as `git\ndiff` writes them, relative to that root: `--- a/core/decode.py` when the\nroot is the model package, `--- a/gen/core/decode.py` when it is the whole\ndesign tree whose package is `gen/`; a patch is tried at the root and then\nin `gen/`):\n  The model is a CalPy actor network: `network/picorv32.py` is the Core\n  (the actors and their connections), `network/top.py` the closed network\n  the software trace runs, `core/cpu.py` and `core/decode.py` the CPU and\n  decoder actors, `membus/memif.py` the memory interface, `regfile/regs.py`\n  the register file. An actor is a class of guarded actions on typed ports\n  and states; a firing consumes and produces tokens. Read the files before\n  proposing; a patch that does not apply, or that does not run the program\n  to the end (Turnus's deadlock analysis on the software trace judges that\n  before any circuit), or that changes the commit stream, is a lost round.\n  Off limits: `harness/`, `observe/`, `rtl/` (the environment and the\n  testbench), the actors' port interfaces to them, and the program.\n  What changes cycles on this core is the model's structure, not the\n  compiler: the fetch and decode chain and the register-file protocol are\n  where the critical path is.\n\nWHAT YOUR PATCH IS APPLIED TO. Every round's diff is applied to the model\nas it stood at round one, never to the model of the round before: the\nhistory's patches are not in the tree, whether they passed or were\nrejected. So never write a patch that reverts an earlier round or builds\non one. To keep a part of an earlier round's change, write that part again\nin full, as a diff against the model of round one; to drop a rejected\nchange, propose the next change and say nothing about the old one, which\nis already gone.\n\nA round whose record says `\"applied\": false` did not measure your change.\nIt ran the model untouched, so its numbers are round one's and they say\nnothing at all about what you proposed: it is a lost round, not a result,\nand two of them are not two rounds that gained nothing. The record's `why`\nis what `patch` said. Read it, read the file again if a context line was\nwrong, and write the patch so that it applies.\n\nWHEN THE REFUSAL LOOKS LIKE OURS. A round can be refused for a reason your\nchange cannot explain: the hardware gate reports a commit stream the\nsoftware gate accepted, and nothing in your patch alters what the model\ncomputes. Removing dead state, renaming a local, reordering two\nindependent statements: if a change of that kind turns a correct circuit\ninto a wrong one, the cause is in the lowering, not in the model.\n\nSay so. Add `\"suspect_flow\": \"<one sentence>\"` to your answer, naming the\nchange you made, why it cannot alter the model's behaviour, and what the\ncircuit did instead. Leave the field out when your patch could have caused\nthe divergence, which is the usual case: a wrong guess here costs the\nreader more than a silent round does. Saying it excuses nothing and ends\nnothing. The round is still spent, the verdict still stands, and you still\nowe the next proposal on the same port.\n\nTHE HUMAN PORT. A user is at this run. The tool that reaches them is\n`mcp__wfpy__ask_user`, wfpy's `ask_user` over MCP. It is deferred: load it\nfirst with `ToolSearch` and the query `select:mcp__wfpy__ask_user`, then\ncall it with `question`, `context` and, when the answer is one of a few,\n`choices`; without choices the user types the answer. The answer is what\nthe user chose or typed, or null when they decline.\n\nEvery round, at the decision that shapes it (which lever to pull, which\nlevel to take, whether a change you cannot predict is worth a round,\nwhether to stop), put one question with two to four choices and take the\nanswer as the decision. Ask once a round, before you write your answer on\nthe Next port. A declined answer means decide yourself, and say so in the\nreason.\n",
+      "model": "opus"
+     },
+     "definitionAnnotations": [
+      {
+       "name": "agent",
+       "arguments": [
+        {
+         "name": "prompt",
+         "value": "\"You are the architect of a hardware design loop, driving a RISC-V core (a\\nCalPy actor model lowered to Dynamatic handshake circuits and synthesized\\non ASAP7) toward fewer cycles on a set of compiled programs by SPECULATING\\nON FETCH. The input is two JSON files: the gate's brief (the goal, the\\ncell bound, the program set, the invariants, the levels of speculation,\\nthe model's root directory, round one's cycles per program as the\\nbaseline, the history of every round with its patch, verdict and numbers,\\nand the latest round's record with every program's software verdict,\\ncoverage and Turnus analyses) and the analyst's report with the budget.\\n\\nWhat you change is the model, as a unified diff against the root directory\\nthe brief names as `model_root`, the whole design tree whose `gen/` is the\\nmodel package: paths as `git diff` writes them, from that root, so\\n`--- a/gen/core/cpu.py` and `+++ b/gen/core/cpu.py`. You have tools: read\\nthe model's files under the root before proposing, in particular\\n`gen/core/cpu.py` (the `launch` action and its `expect`, the `discard`\\naction, the `to_*` actions that convert the prefetch, `jal`, `to_retirq`),\\n`gen/membus/memif.py` (the memory interface: `start_read`, `finish_ifetch`,\\n`finish_prefetch`, `hold_take`) and `gen/core/decode.py`, and the reference\\n`gen/harness/refmodel.py` for what the architecture must retire. Keep a patch small and exact: one\\nthat does not apply is a lost round.\\n\\nThe model already speculates on fetch, and only on fetch: `launch`\\nprefetches the fall-through (`expect`), a taken branch issues its target\\nfrom the execute path, and the wrong word arrives and is dropped by\\n`discard`. Speculative FETCH without speculative STATE is the invariant\\nyou keep: nothing architectural (a register, memory, the counters, the\\nIRQ state) is ever written on a guessed path, so the commit stream stays\\nidentical to the reference by construction. The gate holds every program's\\ncommit stream identical to the reference's, every trace live (a wrong-path\\ntoken the design never consumes fills a queue and deadlocks, and Turnus\\njudges that on the software trace before any circuit), the cells within\\nthe bound, and no program's cycles above round one's; a rejected round\\ncosts one round, not the run, and the record says why.\\n\\nThe levels, in order of risk: (1) issue the fall-through fetch earlier, at\\ndecode, when the PC is known; (2) a predictor for conditional branches, a\\nstatic rule (backward taken) or a small table keyed by PC, so a branch\\nprefetches its predicted target, with a mispredict costing what a taken\\nbranch costs today; (3) two fetches in flight, which needs the responses\\ntold apart (the memory answers in order and `expect` holds one address).\\nTake the smallest level whose budget the analyst's numbers support, and\\nmove up only when the gate passed the round. Never repeat a patch in the\\nhistory. When you cannot predict a change, the gate is there so that you\\nmay try. Stop when the fetch round trip is off the critical path on every\\nprogram, when the last two rounds gained nothing, or at the round limit.\\n\\nAnswer with a JSON object on the Next port: {\\\"model_patch\\\": <the unified\\ndiff as one string, or null>, \\\"design_note\\\": <what the change speculates on\\nand how a wrong guess is discarded, in five sentences>, \\\"reason\\\": <one\\nsentence with the expected gain per program>, \\\"stop\\\": <true when you are\\ndone, with the best round named in the reason>}.\\n\\nMODEL (a unified diff against `model_root` in the brief, paths as `git\\ndiff` writes them, relative to that root: `--- a/core/decode.py` when the\\nroot is the model package, `--- a/gen/core/decode.py` when it is the whole\\ndesign tree whose package is `gen/`; a patch is tried at the root and then\\nin `gen/`):\\n  The model is a CalPy actor network: `network/picorv32.py` is the Core\\n  (the actors and their connections), `network/top.py` the closed network\\n  the software trace runs, `core/cpu.py` and `core/decode.py` the CPU and\\n  decoder actors, `membus/memif.py` the memory interface, `regfile/regs.py`\\n  the register file. An actor is a class of guarded actions on typed ports\\n  and states; a firing consumes and produces tokens. Read the files before\\n  proposing; a patch that does not apply, or that does not run the program\\n  to the end (Turnus's deadlock analysis on the software trace judges that\\n  before any circuit), or that changes the commit stream, is a lost round.\\n  Off limits: `harness/`, `observe/`, `rtl/` (the environment and the\\n  testbench), the actors' port interfaces to them, and the program.\\n  What changes cycles on this core is the model's structure, not the\\n  compiler: the fetch and decode chain and the register-file protocol are\\n  where the critical path is.\\n\\nWHAT YOUR PATCH IS APPLIED TO. Every round's diff is applied to the model\\nas it stood at round one, never to the model of the round before: the\\nhistory's patches are not in the tree, whether they passed or were\\nrejected. So never write a patch that reverts an earlier round or builds\\non one. To keep a part of an earlier round's change, write that part again\\nin full, as a diff against the model of round one; to drop a rejected\\nchange, propose the next change and say nothing about the old one, which\\nis already gone.\\n\\nA round whose record says `\\\"applied\\\": false` did not measure your change.\\nIt ran the model untouched, so its numbers are round one's and they say\\nnothing at all about what you proposed: it is a lost round, not a result,\\nand two of them are not two rounds that gained nothing. The record's `why`\\nis what `patch` said. Read it, read the file again if a context line was\\nwrong, and write the patch so that it applies.\\n\\nWHEN THE REFUSAL LOOKS LIKE OURS. A round can be refused for a reason your\\nchange cannot explain: the hardware gate reports a commit stream the\\nsoftware gate accepted, and nothing in your patch alters what the model\\ncomputes. Removing dead state, renaming a local, reordering two\\nindependent statements: if a change of that kind turns a correct circuit\\ninto a wrong one, the cause is in the lowering, not in the model.\\n\\nSay so. Add `\\\"suspect_flow\\\": \\\"<one sentence>\\\"` to your answer, naming the\\nchange you made, why it cannot alter the model's behaviour, and what the\\ncircuit did instead. Leave the field out when your patch could have caused\\nthe divergence, which is the usual case: a wrong guess here costs the\\nreader more than a silent round does. Saying it excuses nothing and ends\\nnothing. The round is still spent, the verdict still stands, and you still\\nowe the next proposal on the same port.\\n\\nTHE HUMAN PORT. A user is at this run. The tool that reaches them is\\n`mcp__wfpy__ask_user`, wfpy's `ask_user` over MCP. It is deferred: load it\\nfirst with `ToolSearch` and the query `select:mcp__wfpy__ask_user`, then\\ncall it with `question`, `context` and, when the answer is one of a few,\\n`choices`; without choices the user types the answer. The answer is what\\nthe user chose or typed, or null when they decline.\\n\\nEvery round, at the decision that shapes it (which lever to pull, which\\nlevel to take, whether a change you cannot predict is worth a round,\\nwhether to stop), put one question with two to four choices and take the\\nanswer as the decision. Ask once a round, before you write your answer on\\nthe Next port. A declined answer means decide yourself, and say so in the\\nreason.\\n\""
+        },
+        {
+         "name": "model",
+         "value": "\"opus\""
+        },
+        {
+         "name": "timeoutMs",
+         "value": "1800000"
+        },
+        {
+         "name": "contextBudget",
+         "value": "50"
+        },
+        {
+         "name": "useClaudeAgent",
+         "value": "false"
+        },
+        {
+         "name": "useSkill",
+         "value": "true"
+        },
+        {
+         "name": "usePrompt",
+         "value": "true"
+        },
+        {
+         "name": "stateful",
+         "value": "true"
+        },
+        {
+         "name": "askUser",
+         "value": "true"
+        },
+        {
+         "name": "truncationStrategy",
+         "value": "\"sliding\""
+        },
+        {
+         "name": "transport",
+         "value": "\"acp\""
+        },
+        {
+         "name": "cliToolsMode",
+         "value": "\"native\""
+        },
+        {
+         "name": "reasoningEffort",
+         "value": "\"None\""
+        }
+       ]
+      }
+     ],
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 136
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_architect.py",
+      "line": 78
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:history",
+    "kind": "viewer",
+    "label": "history",
+    "type": "JsonViewer",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:history:In",
+      "name": "In",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/viewers/text_viewer.py",
+       "line": 8
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "viewer",
+     "definitionAnnotations": [
+      {
+       "name": "viewer",
+       "arguments": [
+        {
+         "name": "action",
+         "value": "\"open\""
+        },
+        {
+         "name": "inputs",
+         "value": "[\"In\"]"
+        }
+       ]
+      }
+     ],
+     "parameters": [],
+     "definitionParams": [],
+     "viewer": true,
+     "annotations": {
+      "viewer": {
+       "action": "open",
+       "inputs": [
+        "In"
+       ]
+      }
+     },
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 137
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/viewers/text_viewer.py",
+      "line": 5
+     }
+    }
+   },
+   {
+    "id": "node:scope:root:conformed",
+    "kind": "viewer",
+    "label": "conformed",
+    "type": "JsonViewer",
+    "scope": "scope:root",
+    "ports": [
+     {
+      "id": "port:node:scope:root:conformed:In",
+      "name": "In",
+      "direction": "in",
+      "type": "File",
+      "role": "data",
+      "source": {
+       "file": "/home/endrix/git/dataflow/chips/workflow/compile/viewers/text_viewer.py",
+       "line": 8
+      }
+     }
+    ],
+    "meta": {
+     "taskKind": "viewer",
+     "definitionAnnotations": [
+      {
+       "name": "viewer",
+       "arguments": [
+        {
+         "name": "action",
+         "value": "\"open\""
+        },
+        {
+         "name": "inputs",
+         "value": "[\"In\"]"
+        }
+       ]
+      }
+     ],
+     "parameters": [],
+     "definitionParams": [],
+     "viewer": true,
+     "annotations": {
+      "viewer": {
+       "action": "open",
+       "inputs": [
+        "In"
+       ]
+      }
+     },
+     "source": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+      "line": 140
+     },
+     "referencedSource": {
+      "file": "/home/endrix/git/dataflow/chips/workflow/compile/viewers/text_viewer.py",
+      "line": 5
+     }
+    }
+   }
+  ],
+  "edges": [
+   {
+    "id": "edge:port:node:scope:root:model:Out->port:node:scope:root:coordinator:Model",
+    "from": "port:node:scope:root:model:Out",
+    "to": "port:node:scope:root:coordinator:Model",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:model",
+    "toNode": "node:scope:root:coordinator",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 157
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:tb:Out->port:node:scope:root:coordinator:Testbench",
+    "from": "port:node:scope:root:tb:Out",
+    "to": "port:node:scope:root:coordinator:Testbench",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:tb",
+    "toNode": "node:scope:root:coordinator",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 158
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:front_options:Out->port:node:scope:root:coordinator:FrontOptions",
+    "from": "port:node:scope:root:front_options:Out",
+    "to": "port:node:scope:root:coordinator:FrontOptions",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:front_options",
+    "toNode": "node:scope:root:coordinator",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 159
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:handshake_options:Out->port:node:scope:root:coordinator:HandshakeOptions",
+    "from": "port:node:scope:root:handshake_options:Out",
+    "to": "port:node:scope:root:coordinator:HandshakeOptions",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:handshake_options",
+    "toNode": "node:scope:root:coordinator",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 160
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:goal_file:Out->port:node:scope:root:coordinator:Goal",
+    "from": "port:node:scope:root:goal_file:Out",
+    "to": "port:node:scope:root:coordinator:Goal",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:goal_file",
+    "toNode": "node:scope:root:coordinator",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 161
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:goal_file:Out->port:node:scope:root:gate:Goal",
+    "from": "port:node:scope:root:goal_file:Out",
+    "to": "port:node:scope:root:gate:Goal",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:goal_file",
+    "toNode": "node:scope:root:gate",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 162
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:coordinator:Network->port:node:scope:root:patched:Network",
+    "from": "port:node:scope:root:coordinator:Network",
+    "to": "port:node:scope:root:patched:Network",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:coordinator",
+    "toNode": "node:scope:root:patched",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 163
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:coordinator:Config->port:node:scope:root:patched:Config",
+    "from": "port:node:scope:root:coordinator:Config",
+    "to": "port:node:scope:root:patched:Config",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:coordinator",
+    "toNode": "node:scope:root:patched",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 164
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:coordinator:Config->port:node:scope:root:gate:Config",
+    "from": "port:node:scope:root:coordinator:Config",
+    "to": "port:node:scope:root:gate:Config",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:coordinator",
+    "toNode": "node:scope:root:gate",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 165
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:coordinator:Tb->port:node:scope:root:gate:Tb",
+    "from": "port:node:scope:root:coordinator:Tb",
+    "to": "port:node:scope:root:gate:Tb",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:coordinator",
+    "toNode": "node:scope:root:gate",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 166
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:coordinator:Front->port:node:scope:root:gate:FrontOptions",
+    "from": "port:node:scope:root:coordinator:Front",
+    "to": "port:node:scope:root:gate:FrontOptions",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:coordinator",
+    "toNode": "node:scope:root:gate",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 167
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:coordinator:Handshake->port:node:scope:root:gate:HandshakeOptions",
+    "from": "port:node:scope:root:coordinator:Handshake",
+    "to": "port:node:scope:root:gate:HandshakeOptions",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:coordinator",
+    "toNode": "node:scope:root:gate",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 168
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:coordinator:Stop->port:node:scope:root:gate:Stop",
+    "from": "port:node:scope:root:coordinator:Stop",
+    "to": "port:node:scope:root:gate:Stop",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:coordinator",
+    "toNode": "node:scope:root:gate",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 169
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:patched:Note->port:node:scope:root:gate:Note",
+    "from": "port:node:scope:root:patched:Note",
+    "to": "port:node:scope:root:gate:Note",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:patched",
+    "toNode": "node:scope:root:gate",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 170
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:patched:Patched->port:node:scope:root:ats:Network",
+    "from": "port:node:scope:root:patched:Patched",
+    "to": "port:node:scope:root:ats:Network",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:patched",
+    "toNode": "node:scope:root:ats",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 171
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:ats:Out->port:node:scope:root:gate:Ats",
+    "from": "port:node:scope:root:ats:Out",
+    "to": "port:node:scope:root:gate:Ats",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:ats",
+    "toNode": "node:scope:root:gate",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 172
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:start:Out->port:node:scope:root:image_sieve:Start",
+    "from": "port:node:scope:root:start:Out",
+    "to": "port:node:scope:root:image_sieve:Start",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:start",
+    "toNode": "node:scope:root:image_sieve",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 174
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:main_sieve:Out->port:node:scope:root:image_sieve:Main",
+    "from": "port:node:scope:root:main_sieve:Out",
+    "to": "port:node:scope:root:image_sieve:Main",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:main_sieve",
+    "toNode": "node:scope:root:image_sieve",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 175
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:image_sieve:Image->port:node:scope:root:program_sieve:Image",
+    "from": "port:node:scope:root:image_sieve:Image",
+    "to": "port:node:scope:root:program_sieve:Image",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:image_sieve",
+    "toNode": "node:scope:root:program_sieve",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 176
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:patched:Patched->port:node:scope:root:program_sieve:Model",
+    "from": "port:node:scope:root:patched:Patched",
+    "to": "port:node:scope:root:program_sieve:Model",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:patched",
+    "toNode": "node:scope:root:program_sieve",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 177
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:program_sieve:Network->port:node:scope:root:check_sieve:Network",
+    "from": "port:node:scope:root:program_sieve:Network",
+    "to": "port:node:scope:root:check_sieve:Network",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:program_sieve",
+    "toNode": "node:scope:root:check_sieve",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 178
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:program_sieve:Program->port:node:scope:root:check_sieve:Image",
+    "from": "port:node:scope:root:program_sieve:Program",
+    "to": "port:node:scope:root:check_sieve:Image",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:program_sieve",
+    "toNode": "node:scope:root:check_sieve",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 179
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:program_sieve:Name->port:node:scope:root:check_sieve:Name",
+    "from": "port:node:scope:root:program_sieve:Name",
+    "to": "port:node:scope:root:check_sieve:Name",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:program_sieve",
+    "toNode": "node:scope:root:check_sieve",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 180
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:check_sieve:Check->port:node:scope:root:gate:Check1",
+    "from": "port:node:scope:root:check_sieve:Check",
+    "to": "port:node:scope:root:gate:Check1",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:check_sieve",
+    "toNode": "node:scope:root:gate",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 181
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:gate:Live1->port:node:scope:root:live_sieve:Live",
+    "from": "port:node:scope:root:gate:Live1",
+    "to": "port:node:scope:root:live_sieve:Live",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:gate",
+    "toNode": "node:scope:root:live_sieve",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 182
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_sieve:Hex->port:node:scope:root:measure_sieve:Hex",
+    "from": "port:node:scope:root:live_sieve:Hex",
+    "to": "port:node:scope:root:measure_sieve:Hex",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_sieve",
+    "toNode": "node:scope:root:measure_sieve",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_sieve:Trace->port:node:scope:root:measure_sieve:Trace",
+    "from": "port:node:scope:root:live_sieve:Trace",
+    "to": "port:node:scope:root:measure_sieve:Trace",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_sieve",
+    "toNode": "node:scope:root:measure_sieve",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_sieve:TurnusNetwork->port:node:scope:root:measure_sieve:TurnusNetwork",
+    "from": "port:node:scope:root:live_sieve:TurnusNetwork",
+    "to": "port:node:scope:root:measure_sieve:TurnusNetwork",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_sieve",
+    "toNode": "node:scope:root:measure_sieve",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_sieve:SwWeights->port:node:scope:root:measure_sieve:SwWeights",
+    "from": "port:node:scope:root:live_sieve:SwWeights",
+    "to": "port:node:scope:root:measure_sieve:SwWeights",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_sieve",
+    "toNode": "node:scope:root:measure_sieve",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_sieve:Reference->port:node:scope:root:measure_sieve:Reference",
+    "from": "port:node:scope:root:live_sieve:Reference",
+    "to": "port:node:scope:root:measure_sieve:Reference",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_sieve",
+    "toNode": "node:scope:root:measure_sieve",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_sieve:Name->port:node:scope:root:measure_sieve:Name",
+    "from": "port:node:scope:root:live_sieve:Name",
+    "to": "port:node:scope:root:measure_sieve:Name",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_sieve",
+    "toNode": "node:scope:root:measure_sieve",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:build:Build->port:node:scope:root:measure_sieve:Build",
+    "from": "port:node:scope:root:build:Build",
+    "to": "port:node:scope:root:measure_sieve:Build",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:build",
+    "toNode": "node:scope:root:measure_sieve",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 185
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:build:Hw->port:node:scope:root:measure_sieve:Hw",
+    "from": "port:node:scope:root:build:Hw",
+    "to": "port:node:scope:root:measure_sieve:Hw",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:build",
+    "toNode": "node:scope:root:measure_sieve",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 187
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:build:Synthesis->port:node:scope:root:measure_sieve:Synthesis",
+    "from": "port:node:scope:root:build:Synthesis",
+    "to": "port:node:scope:root:measure_sieve:Synthesis",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:build",
+    "toNode": "node:scope:root:measure_sieve",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 191
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:measure_sieve:Measure->port:node:scope:root:gate:Measure1",
+    "from": "port:node:scope:root:measure_sieve:Measure",
+    "to": "port:node:scope:root:gate:Measure1",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:measure_sieve",
+    "toNode": "node:scope:root:gate",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 192
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:start:Out->port:node:scope:root:image_hello:Start",
+    "from": "port:node:scope:root:start:Out",
+    "to": "port:node:scope:root:image_hello:Start",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:start",
+    "toNode": "node:scope:root:image_hello",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 174
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:main_hello:Out->port:node:scope:root:image_hello:Main",
+    "from": "port:node:scope:root:main_hello:Out",
+    "to": "port:node:scope:root:image_hello:Main",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:main_hello",
+    "toNode": "node:scope:root:image_hello",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 175
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:image_hello:Image->port:node:scope:root:program_hello:Image",
+    "from": "port:node:scope:root:image_hello:Image",
+    "to": "port:node:scope:root:program_hello:Image",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:image_hello",
+    "toNode": "node:scope:root:program_hello",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 176
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:patched:Patched->port:node:scope:root:program_hello:Model",
+    "from": "port:node:scope:root:patched:Patched",
+    "to": "port:node:scope:root:program_hello:Model",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:patched",
+    "toNode": "node:scope:root:program_hello",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 177
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:program_hello:Network->port:node:scope:root:check_hello:Network",
+    "from": "port:node:scope:root:program_hello:Network",
+    "to": "port:node:scope:root:check_hello:Network",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:program_hello",
+    "toNode": "node:scope:root:check_hello",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 178
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:program_hello:Program->port:node:scope:root:check_hello:Image",
+    "from": "port:node:scope:root:program_hello:Program",
+    "to": "port:node:scope:root:check_hello:Image",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:program_hello",
+    "toNode": "node:scope:root:check_hello",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 179
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:program_hello:Name->port:node:scope:root:check_hello:Name",
+    "from": "port:node:scope:root:program_hello:Name",
+    "to": "port:node:scope:root:check_hello:Name",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:program_hello",
+    "toNode": "node:scope:root:check_hello",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 180
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:check_hello:Check->port:node:scope:root:gate:Check2",
+    "from": "port:node:scope:root:check_hello:Check",
+    "to": "port:node:scope:root:gate:Check2",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:check_hello",
+    "toNode": "node:scope:root:gate",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 181
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:gate:Live2->port:node:scope:root:live_hello:Live",
+    "from": "port:node:scope:root:gate:Live2",
+    "to": "port:node:scope:root:live_hello:Live",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:gate",
+    "toNode": "node:scope:root:live_hello",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 182
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_hello:Hex->port:node:scope:root:measure_hello:Hex",
+    "from": "port:node:scope:root:live_hello:Hex",
+    "to": "port:node:scope:root:measure_hello:Hex",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_hello",
+    "toNode": "node:scope:root:measure_hello",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_hello:Trace->port:node:scope:root:measure_hello:Trace",
+    "from": "port:node:scope:root:live_hello:Trace",
+    "to": "port:node:scope:root:measure_hello:Trace",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_hello",
+    "toNode": "node:scope:root:measure_hello",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_hello:TurnusNetwork->port:node:scope:root:measure_hello:TurnusNetwork",
+    "from": "port:node:scope:root:live_hello:TurnusNetwork",
+    "to": "port:node:scope:root:measure_hello:TurnusNetwork",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_hello",
+    "toNode": "node:scope:root:measure_hello",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_hello:SwWeights->port:node:scope:root:measure_hello:SwWeights",
+    "from": "port:node:scope:root:live_hello:SwWeights",
+    "to": "port:node:scope:root:measure_hello:SwWeights",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_hello",
+    "toNode": "node:scope:root:measure_hello",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_hello:Reference->port:node:scope:root:measure_hello:Reference",
+    "from": "port:node:scope:root:live_hello:Reference",
+    "to": "port:node:scope:root:measure_hello:Reference",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_hello",
+    "toNode": "node:scope:root:measure_hello",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_hello:Name->port:node:scope:root:measure_hello:Name",
+    "from": "port:node:scope:root:live_hello:Name",
+    "to": "port:node:scope:root:measure_hello:Name",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_hello",
+    "toNode": "node:scope:root:measure_hello",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:build:Build->port:node:scope:root:measure_hello:Build",
+    "from": "port:node:scope:root:build:Build",
+    "to": "port:node:scope:root:measure_hello:Build",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:build",
+    "toNode": "node:scope:root:measure_hello",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 185
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:measure_sieve:Weights->port:node:scope:root:measure_hello:Weights",
+    "from": "port:node:scope:root:measure_sieve:Weights",
+    "to": "port:node:scope:root:measure_hello:Weights",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:measure_sieve",
+    "toNode": "node:scope:root:measure_hello",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 189
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:measure_sieve:Comm->port:node:scope:root:measure_hello:Comm",
+    "from": "port:node:scope:root:measure_sieve:Comm",
+    "to": "port:node:scope:root:measure_hello:Comm",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:measure_sieve",
+    "toNode": "node:scope:root:measure_hello",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 190
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:build:Synthesis->port:node:scope:root:measure_hello:Synthesis",
+    "from": "port:node:scope:root:build:Synthesis",
+    "to": "port:node:scope:root:measure_hello:Synthesis",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:build",
+    "toNode": "node:scope:root:measure_hello",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 191
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:measure_hello:Measure->port:node:scope:root:gate:Measure2",
+    "from": "port:node:scope:root:measure_hello:Measure",
+    "to": "port:node:scope:root:gate:Measure2",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:measure_hello",
+    "toNode": "node:scope:root:gate",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 192
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:start:Out->port:node:scope:root:image_sort:Start",
+    "from": "port:node:scope:root:start:Out",
+    "to": "port:node:scope:root:image_sort:Start",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:start",
+    "toNode": "node:scope:root:image_sort",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 174
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:main_sort:Out->port:node:scope:root:image_sort:Main",
+    "from": "port:node:scope:root:main_sort:Out",
+    "to": "port:node:scope:root:image_sort:Main",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:main_sort",
+    "toNode": "node:scope:root:image_sort",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 175
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:image_sort:Image->port:node:scope:root:program_sort:Image",
+    "from": "port:node:scope:root:image_sort:Image",
+    "to": "port:node:scope:root:program_sort:Image",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:image_sort",
+    "toNode": "node:scope:root:program_sort",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 176
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:patched:Patched->port:node:scope:root:program_sort:Model",
+    "from": "port:node:scope:root:patched:Patched",
+    "to": "port:node:scope:root:program_sort:Model",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:patched",
+    "toNode": "node:scope:root:program_sort",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 177
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:program_sort:Network->port:node:scope:root:check_sort:Network",
+    "from": "port:node:scope:root:program_sort:Network",
+    "to": "port:node:scope:root:check_sort:Network",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:program_sort",
+    "toNode": "node:scope:root:check_sort",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 178
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:program_sort:Program->port:node:scope:root:check_sort:Image",
+    "from": "port:node:scope:root:program_sort:Program",
+    "to": "port:node:scope:root:check_sort:Image",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:program_sort",
+    "toNode": "node:scope:root:check_sort",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 179
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:program_sort:Name->port:node:scope:root:check_sort:Name",
+    "from": "port:node:scope:root:program_sort:Name",
+    "to": "port:node:scope:root:check_sort:Name",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:program_sort",
+    "toNode": "node:scope:root:check_sort",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 180
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:check_sort:Check->port:node:scope:root:gate:Check3",
+    "from": "port:node:scope:root:check_sort:Check",
+    "to": "port:node:scope:root:gate:Check3",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:check_sort",
+    "toNode": "node:scope:root:gate",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 181
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:gate:Live3->port:node:scope:root:live_sort:Live",
+    "from": "port:node:scope:root:gate:Live3",
+    "to": "port:node:scope:root:live_sort:Live",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:gate",
+    "toNode": "node:scope:root:live_sort",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 182
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_sort:Hex->port:node:scope:root:measure_sort:Hex",
+    "from": "port:node:scope:root:live_sort:Hex",
+    "to": "port:node:scope:root:measure_sort:Hex",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_sort",
+    "toNode": "node:scope:root:measure_sort",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_sort:Trace->port:node:scope:root:measure_sort:Trace",
+    "from": "port:node:scope:root:live_sort:Trace",
+    "to": "port:node:scope:root:measure_sort:Trace",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_sort",
+    "toNode": "node:scope:root:measure_sort",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_sort:TurnusNetwork->port:node:scope:root:measure_sort:TurnusNetwork",
+    "from": "port:node:scope:root:live_sort:TurnusNetwork",
+    "to": "port:node:scope:root:measure_sort:TurnusNetwork",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_sort",
+    "toNode": "node:scope:root:measure_sort",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_sort:SwWeights->port:node:scope:root:measure_sort:SwWeights",
+    "from": "port:node:scope:root:live_sort:SwWeights",
+    "to": "port:node:scope:root:measure_sort:SwWeights",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_sort",
+    "toNode": "node:scope:root:measure_sort",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_sort:Reference->port:node:scope:root:measure_sort:Reference",
+    "from": "port:node:scope:root:live_sort:Reference",
+    "to": "port:node:scope:root:measure_sort:Reference",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_sort",
+    "toNode": "node:scope:root:measure_sort",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_sort:Name->port:node:scope:root:measure_sort:Name",
+    "from": "port:node:scope:root:live_sort:Name",
+    "to": "port:node:scope:root:measure_sort:Name",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_sort",
+    "toNode": "node:scope:root:measure_sort",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:build:Build->port:node:scope:root:measure_sort:Build",
+    "from": "port:node:scope:root:build:Build",
+    "to": "port:node:scope:root:measure_sort:Build",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:build",
+    "toNode": "node:scope:root:measure_sort",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 185
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:measure_sieve:Weights->port:node:scope:root:measure_sort:Weights",
+    "from": "port:node:scope:root:measure_sieve:Weights",
+    "to": "port:node:scope:root:measure_sort:Weights",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:measure_sieve",
+    "toNode": "node:scope:root:measure_sort",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 189
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:measure_sieve:Comm->port:node:scope:root:measure_sort:Comm",
+    "from": "port:node:scope:root:measure_sieve:Comm",
+    "to": "port:node:scope:root:measure_sort:Comm",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:measure_sieve",
+    "toNode": "node:scope:root:measure_sort",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 190
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:build:Synthesis->port:node:scope:root:measure_sort:Synthesis",
+    "from": "port:node:scope:root:build:Synthesis",
+    "to": "port:node:scope:root:measure_sort:Synthesis",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:build",
+    "toNode": "node:scope:root:measure_sort",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 191
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:measure_sort:Measure->port:node:scope:root:gate:Measure3",
+    "from": "port:node:scope:root:measure_sort:Measure",
+    "to": "port:node:scope:root:gate:Measure3",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:measure_sort",
+    "toNode": "node:scope:root:gate",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 192
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:start:Out->port:node:scope:root:image_fib:Start",
+    "from": "port:node:scope:root:start:Out",
+    "to": "port:node:scope:root:image_fib:Start",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:start",
+    "toNode": "node:scope:root:image_fib",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 174
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:main_fib:Out->port:node:scope:root:image_fib:Main",
+    "from": "port:node:scope:root:main_fib:Out",
+    "to": "port:node:scope:root:image_fib:Main",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:main_fib",
+    "toNode": "node:scope:root:image_fib",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 175
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:image_fib:Image->port:node:scope:root:program_fib:Image",
+    "from": "port:node:scope:root:image_fib:Image",
+    "to": "port:node:scope:root:program_fib:Image",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:image_fib",
+    "toNode": "node:scope:root:program_fib",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 176
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:patched:Patched->port:node:scope:root:program_fib:Model",
+    "from": "port:node:scope:root:patched:Patched",
+    "to": "port:node:scope:root:program_fib:Model",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:patched",
+    "toNode": "node:scope:root:program_fib",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 177
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:program_fib:Network->port:node:scope:root:check_fib:Network",
+    "from": "port:node:scope:root:program_fib:Network",
+    "to": "port:node:scope:root:check_fib:Network",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:program_fib",
+    "toNode": "node:scope:root:check_fib",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 178
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:program_fib:Program->port:node:scope:root:check_fib:Image",
+    "from": "port:node:scope:root:program_fib:Program",
+    "to": "port:node:scope:root:check_fib:Image",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:program_fib",
+    "toNode": "node:scope:root:check_fib",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 179
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:program_fib:Name->port:node:scope:root:check_fib:Name",
+    "from": "port:node:scope:root:program_fib:Name",
+    "to": "port:node:scope:root:check_fib:Name",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:program_fib",
+    "toNode": "node:scope:root:check_fib",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 180
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:check_fib:Check->port:node:scope:root:gate:Check4",
+    "from": "port:node:scope:root:check_fib:Check",
+    "to": "port:node:scope:root:gate:Check4",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:check_fib",
+    "toNode": "node:scope:root:gate",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 181
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:gate:Live4->port:node:scope:root:live_fib:Live",
+    "from": "port:node:scope:root:gate:Live4",
+    "to": "port:node:scope:root:live_fib:Live",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:gate",
+    "toNode": "node:scope:root:live_fib",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 182
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_fib:Hex->port:node:scope:root:measure_fib:Hex",
+    "from": "port:node:scope:root:live_fib:Hex",
+    "to": "port:node:scope:root:measure_fib:Hex",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_fib",
+    "toNode": "node:scope:root:measure_fib",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_fib:Trace->port:node:scope:root:measure_fib:Trace",
+    "from": "port:node:scope:root:live_fib:Trace",
+    "to": "port:node:scope:root:measure_fib:Trace",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_fib",
+    "toNode": "node:scope:root:measure_fib",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_fib:TurnusNetwork->port:node:scope:root:measure_fib:TurnusNetwork",
+    "from": "port:node:scope:root:live_fib:TurnusNetwork",
+    "to": "port:node:scope:root:measure_fib:TurnusNetwork",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_fib",
+    "toNode": "node:scope:root:measure_fib",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_fib:SwWeights->port:node:scope:root:measure_fib:SwWeights",
+    "from": "port:node:scope:root:live_fib:SwWeights",
+    "to": "port:node:scope:root:measure_fib:SwWeights",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_fib",
+    "toNode": "node:scope:root:measure_fib",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_fib:Reference->port:node:scope:root:measure_fib:Reference",
+    "from": "port:node:scope:root:live_fib:Reference",
+    "to": "port:node:scope:root:measure_fib:Reference",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_fib",
+    "toNode": "node:scope:root:measure_fib",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:live_fib:Name->port:node:scope:root:measure_fib:Name",
+    "from": "port:node:scope:root:live_fib:Name",
+    "to": "port:node:scope:root:measure_fib:Name",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:live_fib",
+    "toNode": "node:scope:root:measure_fib",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 184
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:build:Build->port:node:scope:root:measure_fib:Build",
+    "from": "port:node:scope:root:build:Build",
+    "to": "port:node:scope:root:measure_fib:Build",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:build",
+    "toNode": "node:scope:root:measure_fib",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 185
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:measure_sieve:Weights->port:node:scope:root:measure_fib:Weights",
+    "from": "port:node:scope:root:measure_sieve:Weights",
+    "to": "port:node:scope:root:measure_fib:Weights",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:measure_sieve",
+    "toNode": "node:scope:root:measure_fib",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 189
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:measure_sieve:Comm->port:node:scope:root:measure_fib:Comm",
+    "from": "port:node:scope:root:measure_sieve:Comm",
+    "to": "port:node:scope:root:measure_fib:Comm",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:measure_sieve",
+    "toNode": "node:scope:root:measure_fib",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 190
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:build:Synthesis->port:node:scope:root:measure_fib:Synthesis",
+    "from": "port:node:scope:root:build:Synthesis",
+    "to": "port:node:scope:root:measure_fib:Synthesis",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:build",
+    "toNode": "node:scope:root:measure_fib",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 191
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:measure_fib:Measure->port:node:scope:root:gate:Measure4",
+    "from": "port:node:scope:root:measure_fib:Measure",
+    "to": "port:node:scope:root:gate:Measure4",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:measure_fib",
+    "toNode": "node:scope:root:gate",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 192
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:gate:LiveAts->port:node:scope:root:build:Ats",
+    "from": "port:node:scope:root:gate:LiveAts",
+    "to": "port:node:scope:root:build:Ats",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:gate",
+    "toNode": "node:scope:root:build",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 193
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:gate:LiveTb->port:node:scope:root:build:Tb",
+    "from": "port:node:scope:root:gate:LiveTb",
+    "to": "port:node:scope:root:build:Tb",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:gate",
+    "toNode": "node:scope:root:build",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 194
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:gate:LiveFrontOptions->port:node:scope:root:build:FrontOptions",
+    "from": "port:node:scope:root:gate:LiveFrontOptions",
+    "to": "port:node:scope:root:build:FrontOptions",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:gate",
+    "toNode": "node:scope:root:build",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 195
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:gate:LiveHandshakeOptions->port:node:scope:root:build:HandshakeOptions",
+    "from": "port:node:scope:root:gate:LiveHandshakeOptions",
+    "to": "port:node:scope:root:build:HandshakeOptions",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:gate",
+    "toNode": "node:scope:root:build",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 196
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:gate:Result->port:node:scope:root:analyst:In",
+    "from": "port:node:scope:root:gate:Result",
+    "to": "port:node:scope:root:analyst:In",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:gate",
+    "toNode": "node:scope:root:analyst",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 197
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:gate:Brief->port:node:scope:root:architect:Brief",
+    "from": "port:node:scope:root:gate:Brief",
+    "to": "port:node:scope:root:architect:Brief",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:gate",
+    "toNode": "node:scope:root:architect",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 198
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:analyst:Report->port:node:scope:root:architect:Report",
+    "from": "port:node:scope:root:analyst:Report",
+    "to": "port:node:scope:root:architect:Report",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:analyst",
+    "toNode": "node:scope:root:architect",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 199
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:architect:Next->port:node:scope:root:coordinator:Next",
+    "from": "port:node:scope:root:architect:Next",
+    "to": "port:node:scope:root:coordinator:Next",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:architect",
+    "toNode": "node:scope:root:coordinator",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 200
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:gate:History->port:node:scope:root:history:In",
+    "from": "port:node:scope:root:gate:History",
+    "to": "port:node:scope:root:history:In",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:gate",
+    "toNode": "node:scope:root:history",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 201
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:gate:Final->port:node:scope:root:conformance:In",
+    "from": "port:node:scope:root:gate:Final",
+    "to": "port:node:scope:root:conformance:In",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:gate",
+    "toNode": "node:scope:root:conformance",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 202
+    }
+   },
+   {
+    "id": "edge:port:node:scope:root:conformance:Verdict->port:node:scope:root:conformed:In",
+    "from": "port:node:scope:root:conformance:Verdict",
+    "to": "port:node:scope:root:conformed:In",
+    "scope": "scope:root",
+    "fromNode": "node:scope:root:conformance",
+    "toNode": "node:scope:root:conformed",
+    "source": {
+     "file": "/home/endrix/git/dataflow/chips/workflow/compile/speculation_flow.py",
+     "line": 203
+    }
+   }
+  ],
+  "subgraphs": [
+   {
+    "id": "scope:root",
+    "kind": "root",
+    "parent": null,
+    "controlNodeId": null,
+    "children": [],
+    "nodes": [
+     "node:scope:root:conformance",
+     "node:scope:root:main_sieve",
+     "node:scope:root:image_sieve",
+     "node:scope:root:program_sieve",
+     "node:scope:root:check_sieve",
+     "node:scope:root:live_sieve",
+     "node:scope:root:measure_sieve",
+     "node:scope:root:main_hello",
+     "node:scope:root:image_hello",
+     "node:scope:root:program_hello",
+     "node:scope:root:check_hello",
+     "node:scope:root:live_hello",
+     "node:scope:root:measure_hello",
+     "node:scope:root:main_sort",
+     "node:scope:root:image_sort",
+     "node:scope:root:program_sort",
+     "node:scope:root:check_sort",
+     "node:scope:root:live_sort",
+     "node:scope:root:measure_sort",
+     "node:scope:root:main_fib",
+     "node:scope:root:image_fib",
+     "node:scope:root:program_fib",
+     "node:scope:root:check_fib",
+     "node:scope:root:live_fib",
+     "node:scope:root:measure_fib",
+     "node:scope:root:model",
+     "node:scope:root:tb",
+     "node:scope:root:front_options",
+     "node:scope:root:handshake_options",
+     "node:scope:root:goal_file",
+     "node:scope:root:start",
+     "node:scope:root:coordinator",
+     "node:scope:root:patched",
+     "node:scope:root:ats",
+     "node:scope:root:gate",
+     "node:scope:root:build",
+     "node:scope:root:analyst",
+     "node:scope:root:architect",
+     "node:scope:root:history",
+     "node:scope:root:conformed"
+    ],
+    "edges": [
+     "edge:port:node:scope:root:model:Out->port:node:scope:root:coordinator:Model",
+     "edge:port:node:scope:root:tb:Out->port:node:scope:root:coordinator:Testbench",
+     "edge:port:node:scope:root:front_options:Out->port:node:scope:root:coordinator:FrontOptions",
+     "edge:port:node:scope:root:handshake_options:Out->port:node:scope:root:coordinator:HandshakeOptions",
+     "edge:port:node:scope:root:goal_file:Out->port:node:scope:root:coordinator:Goal",
+     "edge:port:node:scope:root:goal_file:Out->port:node:scope:root:gate:Goal",
+     "edge:port:node:scope:root:coordinator:Network->port:node:scope:root:patched:Network",
+     "edge:port:node:scope:root:coordinator:Config->port:node:scope:root:patched:Config",
+     "edge:port:node:scope:root:coordinator:Config->port:node:scope:root:gate:Config",
+     "edge:port:node:scope:root:coordinator:Tb->port:node:scope:root:gate:Tb",
+     "edge:port:node:scope:root:coordinator:Front->port:node:scope:root:gate:FrontOptions",
+     "edge:port:node:scope:root:coordinator:Handshake->port:node:scope:root:gate:HandshakeOptions",
+     "edge:port:node:scope:root:coordinator:Stop->port:node:scope:root:gate:Stop",
+     "edge:port:node:scope:root:patched:Note->port:node:scope:root:gate:Note",
+     "edge:port:node:scope:root:patched:Patched->port:node:scope:root:ats:Network",
+     "edge:port:node:scope:root:ats:Out->port:node:scope:root:gate:Ats",
+     "edge:port:node:scope:root:start:Out->port:node:scope:root:image_sieve:Start",
+     "edge:port:node:scope:root:main_sieve:Out->port:node:scope:root:image_sieve:Main",
+     "edge:port:node:scope:root:image_sieve:Image->port:node:scope:root:program_sieve:Image",
+     "edge:port:node:scope:root:patched:Patched->port:node:scope:root:program_sieve:Model",
+     "edge:port:node:scope:root:program_sieve:Network->port:node:scope:root:check_sieve:Network",
+     "edge:port:node:scope:root:program_sieve:Program->port:node:scope:root:check_sieve:Image",
+     "edge:port:node:scope:root:program_sieve:Name->port:node:scope:root:check_sieve:Name",
+     "edge:port:node:scope:root:check_sieve:Check->port:node:scope:root:gate:Check1",
+     "edge:port:node:scope:root:gate:Live1->port:node:scope:root:live_sieve:Live",
+     "edge:port:node:scope:root:live_sieve:Hex->port:node:scope:root:measure_sieve:Hex",
+     "edge:port:node:scope:root:live_sieve:Trace->port:node:scope:root:measure_sieve:Trace",
+     "edge:port:node:scope:root:live_sieve:TurnusNetwork->port:node:scope:root:measure_sieve:TurnusNetwork",
+     "edge:port:node:scope:root:live_sieve:SwWeights->port:node:scope:root:measure_sieve:SwWeights",
+     "edge:port:node:scope:root:live_sieve:Reference->port:node:scope:root:measure_sieve:Reference",
+     "edge:port:node:scope:root:live_sieve:Name->port:node:scope:root:measure_sieve:Name",
+     "edge:port:node:scope:root:build:Build->port:node:scope:root:measure_sieve:Build",
+     "edge:port:node:scope:root:build:Hw->port:node:scope:root:measure_sieve:Hw",
+     "edge:port:node:scope:root:build:Synthesis->port:node:scope:root:measure_sieve:Synthesis",
+     "edge:port:node:scope:root:measure_sieve:Measure->port:node:scope:root:gate:Measure1",
+     "edge:port:node:scope:root:start:Out->port:node:scope:root:image_hello:Start",
+     "edge:port:node:scope:root:main_hello:Out->port:node:scope:root:image_hello:Main",
+     "edge:port:node:scope:root:image_hello:Image->port:node:scope:root:program_hello:Image",
+     "edge:port:node:scope:root:patched:Patched->port:node:scope:root:program_hello:Model",
+     "edge:port:node:scope:root:program_hello:Network->port:node:scope:root:check_hello:Network",
+     "edge:port:node:scope:root:program_hello:Program->port:node:scope:root:check_hello:Image",
+     "edge:port:node:scope:root:program_hello:Name->port:node:scope:root:check_hello:Name",
+     "edge:port:node:scope:root:check_hello:Check->port:node:scope:root:gate:Check2",
+     "edge:port:node:scope:root:gate:Live2->port:node:scope:root:live_hello:Live",
+     "edge:port:node:scope:root:live_hello:Hex->port:node:scope:root:measure_hello:Hex",
+     "edge:port:node:scope:root:live_hello:Trace->port:node:scope:root:measure_hello:Trace",
+     "edge:port:node:scope:root:live_hello:TurnusNetwork->port:node:scope:root:measure_hello:TurnusNetwork",
+     "edge:port:node:scope:root:live_hello:SwWeights->port:node:scope:root:measure_hello:SwWeights",
+     "edge:port:node:scope:root:live_hello:Reference->port:node:scope:root:measure_hello:Reference",
+     "edge:port:node:scope:root:live_hello:Name->port:node:scope:root:measure_hello:Name",
+     "edge:port:node:scope:root:build:Build->port:node:scope:root:measure_hello:Build",
+     "edge:port:node:scope:root:measure_sieve:Weights->port:node:scope:root:measure_hello:Weights",
+     "edge:port:node:scope:root:measure_sieve:Comm->port:node:scope:root:measure_hello:Comm",
+     "edge:port:node:scope:root:build:Synthesis->port:node:scope:root:measure_hello:Synthesis",
+     "edge:port:node:scope:root:measure_hello:Measure->port:node:scope:root:gate:Measure2",
+     "edge:port:node:scope:root:start:Out->port:node:scope:root:image_sort:Start",
+     "edge:port:node:scope:root:main_sort:Out->port:node:scope:root:image_sort:Main",
+     "edge:port:node:scope:root:image_sort:Image->port:node:scope:root:program_sort:Image",
+     "edge:port:node:scope:root:patched:Patched->port:node:scope:root:program_sort:Model",
+     "edge:port:node:scope:root:program_sort:Network->port:node:scope:root:check_sort:Network",
+     "edge:port:node:scope:root:program_sort:Program->port:node:scope:root:check_sort:Image",
+     "edge:port:node:scope:root:program_sort:Name->port:node:scope:root:check_sort:Name",
+     "edge:port:node:scope:root:check_sort:Check->port:node:scope:root:gate:Check3",
+     "edge:port:node:scope:root:gate:Live3->port:node:scope:root:live_sort:Live",
+     "edge:port:node:scope:root:live_sort:Hex->port:node:scope:root:measure_sort:Hex",
+     "edge:port:node:scope:root:live_sort:Trace->port:node:scope:root:measure_sort:Trace",
+     "edge:port:node:scope:root:live_sort:TurnusNetwork->port:node:scope:root:measure_sort:TurnusNetwork",
+     "edge:port:node:scope:root:live_sort:SwWeights->port:node:scope:root:measure_sort:SwWeights",
+     "edge:port:node:scope:root:live_sort:Reference->port:node:scope:root:measure_sort:Reference",
+     "edge:port:node:scope:root:live_sort:Name->port:node:scope:root:measure_sort:Name",
+     "edge:port:node:scope:root:build:Build->port:node:scope:root:measure_sort:Build",
+     "edge:port:node:scope:root:measure_sieve:Weights->port:node:scope:root:measure_sort:Weights",
+     "edge:port:node:scope:root:measure_sieve:Comm->port:node:scope:root:measure_sort:Comm",
+     "edge:port:node:scope:root:build:Synthesis->port:node:scope:root:measure_sort:Synthesis",
+     "edge:port:node:scope:root:measure_sort:Measure->port:node:scope:root:gate:Measure3",
+     "edge:port:node:scope:root:start:Out->port:node:scope:root:image_fib:Start",
+     "edge:port:node:scope:root:main_fib:Out->port:node:scope:root:image_fib:Main",
+     "edge:port:node:scope:root:image_fib:Image->port:node:scope:root:program_fib:Image",
+     "edge:port:node:scope:root:patched:Patched->port:node:scope:root:program_fib:Model",
+     "edge:port:node:scope:root:program_fib:Network->port:node:scope:root:check_fib:Network",
+     "edge:port:node:scope:root:program_fib:Program->port:node:scope:root:check_fib:Image",
+     "edge:port:node:scope:root:program_fib:Name->port:node:scope:root:check_fib:Name",
+     "edge:port:node:scope:root:check_fib:Check->port:node:scope:root:gate:Check4",
+     "edge:port:node:scope:root:gate:Live4->port:node:scope:root:live_fib:Live",
+     "edge:port:node:scope:root:live_fib:Hex->port:node:scope:root:measure_fib:Hex",
+     "edge:port:node:scope:root:live_fib:Trace->port:node:scope:root:measure_fib:Trace",
+     "edge:port:node:scope:root:live_fib:TurnusNetwork->port:node:scope:root:measure_fib:TurnusNetwork",
+     "edge:port:node:scope:root:live_fib:SwWeights->port:node:scope:root:measure_fib:SwWeights",
+     "edge:port:node:scope:root:live_fib:Reference->port:node:scope:root:measure_fib:Reference",
+     "edge:port:node:scope:root:live_fib:Name->port:node:scope:root:measure_fib:Name",
+     "edge:port:node:scope:root:build:Build->port:node:scope:root:measure_fib:Build",
+     "edge:port:node:scope:root:measure_sieve:Weights->port:node:scope:root:measure_fib:Weights",
+     "edge:port:node:scope:root:measure_sieve:Comm->port:node:scope:root:measure_fib:Comm",
+     "edge:port:node:scope:root:build:Synthesis->port:node:scope:root:measure_fib:Synthesis",
+     "edge:port:node:scope:root:measure_fib:Measure->port:node:scope:root:gate:Measure4",
+     "edge:port:node:scope:root:gate:LiveAts->port:node:scope:root:build:Ats",
+     "edge:port:node:scope:root:gate:LiveTb->port:node:scope:root:build:Tb",
+     "edge:port:node:scope:root:gate:LiveFrontOptions->port:node:scope:root:build:FrontOptions",
+     "edge:port:node:scope:root:gate:LiveHandshakeOptions->port:node:scope:root:build:HandshakeOptions",
+     "edge:port:node:scope:root:gate:Result->port:node:scope:root:analyst:In",
+     "edge:port:node:scope:root:gate:Brief->port:node:scope:root:architect:Brief",
+     "edge:port:node:scope:root:analyst:Report->port:node:scope:root:architect:Report",
+     "edge:port:node:scope:root:architect:Next->port:node:scope:root:coordinator:Next",
+     "edge:port:node:scope:root:gate:History->port:node:scope:root:history:In",
+     "edge:port:node:scope:root:gate:Final->port:node:scope:root:conformance:In",
+     "edge:port:node:scope:root:conformance:Verdict->port:node:scope:root:conformed:In"
+    ]
+   }
+  ],
+  "meta": {
+   "factoryName": "speculation_with",
+   "parameters": [
+    {
+     "name": "gen",
+     "value": "/mnt/data/claude-scratch/spec-model/picorv32/gen",
+     "type": "str"
+    },
+    {
+     "name": "goal",
+     "value": "/home/endrix/git/dataflow/chips/workflow/compile/agentic/speculation_goal.json",
+     "type": "str"
+    },
+    {
+     "name": "march",
+     "value": "rv32imc",
+     "type": "str"
+    },
+    {
+     "name": "model_root",
+     "value": "/mnt/data/claude-scratch/spec-model/picorv32",
+     "type": "str"
+    },
+    {
+     "name": "programs",
+     "value": [
+      "sieve",
+      "hello",
+      "sort",
+      "fib"
+     ],
+     "type": "list"
+    }
+   ]
+  }
+ }
+}

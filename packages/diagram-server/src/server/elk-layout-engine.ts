@@ -21,6 +21,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 
+/** Graph layout option: `free` lets a layout choose each node's port order against crossings. */
+export const PORT_ORDER_OPTION = 'dialogram.portOrder';
+export const PORT_ORDER_FREE = 'free';
+
 /**
  * Minimal CAL extension of the standard GLSP ELK layout engine.
  * 
@@ -52,6 +56,9 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         }
         const out: Record<string, string> = {};
         for (const [k, v] of Object.entries(input)) {
+            if (k.startsWith('dialogram.')) {
+                continue; // the server's own options, see PORT_ORDER_OPTION
+            }
             if (typeof v === 'string') {
                 out[k] = v;
             } else if (typeof v === 'number' || typeof v === 'boolean') {
@@ -78,23 +85,129 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         if (!(root instanceof GGraph)) {
             return root;
         }
+        const run = async (): Promise<GGraph> => {
+            // Ports sit on a fixed grid in the order the source declares them, and
+            // ELK may not move them (FIXED_POS, see applyShape). On a dense graph that
+            // order is what tangles the edges: an input declared first whose producer
+            // is laid out last crosses every edge between. The Free Ports layout asks
+            // for the order to be chosen first, by a probe layout in which ELK is free
+            // to arrange each side's ports against crossings; the ports are then put
+            // back on their grid in that order, and the real layout runs as before.
+            if (this.portOrderingEnabled(root)) {
+                try {
+                    await this.orderPortsAgainstCrossings(root);
+                } catch (e) {
+                    console.warn('[cal-elk] port ordering skipped:', e);
+                }
+            }
 
-        // Re-implement base `layout` so we can dump the exact object passed to elk.layout().
-        (this as any).elkEdges = [];
-        (this as any).idToElkElement = new Map();
-        const elkGraph = (this as any).transformToElk(root) as ElkNode;
+            // Re-implement base `layout` so we can dump the exact object passed to elk.layout().
+            (this as any).elkEdges = [];
+            (this as any).idToElkElement = new Map();
+            const elkGraph = (this as any).transformToElk(root) as ElkNode;
 
-        const shouldDump = process.env.WORKFLOW_DIAGRAM_DUMP_ELK_INPUT_JSON === '1';
-        const always = process.env.WORKFLOW_DIAGRAM_DUMP_ELK_INPUT_JSON_ALWAYS === '1';
-        if (shouldDump && (always || !this.elkInputDumped)) {
-            this.elkInputDumped = true;
-            void this.dumpElkInputGraph(elkGraph);
-        }
+            const shouldDump = process.env.WORKFLOW_DIAGRAM_DUMP_ELK_INPUT_JSON === '1';
+            const always = process.env.WORKFLOW_DIAGRAM_DUMP_ELK_INPUT_JSON_ALWAYS === '1';
+            if (shouldDump && (always || !this.elkInputDumped)) {
+                this.elkInputDumped = true;
+                void this.dumpElkInputGraph(elkGraph);
+            }
 
-        return (this as any).elk.layout(elkGraph).then((result: ElkNode) => {
+            const result = (await (this as any).elk.layout(elkGraph)) as ElkNode;
             this.applyLayout(result);
             return root;
-        });
+        };
+        return run();
+    }
+
+    /**
+     * The pass runs only when a layout asks for it with the graph option
+     * `dialogram.portOrder: free` (the Free Ports layout), and only for a layered
+     * layout: by default, and after a drag, the ports keep the order the source
+     * declares them in.
+     */
+    private portOrderingEnabled(root: GGraph): boolean {
+        const options = (root as any).layoutOptions as Record<string, unknown> | undefined;
+        if (options?.[PORT_ORDER_OPTION] !== PORT_ORDER_FREE) {
+            return false;
+        }
+        const algorithm = options?.['elk.algorithm'];
+        return algorithm === undefined || algorithm === 'layered';
+    }
+
+    /**
+     * A node whose ports may change order: every ordinary node. The if and loop
+     * containers place their branch ports by index, and a boundary node has one.
+     */
+    private portsMayReorder(node: GNode): boolean {
+        return node.type !== WorkflowDiagramTypes.NODE_STRUCTURE_IF
+            && node.type !== WorkflowDiagramTypes.NODE_STRUCTURE_IF_BRANCH
+            && node.type !== WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH
+            && node.type !== WorkflowDiagramTypes.NODE_BOUNDARY_INPUT
+            && node.type !== WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT;
+    }
+
+    /**
+     * The probe: the same graph with `FIXED_SIDE` on every ordinary node, so that
+     * ELK's crossing minimisation orders the ports of each side. Nothing of its
+     * result is kept but that order, which `regridPorts` writes back onto the
+     * server's rows.
+     */
+    private async orderPortsAgainstCrossings(root: GGraph): Promise<void> {
+        (this as any).elkEdges = [];
+        (this as any).idToElkElement = new Map();
+        const probe = (this as any).transformToElk(root) as ElkNode;
+        const free = (n: ElkNode): void => {
+            for (const child of n.children ?? []) {
+                const el = this.modelState.index.get(child.id);
+                if (el instanceof GNode && this.portsMayReorder(el)) {
+                    child.layoutOptions = { ...(child.layoutOptions ?? {}), 'elk.portConstraints': 'FIXED_SIDE' };
+                    for (const p of child.ports ?? []) {
+                        if (p.layoutOptions && 'elk.port.index' in p.layoutOptions) {
+                            const { ['elk.port.index']: _index, ...rest } = p.layoutOptions as Record<string, string>;
+                            p.layoutOptions = rest;
+                        }
+                    }
+                }
+                free(child);
+            }
+        };
+        free(probe);
+        const result = (await (this as any).elk.layout(probe)) as ElkNode;
+        const apply = (n: ElkNode): void => {
+            for (const child of n.children ?? []) {
+                const el = this.modelState.index.get(child.id);
+                if (el instanceof GNode && this.portsMayReorder(el) && child.ports && child.ports.length > 1) {
+                    this.regridPorts(el, child.ports);
+                }
+                apply(child);
+            }
+        };
+        apply(result);
+    }
+
+    /**
+     * The node's ports of one side take the rows they already occupy, in the
+     * order ELK placed them top to bottom. The labels are the ports' children and
+     * move with them; nothing else about the node changes.
+     */
+    private regridPorts(node: GNode, elkPorts: ElkPort[]): void {
+        for (const input of [true, false]) {
+            const ports = this.findChildren(node, GPort).filter(p => (p.type === WorkflowDiagramTypes.PORT_INPUT) === input);
+            if (ports.length < 2) {
+                continue;
+            }
+            const rows = ports.map(p => p.position?.y ?? 0).sort((a, b) => a - b);
+            const byId = new Map(ports.map(p => [p.id, p] as const));
+            const order = elkPorts.filter(ep => byId.has(ep.id)).sort((a, b) => (a.y ?? 0) - (b.y ?? 0));
+            if (order.length !== ports.length) {
+                continue;
+            }
+            order.forEach((ep, k) => {
+                const port = byId.get(ep.id)!;
+                port.position = { x: port.position?.x ?? 0, y: rows[k] };
+            });
+        }
     }
 
     private async dumpElkInputGraph(elkGraph: ElkNode): Promise<void> {
