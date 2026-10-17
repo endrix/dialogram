@@ -41,6 +41,23 @@ export const PORT_ORDER_FREE = 'free';
 export const DECLARED_ROW_ARG = 'wf:declaredRowY';
 
 /**
+ * `elk.layered.priority.direction` of a wire that goes with the flow, in a
+ * diagram that has return wires. A handshake's `ready` answers backwards: it
+ * leaves an instance on the west, beside the `valid` it answers, and enters
+ * the queue on the east, so ELK sees a cycle for every channel and lays one
+ * of its wires against the flow. Its greedy cycle breaker counts wires, and a
+ * queue drives more than it takes (data, valid, size, ready, space against
+ * data, valid, ready), so every queue became a source and every actor a sink:
+ * a pipeline came out as a column of queues beside a column of actors. With
+ * the data wires at this priority and the return wires at zero, the return
+ * wires are the ones laid backwards; a real feedback loop still reverses a
+ * data wire, as it must. Measured on a ten-queue, six-actor netlist: two
+ * layers at priority 2 and below, eight from 5 up. A diagram without return
+ * wires gets no priority at all, so its layout is exactly what it was.
+ */
+export const FLOW_PRIORITY = '10';
+
+/**
  * Minimal CAL extension of the standard GLSP ELK layout engine.
  * 
  * Key design decisions based on ELK/GLSP best practices:
@@ -55,6 +72,8 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
     private readonly debugElkLevel: number = Number(process.env.WORKFLOW_DIAGRAM_DEBUG_ELK ?? '0') || 0;
     private debugDumped: boolean = false;
     private elkInputDumped: boolean = false;
+    /** Whether the graph being transformed has a wire that leaves a west port or enters an east port. */
+    private hasReturnWires: boolean = false;
 
     constructor(
         elkFactory: ElkFactory,
@@ -304,6 +323,7 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
      * Layout options come from WorkflowLayoutConfigurator - we only add direction propagation here.
      */
     protected override transformGraph(graph: GGraph): ElkNode {
+        this.hasReturnWires = this.findChildren(graph, GEdge).some(edge => this.isReturnWire(edge));
         const elkGraph = super.transformGraph(graph) as ElkNode;
 
         // Forward any runtime-injected layoutOptions (e.g. interactive reroute tweaks).
@@ -535,6 +555,15 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         }
         const elkEdge = super.transformEdge(edge);
 
+        // In a diagram with return wires, tell ELK which wires go with the flow
+        // (see FLOW_PRIORITY); the return wires are the ones to lay backwards.
+        if (this.hasReturnWires) {
+            (elkEdge as any).layoutOptions = {
+                ...(((elkEdge as any).layoutOptions ?? {}) as Record<string, string>),
+                'elk.layered.priority.direction': this.isReturnWire(edge) ? '0' : FLOW_PRIORITY
+            };
+        }
+
         // Forward runtime-injected edge.layoutOptions if present.
         const edgeLayoutOptions = this.stringifyLayoutOptions((edge as any)?.layoutOptions as Record<string, unknown> | undefined);
         if (edgeLayoutOptions) {
@@ -545,6 +574,24 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         }
 
         return elkEdge;
+    }
+
+    /**
+     * A wire drawn against the flow: it leaves a port its producer put on the
+     * west, or enters one put on the east. A handshake's `ready` is one; so is
+     * a wire from a boundary input placed in the east margin.
+     */
+    private isReturnWire(edge: GEdge): boolean {
+        let source: GModelElement | undefined;
+        let target: GModelElement | undefined;
+        try {
+            source = this.modelState.index.get(edge.sourceId);
+            target = this.modelState.index.get(edge.targetId);
+        } catch {
+            return false;
+        }
+        return (source instanceof GPort && gportSide(source) === 'WEST')
+            || (target instanceof GPort && gportSide(target) === 'EAST');
     }
 
     /**
