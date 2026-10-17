@@ -10,11 +10,12 @@
  * All layout options are configured via WorkflowLayoutConfigurator (single source of truth).
  */
 
-import { GEdge, GGraph, GLabel, GModelElement, GNode, GPort, GShapeElement, ModelState, Point, findParentByClass } from '@eclipse-glsp/server';
+import { ActionDispatcher, GEdge, GGraph, GLabel, GModelElement, GNode, GPort, GShapeElement, ModelState, Point, findParentByClass } from '@eclipse-glsp/server';
+import { StatusAction } from '@eclipse-glsp/protocol';
 import { GlspElkLayoutEngine, ElkFactory, ElementFilter, LayoutConfigurator } from '@eclipse-glsp/layout-elk';
 import { ElkExtendedEdge, ElkNode, ElkPort, ElkShape } from 'elkjs';
 import { injectable } from 'inversify';
-import { WorkflowDiagramTypes } from '@dialogram/shared';
+import { WorkflowDiagramTypes, WORKFLOW_LAYOUT_PERSISTENCE_KEY } from '@dialogram/shared';
 import { WorkflowDiagramConstants, WorkflowDiagramMetadata, portSide, type PortSide } from '@dialogram/shared';
 
 /** Which side of its node a GPort sits on: the producer's placement, else its direction or type. */
@@ -28,6 +29,7 @@ function gportSide(port: GPort): PortSide {
     });
 }
 import { snapRouteEndpoints } from '../routing/persisted-edge-routes';
+import { FAST_LAYOUT_OPTIONS, countLayoutElements, layoutTierFor, type LayoutGraphSize, type LayoutTier } from './layout-configurator';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -58,9 +60,29 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         elkFactory: ElkFactory,
         filter: ElementFilter,
         configurator: LayoutConfigurator,
-        modelState: ModelState
+        modelState: ModelState,
+        /** Where the fast tier's status message goes; a test may leave it out. */
+        private readonly actionDispatcher?: ActionDispatcher
     ) {
         super(elkFactory, filter, configurator, modelState);
+    }
+
+    /**
+     * The tier the graph lays out in (see the presets in layout-configurator.ts),
+     * decided by its node and edge counts alone. Counted on each call: a few
+     * thousand elements take microseconds, and the graph changes between layouts.
+     */
+    private tierOf(root: GModelElement): { size: LayoutGraphSize; tier: LayoutTier } {
+        const size = countLayoutElements(root);
+        return { size, tier: layoutTierFor(size) };
+    }
+
+    /** The network the perf lines name, or the graph's id where no layout meta is set. */
+    private networkName(root: GGraph): string {
+        const meta = typeof (this.modelState as any).get === 'function'
+            ? ((this.modelState as any).get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as { networkId?: string } | undefined)
+            : undefined;
+        return meta?.networkId ?? root.id;
     }
 
     private stringifyLayoutOptions(input: Record<string, unknown> | undefined): Record<string, string> | undefined {
@@ -99,6 +121,12 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
             return root;
         }
         const run = async (): Promise<GGraph> => {
+            // Always-on breadcrumb beside the `elk=` timing the submission handler
+            // prints: which preset this layout ran with, and why.
+            const { size, tier } = this.tierOf(root);
+            // eslint-disable-next-line no-console
+            console.log(`[dialogram perf] layout ${this.networkName(root)}: tier=${tier} nodes=${size.nodes} edges=${size.edges}`);
+
             // Ports sit on a fixed grid in the order the source declares them, and
             // ELK may not move them (FIXED_POS, see applyShape). On a dense graph that
             // order is what tangles the edges: an input declared first whose producer
@@ -132,6 +160,14 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
 
             const result = (await (this as any).elk.layout(elkGraph)) as ElkNode;
             this.applyLayout(result);
+
+            // The fast tier skips crossing minimisation: say so in the diagram's
+            // status line, since the result looks nothing like a usual layout.
+            if (tier === 'fast' && this.actionDispatcher) {
+                const message = `${size.nodes} nodes: laid out roughly. Run Layout for the full layout.`;
+                void Promise.resolve(this.actionDispatcher.dispatch(StatusAction.create(message, { severity: 'INFO', timeout: 10000 })))
+                    .catch(e => console.warn('[cal-elk] layout status not shown:', e));
+            }
             return root;
         };
         return run();
@@ -279,6 +315,12 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
                 ...(elkGraph.layoutOptions ?? {}),
                 ...graphLayoutOptions
             };
+            // In the fast tier the preset wins over what a layout set on the
+            // graph (Untangled's Brandes-Koepf placement, say): the options it
+            // replaces are the ones that take minutes or crash on such a graph.
+            if (elkGraph.layoutOptions['elk.algorithm'] === 'layered' && this.tierOf(graph).tier === 'fast') {
+                elkGraph.layoutOptions = { ...elkGraph.layoutOptions, ...FAST_LAYOUT_OPTIONS };
+            }
         }
         
         // Apply direction to all child nodes to ensure nested hierarchies use RIGHT

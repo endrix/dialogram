@@ -58,6 +58,26 @@ platform API version.
   of the margin and crossed the whole node, label included, to reach the glyph.
   It now arrives from the side the glyph faces, in one straight run.
 
+### Changed
+
+- The server's ELK layout picks its option preset by the graph's size, so large
+  graphs lay out in seconds instead of minutes. The default preset, with
+  network-simplex placement and model order, took 41 s on a 344-node netlist
+  module, 334 s on 1528 nodes and overflowed ELK's stack on 3293 nodes. Above
+  150 nodes or 400 edges the middle preset applies (model order off,
+  Brandes-Koepf placement, thoroughness 3: 1.7 s on 344 nodes, 9.3 s on 1528);
+  above 1000 nodes or 3000 edges the fast preset (crossing minimisation off,
+  simple placement, thoroughness 1, polyline routing, since orthogonal routing
+  of a simply placed graph took 2289 s on 3293 nodes against 11.5 s: 3.8 s on
+  1528 nodes, 11.5 s on 3293). The
+  rule reads nothing but node and edge counts, applies to the initial layout on
+  open and to every Layout command alike, and wins over Untangled's own
+  placement in the fast tier, where the options it replaces are the ones that
+  crash. A graph of up to 150 nodes and 400 edges gets exactly the options it
+  did before. Each layout logs
+  `[dialogram perf] layout <network>: tier=<default|middle|fast> nodes=<n> edges=<m>`,
+  and a fast-tier layout says so in the diagram's status line.
+
 ## [0.7.0] - 2026-09-01
 
 Edge routing, and boundary ports as schematic symbols. (#6-#23)
