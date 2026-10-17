@@ -47,7 +47,8 @@ import {
     WorkflowDiagramConstants,
     WorkflowDiagramTypes,
     WORKFLOW_NETWORK_MODEL_KEY,
-    WORKFLOW_LAYOUT_PERSISTENCE_KEY
+    WORKFLOW_LAYOUT_PERSISTENCE_KEY,
+    portSide
 } from '@dialogram/shared';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
@@ -340,8 +341,15 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             if (element instanceof GPort) {
                 const portW = element.size?.width ?? WorkflowDiagramConstants.PORT_WIDTH_PX;
                 const portH = element.size?.height ?? WorkflowDiagramConstants.PORT_HEIGHT_PX;
-                const direction = (element.args?.[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined)
-                    ?? (element.type === WorkflowDiagramTypes.PORT_OUTPUT ? 'output' : 'input');
+                // The label sits inside the node, on the port's SIDE — which is
+                // the direction unless the producer placed the port with its
+                // bundle (`cal:portSide`).
+                const east = portSide({
+                    absolute: { x: 0, y: 0 },
+                    direction: element.args?.[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined,
+                    side: element.args?.[WorkflowDiagramMetadata.PORT_SIDE] as string | undefined,
+                    type: element.type
+                }) === 'EAST';
 
                 const children = (element.children as any[] | undefined) ?? [];
                 for (const child of children) {
@@ -358,7 +366,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
                     // sits to the *left* of the port marker with a fixed gap. Client-side alignment
                     // transforms for port labels are intentionally disabled (see ComputedBounds handling),
                     // so we use the label's top-left origin here.
-                    const x = direction === 'output'
+                    const x = east
                         ? -portLabelGapPx - labelW
                         : portW + portLabelGapPx;
 
@@ -1034,11 +1042,15 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
                 return;
             }
 
-            const direction = (parentPort.args?.[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined)
-                ?? (portType === WorkflowDiagramTypes.PORT_OUTPUT ? 'output' : 'input');
+            const east = portSide({
+                absolute: { x: 0, y: 0 },
+                direction: parentPort.args?.[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined,
+                side: parentPort.args?.[WorkflowDiagramMetadata.PORT_SIDE] as string | undefined,
+                type: portType
+            }) === 'EAST';
 
             const y = Math.round((portH - labelH) / 2);
-            const x = direction === 'output'
+            const x = east
                 ? -portLabelGapPx - labelW
                 : portW + portLabelGapPx;
 

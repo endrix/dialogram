@@ -14,6 +14,44 @@ platform API version.
   globs, the openability probe and the raw sidecar commands accept any of them;
   the new-file scaffold takes the first. `sourceExtension` stays honoured and is
   all a Python product needs.
+- `DiagramStorageOptions.platformEntityItems` (and the same on the toolkit's
+  profile input): `false` leaves the palette's Entities category to the
+  product's own `entityPaletteItems`, for a product whose nodes are none of the
+  platform's kinds. Default `true`, so every existing palette is unchanged.
+- Sidecar toolkit, for a sidecar that is not Python: `openability.decoratorName`
+  is optional (with only a probe, an undecidable probe opens the file instead of
+  scanning for a decorator); `navigation: 'none'` installs no Python navigation
+  provider and skips the Python caller scan; `chat.sourceMimeType` names what
+  the agent receives the file as.
+- A producer may place a port with its bundle instead of by its direction. A
+  port's `side` (`west`/`east`) and a boundary node's `meta.side` say where it
+  sits; `group` names the bundle. A handshake's `ready` then sits beside the
+  `valid` and `data` it answers, and the wire between two nodes is a straight
+  segment with the arrow pointing back instead of a loop around both. The
+  direction is untouched: a `ready` output stays an output. The side reaches
+  the shared port anchor (`cal:portSide`), ELK's port sides and row ordering,
+  the label pass, the client hit areas and a mirrored boundary glyph
+  (`cal:boundarySide`). Absent, everything is as before. An edge whose
+  `meta.role` is `bidirectional` is drawn without an arrowhead.
+- `documentErrorsToProblems` on the sidecar toolkit's profile input and runtime
+  config: `true` publishes a loaded document's own root-level `errors` to the
+  Problems panel with their file, line and column. Default `false`: a Python
+  runtime's load errors stay in the diagram's overlay, as the diagnostics
+  parity tests pin.
+- A location in a graph document (`source`, `referencedSource`, `authoredSource`
+  on a node, `source` on a port or an edge) may leave out its `file` when it is
+  the graph's own, `graph.meta.file`; the reader puts it back before anything
+  navigates. A hierarchy export of a large netlist repeated one absolute path on
+  every element, a third of the export. A document with every file spelled out
+  reads exactly as before.
+
+### Fixed
+
+- ELK is told the side the producer placed a port on. It was told the side
+  from the direction alone, so a bundle's `ready`, placed in the other margin,
+  was routed to as if it sat on the far edge: the wire came around the outside
+  of the margin and crossed the whole node, label included, to reach the glyph.
+  It now arrives from the side the glyph faces, in one straight run.
 
 ## [0.7.0] - 2026-09-01
 

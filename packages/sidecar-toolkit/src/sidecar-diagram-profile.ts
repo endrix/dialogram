@@ -170,6 +170,13 @@ export interface SidecarProfileInput {
     supportsElementCreation?: boolean;
     /** Extra Entities-palette entries this product contributes; plain data. */
     entityPaletteItems?: EntityPaletteItemSpec[];
+    /**
+     * Whether the platform's own Entities entries are offered beside
+     * `entityPaletteItems`. Default `true`. A product whose vocabulary is not
+     * the platform's (a hardware module is neither a task nor an actor) sets
+     * `false` and the palette's Entities are its own entries alone.
+     */
+    platformEntityItems?: boolean;
     nodeFamilies?: NodeFamilySpec[];
 
     // Chat edit backend.
@@ -189,8 +196,25 @@ export interface SidecarProfileInput {
     newContainer: { label: string; decorator: string; importLine: string };
     identifierNoun?: string;
 
-    // Openability (omit for "always openable").
-    openability?: { probeOp?: string; decoratorName: string };
+    // Openability (omit for "always openable"). With only `probeOp`, the
+    // sidecar's answer decides and an undecidable probe opens the file.
+    openability?: { probeOp?: string; decoratorName?: string };
+
+    /**
+     * How cross-file navigation targets are resolved. `'python'` (the default)
+     * uses the Python symbol providers and a `.py` workspace search, and scans
+     * sibling Python files for callers; `'none'` resolves nothing itself: the
+     * runtime emits absolute source locators and the platform navigates to them.
+     */
+    navigation?: 'python' | 'none';
+
+    /**
+     * Whether a loaded document's own `errors` go to the Problems panel with
+     * their file, line and column. A compiler's errors belong there; a Python
+     * runtime's recoverable load errors stay in the diagram's overlay. Default
+     * `false`.
+     */
+    documentErrorsToProblems?: boolean;
 
     // Run driver.
     runOutputDirSettingKey: string;
@@ -224,6 +248,8 @@ export interface SidecarProfileInput {
         fullName: string;
         skill?: string;
         nodeCommands?: Array<{ command: string; nodeType: string; description: string }>;
+        /** The MIME type the agent receives the source file as. Default `text/x-python`. */
+        sourceMimeType?: string;
     };
 
     // Diagram source-file watch globs (default derived from the source extensions).
@@ -258,7 +284,9 @@ function sidecarRuntimeConfig(input: SidecarProfileInput): SidecarRuntimeConfig 
         undoLabelSuffix: input.undoLabelSuffix,
         createNodeStrings: input.createNodeStrings,
         createNodeBehavior: input.createNodeBehavior,
-        createNodeVariants: input.createNodeVariants
+        createNodeVariants: input.createNodeVariants,
+        navigation: input.navigation,
+        documentErrorsToProblems: input.documentErrorsToProblems
     };
 }
 
@@ -453,11 +481,14 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             operationPrefix: input.sidecarOperationPrefix,
             useAlternateEntityPalette: input.useAlternateEntityPalette,
             entityPaletteItems: input.entityPaletteItems,
+            platformEntityItems: input.platformEntityItems,
             nodeFamilies: input.nodeFamilies,
             nestedNavigation: input.clientBehavior?.nestedNavigation
         },
         watch: { globs: input.watchGlobs ?? sourceExtensions.map(ext => `**/*${ext}`) },
-        navigation: createPythonNavigationProvider(),
+        // No provider at all for a product that resolves nothing itself: the
+        // platform then navigates straight to the referenced target.
+        navigation: input.navigation === 'none' ? undefined : createPythonNavigationProvider(),
         canOpenSource,
         editBackend,
         // GLSP-MCP opt-in (0.5.0): sidecar-backed products ship it ON by default.
@@ -473,8 +504,8 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             nodeCommands: input.chat.nodeCommands,
             // Read-only sidecar-registry tools bridged to GLSP-MCP by the platform adapter.
             tools: chatTools,
-            // The libcst edit backend rewrites Python source; agents get the file as text/x-python.
-            sourceMimeType: 'text/x-python',
+            // What the agent receives the file as; Python unless the product says.
+            sourceMimeType: input.chat.sourceMimeType ?? 'text/x-python',
             // The ACP connector: the setting the chat and the property panel
             // read. Without it the chat keeps its opencode default.
             acpConnector: input.acpConnectorSettingKey && input.acpConnectorFiles

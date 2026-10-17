@@ -276,6 +276,22 @@ export namespace WorkflowDiagramMetadata {
     export const PORT_INDEX = 'cal:portIndex';
     export const PORT_DIRECTION = 'cal:portDirection';
     export const IS_INPUT_PORT = 'cal:isInputPort';
+    /**
+     * Which side of its node the port sits on, `'WEST'` or `'EAST'`, when the
+     * producer places it with its bundle rather than by its direction: a
+     * handshake's `ready` beside the `valid` and `data` it answers, so the wire
+     * between two nodes runs straight instead of looping around both. Absent,
+     * the side follows the direction. The direction itself is untouched.
+     */
+    export const PORT_SIDE = 'cal:portSide';
+    /** The bundle the port belongs to (`s_axis`), a producer's fact. */
+    export const PORT_GROUP = 'cal:portGroup';
+    /**
+     * On a boundary node: `'WEST'` or `'EAST'` when the producer places it with
+     * its bundle rather than by its direction (an output `ready` beside the
+     * input bundle it belongs to). The glyph, the text and the port mirror.
+     */
+    export const BOUNDARY_SIDE = 'cal:boundarySide';
     export const IS_ARRAY_PORT = 'cal:isArrayPort';
     export const ARRAY_SIZE = 'cal:arraySize';
     

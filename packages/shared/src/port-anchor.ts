@@ -25,6 +25,8 @@ export interface PortAnchorGeometry {
     size?: { width?: number; height?: number };
     /** `cal:portDirection`, when the model carries it. */
     direction?: string;
+    /** `cal:portSide`, when the producer placed the port with its bundle. Wins over `direction`. */
+    side?: string;
     /** The element type, used only when `direction` is missing or unrecognised. */
     type?: string;
 }
@@ -35,15 +37,29 @@ export interface PortAnchor {
     side: PortSide;
 }
 
+/** `'WEST'` or `'EAST'` from a producer's value in either case; anything else is nothing. */
+export function normalizePortSide(value: unknown): PortSide | undefined {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+    const upper = value.toUpperCase();
+    return upper === 'WEST' || upper === 'EAST' ? upper : undefined;
+}
+
 /**
  * Which side of its node a port sits on.
  *
- * `direction` wins when it is one of the two values the model uses; otherwise
- * fall back to the type string. An unrecognised port is treated as an input,
- * matching the model's own default.
+ * An explicit `side` wins: it is the producer placing the port with its bundle
+ * (see `WorkflowDiagramMetadata.PORT_SIDE`). Then `direction`, when it is one
+ * of the two values the model uses; otherwise fall back to the type string. An
+ * unrecognised port is treated as an input, matching the model's own default.
  */
 export function portSide(geometry: PortAnchorGeometry): PortSide {
     const { direction, type } = geometry;
+    const explicit = normalizePortSide(geometry.side);
+    if (explicit) {
+        return explicit;
+    }
     if (direction === 'output') {
         return 'EAST';
     }

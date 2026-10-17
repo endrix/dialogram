@@ -56,6 +56,7 @@ function portAnchorAbsolute(index: GModelIndex, portId: string | undefined): Poi
         absolute: absolutePosition(port),
         size: (port as any).size as { width?: number; height?: number } | undefined,
         direction: (port as any).args?.[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined,
+        side: (port as any).args?.[WorkflowDiagramMetadata.PORT_SIDE] as string | undefined,
         type: port.type
     });
 }

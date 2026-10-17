@@ -125,6 +125,24 @@ describe('createSidecarDiagramProfile', () => {
         expect(createSidecarDiagramProfile(baseInput({ sourceExtensions: [' ', ''] })).sourceExtensions).toEqual(['.py']);
     });
 
+    it('drops the Python navigation provider, and carries the palette and MIME choices, when the product asks', () => {
+        const python = createSidecarDiagramProfile(baseInput());
+        expect(python.navigation).toBeDefined();
+        expect(python.chat?.sourceMimeType).toBe('text/x-python');
+        expect(python.storageOptions?.platformEntityItems).toBeUndefined();
+
+        const other = createSidecarDiagramProfile(baseInput({
+            navigation: 'none',
+            platformEntityItems: false,
+            entityPaletteItems: [{ elementTypeId: 'node:actor', label: 'Module Instance', description: 'x' }],
+            chat: { name: 'hw', fullName: 'HW', sourceMimeType: 'text/x-systemverilog' }
+        }));
+        expect(other.navigation).toBeUndefined();
+        expect(other.chat?.sourceMimeType).toBe('text/x-systemverilog');
+        expect(other.storageOptions?.platformEntityItems).toBe(false);
+        expect(other.storageOptions?.entityPaletteItems?.map(i => i.label)).toEqual(['Module Instance']);
+    });
+
     it('turns on resuming at a step exactly when the product says how', () => {
         const without = createSidecarDiagramProfile(baseInput({ clientBehavior: { noneSentinel: 'x' } }));
         expect((without.clientBehavior as any)?.resumeAtStep).toBeUndefined();

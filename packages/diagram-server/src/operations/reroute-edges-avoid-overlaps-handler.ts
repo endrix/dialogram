@@ -224,6 +224,7 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
             absolute: this.absPos(port),
             size: this.sizeOf(port),
             direction: (port as any).args?.[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined,
+            side: (port as any).args?.[WorkflowDiagramMetadata.PORT_SIDE] as string | undefined,
             type: port.type
         });
         return { ...anchor, nodeId: String((parentNode as any).id) };

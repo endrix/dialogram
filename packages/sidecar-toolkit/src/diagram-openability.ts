@@ -32,8 +32,11 @@ export interface DiagramOpenabilityConfig {
     /** Every extension it handles, for a language with several (`['.sv', '.v']`);
      *  `sourceExtension` alone when absent. */
     sourceExtensions?: string[];
-    /** Decorator name the fallback checker scans for (e.g. `network`/`workflow`). */
-    decoratorName: string;
+    /** Decorator name the fallback checker scans for (e.g. `network`/`workflow`).
+     *  Absent, there is no fallback: an undecidable probe answers *unknown* and
+     *  the platform opens the file, which is right for a language whose files
+     *  carry no decorator to scan for. */
+    decoratorName?: string;
 }
 
 export type DiagramOpenabilityProbe = (
@@ -123,7 +126,7 @@ export async function shouldOpenDiagram(
     requestedName?: string,
     probe: DiagramOpenabilityProbe = probeDiagramOpenability,
     definitionChecker: DecoratedDefinitionChecker = hasRequestedDecoratedDefinition
-): Promise<boolean> {
+): Promise<boolean | undefined> {
     if (targetUri.scheme !== 'file' || !hasSourceExtension(targetUri.fsPath, cfg)) {
         return false;
     }
@@ -131,6 +134,10 @@ export async function shouldOpenDiagram(
     const probeResult = await probe(targetUri, cfg, requestedName);
     if (probeResult !== undefined) {
         return probeResult;
+    }
+
+    if (cfg.decoratorName === undefined) {
+        return undefined;
     }
 
     try {

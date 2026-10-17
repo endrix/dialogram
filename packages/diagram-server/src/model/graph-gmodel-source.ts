@@ -1,5 +1,5 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
-import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, type PortSide } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
 import { URI } from 'vscode-uri';
@@ -10,6 +10,15 @@ export type PyGraphPort = {
     direction: 'in' | 'out';
     type?: string;
     role?: string;
+    /**
+     * `west` or `east`: the producer placing the port with its bundle rather
+     * than by its direction (a handshake's `ready` beside its `valid`). Absent,
+     * inputs sit west and outputs east.
+     */
+    side?: string;
+    /** The bundle the port belongs to (`s_axis`). */
+    group?: string;
+    width?: number;
     source?: { file?: string; line?: number } | null;
 };
 
@@ -50,6 +59,11 @@ export type PyGraph = {
     meta?: Record<string, unknown>;
 };
 
+/**
+ * A graph document. A location (`source`, `referencedSource`, `authoredSource`
+ * on a node, `source` on a port or an edge) may leave out its `file` when it
+ * is the graph's own, `graph.meta.file`; see `resolveSourceFiles`.
+ */
 export type PyGraphDocument = {
     version: string;
     graph: PyGraph;
@@ -193,6 +207,7 @@ export class GraphGModelSource {
     constructor(private readonly storageOptions?: StorageRuntimeOptions) {}
 
     transform(doc: PyGraphDocument): { graph: GGraph } {
+        doc = resolveSourceFiles(doc);
         const children: GModelElement[] = [];
         const nodeMap = new Map<string, GNode>();
         const portIdMap = new Map<string, string>();
@@ -235,8 +250,11 @@ export class GraphGModelSource {
                 }
                 continue;
             }
-            const inputs = node.ports.filter(p => p.direction === 'in');
-            const outputs = node.ports.filter(p => p.direction === 'out');
+            // Ports are laid out by SIDE, which is the direction unless the
+            // producer placed the port with its bundle (`port.side`).
+            const sideOf = (p: PyGraphPort): PortSide => normalizePortSide(p.side) ?? (p.direction === 'in' ? 'WEST' : 'EAST');
+            const inputs = node.ports.filter(p => sideOf(p) === 'WEST');
+            const outputs = node.ports.filter(p => sideOf(p) === 'EAST');
 
             const portW = WorkflowDiagramConstants.PORT_WIDTH_PX;
             const portH = WorkflowDiagramConstants.PORT_HEIGHT_PX;
@@ -539,9 +557,11 @@ export class GraphGModelSource {
                     'wf:footerTypeLabel': typeLabel
                 };
             }
-            const mkPort = (port: PyGraphPort, direction: 'input' | 'output', idx: number): GPort => {
+            const mkPort = (port: PyGraphPort, side: PortSide, idx: number): GPort => {
                 const portId = `${stableNodeId}_port_${port.name}`;
-                const x = direction === 'output' ? size.width : -portW;
+                const direction: 'input' | 'output' = port.direction === 'out' ? 'output' : 'input';
+                const east = side === 'EAST';
+                const x = east ? size.width : -portW;
                 const y = yStart + idx * portRowH;
                 const labelText = port.name;
                 const labelSize = this.estimateLabelSize(labelText, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX);
@@ -559,10 +579,12 @@ export class GraphGModelSource {
                         [WorkflowDiagramMetadata.PORT_ROLE]: port.role,
                         // Kept beside the documented key: the property panel and
                         // the port views already read this one.
-                        'wf:portRole': port.role
+                        'wf:portRole': port.role,
+                        ...(normalizePortSide(port.side) ? { [WorkflowDiagramMetadata.PORT_SIDE]: side } : {}),
+                        ...(port.group ? { [WorkflowDiagramMetadata.PORT_GROUP]: port.group } : {})
                     },
                     layoutOptions: {
-                        'elk.port.side': direction === 'output' ? 'EAST' : 'WEST'
+                        'elk.port.side': side
                     }
                 };
                 gport.cssClasses = [
@@ -590,10 +612,10 @@ export class GraphGModelSource {
                     cssClasses: [
                         WorkflowDiagramCss.LABEL,
                         'port-label',
-                        direction === 'input' ? 'input-port-label' : 'output-port-label'
+                        east ? 'output-port-label' : 'input-port-label'
                     ],
                     position: {
-                        x: direction === 'input' ? portW + 1 : -1 - labelBoxWidth,
+                        x: east ? -1 - labelBoxWidth : portW + 1,
                         y: Math.round((portH - labelSize.height) / 2)
                     },
                     size: { width: labelBoxWidth, height: labelSize.height },
@@ -630,8 +652,8 @@ export class GraphGModelSource {
                 return gport;
             };
 
-            inputs.forEach((p, i) => gnode.children!.push(mkPort(p, 'input', i)));
-            outputs.forEach((p, i) => gnode.children!.push(mkPort(p, 'output', i)));
+            inputs.forEach((p, i) => gnode.children!.push(mkPort(p, 'WEST', i)));
+            outputs.forEach((p, i) => gnode.children!.push(mkPort(p, 'EAST', i)));
 
             if (node.kind === 'if' || node.kind === 'loop') {
                 const branches = this.createControlBranchPorts(node.id, node.kind);
@@ -1175,6 +1197,13 @@ export class GraphGModelSource {
     private createBoundaryNode(node: PyGraphNode, stableNodeId: string): GNode {
         const port = node.ports[0];
         const isInput = node.kind === 'wf-input';
+        // Which margin the node sits in. By its direction, unless the producer
+        // placed it with its bundle (`meta.side`): an output `ready` belongs
+        // beside the input `valid` and `data` it answers. Then the glyph faces
+        // the other way and the port sits on the other edge.
+        const margin: PortSide = normalizePortSide(node.meta?.['side']) ?? (isInput ? 'WEST' : 'EAST');
+        const mirrored = margin !== (isInput ? 'WEST' : 'EAST');
+        const facesEast = margin === 'WEST';
         // One row tall now, not a 50px box — the port is a symbol on the wire's
         // axis rather than a container. Width stays fixed across every boundary
         // node so their inner edges, and therefore their glyphs, line up in a
@@ -1197,15 +1226,17 @@ export class GraphGModelSource {
             // puts the anchor on the axis — the NAME's line, not the node's
             // centre, which is what used to run the wire between the two lines.
             position: {
-                x: isInput ? size.width - glyph.width : 0,
+                x: facesEast ? size.width - glyph.width : 0,
                 y: BoundaryPortGeometry.AXIS_Y_PX - glyph.height / 2
             },
             size: glyph,
             args: {
                 [WorkflowDiagramMetadata.PORT_NAME]: port?.name ?? '',
-                [WorkflowDiagramMetadata.PORT_DIRECTION]: isInput ? 'output' : 'input'
+                [WorkflowDiagramMetadata.PORT_DIRECTION]: isInput ? 'output' : 'input',
+                ...(mirrored ? { [WorkflowDiagramMetadata.PORT_SIDE]: facesEast ? 'EAST' : 'WEST' } : {}),
+                ...(port?.group ? { [WorkflowDiagramMetadata.PORT_GROUP]: port.group } : {})
             },
-            layoutOptions: { 'elk.port.side': isInput ? 'EAST' : 'WEST' }
+            layoutOptions: { 'elk.port.side': facesEast ? 'EAST' : 'WEST' }
         };
 
         const typeText = port?.type ?? '';
@@ -1253,7 +1284,7 @@ export class GraphGModelSource {
             size,
             layoutOptions: {
                 'elk.portConstraints': 'FIXED_POS',
-                'elk.layered.layering.layerConstraint': isInput ? 'FIRST_SEPARATE' : 'LAST_SEPARATE'
+                'elk.layered.layering.layerConstraint': margin === 'WEST' ? 'FIRST_SEPARATE' : 'LAST_SEPARATE'
             },
             children: [
                 {
@@ -1280,6 +1311,7 @@ export class GraphGModelSource {
                 [WorkflowDiagramMetadata.PORT_TYPE]: typeText,
                 'wf:boundaryKind': isInput ? 'input' : 'output',
                 'wf:portName': port?.name ?? '',
+                ...(mirrored ? { [WorkflowDiagramMetadata.BOUNDARY_SIDE]: margin } : {}),
                 ...boundaryNavigation
             }
         };
@@ -1425,4 +1457,51 @@ export class GraphGModelSource {
     private isExternal(node: PyGraphNode): boolean {
         return this.isExternalNodeKind(node.kind) || this.isExternalByMeta(node);
     }
+}
+
+type SourceLocation = { file?: string; line?: number } | null | undefined;
+
+/**
+ * A location without a `file` is in the graph's own file.
+ *
+ * A hierarchy export repeats one absolute path on every node, port and edge of
+ * every graph; a producer may leave it out where it is the graph's `meta.file`
+ * (a third of a large netlist's export), and this puts it back before anything
+ * reads a location. A document whose locations all name their file, or whose
+ * graph names no file, is returned as it is.
+ */
+export function resolveSourceFiles(doc: PyGraphDocument): PyGraphDocument {
+    const own = doc.graph?.meta?.['file'];
+    if (typeof own !== 'string' || own === '') {
+        return doc;
+    }
+    let changed = false;
+    const fill = (loc: unknown): unknown => {
+        const at = loc as SourceLocation;
+        if (at && typeof at === 'object' && typeof at.line === 'number' && typeof at.file !== 'string') {
+            changed = true;
+            return { ...at, file: own };
+        }
+        return loc;
+    };
+    const fillKeys = <T extends Record<string, unknown>>(obj: T, keys: string[]): T => {
+        let out: Record<string, unknown> = obj;
+        for (const key of keys) {
+            if (key in out) {
+                const filled = fill(out[key]);
+                if (filled !== out[key]) {
+                    out = out === obj ? { ...obj } : out;
+                    out[key] = filled;
+                }
+            }
+        }
+        return out as T;
+    };
+    const nodes = (doc.graph.nodes ?? []).map(node => {
+        const meta = node.meta ? fillKeys(node.meta, ['source', 'referencedSource', 'authoredSource']) : node.meta;
+        const ports = (node.ports ?? []).map(port => fillKeys(port, ['source']));
+        return meta === node.meta && ports.every((port, i) => port === node.ports[i]) ? node : { ...node, meta, ports };
+    });
+    const edges = (doc.graph.edges ?? []).map(edge => fillKeys(edge, ['source']));
+    return changed ? { ...doc, graph: { ...doc.graph, nodes, edges } } : doc;
 }

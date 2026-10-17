@@ -10,7 +10,12 @@
 import { GGraph, GNode, GEdge, GPort, GLabel, GModelElement } from '@eclipse-glsp/server';
 import { AbstractLayoutConfigurator, LayoutOptions } from '@eclipse-glsp/layout-elk';
 import { injectable } from 'inversify';
-import { WorkflowDiagramTypes } from '@dialogram/shared';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide } from '@dialogram/shared';
+
+/** The margin a boundary node was placed in by its producer, when it was not left to its direction. */
+function boundaryMargin(node: GNode): 'WEST' | 'EAST' | undefined {
+    return normalizePortSide((node.args as Record<string, unknown> | undefined)?.[WorkflowDiagramMetadata.BOUNDARY_SIDE]);
+}
 
 /**
  * Workflow-specific layout configurator for ELK.
@@ -244,10 +249,12 @@ export class WorkflowLayoutConfigurator extends AbstractLayoutConfigurator {
             // FIXED_SIZE prevents ELK from resizing the node: the port is positioned at
             // x = node.width (right edge), so any ELK-computed size change would push the
             // port outside the node bounds and break edge routing/anchoring.
+            // Unless the producer placed it with its bundle on the other margin
+            // (`cal:boundarySide`), in which case it goes with the outputs.
             return {
                 'elk.nodeSize.constraints': 'FIXED_SIZE',
                 'elk.portConstraints': 'FIXED_POS',
-                'elk.layered.layering.layerConstraint': 'FIRST_SEPARATE'
+                'elk.layered.layering.layerConstraint': boundaryMargin(node) === 'EAST' ? 'LAST_SEPARATE' : 'FIRST_SEPARATE'
             };
         }
         
@@ -259,7 +266,7 @@ export class WorkflowLayoutConfigurator extends AbstractLayoutConfigurator {
             return {
                 'elk.nodeSize.constraints': 'FIXED_SIZE',
                 'elk.portConstraints': 'FIXED_POS',
-                'elk.layered.layering.layerConstraint': 'LAST_SEPARATE'
+                'elk.layered.layering.layerConstraint': boundaryMargin(node) === 'WEST' ? 'FIRST_SEPARATE' : 'LAST_SEPARATE'
             };
         }
 
@@ -319,8 +326,14 @@ export class WorkflowLayoutConfigurator extends AbstractLayoutConfigurator {
      * Configure port side based on direction and let ELK handle label placement.
      */
     protected override portOptions(port: GPort): LayoutOptions | undefined {
-        const direction = (port as any).args?.['cal:portDirection'] as string | undefined;
-        const side = direction === 'output' ? 'EAST' : 'WEST';
+        // The side the producer placed the port on wins over its direction
+        // (`cal:portSide`, a bundle's `ready` beside its `valid`); this is the
+        // side ELK routes to, so it has to be the one the anchor and the
+        // glyph use, or a wire reaches the port from across its own node.
+        // Without one, the direction decides exactly as before.
+        const args = (port as any).args as Record<string, unknown> | undefined;
+        const direction = args?.['cal:portDirection'] as string | undefined;
+        const side = normalizePortSide(args?.[WorkflowDiagramMetadata.PORT_SIDE]) ?? (direction === 'output' ? 'EAST' : 'WEST');
 
         return {
             'elk.port.side': side,

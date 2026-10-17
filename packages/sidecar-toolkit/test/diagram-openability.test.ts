@@ -41,6 +41,19 @@ describe('shouldOpenDiagram', () => {
         expect(definitionChecker).toHaveBeenCalledWith(targetUri.fsPath, 'network', 'top_level');
     });
 
+    it('answers unknown, not no, when there is no decorator to scan for and the probe cannot say', async () => {
+        const cfg: DiagramOpenabilityConfig = { ...OPENABILITY_CONFIG, decoratorName: undefined };
+        const definitionChecker = vi.fn(async () => false);
+        await expect(
+            shouldOpenDiagram(vscode.Uri.file('/rtl/top.py'), cfg, undefined, vi.fn(async () => undefined), definitionChecker)
+        ).resolves.toBeUndefined();
+        expect(definitionChecker).not.toHaveBeenCalled();
+        // The probe's answer still decides when it has one.
+        await expect(
+            shouldOpenDiagram(vscode.Uri.file('/rtl/top.py'), cfg, undefined, vi.fn(async () => false), definitionChecker)
+        ).resolves.toBe(false);
+    });
+
     it('accepts any of several source extensions and nothing else', async () => {
         const cfg: DiagramOpenabilityConfig = { ...OPENABILITY_CONFIG, sourceExtension: '.sv', sourceExtensions: ['.sv', '.v'] };
         expect(hasSourceExtension('/rtl/top.sv', cfg)).toBe(true);

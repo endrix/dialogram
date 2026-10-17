@@ -24,6 +24,17 @@ describe('port anchor', () => {
         })).toEqual({ x: 100, y: 203.5, side: 'WEST' });
     });
 
+    it('lets the producer\'s side win over the direction', () => {
+        // A handshake's `ready` is an output placed on the west edge with its bundle.
+        expect(portAnchor({
+            absolute: { x: 100, y: 200 }, size: { width: 9, height: 7 }, direction: 'output', side: 'WEST'
+        })).toEqual({ x: 100, y: 203.5, side: 'WEST' });
+        expect(portSide({ absolute: { x: 0, y: 0 }, direction: 'input', side: 'east' })).toBe('EAST');
+        // Anything that is not a side is ignored, and the direction decides.
+        expect(portSide({ absolute: { x: 0, y: 0 }, direction: 'input', side: 'NORTH' })).toBe('WEST');
+        expect(portSide({ absolute: { x: 0, y: 0 }, direction: 'output', side: undefined })).toBe('EAST');
+    });
+
     it('falls back to the shared constants when size is missing or zero', () => {
         const missing = portAnchor({ absolute: { x: 0, y: 0 }, direction: 'output' });
         const zero = portAnchor({ absolute: { x: 0, y: 0 }, size: { width: 0, height: 0 }, direction: 'output' });

@@ -200,6 +200,16 @@ export interface SidecarRuntimeConfig {
     cliCommandSettingKey: string;
     cliCommandDefault: string;
     cliPythonModule?: string;
+    /** `'none'` turns off the Python caller scan (`discoverCrossFileWorkflowCallers`)
+     *  and the `.py` workspace walk behind it; default `'python'`. */
+    navigation?: 'python' | 'none';
+    /**
+     * `true` publishes a graph document's own `errors` (the compiler's, at the
+     * document root) to the Problems panel on a successful load, with their
+     * file, line and column. Default `false`: a Python runtime's document
+     * errors stay in the diagram's overlay, as they always have.
+     */
+    documentErrorsToProblems?: boolean;
     operationKinds: { createEntityPort: string; deleteEntityPort: string };
     /** Op prefixes this runtime accepts when rewriting foreign-prefixed ops
      *  (replaces the hardcoded product-prefix literal check). */

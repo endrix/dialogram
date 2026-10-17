@@ -60,10 +60,14 @@ export class WorkflowToolPaletteItemProvider extends ToolPaletteItemProvider {
         }
 
         const useAlternateEntityPalette = this.storageOptions?.useAlternateEntityPalette ?? false;
+        const platformEntityItems = this.storageOptions?.platformEntityItems ?? true;
         const items: PaletteItem[] = [];
 
-        // Create Entities category
-        const entityItems: PaletteItem[] = useAlternateEntityPalette
+        // Create Entities category: the platform's own entries unless the
+        // product's nodes are none of these kinds, then the product's alone.
+        const entityItems: PaletteItem[] = !platformEntityItems
+            ? []
+            : useAlternateEntityPalette
             ? [
                 this.createNodeItem(WorkflowDiagramTypes.NODE_TASK, 'Actor', 'Create an Actor instance', 'symbol-class'),
                 this.createNodeItem(WorkflowDiagramTypes.NODE_WORKFLOW, 'Network', 'Create a Network instance', 'symbol-namespace')

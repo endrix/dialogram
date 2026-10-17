@@ -15,7 +15,18 @@ import { GlspElkLayoutEngine, ElkFactory, ElementFilter, LayoutConfigurator } fr
 import { ElkExtendedEdge, ElkNode, ElkPort, ElkShape } from 'elkjs';
 import { injectable } from 'inversify';
 import { WorkflowDiagramTypes } from '@dialogram/shared';
-import { WorkflowDiagramConstants } from '@dialogram/shared';
+import { WorkflowDiagramConstants, WorkflowDiagramMetadata, portSide, type PortSide } from '@dialogram/shared';
+
+/** Which side of its node a GPort sits on: the producer's placement, else its direction or type. */
+function gportSide(port: GPort): PortSide {
+    const args = (port.args ?? {}) as Record<string, unknown>;
+    return portSide({
+        absolute: { x: 0, y: 0 },
+        direction: args[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined,
+        side: args[WorkflowDiagramMetadata.PORT_SIDE] as string | undefined,
+        type: port.type
+    });
+}
 import { snapRouteEndpoints } from '../routing/persisted-edge-routes';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -198,8 +209,8 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
      * move with them; nothing else about the node changes.
      */
     private regridPorts(node: GNode, elkPorts: ElkPort[]): void {
-        for (const input of [true, false]) {
-            const ports = this.findChildren(node, GPort).filter(p => (p.type === WorkflowDiagramTypes.PORT_INPUT) === input);
+        for (const side of ['WEST', 'EAST'] as const) {
+            const ports = this.findChildren(node, GPort).filter(p => gportSide(p) === side);
             if (ports.length < 2) {
                 continue;
             }
@@ -857,13 +868,8 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         const w = (port.size?.width && port.size.width > 0) ? port.size.width : fallbackPortWidth;
         const h = (port.size?.height && port.size.height > 0) ? port.size.height : fallbackPortHeight;
 
-        // Determine port side from direction or type
-        const direction = (port as any).args?.['cal:portDirection'] as string | undefined;
-        const side = direction === 'output' ? 'EAST' 
-            : direction === 'input' ? 'WEST'
-            : port.type?.includes('output') ? 'EAST'
-            : port.type?.includes('input') ? 'WEST'
-            : 'WEST';
+        // Determine port side: the producer's placement, else direction or type
+        const side = gportSide(port);
 
         const absPortX = nodePos.x + portPos.x;
         const absPortY = nodePos.y + portPos.y;
