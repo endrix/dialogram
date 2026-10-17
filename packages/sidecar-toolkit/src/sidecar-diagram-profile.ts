@@ -192,8 +192,10 @@ export interface SidecarProfileInput {
      */
     mcp?: { enabled: boolean };
 
-    // New-source-file scaffold.
-    newContainer: { label: string; decorator: string; importLine: string };
+    // New-source-file scaffold. `template` gives the whole text from the name,
+    // for a product whose file is not a decorated Python function; absent, the
+    // scaffold is the import line, the decorator and an empty function.
+    newContainer: { label: string; decorator: string; importLine: string; template?: (name: string) => string };
     identifierNoun?: string;
 
     // Openability (omit for "always openable"). With only `probeOp`, the
@@ -446,6 +448,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             label: input.newContainer.label,
             decorator: input.newContainer.decorator,
             importLine: input.newContainer.importLine,
+            template: input.newContainer.template,
             sourceExtension: primarySourceExtension,
             identifierNoun: input.identifierNoun
         });
