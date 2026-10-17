@@ -33,6 +33,12 @@ type DiagramClientBehavior = {
      *  this editor, as a view of the editor's root (one editor per hierarchy);
      *  `new-editor` (the default) opens the file in its own editor. */
     nestedNavigation?: 'in-place' | 'new-editor';
+    /** Whether a double-click on a node that is not a network instance opens the
+     *  source it references in the text editor. Off (the default), such a node
+     *  does nothing on double-click. For a product whose leaves have a body of
+     *  their own that no diagram shows yet: an HDL module or entity of processes
+     *  and assignments lands at its definition. */
+    doubleClickOpensSource?: boolean;
 };
 
 export type AcpConnectorInfo = {

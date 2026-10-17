@@ -83,6 +83,59 @@ function findContainingNetworkInstanceNode(element: GModelElement | undefined): 
     return undefined;
 }
 
+const SHOW_OPTIONS_ARG = 'jsonOpenerOptions';
+
+type SerializedPosition = { line: number; character: number };
+type SerializedRange = { start: SerializedPosition; end: SerializedPosition };
+
+function isSerializedRange(value: unknown): value is SerializedRange {
+    if (!value || typeof value !== 'object') {
+        return false;
+    }
+    const v = value as Record<string, unknown>;
+    const ok = (p: unknown): boolean => !!p && typeof p === 'object'
+        && typeof (p as SerializedPosition).line === 'number' && typeof (p as SerializedPosition).character === 'number';
+    return ok(v.start) && ok(v.end);
+}
+
+/**
+ * The source a double-click lands in when the node has no diagram to drill
+ * into. A node that is not a network instance has nothing behind it on the
+ * canvas; with `clientBehavior.doubleClickOpensSource` the profile asks for its
+ * definition in the text editor instead: an HDL leaf whose body is processes and
+ * assignments, which no view shows yet. The target is what "Go to Source"
+ * uses, the referenced definition (`REFERENCED_URI`), looked up through the
+ * element's ancestry so a port or label resolves to its node. The editor opens
+ * for real, not as a preview: the reader asked for the code.
+ */
+function openSourceOfLeaf(target: GModelElement): Action[] {
+    if (clientBehavior().doubleClickOpensSource !== true) {
+        return [];
+    }
+    let current: GModelElement | undefined = target;
+    while (current) {
+        const args = (current as unknown as { args?: Args }).args;
+        const uri = args?.[WorkflowDiagramMetadata.REFERENCED_URI];
+        if (typeof uri === 'string' && uri.trim() !== '') {
+            const range = args?.[WorkflowDiagramMetadata.REFERENCED_SOURCE_RANGE];
+            return [
+                NavigateToExternalTargetAction.create({
+                    uri,
+                    args: {
+                        [SHOW_OPTIONS_ARG]: JSON.stringify({
+                            ...(isSerializedRange(range) ? { selection: range } : {}),
+                            preview: false,
+                            preserveFocus: false
+                        })
+                    }
+                })
+            ];
+        }
+        current = (current as unknown as { parent?: GModelElement }).parent;
+    }
+    return [];
+}
+
 @injectable()
 export class WorkflowNetworkNavigationMouseListener extends MouseListener implements Ranked {
     // Run fairly early so we beat default tools (drag etc.).
@@ -97,7 +150,7 @@ export class WorkflowNetworkNavigationMouseListener extends MouseListener implem
     override doubleClick(target: GModelElement, _event: MouseEvent): (Action | Promise<Action>)[] {
         const networkNode = findContainingNetworkInstanceNode(target);
         if (!networkNode) {
-            return [];
+            return openSourceOfLeaf(target);
         }
 
         const args = (networkNode as unknown as { args?: Args }).args;

@@ -8,6 +8,11 @@ platform API version.
 
 ### Added
 
+- `clientBehavior.doubleClickOpensSource`: a double-click on a node that is not
+  a network instance opens the source it references in the text editor, at its
+  definition. Off by default, so every existing diagram is unchanged. For a
+  product whose leaves have a body no diagram shows yet: an HDL module or
+  entity of processes and assignments. Network instances drill down as before.
 - `newContainer.template` on the sidecar toolkit's profile input: the whole
   text of a new source file, from its name, for a product whose file is not a
   decorated Python function (a SystemVerilog module, a VHDL entity). Absent,
