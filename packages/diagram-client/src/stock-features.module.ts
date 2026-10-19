@@ -39,6 +39,8 @@ import {
     WorkflowOpenInOwnEditorActionHandler,
     WorkflowGoToErrorAction,
     WorkflowGoToErrorActionHandler,
+    WorkflowOpenViewAction,
+    WorkflowOpenViewActionHandler,
     WorkflowEditParametersAction,
     WorkflowEditParametersActionHandler,
     WorkflowEditAnnotationsAction,
@@ -120,6 +122,7 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     configureActionHandler(context, WorkflowRerunFromHereAction.KIND, WorkflowRerunFromHereActionHandler);
     configureActionHandler(context, WorkflowOpenInOwnEditorAction.KIND, WorkflowOpenInOwnEditorActionHandler);
     configureActionHandler(context, WorkflowGoToErrorAction.KIND, WorkflowGoToErrorActionHandler);
+    configureActionHandler(context, WorkflowOpenViewAction.KIND, WorkflowOpenViewActionHandler);
     configureActionHandler(context, WorkflowEditParametersAction.KIND, WorkflowEditParametersActionHandler);
     configureActionHandler(context, WorkflowEditAnnotationsAction.KIND, WorkflowEditAnnotationsActionHandler);
     configureActionHandler(context, WorkflowShowWorkspaceEntitiesAction.KIND, WorkflowShowWorkspaceEntitiesActionHandler);

@@ -1,4 +1,5 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
+import { parseViewsMeta } from '../server/graph-load-request-options';
 import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, type PortSide } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
@@ -365,6 +366,13 @@ export class GraphGModelSource {
                 gnode.args = {
                     ...(gnode.args ?? {}),
                     [WorkflowDiagramMetadata.IS_NETWORK_INSTANCE]: true
+                };
+            }
+            const unitViews = parseViewsMeta(node.meta?.['views']);
+            if (unitViews) {
+                gnode.args = {
+                    ...(gnode.args ?? {}),
+                    [WorkflowDiagramMetadata.VIEWS]: unitViews as any
                 };
             }
             if (node.meta) {

@@ -7,6 +7,8 @@ export const ROOT_WORKFLOW_ARG = 'cal:rootWorkflow';
 export const INSTANCE_PATH_ARG = 'cal:instancePath';
 export const NAV_TRAIL_ARG = 'wf:navTrail';
 export const RUN_ID_ARG = 'wf:runId';
+/** The view of the unit to load when not its structure (a view id from `wf:views`). */
+export const VIEW_ARG = 'wf:view';
 
 export type CrossFileNavigationTarget = {
     uri: string;

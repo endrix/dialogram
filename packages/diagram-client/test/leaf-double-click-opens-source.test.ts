@@ -84,6 +84,29 @@ describe('double-click on a node that is not a network instance', () => {
         expect(doubleClick(leafNode({}))).toEqual([]);
     });
 
+    it('opens the first view the producer offers, before the source', () => {
+        behavior({ doubleClickOpensSource: true });
+        const node = leafNode({
+            [WorkflowDiagramMetadata.REFERENCED_URI]: LEAF_URI,
+            [WorkflowDiagramMetadata.REFERENCED_ENTITY_NAME]: 'adder',
+            [WorkflowDiagramMetadata.VIEWS]: [{ id: 'synth', label: 'Synthesis View' }],
+            'wf:entityInstanceName': 'u_add'
+        });
+        expect(doubleClick(portOf(node))).toEqual([{
+            kind: 'dialogram.openView', view: 'synth', label: 'Synthesis View', uri: LEAF_URI, workflowName: 'adder', workflowInstanceName: 'u_add'
+        }]);
+    });
+
+    it('opens a view without the source flag', () => {
+        behavior({});
+        const node = leafNode({
+            [WorkflowDiagramMetadata.REFERENCED_URI]: LEAF_URI,
+            [WorkflowDiagramMetadata.REFERENCED_ENTITY_NAME]: 'adder',
+            [WorkflowDiagramMetadata.VIEWS]: [{ id: 'synth' }]
+        });
+        expect(doubleClick(node)[0]).toMatchObject({ kind: 'dialogram.openView', view: 'synth', workflowName: 'adder' });
+    });
+
     it('never applies to a network instance, which still drills down', () => {
         behavior({ doubleClickOpensSource: true });
         const node = leafNode({

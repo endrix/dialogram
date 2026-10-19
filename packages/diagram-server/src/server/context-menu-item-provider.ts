@@ -22,12 +22,15 @@ const NAVIGATE_SOURCE_URI_ARG = 'wf:navigateSourceUri';
 const NAVIGATE_SOURCE_RANGE_ARG = 'wf:navigateSourceRange';
 const NAVIGATE_SYMBOL_ARG = 'wf:navigateSymbol';
 
+import { VIEW_ARG, parseViewArg, parseViewsMeta } from './graph-load-request-options';
+
 const PROMPT_LABEL_EDIT_KIND = 'dialogram.promptLabelEdit';
 const EDIT_PARAMETERS_KIND = 'dialogram.editParameters';
 const PROMPT_RENAME_ENTITY_KIND = 'dialogram.promptRenameEntity';
 const RERUN_FROM_HERE_KIND = 'dialogram.rerunFromHere';
 const OPEN_IN_OWN_EDITOR_KIND = 'dialogram.openInOwnEditor';
 const GO_TO_ERROR_KIND = 'dialogram.goToError';
+const OPEN_VIEW_KIND = 'dialogram.openView';
 
 /**
  * "Go to Error": the action that opens the view where the shown run failed and
@@ -277,6 +280,22 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
         const elementArgs: Args | undefined = (element as any).args;
         const navSymbolHint = navigationSymbolFromElement(element);
 
+        // The views the producer offers of the unit shown, besides the one on
+        // screen: on the canvas, for the workflow itself.
+        if (element === this.modelState.root) {
+            const rootViews = parseViewsMeta(elementArgs?.[WorkflowDiagramMetadata.VIEWS]);
+            const shownWorkflow = elementArgs?.['wf:selectedWorkflow'];
+            const shownView = parseViewArg(elementArgs?.[VIEW_ARG]);
+            if (rootViews && typeof shownWorkflow === 'string' && shownWorkflow.trim() !== '') {
+                rootViews.filter(view => view.id !== shownView).forEach((view, index) => items.push({
+                    id: `dialogram.openView.${view.id}`,
+                    label: view.label,
+                    sortString: `a7${index}`,
+                    actions: [{ kind: OPEN_VIEW_KIND, view: view.id, label: view.label, uri: sourceUri, workflowName: shownWorkflow.trim() } as any]
+                }));
+            }
+        }
+
         const boundaryAncestor = (() => {
             let current: any = element;
             while (current) {
@@ -375,6 +394,30 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
                         workflowName: displayNameFromQualifiedName(referencedName.trim())
                     } as any]
                 });
+            }
+            // The views the producer offers of the unit behind this node,
+            // besides its structure (a leaf's synthesis, say). Each opens in
+            // place, as a crumb of the trail under this instance.
+            const nodeViews = parseViewsMeta(elementArgs?.[WorkflowDiagramMetadata.VIEWS]);
+            if (
+                nodeViews
+                && typeof referencedUri === 'string' && referencedUri.trim() !== ''
+                && typeof referencedName === 'string' && referencedName.trim() !== ''
+            ) {
+                const instanceName = elementArgs?.['wf:entityInstanceName'] ?? entityName;
+                nodeViews.forEach((view, index) => items.push({
+                    id: `dialogram.openView.${view.id}`,
+                    label: view.label,
+                    sortString: `a7${index}`,
+                    actions: [{
+                        kind: OPEN_VIEW_KIND,
+                        view: view.id,
+                        label: view.label,
+                        uri: referencedUri,
+                        workflowName: displayNameFromQualifiedName(referencedName.trim()),
+                        ...(typeof instanceName === 'string' && instanceName.trim() !== '' ? { workflowInstanceName: instanceName.trim() } : {})
+                    } as any]
+                }));
             }
             // The run the overlay shows can be resumed at a step: offer to
             // resume it just before this node's last firing, so it fires again.

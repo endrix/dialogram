@@ -13,12 +13,23 @@ const OPEN_DIAGRAM_ARG = 'cal:openDiagram';
 const NETWORK_NAME_ARG = 'cal:networkName';
 const NAV_TRAIL_ARG = 'wf:navTrail';
 const RUN_ID_ARG = 'wf:runId';
+/** The view of the unit to load when not its structure (`network-navigation-target.ts`). */
+const VIEW_ARG = 'wf:view';
 
 type NavigationCrumb = {
     sourceUri: string;
     workflowName: string;
     workflowInstanceName?: string;
+    /** The crumb is a view of the workflow other than its structure. */
+    view?: string;
+    viewLabel?: string;
 };
+
+/** What a crumb says: the instance or workflow, then the view when it is one. */
+function crumbLabel(entry: NavigationCrumb): string {
+    const name = entry.workflowInstanceName || entry.workflowName;
+    return entry.view ? `${name} · ${entry.viewLabel || entry.view}` : name;
+}
 
 type ParentWorkflowOption = {
     sourceUri: string;
@@ -585,7 +596,7 @@ export class WorkflowNavigationUi {
 
             const btn = document.createElement('button');
             btn.className = 'workflow-wf-breadcrumb';
-            const displayName = entry.workflowInstanceName || entry.workflowName;
+            const displayName = crumbLabel(entry);
             btn.textContent = displayName;
             const isCrossFile = entry.sourceUri !== currentSourceKey && !navigatesInPlace();
             btn.title = idx === stack.length - 1
@@ -710,8 +721,32 @@ export class WorkflowNavigationUi {
                 ...(typeof queueTraceStep === 'number' ? { queueTraceStep } : {}),
                 ...(typeof runId === 'string' && runId.trim() !== '' ? { [RUN_ID_ARG]: runId.trim() } : {}),
                 ...(Array.isArray(trail) && trail.length > 0 ? { [NAV_TRAIL_ARG]: this.serializeTrail(trail) } : {}),
+                // The view is the trail's last crumb's: a crumb click, a
+                // picker, "Go to Error" all land on what that crumb shows.
+                ...(Array.isArray(trail) && trail[trail.length - 1]?.view ? { [VIEW_ARG]: trail[trail.length - 1].view } : {}),
             }
         });
+    }
+
+    /**
+     * The request that shows a view of a workflow other than its structure
+     * (its synthesis, say), in place: a crumb under the current trail, or
+     * under the instance's crumb when the view is of a node's unit, so the
+     * breadcrumb reads `top / u_reg · Synthesis View` and the structure is one
+     * click back. The layout of a view is its own (`layout-target.ts`).
+     */
+    requestView(
+        targetSourceUri: string,
+        workflowName: string,
+        workflowInstanceName: string | undefined,
+        view: string,
+        viewLabel: string | undefined
+    ): RequestModelAction {
+        const currentSourceUri = this.editorContext.sourceUri;
+        const trail = this.buildNavigationTrail(currentSourceUri, targetSourceUri, workflowName, workflowInstanceName)
+            .map((crumb, index, all) => (index === all.length - 1 ? { ...crumb, view, ...(viewLabel ? { viewLabel } : {}) } : crumb));
+        this.noteNavigate(targetSourceUri, workflowName, trail);
+        return this.requestModel(targetSourceUri, workflowName, undefined, trail);
     }
 
     /**
@@ -1153,11 +1188,14 @@ export class WorkflowNavigationUi {
             const workflowInstanceName = typeof (item as any)?.workflowInstanceName === 'string'
                 ? (item as any).workflowInstanceName.trim()
                 : '';
+            const view = typeof (item as any)?.view === 'string' ? (item as any).view.trim() : '';
+            const viewLabel = typeof (item as any)?.viewLabel === 'string' ? (item as any).viewLabel.trim() : '';
             if (sourceUri !== '' && workflowName !== '') {
                 out.push({
                     sourceUri,
                     workflowName,
-                    ...(workflowInstanceName !== '' ? { workflowInstanceName } : {})
+                    ...(workflowInstanceName !== '' ? { workflowInstanceName } : {}),
+                    ...(view !== '' ? { view, ...(viewLabel !== '' ? { viewLabel } : {}) } : {})
                 });
             }
         }
@@ -1182,11 +1220,14 @@ export class WorkflowNavigationUi {
             if (!entry || entry.sourceUri.trim() === '' || entry.workflowName.trim() === '') {
                 continue;
             }
-            const next = {
+            const next: NavigationCrumb = {
                 sourceUri: normalizeSourceUriKey(entry.sourceUri),
                 workflowName: entry.workflowName.trim(),
                 ...(typeof entry.workflowInstanceName === 'string' && entry.workflowInstanceName.trim() !== ''
                     ? { workflowInstanceName: entry.workflowInstanceName.trim() }
+                    : {}),
+                ...(typeof entry.view === 'string' && entry.view.trim() !== ''
+                    ? { view: entry.view.trim(), ...(entry.viewLabel?.trim() ? { viewLabel: entry.viewLabel.trim() } : {}) }
                     : {})
             };
             const prev = normalized[normalized.length - 1];
@@ -1195,6 +1236,7 @@ export class WorkflowNavigationUi {
                 || prev.sourceUri !== next.sourceUri
                 || prev.workflowName !== next.workflowName
                 || prev.workflowInstanceName !== next.workflowInstanceName
+                || prev.view !== next.view
             ) {
                 normalized.push(next);
             }

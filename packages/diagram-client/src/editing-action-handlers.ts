@@ -3,7 +3,7 @@ import { EditorContextService, IActionDispatcher, IGridManager, TYPES } from '@e
 import { Action as GlspAction, ApplyLabelEditOperation, ICommand, IActionHandler, NavigateToExternalTargetAction, RequestModelAction } from '@eclipse-glsp/sprotty';
 import { VscodeUi, type VscodeQuickPickItem } from './vscode-ui';
 import { clientBehavior, commandId, settingsNamespace } from './profile';
-import { rerunActorFor } from './navigation-ui';
+import { rerunActorFor, WorkflowNavigationUi } from './navigation-ui';
 import { NETWORK_NAME_ARG, OPEN_DIAGRAM_ARG } from './network-navigation-target';
 import { FocusAfterLoadService } from './focus-after-load';
 import { EXECUTION_OVERLAY_ACTION_KIND, type ExecutionOverlayActionPayload } from '@dialogram/shared';
@@ -102,6 +102,34 @@ export namespace WorkflowOpenInOwnEditorAction {
     export function is(action: unknown): action is Action {
         return !!action && typeof action === 'object' && (action as any).kind === KIND
             && typeof (action as any).uri === 'string' && typeof (action as any).workflowName === 'string';
+    }
+}
+
+/**
+ * "<View>" on a node or the canvas: show a view of a unit other than its
+ * structure (a leaf's synthesis, say), in place, as a crumb of the trail.
+ * The server offers one item per view the producer listed on the node.
+ */
+export namespace WorkflowOpenViewAction {
+    export const KIND = 'dialogram.openView';
+
+    export interface Action extends GlspAction {
+        kind: typeof KIND;
+        /** The view id the producer listed (`wf:views`). */
+        view: string;
+        /** Its label, for the crumb. */
+        label?: string;
+        /** The file that defines the unit. */
+        uri: string;
+        workflowName: string;
+        /** The instance the view is reached through, when through a node. */
+        workflowInstanceName?: string;
+    }
+
+    export function is(action: unknown): action is Action {
+        return !!action && typeof action === 'object' && (action as any).kind === KIND
+            && typeof (action as any).view === 'string' && typeof (action as any).uri === 'string'
+            && typeof (action as any).workflowName === 'string';
     }
 }
 
@@ -1321,6 +1349,24 @@ export class WorkflowOpenInOwnEditorActionHandler implements IActionHandler {
     }
 }
 
+
+@injectable()
+export class WorkflowOpenViewActionHandler implements IActionHandler {
+    @inject(TYPES.IActionDispatcher)
+    protected readonly actionDispatcher!: IActionDispatcher;
+
+    @inject(WorkflowNavigationUi)
+    protected readonly navigationUi!: WorkflowNavigationUi;
+
+    handle(action: GlspAction): ICommand | GlspAction | void {
+        if (!WorkflowOpenViewAction.is(action)) {
+            return;
+        }
+        void this.actionDispatcher.dispatch(
+            this.navigationUi.requestView(action.uri, action.workflowName, action.workflowInstanceName, action.view, action.label) as never
+        );
+    }
+}
 
 /**
  * "Go to Error": open the view where the shown run failed, at the trail a

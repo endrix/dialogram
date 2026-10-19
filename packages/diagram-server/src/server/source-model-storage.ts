@@ -17,7 +17,7 @@ import {
 import { RequestModelAction, SaveModelAction } from '@eclipse-glsp/protocol';
 import { inject, injectable, optional } from 'inversify';
 import { URI } from 'vscode-uri';
-import { instanceLayoutFor, type LayoutTarget } from './layout-target';
+import { instanceLayoutFor, type LayoutTarget, viewKey } from './layout-target';
 import { errorInView } from '@dialogram/shared';
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
@@ -48,6 +48,9 @@ import {
     RUN_ID_ARG,
     RUNTIME_PROFILE_ARG,
     GRAPH_SOURCE_URI_ARG,
+    VIEW_ARG,
+    parseViewArg,
+    parseViewsMeta,
     ROOT_WORKFLOW_ARG,
     INSTANCE_PATH_ARG,
     parseNavigationTrailArg as sharedParseNavigationTrailArg,
@@ -471,6 +474,16 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 fallbackLayout = instance.fallback;
             }
         }
+        // A view other than the structure draws other nodes: its layout is its
+        // own, under the workflow's key with the view's suffix (an instance
+        // layout already carries it from the trail's last crumb).
+        const view = parseViewArg(opts[VIEW_ARG]);
+        if (view && !networkId.endsWith(`@${view}`)) {
+            networkId = viewKey(networkId, view);
+            if (fallbackLayout) {
+                fallbackLayout = { ...fallbackLayout, networkId: viewKey(fallbackLayout.networkId, view) };
+            }
+        }
         let loadedLayoutPositions = await this.layoutPersistence.loadLayout(workflowFilePath, networkId);
         let edgeRoutes = await this.layoutPersistence.loadEdgeRoutes(workflowFilePath, networkId);
         if (!loadedLayoutPositions && fallbackLayout) {
@@ -578,6 +591,14 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         (gmodelRoot as any).args['wf:selectedWorkflow'] = workflowName || undefined;
         (gmodelRoot as any).args[RUNTIME_PROFILE_ARG] = this.storageOptions?.operationPrefix ?? '';
         (gmodelRoot as any).args['cal:networkName'] = workflowName || undefined;
+        const shownView = parseViewArg(opts[VIEW_ARG]);
+        if (shownView) {
+            (gmodelRoot as any).args[VIEW_ARG] = shownView;
+        }
+        const unitViews = parseViewsMeta(doc?.graph?.meta?.['views']);
+        if (unitViews) {
+            (gmodelRoot as any).args[WorkflowDiagramMetadata.VIEWS] = unitViews;
+        }
         (gmodelRoot as any).args['sourceUri'] = sourceUri;
         (gmodelRoot as any).args['wf:workflowFile'] = workflowFilePath;
         if (workflowName) {
