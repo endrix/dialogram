@@ -8,6 +8,14 @@ platform API version.
 
 ### Added
 
+- Views of a unit besides its structure. A producer lists them on a node's
+  `meta.views` (`[{ id, label }]`, and on `graph.meta.views` for the unit
+  shown); the platform offers each as a context-menu item on the node and on
+  the canvas, and a double-click on a node with no diagram behind it opens the
+  first. A view shows in place as a crumb of the trail (`top / u_add ·
+  Synthesis View`), is requested with `wf:view` (the `cli-plan` acquisition
+  passes `--view <id>` to the plan command, the export op gets `view`), and
+  keeps a layout of its own under `<unit>@<view>`.
 - `clientBehavior.doubleClickOpensSource`: a double-click on a node that is not
   a network instance opens the source it references in the text editor, at its
   definition. Off by default, so every existing diagram is unchanged. For a

@@ -172,6 +172,10 @@ export namespace WorkflowDiagramMetadata {
     export const IS_READ_ONLY = 'cal:readOnly';
     export const IS_COLLAPSED = 'cal:isCollapsed';
     export const IS_NETWORK_INSTANCE = 'cal:isNetworkInstance';
+    /** The views the producer offers of the unit behind a node besides its
+     *  structure, `[{ id, label }]` as it listed them on `meta.views` (a leaf's
+     *  synthesis, say). On the root: the views of the unit shown. */
+    export const VIEWS = 'wf:views';
     export const IS_EXTERNAL_ACTOR = 'cal:isExternalActor';
     /** Marks a regular task that contains external function declarations or agent annotations. */
     export const HAS_EXTERNAL_MEMBERS = 'cal:hasExternalMembers';

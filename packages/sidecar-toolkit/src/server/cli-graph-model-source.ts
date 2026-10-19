@@ -21,7 +21,9 @@ import type {
 import {
     GRAPH_SOURCE_URI_ARG,
     NAV_TRAIL_ARG,
-    parseNavigationTrailArg
+    VIEW_ARG,
+    parseNavigationTrailArg,
+    parseViewArg
 } from '@dialogram/diagram-server/server/graph-load-request-options';
 import { HierarchyCache, findInstance, outlineOf } from './hierarchy-cache';
 import { extractWorkflowDefinitionNames, normalizeSourceUriKey } from './source-analysis';
@@ -87,7 +89,10 @@ export class CliGraphModelSource implements DiagramModelSource {
             : this.fallback.analysis.pickDefaultWorkflowName(workflowFilePath, localWorkflowNames);
         const selectedWorkflowName = requestedWorkflowName ?? defaultWorkflowName;
 
-        const fromHierarchy = await this.viewFromHierarchy(sourceUri, workflowFilePath, selectedWorkflowName, opts);
+        // A view other than the structure is not in the hierarchy export: the
+        // plan command makes it, told which view with `--view <id>`.
+        const view = parseViewArg(opts[VIEW_ARG]);
+        const fromHierarchy = view ? undefined : await this.viewFromHierarchy(sourceUri, workflowFilePath, selectedWorkflowName, opts);
         if (fromHierarchy) {
             return this.fallback.attachDiagnostics({ ...fromHierarchy, resolvedOptions: opts });
         }
@@ -96,10 +101,13 @@ export class CliGraphModelSource implements DiagramModelSource {
         if (selectedWorkflowName) {
             args.push('--workflow', selectedWorkflowName);
         }
+        if (view) {
+            args.push('--view', view);
+        }
 
         // Skip re-running the workflow when on-disk content is unchanged (e.g. debounced live
         // updates, reopen). The key includes the content hash, so a save misses and re-runs.
-        const planCacheKey = await this.computePlanCacheKey(workflowFilePath, selectedWorkflowName);
+        const planCacheKey = await this.computePlanCacheKey(workflowFilePath, view ? `${selectedWorkflowName ?? ''}@${view}` : selectedWorkflowName);
         if (planCacheKey) {
             const cached = this.planGraphCache.get(planCacheKey);
             if (cached !== undefined) {

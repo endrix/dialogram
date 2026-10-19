@@ -84,6 +84,8 @@ function findContainingNetworkInstanceNode(element: GModelElement | undefined): 
 }
 
 const SHOW_OPTIONS_ARG = 'jsonOpenerOptions';
+/** The client handler's kind (`editing-action-handlers.ts`), without importing the module. */
+const OPEN_VIEW_KIND = 'dialogram.openView';
 
 type SerializedPosition = { line: number; character: number };
 type SerializedRange = { start: SerializedPosition; end: SerializedPosition };
@@ -99,24 +101,39 @@ function isSerializedRange(value: unknown): value is SerializedRange {
 }
 
 /**
- * The source a double-click lands in when the node has no diagram to drill
- * into. A node that is not a network instance has nothing behind it on the
- * canvas; with `clientBehavior.doubleClickOpensSource` the profile asks for its
- * definition in the text editor instead: an HDL leaf whose body is processes and
- * assignments, which no view shows yet. The target is what "Go to Source"
- * uses, the referenced definition (`REFERENCED_URI`), looked up through the
- * element's ancestry so a port or label resolves to its node. The editor opens
- * for real, not as a preview: the reader asked for the code.
+ * Where a double-click lands when the node has no diagram to drill into.
+ *
+ * A node that is not a network instance has nothing behind it on the canvas.
+ * When the producer offers views of its unit (`wf:views`: a leaf's synthesis,
+ * say), the first one opens in place, as a crumb of the trail. Otherwise, with
+ * `clientBehavior.doubleClickOpensSource`, the node's definition opens in the
+ * text editor (`REFERENCED_URI`, what "Go to Source" uses) for real, not as a
+ * preview: the reader asked for the code. Both look the node up through the
+ * element's ancestry, so a port or label resolves to its node.
  */
-function openSourceOfLeaf(target: GModelElement): Action[] {
-    if (clientBehavior().doubleClickOpensSource !== true) {
-        return [];
-    }
+function openLeaf(target: GModelElement): Action[] {
     let current: GModelElement | undefined = target;
     while (current) {
         const args = (current as unknown as { args?: Args }).args;
         const uri = args?.[WorkflowDiagramMetadata.REFERENCED_URI];
         if (typeof uri === 'string' && uri.trim() !== '') {
+            const views = args?.[WorkflowDiagramMetadata.VIEWS] as unknown;
+            const first = Array.isArray(views) ? views.find(v => typeof v?.id === 'string' && v.id.trim() !== '') : undefined;
+            const referencedName = args?.[WorkflowDiagramMetadata.REFERENCED_ENTITY_NAME] ?? args?.[WorkflowDiagramMetadata.ENTITY_TYPE];
+            if (first && typeof referencedName === 'string' && referencedName.trim() !== '') {
+                const instanceName = args?.['wf:entityInstanceName'];
+                return [{
+                    kind: OPEN_VIEW_KIND,
+                    view: String(first.id).trim(),
+                    ...(typeof first.label === 'string' ? { label: first.label } : {}),
+                    uri,
+                    workflowName: displayNameFromQualifiedName(referencedName.trim()),
+                    ...(typeof instanceName === 'string' && instanceName.trim() !== '' ? { workflowInstanceName: instanceName.trim() } : {})
+                } as Action];
+            }
+            if (clientBehavior().doubleClickOpensSource !== true) {
+                return [];
+            }
             const range = args?.[WorkflowDiagramMetadata.REFERENCED_SOURCE_RANGE];
             return [
                 NavigateToExternalTargetAction.create({
@@ -150,7 +167,7 @@ export class WorkflowNetworkNavigationMouseListener extends MouseListener implem
     override doubleClick(target: GModelElement, _event: MouseEvent): (Action | Promise<Action>)[] {
         const networkNode = findContainingNetworkInstanceNode(target);
         if (!networkNode) {
-            return openSourceOfLeaf(target);
+            return openLeaf(target);
         }
 
         const args = (networkNode as unknown as { args?: Args }).args;

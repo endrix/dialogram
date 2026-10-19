@@ -31,6 +31,17 @@ export interface TrailCrumb {
     sourceUri: string;
     workflowName: string;
     workflowInstanceName?: string;
+    /** A view of the workflow other than its structure (`wf:view`). */
+    view?: string;
+}
+
+/**
+ * The layout key of a view of a workflow: its own, after the workflow's. A
+ * view draws other nodes than the structure does, so it cannot share a layout
+ * with it; `top@synth` sits beside `top` in the same store.
+ */
+export function viewKey(networkId: string, view: string | undefined): string {
+    return view ? `${networkId}@${view}` : networkId;
 }
 
 /**
@@ -56,9 +67,9 @@ export function instanceLayoutFor(
             filePath: toFilePath(root.sourceUri),
             // The shape a hierarchical runtime's layouts already use:
             // root, instance path, then the workflow shown.
-            networkId: [root.workflowName, ...instancePath, shown.workflowName].join('/')
+            networkId: viewKey([root.workflowName, ...instancePath, shown.workflowName].join('/'), last.view)
         },
-        fallback: { filePath: shown.filePath, networkId: shown.workflowName }
+        fallback: { filePath: shown.filePath, networkId: viewKey(shown.workflowName, last.view) }
     };
 }
 

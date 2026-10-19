@@ -41,11 +41,45 @@ export const RUNTIME_PROFILE_ARG = 'wf:runtimeProfile';
 export const GRAPH_SOURCE_URI_ARG = 'cal:graphSourceUri';
 export const ROOT_WORKFLOW_ARG = 'cal:rootWorkflow';
 export const INSTANCE_PATH_ARG = 'cal:instancePath';
+/** The view of the unit to load, when not its structure: a view id the producer
+ *  listed on the node (`wf:views`). Carried on the request and echoed on the root. */
+export const VIEW_ARG = 'wf:view';
 
 export interface NavigationTrailEntry {
     sourceUri: string;
     workflowName: string;
     workflowInstanceName?: string;
+    /** The crumb is a view of the workflow other than its structure. */
+    view?: string;
+    viewLabel?: string;
+}
+
+/** One view a producer offers of a unit, as `meta.views` lists it. */
+export interface UnitView {
+    id: string;
+    label: string;
+}
+
+/** The view id on a request option or root arg, or nothing. */
+export function parseViewArg(raw: unknown): string | undefined {
+    return typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : undefined;
+}
+
+/** `meta.views` as the producer wrote it: `[{ id, label }]`, else nothing. */
+export function parseViewsMeta(raw: unknown): UnitView[] | undefined {
+    if (!Array.isArray(raw)) {
+        return undefined;
+    }
+    const out: UnitView[] = [];
+    for (const item of raw) {
+        const id = typeof item?.id === 'string' ? item.id.trim() : '';
+        if (id === '') {
+            continue;
+        }
+        const label = typeof item?.label === 'string' && item.label.trim() !== '' ? item.label.trim() : id;
+        out.push({ id, label });
+    }
+    return out.length > 0 ? out : undefined;
 }
 
 export interface NormalizedGraphLoadError {
@@ -74,11 +108,14 @@ export function parseNavigationTrailArg(raw: unknown): NavigationTrailEntry[] {
             const workflowInstanceName = typeof item?.workflowInstanceName === 'string'
                 ? item.workflowInstanceName.trim()
                 : '';
+            const view = typeof item?.view === 'string' ? item.view.trim() : '';
+            const viewLabel = typeof item?.viewLabel === 'string' ? item.viewLabel.trim() : '';
             if (sourceUri !== '' && workflowName !== '') {
                 out.push({
                     sourceUri: normalizeSourceUriKey(sourceUri),
                     workflowName,
-                    ...(workflowInstanceName !== '' ? { workflowInstanceName } : {})
+                    ...(workflowInstanceName !== '' ? { workflowInstanceName } : {}),
+                    ...(view !== '' ? { view, ...(viewLabel !== '' ? { viewLabel } : {}) } : {})
                 });
             }
         }

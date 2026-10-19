@@ -26,7 +26,9 @@ import {
     deriveTrailFallback,
     normalizeGraphLoadErrors,
     parseStringListArg,
-    shouldRetryTrailFallback
+    shouldRetryTrailFallback,
+    VIEW_ARG,
+    parseViewArg
 } from '@dialogram/diagram-server/server/graph-load-request-options';
 import {
     findPackageRootForFile,
@@ -364,6 +366,10 @@ export class SidecarModelSource implements DiagramModelSource {
                 requestArgs.instancePath = instancePath;
             } else if (networkName) {
                 requestArgs.network = networkName;
+            }
+            const view = parseViewArg(opts[VIEW_ARG]);
+            if (view) {
+                requestArgs.view = view;
             }
             // The graph-export op name differs per acquisition strategy: the sidecar-export runtime
             // dispatches `exportNetworkGraph`; others dispatch `exportWorkflowGraph`.
