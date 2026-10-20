@@ -15,7 +15,13 @@ platform API version.
   first. A view shows in place as a crumb of the trail (`top / u_add ·
   Synthesis View`), is requested with `wf:view` (the `cli-plan` acquisition
   passes `--view <id>` to the plan command, the export op gets `view`), and
-  keeps a layout of its own under `<unit>@<view>`.
+  keeps a layout of its own under `<unit>@<view>`. The view items sit last in
+  the context menu, under a separator.
+
+### Changed
+
+- The context menu draws a separator above a group that follows the ungrouped
+  items at the top, not only above a group that follows another group.
 - `clientBehavior.doubleClickOpensSource`: a double-click on a node that is not
   a network instance opens the source it references in the text editor, at its
   definition. Off by default, so every existing diagram is unchanged. For a

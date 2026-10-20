@@ -77,7 +77,9 @@ export class WorkflowContextMenuService implements IContextMenuService {
             const group = typeof item.group === 'string' && item.group.trim() !== ''
                 ? item.group
                 : undefined;
-            if (previousGroup && group && previousGroup !== group) {
+            // A group starts under a separator: after another group, and
+            // after the ungrouped items at the top of the menu.
+            if (group && previousGroup !== group && div.childElementCount > 0) {
                 const separator = document.createElement('div');
                 separator.className = 'workflow-context-menu-separator';
                 separator.setAttribute('role', 'separator');

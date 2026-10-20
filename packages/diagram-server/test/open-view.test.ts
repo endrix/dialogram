@@ -38,6 +38,9 @@ describe('a view of a node’s unit', () => {
         const items = provider(root, node).getItems(['n'], { x: 0, y: 0 });
         const item = items.find((i: any) => i.id === 'dialogram.openView.synth');
         expect(item.label).toBe('Synthesis View');
+        // Last in the menu, in a group of its own, so the client draws a separator above it.
+        expect(item.group).toBe('views');
+        expect(items.every((i: any) => i === item || String(i.sortString) < item.sortString)).toBe(true);
         expect(item.actions).toEqual([{
             kind: 'dialogram.openView', view: 'synth', label: 'Synthesis View',
             uri: 'file:///w/adder.vhd', workflowName: 'adder', workflowInstanceName: 'u_add'
