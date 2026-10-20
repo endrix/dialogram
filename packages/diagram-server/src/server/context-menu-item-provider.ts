@@ -290,7 +290,10 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
                 rootViews.filter(view => view.id !== shownView).forEach((view, index) => items.push({
                     id: `dialogram.openView.${view.id}`,
                     label: view.label,
-                    sortString: `a7${index}`,
+                    // Last in the menu, under a separator: a view is a different
+                    // picture of the same thing, not an edit of it.
+                    sortString: `z${index}`,
+                    group: 'views',
                     actions: [{ kind: OPEN_VIEW_KIND, view: view.id, label: view.label, uri: sourceUri, workflowName: shownWorkflow.trim() } as any]
                 }));
             }
@@ -408,7 +411,8 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
                 nodeViews.forEach((view, index) => items.push({
                     id: `dialogram.openView.${view.id}`,
                     label: view.label,
-                    sortString: `a7${index}`,
+                    sortString: `z${index}`,
+                    group: 'views',
                     actions: [{
                         kind: OPEN_VIEW_KIND,
                         view: view.id,
