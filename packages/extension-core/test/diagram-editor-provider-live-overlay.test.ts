@@ -89,6 +89,8 @@ describe('WorkflowEditorProvider live-overlay signature refresh', () => {
         provider.onLiveOverlaySignatureUpdate(uri.toString(), 'r1|1|stage-a||1||123|45');
         expect(dispatched.length).toBe(1);
         expect(dispatched[0].clientId).toBe('client-1');
+        // Silent: the server starts no "Model loading in progress" for this id.
+        expect(String(dispatched[0].action.requestId)).toMatch(/^refresh-live-overlay-/);
 
         // Same signature → no additional refresh.
         provider.onLiveOverlaySignatureUpdate(uri.toString(), 'r1|1|stage-a||1||123|45');

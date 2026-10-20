@@ -18,6 +18,13 @@ platform API version.
   keeps a layout of its own under `<unit>@<view>`. The view items sit last in
   the context menu, under a separator.
 
+### Fixed
+
+- Running a workflow no longer shows a "Model loading in progress" notification
+  on every firing. The live overlay's signature changes with each firing and the
+  editor reloads the model to redraw the glow; that refresh is now silent, as
+  the run driver's own polling refreshes already were.
+
 ### Changed
 
 - The context menu draws a separator above a group that follows the ungrouped

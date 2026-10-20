@@ -606,7 +606,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     protected dispatchModelRefresh(
         clientId: string,
         sourceUri: string,
-        options: { content?: string; forceReloadFromDisk?: boolean; contentUri?: string } = {}
+        options: { content?: string; forceReloadFromDisk?: boolean; contentUri?: string; silent?: boolean } = {}
     ): void {
         const refreshContext = this.getRefreshContext(sourceUri);
 
@@ -619,7 +619,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             && this.canonicalizeUriString(shownSourceUri) !== this.canonicalizeUriString(sourceUri);
         // `content` is the text of `contentUri` when given, of the editor's
         // document otherwise. It previews the view only if it is the shown file's.
-        const { contentUri, ...rest } = options;
+        const { contentUri, silent, ...rest } = options;
         const contentFile = this.canonicalizeUriString(contentUri ?? sourceUri);
         const shownFile = this.canonicalizeUriString(showsOtherFile ? shownSourceUri! : sourceUri);
         const effectiveOptions = rest.content !== undefined && contentFile !== shownFile
@@ -627,8 +627,12 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             : rest;
 
         // Create a RequestModelAction to refresh the diagram
+        // A silent refresh carries a request id the server's model handler
+        // recognises (`refresh-live-overlay-`): no "Model loading in progress"
+        // status is started for it. The run's overlay changes on every firing;
+        // a notification per firing is noise.
         const action = RequestModelAction.create({
-            requestId: 'refresh-' + Date.now(),
+            requestId: (silent ? 'refresh-live-overlay-' : 'refresh-') + Date.now(),
             options: {
                 sourceUri: showsOtherFile ? shownSourceUri : sourceUri,
                 diagramType: this.diagramType,
@@ -730,7 +734,10 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             return;
         }
 
-        this.dispatchModelRefresh(clientId, vscode.Uri.parse(key).toString());
+        // Silent: the overlay changes on every firing of a run, and each change
+        // reloads the model to redraw the glow; a "Model loading in progress"
+        // notification per firing was the complaint.
+        this.dispatchModelRefresh(clientId, vscode.Uri.parse(key).toString(), { silent: true });
     }
 
     /**

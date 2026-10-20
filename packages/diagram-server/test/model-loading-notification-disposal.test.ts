@@ -68,6 +68,7 @@ describe('WorkflowRequestModelActionHandler model-loading notification disposal'
         const { handler, dispatched } = makeHandler(async () => {});
 
         await handler.execute({ kind: 'requestModel', requestId: 'refresh-during-run-42' } as any);
+        await handler.execute({ kind: 'requestModel', requestId: 'refresh-live-overlay-43' } as any);
 
         expect(dispatched).toHaveLength(0);
     });
