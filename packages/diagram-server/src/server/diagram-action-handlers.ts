@@ -678,6 +678,7 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
     override async execute(action: RequestModelAction): Promise<Action[]> {
         const requestId = action.requestId ?? '';
         const isPolling = requestId.startsWith('refresh-during-run-') ||
+            requestId.startsWith('refresh-live-overlay-') ||
             requestId.startsWith('refresh-queue-visibility-') ||
             requestId.startsWith('refresh-agent-ctx-') ||
             requestId.startsWith('refresh-caller-refs-') ||
