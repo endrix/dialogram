@@ -8,6 +8,9 @@ platform API version.
 
 ### Added
 
+- `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
+  no carried label, queue badge, last-token button or index label on it; the
+  tooltip on hover still says what it carries. Default `true`, as before.
 - `SidecarProfileInput.chat.sourceContext: 'reference'`: the chat session gets
   its source by reference instead of by content. No file is attached (the note
   names its path and size), the graph goes in as a line per node with its file
