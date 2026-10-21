@@ -1758,6 +1758,10 @@ export class WorkflowEdgeView extends PolylineEdgeView {
         
         const workflowEdge = edge as WorkflowEdge;
         const edgeArgs = (edge as any).args as Record<string, unknown> | undefined;
+        // Whether anything is written on the wire. A product whose wires are
+        // many and whose ports already say what they carry turns it off: the
+        // line alone, with the tooltip still there on hover.
+        const captions = clientBehavior().edgeCaptions !== false;
         const structureBranch = (edgeArgs?.[WorkflowDiagramMetadata.STRUCTURE_BRANCH] as string | undefined) ?? undefined;
         const structureCondition = (edgeArgs?.[WorkflowDiagramMetadata.STRUCTURE_CONDITION] as string | undefined) ?? undefined;
         const structureForeach = (edgeArgs?.[WorkflowDiagramMetadata.STRUCTURE_FOREACH] as string | undefined) ?? undefined;
@@ -1849,9 +1853,9 @@ export class WorkflowEdgeView extends PolylineEdgeView {
                     'stroke-width': '2px'
                 } : {}
             }),
-            ...(hasViewerToken ? this.renderEdgeOpenButton(workflowEdge as any, normalizedSegments as any) : []),
-            ...(queueSize !== undefined ? this.renderEdgeQueueSizeBadge(normalizedSegments as any, queueSize, hasViewerToken) : []),
-            ...(carriedText
+            ...(captions && hasViewerToken ? this.renderEdgeOpenButton(workflowEdge as any, normalizedSegments as any) : []),
+            ...(captions && queueSize !== undefined ? this.renderEdgeQueueSizeBadge(normalizedSegments as any, queueSize, hasViewerToken) : []),
+            ...(captions && carriedText
                 ? this.renderEdgeCarriedLabel(
                     normalizedSegments as any,
                     carriedText,
@@ -1859,7 +1863,7 @@ export class WorkflowEdgeView extends PolylineEdgeView {
                 )
                 : []),
             // Endpoint index labels for list/entity indexing (e.g. bf[0].In)
-            ...(fromIndexLabel && fromIndexPos
+            ...(captions && fromIndexLabel && fromIndexPos
                 ? [svg('text', {
                     class: { 'cal-edge-index-label': true, 'from-index': true },
                     attrs: {
@@ -1870,7 +1874,7 @@ export class WorkflowEdgeView extends PolylineEdgeView {
                     }
                 }, svg('tspan', {}, fromIndexLabel))]
                 : []),
-            ...(toIndexLabel && toIndexPos
+            ...(captions && toIndexLabel && toIndexPos
                 ? [svg('text', {
                     class: { 'cal-edge-index-label': true, 'to-index': true },
                     attrs: {

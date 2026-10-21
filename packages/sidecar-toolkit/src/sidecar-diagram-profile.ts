@@ -70,6 +70,11 @@ export interface SidecarClientBehavior {
      *  their own that no diagram shows yet: an HDL module or entity of processes
      *  and assignments lands at its definition. */
     doubleClickOpensSource?: boolean;
+    /** Whether anything is written on a wire: the carried label (a width, a
+     *  payload type), the queue badge and last-token button of a run, the
+     *  index labels of a list connection. Default true. Off, an edge is its
+     *  line, and the tooltip on hover still says what it carries. */
+    edgeCaptions?: boolean;
 }
 
 /** The 24 consumer-owned command ids a sidecar diagram profile carries. */
