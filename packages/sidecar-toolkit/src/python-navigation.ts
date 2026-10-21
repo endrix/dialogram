@@ -14,6 +14,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import type { DiagramNavigationProvider, DiagramNavigationTarget } from '@dialogram/shared';
 import { extractDecoratedDefinitionNames } from './python-diagram-definitions.js';
+import { pickBestWorkspaceSymbol } from './python-symbol-ranking.js';
 // `normalizeSourceUriKey` now lives in the neutral uri-keys util; re-exported
 // here for compat with existing importers of this module.
 import { normalizeSourceUriKey } from './uri-keys.js';
@@ -621,8 +622,6 @@ async function resolveDefinitionTargetBySymbol(
         const sourcePath = sourceUri.scheme === 'file'
             ? canonicalizeSourcePathForMatch(sourceUri.fsPath)
             : '';
-        const sourceDir = sourcePath !== '' ? path.dirname(sourcePath) : '';
-        const symbolLower = symbolName.toLowerCase();
 
         const declarationKinds = new Set<vscode.SymbolKind>([
             vscode.SymbolKind.Function,
@@ -633,49 +632,15 @@ async function resolveDefinitionTargetBySymbol(
 
         const candidates = symbols
             .filter(info => info.location?.uri?.scheme === 'file')
-            .map(info => {
-                const uri = info.location.uri;
-                const candidatePath = canonicalizeSourcePathForMatch(uri.fsPath);
-                const range = {
-                    start: {
-                        line: info.location.range.start.line,
-                        character: info.location.range.start.character
-                    },
-                    end: {
-                        line: info.location.range.end.line,
-                        character: info.location.range.end.character
-                    }
-                } as SerializedRange;
+            .map(info => ({
+                name: info.name,
+                isDeclaration: declarationKinds.has(info.kind),
+                path: canonicalizeSourcePathForMatch(info.location.uri.fsPath),
+                uri: info.location.uri,
+                selection: toSerializedRange(info.location.range)
+            }));
 
-                let score = 0;
-                const nameLower = info.name.toLowerCase();
-                if (nameLower === symbolLower) {
-                    score += 200;
-                } else if (nameLower.endsWith(`.${symbolLower}`)) {
-                    score += 100;
-                }
-
-                if (declarationKinds.has(info.kind)) {
-                    score += 60;
-                }
-
-                if (candidatePath === sourcePath) {
-                    score += 40;
-                }
-                if (sourceDir !== '' && candidatePath.startsWith(sourceDir)) {
-                    score += 30;
-                }
-
-                return { uri, selection: range, score };
-            })
-            .filter(candidate => candidate.score > 0)
-            .sort((left, right) => right.score - left.score);
-
-        if (candidates.length === 0) {
-            return undefined;
-        }
-
-        const best = candidates[0];
+        const best = pickBestWorkspaceSymbol(candidates, symbolName, sourcePath);
         return best ? { uri: best.uri, selection: best.selection } : undefined;
     })();
 
