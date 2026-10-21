@@ -14,6 +14,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import type { DiagramNavigationProvider, DiagramNavigationTarget } from '@dialogram/shared';
 import { extractDecoratedDefinitionNames } from './python-diagram-definitions.js';
+import { candidateModuleFiles, findImportingModules } from './python-import-resolution.js';
 import { pickBestWorkspaceSymbol } from './python-symbol-ranking.js';
 // `normalizeSourceUriKey` now lives in the neutral uri-keys util; re-exported
 // here for compat with existing importers of this module.
@@ -136,9 +137,10 @@ function putCachedDefinitionQueryResult(
     });
 }
 
+// Per source file, not per workspace folder: the ranking prefers what is near
+// the source, and one folder can hold several projects with a `Div` each.
 function symbolDefinitionCacheKey(symbolName: string, sourceUri: vscode.Uri): string {
-    const workspaceFolderUri = vscode.workspace.getWorkspaceFolder(sourceUri)?.uri.toString() ?? 'global';
-    return `${workspaceFolderUri}::${symbolName}`;
+    return `${sourceUri.toString()}::${symbolName}`;
 }
 
 function getCachedSymbolDefinitionTarget(
@@ -595,6 +597,50 @@ function isLikelySameLineFallbackDefinition(
     return typeof targetLine === 'number' && targetLine === sourceSelection.start.line;
 }
 
+async function resolveDefinitionTargetByImport(
+    symbolName: string,
+    sourceUri: vscode.Uri
+): Promise<{ uri: vscode.Uri; selection: SerializedRange } | undefined> {
+    if (sourceUri.scheme !== 'file') {
+        return undefined;
+    }
+    let sourceText: string;
+    try {
+        sourceText = (await vscode.workspace.openTextDocument(sourceUri)).getText();
+    } catch {
+        return undefined;
+    }
+    const files = findImportingModules(sourceText, symbolName)
+        .flatMap(module => candidateModuleFiles(module, sourceUri.fsPath));
+    for (const file of files) {
+        const uri = vscode.Uri.file(file);
+        let text: string;
+        try {
+            text = (await vscode.workspace.openTextDocument(uri)).getText();
+        } catch {
+            continue; // No such module under this root: try the next one.
+        }
+        const [first] = collectPossibleDefinitionRangesForName(text, symbolName);
+        if (first) {
+            return { uri, selection: first };
+        }
+    }
+    return undefined;
+}
+
+/**
+ * The definition of `symbolName` as used in `sourceUri`, without the language
+ * server's definition provider: the file it is imported from, else the
+ * workspace's declarations of that name.
+ */
+async function resolveDefinitionTargetByName(
+    symbolName: string,
+    sourceUri: vscode.Uri
+): Promise<{ uri: vscode.Uri; selection: SerializedRange } | undefined> {
+    return await resolveDefinitionTargetByImport(symbolName, sourceUri)
+        ?? await resolveDefinitionTargetBySymbol(symbolName, sourceUri);
+}
+
 async function resolveDefinitionTargetBySymbol(
     symbolName: string,
     sourceUri: vscode.Uri
@@ -771,9 +817,9 @@ async function resolveDefinitionTarget(
         const direct = await runDefinitionProvider(sourceUri, position);
         if (!direct) {
             // No definition at all (an import Pylance cannot follow): find the
-            // symbol by name rather than leave the caller on the instance.
+            // definition by name rather than leave the caller on the instance.
             const bySymbol = symbolHint && symbolHint.trim() !== ''
-                ? await resolveDefinitionTargetBySymbol(symbolHint.trim(), sourceUri)
+                ? await resolveDefinitionTargetByName(symbolHint.trim(), sourceUri)
                 : undefined;
             putCachedResolvedNavigationTarget(sourceUri, sourceSelection, symbolHint, bySymbol);
             return bySymbol;
@@ -788,7 +834,7 @@ async function resolveDefinitionTarget(
             const isDeclaration = await isPythonDeclarationLine(preferred);
             const matchesSymbol = await definitionTargetMatchesSymbolHint(preferred, symbol);
             if ((!isDeclaration || isSameLineFallback) && !matchesSymbol) {
-                const bySymbol = await resolveDefinitionTargetBySymbol(symbol, sourceUri);
+                const bySymbol = await resolveDefinitionTargetByName(symbol, sourceUri);
                 if (bySymbol) {
                     putCachedResolvedNavigationTarget(sourceUri, sourceSelection, symbolHint, bySymbol);
                     return bySymbol;
@@ -801,7 +847,7 @@ async function resolveDefinitionTarget(
     } catch {
         if (symbolHint && symbolHint.trim() !== '') {
             try {
-                const bySymbol = await resolveDefinitionTargetBySymbol(symbolHint.trim(), sourceUri);
+                const bySymbol = await resolveDefinitionTargetByName(symbolHint.trim(), sourceUri);
                 putCachedResolvedNavigationTarget(sourceUri, sourceSelection, symbolHint, bySymbol);
                 return bySymbol;
             } catch {

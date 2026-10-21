@@ -40,10 +40,14 @@ const originalWorkspace = { ...workspace };
 function installWorkspace(root: string): { networkUri: string; actorUri: string } {
     const networkPath = `${root}/gen/network/net.py`;
     const actorPath = `${root}/gen/load/load.py`;
-    const files = new Map<string, readonly string[]>([
+    installFiles(root, new Map([
         [networkPath, NETWORK_LINES],
         [actorPath, ACTOR_LINES]
-    ]);
+    ]));
+    return { networkUri: vscode.Uri.file(networkPath).toString(), actorUri: vscode.Uri.file(actorPath).toString() };
+}
+
+function installFiles(root: string, files: ReadonlyMap<string, readonly string[]>): void {
     workspace.openTextDocument = (async (uri: vscode.Uri) => {
         const lines = files.get(uri.fsPath);
         if (!lines) {
@@ -55,15 +59,14 @@ function installWorkspace(root: string): { networkUri: string; actorUri: string 
         ? { uri: vscode.Uri.file(root), name: root, index: 0 }
         : undefined) as typeof workspace.getWorkspaceFolder;
     workspace.findFiles = (async () => [...files.keys()].map(p => vscode.Uri.file(p))) as typeof workspace.findFiles;
-    return { networkUri: vscode.Uri.file(networkPath).toString(), actorUri: vscode.Uri.file(actorPath).toString() };
 }
 
-function drillRequest(networkUri: string): Record<string, unknown> {
+function drillRequest(networkUri: string, symbolHint = 'Load', line = INSTANCE_LINE): Record<string, unknown> {
     return {
         kind: 'definition',
         sourceUri: networkUri,
-        sourceSelection: { start: { line: INSTANCE_LINE, character: 0 }, end: { line: INSTANCE_LINE, character: 0 } },
-        symbolHint: 'Load'
+        sourceSelection: { start: { line, character: 0 }, end: { line, character: 0 } },
+        symbolHint
     };
 }
 
@@ -104,5 +107,31 @@ describe('python drill-down from an actor instance', () => {
 
         expect(target?.uri).toBe(actorUri);
         expect(target?.range?.startLine).toBe(CLASS_LINE);
+    });
+
+    it('follows the import to the class rather than take a same-named symbol of another project', async () => {
+        // picorv32's network imports `Div` from its own gen root; the symbol
+        // search only indexes boomv4, where `Div` is a Variant member and, as a
+        // decoy, a class of another module.
+        const root = '/ws-imports';
+        const networkPath = `${root}/picorv32/gen/network/picorv32.py`;
+        const actorPath = `${root}/picorv32/gen/pcpi/div.py`;
+        const memberPath = `${root}/boomv4/gen/isa/alu.py`;
+        const decoyPath = `${root}/boomv4/gen/isa/div.py`;
+        installFiles(root, new Map([
+            [networkPath, ['from pcpi.div import Div', '', 'def Net():', '    div = Div() if ENABLE_DIV else Absent()']],
+            [actorPath, ['@actor', 'class Div:', '    pass']],
+            [memberPath, ['class AluOp(Variant):', '    Div = ()']],
+            [decoyPath, ['class Div:', '    pass']]
+        ]));
+        vscode.commands.registerCommand('vscode.executeWorkspaceSymbolProvider', () => [
+            { name: 'Div', kind: vscode.SymbolKind.Variable, location: { uri: vscode.Uri.file(memberPath), range: new vscode.Range(1, 4, 1, 7) } },
+            { name: 'Div', kind: vscode.SymbolKind.Class, location: { uri: vscode.Uri.file(decoyPath), range: new vscode.Range(0, 6, 0, 9) } }
+        ]);
+
+        const target = await createPythonNavigationProvider().resolveTarget(drillRequest(vscode.Uri.file(networkPath).toString(), 'Div', 3));
+
+        expect(target?.uri).toBe(vscode.Uri.file(actorPath).toString());
+        expect(target?.range?.startLine).toBe(1);
     });
 });

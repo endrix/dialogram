@@ -15,13 +15,12 @@ describe('pickBestWorkspaceSymbol', () => {
         expect(best?.id).toBe('class');
     });
 
-    it('prefers a declaration elsewhere over a same-file non-declaration of the same name', () => {
-        const best = pickBestWorkspaceSymbol([
+    it('ignores a symbol that is not a class or a def, however close or well named', () => {
+        // `Div = ()`, a Variant member, is not the actor `Div`.
+        expect(pickBestWorkspaceSymbol([
             { name: 'Load', isDeclaration: false, path: NETWORK, id: 'import' },
-            { name: 'Load', isDeclaration: true, path: '/repo/gen/load/load.py', id: 'class' }
-        ], 'Load', NETWORK);
-
-        expect(best?.id).toBe('class');
+            { name: 'Load', isDeclaration: false, path: '/repo/gen/isa/alu.py', id: 'member' }
+        ], 'Load', NETWORK)).toBeUndefined();
     });
 
     it('prefers the declaration closest to the source among equal names', () => {

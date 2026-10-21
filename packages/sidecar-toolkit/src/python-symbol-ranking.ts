@@ -4,8 +4,9 @@
  * definition. Pure, so it is testable without a language server.
  *
  * A search for `Load` also returns the instance `load` in `load = Load()`, in
- * the very file being drilled from. Python names are case-sensitive, so only an
- * exact name counts, and being a declaration outweighs being near the source.
+ * the very file being drilled from, and one for `Div` the Variant member
+ * `Div = ()` of another module. Python names are case-sensitive, so only an
+ * exact name counts, and only a class or a def is a definition.
  */
 import * as path from 'node:path';
 
@@ -20,9 +21,6 @@ export interface WorkspaceSymbolCandidate {
 
 const EXACT_NAME_SCORE = 200;
 const QUALIFIED_NAME_SCORE = 100;
-// Above the two locality bonuses together, so a definition elsewhere beats a
-// same-file use of the name.
-const DECLARATION_SCORE = 100;
 const SAME_FILE_SCORE = 40;
 const SAME_DIR_SCORE = 30;
 
@@ -38,12 +36,11 @@ function nameScore(name: string, symbolName: string): number {
 
 function scoreCandidate(candidate: WorkspaceSymbolCandidate, symbolName: string, sourcePath: string): number {
     const byName = nameScore(candidate.name, symbolName);
-    if (byName === 0) {
+    if (byName === 0 || !candidate.isDeclaration) {
         return 0;
     }
     const sourceDir = sourcePath !== '' ? path.dirname(sourcePath) : '';
     return byName
-        + (candidate.isDeclaration ? DECLARATION_SCORE : 0)
         + (sourcePath !== '' && candidate.path === sourcePath ? SAME_FILE_SCORE : 0)
         + (sourceDir !== '' && candidate.path.startsWith(sourceDir) ? SAME_DIR_SCORE : 0);
 }
