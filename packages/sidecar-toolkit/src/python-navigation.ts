@@ -138,7 +138,7 @@ function putCachedDefinitionQueryResult(
 
 function symbolDefinitionCacheKey(symbolName: string, sourceUri: vscode.Uri): string {
     const workspaceFolderUri = vscode.workspace.getWorkspaceFolder(sourceUri)?.uri.toString() ?? 'global';
-    return `${workspaceFolderUri}::${symbolName.toLowerCase()}`;
+    return `${workspaceFolderUri}::${symbolName}`;
 }
 
 function getCachedSymbolDefinitionTarget(
@@ -770,8 +770,13 @@ async function resolveDefinitionTarget(
     try {
         const direct = await runDefinitionProvider(sourceUri, position);
         if (!direct) {
-            putCachedResolvedNavigationTarget(sourceUri, sourceSelection, symbolHint, undefined);
-            return undefined;
+            // No definition at all (an import Pylance cannot follow): find the
+            // symbol by name rather than leave the caller on the instance.
+            const bySymbol = symbolHint && symbolHint.trim() !== ''
+                ? await resolveDefinitionTargetBySymbol(symbolHint.trim(), sourceUri)
+                : undefined;
+            putCachedResolvedNavigationTarget(sourceUri, sourceSelection, symbolHint, bySymbol);
+            return bySymbol;
         }
 
         const chased = await chaseAliasDefinitionTarget(direct, symbolHint);

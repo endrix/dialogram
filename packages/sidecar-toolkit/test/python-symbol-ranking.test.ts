@@ -33,12 +33,10 @@ describe('pickBestWorkspaceSymbol', () => {
         expect(best?.id).toBe('near');
     });
 
-    it('still accepts a case-insensitive match when nothing matches exactly', () => {
-        const best = pickBestWorkspaceSymbol([
-            { name: 'load', isDeclaration: true, path: '/repo/gen/load/load.py', id: 'func' }
-        ], 'Load', NETWORK);
-
-        expect(best?.id).toBe('func');
+    it('ignores a name that differs only in case', () => {
+        expect(pickBestWorkspaceSymbol([
+            { name: 'load', isDeclaration: false, path: NETWORK, id: 'variable' }
+        ], 'Load', NETWORK)).toBeUndefined();
     });
 
     it('returns undefined when no candidate is related to the name', () => {

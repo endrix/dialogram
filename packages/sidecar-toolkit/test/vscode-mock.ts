@@ -60,6 +60,22 @@ export class Uri {
     }
 }
 
+// Added for python-navigation-drill.test.ts: the drill-down's workspace-symbol
+// fallback tells declarations from other symbols by kind. Values match VS Code's.
+export enum SymbolKind {
+    File = 0, Module = 1, Namespace = 2, Package = 3, Class = 4, Method = 5, Property = 6,
+    Field = 7, Constructor = 8, Enum = 9, Interface = 10, Function = 11, Variable = 12, Constant = 13
+}
+
+// Added for python-navigation-drill.test.ts: the drill-down's file-scan
+// fallback searches the source's workspace folder.
+export class RelativePattern {
+    constructor(
+        public readonly base: unknown,
+        public readonly pattern: string
+    ) {}
+}
+
 export class TextEdit {
     constructor(
         public readonly range: Range,

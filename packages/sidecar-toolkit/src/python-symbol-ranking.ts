@@ -4,8 +4,8 @@
  * definition. Pure, so it is testable without a language server.
  *
  * A search for `Load` also returns the instance `load` in `load = Load()`, in
- * the very file being drilled from; the case of the name and whether the
- * symbol is a declaration have to outweigh being near the source.
+ * the very file being drilled from. Python names are case-sensitive, so only an
+ * exact name counts, and being a declaration outweighs being near the source.
  */
 import * as path from 'node:path';
 
@@ -19,7 +19,6 @@ export interface WorkspaceSymbolCandidate {
 }
 
 const EXACT_NAME_SCORE = 200;
-const CASE_INSENSITIVE_NAME_SCORE = 100;
 const QUALIFIED_NAME_SCORE = 100;
 // Above the two locality bonuses together, so a definition elsewhere beats a
 // same-file use of the name.
@@ -33,11 +32,6 @@ function nameScore(name: string, symbolName: string): number {
     }
     if (name.endsWith(`.${symbolName}`)) {
         return QUALIFIED_NAME_SCORE;
-    }
-    const nameLower = name.toLowerCase();
-    const symbolLower = symbolName.toLowerCase();
-    if (nameLower === symbolLower || nameLower.endsWith(`.${symbolLower}`)) {
-        return CASE_INSENSITIVE_NAME_SCORE;
     }
     return 0;
 }
