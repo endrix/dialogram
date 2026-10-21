@@ -14,6 +14,7 @@
 import type { EntityPaletteItemSpec, NodeFamilySpec } from '@dialogram/shared';
 import * as vscode from 'vscode';
 import { invokeSidecarOp } from './sidecar-graph-export.js';
+import { createSourceReferenceContext } from './chat-source-reference.js';
 import { createRegistryChatTools, type RegistryChatTool } from './registry-tools.js';
 import { RESUME_TOOL } from './run-failure.js';
 import { getCliInvocation,
@@ -258,6 +259,16 @@ export interface SidecarProfileInput {
         nodeCommands?: Array<{ command: string; nodeType: string; description: string }>;
         /** The MIME type the agent receives the source file as. Default `text/x-python`. */
         sourceMimeType?: string;
+        /**
+         * How the session gets its source. `embed` (the default) attaches the
+         * file whole (up to the platform's bound) and the resolved graph as
+         * JSON, and names a selected node by id. `reference` attaches neither:
+         * the graph goes in as a line per node with its file and line, and a
+         * selected node as its name, what it is and where to read it, with a
+         * link to the file. For a generated design the first fills the agent's
+         * context before the question is read.
+         */
+        sourceContext?: 'embed' | 'reference';
     };
 
     // Diagram source-file watch globs (default derived from the source extensions).
@@ -371,17 +382,35 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
     // platform adapter exposes them over GLSP-MCP. Library-mode only (function
     // closures share the platform realm) — the cross-extension API path leaves
     // chat.tools absent, which is acceptable (the tools are simply unavailable).
+    const invoke = (file: string, opName: string, args: Record<string, unknown>) =>
+        invokeSidecarOp(
+            file,
+            { sidecarCommand: resolveSidecarCommand(file), sidecarOperationPrefix: input.sidecarOperationPrefix },
+            opName,
+            args
+        );
     const chatTools = createRegistryChatTools({
         scopeArgKey: input.scopeArgKey,
         exportOp: input.exportOp,
-        invoke: (file, opName, args) =>
-            invokeSidecarOp(
-                file,
-                { sidecarCommand: resolveSidecarCommand(file), sidecarOperationPrefix: input.sidecarOperationPrefix },
-                opName,
-                args
-            )
+        invoke
     });
+    // The source by reference (`chat.sourceContext: 'reference'`): no file
+    // attached, a compact graph summary, and a selected node as a file and line.
+    const sourceContextConfig = input.chat.sourceContext === 'reference'
+        ? (() => {
+            const context = createSourceReferenceContext({
+                invoke,
+                exportOp: input.exportOp,
+                sourceMimeType: input.chat.sourceMimeType ?? 'text/x-python'
+            });
+            return {
+                sourceMaxBytes: 0,
+                graphContextProvider: (file: string) => context.graphContextProvider(file),
+                turnContextProvider: (file: string, selectedNodeIds: string[]) => context.turnContextProvider(file, selectedNodeIds),
+                selectionContext: false as const
+            };
+        })()
+        : {};
     // A product that can resume runs gives the chat a way to offer it: the
     // agent that fixed a failed run proposes resuming it, and the person says
     // yes or no.
@@ -515,6 +544,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             tools: chatTools,
             // What the agent receives the file as; Python unless the product says.
             sourceMimeType: input.chat.sourceMimeType ?? 'text/x-python',
+            ...sourceContextConfig,
             // The ACP connector: the setting the chat and the property panel
             // read. Without it the chat keeps its opencode default.
             acpConnector: input.acpConnectorSettingKey && input.acpConnectorFiles

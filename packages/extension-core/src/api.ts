@@ -146,8 +146,8 @@ export interface DiagramChatConfig {
   tools?: InProcessChatTool[];
   /**
    * Compact graph/structure rendering, injected with the file (mtime-deduped).
-   * When the profile has an `editBackend`, the edit capability's exportGraph
-   * provider WINS and this field is ignored.
+   * Set, it is what the session gets; absent, a profile with an `editBackend`
+   * gets the edit capability's graph export as JSON.
    */
   graphContextProvider?: (
     file: string,

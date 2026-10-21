@@ -119,3 +119,4 @@ export {
     CliGraphModelSource,
     createSidecarModelSource
 } from './server/cli-graph-model-source.js';
+export { createSourceReferenceContext, summarizeGraph, selectionBlocks, nodeLine } from './chat-source-reference.js';

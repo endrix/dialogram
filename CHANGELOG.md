@@ -8,6 +8,12 @@ platform API version.
 
 ### Added
 
+- `SidecarProfileInput.chat.sourceContext: 'reference'`: the chat session gets
+  its source by reference instead of by content. No file is attached (the note
+  names its path and size), the graph goes in as a line per node with its file
+  and line, and a selected node as its name, what it is and where to read it,
+  with a link to the file. The default, `embed`, is unchanged. A profile's own
+  `chat.graphContextProvider` now wins over the edit capability's JSON export.
 - Views of a unit besides its structure. A producer lists them on a node's
   `meta.views` (`[{ id, label }]`, and on `graph.meta.views` for the unit
   shown); the platform offers each as a context-menu item on the node and on
