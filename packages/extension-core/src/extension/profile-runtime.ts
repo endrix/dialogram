@@ -117,9 +117,10 @@ export function assembleChatRuntimeConfig(
     skill: chat.skill,
     sourceMimeType: chat.sourceMimeType,
     sourceMaxBytes: chat.sourceMaxBytes,
-    graphContextProvider: capability
-      ? (f) => capability.graphContextProvider(f)
-      : chat.graphContextProvider,
+    // A profile that renders its own graph context (a summary by reference,
+    // say) is heard; otherwise the edit capability's export, as before.
+    graphContextProvider: chat.graphContextProvider
+      ?? (capability ? (f) => capability.graphContextProvider(f) : undefined),
     turnContextProvider: chat.turnContextProvider,
     acpAgent: chat.acpConnector
       ? createAcpAgentResolver(profile.settingsNamespace, chat.acpConnector)

@@ -66,12 +66,16 @@ describe('assembleChatRuntimeConfig', () => {
         expect(cfg.postTurnHook).toBeUndefined();
     });
 
-    it('capability graph provider wins over the profile field', async () => {
+    it('the profile field wins over the capability graph provider when set', async () => {
+        // A profile that renders its own graph context (a summary by reference)
+        // is heard; without one the capability's JSON export is the fallback.
         const cfg = assembleChatRuntimeConfig(
             makeProfile({ graphContextProvider: async () => 'profile-graph' }),
             makeCapability()
         );
-        await expect(Promise.resolve(cfg.graphContextProvider!('/f.py'))).resolves.toBe('capability-graph');
+        await expect(Promise.resolve(cfg.graphContextProvider!('/f.py'))).resolves.toBe('profile-graph');
+        const fallback = assembleChatRuntimeConfig(makeProfile({}), makeCapability());
+        await expect(Promise.resolve(fallback.graphContextProvider!('/f.py'))).resolves.toBe('capability-graph');
     });
 
     it('slash merge: capability first, profile appended (so profile can override by name)', () => {
