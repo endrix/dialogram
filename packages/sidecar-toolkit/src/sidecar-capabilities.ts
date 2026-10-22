@@ -20,6 +20,38 @@ export interface SidecarCapabilities {
   supportedOps: Set<string>;
   /** Declared feature flags (sourceTruthEdits, stableIds, checkConnection, …). */
   features: Record<string, boolean>;
+  /**
+   * The kinds of edge the sidecar's `connect` can make, when a connection is
+   * more than one thing (`diagnostic.edgeRoles`, `[{ id, label, description? }]`).
+   * Absent or empty: a connection is one thing, and `connect` is sent without
+   * a role. Present: the create-edge handler asks which, and sends `args.role`.
+   */
+  edgeRoles?: SidecarEdgeRole[];
+}
+
+/** One kind of edge a sidecar's `connect` can make. */
+export interface SidecarEdgeRole {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+/** `diagnostic.edgeRoles` as the sidecar wrote it, else nothing: an entry
+ *  without a non-empty string id is dropped, a missing label is the id. */
+export function parseEdgeRoles(raw: unknown): SidecarEdgeRole[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: SidecarEdgeRole[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const { id, label, description } = item as Record<string, unknown>;
+    if (typeof id !== 'string' || id.trim() === '') continue;
+    out.push({
+      id: id.trim(),
+      label: typeof label === 'string' && label.trim() !== '' ? label.trim() : id.trim(),
+      ...(typeof description === 'string' && description.trim() !== '' ? { description: description.trim() } : {}),
+    });
+  }
+  return out.length > 0 ? out : undefined;
 }
 
 interface CapabilityQueryOptions {
@@ -68,7 +100,8 @@ export function parseCapabilitiesDiagnostic(diagnostic: any, prefix: string): Si
       : typeof nested?.sidecarProtocolVersion === 'number'
         ? nested.sidecarProtocolVersion
         : 1;
-  return { protocolVersion, supportedOps, features };
+  const edgeRoles = parseEdgeRoles(diagnostic.edgeRoles);
+  return { protocolVersion, supportedOps, features, ...(edgeRoles ? { edgeRoles } : {}) };
 }
 
 /**
