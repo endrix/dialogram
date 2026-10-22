@@ -1,5 +1,5 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
-import { parseViewsMeta } from '../server/graph-load-request-options';
+import { parseFactsMeta, parseViewsMeta } from '../server/graph-load-request-options';
 import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, type PortSide } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
@@ -373,6 +373,17 @@ export class GraphGModelSource {
                 gnode.args = {
                     ...(gnode.args ?? {}),
                     [WorkflowDiagramMetadata.VIEWS]: unitViews as any
+                };
+            }
+            // Facts are already under `wf:nodeMeta` with the rest of the meta,
+            // but the panel reads them from a key of their own, checked here,
+            // so a malformed entry is dropped once on the way in rather than
+            // defended against by every reader.
+            const unitFacts = parseFactsMeta(node.meta?.['facts']);
+            if (unitFacts) {
+                gnode.args = {
+                    ...(gnode.args ?? {}),
+                    [WorkflowDiagramMetadata.FACTS]: unitFacts as any
                 };
             }
             if (node.meta) {
@@ -933,6 +944,11 @@ export class GraphGModelSource {
         const networkParameters = doc.graph.meta?.['parameters'];
         if (networkParameters !== undefined) {
             graphArgs[WorkflowDiagramMetadata.NETWORK_PARAMETERS] = networkParameters;
+        }
+        // The facts of the unit shown, for the root's own panel.
+        const graphFacts = parseFactsMeta(doc.graph.meta?.['facts']);
+        if (graphFacts) {
+            graphArgs[WorkflowDiagramMetadata.FACTS] = graphFacts;
         }
         if (doc.partial) {
             graphArgs['wf:partial'] = true;

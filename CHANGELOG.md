@@ -8,6 +8,15 @@ platform API version.
 
 ### Added
 
+- A Facts section in the property panel. A producer lists what it knows about
+  a unit on a node's `meta.facts` (`[{ label, value, markdown? }]`, and on
+  `graph.meta.facts` for the unit shown); the panel shows them as `Facts (n)`
+  under the identity header, one read-only row per entry in the producer's
+  order, label on the left and value on the right. An entry with
+  `markdown: true` has its value rendered as Markdown, as a block under the
+  label, through the same sanitizer the chat uses. No label is special and
+  nothing is interpreted; an entry without a string label and value is
+  dropped on the way in. Carried on `wf:facts`.
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the
   tooltip on hover still says what it carries. Default `true`, as before.
