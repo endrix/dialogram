@@ -195,8 +195,18 @@ export interface CreateNodeBehavior {
 export interface SidecarRuntimeConfig {
     settingsNamespace: string;
     sidecarOperationPrefix: string;
-    sidecarCommandSettingKey: string;
-    sidecarCommandDefault: string;
+    /** The setting and default naming the sidecar command. Required unless
+     *  `readOnly`; asking a config that has none for the command throws. */
+    sidecarCommandSettingKey?: string;
+    sidecarCommandDefault?: string;
+    /**
+     * `true` for a profile whose diagram is a projection of a file drawn by
+     * the CLI alone: there is no sidecar, nothing is edited, and the model
+     * source never attempts the sidecar graph export (neither the static
+     * fallback when the plan fails nor the node-identity lookup). Default
+     * `false`, which keeps every path as it was.
+     */
+    readOnly?: boolean;
     cliCommandSettingKey: string;
     cliCommandDefault: string;
     cliPythonModule?: string;
@@ -256,12 +266,23 @@ export function sidecarOp(cfg: SidecarRuntimeConfig, opName: string): string {
     return `${cfg.sidecarOperationPrefix}.${opName}`;
 }
 
-/** Resolve the configured sidecar command from VS Code settings (falling back to the default). */
+/**
+ * Resolve the configured sidecar command from VS Code settings (falling back to the default).
+ *
+ * Throws for a config with no sidecar (`readOnly`, or the fields left out): a
+ * path that asks for the command there is a path that was going to spawn one,
+ * and an error names it where a blank command would only fail to start.
+ */
 export function getSidecarCommand(
     cfg: SidecarRuntimeConfig,
     vscodeModule: typeof import('vscode'),
     scopeUri?: import('vscode').Uri
 ): string {
+    if (cfg.sidecarCommandSettingKey === undefined || cfg.sidecarCommandDefault === undefined) {
+        throw new Error(
+            `${cfg.settingsNamespace}: this profile has no sidecar${cfg.readOnly ? ' (readOnly)' : ''}; nothing in it may invoke one.`
+        );
+    }
     const config = vscodeModule.workspace.getConfiguration(cfg.settingsNamespace, scopeUri);
     const configured = config.get<string>(cfg.sidecarCommandSettingKey, cfg.sidecarCommandDefault);
     return toNonEmptyString(configured, cfg.sidecarCommandDefault);
