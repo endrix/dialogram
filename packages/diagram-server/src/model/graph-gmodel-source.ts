@@ -339,6 +339,17 @@ export class GraphGModelSource {
                 if (typeof nodeFactoryName === 'string' && nodeFactoryName.trim() !== '') {
                     (gnode.args as Record<string, unknown>)[WorkflowDiagramMetadata.NETWORK_FACTORY_NAME] = nodeFactoryName.trim();
                 }
+                // The name the node navigates as, when that is not its label:
+                // the instance name a drill-down puts on the crumb and the
+                // outline matches its row against. A producer whose node
+                // stands for a unit under another name (a clause drawn in the
+                // document that refers to it, say, which drills into the
+                // document that holds it) says so here; the label stays what
+                // the node is called on the canvas.
+                const instanceName = node.meta['instanceName'];
+                if (typeof instanceName === 'string' && instanceName.trim() !== '') {
+                    (gnode.args as Record<string, unknown>)['wf:entityInstanceName'] = instanceName.trim();
+                }
             }
             if (node.kind === 'if' || node.kind === 'loop') {
                 gnode.cssClasses = [WorkflowDiagramCss.NODE, WorkflowDiagramCss.NODE_STRUCTURE, node.kind === 'if' ? WorkflowDiagramCss.NODE_STRUCTURE_IF : WorkflowDiagramCss.NODE_STRUCTURE_FOREACH];

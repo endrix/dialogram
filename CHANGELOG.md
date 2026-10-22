@@ -8,6 +8,13 @@ platform API version.
 
 ### Added
 
+- `meta.instanceName` on a node: the name it navigates as when that is not
+  its label. A drill-down puts it on the crumb and the hierarchy outline
+  matches its row against it (`wf:entityInstanceName`); the label and the
+  entity name rename and lookups use stay as they were. For a producer whose
+  node stands for a unit under another name: a clause drawn at the edge of the
+  document that refers to it drills into the document that holds it, and the
+  crumb should say that document, not the clause.
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the
   tooltip on hover still says what it carries. Default `true`, as before.
