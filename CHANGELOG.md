@@ -23,6 +23,13 @@ platform API version.
   belong together, and the layout keeps them together. The platform learns
   nothing from the grouping; what a group is (a layer, a domain, a stage) is
   the producer's business and shows only in its label.
+- Header badges. A producer puts short marks on a node's `meta.badges`
+  (`[{ text, tone? }]`, `tone` one of `neutral`, `info`, `warning`, `error`,
+  `neutral` when absent or unknown); the node's header draws them as pills,
+  right-aligned, in that order, and the node is sized so they never cover the
+  name. The text is the producer's word and the platform reads nothing into
+  it: a modality, a status, a count, whatever a reader must see without
+  opening the panel. Carried on `wf:badges`.
 
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the
