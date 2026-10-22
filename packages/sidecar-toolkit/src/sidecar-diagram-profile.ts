@@ -18,6 +18,7 @@ import { createSourceReferenceContext } from './chat-source-reference.js';
 import { createRegistryChatTools, type RegistryChatTool } from './registry-tools.js';
 import { RESUME_TOOL } from './run-failure.js';
 import { getCliInvocation,
+    getGraphLoadTimeoutMs,
     getSidecarCommand,
     type SidecarRuntimeConfig,
     type CreateNodeStrings,
@@ -27,7 +28,12 @@ import { getCliInvocation,
 import { createSidecarModelSource } from './server/cli-graph-model-source.js';
 import { createSidecarServerModule } from './server/sidecar-server-module.js';
 import { createSidecarOperationModules } from './server/operation-modules.js';
-import { createDiagramOpenabilityCheck } from './diagram-openability.js';
+import { exportGraphFromCli } from './cli-graph-export.js';
+import {
+    createDiagramOpenabilityCheck,
+    createPredicateOpenabilityCheck,
+    type DiagramOpenabilityPredicate
+} from './diagram-openability.js';
 import { createSidecarEditBackend } from './chat-edit-backend.js';
 import { createPythonNavigationProvider } from './python-navigation.js';
 import { registerSidecarCommands } from './sidecar-commands.js';
@@ -141,10 +147,32 @@ export interface SidecarProfileInput {
      */
     clientStylesheets?: string[];
 
+    /**
+     * A diagram that is a projection of a file drawn by the CLI, with nothing to
+     * edit and no sidecar. Default `false`, which changes nothing. `true`:
+     *
+     * - the profile's `edits` is `'read-only'` and `supportsElementCreation` is
+     *   `false` whatever the input says;
+     * - the toolkit spawns no sidecar: no capability probe, no openability
+     *   probe, no create-node type listing, no sidecar graph export when the
+     *   plan fails. `graphAcquisition` must be `'cli-plan'` (assembly throws
+     *   otherwise) and the model source reads the graph from the CLI alone;
+     * - the chat works read-only: `get_graph` and the session's graph context
+     *   come from the CLI plan document, there is no `editBackend` (so the
+     *   platform offers no edit slash commands), and the registry listings
+     *   and validation verdict, which only a sidecar answers, are not offered;
+     * - `sidecarCommandSettingKey`, `sidecarCommandDefault` and `exportOp` may
+     *   be left out, and the raw sidecar commands (`commands.sidecarEdit`,
+     *   `commands.sidecarSend`) are not registered.
+     */
+    readOnly?: boolean;
+
     // Sidecar/CLI transport.
     sidecarOperationPrefix: string;
-    sidecarCommandSettingKey: string;
-    sidecarCommandDefault: string;
+    /** The setting and default naming the sidecar command. Required unless
+     *  `readOnly` (assembly throws without them otherwise). */
+    sidecarCommandSettingKey?: string;
+    sidecarCommandDefault?: string;
     cliCommandSettingKey: string;
     cliCommandDefault: string;
     cliPythonModule?: string;
@@ -219,7 +247,25 @@ export interface SidecarProfileInput {
 
     // Openability (omit for "always openable"). With only `probeOp`, the
     // sidecar's answer decides and an undecidable probe opens the file.
-    openability?: { probeOp?: string; decoratorName?: string };
+    openability?: {
+        probeOp?: string;
+        decoratorName?: string;
+        /**
+         * The product's own answer, from the file's text and path. Given, it
+         * decides alone: no sidecar probe and no decorator scan run, whatever
+         * else is set here (and it is the only form a `readOnly` profile may
+         * probe with). A closure crosses the extension API, so it threads
+         * straight into the profile's `canOpenSource`.
+         *
+         * It should be synchronous and cheap -- it runs on every candidate file
+         * before anything is on screen -- and look only at the text it is given
+         * (a marker, a header, a pattern near the top): no I/O beyond that text,
+         * no process, no full parse when a prefix would do. A throw counts as
+         * `false`; a file with none of the source extensions is refused before
+         * it is called.
+         */
+        predicate?: DiagramOpenabilityPredicate;
+    };
 
     /**
      * How cross-file navigation targets are resolved. `'python'` (the default)
@@ -293,6 +339,19 @@ export function sourceExtensionsOf(input: Pick<SidecarProfileInput, 'sourceExten
     return many.length > 0 ? many : [input.sourceExtension];
 }
 
+/**
+ * The sidecar command an editable profile must name. Checked here, where the
+ * message can say which fields and why, rather than at the first spawn.
+ */
+function requireSidecarCommand(input: SidecarProfileInput): { settingKey: string; commandDefault: string } {
+    if (input.sidecarCommandSettingKey === undefined || input.sidecarCommandDefault === undefined) {
+        throw new Error(
+            'createSidecarDiagramProfile: sidecarCommandSettingKey and sidecarCommandDefault are required unless readOnly is true.'
+        );
+    }
+    return { settingKey: input.sidecarCommandSettingKey, commandDefault: input.sidecarCommandDefault };
+}
+
 /** Build the neutral {@link SidecarRuntimeConfig} the toolkit model source needs. */
 function sidecarRuntimeConfig(input: SidecarProfileInput): SidecarRuntimeConfig {
     return {
@@ -300,6 +359,7 @@ function sidecarRuntimeConfig(input: SidecarProfileInput): SidecarRuntimeConfig 
         sidecarOperationPrefix: input.sidecarOperationPrefix,
         sidecarCommandSettingKey: input.sidecarCommandSettingKey,
         sidecarCommandDefault: input.sidecarCommandDefault,
+        readOnly: input.readOnly,
         cliCommandSettingKey: input.cliCommandSettingKey,
         cliCommandDefault: input.cliCommandDefault,
         cliPythonModule: input.cliPythonModule,
@@ -351,32 +411,65 @@ export interface SidecarDialogramApi {
 }
 
 export function createSidecarDiagramProfile(input: SidecarProfileInput) {
+    // A read-only profile has no sidecar, so the sidecar fields may be absent
+    // and nothing may need one; an editable profile must name its sidecar.
+    // Both are checked here, where the message can say which field and why,
+    // rather than at the first spawn.
+    const readOnly = input.readOnly === true;
+    const sidecarCommand = readOnly ? undefined : requireSidecarCommand(input);
+    const cliGraphArgs = input.cliGraphArgs;
+    if (readOnly && (input.graphAcquisition !== 'cli-plan' || !cliGraphArgs)) {
+        throw new Error(
+            `createSidecarDiagramProfile: readOnly requires graphAcquisition 'cli-plan' with cliGraphArgs (got '${input.graphAcquisition}'): `
+            + 'a read-only profile reads its graph from the CLI and never spawns a sidecar.'
+        );
+    }
+    if (readOnly && input.openability?.probeOp && !input.openability.predicate) {
+        throw new Error(
+            'createSidecarDiagramProfile: readOnly cannot probe a sidecar for openability (openability.probeOp); '
+            + 'use openability.predicate or openability.decoratorName.'
+        );
+    }
+
     const runtimeConfig = sidecarRuntimeConfig(input);
     const sourceExtensions = sourceExtensionsOf(input);
     const primarySourceExtension = sourceExtensions[0];
 
-    const canOpenSource = input.openability
-        ? createDiagramOpenabilityCheck({
-            settingsNamespace: input.settingsNamespace,
-            sidecarCommandSettingKey: input.sidecarCommandSettingKey,
-            sidecarCommandDefault: input.sidecarCommandDefault,
-            sidecarOperationPrefix: input.sidecarOperationPrefix,
-            probeOp: input.openability.probeOp,
+    // The product's predicate decides alone when given; otherwise the sidecar
+    // probe and the decorator scan, as before.
+    const canOpenSource = input.openability?.predicate
+        ? createPredicateOpenabilityCheck({
+            predicate: input.openability.predicate,
             sourceExtension: primarySourceExtension,
-            sourceExtensions,
-            decoratorName: input.openability.decoratorName
+            sourceExtensions
+        })
+        : input.openability
+            ? createDiagramOpenabilityCheck({
+                settingsNamespace: input.settingsNamespace,
+                sidecarCommandSettingKey: sidecarCommand?.settingKey,
+                sidecarCommandDefault: sidecarCommand?.commandDefault,
+                sidecarOperationPrefix: input.sidecarOperationPrefix,
+                probeOp: input.openability.probeOp,
+                sourceExtension: primarySourceExtension,
+                sourceExtensions,
+                decoratorName: input.openability.decoratorName
+            })
+            : undefined;
+
+    // No edit backend for a read-only profile: the platform then offers the
+    // chat without its edit slash commands (its own gate), and the graph the
+    // backend would have exported comes from the CLI below.
+    const editBackend = sidecarCommand
+        ? createSidecarEditBackend({
+            settingsNamespace: input.settingsNamespace,
+            sidecarCommandSettingKey: sidecarCommand.settingKey,
+            sidecarCommandDefault: sidecarCommand.commandDefault,
+            sidecarOperationPrefix: input.sidecarOperationPrefix,
+            exportOp: input.exportOp,
+            mcpEnabledSetting: input.mcpEnabledSetting,
+            scopeArgKey: input.scopeArgKey
         })
         : undefined;
-
-    const editBackend = createSidecarEditBackend({
-        settingsNamespace: input.settingsNamespace,
-        sidecarCommandSettingKey: input.sidecarCommandSettingKey,
-        sidecarCommandDefault: input.sidecarCommandDefault,
-        sidecarOperationPrefix: input.sidecarOperationPrefix,
-        exportOp: input.exportOp,
-        mcpEnabledSetting: input.mcpEnabledSetting,
-        scopeArgKey: input.scopeArgKey
-    });
 
     // Resolve the sidecar command for a given ABSOLUTE file path through the SAME
     // helper the diagram's edit path uses (`getSidecarCommand`, via
@@ -394,17 +487,33 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
     // platform adapter exposes them over GLSP-MCP. Library-mode only (function
     // closures share the platform realm) — the cross-extension API path leaves
     // chat.tools absent, which is acceptable (the tools are simply unavailable).
-    const invoke = (file: string, opName: string, args: Record<string, unknown>) =>
-        invokeSidecarOp(
-            file,
-            { sidecarCommand: resolveSidecarCommand(file), sidecarOperationPrefix: input.sidecarOperationPrefix },
-            opName,
-            args
-        );
+    //
+    // Read-only, the one op anyone asks for is the graph export, and the CLI
+    // plan answers it, in the sidecar's envelope, with the same deadline the
+    // model source gives the plan; the op name is not looked at.
+    const invoke = readOnly && cliGraphArgs
+        ? (file: string, _opName: string, args: Record<string, unknown>) => {
+            const scopeUri = vscode.Uri.file(file);
+            const scoped = args[input.scopeArgKey];
+            return exportGraphFromCli(file, {
+                ...getCliInvocation(runtimeConfig, vscode, scopeUri),
+                cliGraphArgs,
+                networkName: typeof scoped === 'string' ? scoped : undefined,
+                timeoutMs: getGraphLoadTimeoutMs(runtimeConfig, vscode, scopeUri)
+            });
+        }
+        : (file: string, opName: string, args: Record<string, unknown>) =>
+            invokeSidecarOp(
+                file,
+                { sidecarCommand: resolveSidecarCommand(file), sidecarOperationPrefix: input.sidecarOperationPrefix },
+                opName,
+                args
+            );
     const chatTools = createRegistryChatTools({
         scopeArgKey: input.scopeArgKey,
         exportOp: input.exportOp,
-        invoke
+        invoke,
+        graphOnly: readOnly
     });
     // The source by reference (`chat.sourceContext: 'reference'`): no file
     // attached, a compact graph summary, and a selected node as a file and line.
@@ -422,7 +531,17 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
                 selectionContext: false as const
             };
         })()
-        : {};
+        : readOnly
+            // Embedded and read-only: the graph as JSON, as the edit backend's
+            // export would have given it, from the CLI plan instead.
+            ? {
+                graphContextProvider: async (file: string): Promise<string | undefined> => {
+                    const result = await invoke(file, input.exportOp ?? 'exportGraph', {});
+                    const graph = result.ok ? result.response?.diagnostic?.graph : undefined;
+                    return graph && typeof graph === 'object' ? JSON.stringify(graph) : undefined;
+                }
+            }
+            : {};
     // A product that can resume runs gives the chat a way to offer it: the
     // agent that fixed a failed run proposes resuming it, and the person says
     // yes or no.
@@ -481,16 +600,19 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
     };
 
     const newSourceFile = (context: vscode.ExtensionContext): vscode.Disposable => {
-        registerSidecarCommands(context, {
-            editCommandId: input.commands.sidecarEdit,
-            sendCommandId: input.commands.sidecarSend,
-            opNamespace: input.key,
-            settingsNamespace: input.settingsNamespace,
-            sidecarCommandSettingKey: input.sidecarCommandSettingKey,
-            sidecarCommandDefault: input.sidecarCommandDefault,
-            sourceFileExtension: primarySourceExtension,
-            sourceFileExtensions: sourceExtensions
-        });
+        // The raw sidecar commands need a sidecar; a read-only profile has none.
+        if (sidecarCommand) {
+            registerSidecarCommands(context, {
+                editCommandId: input.commands.sidecarEdit,
+                sendCommandId: input.commands.sidecarSend,
+                opNamespace: input.key,
+                settingsNamespace: input.settingsNamespace,
+                sidecarCommandSettingKey: sidecarCommand.settingKey,
+                sidecarCommandDefault: sidecarCommand.commandDefault,
+                sourceFileExtension: primarySourceExtension,
+                sourceFileExtensions: sourceExtensions
+            });
+        }
         registerNewSourceFileCommand(context, input.commands.createNewContainer, input.customEditorViewType, {
             label: input.newContainer.label,
             decorator: input.newContainer.decorator,
@@ -518,13 +640,19 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         // falls back to accepting anything, which is the right default for a
         // profile that cannot say, and the wrong one for a builder that can.
         sourceExtensions,
-        supportsElementCreation: input.supportsElementCreation,
+        // A projection creates nothing, whatever the input says.
+        supportsElementCreation: readOnly ? false : input.supportsElementCreation,
         operationKinds: input.operationKinds,
         clientBehavior: input.cliResumeArgs
             ? { ...input.clientBehavior, resumeAtStep: true }
             : input.clientBehavior,
         clientStylesheets: input.clientStylesheets,
-        edits: { operationModules: createSidecarOperationModules(runtimeConfig) },
+        // Read-only, the server registers no writing operation handler at all
+        // (the platform's own guard on `'read-only'`), so no create-node flow
+        // and no capability probe can ever run.
+        edits: readOnly
+            ? ('read-only' as const)
+            : { operationModules: createSidecarOperationModules(runtimeConfig) },
         modelSource: () => createSidecarModelSource(runtimeConfig),
         serverModules: [createSidecarServerModule(runtimeConfig)],
         storageOptions: {

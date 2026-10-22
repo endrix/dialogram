@@ -44,6 +44,8 @@ interface PayloadNode {
     kind?: string;
     type?: string;
     location?: Location;
+    /** Where the normalized document keeps a node's location (`graphPayloadToDoc` moves `location` here). */
+    meta?: { source?: Location };
     metadata?: { referencedSource?: Location; referencedEntityName?: string; networkInstance?: boolean; external?: boolean };
 }
 
@@ -80,7 +82,8 @@ function describe(node: PayloadNode): string {
 
 /** One line per node: what it is and where to read it. */
 export function nodeLine(node: PayloadNode, ownFile: string): string {
-    const at = where(node.location, ownFile);
+    // The raw export carries `location`; a plan document, already normalized, carries `meta.source`.
+    const at = where(node.location ?? node.meta?.source, ownFile);
     const defined = node.metadata?.referencedSource ? where(node.metadata.referencedSource, ownFile) : undefined;
     const parts = [`${node.label ?? node.id}: ${describe(node)}`];
     if (at) {

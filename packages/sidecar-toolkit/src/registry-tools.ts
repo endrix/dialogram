@@ -59,6 +59,12 @@ export interface RegistryToolsConfig {
   exportOp?: string;
   /** Arg key used to scope ops to a sub-graph (today `'workflow'`). */
   scopeArgKey: string;
+  /**
+   * Offer `get_graph` alone. For a transport that answers with a graph and
+   * nothing else -- a read-only profile whose graph comes from the CLI -- the
+   * registry listings and the validation verdict have no one to ask.
+   */
+  graphOnly?: boolean;
 }
 
 const networkProp = {
@@ -98,6 +104,19 @@ export function createRegistryChatTools(cfg: RegistryToolsConfig): RegistryChatT
     handler: async (file, args) => renderResult(await cfg.invoke(file, opName, scope(args))),
   });
 
+  // Ported from the deleted legacy stdio MCP server (0.6.0). Returns the RAW resolved graph as
+  // JSON (the GModel `diagram-model`/`query-elements` built-ins expose the GModel, not the
+  // sidecar's raw export). Non-mutating and bridgeable; mirrors `validate_workflow`'s transport
+  // but renders the export payload verbatim instead of summarizing it.
+  const getGraph = readTool(
+    'get_graph',
+    'Export the current file as a resolved graph (JSON): the workflow/network with its nodes, edges, and their resolved types and ports. Use this to inspect the full structure before or after editing.',
+    exportOp
+  );
+  if (cfg.graphOnly) {
+    return [getGraph];
+  }
+
   return [
     readTool(
       'list_task_types',
@@ -106,15 +125,7 @@ export function createRegistryChatTools(cfg: RegistryToolsConfig): RegistryChatT
     ),
     readTool('list_workflow_types', 'List the workflow types available in the file.', 'listWorkflowTypes'),
     readTool('list_nodes', 'List the instance (node) names currently in the workflow graph.', 'listInstanceNames'),
-    // Ported from the deleted legacy stdio MCP server (0.6.0). Returns the RAW resolved graph as
-    // JSON (the GModel `diagram-model`/`query-elements` built-ins expose the GModel, not the
-    // sidecar's raw export). Non-mutating and bridgeable; mirrors `validate_workflow`'s transport
-    // but renders the export payload verbatim instead of summarizing it.
-    readTool(
-      'get_graph',
-      'Export the current file as a resolved graph (JSON): the workflow/network with its nodes, edges, and their resolved types and ports. Use this to inspect the full structure before or after editing.',
-      exportOp
-    ),
+    getGraph,
     {
       name: 'validate_workflow',
       description:
