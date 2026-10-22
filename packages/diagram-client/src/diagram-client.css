@@ -1345,6 +1345,44 @@ body.vscode-high-contrast-light .node-center-image-light {
     font-size: 10px;
 }
 
+/* Header badges: a producer's short marks, pills on the right of the header */
+.header-badge rect {
+    fill: var(--vscode-badge-background, #4d4d4d);
+}
+
+.header-badge .header-badge-text {
+    fill: var(--vscode-badge-foreground, #ffffff);
+    font-family: var(--vscode-font-family);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+
+.header-badge.badge-tone-neutral rect {
+    fill: var(--vscode-descriptionForeground, #8b8b8b);
+    fill-opacity: 0.35;
+}
+
+.header-badge.badge-tone-neutral .header-badge-text {
+    fill: var(--vscode-foreground, #cccccc);
+}
+
+.header-badge.badge-tone-info rect {
+    fill: var(--vscode-editorInfo-foreground, #3794ff);
+}
+
+.header-badge.badge-tone-warning rect {
+    fill: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.header-badge.badge-tone-warning .header-badge-text {
+    fill: var(--vscode-editor-background, #1e1e1e);
+}
+
+.header-badge.badge-tone-error rect {
+    fill: var(--vscode-editorError-foreground, #f14c4c);
+}
+
 /* ============================================
    Validation decoration styles
    ============================================ */

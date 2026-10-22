@@ -1,5 +1,5 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
-import { parseViewsMeta } from '../server/graph-load-request-options';
+import { parseBadgesMeta, parseViewsMeta, type UnitBadge } from '../server/graph-load-request-options';
 import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, type PortSide } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
@@ -286,8 +286,14 @@ export class GraphGModelSource {
                 if (w > maxOutputLabelW) maxOutputLabelW = w;
             }
             const labelRequiredWidth = portW + labelGap + labelPad + maxInputLabelW + centreGap + maxOutputLabelW + labelPad + labelGap + portW;
+            // The badges share the header with the name, right-aligned, so
+            // the node must be wide enough for both or the badges cover the
+            // name's tail. Their widths follow the client's drawing: text at
+            // the badge font, padding, a gap between badges.
+            const unitBadges = parseBadgesMeta(node.meta?.['badges']) ?? [];
             const headerLabelW = this.estimateLabelSize(node.label, WorkflowDiagramConstants.HEADER_LABEL_FONT_SIZE_PX).width
-                + WorkflowDiagramConstants.HEADER_LABEL_EXTRA_WIDTH_PX;
+                + WorkflowDiagramConstants.HEADER_LABEL_EXTRA_WIDTH_PX
+                + this.badgesWidth(unitBadges);
             const isNetworkInstanceNode = this.isNetworkInstanceNode(node);
             // Does this node get an italic type label under it? Mirrors the
             // condition used below when setting `wf:footerTypeLabel`.
@@ -557,7 +563,13 @@ export class GraphGModelSource {
             const headerLabelId = `${stableNodeId}_label_name`;
             const subtitle = this.controlSubtitle(node);
             const headerClasses = this.getHeaderCssClasses(node);
-            gnode.children!.push(this.createHeaderCompartment(headerLabelId, node.label, subtitle, headerClasses));
+            gnode.children!.push(this.createHeaderCompartment(headerLabelId, node.label, subtitle, headerClasses, unitBadges));
+            if (unitBadges.length > 0) {
+                gnode.args = {
+                    ...(gnode.args ?? {}),
+                    [WorkflowDiagramMetadata.BADGES]: unitBadges as any
+                };
+            }
             const typeLabel = footerTypeLabel;
             if (typeLabel) {
                 gnode.args = {
@@ -1049,11 +1061,19 @@ export class GraphGModelSource {
         return ports;
     }
 
+    /** The room a header's badges take, in the client's drawing: see the
+     *  header view, which draws each badge at its text width plus padding,
+     *  with a gap before the next. */
+    private badgesWidth(badges: readonly UnitBadge[]): number {
+        return badges.reduce((total, badge) => total + Math.round(badge.text.length * 5.6) + 10 + 4, 0);
+    }
+
     private createHeaderCompartment(
         id: string,
         text: string,
         subtitle?: string,
-        cssClasses?: string[]
+        cssClasses?: string[],
+        badges: readonly UnitBadge[] = []
     ): GModelElement {
         const children: GModelElement[] = [
             {
@@ -1069,6 +1089,16 @@ export class GraphGModelSource {
                 text: subtitle
             } as any);
         }
+        // A badge is a label of its own type in the header; the client draws
+        // the badge labels as pills on the right and the others as before.
+        badges.forEach((badge, index) => {
+            children.push({
+                id: `${id}_badge_${index}`,
+                type: WorkflowDiagramTypes.LABEL_BADGE,
+                text: badge.text,
+                cssClasses: [`badge-tone-${badge.tone}`]
+            } as any);
+        });
         const classes = Array.isArray(cssClasses) && cssClasses.length > 0
             ? cssClasses
             : ['header-task'];

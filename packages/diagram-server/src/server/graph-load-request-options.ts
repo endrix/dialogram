@@ -82,6 +82,41 @@ export function parseViewsMeta(raw: unknown): UnitView[] | undefined {
     return out.length > 0 ? out : undefined;
 }
 
+export type UnitBadgeTone = 'neutral' | 'info' | 'warning' | 'error';
+
+/** One mark on a node's header, as `meta.badges` lists it. */
+export interface UnitBadge {
+    text: string;
+    tone: UnitBadgeTone;
+}
+
+const BADGE_TONES: readonly UnitBadgeTone[] = ['neutral', 'info', 'warning', 'error'];
+
+/**
+ * `meta.badges` as the producer wrote it: `[{ text, tone? }]`, else nothing.
+ * An entry without a non-empty string text is dropped; a tone the platform
+ * does not have falls back to `neutral`, since the word on the badge still
+ * means something to the reader and the colour was only emphasis.
+ */
+export function parseBadgesMeta(raw: unknown): UnitBadge[] | undefined {
+    if (!Array.isArray(raw)) {
+        return undefined;
+    }
+    const out: UnitBadge[] = [];
+    for (const item of raw) {
+        if (!item || typeof item !== 'object') {
+            continue;
+        }
+        const { text, tone } = item as Record<string, unknown>;
+        if (typeof text !== 'string' || text.trim() === '') {
+            continue;
+        }
+        const resolved = BADGE_TONES.find(candidate => candidate === tone) ?? 'neutral';
+        out.push({ text: text.trim(), tone: resolved });
+    }
+    return out.length > 0 ? out : undefined;
+}
+
 export interface NormalizedGraphLoadError {
     message: string;
     file?: string;
