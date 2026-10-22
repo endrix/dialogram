@@ -45,6 +45,9 @@ export type PyGraphEdge = {
 export type PyGraphScope = {
     id: string;
     kind: string;
+    /** What a `group` scope shows as its title; the last segment of its id
+     *  when absent. */
+    label?: string;
     parent?: string | null;
     controlNodeId?: string | null;
     children?: string[];
@@ -769,6 +772,46 @@ export class GraphGModelSource {
             }
         }
 
+        // A scope of kind `group` is a labelled container of the nodes that
+        // declare it or that it lists, nested under its parent when that is a
+        // group too. The members are untouched: the container only says they
+        // belong together, and the layout keeps them together. What the group
+        // is (a layer, a domain, a stage) is the producer's business and shows
+        // only in its label; the control-flow containers above keep their own
+        // kinds and never come through here.
+        const groupScopes = (doc.graph.subgraphs ?? []).filter(scope => scope.kind === 'group' && !scope.controlNodeId);
+        if (groupScopes.length > 0) {
+            const groupNodes = new Map<string, GNode>();
+            for (const scope of groupScopes) {
+                groupNodes.set(scope.id, this.createGroupNode(scope, scopeNodes, irNodeToStableId, nodeMap, removedNodeIds));
+            }
+            // A group whose parent chain leads back to itself has no parent
+            // worth the name; it sits at the root, as a group with no parent
+            // does. Without the check two groups that name each other would
+            // vanish from the model, each inside the other.
+            const parentOf = (scope: PyGraphScope): GNode | undefined => {
+                const seen = new Set<string>([scope.id]);
+                let current: PyGraphScope | undefined = scope;
+                while (current?.parent && groupNodes.has(current.parent)) {
+                    if (seen.has(current.parent)) {
+                        return undefined;
+                    }
+                    seen.add(current.parent);
+                    current = groupScopes.find(candidate => candidate.id === current!.parent);
+                }
+                return scope.parent ? groupNodes.get(scope.parent) : undefined;
+            };
+            for (const scope of groupScopes) {
+                const group = groupNodes.get(scope.id)!;
+                const parent = parentOf(scope);
+                if (parent && parent !== group) {
+                    parent.children!.push(group);
+                } else {
+                    children.push(group);
+                }
+            }
+        }
+
         for (const edge of doc.graph.edges) {
             const scope = scopeById.get(edge.scope);
             const branch = this.scopeLabel(scope?.kind ?? '');
@@ -1020,6 +1063,66 @@ export class GraphGModelSource {
             removedNodeIds.add(stableId);
         }
 
+        return node;
+    }
+
+    /**
+     * The container for a `group` scope: its label, its members moved under it
+     * (and out of the root, through `removedNodeIds`), laid out in the same
+     * direction as the graph so a group changes where its members sit, never
+     * how they read.
+     */
+    private createGroupNode(
+        scope: PyGraphScope,
+        scopeNodes: Map<string, string[]>,
+        irNodeToStableId: Map<string, string>,
+        nodeMap: Map<string, GNode>,
+        removedNodeIds: Set<string>
+    ): GNode {
+        const nodeId = `scope:${scope.id}`;
+        const label = typeof scope.label === 'string' && scope.label.trim() !== ''
+            ? scope.label.trim()
+            : (scope.id.split(':').pop() || scope.id);
+        const node: GNode = {
+            id: nodeId,
+            type: WorkflowDiagramTypes.NODE_GROUP,
+            cssClasses: [WorkflowDiagramCss.NODE, WorkflowDiagramCss.NODE_STRUCTURE, WorkflowDiagramCss.NODE_GROUP],
+            layoutOptions: {
+                'elk.algorithm': 'layered',
+                'elk.direction': 'RIGHT',
+                'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+                'elk.nodeSize.constraints': 'MINIMUM_SIZE',
+                'elk.padding': '[top=26,left=12,bottom=12,right=12]'
+            },
+            children: [],
+            args: {
+                [WorkflowDiagramMetadata.AST_PATH]: nodeId,
+                'wf:scopeId': scope.id,
+                [WorkflowDiagramMetadata.STRUCTURE_KIND]: 'group',
+                [WorkflowDiagramMetadata.GROUP_LABEL]: label
+            }
+        };
+        const memberIds = new Set<string>();
+        for (const irId of scope.nodes ?? []) {
+            const stableId = irNodeToStableId.get(irId);
+            if (stableId) {
+                memberIds.add(stableId);
+            }
+        }
+        for (const stableId of scopeNodes.get(scope.id) ?? []) {
+            memberIds.add(stableId);
+        }
+        for (const stableId of memberIds) {
+            if (removedNodeIds.has(stableId)) {
+                continue;
+            }
+            const member = nodeMap.get(stableId);
+            if (!member) {
+                continue;
+            }
+            node.children!.push(member);
+            removedNodeIds.add(stableId);
+        }
         return node;
     }
 

@@ -236,6 +236,34 @@ export class StructureIfBranchNode extends RectangularNode implements Hoverable,
 }
 
 /**
+ * A producer's group container. Read-only; sized by the server from its
+ * members, like a branch container, so `bounds` sets the position only.
+ */
+export class GroupNode extends RectangularNode implements Hoverable, Selectable, Fadeable {
+    static override readonly DEFAULT_FEATURES = [
+        selectFeature,
+        hoverFeedbackFeature,
+        boundsFeature,
+        layoutContainerFeature
+    ];
+
+    override type = WorkflowDiagramTypes.NODE_GROUP;
+    override hoverFeedback: boolean = false;
+    override selected: boolean = false;
+    override opacity: number = 1;
+    readOnly: boolean = true;
+    args?: Args;
+
+    override set bounds(newBounds: { x: number; y: number; width: number; height: number }) {
+        this.position = { x: newBounds.x, y: newBounds.y };
+    }
+
+    override get bounds(): { x: number; y: number; width: number; height: number } {
+        return { x: this.position.x, y: this.position.y, width: this.size.width, height: this.size.height };
+    }
+}
+
+/**
  * Structure if join node (phi-like merge point)
  * Read-only and not user-movable.
  * 

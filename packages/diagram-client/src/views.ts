@@ -405,6 +405,59 @@ export class StructureIfBranchNodeView extends ShapeView {
     }
 }
 
+/**
+ * A producer's group: a quiet frame with the group's label in its corner,
+ * the members rendered inside. The frame is dashed and tinted from the
+ * description colour so it reads as a region, not as a node.
+ */
+@injectable()
+export class GroupNodeView extends ShapeView {
+    override render(node: Readonly<any>, context: RenderingContext, args?: IViewArgs): VNode | undefined {
+        if (!this.isVisible(node, context)) {
+            return undefined;
+        }
+
+        const { width, height } = getNodeSize(node as any, 200, 80);
+        const raw = (node as any).args?.[WorkflowDiagramMetadata.GROUP_LABEL];
+        const label = typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : '';
+
+        return svg('g', {
+            class: {
+                'workflow-node': true,
+                [WorkflowDiagramCss.NODE_STRUCTURE]: true,
+                [WorkflowDiagramCss.NODE_GROUP]: true,
+                selected: (node as any).selected,
+                hover: (node as any).hoverFeedback,
+                'read-only': true
+            },
+            attrs: {
+                transform: `translate(${node.position.x}, ${node.position.y})`
+            }
+        },
+            svg('rect', {
+                class: { 'group-frame': true },
+                attrs: {
+                    x: 0, y: 0,
+                    width, height,
+                    rx: 6, ry: 6
+                }
+            }),
+            ...(label
+                ? [svg('text', {
+                    class: { 'group-label': true },
+                    attrs: {
+                        x: 8,
+                        y: 13,
+                        'text-anchor': 'start',
+                        'dominant-baseline': 'middle'
+                    }
+                }, label)]
+                : []),
+            ...context.renderChildren(node)
+        );
+    }
+}
+
 @injectable()
 export class StructureIfJoinNodeView extends ShapeView {
     override render(node: Readonly<any>, context: RenderingContext, args?: IViewArgs): VNode | undefined {
