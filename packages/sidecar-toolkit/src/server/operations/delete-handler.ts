@@ -79,9 +79,18 @@ export class DeleteElementOperationHandler extends OperationHandler {
                         if (!outPort || !inPort) continue;
                         const fromExpr = this.edgeEndpointExpr(fromName, outPort);
                         const toExpr = this.edgeEndpointExpr(toName, inPort);
+                        // The kind of edge, when the producer said (`meta.role`):
+                        // two nodes may be joined by edges of several kinds, and
+                        // the sidecar then needs to know which one goes.
+                        const role = elementArgs[WorkflowDiagramMetadata.EDGE_ROLE];
                         const ok = await this.sendSidecarOp(sourceUri, {
                             op: this.sidecar.sidecarOp('deleteEdge'),
-                            args: { workflow: workflowName, from_expr: fromExpr, to_expr: toExpr }
+                            args: {
+                                workflow: workflowName,
+                                from_expr: fromExpr,
+                                to_expr: toExpr,
+                                ...(typeof role === 'string' && role.trim() !== '' ? { role: role.trim() } : {})
+                            }
                         });
                         if (!ok) return undefined;
                         continue;
