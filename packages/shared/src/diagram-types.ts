@@ -66,6 +66,14 @@ export namespace WorkflowDiagramTypes {
     // Foreach container + inline statement nodes (purely structural)
     export const NODE_STRUCTURE_FOREACH = 'node:structure:foreach';
     export const NODE_STRUCTURE_FOREACH_JOIN = 'node:structure:foreach:join';
+    /**
+     * A producer's own grouping of nodes: a scope of kind `group` in the
+     * document, drawn as a labelled container around its members. The
+     * platform learns nothing from the grouping but that the members belong
+     * together; what a group IS (a layer, a domain, a stage) is the
+     * producer's business and shows only in its label.
+     */
+    export const NODE_GROUP = 'node:group';
     export const NODE_STRUCTURE_IF_INLINE = 'node:structure:if:inline';
     export const NODE_BOUNDARY_INPUT = 'node:boundary:input';
     export const NODE_BOUNDARY_OUTPUT = 'node:boundary:output';
@@ -129,6 +137,7 @@ export namespace WorkflowDiagramCss {
     export const NODE_STRUCTURE_FOREACH = 'workflow-node-structure-foreach';
     export const NODE_STRUCTURE_FOREACH_JOIN = 'workflow-node-structure-foreach-join';
     export const NODE_STRUCTURE_IF_INLINE = 'workflow-node-structure-if-inline';
+    export const NODE_GROUP = 'workflow-node-group';
     export const NODE_BOUNDARY = 'workflow-node-boundary';
     export const NODE_BOUNDARY_INPUT = 'workflow-node-boundary-input';
     export const NODE_BOUNDARY_OUTPUT = 'workflow-node-boundary-output';
@@ -380,6 +389,9 @@ export namespace WorkflowDiagramMetadata {
 
     // Structure node metadata (used on node:structure:* elements)
     export const STRUCTURE_KIND = 'cal:structureKind';
+    /** The label a group container shows: the scope's `label`, else the last
+     *  segment of its id. */
+    export const GROUP_LABEL = 'wf:groupLabel';
 }
 /**
  * Consolidated origin metadata interface (spec-compliant).

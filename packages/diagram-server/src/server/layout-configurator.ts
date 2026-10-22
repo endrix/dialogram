@@ -300,6 +300,22 @@ export class WorkflowLayoutConfigurator extends AbstractLayoutConfigurator {
             };
         }
 
+        if (nodeType === WorkflowDiagramTypes.NODE_GROUP) {
+            // A producer's group: a container laid out like the graph around
+            // it, so grouping changes where members sit and not how they read.
+            return {
+                'elk.algorithm': 'layered',
+                'elk.direction': 'RIGHT',
+                'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+                'elk.nodeSize.constraints': 'MINIMUM_SIZE',
+                'elk.padding': '[top=26,left=12,bottom=12,right=12]',
+                'elk.portConstraints': 'FIXED_POS',
+                'elk.spacing.nodeNode': '30',
+                'elk.spacing.edgeNode': '20',
+                'elk.spacing.portPort': '8'
+            };
+        }
+
         if (nodeType === WorkflowDiagramTypes.NODE_STRUCTURE_IF_JOIN) {
             // Join is a small helper node; size comes from server.
             const nodeWidth = node.size?.width ?? 70;

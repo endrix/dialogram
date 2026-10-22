@@ -74,6 +74,7 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
         mapping.set(WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH, GNode);
         mapping.set(WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH_JOIN, GNode);
         mapping.set(WorkflowDiagramTypes.NODE_STRUCTURE_IF_INLINE, GNode);
+        mapping.set(WorkflowDiagramTypes.NODE_GROUP, GNode);
         mapping.set(WorkflowDiagramTypes.NODE_BOUNDARY_INPUT, GNode);
         mapping.set(WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT, GNode);
 
@@ -185,6 +186,14 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
             {
                 elementTypeId: WorkflowDiagramTypes.NODE_STRUCTURE_ELSE,
                 repositionable: false,
+                deletable: false,
+                resizable: true,
+                reparentable: false
+            },
+            // A producer's group: movable as a whole, sized by its members.
+            {
+                elementTypeId: WorkflowDiagramTypes.NODE_GROUP,
+                repositionable: true,
                 deletable: false,
                 resizable: true,
                 reparentable: false

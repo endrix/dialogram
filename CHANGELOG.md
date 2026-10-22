@@ -8,6 +8,15 @@ platform API version.
 
 ### Added
 
+- Group containers. A producer puts a scope of kind `group` in its document
+  (`subgraphs: [{ id, kind: "group", label?, parent?, nodes? }]`), and the
+  nodes that declare that scope, or that it lists, are drawn inside a labelled
+  frame; a group whose `parent` is a group nests inside it. The members and
+  the layout direction are untouched: the container only says the members
+  belong together, and the layout keeps them together. The platform learns
+  nothing from the grouping; what a group is (a layer, a domain, a stage) is
+  the producer's business and shows only in its label.
+
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the
   tooltip on hover still says what it carries. Default `true`, as before.

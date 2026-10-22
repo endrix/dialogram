@@ -1263,6 +1263,30 @@ body.vscode-high-contrast-light .node-center-image-light {
     font-size: 10px;
 }
 
+/* Group containers: a producer's own grouping of nodes (a layer, a domain, a stage) */
+.workflow-node-group .group-frame {
+    fill: var(--vscode-descriptionForeground, #8b8b8b);
+    fill-opacity: 0.05;
+    stroke: var(--vscode-descriptionForeground, #8b8b8b);
+    stroke-width: 1px;
+    stroke-dasharray: 4,3;
+    opacity: 0.9;
+}
+
+.workflow-node-group.selected .group-frame,
+.workflow-node-group.hover .group-frame {
+    stroke: var(--vscode-focusBorder, #007fd4);
+    stroke-dasharray: none;
+}
+
+.workflow-node-group .group-label {
+    fill: var(--vscode-descriptionForeground, #8b8b8b);
+    font-family: var(--vscode-font-family);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
 /* Join node (phi-like merge point) */
 .workflow-node-structure-if-join .structure-if-join-body {
     fill: transparent;

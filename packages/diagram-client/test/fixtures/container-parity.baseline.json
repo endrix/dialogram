@@ -321,6 +321,12 @@
         "view": "StructureIfBranchNodeView"
     },
     {
+        "model": "GroupNode",
+        "op": "modelElement",
+        "typeId": "node:group",
+        "view": "GroupNodeView"
+    },
+    {
         "model": "StructureIfJoinNode",
         "op": "modelElement",
         "typeId": "node:structure:if:join",
