@@ -433,6 +433,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             libavoidWasmUri: this.getWebviewResourceUri(webview, 'dist', 'webview', 'libavoid.wasm'),
             libavoidModuleUri: this.getWebviewResourceUri(webview, 'dist', 'webview', 'libavoid.mjs'),
             styleUri: assets.styleUri,
+            extraStyleUris: assets.extraStyleUris,
             clientId,
             documentUri: document.uri.toString()
         });
@@ -778,19 +779,33 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     protected resolveClientAssets(webview: vscode.Webview): {
         scriptUri: vscode.Uri;
         styleUri?: vscode.Uri;
+        extraStyleUris: vscode.Uri[];
         localResourceRoots: vscode.Uri[];
     } {
         const stockRoots = [
             vscode.Uri.joinPath(this.assetsBaseUri, 'out'),
             vscode.Uri.joinPath(this.assetsBaseUri, 'dist')
         ];
+        // The product's own stylesheets come after the bundle's, stock or
+        // configured, so the product's rules load last and win the cascade:
+        // that is what a product-specific stylesheet is for. Each file's
+        // directory joins the roots, or the webview refuses to load it.
+        const stylesheets = this.profile.clientStylesheets ?? [];
+        const extraStyleUris = stylesheets.map(sheet => this.getConfiguredAssetUri(webview, sheet));
+        const stylesheetRoots = stylesheets.map(sheet => {
+            const fileUri = this.toResourceUri(sheet);
+            return fileUri.scheme === 'file'
+                ? vscode.Uri.file(path.dirname(fileUri.fsPath))
+                : vscode.Uri.joinPath(fileUri, '..');
+        });
 
         const clientAssets = this.profile.clientAssets;
         if (!clientAssets) {
             return {
                 scriptUri: this.getWebviewResourceUri(webview, 'dist', 'webview', 'diagram-client.js'),
                 styleUri: this.getWebviewResourceUri(webview, 'dist', 'webview', 'diagram-client.css'),
-                localResourceRoots: stockRoots
+                extraStyleUris,
+                localResourceRoots: [...stockRoots, ...stylesheetRoots]
             };
         }
 
@@ -800,7 +815,8 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             styleUri: clientAssets.stylePath
                 ? this.getConfiguredAssetUri(webview, clientAssets.stylePath)
                 : undefined,
-            localResourceRoots: [...stockRoots, ...configuredRoots]
+            extraStyleUris,
+            localResourceRoots: [...stockRoots, ...configuredRoots, ...stylesheetRoots]
         };
     }
 
@@ -876,6 +892,8 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             libavoidWasmUri?: vscode.Uri;
             libavoidModuleUri?: vscode.Uri;
             styleUri?: vscode.Uri;
+            /** The product's own stylesheets, linked after `styleUri`. */
+            extraStyleUris?: vscode.Uri[];
             clientId: string;
             documentUri: string;
         }
@@ -892,9 +910,10 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
 
         // The stylesheet link is emitted only when a style URI is present; a
         // consumer bundle may inline its CSS and supply no `stylePath`.
-        const styleLink = options.styleUri
-            ? `<link href="${options.styleUri}" rel="stylesheet" />\n    `
-            : '';
+        const styleLink = [
+            ...(options.styleUri ? [options.styleUri] : []),
+            ...(options.extraStyleUris ?? [])
+        ].map(uri => `<link href="${uri}" rel="stylesheet" />\n    `).join('');
 
         return /* html */ `<!DOCTYPE html>
 <html lang="en">

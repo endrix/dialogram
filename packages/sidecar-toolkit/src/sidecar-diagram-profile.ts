@@ -133,6 +133,13 @@ export interface SidecarProfileInput {
     operationKinds: { createEntityPort: string; deleteEntityPort: string };
     /** Neutral behavior flags forwarded into the diagram webview. */
     clientBehavior?: SidecarClientBehavior;
+    /**
+     * The product's own stylesheets, absolute paths, served into the stock
+     * webview after the platform's: how the product's `<kind>-node`,
+     * `edge-role-<role>` and family hooks look. Data only; threaded straight
+     * onto `DiagramProfile.clientStylesheets`.
+     */
+    clientStylesheets?: string[];
 
     // Sidecar/CLI transport.
     sidecarOperationPrefix: string;
@@ -516,6 +523,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         clientBehavior: input.cliResumeArgs
             ? { ...input.clientBehavior, resumeAtStep: true }
             : input.clientBehavior,
+        clientStylesheets: input.clientStylesheets,
         edits: { operationModules: createSidecarOperationModules(runtimeConfig) },
         modelSource: () => createSidecarModelSource(runtimeConfig),
         serverModules: [createSidecarServerModule(runtimeConfig)],

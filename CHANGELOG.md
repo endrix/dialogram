@@ -8,6 +8,14 @@ platform API version.
 
 ### Added
 
+- `DiagramProfile.clientStylesheets` (and `SidecarProfileInput.clientStylesheets`):
+  a product's own stylesheets, absolute paths, served into the webview after
+  the platform's own stylesheet, stock bundle or `clientAssets` alike, each
+  file's directory added to the resource roots. The platform already writes
+  `<kind>-node`, `edge-role-<role>` and the family classes on what it draws;
+  this is where a product says what they look like, without composing a webview
+  bundle of its own for one stylesheet.
+
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the
   tooltip on hover still says what it carries. Default `true`, as before.

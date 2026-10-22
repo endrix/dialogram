@@ -405,6 +405,19 @@ export interface DiagramProfile {
    *  the provider serves its stock `dist/webview/*` bundle. DATA ONLY — path/URI
    *  strings, never code objects. */
   clientAssets?: DiagramClientAssets;
+  /**
+   * Stylesheets served into the webview after the platform's own, whichever
+   * bundle that is: the stock one or `clientAssets`. Absolute fs paths or
+   * file-URI strings, DATA ONLY; each file's directory joins the webview's
+   * `localResourceRoots`.
+   *
+   * The platform writes hooks it does not style: `<kind>-node` for a kind of
+   * its own, `edge-role-<role>` for what a connection is, the family classes.
+   * A product that wants `refines` solid and `conflicts-with` red, or its pins
+   * smaller, says so here in CSS and nowhere else, without composing a webview
+   * bundle of its own for one stylesheet.
+   */
+  clientStylesheets?: string[];
   /** Edit strategy: `'read-only'` disables writes; an editable strategy carries the
    *  consumer-supplied operation modules registered on the diagram server. */
   edits: EditStrategy;
