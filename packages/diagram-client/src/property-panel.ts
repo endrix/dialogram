@@ -537,6 +537,11 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             })
         );
 
+        const factsSection = this.buildFactsSection(args);
+        if (factsSection) {
+            content.appendChild(factsSection);
+        }
+
         content.appendChild(this.buildDefinitionAnnotationsSection(node.id, args, undefined, requestAgentDiscovery));
 
         // Agent Tools section (only rendered for @agent nodes)
@@ -4397,6 +4402,11 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         }
         content.appendChild(basicSection);
 
+        const rootFactsSection = this.buildFactsSection(rootArgs);
+        if (rootFactsSection) {
+            content.appendChild(rootFactsSection);
+        }
+
         const graphLoadIssuesSection = this.buildGraphLoadIssuesSection(rootArgs);
         if (graphLoadIssuesSection) {
             content.appendChild(graphLoadIssuesSection);
@@ -4421,6 +4431,75 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         // Option B: avoid redundant counts; show the ports directly.
         content.appendChild(this.createBoundaryPortsSection('Input Ports', 'input', boundaryInputs));
         content.appendChild(this.createBoundaryPortsSection('Output Ports', 'output', boundaryOutputs));
+    }
+
+    /**
+     * Facts: the labelled values a producer stated on `meta.facts`, shown in
+     * its order and otherwise untouched — the platform has no opinion on what
+     * a label means, so there is no key to sort by, hide or rename.
+     *
+     * A plain value sits beside its label; a Markdown one goes under it as a
+     * block, through the same sanitized renderer the chat uses, since a value
+     * worth marking up is usually several lines. Nothing when there are no
+     * facts: a header announcing zero of something is not a fact either.
+     *
+     * Built imperatively rather than as a Lit template so it stays testable
+     * against the minimal fake `document` the panel's other section tests use.
+     */
+    protected buildFactsSection(args: Record<string, unknown> | undefined): HTMLElement | undefined {
+        const facts = this.normalizeFacts(args?.[WorkflowDiagramMetadata.FACTS]);
+        if (facts.length === 0) {
+            return undefined;
+        }
+        const section = this.createSection(`Facts (${facts.length})`);
+        const content = section.querySelector('.property-section-content') as HTMLElement | null;
+        if (!content) {
+            return section;
+        }
+        for (const fact of facts) {
+            const row = document.createElement('div');
+            row.className = fact.markdown ? 'pp-arow pp-fact pp-fact-block' : 'pp-arow pp-fact';
+            const key = document.createElement('span');
+            key.className = 'pp-akey';
+            key.textContent = fact.label;
+            row.appendChild(key);
+            if (fact.markdown) {
+                const block = document.createElement('div');
+                block.className = 'pp-aval pp-fact-markdown';
+                // renderMarkdownSafe sanitizes before this assignment.
+                block.innerHTML = renderMarkdownSafe(fact.value);
+                row.appendChild(block);
+            } else {
+                const val = document.createElement('span');
+                val.className = 'pp-aval pp-aval-wrap';
+                val.textContent = fact.value;
+                row.appendChild(val);
+            }
+            content.appendChild(row);
+        }
+        return section;
+    }
+
+    /**
+     * The server already dropped malformed entries; this repeats the check so
+     * a root or a node whose args came from anywhere else is as safe to show.
+     */
+    private normalizeFacts(raw: unknown): Array<{ label: string; value: string; markdown: boolean }> {
+        if (!Array.isArray(raw)) {
+            return [];
+        }
+        const out: Array<{ label: string; value: string; markdown: boolean }> = [];
+        for (const item of raw) {
+            if (!item || typeof item !== 'object') {
+                continue;
+            }
+            const { label, value, markdown } = item as Record<string, unknown>;
+            if (typeof label !== 'string' || typeof value !== 'string') {
+                continue;
+            }
+            out.push({ label, value, markdown: markdown === true });
+        }
+        return out;
     }
 
     protected buildGraphLoadIssuesSection(rootArgs: Record<string, unknown>): HTMLElement | undefined {

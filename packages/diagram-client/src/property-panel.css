@@ -718,6 +718,59 @@
     width: 100%;
 }
 
+/* Facts — a producer's labelled values. A plain value shares the aligned row;
+   a Markdown one stacks under its label as a block, with the chat panel's
+   code styling so the same text reads the same in both places. */
+.property-panel .pp-fact .pp-akey {
+    overflow-wrap: anywhere;
+}
+.property-panel .pp-fact-block {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+    align-items: start;
+}
+.property-panel .pp-fact-markdown {
+    display: block;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+.property-panel .pp-fact-markdown p {
+    margin: 0 0 6px;
+}
+.property-panel .pp-fact-markdown p:last-child {
+    margin-bottom: 0;
+}
+.property-panel .pp-fact-markdown ul,
+.property-panel .pp-fact-markdown ol {
+    margin: 4px 0 6px;
+    padding-left: 18px;
+}
+.property-panel .pp-fact-markdown pre {
+    background: var(--vscode-textCodeBlock-background, #1e1e1e);
+    border: 1px solid var(--pp-border);
+    border-radius: 4px;
+    padding: 8px 10px;
+    overflow-x: auto;
+    margin: 6px 0;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 12px;
+    line-height: 1.5;
+}
+.property-panel .pp-fact-markdown code {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 0.92em;
+    background: var(--vscode-textCodeBlock-background, rgba(128, 128, 128, 0.15));
+    border-radius: 3px;
+    padding: 1px 4px;
+}
+.property-panel .pp-fact-markdown pre code {
+    background: none;
+    padding: 0;
+}
+.property-panel .pp-fact-markdown a {
+    color: var(--vscode-textLink-foreground, #3794ff);
+}
+
 /* extra-small inline button (e.g. "Change") */
 .property-panel .pp-btn-xs {
     height: 22px;
