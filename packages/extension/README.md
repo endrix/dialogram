@@ -150,7 +150,7 @@ CSP, esbuild options, timing constraints) is in
 | Identity | `key`, `displayName`, `settingsNamespace`, `customEditorViewType`, `glspClientId`, `glspClientName` |
 | Commands | `commands` (21 consumer-owned command ids), `operationKinds` (port create/delete kind strings) |
 | Model & edits | `modelSource` factory, `edits` (`'read-only'` or a strategy with operation modules), `serverModules`, `serverDiagramModule` (library mode only), `storageOptions` |
-| Client | `clientBehavior` (neutral capability flags injected into the webview), `clientAssets` (custom webview bundle — data only), `onWebviewMessage` (inbound message hook) |
+| Client | `clientBehavior` (neutral capability flags injected into the webview), `clientAssets` (custom webview bundle — data only), `clientStylesheets` (the product's own stylesheets, served after the platform's — data only), `onWebviewMessage` (inbound message hook) |
 | Features | `watch` (file globs), `navigation` (cross-file drill-down), `canOpenSource` (openability predicate), `editBackend` (chat mutation seam), `chat` (chat carry-overs), `runDriver` (factory receiving a `DiagramRunHost`), `newSourceFile` |
 
 Everything optional degrades gracefully: no `chat` → no chat backend, no
