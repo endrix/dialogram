@@ -397,6 +397,9 @@ export interface DiagramClientBehavior {
    *  producer's editable fields still show), `entityType` (Basic Info's Type
    *  row and its change-type button). All shown by default. */
   propertySections?: { ports?: boolean; annotations?: boolean; parameters?: boolean; entityType?: boolean };
+  /** What the hierarchy outline panel is called (its title and its button's
+   *  tooltip); "Hierarchy" by default. */
+  outlineTitle?: string;
   /**
    * Whether the host has a chat backend behind this diagram.
    *

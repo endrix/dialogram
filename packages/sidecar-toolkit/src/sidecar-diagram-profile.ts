@@ -84,6 +84,8 @@ export interface SidecarClientBehavior {
     edgeCaptions?: boolean;
     /** Property-panel sections the product does without (`ports`, `annotations`, `parameters`, `entityType`), each `false` to hide it. */
     propertySections?: { ports?: boolean; annotations?: boolean; parameters?: boolean; entityType?: boolean };
+    /** What the hierarchy outline panel is called; "Hierarchy" by default. */
+    outlineTitle?: string;
 }
 
 /** The 24 consumer-owned command ids a sidecar diagram profile carries. */

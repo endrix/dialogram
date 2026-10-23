@@ -57,6 +57,9 @@ type DiagramClientBehavior = {
      *  <label>" runs `showCommand`, "Clear <label>" runs `clearCommand`.
      *  Derived by the platform from the profile. */
     statusSource?: { label: string; showCommand: string; clearCommand: string };
+    /** What the hierarchy outline panel is called (its title, its button's
+     *  tooltip): plain words, "Hierarchy" by default. */
+    outlineTitle?: string;
 };
 
 export type AcpConnectorInfo = {
