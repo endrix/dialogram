@@ -31,6 +31,10 @@ describe('the file a node stands for', () => {
         expect(nodeWith({ open: '/w/a.py' }).args?.[WorkflowDiagramMetadata.OPEN_TARGET]).toBeUndefined();
     });
 
+    it('keeps the producer’s own id, which a `#<id>` link in its text names', () => {
+        expect(nodeWith({}).args[WorkflowDiagramMetadata.GRAPH_NODE_ID]).toBe('node:clause');
+    });
+
     it('leaves editable parameters as the producer wrote them, choices and all', () => {
         const parameters = [{ name: 'status', value: 'draft', editable: true, choices: ['draft', 'active'] }];
 

@@ -10,8 +10,9 @@ platform API version.
 
 - Links in the property panel lead somewhere. A click on an anchor in any
   text the panel renders (a node's body, a producer's facts) used to do
-  nothing in the webview. `#<id>` now selects that element and brings it into
-  view, `http(s):` and `mailto:` open in the browser, and anything else is a
+  nothing in the webview. `#<id>` now selects that element (by its id, or by
+  the producer's own, kept on every node as `wf:graphNodeId`) and brings it
+  into view, `http(s):` and `mailto:` open in the browser, and anything else is a
   file reference the host resolves and opens: an absolute path or `file:` URI;
   a path relative to the node's own file or a folder above it; else the
   workspace's files ending with that path, the closest first (a quick pick

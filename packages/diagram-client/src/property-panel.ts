@@ -96,15 +96,34 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
      * shows it); anything else goes to the host, resolved against the file the
      * shown node came from.
      */
+    /** The element a link names: by the diagram's id, or by the producer's (`wf:graphNodeId`). */
+    protected elementIdFor(id: string): string | undefined {
+        const index = this.lastRoot?.index;
+        if (!index) {
+            return undefined;
+        }
+        if (index.getById(id)) {
+            return id;
+        }
+        const all: Iterable<any> = typeof index.all === 'function' ? index.all() : [];
+        for (const element of all) {
+            if (element?.args?.[WorkflowDiagramMetadata.GRAPH_NODE_ID] === id) {
+                return element.id;
+            }
+        }
+        return undefined;
+    }
+
     protected followLink(link: PanelLink): void {
         if (link.kind === 'element') {
-            if (!this.lastRoot?.index?.getById(link.id)) {
+            const id = this.elementIdFor(link.id);
+            if (!id) {
                 VscodeUi.instance.infoMessage(`${link.id} is not in this diagram.`);
                 return;
             }
             void this.actionDispatcher.dispatchAll([
-                SelectAction.create({ selectedElementsIDs: [link.id], deselectedElementsIDs: true }),
-                CenterAction.create([link.id], { animate: true, retainZoom: true })
+                SelectAction.create({ selectedElementsIDs: [id], deselectedElementsIDs: true }),
+                CenterAction.create([id], { animate: true, retainZoom: true })
             ]);
             return;
         }

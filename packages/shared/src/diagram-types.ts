@@ -181,6 +181,10 @@ export namespace WorkflowDiagramMetadata {
      *  for, such as the code a specification clause names. It wins over a
      *  drill-down, the node's views and its definition. */
     export const OPEN_TARGET = 'wf:open';
+    /** The node's id in the producer's graph document. The diagram names a
+     *  node after its label, so this is how a producer's own reference to a
+     *  node (a `#<id>` link in its text) finds it. */
+    export const GRAPH_NODE_ID = 'wf:graphNodeId';
     export const IS_EXTERNAL_ACTOR = 'cal:isExternalActor';
     /** Marks a regular task that contains external function declarations or agent annotations. */
     export const HAS_EXTERNAL_MEMBERS = 'cal:hasExternalMembers';

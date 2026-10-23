@@ -11,8 +11,9 @@
  *   definition — because a producer that names the file is saying what the
  *   node is for.
  * - The property panel's text can carry links (Markdown, the producer's
- *   facts). A click opens the target: `#<id>` is an element of this diagram,
- *   selected and brought into view; `http(s):` and `mailto:` go to the
+ *   facts). A click opens the target: `#<id>` is an element of this diagram
+ *   (its id, or the producer's own, `wf:graphNodeId`), selected and brought
+ *   into view; `http(s):` and `mailto:` go to the
  *   browser; anything else is a file reference, resolved by the extension
  *   host (an absolute path, or a path relative to the node's own file, else
  *   searched for in the workspace), with `#L12`, `#L12-L20` or a symbol after

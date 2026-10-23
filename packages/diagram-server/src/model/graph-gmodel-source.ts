@@ -368,6 +368,7 @@ export class GraphGModelSource {
                     [WorkflowDiagramMetadata.IS_NETWORK_INSTANCE]: true
                 };
             }
+            gnode.args = { ...(gnode.args ?? {}), [WorkflowDiagramMetadata.GRAPH_NODE_ID]: node.id };
             const openTarget = this.openTarget(node.meta?.['open']);
             if (openTarget) {
                 gnode.args = {
