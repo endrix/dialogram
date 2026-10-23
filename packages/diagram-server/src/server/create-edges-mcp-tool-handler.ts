@@ -61,7 +61,9 @@ export class AgentDispatchCreateEdgesMcpToolHandler extends CreateEdgesMcpToolHa
         "name via `args.source` / `args.target` as \"nodeName.portName\" (e.g. args.source " +
         '"producer.out", args.target "consumer.in") — the name form is resolved server-side and needs ' +
         'no query-elements/diagram-model dump. After create-nodes, the confirmation lists each new ' +
-        "node's port names, so the very next create-edges can use nodeName.portName directly. Set " +
+        "node's port names, so the very next create-edges can use nodeName.portName directly. When " +
+        "the diagram's edges come in kinds, name the kind in `args.role`; without it the diagram's " +
+        'default kind is made (never a question to the person). Set ' +
         '`dryRun: true` to validate without creating. Use `element-types` for valid edge type IDs. ' +
         'This modifies the source and is undoable via the editor.';
 
@@ -84,12 +86,14 @@ export class AgentDispatchCreateEdgesMcpToolHandler extends CreateEdgesMcpToolHa
             if (source.ok && target.ok) {
                 // Drop the name specs from args (they are addressing, not model metadata) and fill
                 // the concrete ids the stock handler dispatches.
+                // An agent's edge is made headless: no one is at the screen to
+                // answer a question in the middle of its tool call.
                 const { source: _s, target: _t, ...restArgs } = (edge.args ?? {}) as Record<string, unknown>;
                 resolvedEdges.push({
                     ...edge,
                     sourceElementId: source.elementId,
                     targetElementId: target.elementId,
-                    args: Object.keys(restArgs).length > 0 ? restArgs : undefined
+                    args: { ...restArgs, headless: true }
                 });
             }
         }

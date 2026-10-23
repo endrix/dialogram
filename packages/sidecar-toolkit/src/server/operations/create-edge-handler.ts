@@ -6,6 +6,7 @@ import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared
 
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { SidecarInvoker } from './sidecar-invoker';
+import { type SidecarEdgeRole } from '../../sidecar-capabilities';
 
 /**
  * Port reference resolved from GModel args (Python path).
@@ -80,9 +81,13 @@ export class CreateEdgeOperationHandler extends OperationHandler {
                     ? { type: 'workflow', name: targetRef.portName }
                     : { type: 'actor', actor: targetRef.entityName, port: targetRef.portName };
 
+                const role = await this.pickEdgeRole(sourceUri, operation);
+                if (role === null) {
+                    return undefined;
+                }
                 const ok = await this.sendSidecarOp(sourceUri, {
                     op: this.sidecar.sidecarOp('connect'),
-                    args: { workflow: workflowName, from_port: fromPort, to_port: toPort }
+                    args: { workflow: workflowName, from_port: fromPort, to_port: toPort, ...(role ? { role } : {}) }
                 });
                 if (!ok) {
                     return undefined;
@@ -90,6 +95,44 @@ export class CreateEdgeOperationHandler extends OperationHandler {
                 return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];
             },
         });
+    }
+
+    /**
+     * The kind of edge to make, when the sidecar's `connect` can make more
+     * than one (`getCapabilities.edgeRoles`).
+     *
+     * A role given on the operation wins. Otherwise the sidecar is asked what
+     * it offers: nothing, and `connect` goes without a role, as it always
+     * has; one, and that is it; several, and the person picks (`undefined`
+     * when the pick is dismissed, which is the `null` here: no connection).
+     * A headless caller, an agent with no one to ask, gets no pick either:
+     * it names the role itself, or the sidecar's default applies.
+     */
+    protected async pickEdgeRole(sourceUri: string, operation: CreateEdgeOperation): Promise<string | undefined | null> {
+        const given = typeof operation.args?.['role'] === 'string' ? String(operation.args['role']).trim() : '';
+        if (given !== '') {
+            return given;
+        }
+        if (operation.args?.['headless'] === true) {
+            return undefined;
+        }
+        const roles = await this.edgeRoles(sourceUri);
+        if (!roles || roles.length === 0) {
+            return undefined;
+        }
+        if (roles.length === 1) {
+            return roles[0].id;
+        }
+        const picked = await vscode.window.showQuickPick(
+            roles.map(role => ({ label: role.id, description: role.label, detail: role.description, id: role.id })),
+            { placeHolder: 'Which kind of edge?', matchOnDescription: true }
+        );
+        return picked ? picked.id : null;
+    }
+
+    /** The edge kinds the sidecar offers (asked once per session); nothing when it says nothing. */
+    protected async edgeRoles(sourceUri: string): Promise<SidecarEdgeRole[] | undefined> {
+        return this.sidecar.edgeRoles(sourceUri);
     }
 
     /**
