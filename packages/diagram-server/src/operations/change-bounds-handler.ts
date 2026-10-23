@@ -8,8 +8,10 @@ import 'reflect-metadata';
 
 import { GEdge, GNode, GPort } from '@eclipse-glsp/graph';
 import { ChangeBoundsOperation } from '@eclipse-glsp/protocol';
-import { GModelChangeBoundsOperationHandler, GModelSerializer, GModelRecordingCommand, type Command, type MaybePromise } from '@eclipse-glsp/server';
-import { inject, injectable } from 'inversify';
+import { DiagramConfiguration, GModelChangeBoundsOperationHandler, GModelSerializer, GModelRecordingCommand, type Command, type MaybePromise } from '@eclipse-glsp/server';
+import { inject, injectable, optional } from 'inversify';
+import type { Dimension, Point } from '@eclipse-glsp/protocol';
+import { growGroupsToFit } from '../server/group-geometry';
 
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
@@ -32,9 +34,44 @@ export class WorkflowChangeBoundsOperationHandler extends GModelChangeBoundsOper
     @inject(WorkflowRerouteEdgesAvoidOverlapsOperationHandler)
     protected rerouteHandler!: WorkflowRerouteEdgesAvoidOverlapsOperationHandler;
 
+    @inject(DiagramConfiguration)
+    @optional()
+    protected diagramConfiguration?: DiagramConfiguration;
+
+    /** The groups the last change of bounds grew, whose edges are routed again with the moved nodes'. */
+    private grownGroups: GNode[] = [];
+
+    /**
+     * A move changes where a node is, not how big it is. GLSP's handler copies
+     * the size the client sends, and a client that measured a node in its
+     * hidden model (selection and resize feedback do) sends that measurement:
+     * applied, it grew the node for good, and the layout file kept it. A node
+     * keeps its own size unless its type is declared resizable, so a resize of
+     * a container that allows one still goes through.
+     */
+    protected override changeElementBounds(elementId: string, newSize: Dimension, newPosition?: Point): void {
+        const node = this.modelState.index.findByClass(elementId, GNode);
+        const own = node?.size;
+        const keepSize = !!node && !!own && own.width > 0 && own.height > 0 && !this.isResizable(node.type);
+        super.changeElementBounds(elementId, keepSize ? { ...own } : newSize, newPosition);
+    }
+
+    private isResizable(type: string): boolean {
+        const hints = (this.diagramConfiguration as any)?.shapeTypeHints as Array<{ elementTypeId: string; resizable?: boolean }> | undefined;
+        return hints?.find(hint => hint.elementTypeId === type)?.resizable === true;
+    }
+
     override createCommand(operation: ChangeBoundsOperation): MaybePromise<Command | undefined> {
         return new GModelRecordingCommand(this.modelState, this.serializer, async () => {
             this.executeChangeBounds(operation);
+            // A member dragged towards its group's edge takes the frame with it.
+            this.grownGroups = [];
+            for (const element of operation.newBounds) {
+                const node = this.modelState.index.findByClass(element.elementId, GNode);
+                if (node) {
+                    this.grownGroups.push(...growGroupsToFit(node));
+                }
+            }
 
             // Keyboard moves typically only send ChangeBounds; without an explicit reroute op,
             // edges keep stale routing points (visual glitches). Trigger a canonical incident-edge
@@ -123,6 +160,14 @@ export class WorkflowChangeBoundsOperationHandler extends GModelChangeBoundsOper
                 }
             };
             visit(node);
+        }
+        // The ports on a grown group's right-hand side moved with its edge.
+        for (const group of this.grownGroups) {
+            for (const child of group.children) {
+                if (child instanceof GPort) {
+                    movedPortIds.add(String(child.id));
+                }
+            }
         }
         if (movedPortIds.size === 0) {
             return [];

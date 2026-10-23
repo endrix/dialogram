@@ -179,3 +179,39 @@ export function restoreGroupGeometry(root: GModelRoot, routes?: Map<string, Poin
 export function relativeToParent(saved: Point, parentOrigin: Point): Point {
     return { x: saved.x - parentOrigin.x, y: saved.y - parentOrigin.y };
 }
+
+/**
+ * Grow the groups around `node` so it fits inside them, after it moved: each
+ * group, innermost first, becomes wide and tall enough for its child plus the
+ * padding, and the ports on its right-hand side follow its right edge. A group
+ * never shrinks here, and never grows to the left or upwards: a member cannot
+ * be dragged past a group's left edge or under its header. Returns the groups
+ * that grew, whose edges need routing again.
+ */
+export function growGroupsToFit(node: GNode): GNode[] {
+    const pad = WorkflowDiagramConstants.GROUP_PADDING_PX;
+    const grown: GNode[] = [];
+    let child: GNode = node;
+    let parent: GModelElement | undefined = (child as any).parent;
+    while (parent && isGroup(parent)) {
+        const size = sizeOf(child) ?? { width: 0, height: 0 };
+        const neededWidth = (child.position?.x ?? 0) + size.width + pad;
+        const neededHeight = (child.position?.y ?? 0) + size.height + pad;
+        const current = sizeOf(parent) ?? { width: 0, height: 0 };
+        if (neededWidth <= current.width && neededHeight <= current.height) {
+            break;
+        }
+        parent.size = { width: Math.max(current.width, neededWidth), height: Math.max(current.height, neededHeight) };
+        for (const port of parent.children) {
+            if (port instanceof GPort && port.type === WorkflowDiagramTypes.PORT_GROUP_BOUNDARY
+                && (port as any).args?.[WorkflowDiagramMetadata.PORT_SIDE] === 'EAST') {
+                const portWidth = sizeOf(port)?.width ?? WorkflowDiagramConstants.GROUP_BOUNDARY_PORT_SIZE_PX;
+                port.position = { x: parent.size.width - portWidth / 2, y: port.position?.y ?? 0 };
+            }
+        }
+        grown.push(parent);
+        child = parent;
+        parent = (child as any).parent;
+    }
+    return grown;
+}

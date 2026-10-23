@@ -145,6 +145,12 @@
         "to": "ContainedMovementRestrictor"
     },
     {
+        "id": "ComputedBoundsApplicator",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "NodeSizePreservingBoundsApplicator"
+    },
+    {
         "id": "Symbol(stub.ISelectionListener)",
         "op": "bind",
         "to": "service:ChatPanel"

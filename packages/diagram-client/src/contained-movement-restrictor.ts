@@ -16,8 +16,12 @@
  * never restricted; the canvas has no edge.
  *
  * Inside a group, "inside" excludes the header band the group's label is
- * drawn in, and keeps a small margin from the frame line, so a member cannot
- * cover the label or sit on the frame's boundary ports.
+ * drawn in, and keeps a small margin from the left frame line, so a member
+ * cannot cover the label or sit on the frame's entry ports. To the right and
+ * downwards a group has no limit: the frame grows to fit a member dragged
+ * that way (the server does it on the drop, see `growGroupsToFit`). Other
+ * containers do not grow, so their members stay within their box on every
+ * side.
  */
 import { injectable } from 'inversify';
 import { GChildElement, GModelElement, GNode, isMoveable, type IMovementRestrictor, type Point } from '@eclipse-glsp/client';
@@ -28,20 +32,30 @@ type Size = { width: number; height: number };
 /** How far from a group's frame a member must stay. */
 export const GROUP_MEMBER_MARGIN_PX = 4;
 
-/** The area inside a container a child's top-left corner may take, for a child of `childSize`. */
+/**
+ * The area inside a container a child's top-left corner may take, for a child
+ * of `childSize`. A group's area is open to the right and downwards, where the
+ * group grows.
+ */
 export function allowedArea(
     parentType: string,
     parentSize: Size,
     childSize: Size
 ): { minX: number; minY: number; maxX: number; maxY: number } {
     const isGroup = parentType === WorkflowDiagramTypes.NODE_GROUP;
-    const margin = isGroup ? GROUP_MEMBER_MARGIN_PX : 0;
-    const top = isGroup ? WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX + margin : 0;
+    if (isGroup) {
+        return {
+            minX: GROUP_MEMBER_MARGIN_PX,
+            minY: WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX + GROUP_MEMBER_MARGIN_PX,
+            maxX: Number.POSITIVE_INFINITY,
+            maxY: Number.POSITIVE_INFINITY
+        };
+    }
     return {
-        minX: margin,
-        minY: top,
-        maxX: parentSize.width - childSize.width - margin,
-        maxY: parentSize.height - childSize.height - margin
+        minX: 0,
+        minY: 0,
+        maxX: parentSize.width - childSize.width,
+        maxY: parentSize.height - childSize.height
     };
 }
 

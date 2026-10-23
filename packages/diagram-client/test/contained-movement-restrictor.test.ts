@@ -22,19 +22,17 @@ describe('inside the parent', () => {
     const parent = { width: 300, height: 200 };
     const child = { width: 100, height: 60 };
 
-    it('keeps a group member below the header band and off the frame line', () => {
+    it('keeps a group member below the header band and off the left frame line, and lets it go right and down', () => {
         const area = allowedArea(GROUP, parent, child);
-        expect(area).toEqual({
-            minX: GROUP_MEMBER_MARGIN_PX,
-            minY: HEADER + GROUP_MEMBER_MARGIN_PX,
-            maxX: 300 - 100 - GROUP_MEMBER_MARGIN_PX,
-            maxY: 200 - 60 - GROUP_MEMBER_MARGIN_PX
-        });
+        expect(area.minX).toBe(GROUP_MEMBER_MARGIN_PX);
+        expect(area.minY).toBe(HEADER + GROUP_MEMBER_MARGIN_PX);
+        // The frame grows to fit a member dragged right or down.
+        expect(area.maxX).toBe(Number.POSITIVE_INFINITY);
+        expect(area.maxY).toBe(Number.POSITIVE_INFINITY);
         expect(isInsideParent(GROUP, parent, child, { x: 20, y: 40 })).toBe(true);
+        expect(isInsideParent(GROUP, parent, child, { x: 250, y: 180 })).toBe(true);
         expect(isInsideParent(GROUP, parent, child, { x: 20, y: HEADER - 1 })).toBe(false);
         expect(isInsideParent(GROUP, parent, child, { x: -10, y: 40 })).toBe(false);
-        expect(isInsideParent(GROUP, parent, child, { x: 250, y: 40 })).toBe(false);
-        expect(isInsideParent(GROUP, parent, child, { x: 20, y: 180 })).toBe(false);
     });
 
     it('keeps a node in another container within its box', () => {
@@ -62,11 +60,19 @@ describe('the restrictor', () => {
         return node;
     };
 
-    it('refuses a member dragged out of its group, and allows it inside', () => {
+    it('refuses a member dragged past its group’s left edge or under its header, and allows it right and down', () => {
         const node = member(GROUP);
         expect(restrictor.validate(node as any, { x: 20, y: 40 })).toBe(true);
-        expect(restrictor.validate(node as any, { x: 400, y: 40 })).toBe(false);
+        expect(restrictor.validate(node as any, { x: 400, y: 300 })).toBe(true);
+        expect(restrictor.validate(node as any, { x: -40, y: 40 })).toBe(false);
+        expect(restrictor.validate(node as any, { x: 20, y: 0 })).toBe(false);
         expect(restrictor.cssClasses).toEqual(['movement-not-allowed']);
+    });
+
+    it('keeps a member of another container within its box on every side', () => {
+        const node = member('node:structure:if:branch');
+        expect(restrictor.validate(node as any, { x: 200, y: 140 })).toBe(true);
+        expect(restrictor.validate(node as any, { x: 400, y: 40 })).toBe(false);
     });
 
     it('never restricts a node at the root', () => {

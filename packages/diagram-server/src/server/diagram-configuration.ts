@@ -192,11 +192,16 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
                 reparentable: false
             },
             // A producer's group: movable as a whole, sized by its members.
+            // Not resizable by hand: the frame grows when its members need it
+            // (the layout, a member dragged to its edge). Declared resizable,
+            // GLSP took any click on a member for the start of a resize of the
+            // group, re-measured the group in the hidden model and wrote the
+            // measured sizes back, so the clicked member grew.
             {
                 elementTypeId: WorkflowDiagramTypes.NODE_GROUP,
                 repositionable: true,
                 deletable: false,
-                resizable: true,
+                resizable: false,
                 reparentable: false
             },
             {
