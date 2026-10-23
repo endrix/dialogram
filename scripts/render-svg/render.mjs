@@ -84,6 +84,9 @@ function parseArgs(argv) {
         families: single.families ? JSON.parse(fs.readFileSync(single.families, 'utf8')) : [],
         css: repeated.css.map(file => path.resolve(file)),
         behavior: single.behavior ? JSON.parse(single.behavior) : {},
+        // The client draws a family's colour and icon from its own copy of the
+        // families (`clientBehavior.nodeFamilies`), as the webview gets them
+        // from the profile; the server copy only classifies the nodes.
         theme: single.theme ?? 'dark',
         png: flags.has('png'),
         keep: flags.has('keep'),
@@ -217,7 +220,7 @@ html, body { margin: 0; ${themeVariables(args.theme)} background: var(--vscode-e
 </style>
 </head><body class="vscode-${args.theme}"><div class="sprotty" id="dialogram-headless"></div>
 <div id="dialogram-headless_hidden"></div><div id="dialogram-headless_popup"></div>
-<script>window.diagramIdentifier = { clientBehavior: ${JSON.stringify(args.behavior)} };
+<script>window.diagramIdentifier = { clientBehavior: ${JSON.stringify({ nodeFamilies: args.families, ...args.behavior })} };
 window.__SCHEMA__ = ${fs.readFileSync(schemaPath, 'utf8')};
 window.__CANVAS__ = ${CANVAS_PX};</script>
 <script src="file://${path.join(bundleDir, 'headless-entry.js')}"></script>
