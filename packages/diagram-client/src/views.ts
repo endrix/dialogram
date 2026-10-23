@@ -715,22 +715,51 @@ export class HeaderCompartmentView extends ShapeView {
         // Use header height from bounds, or default to 24 (standard header height)
         const height = node.bounds.height > 0 ? node.bounds.height : 24;
         
+        // Badges first: pills right-aligned in the header, in the producer's
+        // order from the left, each at its text width plus padding. What they
+        // take from the right is what the name is centred in; the server sized
+        // the node for both, so the name's tail stays clear of them.
+        const isBadge = (child: unknown): boolean => child instanceof GLabel && child.type.includes('badge');
+        const badges = node.children.filter((child): child is GLabel => child instanceof GLabel && isBadge(child));
+        const badgeChildren: VNode[] = [];
+        const badgeHeight = 14;
+        let right = width - 6;
+        for (const badge of [...badges].reverse()) {
+            const text = badge.text || '';
+            const badgeWidth = Math.round(text.length * 5.6) + 10;
+            const x = right - badgeWidth;
+            const tone = (badge.cssClasses ?? []).find(cls => cls.startsWith('badge-tone-')) ?? 'badge-tone-neutral';
+            badgeChildren.push(
+                svg('g', { class: { 'header-badge': true, [tone]: true } },
+                    svg('rect', {
+                        attrs: { x, y: (height - badgeHeight) / 2, width: badgeWidth, height: badgeHeight, rx: 7, ry: 7 }
+                    }),
+                    svg('text', {
+                        class: { 'header-badge-text': true },
+                        attrs: { x: x + badgeWidth / 2, y: height / 2, 'text-anchor': 'middle', 'dominant-baseline': 'middle' }
+                    }, text)
+                )
+            );
+            right = x - 4;
+        }
+        const badgesWidth = badges.length > 0 ? width - 6 - right : 0;
+
         // Render labels centered horizontally within the header
         // Use text-anchor: middle and position at center X
-        const centerX = width / 2;
+        const centerX = (width - badgesWidth) / 2;
         const labelChildren: VNode[] = [];
         let labelY = height / 2; // Center vertically in header
         const labelSpacing = 14; // Vertical spacing between labels
         
         // Count labels first for proper vertical distribution
-        const labels = node.children.filter(child => child instanceof GLabel);
+        const labels = node.children.filter(child => child instanceof GLabel && !isBadge(child));
         if (labels.length > 0) {
             const totalLabelHeight = labels.length * labelSpacing;
             labelY = (height - totalLabelHeight) / 2 + labelSpacing / 2 + 4; // Start position
         }
         
         for (const child of node.children) {
-            if (child instanceof GLabel) {
+            if (child instanceof GLabel && !isBadge(child)) {
                 labelChildren.push(
                     svg('text', {
                         class: { 
@@ -776,7 +805,8 @@ export class HeaderCompartmentView extends ShapeView {
                     d: this.headerBackgroundPath(width, height)
                 }
             }),
-            ...labelChildren
+            ...labelChildren,
+            ...badgeChildren
         );
     }
 

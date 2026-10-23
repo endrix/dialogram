@@ -202,6 +202,15 @@ export namespace WorkflowDiagramMetadata {
      * the same sanitizer the chat uses; the rest is shown verbatim.
      */
     export const FACTS = 'wf:facts';
+    /**
+     * Short marks a producer puts on a node's header, as it listed them on
+     * `meta.badges`: `[{ text, tone? }]`, drawn right-aligned in the header
+     * in that order. `tone` is `neutral` (the default), `info`, `warning` or
+     * `error` and picks the colour; the text is the producer's word and the
+     * platform reads nothing into it. For what a reader must see without
+     * opening the panel: a modality, a status, a count.
+     */
+    export const BADGES = 'wf:badges';
     export const IS_EXTERNAL_ACTOR = 'cal:isExternalActor';
     /** Marks a regular task that contains external function declarations or agent annotations. */
     export const HAS_EXTERNAL_MEMBERS = 'cal:hasExternalMembers';
