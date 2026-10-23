@@ -108,17 +108,27 @@ export class WorkflowChangeBoundsOperationHandler extends GModelChangeBoundsOper
         void (async () => {
             const positions = (await this.layoutPersistence.loadLayout(workflowFilePath, networkId)) ?? new Map();
 
+            // The layout file holds absolute positions, so a container that
+            // moves (a group) moves everything inside it too: their saved
+            // positions follow, or a reopen would put them back where they were
+            // and out of the frame.
+            const save = (node: GNode): void => {
+                const nodeName = this.getNodeName(node);
+                if (node.position && nodeName) {
+                    const abs = this.getAbsolutePosition(node);
+                    positions.set(nodeName, { x: abs.x, y: abs.y });
+                }
+                for (const child of node.children) {
+                    if (child instanceof GNode) {
+                        save(child);
+                    }
+                }
+            };
             for (const element of operation.newBounds) {
                 const node = this.modelState.index.findByClass(element.elementId, GNode);
-                if (!node || !node.position) {
-                    continue;
+                if (node && node.position) {
+                    save(node);
                 }
-                const nodeName = this.getNodeName(node);
-                if (!nodeName) {
-                    continue;
-                }
-                const abs = this.getAbsolutePosition(node);
-                positions.set(nodeName, { x: abs.x, y: abs.y });
             }
 
             // Only persist positions. Edge routing is handled by the canonical
