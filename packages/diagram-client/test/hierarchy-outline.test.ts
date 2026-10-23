@@ -144,7 +144,11 @@ describe('an outline with group and node rows', () => {
 
     it('opens the rows down to the current view, and the groups that arrange what it holds', () => {
         expect(rowIdsTo(rich, ['DOC-PIPE'])).toEqual(['', 'dir:arch', 'DOC-PIPE', 'DOC-PIPE/layer:L1']);
-        expect(rowIdsTo(rich, ['NOPE'])).toEqual([]);
+    });
+
+    it('opens the rows down to the deepest one it lists for a view it does not (a row cut short)', () => {
+        expect(rowIdsTo(rich, ['DOC-PIPE', 'PIPE-009'])).toEqual(['', 'dir:arch', 'DOC-PIPE']);
+        expect(rowIdsTo(rich, ['NOPE'])).toEqual(['']);
     });
 
     it('says the producer’s label and detail, and filters by either', () => {

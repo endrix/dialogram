@@ -69,10 +69,21 @@ export function pathOfTrail(trail: Array<{ workflowName: string; workflowInstanc
 /**
  * The ids of the rows to open so the current view's row shows with what is in
  * it: the rows down to the entry at `path` (group rows and its own included),
- * and the group rows beneath it, which only arrange what the view holds.
+ * and the group rows beneath it, which only arrange what the view holds. A
+ * view the outline does not list (below a row it cut short) opens the rows
+ * down to the deepest one on its way that it does.
  */
 export function rowIdsTo(root: HierarchyOutlineEntry, path: string[]): string[] {
     const rows = hierarchyRowsTo(root, path);
+    if (rows.length === 0) {
+        for (let depth = path.length - 1; depth >= 0; depth--) {
+            const known = hierarchyRowsTo(root, path.slice(0, depth));
+            if (known.length > 0) {
+                return known.map(rowId);
+            }
+        }
+        return [];
+    }
     const groupsBelow = (entry: HierarchyOutlineEntry): HierarchyOutlineEntry[] =>
         entry.children.filter(child => child.role === 'group').flatMap(group => [group, ...groupsBelow(group)]);
     const target = rows[rows.length - 1];
