@@ -25,6 +25,7 @@ import { WorkflowChangeBoundsTool } from './change-bounds-drag-threshold';
 import { LibavoidEdgeRouter } from './libavoid-edge-router';
 import { HierarchyOutlinePanel } from './hierarchy-outline';
 import { FocusAfterLoadService } from './focus-after-load';
+import { ReadOnlyViewMarker } from './read-only-view';
 import { preloadLibavoid } from './libavoid-loader';
 import {
     WorkflowPromptLabelEditAction,
@@ -79,6 +80,10 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     // Selects a node once the view it is in has loaded ("Go to Error").
     bind(FocusAfterLoadService).toSelf().inSingletonScope();
     bind(TYPES.IGModelRootListener).toService(FocusAfterLoadService);
+
+    // Hides the palette's tools while the view shown is read-only.
+    bind(ReadOnlyViewMarker).toSelf().inSingletonScope();
+    bind(TYPES.IGModelRootListener).toService(ReadOnlyViewMarker);
 
     // Register integrated chat panel (slides up from bottom of diagram).
     // Bound as an IDiagramStartup so GLSP eagerly instantiates it on diagram

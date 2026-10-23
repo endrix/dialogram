@@ -417,5 +417,16 @@
         "id": "Symbol(stub.IGModelRootListener)",
         "op": "bind",
         "to": "service:FocusAfterLoadService"
+    },
+    {
+        "id": "ReadOnlyViewMarker",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "id": "Symbol(stub.IGModelRootListener)",
+        "op": "bind",
+        "to": "service:ReadOnlyViewMarker"
     }
 ]

@@ -934,6 +934,9 @@ export class GraphGModelSource {
         if (networkParameters !== undefined) {
             graphArgs[WorkflowDiagramMetadata.NETWORK_PARAMETERS] = networkParameters;
         }
+        if (doc.graph.meta?.['readOnly'] === true) {
+            graphArgs[WorkflowDiagramMetadata.READ_ONLY_VIEW] = true;
+        }
         if (doc.partial) {
             graphArgs['wf:partial'] = true;
         }

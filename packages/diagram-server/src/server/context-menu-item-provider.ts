@@ -29,6 +29,15 @@ const EDIT_PARAMETERS_KIND = 'dialogram.editParameters';
 const PROMPT_RENAME_ENTITY_KIND = 'dialogram.promptRenameEntity';
 const RERUN_FROM_HERE_KIND = 'dialogram.rerunFromHere';
 const OPEN_IN_OWN_EDITOR_KIND = 'dialogram.openInOwnEditor';
+/** The context-menu items that write to the source: a read-only view leaves them out. */
+const EDITING_MENU_ITEMS: ReadonlySet<string> = new Set([
+    'dialogram.removeBoundaryPort',
+    'dialogram.renameBoundaryPort',
+    'dialogram.changeBoundaryPortType',
+    'dialogram.renameEntity',
+    'dialogram.duplicate',
+    'dialogram.editParameters'
+]);
 const GO_TO_ERROR_KIND = 'dialogram.goToError';
 const OPEN_VIEW_KIND = 'dialogram.openView';
 
@@ -650,6 +659,12 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
             });
         }
 
+        // A read-only view keeps what reads, navigates and lays out, and
+        // loses what would write to the source.
+        const rootArgs = (this.modelState.root as any)?.args as Args | undefined;
+        if (rootArgs?.[WorkflowDiagramMetadata.READ_ONLY_VIEW] === true) {
+            return items.filter(item => !EDITING_MENU_ITEMS.has(item.id));
+        }
         return items;
     }
 }
