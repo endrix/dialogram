@@ -67,11 +67,16 @@ export function pathOfTrail(trail: Array<{ workflowName: string; workflowInstanc
 }
 
 /**
- * The ids of the rows down to the entry at `path`, group rows and the entry's
- * own included: what to open so the current view's row shows with what is in it.
+ * The ids of the rows to open so the current view's row shows with what is in
+ * it: the rows down to the entry at `path` (group rows and its own included),
+ * and the group rows beneath it, which only arrange what the view holds.
  */
 export function rowIdsTo(root: HierarchyOutlineEntry, path: string[]): string[] {
-    return hierarchyRowsTo(root, path).map(rowId);
+    const rows = hierarchyRowsTo(root, path);
+    const groupsBelow = (entry: HierarchyOutlineEntry): HierarchyOutlineEntry[] =>
+        entry.children.filter(child => child.role === 'group').flatMap(group => [group, ...groupsBelow(group)]);
+    const target = rows[rows.length - 1];
+    return [...rows, ...(target ? groupsBelow(target) : [])].map(rowId);
 }
 
 /** The ids of every ancestor of `path`, so the current row can be revealed. */
