@@ -47,8 +47,10 @@ type DiagramClientBehavior = {
     /** Property-panel sections a product does without, each `false` to hide
      *  it (all shown by default): `ports`, the input and output port lists, for
      *  a product whose pins carry no meaning; `annotations`, the raw
-     *  definition annotations, for one whose facts already say it all. */
-    propertySections?: { ports?: boolean; annotations?: boolean };
+     *  definition annotations, for one whose facts already say it all;
+     *  `parameters`, the definition's parameters, for one whose nodes have
+     *  none (its own editable fields still show). */
+    propertySections?: { ports?: boolean; annotations?: boolean; parameters?: boolean };
 };
 
 export type AcpConnectorInfo = {
