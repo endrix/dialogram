@@ -168,7 +168,7 @@ CSP, esbuild options, timing constraints) is in
 | Commands | `commands` (21 consumer-owned command ids), `operationKinds` (port create/delete kind strings) |
 | Model & edits | `modelSource` factory, `edits` (`'read-only'` or a strategy with operation modules), `serverModules`, `serverDiagramModule` (library mode only), `storageOptions`, `supportsElementCreation` (`false` empties the creation palette) |
 | Client | `clientBehavior` (neutral capability flags injected into the webview), `clientAssets` (custom webview bundle — data only), `onWebviewMessage` (inbound message hook) |
-| Features | `watch` (file globs), `navigation` (cross-file drill-down), `canOpenSource` (openability predicate), `editBackend` (chat mutation seam), `chat` (chat carry-overs), `runDriver` (factory receiving a `DiagramRunHost`), `newSourceFile` |
+| Features | `watch` (file globs), `navigation` (cross-file drill-down), `canOpenSource` (openability predicate), `editBackend` (chat mutation seam), `chat` (chat carry-overs), `runDriver` (factory receiving a `DiagramRunHost`), `statusSource` (node states from a report, shown on demand), `newSourceFile` |
 
 Everything optional degrades gracefully: no `chat` → no chat backend, no
 `runDriver` → no run/stop commands or live glow, no `clientAssets` → the
@@ -258,6 +258,18 @@ closed and reopened mid-run, so the bar and glow survive tab churn. The
 toolkit ships `CliRunDriver` — a complete implementation over a spawned CLI
 with SSE event streaming, per-entity agent-tool overrides, and process
 control — which sidecar profiles get for free.
+
+`overlay.publish(sourceUri, states)` sets the node states the diagram shows
+(the whole set; `[]` takes them off): `running` draws the turning ring,
+`succeeded` green, `failed` red, the classes a live run draws with. They are
+kept, matched by node id in whatever view is shown, and drawn again when the
+editor reopens. A profile whose states come from a report rather than a run
+(a coverage table, a list of checks) declares a `statusSource` instead of a
+driver: a label, a show and a clear command, and `collect(file)` returning the
+states. The platform registers the commands, offers "Show <label>" and "Clear
+<label>" on the canvas's context menu, and publishes what `collect` answers.
+The toolkit's `SidecarProfileInput.statusSource` gives `collect` a runner for
+the product's configured CLI that resolves to its JSON.
 
 ## Development
 

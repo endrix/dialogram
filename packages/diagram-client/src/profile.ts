@@ -44,6 +44,10 @@ type DiagramClientBehavior = {
      *  index labels of a list connection. Default true. Off, an edge is its
      *  line, and the tooltip on hover still says what it carries. */
     edgeCaptions?: boolean;
+    /** The profile's status source, as the context menu offers it: "Show
+     *  <label>" runs `showCommand`, "Clear <label>" runs `clearCommand`.
+     *  Derived by the platform from the profile. */
+    statusSource?: { label: string; showCommand: string; clearCommand: string };
 };
 
 export type AcpConnectorInfo = {

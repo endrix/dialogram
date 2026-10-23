@@ -84,8 +84,26 @@ export const TYPES = {
     IDiagramStartup: Symbol.for('stub.IDiagramStartup'),
     IContextMenuService: Symbol.for('stub.IContextMenuService'),
     MouseListener: Symbol.for('stub.MouseListener'),
-    IEdgeRouter: Symbol.for('stub.IEdgeRouter')
+    IEdgeRouter: Symbol.for('stub.IEdgeRouter'),
+    IFeedbackActionDispatcher: Symbol.for('stub.IFeedbackActionDispatcher'),
+    IContextMenuItemProvider: Symbol.for('stub.IContextMenuItemProvider'),
+    Action: Symbol.for('stub.Action')
 };
+
+/**
+ * GLSP's feedback command base, as the node states' command extends it:
+ * undo and redo give the model back. Nothing in a node test runs one through
+ * the command stack; the states test calls `execute` directly.
+ */
+export class FeedbackCommand {
+    readonly rank: number = 0;
+    undo(context: { root: unknown }): unknown {
+        return context.root;
+    }
+    redo(context: { root: unknown }): unknown {
+        return context.root;
+    }
+}
 
 export const DefaultTypes = {
     ROUTING_POINT: 'routing-point',
@@ -204,6 +222,10 @@ export function configureModelElement(
 
 export function configureActionHandler(_context: unknown, kind: unknown, handlerConstructor: unknown): void {
     registrationSink?.({ op: 'actionHandler', kind: String(kind), handler: nameOf(handlerConstructor) });
+}
+
+export function configureCommand(_context: unknown, commandConstructor: unknown): void {
+    registrationSink?.({ op: 'command', command: nameOf(commandConstructor) });
 }
 
 export function bindAsService(_context: unknown, serviceIdentifier: unknown, constructor: unknown): void {

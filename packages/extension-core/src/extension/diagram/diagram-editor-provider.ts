@@ -974,7 +974,17 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
                 // product sets by hand is one it can set wrongly. `chat` being
                 // absent is exactly what "the chat backend is not activated"
                 // means, so it is the honest source.
-                chatBackend: this.profile.chat !== undefined
+                chatBackend: this.profile.chat !== undefined,
+                // The same for the status source: the menu offers exactly the
+                // commands the host registered, or none. Data only; `collect`
+                // stays on the host.
+                statusSource: this.profile.statusSource
+                    ? {
+                        label: this.profile.statusSource.label,
+                        showCommand: this.profile.statusSource.showCommand,
+                        clearCommand: this.profile.statusSource.clearCommand
+                    }
+                    : undefined
             },
             // Where the live edge router fetches its WASM binary. The webview
             // cannot read the filesystem, so the URI is resolved host-side.

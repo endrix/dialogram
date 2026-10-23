@@ -15,7 +15,7 @@
  *
  * The baseline is no longer a pure capture of that commit: features added since
  * the split are appended to it deliberately, and the fixture currently carries
- * seven additions — `IEdgeRouter -> LibavoidEdgeRouter` (the client-side live
+ * these additions — `IEdgeRouter -> LibavoidEdgeRouter` (the client-side live
  * routing tier), `ChangeBoundsTool -> WorkflowChangeBoundsTool` (the mouse-drag
  * threshold) and `IDiagramStartup -> WorkflowPaletteIconStartup` (draws the
  * palette icons a product contributed), the `dialogram.rerunFromHere` action handler
@@ -23,7 +23,10 @@
  * one (opens a nested workflow's file as a root of its own), the hierarchy outline panel
  * (bound to itself and as a model-root listener), and "Go to Error" (its action handler and
  * the focus-after-load service, bound the same two ways), and the `dialogram.openView` action
- * handler (shows a view of a unit besides its structure, in place) — plus one change: `label:boundary:type` is bound to
+ * handler (shows a view of a unit besides its structure, in place), the status source's
+ * context-menu provider with its `dialogram.runStatusCommand` handler ("Show <label>" and
+ * "Clear <label>" on the canvas, running the profile's commands), and the
+ * `ExecutionStatesFeedbackCommand` that draws published node states — plus one change: `label:boundary:type` is bound to
  * the non-editable `BoundaryLabel`, because editing it renamed the port.
  * The oracle still does its job: it fails on any binding this composition gains
  * or loses, and updating the fixture is the deliberate act of accepting one.
