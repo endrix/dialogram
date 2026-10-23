@@ -30,8 +30,11 @@ platform API version.
 
 - A dragged node stays inside the node that holds it (a group, a control
   structure's branch): the bound `IMovementRestrictor` refuses a position
-  outside the parent, below a group's header band, and a drop there is not
-  committed.
+  outside the parent, and a drop there is not committed. A group's area is
+  open to the right and downwards: a member dragged that way takes the frame
+  with it (the server grows the group, and any group around it, to fit, and
+  the ports on its right-hand side follow). Past the left edge or under the
+  header is refused.
 
 ### Fixed
 
@@ -43,6 +46,14 @@ platform API version.
   routes.
 - The edge rerouter that runs after a move treated a group's frame as an
   obstacle, so an edge inside a group was routed around the group it is in.
+- Clicking a node inside a group grew it. The group was declared resizable,
+  so GLSP took the click for the start of a resize of the group, measured the
+  group and its members in the hidden model and wrote the measured sizes
+  back, larger than the nodes' own. Groups are no longer resizable by hand;
+  measured bounds never resize a workflow node on the client
+  (`NodeSizePreservingBoundsApplicator`, the `ComputedBoundsApplicator`); and
+  a move never changes a node's size on the server unless its type is
+  declared resizable, whatever size the client sends.
 
 ### Tooling
 

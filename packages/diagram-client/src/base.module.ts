@@ -36,7 +36,8 @@ import {
     DefaultTypes,
     GRoutingHandle,
     GRoutingHandleView,
-    SetModelCommand
+    SetModelCommand,
+    ComputedBoundsApplicator
 } from '@eclipse-glsp/client';
 import { EXECUTION_OVERLAY_ACTION_KIND } from '@dialogram/shared';
 import { PostEditSelectionService } from './post-edit-selection-service';
@@ -49,6 +50,7 @@ import { RunningAgentsBar } from './running-agents-bar';
 import { ExecutionOverlayMessageBridge } from './execution-overlay-message-bridge';
 import { RunAgentStreamActionHandler } from './editing-action-handlers';
 import { ContainedMovementRestrictor } from './contained-movement-restrictor';
+import { NodeSizePreservingBoundsApplicator } from './node-size-preserving-bounds-applicator';
 
 /**
  * The neutral base bindings shared by all diagram-client consumers. Loaded first
@@ -68,6 +70,14 @@ export const diagramBaseModule = new ContainerModule((bind, unbind, isBound, reb
         rebind(TYPES.IMovementRestrictor).to(ContainedMovementRestrictor).inSingletonScope();
     } else {
         bind(TYPES.IMovementRestrictor).to(ContainedMovementRestrictor).inSingletonScope();
+    }
+
+    // A node's size comes from the server: measured bounds move it but never
+    // resize it (see `node-size-preserving-bounds-applicator.ts`).
+    if (isBound(ComputedBoundsApplicator)) {
+        rebind(ComputedBoundsApplicator).to(NodeSizePreservingBoundsApplicator).inSingletonScope();
+    } else {
+        bind(ComputedBoundsApplicator).to(NodeSizePreservingBoundsApplicator).inSingletonScope();
     }
 
     // Set up logging
