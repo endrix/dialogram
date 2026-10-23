@@ -11,7 +11,8 @@ import { injectable, inject, optional } from 'inversify';
 import { 
     ToolPaletteItemProvider,
     OperationHandlerRegistry,
-    CreateOperationHandler
+    CreateOperationHandler,
+    ModelState
 } from '@eclipse-glsp/server';
 import { 
     PaletteItem, 
@@ -21,7 +22,7 @@ import {
     CreateNodeOperation,
     CreateEdgeOperation
 } from '@eclipse-glsp/protocol';
-import { WorkflowDiagramTypes } from '@dialogram/shared';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
 
 /**
@@ -42,6 +43,10 @@ export class WorkflowToolPaletteItemProvider extends ToolPaletteItemProvider {
     @optional()
     protected storageOptions?: StorageRuntimeOptions;
 
+    @inject(ModelState)
+    @optional()
+    protected modelState?: ModelState;
+
     protected counter = 0;
 
     override async getItems(_args?: Args): Promise<PaletteItem[]> {
@@ -56,6 +61,12 @@ export class WorkflowToolPaletteItemProvider extends ToolPaletteItemProvider {
         // to create has nothing of its own to create either, and leaving those
         // standing would reproduce the exact palette the flag exists to remove.
         if (this.storageOptions?.supportsElementCreation === false) {
+            return [];
+        }
+        // The same, for one view the producer marked read-only: the palette
+        // asks again on the next view, so an editable one gets its items back.
+        const rootArgs = (this.modelState?.root as { args?: Args } | undefined)?.args;
+        if (rootArgs?.[WorkflowDiagramMetadata.READ_ONLY_VIEW] === true) {
             return [];
         }
 
