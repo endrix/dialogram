@@ -6,7 +6,7 @@ import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared
 
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { SidecarInvoker } from './sidecar-invoker';
-import { parseCapabilitiesDiagnostic, type SidecarEdgeRole } from '../../sidecar-capabilities';
+import { type SidecarEdgeRole } from '../../sidecar-capabilities';
 
 /**
  * Port reference resolved from GModel args (Python path).
@@ -130,13 +130,9 @@ export class CreateEdgeOperationHandler extends OperationHandler {
         return picked ? picked.id : null;
     }
 
-    /** The edge kinds the sidecar offers, from its capabilities; nothing when it says nothing. */
+    /** The edge kinds the sidecar offers (asked once per session); nothing when it says nothing. */
     protected async edgeRoles(sourceUri: string): Promise<SidecarEdgeRole[] | undefined> {
-        const result = await this.sidecar.sendSidecarCapabilitiesDetailed(sourceUri);
-        if (!result.ok || !result.response) {
-            return undefined;
-        }
-        return parseCapabilitiesDiagnostic(result.response.diagnostic, '')?.edgeRoles;
+        return this.sidecar.edgeRoles(sourceUri);
     }
 
     /**

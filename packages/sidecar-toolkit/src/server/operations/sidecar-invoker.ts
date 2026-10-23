@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { URI } from 'vscode-uri';
 import { SidecarRuntimeService, type CreateNodeStrings, type CreateNodeBehavior, CreateNodeVariant } from '../sidecar-runtime-config';
 import { describeChildFailure, runChildProcess } from '../../run-child-process';
+import { parseCapabilitiesDiagnostic, type SidecarEdgeRole } from '../../sidecar-capabilities';
 
 export interface SidecarInvocationResult {
     ok: boolean;
@@ -14,6 +15,9 @@ export interface SidecarInvocationResult {
 
 @injectable()
 export class SidecarInvoker {
+    /** The edge kinds each sidecar command offers, asked once per session. */
+    private readonly edgeRolesByCommand = new Map<string, Promise<SidecarEdgeRole[] | undefined>>();
+
     constructor(
         @inject(SidecarRuntimeService)
         private readonly runtimeProfile: SidecarRuntimeService
@@ -76,6 +80,35 @@ export class SidecarInvoker {
             op: this.sidecarOp('getCapabilities'),
             args: {}
         });
+    }
+
+    /**
+     * The kinds of edge the sidecar's `connect` can make
+     * (`getCapabilities.edgeRoles`); nothing when it lists none. Asked once per
+     * sidecar command for the session, not on every connect: each ask is a
+     * process of its own, and what a sidecar offers does not change while it
+     * is running. A failed ask is not kept, so the next one tries again.
+     */
+    async edgeRoles(sourceUri: string): Promise<SidecarEdgeRole[] | undefined> {
+        let key: string;
+        try {
+            key = this.sidecarCommand(vscode.Uri.parse(sourceUri));
+        } catch {
+            key = sourceUri;
+        }
+        let pending = this.edgeRolesByCommand.get(key);
+        if (!pending) {
+            pending = this.sendSidecarCapabilitiesDetailed(sourceUri).then(result => {
+                if (!result.ok || !result.response) {
+                    this.edgeRolesByCommand.delete(key);
+                    return undefined;
+                }
+                return parseCapabilitiesDiagnostic(result.response.diagnostic, '')?.edgeRoles ?? [];
+            });
+            this.edgeRolesByCommand.set(key, pending);
+        }
+        const roles = await pending;
+        return roles && roles.length > 0 ? roles : undefined;
     }
 
     async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {

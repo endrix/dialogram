@@ -12,10 +12,13 @@ platform API version.
   A sidecar lists the kinds in its capabilities (`diagnostic.edgeRoles`,
   `[{ id, label, description? }]`); the create-edge handler then asks which
   (a role given on the operation, or the only one listed, is taken without
-  asking; a headless caller gets no pick) and sends it as `args.role`, and the
-  delete handler sends the edge's `cal:edgeRole` as `args.role` so the right
-  one of several edges between two nodes goes. A sidecar that lists none is
-  treated as before.
+  asking) and sends it as `args.role`, and the delete handler sends the
+  edge's `cal:edgeRole` as `args.role` so the right one of several edges
+  between two nodes goes. The capabilities are asked once per sidecar command
+  for the session, not on every connect. An agent's `create-edges` call is
+  headless: it may name the kind in `args.role`, and is never asked; without
+  one the sidecar's default kind is made. A sidecar that lists none is
+  treated as before, on connect and on delete.
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the
   tooltip on hover still says what it carries. Default `true`, as before.
