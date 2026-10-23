@@ -15,6 +15,66 @@ platform API version.
   `<kind>-node`, `edge-role-<role>` and the family classes on what it draws;
   this is where a product says what they look like, without composing a webview
   bundle of its own for one stylesheet.
+- Group containers. A producer puts a scope of kind `group` in its document
+  (`subgraphs: [{ id, kind: "group", label?, parent?, nodes? }]`), and the
+  nodes that declare that scope, or that it lists, are drawn inside a labelled
+  frame; a group whose `parent` is a group nests inside it. The members and
+  the layout direction are untouched: the container only says the members
+  belong together, and the layout keeps them together. The platform learns
+  nothing from the grouping; what a group is (a layer, a domain, a stage) is
+  the producer's business and shows only in its label.
+
+  A group is drawn and laid out the way mlir-viewer draws a nested region: a
+  tinted body, a header band carrying the label, the members below it, laid
+  out on their own (`SEPARATE_CHILDREN`) so the frame stays tight around them.
+  An edge that leaves or enters a group is cut where it crosses the frame, at
+  a boundary port (`port:group-boundary`), one piece per level; edges reaching
+  the same member through the same frame share the way in. The stretch
+  between frames keeps the edge's id, arguments and caption, and deletes the
+  edge; a piece several edges share lists them (`wf:edgesOf`) and is not
+  deleted on its own. Every piece stays at the root of the model, so saved,
+  restored and rerouted routes keep their absolute coordinates.
+
+- A dragged member of a group stays inside its group: the bound
+  `IMovementRestrictor` refuses a position outside it, and a drop there is
+  not committed. A group's area is open to the right and downwards: a member
+  dragged that way takes the frame with it (the server grows the group, and
+  any group around it, to fit, and the ports on its right-hand side follow).
+  Past the left edge or under the header is refused. Members of other
+  containers (a control structure's branch) move as freely as before.
+
+### Fixed
+
+- Reopening a saved layout put every node inside a container outside it: the
+  layout file holds absolute positions and the loader wrote them back as
+  positions relative to the parent, adding the container's offset twice. A
+  reopened group also lost its size and the ports on its frame, which only the
+  layout run produces; they are now rebuilt from the saved positions and
+  routes.
+- Moving a container saved only its own position: the layout file holds
+  absolute positions, so its members reopened where they had been, out of
+  the frame. A move now saves the new position of everything inside the
+  moved node.
+- The edge rerouter that runs after a move treated a group's frame as an
+  obstacle, so an edge inside a group was routed around the group it is in.
+- Clicking a node inside a group grew it. The group was declared resizable,
+  so GLSP took the click for the start of a resize of the group, measured the
+  group and its members in the hidden model and wrote the measured sizes
+  back, larger than the nodes' own. Groups are no longer resizable by hand;
+  measured bounds never resize a workflow node on the client
+  (`NodeSizePreservingBoundsApplicator`, the `ComputedBoundsApplicator`); and
+  a move never changes a node's size on the server unless its type is
+  declared resizable, whatever size the client sends.
+
+### Tooling
+
+- `scripts/render-svg/render.mjs`: a graph document in (what a producer's
+  plan command prints), an SVG out, through the server's layout and the real
+  client in headless Chrome, extracted as "Export as SVG" extracts it. Picks a
+  layout (`--layout default|untangled|free-ports`, `--all-layouts` for all
+  three side by side), extra ELK options (`--elk key=value`), the product's
+  node families and stylesheets, client behavior flags and a theme. For
+  looking at what a change does to a real diagram without opening VS Code.
 
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the

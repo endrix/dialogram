@@ -74,12 +74,14 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
         mapping.set(WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH, GNode);
         mapping.set(WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH_JOIN, GNode);
         mapping.set(WorkflowDiagramTypes.NODE_STRUCTURE_IF_INLINE, GNode);
+        mapping.set(WorkflowDiagramTypes.NODE_GROUP, GNode);
         mapping.set(WorkflowDiagramTypes.NODE_BOUNDARY_INPUT, GNode);
         mapping.set(WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT, GNode);
 
         // Port types
         mapping.set(WorkflowDiagramTypes.PORT_INPUT, GPort);
         mapping.set(WorkflowDiagramTypes.PORT_OUTPUT, GPort);
+        mapping.set(WorkflowDiagramTypes.PORT_GROUP_BOUNDARY, GPort);
 
         // Edge types
         mapping.set(WorkflowDiagramTypes.EDGE_CONNECTION, GEdge);
@@ -187,6 +189,19 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
                 repositionable: false,
                 deletable: false,
                 resizable: true,
+                reparentable: false
+            },
+            // A producer's group: movable as a whole, sized by its members.
+            // Not resizable by hand: the frame grows when its members need it
+            // (the layout, a member dragged to its edge). Declared resizable,
+            // GLSP took any click on a member for the start of a resize of the
+            // group, re-measured the group in the hidden model and wrote the
+            // measured sizes back, so the clicked member grew.
+            {
+                elementTypeId: WorkflowDiagramTypes.NODE_GROUP,
+                repositionable: true,
+                deletable: false,
+                resizable: false,
                 reparentable: false
             },
             {

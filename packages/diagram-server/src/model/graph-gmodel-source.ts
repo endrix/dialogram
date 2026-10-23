@@ -3,6 +3,7 @@ import { parseViewsMeta } from '../server/graph-load-request-options';
 import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, type PortSide } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
+import { groupLayoutOptions, splitEdgesAtGroups } from './group-edges';
 import { URI } from 'vscode-uri';
 
 export type PyGraphPort = {
@@ -45,6 +46,9 @@ export type PyGraphEdge = {
 export type PyGraphScope = {
     id: string;
     kind: string;
+    /** What a `group` scope shows as its title; the last segment of its id
+     *  when absent. */
+    label?: string;
     parent?: string | null;
     controlNodeId?: string | null;
     children?: string[];
@@ -769,6 +773,46 @@ export class GraphGModelSource {
             }
         }
 
+        // A scope of kind `group` is a labelled container of the nodes that
+        // declare it or that it lists, nested under its parent when that is a
+        // group too. The members are untouched: the container only says they
+        // belong together, and the layout keeps them together. What the group
+        // is (a layer, a domain, a stage) is the producer's business and shows
+        // only in its label; the control-flow containers above keep their own
+        // kinds and never come through here.
+        const groupScopes = (doc.graph.subgraphs ?? []).filter(scope => scope.kind === 'group' && !scope.controlNodeId);
+        if (groupScopes.length > 0) {
+            const groupNodes = new Map<string, GNode>();
+            for (const scope of groupScopes) {
+                groupNodes.set(scope.id, this.createGroupNode(scope, scopeNodes, irNodeToStableId, nodeMap, removedNodeIds));
+            }
+            // A group whose parent chain leads back to itself has no parent
+            // worth the name; it sits at the root, as a group with no parent
+            // does. Without the check two groups that name each other would
+            // vanish from the model, each inside the other.
+            const parentOf = (scope: PyGraphScope): GNode | undefined => {
+                const seen = new Set<string>([scope.id]);
+                let current: PyGraphScope | undefined = scope;
+                while (current?.parent && groupNodes.has(current.parent)) {
+                    if (seen.has(current.parent)) {
+                        return undefined;
+                    }
+                    seen.add(current.parent);
+                    current = groupScopes.find(candidate => candidate.id === current!.parent);
+                }
+                return scope.parent ? groupNodes.get(scope.parent) : undefined;
+            };
+            for (const scope of groupScopes) {
+                const group = groupNodes.get(scope.id)!;
+                const parent = parentOf(scope);
+                if (parent && parent !== group) {
+                    parent.children!.push(group);
+                } else {
+                    children.push(group);
+                }
+            }
+        }
+
         for (const edge of doc.graph.edges) {
             const scope = scopeById.get(edge.scope);
             const branch = this.scopeLabel(scope?.kind ?? '');
@@ -905,6 +949,12 @@ export class GraphGModelSource {
             children.push(...filtered);
         }
 
+        // An edge that enters or leaves a group is cut at the group's frame, so
+        // each group can lay out on its own (see `group-edges.ts`). After the
+        // feedback marking, which the pieces inherit, and once the members sit
+        // inside their groups, which decides what each edge crosses.
+        splitEdgesAtGroups(children);
+
         // Edges first, so nodes and ports paint over them.
         //
         // SVG has no z-index: what covers what is decided by document order, and
@@ -1020,6 +1070,60 @@ export class GraphGModelSource {
             removedNodeIds.add(stableId);
         }
 
+        return node;
+    }
+
+    /**
+     * The container for a `group` scope: its label, its members moved under it
+     * (and out of the root, through `removedNodeIds`), laid out on its own,
+     * left to right (`groupLayoutOptions`): a group changes where its members
+     * sit, and its frame takes edges in on its left side and out on its right.
+     */
+    private createGroupNode(
+        scope: PyGraphScope,
+        scopeNodes: Map<string, string[]>,
+        irNodeToStableId: Map<string, string>,
+        nodeMap: Map<string, GNode>,
+        removedNodeIds: Set<string>
+    ): GNode {
+        const nodeId = `scope:${scope.id}`;
+        const label = typeof scope.label === 'string' && scope.label.trim() !== ''
+            ? scope.label.trim()
+            : (scope.id.split(':').pop() || scope.id);
+        const node: GNode = {
+            id: nodeId,
+            type: WorkflowDiagramTypes.NODE_GROUP,
+            cssClasses: [WorkflowDiagramCss.NODE, WorkflowDiagramCss.NODE_STRUCTURE, WorkflowDiagramCss.NODE_GROUP],
+            layoutOptions: groupLayoutOptions(),
+            children: [],
+            args: {
+                [WorkflowDiagramMetadata.AST_PATH]: nodeId,
+                'wf:scopeId': scope.id,
+                [WorkflowDiagramMetadata.STRUCTURE_KIND]: 'group',
+                [WorkflowDiagramMetadata.GROUP_LABEL]: label
+            }
+        };
+        const memberIds = new Set<string>();
+        for (const irId of scope.nodes ?? []) {
+            const stableId = irNodeToStableId.get(irId);
+            if (stableId) {
+                memberIds.add(stableId);
+            }
+        }
+        for (const stableId of scopeNodes.get(scope.id) ?? []) {
+            memberIds.add(stableId);
+        }
+        for (const stableId of memberIds) {
+            if (removedNodeIds.has(stableId)) {
+                continue;
+            }
+            const member = nodeMap.get(stableId);
+            if (!member) {
+                continue;
+            }
+            node.children!.push(member);
+            removedNodeIds.add(stableId);
+        }
         return node;
     }
 
@@ -1513,3 +1617,4 @@ export function resolveSourceFiles(doc: PyGraphDocument): PyGraphDocument {
     const edges = (doc.graph.edges ?? []).map(edge => fillKeys(edge, ['source']));
     return changed ? { ...doc, graph: { ...doc.graph, nodes, edges } } : doc;
 }
+

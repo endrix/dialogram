@@ -36,7 +36,8 @@ import {
     DefaultTypes,
     GRoutingHandle,
     GRoutingHandleView,
-    SetModelCommand
+    SetModelCommand,
+    ComputedBoundsApplicator
 } from '@eclipse-glsp/client';
 import { EXECUTION_OVERLAY_ACTION_KIND } from '@dialogram/shared';
 import { PostEditSelectionService } from './post-edit-selection-service';
@@ -48,6 +49,8 @@ import { ViewportPreservingSetModelCommand } from './viewport-preserving-set-mod
 import { RunningAgentsBar } from './running-agents-bar';
 import { ExecutionOverlayMessageBridge } from './execution-overlay-message-bridge';
 import { RunAgentStreamActionHandler } from './editing-action-handlers';
+import { ContainedMovementRestrictor } from './contained-movement-restrictor';
+import { NodeSizePreservingBoundsApplicator } from './node-size-preserving-bounds-applicator';
 
 /**
  * The neutral base bindings shared by all diagram-client consumers. Loaded first
@@ -60,6 +63,22 @@ export const diagramBaseModule = new ContainerModule((bind, unbind, isBound, reb
     // element configs — every diagram needs edge bendpoint editing.
     configureModelElement(context, DefaultTypes.ROUTING_POINT, GRoutingHandle, GRoutingHandleView);
     configureModelElement(context, DefaultTypes.VOLATILE_ROUTING_POINT, GRoutingHandle, GRoutingHandleView);
+
+    // A dragged node stays inside the node that holds it (a group, a branch):
+    // see `contained-movement-restrictor.ts`.
+    if (isBound(TYPES.IMovementRestrictor)) {
+        rebind(TYPES.IMovementRestrictor).to(ContainedMovementRestrictor).inSingletonScope();
+    } else {
+        bind(TYPES.IMovementRestrictor).to(ContainedMovementRestrictor).inSingletonScope();
+    }
+
+    // A node's size comes from the server: measured bounds move it but never
+    // resize it (see `node-size-preserving-bounds-applicator.ts`).
+    if (isBound(ComputedBoundsApplicator)) {
+        rebind(ComputedBoundsApplicator).to(NodeSizePreservingBoundsApplicator).inSingletonScope();
+    } else {
+        bind(ComputedBoundsApplicator).to(NodeSizePreservingBoundsApplicator).inSingletonScope();
+    }
 
     // Set up logging
     rebind(TYPES.ILogger).to(ConsoleLogger).inSingletonScope();

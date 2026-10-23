@@ -1263,6 +1263,56 @@ body.vscode-high-contrast-light .node-center-image-light {
     font-size: 10px;
 }
 
+/* Group containers: a producer's own grouping of nodes (a layer, a domain, a
+   stage), drawn as a nested region: a tinted body, a header band with the
+   label, a border over both. The body stays translucent because the edges
+   pass underneath it. */
+.workflow-node-group .group-body {
+    fill: var(--vscode-descriptionForeground, #8b8b8b);
+    fill-opacity: 0.04;
+    stroke: none;
+}
+
+.workflow-node-group .group-header {
+    fill: var(--vscode-descriptionForeground, #8b8b8b);
+    fill-opacity: 0.16;
+    stroke: none;
+}
+
+.workflow-node-group .group-frame {
+    fill: none;
+    stroke: var(--vscode-descriptionForeground, #8b8b8b);
+    stroke-opacity: 0.7;
+    stroke-width: 1px;
+}
+
+.workflow-node-group.selected .group-frame,
+.workflow-node-group.hover .group-frame {
+    stroke: var(--vscode-focusBorder, #007fd4);
+    stroke-opacity: 1;
+}
+
+.workflow-node-group .group-label {
+    fill: var(--vscode-foreground, #cccccc);
+    font-family: var(--vscode-font-family);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+/* Where an edge crosses a group's frame. */
+.workflow-group-boundary-port .group-boundary-dot {
+    fill: var(--vscode-descriptionForeground, #8b8b8b);
+    stroke: var(--vscode-editor-background, #1e1e1e);
+    stroke-width: 1px;
+}
+
+/* A node dragged outside the node that holds it: refused, and shown so. */
+.movement-not-allowed .node-body {
+    stroke: var(--vscode-editorError-foreground, #f14c4c);
+}
+
 /* Join node (phi-like merge point) */
 .workflow-node-structure-if-join .structure-if-join-body {
     fill: transparent;

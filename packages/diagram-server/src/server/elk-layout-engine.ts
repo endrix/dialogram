@@ -215,6 +215,7 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         return node.type !== WorkflowDiagramTypes.NODE_STRUCTURE_IF
             && node.type !== WorkflowDiagramTypes.NODE_STRUCTURE_IF_BRANCH
             && node.type !== WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH
+            && node.type !== WorkflowDiagramTypes.NODE_GROUP
             && node.type !== WorkflowDiagramTypes.NODE_BOUNDARY_INPUT
             && node.type !== WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT;
     }
@@ -612,7 +613,14 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         // anchors instead (see applyEdgeWithOffset), which keeps edges attached without letting
         // ELK's rounding leak into the model. Port LABELS are unaffected: applyLayoutWithOffset
         // applies those from `elkPort.labels` separately.
+        //
+        // A group's boundary port is the exception: the server never places it, because where
+        // an edge crosses a group's frame is decided by the layout inside the group. ELK's
+        // position is the only one it has.
         if (shape instanceof GPort) {
+            if (shape.type === WorkflowDiagramTypes.PORT_GROUP_BOUNDARY) {
+                super.applyShape(shape, elkShape);
+            }
             return;
         }
 
@@ -650,7 +658,8 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
     private isAutoSizedContainer(node: GNode): boolean {
         return node.type === WorkflowDiagramTypes.NODE_STRUCTURE_IF
             || node.type === WorkflowDiagramTypes.NODE_STRUCTURE_IF_BRANCH
-            || node.type === WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH;
+            || node.type === WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH
+            || node.type === WorkflowDiagramTypes.NODE_GROUP;
     }
 
     /**

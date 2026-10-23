@@ -58,4 +58,14 @@ export const WorkflowDiagramConstants = {
     NODE_FOOTER_LABEL_GAP_PX: 4,
     NODE_FOOTER_LABEL_FONT_SIZE_PX: 10,
     NODE_FOOTER_LABEL_HEIGHT_PX: 14,
+
+    // Group containers (a producer's `group` scopes), drawn as a nested
+    // region: a header band carrying the label on top, the members laid out
+    // below it. The server pads the layout by these,
+    // the client draws by them and keeps a dragged member inside them, so all
+    // three agree on where the inside of a group is.
+    GROUP_HEADER_HEIGHT_PX: 24,
+    GROUP_PADDING_PX: 14,
+    /** The point on a group's frame an edge passes through on its way in or out. */
+    GROUP_BOUNDARY_PORT_SIZE_PX: 8,
 } as const;

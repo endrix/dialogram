@@ -10,7 +10,8 @@
 import { GGraph, GNode, GEdge, GPort, GLabel, GModelElement } from '@eclipse-glsp/server';
 import { AbstractLayoutConfigurator, LayoutOptions } from '@eclipse-glsp/layout-elk';
 import { injectable } from 'inversify';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide } from '@dialogram/shared';
+import { WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide } from '@dialogram/shared';
+import { groupLayoutOptions } from '../model/group-edges';
 
 /** The margin a boundary node was placed in by its producer, when it was not left to its direction. */
 function boundaryMargin(node: GNode): 'WEST' | 'EAST' | undefined {
@@ -300,6 +301,12 @@ export class WorkflowLayoutConfigurator extends AbstractLayoutConfigurator {
             };
         }
 
+        if (nodeType === WorkflowDiagramTypes.NODE_GROUP) {
+            // A producer's group: laid out on its own, members first, with its
+            // header band and the boundary ports its crossing edges pass through.
+            return groupLayoutOptions();
+        }
+
         if (nodeType === WorkflowDiagramTypes.NODE_STRUCTURE_IF_JOIN) {
             // Join is a small helper node; size comes from server.
             const nodeWidth = node.size?.width ?? 70;
@@ -457,7 +464,13 @@ export class WorkflowLayoutConfigurator extends AbstractLayoutConfigurator {
         const direction = args?.['cal:portDirection'] as string | undefined;
         const side = normalizePortSide(args?.[WorkflowDiagramMetadata.PORT_SIDE]) ?? (direction === 'output' ? 'EAST' : 'WEST');
 
+        // A group's boundary port sits centred on the frame line, where the
+        // edge crosses it, rather than outside it.
+        const onFrame = port.type === WorkflowDiagramTypes.PORT_GROUP_BOUNDARY
+            ? { 'elk.port.borderOffset': String(-WorkflowDiagramConstants.GROUP_BOUNDARY_PORT_SIZE_PX / 2) }
+            : {};
         return {
+            ...onFrame,
             'elk.port.side': side,
             'elk.portLabels.placement': 'INSIDE NEXT_TO_PORT_IF_POSSIBLE',
             'elk.spacing.labelPortHorizontal': '0',
