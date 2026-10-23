@@ -34,54 +34,7 @@ platform API version.
   belong together, and the layout keeps them together. The platform learns
   nothing from the grouping; what a group is (a layer, a domain, a stage) is
   the producer's business and shows only in its label.
-- Header badges. A producer puts short marks on a node's `meta.badges`
-  (`[{ text, tone? }]`, `tone` one of `neutral`, `info`, `warning`, `error`,
-  `neutral` when absent or unknown); the node's header draws them as pills,
-  right-aligned, in that order, and the node is sized so they never cover the
-  name. The text is the producer's word and the platform reads nothing into
-  it: a modality, a status, a count, whatever a reader must see without
-  opening the panel. Carried on `wf:badges`.
 
-- A Facts section in the property panel. A producer lists what it knows about
-  a unit on a node's `meta.facts` (`[{ label, value, markdown? }]`, and on
-  `graph.meta.facts` for the unit shown); the panel shows them as `Facts (n)`
-  under the identity header, one read-only row per entry in the producer's
-  order, label on the left and value on the right. An entry with
-  `markdown: true` has its value rendered as Markdown, as a block under the
-  label, through the same sanitizer the chat uses but as CommonMark (a single
-  newline joins the lines, so a document's wrapped prose reads as a
-  paragraph rather than breaking at every column). No label is special and
-  nothing is interpreted; an entry without a string label and value is
-  dropped on the way in. Carried on `wf:facts`.
-- `SidecarProfileInput.readOnly`: a profile whose diagram is a projection of
-  a file drawn by the CLI, with no sidecar and nothing to edit. The assembled
-  profile's `edits` is `'read-only'` and `supportsElementCreation` is `false`;
-  the toolkit spawns no sidecar (no capability or openability probe, no
-  create-node type listing, no sidecar graph export when the plan fails), so
-  `graphAcquisition` must be `'cli-plan'` and `sidecarCommandSettingKey`,
-  `sidecarCommandDefault` and `exportOp` may be left out. The chat stays, read
-  only: `get_graph` and the session's graph context come from the CLI plan
-  document, there is no edit backend, and the raw sidecar commands are not
-  registered. Default `false`, which changes nothing.
-- `SidecarProfileInput.openability.predicate`: the product's own answer to
-  "can this file be shown as a diagram?", from the file's text and path. Given,
-  it decides alone -- no sidecar probe, no decorator scan -- and it is the one
-  form of openability a read-only profile may have.
-- `meta.instanceName` on a node: the name it navigates as when that is not
-  its label. A drill-down puts it on the crumb and the hierarchy outline
-  matches its row against it (`wf:entityInstanceName`); the label and the
-  entity name rename and lookups use stay as they were. For a producer whose
-  node stands for a unit under another name: a clause drawn at the edge of the
-  document that refers to it drills into the document that holds it, and the
-  crumb should say that document, not the clause.
-- The kind of an edge, for a sidecar whose `connect` can make more than one.
-  A sidecar lists the kinds in its capabilities (`diagnostic.edgeRoles`,
-  `[{ id, label, description? }]`); the create-edge handler then asks which
-  (a role given on the operation, or the only one listed, is taken without
-  asking; a headless caller gets no pick) and sends it as `args.role`, and the
-  delete handler sends the edge's `cal:edgeRole` as `args.role` so the right
-  one of several edges between two nodes goes. A sidecar that lists none is
-  treated as before.
   A group is drawn and laid out the way mlir-viewer draws a nested region: a
   tinted body, a header band carrying the label, the members below it, laid
   out on their own (`SEPARATE_CHILDREN`) so the frame stays tight around them.
@@ -133,6 +86,58 @@ platform API version.
   three side by side), extra ELK options (`--elk key=value`), the product's
   node families and stylesheets, client behavior flags and a theme. For
   looking at what a change does to a real diagram without opening VS Code.
+
+- A Facts section in the property panel. A producer lists what it knows about
+  a unit on a node's `meta.facts` (`[{ label, value, markdown? }]`, and on
+  `graph.meta.facts` for the unit shown); the panel shows them as `Facts (n)`
+  under the identity header, one read-only row per entry in the producer's
+  order, label on the left and value on the right. An entry with
+  `markdown: true` has its value rendered as Markdown, as a block under the
+  label, through the same sanitizer the chat uses but as CommonMark (a single
+  newline joins the lines, so a document's wrapped prose reads as a
+  paragraph rather than breaking at every column). No label is special and
+  nothing is interpreted; an entry without a string label and value is
+  dropped on the way in. Carried on `wf:facts`.
+- Header badges. A producer puts short marks on a node's `meta.badges`
+  (`[{ text, tone? }]`, `tone` one of `neutral`, `info`, `warning`, `error`,
+  `neutral` when absent or unknown); the node's header draws them as pills,
+  right-aligned, in that order, and the node is sized so they never cover the
+  name. The text is the producer's word and the platform reads nothing into
+  it: a modality, a status, a count, whatever a reader must see without
+  opening the panel. Carried on `wf:badges`.
+
+- `SidecarProfileInput.readOnly`: a profile whose diagram is a projection of
+  a file drawn by the CLI, with no sidecar and nothing to edit. The assembled
+  profile's `edits` is `'read-only'` and `supportsElementCreation` is `false`;
+  the toolkit spawns no sidecar (no capability or openability probe, no
+  create-node type listing, no sidecar graph export when the plan fails), so
+  `graphAcquisition` must be `'cli-plan'` and `sidecarCommandSettingKey`,
+  `sidecarCommandDefault` and `exportOp` may be left out. The chat stays, read
+  only: `get_graph` and the session's graph context come from the CLI plan
+  document, there is no edit backend, and the raw sidecar commands are not
+  registered. Default `false`, which changes nothing.
+- `SidecarProfileInput.openability.predicate`: the product's own answer to
+  "can this file be shown as a diagram?", from the file's text and path. Given,
+  it decides alone -- no sidecar probe, no decorator scan -- and it is the one
+  form of openability a read-only profile may have.
+- `meta.instanceName` on a node: the name it navigates as when that is not
+  its label. A drill-down puts it on the crumb and the hierarchy outline
+  matches its row against it (`wf:entityInstanceName`); the label and the
+  entity name rename and lookups use stay as they were. For a producer whose
+  node stands for a unit under another name: a clause drawn at the edge of the
+  document that refers to it drills into the document that holds it, and the
+  crumb should say that document, not the clause.
+- The kind of an edge, for a sidecar whose `connect` can make more than one.
+  A sidecar lists the kinds in its capabilities (`diagnostic.edgeRoles`,
+  `[{ id, label, description? }]`); the create-edge handler then asks which
+  (a role given on the operation, or the only one listed, is taken without
+  asking) and sends it as `args.role`, and the delete handler sends the
+  edge's `cal:edgeRole` as `args.role` so the right one of several edges
+  between two nodes goes. The capabilities are asked once per sidecar command
+  for the session, not on every connect. An agent's `create-edges` call is
+  headless: it may name the kind in `args.role`, and is never asked; without
+  one the sidecar's default kind is made. A sidecar that lists none is
+  treated as before, on connect and on delete.
 - `StorageRuntimeOptions.defaultLayout` (and `SidecarProfileInput.defaultLayout`):
   `'untangled'` or `'free-ports'` makes that layout the one a product's
   diagrams open with and the one Layout Diagram runs. Every loaded diagram
@@ -216,20 +221,6 @@ platform API version.
   placeholder now just says "Filter…".
 - Read-only views: a producer marks one view read-only with
   `graph.meta.readOnly: true` (a projection of a file it reads but does not
-  write, a project overview). The root carries `wf:readOnlyView`; the palette
-  is empty for that view and its tools are hidden while it is shown (the
-  palette's header stays), and the context menu leaves out Rename Entity,
-  Duplicate, Edit Parameters and the boundary-port edits. Moving and laying
-  out stay. Per view, so one editor passes between editable and read-only
-  views in place; `supportsElementCreation: false` still empties the palette
-  of a whole profile. A keyboard delete or label edit still reaches the
-  producer's sidecar, which is expected to refuse it.
-- `clientBehavior.edgeCaptions: 'once'`: of the edges that leave one port, or
-  reach one port, with the same carried label, only the first in model order
-  writes it; the router bundles them on one trunk, where their captions used
-  to stack (twenty `depends-on` on one line). An edge whose caption is left
-  out, or not written because captions are off, says what it carries in its
-  hover tooltip. `true` (the default) and `false` are unchanged.
   write, a project overview). The root carries `wf:readOnlyView`; the
   palette's tools are hidden while that view is shown (its header stays, and
   the tools come back on the next editable view), and the context menu
@@ -238,14 +229,13 @@ platform API version.
   editable and read-only views in place; `supportsElementCreation: false`
   still empties the palette of a whole profile. A keyboard delete or label
   edit still reaches the producer's sidecar, which is expected to refuse it.
+- `clientBehavior.edgeCaptions: 'once'`: of the edges that leave one port, or
+  reach one port, with the same carried label, only the first in model order
+  writes it; the router bundles them on one trunk, where their captions used
+  to stack (twenty `depends-on` on one line). An edge whose caption is left
+  out, or not written because captions are off, says what it carries in its
+  hover tooltip. `true` (the default) and `false` are unchanged.
 
-  asking) and sends it as `args.role`, and the delete handler sends the
-  edge's `cal:edgeRole` as `args.role` so the right one of several edges
-  between two nodes goes. The capabilities are asked once per sidecar command
-  for the session, not on every connect. An agent's `create-edges` call is
-  headless: it may name the kind in `args.role`, and is never asked; without
-  one the sidecar's default kind is made. A sidecar that lists none is
-  treated as before, on connect and on delete.
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the
   tooltip on hover still says what it carries. Default `true`, as before.
