@@ -34,6 +34,7 @@ import {
     type WorkflowCallerReference
 } from '@dialogram/shared';
 import { GraphGModelSource } from '../model/graph-gmodel-source';
+import { tunedLayoutOptions } from '../operations/layout-tuned-handler';
 import { WorkflowRequestAgentSkillsOperationHandler, type DiscoveredAgentSkill } from '../operations/request-agent-skills-handler';
 import { WorkflowRequestClaudeAgentsOperationHandler, type DiscoveredClaudeAgentProfile } from '../operations/request-claude-agents-handler';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
@@ -580,6 +581,15 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
 
         const gmodelRoot = convertToGModelRoot(diagramModel as any);
         perf?.mark('convert');
+        // The product's default layout, as graph options: the first layout on
+        // open and Layout Diagram both run with the graph's options.
+        const defaultLayout = this.storageOptions?.defaultLayout;
+        if (defaultLayout) {
+            (gmodelRoot as any).layoutOptions = {
+                ...tunedLayoutOptions(defaultLayout),
+                ...((gmodelRoot as any).layoutOptions ?? {})
+            };
+        }
         const navigationTrail = this.parseNavigationTrailArg(opts[NAV_TRAIL_ARG]);
         const sourcePathHints = this.collectSourcePathHints(workflowFilePath, opts);
         const workflowNameHints = this.collectWorkflowNameHints(workflowName || 'workflow', opts);

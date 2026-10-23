@@ -8,6 +8,13 @@ platform API version.
 
 ### Added
 
+- `StorageRuntimeOptions.defaultLayout` (and `SidecarProfileInput.defaultLayout`):
+  `'untangled'` or `'free-ports'` makes that layout the one a product's
+  diagrams open with and the one Layout Diagram runs. Every loaded diagram
+  carries the layout's graph options; a producer's own graph options still
+  win. Untangled now says the declared port order explicitly, so it stays
+  itself on a graph that defaults to Free Ports. Absent, nothing changes.
+
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the
   tooltip on hover still says what it carries. Default `true`, as before.
