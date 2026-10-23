@@ -332,3 +332,63 @@ describe('WorkflowEditorProvider configured webview assets (clientAssets)', () =
         }
     });
 });
+
+describe('WorkflowEditorProvider product stylesheets (clientStylesheets)', () => {
+    /** Two product stylesheets in one directory, with fixed mtimes. */
+    function makeStylesheets(): { dir: string; first: string; second: string } {
+        const dir = mkdtempSync(path.join(tmpdir(), 'dialogram-client-stylesheets-'));
+        const first = path.join(dir, 'edges.css');
+        const second = path.join(dir, 'pins.css');
+        writeFileSync(first, '.edge-role-a { stroke: red }');
+        writeFileSync(second, '.workflow-port { r: 2 }');
+        utimesSync(first, new Date(1000 * 1000), new Date(4000 * 1000));
+        utimesSync(second, new Date(1000 * 1000), new Date(5000 * 1000));
+        return { dir, first, second };
+    }
+
+    function profileWith(extra: Partial<DiagramProfile>): DiagramProfile {
+        return { ...(STOCK_PROFILE as object), ...extra } as unknown as DiagramProfile;
+    }
+
+    it('links the stylesheets after the stock one, in order, with their mtime cache-bust', () => {
+        const { first, second } = makeStylesheets();
+        const { html } = render(profileWith({ clientStylesheets: [first, second] }));
+
+        const stock = html.indexOf('diagram-client.css');
+        const one = html.indexOf(`href="https://webview${first}?v=4000000"`);
+        const two = html.indexOf(`href="https://webview${second}?v=5000000"`);
+        expect(stock).toBeGreaterThan(-1);
+        expect(one).toBeGreaterThan(stock);
+        expect(two).toBeGreaterThan(one);
+    });
+
+    it('adds each stylesheet\'s directory to localResourceRoots, stock roots retained', () => {
+        const { dir, first } = makeStylesheets();
+        const { options } = render(profileWith({ clientStylesheets: [first] }));
+
+        expect(localResourceRootStrings(options)).toEqual([
+            'file:///fake-ext/out',
+            'file:///fake-ext/dist',
+            vscode.Uri.file(dir).toString()
+        ]);
+    });
+
+    it('links them after a consumer bundle\'s own stylesheet too', () => {
+        const { first } = makeStylesheets();
+        const dir = mkdtempSync(path.join(tmpdir(), 'dialogram-client-assets-'));
+        const scriptPath = path.join(dir, 'consumer-client.js');
+        const stylePath = path.join(dir, 'consumer-client.css');
+        writeFileSync(scriptPath, '// consumer bundle');
+        writeFileSync(stylePath, '/* consumer styles */');
+        const { html } = render(profileWith({ clientAssets: { scriptPath, stylePath }, clientStylesheets: [first] }));
+
+        expect(html.indexOf(`href="https://webview${first}`)).toBeGreaterThan(html.indexOf(`href="https://webview${stylePath}`));
+        expect(html).not.toContain('diagram-client.css');
+    });
+
+    it('changes nothing when none are declared', () => {
+        const { html, options } = render(STOCK_PROFILE);
+        expect(html.match(/rel="stylesheet"/g)).toHaveLength(1);
+        expect(localResourceRootStrings(options)).toEqual(['file:///fake-ext/out', 'file:///fake-ext/dist']);
+    });
+});
