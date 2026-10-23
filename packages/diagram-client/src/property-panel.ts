@@ -11,7 +11,7 @@ import { html, render, nothing, type TemplateResult } from 'lit';
 import { createRef, ref } from 'lit/directives/ref.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import type { GModelRoot } from '@eclipse-glsp/sprotty';
-import { DeleteElementOperation } from '@eclipse-glsp/protocol';
+import { CenterAction, DeleteElementOperation, SelectAction } from '@eclipse-glsp/protocol';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import {
     type WorkflowAgentSkill,
@@ -35,6 +35,8 @@ import { ppField, ppNumberField, ppReadonlyRow, renderInto } from './property-fi
 import { type PropertyElement, readNumberArg } from './property-model';
 import { PropertyPanelChrome } from './property-panel-chrome';
 import { clientBehavior, commandId, operationKind } from './profile';
+import { classifyLink, decodeURIComponentSafe, openTargetOf, referenceAction, type PanelLink } from './open-target';
+import { producerFields, type ProducerField } from './producer-fields';
 
 /**
  * IGModelRootListener interface — fire on every model root change
@@ -65,6 +67,76 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     protected initialize(): void {
         this.chrome.initialize();
         this.initializeAsyncDiscoveryRefresh();
+        this.initializeLinks();
+    }
+
+    /**
+     * Links anywhere in the panel lead somewhere instead of nowhere: a webview
+     * does not navigate, so a click on an anchor in a rendered body or a
+     * producer's fact did nothing. One listener, on the document because the
+     * panel's content is rebuilt on every selection.
+     */
+    protected initializeLinks(): void {
+        document.addEventListener('click', event => {
+            const anchor = (event.target as Element | null)?.closest?.('a[href]');
+            if (!anchor || !anchor.closest('#property-panel')) {
+                return;
+            }
+            const link = classifyLink(anchor.getAttribute('href'), anchor.getAttribute('title'));
+            if (!link) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            this.followLink(link);
+        }, true);
+    }
+
+    /**
+     * `#<id>` selects that element and brings it into view (the panel then
+     * shows it); anything else goes to the host, resolved against the file the
+     * shown node came from.
+     */
+    /** The element a link names: by the diagram's id, or by the producer's (`wf:graphNodeId`). */
+    protected elementIdFor(id: string): string | undefined {
+        const index = this.lastRoot?.index;
+        if (!index) {
+            return undefined;
+        }
+        if (index.getById(id)) {
+            return id;
+        }
+        const all: Iterable<any> = typeof index.all === 'function' ? index.all() : [];
+        for (const element of all) {
+            if (element?.args?.[WorkflowDiagramMetadata.GRAPH_NODE_ID] === id) {
+                return element.id;
+            }
+        }
+        return undefined;
+    }
+
+    protected followLink(link: PanelLink): void {
+        if (link.kind === 'element') {
+            const id = this.elementIdFor(link.id);
+            if (!id && link.fallback) {
+                this.followLink({ kind: 'reference', href: link.fallback });
+                return;
+            }
+            if (!id) {
+                VscodeUi.instance.infoMessage(`${link.id} is not in this diagram.`);
+                return;
+            }
+            void this.actionDispatcher.dispatchAll([
+                SelectAction.create({ selectedElementsIDs: [id], deselectedElementsIDs: true }),
+                CenterAction.create([id], { animate: true, retainZoom: true })
+            ]);
+            return;
+        }
+        const node = this.lastRenderedNodeId ? this.lastRoot?.index?.getById(this.lastRenderedNodeId) : undefined;
+        const base = (node?.args?.[WorkflowDiagramMetadata.REFERENCED_URI] as string | undefined)
+            ?? (this.lastRoot?.args?.['wf:workflowSourceUri'] as string | undefined)
+            ?? (this.lastRoot?.args?.[WorkflowDiagramMetadata.REFERENCED_URI] as string | undefined);
+        void this.actionDispatcher.dispatch(referenceAction(link, base));
     }
 
     protected initializeAsyncDiscoveryRefresh(): void {
@@ -538,12 +610,23 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             })
         );
 
+        // Fields the producer lets a person edit, in any profile: a select
+        // where it listed the values, an input with suggestions where it
+        // offered some, a plain input otherwise.
+        const fields = producerFields(args[WorkflowDiagramMetadata.ENTITY_PARAMETERS]);
+        if (fields.length > 0) {
+            content.appendChild(this.buildProducerFieldsSection(node.id, fields));
+        }
+
         const factsSection = this.buildFactsSection(args);
         if (factsSection) {
             content.appendChild(factsSection);
         }
 
-        content.appendChild(this.buildDefinitionAnnotationsSection(node.id, args, undefined, requestAgentDiscovery));
+        const sections = clientBehavior().propertySections;
+        if (sections?.annotations !== false) {
+            content.appendChild(this.buildDefinitionAnnotationsSection(node.id, args, undefined, requestAgentDiscovery));
+        }
 
         // Agent Tools section (only rendered for @agent nodes)
         const agentToolsSection = this.buildAgentToolsSection(entityName, args);
@@ -561,7 +644,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
 
         if (isNetworkModel) {
             content.appendChild(this.buildNetworkDefinitionParamsSection(node.id, args));
-        } else if (!hasEditableNetworkParams) {
+        } else if (!hasEditableNetworkParams && fields.length === 0 && sections?.parameters !== false) {
             content.appendChild(this.buildDefinitionParametersSection(node.id, args));
         }
 
@@ -583,7 +666,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         // so offering it "Input Ports (0)" and "Output Ports (0)", each with an
         // add button, describes something that cannot exist. Its own type and
         // direction are already on the Basic Info section above.
-        if (!isBoundary) {
+        if (!isBoundary && sections?.ports !== false) {
             if (inputPorts.length > 0 || entityType) {
                 content.appendChild(this.buildEntityPortsSection(node, entityType, 'input', inputPorts));
             }
@@ -4071,6 +4154,54 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         `;
     }
 
+    /**
+     * The producer's editable fields (producer-fields.ts): each committed on its
+     * own, a select on change, an input on Enter or when it loses focus, and
+     * only when the value actually changed.
+     */
+    protected buildProducerFieldsSection(elementId: string, fields: ProducerField[]): HTMLElement {
+        const commit = (field: ProducerField, next: string): void => {
+            if (next === field.value) {
+                return;
+            }
+            void this.actionDispatcher.dispatch(
+                WorkflowUpdateEntityParameterOperation.create({ elementId, parameterName: field.name, newValue: next })
+            );
+        };
+        const rows = fields.map((field) => {
+            const listId = `pp-field-${elementId}-${field.name}`.replace(/[^A-Za-z0-9_-]/g, '_');
+            const editor = field.choices
+                ? html`<select class="param-map-input pp-field-select" @change=${(e: Event) => commit(field, (e.target as HTMLSelectElement).value)}>
+                      ${field.value === '' ? html`<option value="" selected>(unset)</option>` : nothing}
+                      ${field.choices.map((choice) => html`<option value=${choice} ?selected=${choice === field.value}>${choice}</option>`)}
+                  </select>`
+                : html`<input
+                      class="param-map-input"
+                      .value=${field.value}
+                      list=${field.suggestions ? listId : nothing}
+                      placeholder="(unset)"
+                      @keydown=${(e: KeyboardEvent) => {
+                          if (e.key === 'Enter') {
+                              e.preventDefault();
+                              (e.target as HTMLInputElement).blur();
+                          }
+                      }}
+                      @change=${(e: Event) => commit(field, (e.target as HTMLInputElement).value.trim())}
+                  />
+                  ${field.suggestions
+                      ? html`<datalist id=${listId}>${field.suggestions.map((s) => html`<option value=${s}></option>`)}</datalist>`
+                      : nothing}`;
+            return html`
+                <div class="param-map-item pp-field">
+                    <div class="param-map-key" title=${field.name}>${field.name}</div>
+                    ${editor}
+                </div>
+                ${field.description ? html`<div class="param-map-type">${field.description}</div>` : nothing}
+            `;
+        });
+        return this.litSection(`Fields (${fields.length})`, { body: html`<div class="param-map-list">${rows}</div>` });
+    }
+
     protected buildEditableEntityParametersSection(elementId: string, args: Record<string, unknown>): HTMLElement | undefined {
         const raw = args[WorkflowDiagramMetadata.ENTITY_PARAMETERS];
         const entityParams = this.normalizeEditableEntityParameters(raw);
@@ -4885,33 +5016,51 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                     currentType: info.entityType,
                 })
             );
+        // The platform's kind of node (task, workflow) and the button that
+        // changes it mean nothing to a product whose kinds are its own.
+        const showType = clientBehavior().propertySections?.entityType !== false;
+        // The file the node stands for, a double-click away and here a click away.
+        const opens = openTargetOf(node);
+        const opensPath = opens ? decodeURIComponentSafe(opens.uri.replace(/^file:\/\//, '')) : '';
+        const opensRow = opens
+            ? html`<div class="pp-arow">
+                  <span class="pp-akey">Opens</span>
+                  <span class="pp-aval pp-aval-wrap">
+                      <a href=${opens.line ? `${opens.uri}#L${opens.line}` : opens.uri} title=${opensPath}
+                          >${this.shortenPath(opensPath)}${opens.line ? `:${opens.line}` : ''}</a>
+                  </span>
+              </div>`
+            : nothing;
         const body = html`
             <div class="pp-arow">
                 <span class="pp-akey">Name</span>
                 <span class="pp-aval">${info.entityName}</span>
             </div>
-            <div class="pp-arow">
-                <span class="pp-akey">Type</span>
-                <span class="pp-aval">
-                    <span>${info.typeLabel}</span>
-                    <code class="pp-chip" title=${info.typeBadge}>${info.typeBadge}</code>
-                    ${info.isBoundary
-                        ? nothing
-                        : html`<button
-                              class="pp-icon-btn pp-change"
-                              title="Change referenced type"
-                              @click=${onChange}
-                          >
-                              <span class="codicon codicon-edit"></span>
-                          </button>`}
-                </span>
-            </div>
+            ${showType
+                ? html`<div class="pp-arow">
+                    <span class="pp-akey">Type</span>
+                    <span class="pp-aval">
+                        <span>${info.typeLabel}</span>
+                        <code class="pp-chip" title=${info.typeBadge}>${info.typeBadge}</code>
+                        ${info.isBoundary
+                            ? nothing
+                            : html`<button
+                                  class="pp-icon-btn pp-change"
+                                  title="Change referenced type"
+                                  @click=${onChange}
+                              >
+                                  <span class="codicon codicon-edit"></span>
+                              </button>`}
+                    </span>
+                </div>`
+                : nothing}
             ${info.skillStatus
                 ? html`<div class="pp-arow">
                       <span class="pp-akey">Skill</span>
                       <span class="pp-aval pp-aval-wrap">${info.skillStatus}</span>
                   </div>`
                 : nothing}
+            ${opensRow}
         `;
         return this.litSection('Basic Info', { body });
     }

@@ -156,6 +156,33 @@ platform API version.
   elkjs, 2.6 s on the server. From mlir-viewer's elk-server engine, speaking
   only the server's gzip-framed mode (its plain mode hangs on a brace in an
   id) over one connection per layout. The jar carries ELK 0.8.1, elkjs 0.9.3.
+- Links in the property panel lead somewhere. A click on an anchor in any
+  text the panel renders (a node's body, a producer's facts) used to do
+  nothing in the webview. `#<id>` now selects that element (by its id, or by
+  the producer's own, kept on every node as `wf:graphNodeId`) and brings it
+  into view, or opens the file reference in the link's title when the diagram
+  does not draw it, `http(s):` and `mailto:` open in the browser, and anything else is a
+  file reference the host resolves and opens: an absolute path or `file:` URI;
+  a path relative to the node's own file or a folder above it; else the
+  workspace's files ending with that path, the closest first (a quick pick
+  when several match). `#L12`, `#L12-L20` and `:12-20` select lines;
+  `::Name.member` and `#name` land on the symbol's definition.
+- `meta.open: { file, line? }` on a node (`wf:open`): the file the node stands
+  for, such as the code a specification clause names. A double-click opens it
+  at its line, ahead of a drill-down, the node's views or its definition, and
+  the panel's Basic Info links it.
+- Producer-editable fields in any profile. An entry of `meta.parameters`
+  marked `editable: true` gets an editor in a Fields section, committed
+  through `updateNodeParameter` as typed: a select when the entry lists
+  `choices`, an input with a list when it offers `suggestions`, a plain input
+  otherwise. Until now the panel edited parameters only for a network runtime
+  (`networkPropertySections`), as source expressions.
+- `clientBehavior.propertySections: { ports?, annotations?, parameters?,
+  entityType? }`: `false` hides the panel's port lists, its raw definition
+  annotations, the definition's parameters, or Basic Info's Type row (task,
+  workflow) with its change-type button: for a product whose pins mean
+  nothing, whose facts already say it all, whose nodes have no parameters but
+  their own fields, or whose node kinds are its own.
 
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the
@@ -177,6 +204,13 @@ platform API version.
   the context menu, under a separator.
 
 ### Fixed
+
+- A double-click opens one thing. On a node that is not a network instance,
+  the network navigation listener opens its first view (or, with
+  `doubleClickOpensSource`, its definition), and the viewer listener opened
+  its definition as a preview as well: a specification clause opened its
+  refinement trace and its heading at once. The viewer listener now stands
+  back whenever the other opens something.
 
 - Running a workflow no longer shows a "Model loading in progress" notification
   on every firing. The live overlay's signature changes with each firing and the

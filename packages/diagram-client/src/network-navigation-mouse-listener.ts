@@ -11,6 +11,7 @@ import { inject, injectable } from 'inversify';
 import { WorkflowDiagramTypes, WorkflowDiagramMetadata } from '@dialogram/shared';
 import { navigatesInPlace, WorkflowNavigationUi } from './navigation-ui';
 import { clientBehavior } from './profile';
+import { openTargetAction } from './open-target';
 import {
     buildCrossFileNavigationTarget,
     GRAPH_SOURCE_URI_ARG,
@@ -111,7 +112,7 @@ function isSerializedRange(value: unknown): value is SerializedRange {
  * preview: the reader asked for the code. Both look the node up through the
  * element's ancestry, so a port or label resolves to its node.
  */
-function openLeaf(target: GModelElement): Action[] {
+export function openLeaf(target: GModelElement): Action[] {
     let current: GModelElement | undefined = target;
     while (current) {
         const args = (current as unknown as { args?: Args }).args;
@@ -165,6 +166,12 @@ export class WorkflowNetworkNavigationMouseListener extends MouseListener implem
     protected readonly workflowNavUi!: WorkflowNavigationUi;
 
     override doubleClick(target: GModelElement, _event: MouseEvent): (Action | Promise<Action>)[] {
+        // A node that stands for a file opens it, whatever else it could do
+        // (see open-target.ts); the viewer listener stands back for it.
+        const openFile = openTargetAction(target);
+        if (openFile) {
+            return [openFile];
+        }
         const networkNode = findContainingNetworkInstanceNode(target);
         if (!networkNode) {
             return openLeaf(target);

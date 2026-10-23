@@ -389,6 +389,14 @@ export class GraphGModelSource {
                     [WorkflowDiagramMetadata.IS_NETWORK_INSTANCE]: true
                 };
             }
+            gnode.args = { ...(gnode.args ?? {}), [WorkflowDiagramMetadata.GRAPH_NODE_ID]: node.id };
+            const openTarget = this.openTarget(node.meta?.['open']);
+            if (openTarget) {
+                gnode.args = {
+                    ...(gnode.args ?? {}),
+                    [WorkflowDiagramMetadata.OPEN_TARGET]: openTarget as any
+                };
+            }
             const unitViews = parseViewsMeta(node.meta?.['views']);
             if (unitViews) {
                 gnode.args = {
@@ -1321,6 +1329,23 @@ export class GraphGModelSource {
             }
         }
         return classes;
+    }
+
+    /**
+     * `meta.open`, the file a double-click on the node opens: `{ file, line? }`
+     * with a 1-based line, as every location in a graph document. Anything else
+     * is ignored rather than half-mapped.
+     */
+    private openTarget(value: unknown): { uri: string; line?: number } | undefined {
+        if (!value || typeof value !== 'object') {
+            return undefined;
+        }
+        const { file, line } = value as { file?: unknown; line?: unknown };
+        const uri = typeof file === 'string' ? normalizeNavigationFileUri(file) : undefined;
+        if (!uri) {
+            return undefined;
+        }
+        return typeof line === 'number' && Number.isInteger(line) && line > 0 ? { uri, line } : { uri };
     }
 
     private controlSubtitle(node: PyGraphNode): string | undefined {

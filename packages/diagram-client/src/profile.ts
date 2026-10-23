@@ -44,6 +44,15 @@ type DiagramClientBehavior = {
      *  index labels of a list connection. Default true. Off, an edge is its
      *  line, and the tooltip on hover still says what it carries. */
     edgeCaptions?: boolean;
+    /** Property-panel sections a product does without, each `false` to hide
+     *  it (all shown by default): `ports`, the input and output port lists, for
+     *  a product whose pins carry no meaning; `annotations`, the raw
+     *  definition annotations, for one whose facts already say it all;
+     *  `parameters`, the definition's parameters, for one whose nodes have
+     *  none (its own editable fields still show); `entityType`, Basic Info's
+     *  Type row (task, workflow) and its change-type button, for one whose
+     *  node kinds are its own. */
+    propertySections?: { ports?: boolean; annotations?: boolean; parameters?: boolean; entityType?: boolean };
 };
 
 export type AcpConnectorInfo = {

@@ -6,6 +6,8 @@ import {
     MouseListener,
     NavigateToExternalTargetAction
 } from '@eclipse-glsp/sprotty';
+import { openTargetOf } from './open-target';
+import { openLeaf } from './network-navigation-mouse-listener';
 import { inject, injectable } from 'inversify';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { settingsNamespace } from './profile';
@@ -333,6 +335,19 @@ function buildDefinitionNavigationAction(
     });
 }
 
+/**
+ * Whether the network navigation listener opens something itself for this
+ * node on a double-click (its `openLeaf`): the node's first view, or, with
+ * `doubleClickOpensSource`, its definition for real. Answering here too opened
+ * a second thing beside it: a specification clause opened its refinement
+ * trace and its heading as a preview at once.
+ */
+function leafOpensItself(node: GModelElement): boolean {
+    // Asked of `openLeaf` itself, so the two never disagree: a node it opens
+    // nothing for (a view but no referenced name, say) keeps its definition.
+    return openLeaf(node).length > 0;
+}
+
 @injectable()
 export class ViewerMouseListener extends MouseListener implements Ranked {
     // Run early so it triggers before default tools.
@@ -344,6 +359,11 @@ export class ViewerMouseListener extends MouseListener implements Ranked {
     override doubleClick(target: GModelElement, _event: MouseEvent): (Action | Promise<Action>)[] {
         const node = findContainingEntityNode(target);
         if (!node) {
+            return [];
+        }
+        // The network navigation listener opens the file such a node stands
+        // for; answering here too would open its definition beside it.
+        if (openTargetOf(node)) {
             return [];
         }
 
@@ -360,7 +380,7 @@ export class ViewerMouseListener extends MouseListener implements Ranked {
                 return [];
             }
 
-            if (!definitionNavigationAction) {
+            if (!definitionNavigationAction || leafOpensItself(node)) {
                 return [];
             }
 
@@ -375,7 +395,7 @@ export class ViewerMouseListener extends MouseListener implements Ranked {
         const annotations = Array.isArray(defAnnotations) ? (defAnnotations as DefinitionAnnotation[]) : [];
         const viewer = annotations.find(a => a && a.name === 'viewer');
         if (!viewer) {
-            return definitionNavigationAction ? [definitionNavigationAction] : [];
+            return definitionNavigationAction && !leafOpensItself(node) ? [definitionNavigationAction] : [];
         }
 
         const argByName = new Map<string, string>();
