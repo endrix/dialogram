@@ -347,8 +347,9 @@ export interface DiagramClientBehavior {
   /** Property-panel sections a product does without, each `false` to hide it:
    *  `ports` (the input and output port lists), `annotations` (the raw
    *  definition annotations), `parameters` (the definition's parameters; a
-   *  producer's editable fields still show). All shown by default. */
-  propertySections?: { ports?: boolean; annotations?: boolean; parameters?: boolean };
+   *  producer's editable fields still show), `entityType` (Basic Info's Type
+   *  row and its change-type button). All shown by default. */
+  propertySections?: { ports?: boolean; annotations?: boolean; parameters?: boolean; entityType?: boolean };
   /**
    * Whether the host has a chat backend behind this diagram.
    *

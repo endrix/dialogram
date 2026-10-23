@@ -4935,6 +4935,9 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                     currentType: info.entityType,
                 })
             );
+        // The platform's kind of node (task, workflow) and the button that
+        // changes it mean nothing to a product whose kinds are its own.
+        const showType = clientBehavior().propertySections?.entityType !== false;
         // The file the node stands for, a double-click away and here a click away.
         const opens = openTargetOf(node);
         const opensPath = opens ? decodeURIComponent(opens.uri.replace(/^file:\/\//, '')) : '';
@@ -4952,22 +4955,24 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                 <span class="pp-akey">Name</span>
                 <span class="pp-aval">${info.entityName}</span>
             </div>
-            <div class="pp-arow">
-                <span class="pp-akey">Type</span>
-                <span class="pp-aval">
-                    <span>${info.typeLabel}</span>
-                    <code class="pp-chip" title=${info.typeBadge}>${info.typeBadge}</code>
-                    ${info.isBoundary
-                        ? nothing
-                        : html`<button
-                              class="pp-icon-btn pp-change"
-                              title="Change referenced type"
-                              @click=${onChange}
-                          >
-                              <span class="codicon codicon-edit"></span>
-                          </button>`}
-                </span>
-            </div>
+            ${showType
+                ? html`<div class="pp-arow">
+                    <span class="pp-akey">Type</span>
+                    <span class="pp-aval">
+                        <span>${info.typeLabel}</span>
+                        <code class="pp-chip" title=${info.typeBadge}>${info.typeBadge}</code>
+                        ${info.isBoundary
+                            ? nothing
+                            : html`<button
+                                  class="pp-icon-btn pp-change"
+                                  title="Change referenced type"
+                                  @click=${onChange}
+                              >
+                                  <span class="codicon codicon-edit"></span>
+                              </button>`}
+                    </span>
+                </div>`
+                : nothing}
             ${info.skillStatus
                 ? html`<div class="pp-arow">
                       <span class="pp-akey">Skill</span>
