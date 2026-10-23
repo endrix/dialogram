@@ -57,6 +57,13 @@ platform API version.
 
 ### Fixed
 
+- A double-click opens one thing. On a node that is not a network instance,
+  the network navigation listener opens its first view (or, with
+  `doubleClickOpensSource`, its definition), and the viewer listener opened
+  its definition as a preview as well: a specification clause opened its
+  refinement trace and its heading at once. The viewer listener now stands
+  back whenever the other opens something.
+
 - Running a workflow no longer shows a "Model loading in progress" notification
   on every firing. The live overlay's signature changes with each firing and the
   editor reloads the model to redraw the glow; that refresh is now silent, as
