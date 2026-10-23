@@ -81,6 +81,7 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
         // Port types
         mapping.set(WorkflowDiagramTypes.PORT_INPUT, GPort);
         mapping.set(WorkflowDiagramTypes.PORT_OUTPUT, GPort);
+        mapping.set(WorkflowDiagramTypes.PORT_GROUP_BOUNDARY, GPort);
 
         // Edge types
         mapping.set(WorkflowDiagramTypes.EDGE_CONNECTION, GEdge);

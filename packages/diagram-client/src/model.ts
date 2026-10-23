@@ -384,6 +384,26 @@ export class WorkflowPort extends CircularPort implements Hoverable, Selectable 
     }
 }
 
+/**
+ * Where an edge crosses a group's frame. Placed by the layout, drawn as a dot
+ * on the frame line; nothing connects to it by hand and it is not selected on
+ * its own, so it carries bounds and nothing else.
+ */
+export class GroupBoundaryPort extends CircularPort {
+    static override readonly DEFAULT_FEATURES = [boundsFeature];
+
+    override type = WorkflowDiagramTypes.PORT_GROUP_BOUNDARY;
+    args?: Args;
+
+    override set bounds(newBounds: { x: number; y: number; width: number; height: number }) {
+        this.position = { x: newBounds.x, y: newBounds.y };
+    }
+
+    override get bounds(): { x: number; y: number; width: number; height: number } {
+        return { x: this.position.x, y: this.position.y, width: this.size.width, height: this.size.height };
+    }
+}
+
 export class WorkflowInputPort extends WorkflowPort {
     override type = WorkflowDiagramTypes.PORT_INPUT;
     override direction: 'input' | 'output' = 'input';

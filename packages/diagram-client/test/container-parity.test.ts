@@ -23,7 +23,9 @@
  * one (opens a nested workflow's file as a root of its own), the hierarchy outline panel
  * (bound to itself and as a model-root listener), and "Go to Error" (its action handler and
  * the focus-after-load service, bound the same two ways), and the `dialogram.openView` action
- * handler (shows a view of a unit besides its structure, in place) — plus one change: `label:boundary:type` is bound to
+ * handler (shows a view of a unit besides its structure, in place), the group container and its
+ * boundary port (`node:group`, `port:group-boundary`), and the `IMovementRestrictor` that keeps a
+ * dragged node inside the node holding it — plus one change: `label:boundary:type` is bound to
  * the non-editable `BoundaryLabel`, because editing it renamed the port.
  * The oracle still does its job: it fails on any binding this composition gains
  * or loses, and updating the fixture is the deliberate act of accepting one.

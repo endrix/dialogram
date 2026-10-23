@@ -47,8 +47,28 @@ export const RequestModelAction = {
 
 // Sprotty base classes (extended by the model/view/listener modules).
 export class MouseListener {}
-export class GModelElement {}
+export class GModelElement {
+    type = '';
+    id = '';
+}
 export class GShapeElement extends GModelElement {}
+/** A model element with a parent: what the movement restrictor checks. */
+export class GChildElement extends GModelElement {
+    parent: unknown;
+}
+export class GNode extends GChildElement {
+    size = { width: 0, height: 0 };
+    features = new Set<symbol>();
+    hasFeature(feature: symbol): boolean {
+        return this.features.has(feature);
+    }
+}
+export function isMoveable(element: unknown): boolean {
+    const candidate = element as { hasFeature?: (feature: symbol) => boolean } | undefined;
+    return typeof candidate?.hasFeature === 'function' && candidate.hasFeature(moveFeature);
+}
+export type Point = { x: number; y: number };
+export type IMovementRestrictor = { validate(element: unknown, newLocation?: Point): boolean; cssClasses?: string[] };
 
 // Type-only in consumers (stripped at runtime), declared for import resolution.
 export type ICommand = unknown;
@@ -84,7 +104,8 @@ export const TYPES = {
     IDiagramStartup: Symbol.for('stub.IDiagramStartup'),
     IContextMenuService: Symbol.for('stub.IContextMenuService'),
     MouseListener: Symbol.for('stub.MouseListener'),
-    IEdgeRouter: Symbol.for('stub.IEdgeRouter')
+    IEdgeRouter: Symbol.for('stub.IEdgeRouter'),
+    IMovementRestrictor: Symbol.for('stub.IMovementRestrictor')
 };
 
 export const DefaultTypes = {

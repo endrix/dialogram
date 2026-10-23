@@ -41,6 +41,7 @@ import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
 import { convertToGModelRoot } from './gmodel-convert';
 import { applyPersistedEdgeRoutes } from '../routing/persisted-edge-routes';
+import { relativeToParent, restoreGroupGeometry } from './group-geometry';
 import { PERF_ENABLED, perfNow, GraphLoadPerf, nextBuildCount } from './graph-load-perf';
 import { getGraphDiagnosticsCollection } from './graph-diagnostics';
 import {
@@ -494,10 +495,21 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         perf?.mark('layoutIO');
 
         if (loadedLayoutPositions) {
-            const applyLayoutPositions = (element: any): void => {
+            // Every handler saves a node's ABSOLUTE position, and a model
+            // position is relative to the node's parent. At the root the two
+            // are the same, which is why writing the saved value straight back
+            // went unnoticed; inside a container (a group, a branch) it added
+            // the container's offset a second time and the member landed
+            // outside it. So the walk carries each parent's absolute origin
+            // and subtracts it.
+            const applyLayoutPositions = (element: any, parentOrigin: { x: number; y: number }): void => {
                 if (!element) {
                     return;
                 }
+                let origin = {
+                    x: parentOrigin.x + (element.position?.x ?? 0),
+                    y: parentOrigin.y + (element.position?.y ?? 0)
+                };
                 const type = element.type as string | undefined;
                 if (typeof type === 'string' && type.startsWith('node:')) {
                     const args = element.args as Record<string, unknown> | undefined;
@@ -507,18 +519,19 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                     if (typeof key === 'string' && loadedLayoutPositions.has(key)) {
                         const pos = loadedLayoutPositions.get(key);
                         if (pos) {
-                            element.position = { x: pos.x, y: pos.y };
+                            element.position = relativeToParent(pos, parentOrigin);
+                            origin = { x: pos.x, y: pos.y };
                         }
                     }
                 }
                 const children = element.children as any[] | undefined;
                 if (Array.isArray(children)) {
                     for (const child of children) {
-                        applyLayoutPositions(child);
+                        applyLayoutPositions(child, origin);
                     }
                 }
             };
-            applyLayoutPositions((diagramModel as any).graph);
+            applyLayoutPositions((diagramModel as any).graph, { x: 0, y: 0 });
         }
 
         // Count workflow nodes with no persisted position to enable partial layout for new nodes.
@@ -661,6 +674,12 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             (gmodelRoot as any).args[NAV_TRAIL_ARG] = JSON.stringify(navigationTrail);
         }
 
+        // A reopened layout skips the layout run, and a group's size and the
+        // ports on its frame come from that run alone: recover them from the
+        // saved positions and routes before the routes are snapped to ports.
+        if (hasPersistedLayout) {
+            restoreGroupGeometry(gmodelRoot as any, edgeRoutes);
+        }
         if (hasPersistedLayout && edgeRoutes && edgeRoutes.size > 0) {
             applyPersistedEdgeRoutes(gmodelRoot, edgeRoutes);
         }

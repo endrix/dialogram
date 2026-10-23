@@ -37,6 +37,7 @@ import {
     InlineIfNode,
     StructureIfBranchNode,
     GroupNode,
+    GroupBoundaryPort,
     StructureIfJoinNode,
     StructureForeachJoinNode,
     BoundaryInputNode,
@@ -62,6 +63,7 @@ import {
     InlineIfNodeView,
     StructureIfBranchNodeView,
     GroupNodeView,
+    GroupBoundaryPortView,
     StructureIfJoinNodeView,
     StructureForeachJoinNodeView,
     BoundaryInputNodeView,
@@ -99,6 +101,7 @@ export const workflowViewsModule = new ContainerModule((bind, unbind, isBound, r
     configureModelElement(context, WorkflowDiagramTypes.NODE_STRUCTURE_IF_INLINE, InlineIfNode, InlineIfNodeView);
     configureModelElement(context, WorkflowDiagramTypes.NODE_STRUCTURE_IF_BRANCH, StructureIfBranchNode, StructureIfBranchNodeView);
     configureModelElement(context, WorkflowDiagramTypes.NODE_GROUP, GroupNode, GroupNodeView);
+    configureModelElement(context, WorkflowDiagramTypes.PORT_GROUP_BOUNDARY, GroupBoundaryPort, GroupBoundaryPortView);
     configureModelElement(context, WorkflowDiagramTypes.NODE_STRUCTURE_IF_JOIN, StructureIfJoinNode, StructureIfJoinNodeView);
     configureModelElement(context, WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH_JOIN, StructureForeachJoinNode, StructureForeachJoinNodeView);
     configureModelElement(context, WorkflowDiagramTypes.NODE_BOUNDARY_INPUT, BoundaryInputNode, BoundaryInputNodeView);

@@ -48,6 +48,7 @@ export class DeleteElementOperationHandler extends OperationHandler {
             uri: vscodeUri,
             computeEdits: async () => {
                 const beforeText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
+                const deletedEdges = new Set<string>();
                 for (const id of elementIds) {
                     const gmodelElement = this.modelState.index.get(id);
                     if (gmodelElement) {
@@ -72,6 +73,26 @@ export class DeleteElementOperationHandler extends OperationHandler {
                     }
 
                     if (elementType === WorkflowDiagramTypes.EDGE_CONNECTION && elementArgs) {
+                        // A piece of an edge split at group frames stands for the
+                        // edge (`EDGE_OF`): two pieces of one edge delete it once.
+                        // A piece several edges share inside a group stands for
+                        // more than one, and which to delete is not for this
+                        // handler to guess; their stretch between frames is each
+                        // one's own, and deletes it.
+                        const edgesOf = elementArgs[WorkflowDiagramMetadata.EDGES_OF];
+                        if (Array.isArray(edgesOf) && edgesOf.length > 1) {
+                            void vscode.window.showInformationMessage(
+                                `That line inside the group stands for ${edgesOf.length} edges. Select one of them where it runs between groups to delete it.`
+                            );
+                            continue;
+                        }
+                        const edgeOf = elementArgs[WorkflowDiagramMetadata.EDGE_OF];
+                        if (typeof edgeOf === 'string') {
+                            if (deletedEdges.has(edgeOf)) {
+                                continue;
+                            }
+                            deletedEdges.add(edgeOf);
+                        }
                         const fromName = elementArgs['wf:from'] as string | undefined;
                         const toName = elementArgs['wf:to'] as string | undefined;
                         const outPort = elementArgs['wf:outPort'] as string | undefined;
