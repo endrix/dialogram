@@ -127,6 +127,12 @@ platform API version.
   three side by side), extra ELK options (`--elk key=value`), the product's
   node families and stylesheets, client behavior flags and a theme. For
   looking at what a change does to a real diagram without opening VS Code.
+- `StorageRuntimeOptions.defaultLayout` (and `SidecarProfileInput.defaultLayout`):
+  `'untangled'` or `'free-ports'` makes that layout the one a product's
+  diagrams open with and the one Layout Diagram runs. Every loaded diagram
+  carries the layout's graph options; a producer's own graph options still
+  win. Untangled now says the declared port order explicitly, so it stays
+  itself on a graph that defaults to Free Ports. Absent, nothing changes.
 
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the

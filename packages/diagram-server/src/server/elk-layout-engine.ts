@@ -37,6 +37,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 /** Graph layout option: `free` lets a layout choose each node's port order against crossings. */
 export const PORT_ORDER_OPTION = 'dialogram.portOrder';
 export const PORT_ORDER_FREE = 'free';
+/** The ports in the order the source declares them, what every value but `free` means. */
+export const PORT_ORDER_DECLARED = 'declared';
 /** On a port the Free Ports pass has moved: the row the server gave it from the declaration. */
 export const DECLARED_ROW_ARG = 'wf:declaredRowY';
 

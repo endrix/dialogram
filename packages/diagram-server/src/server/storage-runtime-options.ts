@@ -62,6 +62,18 @@ export interface StorageRuntimeOptions {
      * palette in the exact state the flag exists to prevent.
      */
     supportsElementCreation?: boolean;
+    /**
+     * The layout the product's diagrams open with and Layout Diagram runs:
+     * `untangled` or `free-ports`, the two layouts beside it in the Layout
+     * menu (see `layout-tuned-handler.ts`). Absent, it is Layout Diagram's
+     * own. Set as graph options on every loaded diagram, so the first layout
+     * on open and every later Layout Diagram read them alike; a producer's own
+     * graph options still win over them.
+     */
+    defaultLayout?: DefaultLayout;
 }
+
+/** A layout a product can make its default, beside Layout Diagram's own. */
+export type DefaultLayout = 'untangled' | 'free-ports';
 
 export const STORAGE_RUNTIME_OPTIONS = Symbol('StorageRuntimeOptions');
