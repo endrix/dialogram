@@ -36,6 +36,7 @@ import { executeViewerCommand, executeViewerOpen, executeViewerReveal } from './
 import { decideDiagramOpen } from './diagram-open-decision';
 import { readMcpServerUrl } from './mcp-server-url';
 import { composeStorageRuntimeOptions } from './profile-storage-options';
+import { openReference } from './open-reference-host';
 import { type DiagramChatConfirm, type DiagramChatConfirmAnswer, type DiagramChatTask, type DiagramProfile, type DiagramRunAnswer, type DiagramRunHost, type DiagramRunQuestion } from '../../api';
 
 // Define the diagram type constant locally to avoid import
@@ -53,6 +54,9 @@ const NAVIGATE_PREFER_DEFINITION_ARG = 'wf:navigatePreferDefinition';
 const NAVIGATE_SOURCE_URI_ARG = 'wf:navigateSourceUri';
 const NAVIGATE_SOURCE_RANGE_ARG = 'wf:navigateSourceRange';
 const NAVIGATE_SYMBOL_ARG = 'wf:navigateSymbol';
+// A property-panel link (diagram-client `open-target.ts`): resolve, then open.
+const OPEN_REFERENCE_ARG = 'wf:openReference';
+const REFERENCE_BASE_ARG = 'wf:referenceBase';
 
 // Viewer actions (sent from the webview via NavigateToExternalTargetAction).
 const VIEWER_ACTION_ARG = 'wf:viewerAction';
@@ -443,6 +447,16 @@ export async function activateGlspIntegration(
             // (not the text editor).
             if (ActionMessage.is(message) && NavigateToExternalTargetAction.is(message.action)) {
                 const { uri, args } = message.action.target;
+
+                // A link clicked in the property panel: a reference for the
+                // host to resolve, not a URI to open as it is (open-reference.ts).
+                if (args?.[OPEN_REFERENCE_ARG] === true) {
+                    const base = typeof args?.[REFERENCE_BASE_ARG] === 'string' ? String(args[REFERENCE_BASE_ARG]) : undefined;
+                    void openReference(uri, base).catch(error =>
+                        void vscode.window.showErrorMessage(`Could not open ${uri}: ${error instanceof Error ? error.message : String(error)}`));
+                    callback(message, false);
+                    return;
+                }
 
                 if (args?.[NAVIGATE_PREFER_DEFINITION_ARG] === true) {
                     const fallbackTargetUri = parseExternalTargetUri(uri);

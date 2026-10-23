@@ -176,6 +176,11 @@ export namespace WorkflowDiagramMetadata {
      *  structure, `[{ id, label }]` as it listed them on `meta.views` (a leaf's
      *  synthesis, say). On the root: the views of the unit shown. */
     export const VIEWS = 'wf:views';
+    /** What a double-click on the node opens, `{ uri, line? }`, as the
+     *  producer said on `meta.open` (`{ file, line? }`): a file the node stands
+     *  for, such as the code a specification clause names. It wins over a
+     *  drill-down, the node's views and its definition. */
+    export const OPEN_TARGET = 'wf:open';
     export const IS_EXTERNAL_ACTOR = 'cal:isExternalActor';
     /** Marks a regular task that contains external function declarations or agent annotations. */
     export const HAS_EXTERNAL_MEMBERS = 'cal:hasExternalMembers';

@@ -75,6 +75,8 @@ export interface SidecarClientBehavior {
      *  index labels of a list connection. Default true. Off, an edge is its
      *  line, and the tooltip on hover still says what it carries. */
     edgeCaptions?: boolean;
+    /** Property-panel sections the product does without (`ports`, `annotations`), each `false` to hide it. */
+    propertySections?: { ports?: boolean; annotations?: boolean };
 }
 
 /** The 24 consumer-owned command ids a sidecar diagram profile carries. */
