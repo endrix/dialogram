@@ -5,9 +5,9 @@
  * profile. A producer whose files are mostly editable can also draw some it
  * only reads (a projection of another syntax, a project overview), and one
  * editor passes between both kinds in place. `graph.meta.readOnly` marks such
- * a view: the root carries `wf:readOnlyView`, the palette is empty for it and
- * the context menu loses its editing items, while reading, navigating and
- * laying out stay.
+ * a view: the root carries `wf:readOnlyView`, the client hides the palette's
+ * tools while it is shown, and the context menu loses its editing items, while
+ * reading, navigating and laying out stay.
  */
 import { describe, expect, it } from 'vitest';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
@@ -50,12 +50,14 @@ describe('a view the producer marks read-only', () => {
         expect(rootArgs()?.[WorkflowDiagramMetadata.READ_ONLY_VIEW]).toBeUndefined();
     });
 
-    it('gets an empty palette, and an editable view the whole one', async () => {
+    it('still gets the palette items, which the client hides: the palette asks once per editor', async () => {
+        // An editor that opens on a read-only view and navigates in place to an
+        // editable one has only the items it was given at startup.
         const readOnly = { id: 'root', args: { [WorkflowDiagramMetadata.READ_ONLY_VIEW]: true } };
-        expect(await palette(readOnly).getItems()).toEqual([]);
         const editable = { id: 'root', args: {} };
-        expect((await palette(editable).getItems()).map((category: any) => category.id))
-            .toEqual(['palette-entities', 'palette-ports', 'palette-connections']);
+        const ids = async (root: unknown) => (await palette(root).getItems()).map((category: any) => category.id);
+        expect(await ids(readOnly)).toEqual(['palette-entities', 'palette-ports', 'palette-connections']);
+        expect(await ids(readOnly)).toEqual(await ids(editable));
     });
 
     it('keeps reading and navigating items in the context menu, not editing ones', () => {

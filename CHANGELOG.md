@@ -230,6 +230,14 @@ platform API version.
   to stack (twenty `depends-on` on one line). An edge whose caption is left
   out, or not written because captions are off, says what it carries in its
   hover tooltip. `true` (the default) and `false` are unchanged.
+  write, a project overview). The root carries `wf:readOnlyView`; the
+  palette's tools are hidden while that view is shown (its header stays, and
+  the tools come back on the next editable view), and the context menu
+  leaves out Rename Entity, Duplicate, Edit Parameters and the boundary-port
+  edits. Moving and laying out stay. Per view, so one editor passes between
+  editable and read-only views in place; `supportsElementCreation: false`
+  still empties the palette of a whole profile. A keyboard delete or label
+  edit still reaches the producer's sidecar, which is expected to refuse it.
 
   asking) and sends it as `args.role`, and the delete handler sends the
   edge's `cal:edgeRole` as `args.role` so the right one of several edges
