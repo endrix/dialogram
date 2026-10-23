@@ -40,6 +40,8 @@ import {
     DisposeClientSessionParameters
 } from '@eclipse-glsp/protocol';
 import { createDiagramContainer } from '../../packages/diagram-client/src/container';
+import { ExecutionOverlayMessageBridge } from '../../packages/diagram-client/src/execution-overlay-message-bridge';
+import { showExecutionStates } from '../../packages/diagram-client/src/execution-states';
 import { extractSvg, renderedDiagram } from '../../packages/diagram-client/src/svg-export';
 
 const DIAGRAM_TYPE = 'dialogram-headless';
@@ -112,6 +114,14 @@ async function main(): Promise<void> {
     const canvas = Number((window as any).__CANVAS__) || 0;
     if (canvas > 0) {
         await dispatcher.dispatch(InitializeCanvasBoundsAction.create({ x: 0, y: 0, width: canvas, height: canvas }));
+    }
+    // Node states, as a status source's answer reaches the webview: the
+    // bridge hands the feedback dispatcher to the painter (the loader may not
+    // have, with no server to answer it), and the states go on as feedback.
+    const states = (window as any).__STATES__;
+    if (Array.isArray(states) && states.length > 0) {
+        container.get(ExecutionOverlayMessageBridge).postModelInitialization();
+        showExecutionStates(states);
     }
     // Snabbdom patches on an animation frame; wait for the DOM to exist.
     await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
