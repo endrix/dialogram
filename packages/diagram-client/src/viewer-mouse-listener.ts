@@ -6,6 +6,7 @@ import {
     MouseListener,
     NavigateToExternalTargetAction
 } from '@eclipse-glsp/sprotty';
+import { openTargetOf } from './open-target';
 import { inject, injectable } from 'inversify';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { settingsNamespace } from './profile';
@@ -344,6 +345,11 @@ export class ViewerMouseListener extends MouseListener implements Ranked {
     override doubleClick(target: GModelElement, _event: MouseEvent): (Action | Promise<Action>)[] {
         const node = findContainingEntityNode(target);
         if (!node) {
+            return [];
+        }
+        // The network navigation listener opens the file such a node stands
+        // for; answering here too would open its definition beside it.
+        if (openTargetOf(node)) {
             return [];
         }
 
