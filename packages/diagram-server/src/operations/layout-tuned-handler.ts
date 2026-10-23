@@ -1,7 +1,8 @@
 import { Operation } from '@eclipse-glsp/protocol';
 import { GModelRecordingCommand, GModelSerializer, ModelState, OperationHandler, type Command, type MaybePromise } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
-import { PORT_ORDER_FREE, PORT_ORDER_OPTION } from '../server/elk-layout-engine';
+import { PORT_ORDER_DECLARED, PORT_ORDER_FREE, PORT_ORDER_OPTION } from '../server/elk-layout-engine';
+import type { DefaultLayout } from '../server/storage-runtime-options';
 import { WORKFLOW_LAYOUT_BOUNDARY_FLOW_OPERATION_KIND, WorkflowLayoutBoundaryFlowOperationHandler } from './layout-boundary-flow-handler';
 
 /**
@@ -28,6 +29,18 @@ export const UNTANGLED_ELK_OPTIONS: Record<string, string> = {
     'elk.layered.crossingMinimization.greedySwitchHierarchical.type': 'TWO_SIDED',
     'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF'
 };
+
+/**
+ * The graph options of Untangled or Free Ports. Both say the port order, so
+ * either one, run on a graph that defaults to the other
+ * (`StorageRuntimeOptions.defaultLayout`), is still the layout it names.
+ */
+export function tunedLayoutOptions(layout: DefaultLayout): Record<string, string> {
+    return {
+        ...UNTANGLED_ELK_OPTIONS,
+        [PORT_ORDER_OPTION]: layout === 'free-ports' ? PORT_ORDER_FREE : PORT_ORDER_DECLARED
+    };
+}
 
 export const WORKFLOW_LAYOUT_UNTANGLED_OPERATION_KIND = 'dialogram.layoutUntangled' as const;
 export const WORKFLOW_LAYOUT_FREE_PORTS_OPERATION_KIND = 'dialogram.layoutFreePorts' as const;
@@ -76,7 +89,7 @@ export class WorkflowLayoutUntangledOperationHandler extends WorkflowLayoutTuned
     override readonly operationType = WORKFLOW_LAYOUT_UNTANGLED_OPERATION_KIND;
 
     protected graphOptions(): Record<string, string> {
-        return { ...UNTANGLED_ELK_OPTIONS };
+        return tunedLayoutOptions('untangled');
     }
 }
 
@@ -85,6 +98,6 @@ export class WorkflowLayoutFreePortsOperationHandler extends WorkflowLayoutTuned
     override readonly operationType = WORKFLOW_LAYOUT_FREE_PORTS_OPERATION_KIND;
 
     protected graphOptions(): Record<string, string> {
-        return { ...UNTANGLED_ELK_OPTIONS, [PORT_ORDER_OPTION]: PORT_ORDER_FREE };
+        return tunedLayoutOptions('free-ports');
     }
 }

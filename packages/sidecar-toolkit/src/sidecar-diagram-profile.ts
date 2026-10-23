@@ -225,6 +225,12 @@ export interface SidecarProfileInput {
      */
     platformEntityItems?: boolean;
     nodeFamilies?: NodeFamilySpec[];
+    /**
+     * The layout the diagrams open with and Layout Diagram runs: `untangled`
+     * or `free-ports`, the Layout menu's other two. Absent, Layout Diagram's
+     * own.
+     */
+    defaultLayout?: 'untangled' | 'free-ports';
 
     // Chat edit backend.
     exportOp?: string;
@@ -662,7 +668,8 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             entityPaletteItems: input.entityPaletteItems,
             platformEntityItems: input.platformEntityItems,
             nodeFamilies: input.nodeFamilies,
-            nestedNavigation: input.clientBehavior?.nestedNavigation
+            nestedNavigation: input.clientBehavior?.nestedNavigation,
+            defaultLayout: input.defaultLayout
         },
         watch: { globs: input.watchGlobs ?? sourceExtensions.map(ext => `**/*${ext}`) },
         // No provider at all for a product that resolves nothing itself: the
