@@ -26,6 +26,8 @@
  *   --css <path.css>        a product stylesheet, served after the platform's, repeatable
  *   --behavior <json>       client behavior flags, as a profile's clientBehavior
  *   --theme <dark|light>    the editor colours the page is drawn in (default: dark)
+ *   --states <path.json>    node states to draw (ExecutionNodeState[]), as a status
+ *                           source publishes them: through the client's own painter
  *   --chrome <path>         Chrome/Chromium binary (default: $CHROME or google-chrome)
  *   --keep                  keep the intermediate schema, bundle and page
  */
@@ -84,6 +86,7 @@ function parseArgs(argv) {
         families: single.families ? JSON.parse(fs.readFileSync(single.families, 'utf8')) : [],
         css: repeated.css.map(file => path.resolve(file)),
         behavior: single.behavior ? JSON.parse(single.behavior) : {},
+        states: single.states ? JSON.parse(fs.readFileSync(single.states, 'utf8')) : [],
         // The client draws a family's colour and icon from its own copy of the
         // families (`clientBehavior.nodeFamilies`), as the webview gets them
         // from the profile; the server copy only classifies the nodes.
@@ -222,6 +225,7 @@ html, body { margin: 0; ${themeVariables(args.theme)} background: var(--vscode-e
 <div id="dialogram-headless_hidden"></div><div id="dialogram-headless_popup"></div>
 <script>window.diagramIdentifier = { clientBehavior: ${JSON.stringify({ nodeFamilies: args.families, ...args.behavior })} };
 window.__SCHEMA__ = ${fs.readFileSync(schemaPath, 'utf8')};
+window.__STATES__ = ${JSON.stringify(args.states)};
 window.__CANVAS__ = ${CANVAS_PX};</script>
 <script src="file://${path.join(bundleDir, 'headless-entry.js')}"></script>
 </body></html>`);

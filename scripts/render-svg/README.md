@@ -25,6 +25,7 @@ node scripts/render-svg/render.mjs - --elk elk.direction=DOWN < doc.json        
 | `--css <path.css>` | A product stylesheet, served after the platform's, repeatable |
 | `--behavior <json>` | Client behavior flags, as a profile's `clientBehavior` |
 | `--theme <dark\|light>` | The editor colours the page is drawn in (default dark) |
+| `--states <path.json>` | Node states to draw (`ExecutionNodeState[]`), as a status source publishes them, through the client's own painter |
 | `--chrome <path>` | Chrome or Chromium (default `$CHROME` or `google-chrome`) |
 | `--keep` | Keep the schema, bundles and page in the work directory |
 
