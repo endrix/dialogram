@@ -638,7 +638,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
 
         if (isNetworkModel) {
             content.appendChild(this.buildNetworkDefinitionParamsSection(node.id, args));
-        } else if (!hasEditableNetworkParams && fields.length === 0) {
+        } else if (!hasEditableNetworkParams && fields.length === 0 && sections?.parameters !== false) {
             content.appendChild(this.buildDefinitionParametersSection(node.id, args));
         }
 

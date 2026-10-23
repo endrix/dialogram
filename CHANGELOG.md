@@ -29,9 +29,10 @@ platform API version.
   `choices`, an input with a list when it offers `suggestions`, a plain input
   otherwise. Until now the panel edited parameters only for a network runtime
   (`networkPropertySections`), as source expressions.
-- `clientBehavior.propertySections: { ports?, annotations? }`: `false` hides
-  the panel's port lists or its raw definition annotations, for a product
-  whose pins mean nothing or whose facts already say it all.
+- `clientBehavior.propertySections: { ports?, annotations?, parameters? }`:
+  `false` hides the panel's port lists, its raw definition annotations or the
+  definition's parameters, for a product whose pins mean nothing, whose facts
+  already say it all, or whose nodes have no parameters but their own fields.
 
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the
