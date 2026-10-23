@@ -87,6 +87,14 @@ describe('the CSS a declaration generates', () => {
         expect(css).toContain('#4fa97a');
     });
 
+    it('colours a plain node in the family too, over the task amber', () => {
+        const css = nodeFamilyCss([{ annotation: 'requirement', color: '#2f6fd6' }]);
+        const rule = /\.actor-node\.external-actor-requirement \.header-compartment \.header-background \{[^}]*\}/.exec(css)?.[0] ?? '';
+        expect(rule).toContain('fill: #2f6fd6');
+        // More specific than `.header-compartment.header-task .header-background`, so it wins.
+        expect(rule.split('{')[0].trim().split(/\s+/).join(' ').match(/\./g)?.length).toBeGreaterThan(3);
+    });
+
     it('colours an icon only for a family that has one', () => {
         const withIcon = nodeFamilyCss([FAMILIES[0]]);
         const without = nodeFamilyCss([{ annotation: 'viewer', color: '#49a6b8' }]);
