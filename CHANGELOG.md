@@ -28,13 +28,13 @@ platform API version.
   deleted on its own. Every piece stays at the root of the model, so saved,
   restored and rerouted routes keep their absolute coordinates.
 
-- A dragged node stays inside the node that holds it (a group, a control
-  structure's branch): the bound `IMovementRestrictor` refuses a position
-  outside the parent, and a drop there is not committed. A group's area is
-  open to the right and downwards: a member dragged that way takes the frame
-  with it (the server grows the group, and any group around it, to fit, and
-  the ports on its right-hand side follow). Past the left edge or under the
-  header is refused.
+- A dragged member of a group stays inside its group: the bound
+  `IMovementRestrictor` refuses a position outside it, and a drop there is
+  not committed. A group's area is open to the right and downwards: a member
+  dragged that way takes the frame with it (the server grows the group, and
+  any group around it, to fit, and the ports on its right-hand side follow).
+  Past the left edge or under the header is refused. Members of other
+  containers (a control structure's branch) move as freely as before.
 
 ### Fixed
 
@@ -44,6 +44,10 @@ platform API version.
   reopened group also lost its size and the ports on its frame, which only the
   layout run produces; they are now rebuilt from the saved positions and
   routes.
+- Moving a container saved only its own position: the layout file holds
+  absolute positions, so its members reopened where they had been, out of
+  the frame. A move now saves the new position of everything inside the
+  moved node.
 - The edge rerouter that runs after a move treated a group's frame as an
   obstacle, so an edge inside a group was routed around the group it is in.
 - Clicking a node inside a group grew it. The group was declared resizable,

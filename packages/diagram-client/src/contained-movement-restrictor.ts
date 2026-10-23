@@ -1,13 +1,12 @@
 /**
- * A node stays inside the node that holds it.
+ * A member of a group stays inside its group.
  *
- * A member of a group, or a node inside a control structure's branch, is a
- * child of that container in the model: its position is relative to it, and
- * dragging it moves it within it. Nothing stopped the drag at the frame, so a
- * member could be dropped anywhere, drawn outside the frame it still belongs
- * to, with the frame left where it was. Nothing in the diagram can move a node
- * to another container (`reparentable: false`), so outside is never a place a
- * node can go.
+ * A member of a group is a child of the group in the model: its position is
+ * relative to it, and dragging it moves it within it. Nothing stopped the drag
+ * at the frame, so a member could be dropped anywhere, drawn outside the frame
+ * it still belongs to, with the frame left where it was. Nothing in the
+ * diagram can move a node to another group (`reparentable: false`), so outside
+ * is never a place a member can go.
  *
  * GLSP asks the bound `IMovementRestrictor` about every position a drag
  * passes through. A position outside the parent is refused: the node is drawn
@@ -15,13 +14,16 @@
  * committed, so the node goes back to where it was. A node at the root is
  * never restricted; the canvas has no edge.
  *
- * Inside a group, "inside" excludes the header band the group's label is
- * drawn in, and keeps a small margin from the left frame line, so a member
- * cannot cover the label or sit on the frame's entry ports. To the right and
- * downwards a group has no limit: the frame grows to fit a member dragged
- * that way (the server does it on the drop, see `growGroupsToFit`). Other
- * containers do not grow, so their members stay within their box on every
- * side.
+ * "Inside" excludes the header band the group's label is drawn in, and keeps
+ * a small margin from the left frame line, so a member cannot cover the label
+ * or sit on the frame's entry ports. To the right and downwards a group has no
+ * limit: the frame grows to fit a member dragged that way (the server does it
+ * on the drop, see `growGroupsToFit`).
+ *
+ * Only groups. A control structure's branch (an if, a loop) holds its members
+ * the same way but does not grow, and its layout leaves it only a few pixels
+ * of padding around them, so holding a member inside it would leave a lone
+ * one almost nowhere to go. Those keep moving freely, as they always have.
  */
 import { injectable } from 'inversify';
 import { GChildElement, GModelElement, GNode, isMoveable, type IMovementRestrictor, type Point } from '@eclipse-glsp/client';
@@ -35,7 +37,7 @@ export const GROUP_MEMBER_MARGIN_PX = 4;
 /**
  * The area inside a container a child's top-left corner may take, for a child
  * of `childSize`. A group's area is open to the right and downwards, where the
- * group grows.
+ * group grows; any other container's is the whole plane (not restricted).
  */
 export function allowedArea(
     parentType: string,
@@ -52,10 +54,10 @@ export function allowedArea(
         };
     }
     return {
-        minX: 0,
-        minY: 0,
-        maxX: parentSize.width - childSize.width,
-        maxY: parentSize.height - childSize.height
+        minX: Number.NEGATIVE_INFINITY,
+        minY: Number.NEGATIVE_INFINITY,
+        maxX: Number.POSITIVE_INFINITY,
+        maxY: Number.POSITIVE_INFINITY
     };
 }
 

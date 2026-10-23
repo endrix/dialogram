@@ -59,9 +59,9 @@ export const WorkflowDiagramConstants = {
     NODE_FOOTER_LABEL_FONT_SIZE_PX: 10,
     NODE_FOOTER_LABEL_HEIGHT_PX: 14,
 
-    // Group containers (a producer's `group` scopes), drawn the way a nested
-    // container reads in an MLIR region: a header band carrying the label on
-    // top, the members laid out below it. The server pads the layout by these,
+    // Group containers (a producer's `group` scopes), drawn as a nested
+    // region: a header band carrying the label on top, the members laid out
+    // below it. The server pads the layout by these,
     // the client draws by them and keeps a dragged member inside them, so all
     // three agree on where the inside of a group is.
     GROUP_HEADER_HEIGHT_PX: 24,

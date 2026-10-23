@@ -406,12 +406,11 @@ export class StructureIfBranchNodeView extends ShapeView {
 }
 
 /**
- * A producer's group, drawn the way mlir-viewer draws a nested region: a body,
- * a header band carrying the group's label, a border over both, and the
- * members below the header. The body is only tinted, so the edges the root
- * draws underneath it (every edge stays at the root; see `group-edges.ts`)
- * still show inside the frame. Edges a group holds itself are drawn above the
- * body and below the header, as mlir-viewer draws them.
+ * A producer's group, drawn as a nested region: a body, a header band carrying
+ * the group's label, a border over both, and the members below the header. The
+ * body is only tinted, so the edges the root draws underneath it (every edge
+ * stays at the root; see `group-edges.ts`) still show inside the frame. Edges
+ * a group holds itself are drawn above the body and below the header.
  */
 @injectable()
 export class GroupNodeView extends ShapeView {

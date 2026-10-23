@@ -1,5 +1,6 @@
 /**
- * A dragged node stays inside the node that holds it.
+ * A dragged member of a group stays inside its group; members of other
+ * containers move freely, as they always have.
  *
  * The rule is a function of the parent's type and size, the child's size and
  * the position asked for, relative to the parent; the restrictor applies it to
@@ -35,10 +36,10 @@ describe('inside the parent', () => {
         expect(isInsideParent(GROUP, parent, child, { x: -10, y: 40 })).toBe(false);
     });
 
-    it('keeps a node in another container within its box', () => {
+    it('leaves a node in another container free: such a container does not grow', () => {
         expect(isInsideParent('node:structure:if:branch', parent, child, { x: 0, y: 0 })).toBe(true);
-        expect(isInsideParent('node:structure:if:branch', parent, child, { x: 200, y: 140 })).toBe(true);
-        expect(isInsideParent('node:structure:if:branch', parent, child, { x: 201, y: 0 })).toBe(false);
+        expect(isInsideParent('node:structure:if:branch', parent, child, { x: 201, y: 0 })).toBe(true);
+        expect(isInsideParent('node:structure:if:branch', parent, child, { x: -500, y: 900 })).toBe(true);
     });
 
     it('allows the move when the parent has no size to judge by', () => {
@@ -69,10 +70,11 @@ describe('the restrictor', () => {
         expect(restrictor.cssClasses).toEqual(['movement-not-allowed']);
     });
 
-    it('keeps a member of another container within its box on every side', () => {
+    it('never restricts a member of another container (an if or loop branch)', () => {
         const node = member('node:structure:if:branch');
         expect(restrictor.validate(node as any, { x: 200, y: 140 })).toBe(true);
-        expect(restrictor.validate(node as any, { x: 400, y: 40 })).toBe(false);
+        expect(restrictor.validate(node as any, { x: 400, y: 40 })).toBe(true);
+        expect(restrictor.validate(node as any, { x: -40, y: -40 })).toBe(true);
     });
 
     it('never restricts a node at the root', () => {

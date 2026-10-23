@@ -113,4 +113,28 @@ describe('moving a member of a group', () => {
         handler.changeElementBounds('branch', { width: 180, height: 120 }, { x: 0, y: 0 });
         expect(branch.size).toEqual({ width: 180, height: 120 });
     });
+
+    it('saves where the members of a moved group now are, so a reopen keeps them in the frame', async () => {
+        const { byId, group } = model();
+        const saved: Array<Map<string, { x: number; y: number }>> = [];
+        const handler = new WorkflowChangeBoundsOperationHandler() as any;
+        handler.modelState = {
+            index: {
+                findByClass: (id: string, cls: any) => { const e = byId.get(id); return e instanceof cls ? e : undefined; },
+                find: (id: string) => byId.get(id)
+            },
+            get: () => ({ documentUri: 'file:///w/doc.json', workflowName: 'root' })
+        };
+        handler.diagramConfiguration = new WorkflowDiagramConfiguration();
+        handler.layoutPersistence = {
+            loadLayout: async () => new Map([['a1', { x: 34, y: 78 }]]),
+            saveLayout: (_file: string, _network: string, positions: Map<string, { x: number; y: number }>) => { saved.push(positions); }
+        };
+        // The group dragged 100 to the right and 50 down; its member rides along.
+        handler.executeChangeBounds({ newBounds: [{ elementId: group.id, newSize: group.size, newPosition: { x: 114, y: 88 } }] });
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(saved).toHaveLength(1);
+        // a1 sits at (20, 40) in A, now at (114, 88) in Outer at (0, 0).
+        expect(saved[0].get('a1')).toEqual({ x: 134, y: 128 });
+    });
 });

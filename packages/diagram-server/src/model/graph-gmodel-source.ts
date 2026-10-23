@@ -1075,9 +1075,9 @@ export class GraphGModelSource {
 
     /**
      * The container for a `group` scope: its label, its members moved under it
-     * (and out of the root, through `removedNodeIds`), laid out on its own in
-     * the same direction as the graph (`groupLayoutOptions`), so a group
-     * changes where its members sit, never how they read.
+     * (and out of the root, through `removedNodeIds`), laid out on its own,
+     * left to right (`groupLayoutOptions`): a group changes where its members
+     * sit, and its frame takes edges in on its left side and out on its right.
      */
     private createGroupNode(
         scope: PyGraphScope,

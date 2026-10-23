@@ -4,14 +4,14 @@
  * A group (a producer's `group` scope) is laid out on its own: ELK places its
  * members inside it first, then places the group as one block among its
  * siblings (`SEPARATE_CHILDREN`). That is what keeps a group compact and its
- * frame tight around its members, the way a nested region reads in an MLIR
- * graph. It also means ELK cannot route an edge from a member of one group to
+ * frame tight around its members, the way a nested region reads in a
+ * compiler's graph of nested operations. It also means ELK cannot route an edge from a member of one group to
  * a member of another in one piece: in a separate layout, an edge may only
  * join a node's own ports to its children, or siblings to each other.
  *
  * So an edge that leaves or enters a group is cut where it crosses the frame,
- * at a boundary port on the frame (`PORT_GROUP_BOUNDARY`), as mlir-viewer cuts
- * an edge at each container it crosses:
+ * at a boundary port on the frame (`PORT_GROUP_BOUNDARY`), one cut at each
+ * container it crosses:
  *
  *     member a (in A) ──► A's frame ──► B's frame ──► member b (in B)
  *        `source` piece      `middle`      `target` piece
@@ -23,7 +23,7 @@
  * boundary port, which the client draws without one.
  *
  * Edges reaching the same member through the same frame share the way in, as
- * mlir-viewer's edges carrying one value share a container's port: one
+ * edges carrying one value share a container's port in a nested-region graph: one
  * boundary port per group, direction and inner endpoint, and one piece inside
  * the group from it to the member. Five sources implementing one clause then
  * enter its group at one point instead of five. A shared piece lists every edge
@@ -268,8 +268,8 @@ function addBoundaryPort(group: GNode, direction: Direction, portId: string): GP
 
 /**
  * How a group lays out: on its own (`SEPARATE_CHILDREN`), members first, then
- * the group as one block among its siblings, the way mlir-viewer lays out a
- * region. The top padding leaves room for the header band the client draws,
+ * the group as one block among its siblings, left to right, the way a nested
+ * region is laid out. The top padding leaves room for the header band the client draws,
  * and the edges that cross the frame enter and leave through boundary ports on
  * its sides (`group-edges.ts`), kept below the header.
  */
