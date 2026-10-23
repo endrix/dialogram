@@ -44,6 +44,9 @@ const transform = (doc: PyGraphDocument): Element[] =>
 
 const byId = (elements: Element[] | undefined, id: string): Element | undefined => elements?.find(e => e.id === id);
 const groups = (elements: Element[]): Element[] => elements.filter(e => e.type === WorkflowDiagramTypes.NODE_GROUP);
+/** A container's member nodes, without the boundary ports its crossing edges add. */
+const members = (element: Element | undefined): string[] =>
+    (element?.children ?? []).filter(c => c.type.startsWith('node')).map(c => c.id);
 
 describe('a producer’s group scopes', () => {
     it('draws the members of a group inside a labelled container, and out of the root', () => {
@@ -55,7 +58,7 @@ describe('a producer’s group scopes', () => {
         expect(group?.type).toBe(WorkflowDiagramTypes.NODE_GROUP);
         expect(group?.args?.[WorkflowDiagramMetadata.GROUP_LABEL]).toBe('Layer 1');
         expect(group?.args?.[WorkflowDiagramMetadata.STRUCTURE_KIND]).toBe('group');
-        expect(group?.children?.map(c => c.id).sort()).toEqual(['a', 'b']);
+        expect(members(group).sort()).toEqual(['a', 'b']);
         expect(byId(root, 'a')).toBeUndefined();
         expect(byId(root, 'b')).toBeUndefined();
         expect(byId(root, 'c')).toBeDefined();
@@ -69,7 +72,7 @@ describe('a producer’s group scopes', () => {
 
         const group = byId(root, 'scope:scope:domain');
         expect(group?.args?.[WorkflowDiagramMetadata.GROUP_LABEL]).toBe('domain');
-        expect(group?.children?.map(c => c.id)).toEqual(['b']);
+        expect(members(group)).toEqual(['b']);
     });
 
     it('nests a group inside its parent group', () => {
@@ -81,18 +84,30 @@ describe('a producer’s group scopes', () => {
         const outer = byId(root, 'scope:scope:outer');
         const inner = byId(outer?.children, 'scope:scope:inner');
         expect(groups(root).map(g => g.id)).toEqual(['scope:scope:outer']);
-        expect(inner?.children?.map(c => c.id)).toEqual(['c']);
+        expect(members(inner)).toEqual(['c']);
         expect(byId(root, 'c')).toBeUndefined();
     });
 
-    it('keeps the edges between members, wherever they moved', () => {
-        const root = transform(docWith([
+    it('keeps an edge between members of one group whole, and cuts one that leaves it at the frame', () => {
+        const inside = transform(docWith([
+            { id: 'scope:g', kind: 'group', nodes: ['node:a', 'node:c'] }
+        ]));
+        const whole = byId(inside, 'e');
+        expect(whole?.sourceId).toBe('a_port_out');
+        expect(whole?.targetId).toBe('c_port_in');
+
+        const leaving = transform(docWith([
             { id: 'scope:g', kind: 'group', nodes: ['node:a'] }
         ]));
-
-        const edge = byId(root, 'e');
-        expect(edge?.sourceId).toBe('a_port_out');
-        expect(edge?.targetId).toBe('c_port_in');
+        const group = byId(leaving, 'scope:scope:g');
+        const port = 'scope:scope:g::out::a_port_out';
+        expect(group?.children?.find(c => c.id === port)?.type).toBe(WorkflowDiagramTypes.PORT_GROUP_BOUNDARY);
+        // The edge keeps its id and runs from the frame; the piece inside joins the member to it.
+        expect(byId(leaving, 'e')?.sourceId).toBe(port);
+        expect(byId(leaving, 'e')?.targetId).toBe('c_port_in');
+        const piece = byId(leaving, `${port}::piece`);
+        expect(piece?.sourceId).toBe('a_port_out');
+        expect(piece?.targetId).toBe(port);
     });
 
     it('creates nothing for a scope of another kind, the root scope included', () => {
@@ -122,7 +137,7 @@ describe('a producer’s group scopes', () => {
 
         const first = byId(root, 'scope:scope:first');
         const second = byId(root, 'scope:scope:second');
-        expect(first?.children?.map(c => c.id)).toEqual(['a']);
-        expect(second?.children).toEqual([]);
+        expect(members(first)).toEqual(['a']);
+        expect(members(second)).toEqual([]);
     });
 });

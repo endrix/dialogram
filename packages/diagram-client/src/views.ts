@@ -406,9 +406,12 @@ export class StructureIfBranchNodeView extends ShapeView {
 }
 
 /**
- * A producer's group: a quiet frame with the group's label in its corner,
- * the members rendered inside. The frame is dashed and tinted from the
- * description colour so it reads as a region, not as a node.
+ * A producer's group, drawn the way mlir-viewer draws a nested region: a body,
+ * a header band carrying the group's label, a border over both, and the
+ * members below the header. The body is only tinted, so the edges the root
+ * draws underneath it (every edge stays at the root; see `group-edges.ts`)
+ * still show inside the frame. Edges a group holds itself are drawn above the
+ * body and below the header, as mlir-viewer draws them.
  */
 @injectable()
 export class GroupNodeView extends ShapeView {
@@ -420,6 +423,11 @@ export class GroupNodeView extends ShapeView {
         const { width, height } = getNodeSize(node as any, 200, 80);
         const raw = (node as any).args?.[WorkflowDiagramMetadata.GROUP_LABEL];
         const label = typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : '';
+        const header = Math.min(WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX, height);
+        const radius = 6;
+        const children = ((node as any).children ?? []) as Array<{ type?: string }>;
+        const isEdgeChild = (child: { type?: string }): boolean =>
+            typeof child.type === 'string' && child.type.startsWith('edge:');
 
         return svg('g', {
             class: {
@@ -435,25 +443,58 @@ export class GroupNodeView extends ShapeView {
             }
         },
             svg('rect', {
+                class: { 'group-body': true },
+                attrs: { x: 0, y: 0, width, height, rx: radius, ry: radius }
+            }),
+            ...children.filter(isEdgeChild).map(child => context.renderElement(child as any)),
+            svg('path', {
+                class: { 'group-header': true },
+                attrs: { d: roundedTopPath(width, header, radius) }
+            }),
+            svg('rect', {
                 class: { 'group-frame': true },
-                attrs: {
-                    x: 0, y: 0,
-                    width, height,
-                    rx: 6, ry: 6
-                }
+                attrs: { x: 0, y: 0, width, height, rx: radius, ry: radius }
             }),
             ...(label
                 ? [svg('text', {
                     class: { 'group-label': true },
                     attrs: {
-                        x: 8,
-                        y: 13,
+                        x: 10,
+                        y: header / 2,
                         'text-anchor': 'start',
-                        'dominant-baseline': 'middle'
+                        'dominant-baseline': 'central'
                     }
                 }, label)]
                 : []),
-            ...context.renderChildren(node)
+            ...children.filter(child => !isEdgeChild(child)).map(child => context.renderElement(child as any))
+        );
+    }
+}
+
+/** A band `width` wide and `height` tall with its top corners rounded and its bottom square. */
+function roundedTopPath(width: number, height: number, radius: number): string {
+    const r = Math.max(0, Math.min(radius, width / 2, height));
+    return `M 0 ${height} L 0 ${r} Q 0 0 ${r} 0 L ${width - r} 0 Q ${width} 0 ${width} ${r} L ${width} ${height} Z`;
+}
+
+/** Where an edge crosses a group's frame: a dot on the frame line. */
+@injectable()
+export class GroupBoundaryPortView extends ShapeView {
+    override render(port: Readonly<any>, _context: RenderingContext, _args?: IViewArgs): VNode {
+        const size = WorkflowDiagramConstants.GROUP_BOUNDARY_PORT_SIZE_PX;
+        const width = port.size?.width > 0 ? port.size.width : size;
+        const height = port.size?.height > 0 ? port.size.height : size;
+        return svg('g', {
+            class: { [WorkflowDiagramCss.GROUP_BOUNDARY_PORT]: true },
+            attrs: {
+                transform: `translate(${port.position.x}, ${port.position.y})`,
+                'data-cal-port-id': port.id
+            }
+        },
+            svg('circle', {
+                class: { 'group-boundary-dot': true },
+                attrs: { cx: width / 2, cy: height / 2, r: Math.min(width, height) / 2 - 1 }
+            })
         );
     }
 }
@@ -1138,6 +1179,11 @@ function isBidirectionalEdge(edge: Readonly<SEdgeImpl>): boolean {
 
 /** Whether an edge terminates on a boundary port, whose glyph is already an arrow. */
 function endsAtBoundaryPort(edge: Readonly<SEdgeImpl>): boolean {
+    // A piece of an edge split at a group's frame: the edge carries on past
+    // the frame, so the arrowhead belongs to the last piece only.
+    if ((edge as any).target?.type === WorkflowDiagramTypes.PORT_GROUP_BOUNDARY) {
+        return true;
+    }
     let element: any = (edge as any).target;
     while (element) {
         if (element.type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT

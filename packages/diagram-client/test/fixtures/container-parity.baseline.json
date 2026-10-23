@@ -139,6 +139,12 @@
         "to": "ConsoleLogger"
     },
     {
+        "id": "Symbol(stub.IMovementRestrictor)",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "ContainedMovementRestrictor"
+    },
+    {
         "id": "Symbol(stub.ISelectionListener)",
         "op": "bind",
         "to": "service:ChatPanel"
@@ -325,6 +331,12 @@
         "op": "modelElement",
         "typeId": "node:group",
         "view": "GroupNodeView"
+    },
+    {
+        "model": "GroupBoundaryPort",
+        "op": "modelElement",
+        "typeId": "port:group-boundary",
+        "view": "GroupBoundaryPortView"
     },
     {
         "model": "StructureIfJoinNode",

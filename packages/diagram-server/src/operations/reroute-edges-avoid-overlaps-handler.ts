@@ -14,7 +14,7 @@ import { inject, injectable } from 'inversify';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
-import { WorkflowDiagramMetadata } from '@dialogram/shared';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { WorkflowDiagramConstants, portAnchor } from '@dialogram/shared';
 import { GModelSerializer } from '@eclipse-glsp/server';
 import { routeOrthogonal, type RouterConnector, type RouterObstacle } from '../routing/libavoid-router';
@@ -299,7 +299,10 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
         const pad = WorkflowRerouteEdgesAvoidOverlapsOperationHandler.PAD;
         const obs: Array<{ id: string; x: number; y: number; r: number; b: number }> = [];
         const visit = (el: any): void => {
-            if (el instanceof GNode && el.position) {
+            // A group is a region, not an obstacle: its members are the
+            // obstacles, and an edge inside it, or one passing through its
+            // frame at a boundary port, has to be able to cross its box.
+            if (el instanceof GNode && el.position && el.type !== WorkflowDiagramTypes.NODE_GROUP) {
                 const pos = this.absPos(el);
                 const sz = this.sizeOf(el);
                 if (sz.width > 0 && sz.height > 0) {

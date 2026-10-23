@@ -3,6 +3,7 @@ import { parseViewsMeta } from '../server/graph-load-request-options';
 import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, type PortSide } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
+import { groupLayoutOptions, splitEdgesAtGroups } from './group-edges';
 import { URI } from 'vscode-uri';
 
 export type PyGraphPort = {
@@ -948,6 +949,12 @@ export class GraphGModelSource {
             children.push(...filtered);
         }
 
+        // An edge that enters or leaves a group is cut at the group's frame, so
+        // each group can lay out on its own (see `group-edges.ts`). After the
+        // feedback marking, which the pieces inherit, and once the members sit
+        // inside their groups, which decides what each edge crosses.
+        splitEdgesAtGroups(children);
+
         // Edges first, so nodes and ports paint over them.
         //
         // SVG has no z-index: what covers what is decided by document order, and
@@ -1068,9 +1075,9 @@ export class GraphGModelSource {
 
     /**
      * The container for a `group` scope: its label, its members moved under it
-     * (and out of the root, through `removedNodeIds`), laid out in the same
-     * direction as the graph so a group changes where its members sit, never
-     * how they read.
+     * (and out of the root, through `removedNodeIds`), laid out on its own in
+     * the same direction as the graph (`groupLayoutOptions`), so a group
+     * changes where its members sit, never how they read.
      */
     private createGroupNode(
         scope: PyGraphScope,
@@ -1087,13 +1094,7 @@ export class GraphGModelSource {
             id: nodeId,
             type: WorkflowDiagramTypes.NODE_GROUP,
             cssClasses: [WorkflowDiagramCss.NODE, WorkflowDiagramCss.NODE_STRUCTURE, WorkflowDiagramCss.NODE_GROUP],
-            layoutOptions: {
-                'elk.algorithm': 'layered',
-                'elk.direction': 'RIGHT',
-                'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-                'elk.nodeSize.constraints': 'MINIMUM_SIZE',
-                'elk.padding': '[top=26,left=12,bottom=12,right=12]'
-            },
+            layoutOptions: groupLayoutOptions(),
             children: [],
             args: {
                 [WorkflowDiagramMetadata.AST_PATH]: nodeId,
@@ -1616,3 +1617,4 @@ export function resolveSourceFiles(doc: PyGraphDocument): PyGraphDocument {
     const edges = (doc.graph.edges ?? []).map(edge => fillKeys(edge, ['source']));
     return changed ? { ...doc, graph: { ...doc.graph, nodes, edges } } : doc;
 }
+

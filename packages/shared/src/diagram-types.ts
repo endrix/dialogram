@@ -89,6 +89,10 @@ export namespace WorkflowDiagramTypes {
     export const PORT_IN = PORT_INPUT;
     /** Spec alias: 'port:out' */
     export const PORT_OUT = PORT_OUTPUT;
+    /** Where an edge crosses a group's frame: the server splits an edge that
+     *  enters or leaves a group at one of these, so each group lays out on its
+     *  own. Not a port anyone connects to. */
+    export const PORT_GROUP_BOUNDARY = 'port:group-boundary';
     
     // Edge types
     export const EDGE_CONNECTION = 'edge:connection';
@@ -138,6 +142,7 @@ export namespace WorkflowDiagramCss {
     export const NODE_STRUCTURE_FOREACH_JOIN = 'workflow-node-structure-foreach-join';
     export const NODE_STRUCTURE_IF_INLINE = 'workflow-node-structure-if-inline';
     export const NODE_GROUP = 'workflow-node-group';
+    export const GROUP_BOUNDARY_PORT = 'workflow-group-boundary-port';
     export const NODE_BOUNDARY = 'workflow-node-boundary';
     export const NODE_BOUNDARY_INPUT = 'workflow-node-boundary-input';
     export const NODE_BOUNDARY_OUTPUT = 'workflow-node-boundary-output';
@@ -392,6 +397,16 @@ export namespace WorkflowDiagramMetadata {
     /** The label a group container shows: the scope's `label`, else the last
      *  segment of its id. */
     export const GROUP_LABEL = 'wf:groupLabel';
+    /** On a piece of an edge split at group frames: the id of the edge it is a
+     *  piece of (the first, for a piece several edges share). The piece that
+     *  keeps the edge's own id carries it too. */
+    export const EDGE_OF = 'wf:edgeOf';
+    /** Every edge a piece stands for, as a list: one for the stretch between
+     *  frames, several for a stretch inside a group that edges share. */
+    export const EDGES_OF = 'wf:edgesOf';
+    /** Which piece: `source` (inside the source's groups), `middle` (between
+     *  the outermost frames), or `target`. */
+    export const EDGE_SEGMENT = 'wf:edgeSegment';
 }
 /**
  * Consolidated origin metadata interface (spec-compliant).

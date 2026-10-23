@@ -17,6 +17,43 @@ platform API version.
   nothing from the grouping; what a group is (a layer, a domain, a stage) is
   the producer's business and shows only in its label.
 
+  A group is drawn and laid out the way mlir-viewer draws a nested region: a
+  tinted body, a header band carrying the label, the members below it, laid
+  out on their own (`SEPARATE_CHILDREN`) so the frame stays tight around them.
+  An edge that leaves or enters a group is cut where it crosses the frame, at
+  a boundary port (`port:group-boundary`), one piece per level; edges reaching
+  the same member through the same frame share the way in. The stretch
+  between frames keeps the edge's id, arguments and caption, and deletes the
+  edge; a piece several edges share lists them (`wf:edgesOf`) and is not
+  deleted on its own. Every piece stays at the root of the model, so saved,
+  restored and rerouted routes keep their absolute coordinates.
+
+- A dragged node stays inside the node that holds it (a group, a control
+  structure's branch): the bound `IMovementRestrictor` refuses a position
+  outside the parent, below a group's header band, and a drop there is not
+  committed.
+
+### Fixed
+
+- Reopening a saved layout put every node inside a container outside it: the
+  layout file holds absolute positions and the loader wrote them back as
+  positions relative to the parent, adding the container's offset twice. A
+  reopened group also lost its size and the ports on its frame, which only the
+  layout run produces; they are now rebuilt from the saved positions and
+  routes.
+- The edge rerouter that runs after a move treated a group's frame as an
+  obstacle, so an edge inside a group was routed around the group it is in.
+
+### Tooling
+
+- `scripts/render-svg/render.mjs`: a graph document in (what a producer's
+  plan command prints), an SVG out, through the server's layout and the real
+  client in headless Chrome, extracted as "Export as SVG" extracts it. Picks a
+  layout (`--layout default|untangled|free-ports`, `--all-layouts` for all
+  three side by side), extra ELK options (`--elk key=value`), the product's
+  node families and stylesheets, client behavior flags and a theme. For
+  looking at what a change does to a real diagram without opening VS Code.
+
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the
   tooltip on hover still says what it carries. Default `true`, as before.

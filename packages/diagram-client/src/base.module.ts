@@ -48,6 +48,7 @@ import { ViewportPreservingSetModelCommand } from './viewport-preserving-set-mod
 import { RunningAgentsBar } from './running-agents-bar';
 import { ExecutionOverlayMessageBridge } from './execution-overlay-message-bridge';
 import { RunAgentStreamActionHandler } from './editing-action-handlers';
+import { ContainedMovementRestrictor } from './contained-movement-restrictor';
 
 /**
  * The neutral base bindings shared by all diagram-client consumers. Loaded first
@@ -60,6 +61,14 @@ export const diagramBaseModule = new ContainerModule((bind, unbind, isBound, reb
     // element configs — every diagram needs edge bendpoint editing.
     configureModelElement(context, DefaultTypes.ROUTING_POINT, GRoutingHandle, GRoutingHandleView);
     configureModelElement(context, DefaultTypes.VOLATILE_ROUTING_POINT, GRoutingHandle, GRoutingHandleView);
+
+    // A dragged node stays inside the node that holds it (a group, a branch):
+    // see `contained-movement-restrictor.ts`.
+    if (isBound(TYPES.IMovementRestrictor)) {
+        rebind(TYPES.IMovementRestrictor).to(ContainedMovementRestrictor).inSingletonScope();
+    } else {
+        bind(TYPES.IMovementRestrictor).to(ContainedMovementRestrictor).inSingletonScope();
+    }
 
     // Set up logging
     rebind(TYPES.ILogger).to(ConsoleLogger).inSingletonScope();
