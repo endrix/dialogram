@@ -11,8 +11,7 @@ import { injectable, inject, optional } from 'inversify';
 import { 
     ToolPaletteItemProvider,
     OperationHandlerRegistry,
-    CreateOperationHandler,
-    ModelState
+    CreateOperationHandler
 } from '@eclipse-glsp/server';
 import { 
     PaletteItem, 
@@ -22,7 +21,7 @@ import {
     CreateNodeOperation,
     CreateEdgeOperation
 } from '@eclipse-glsp/protocol';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { WorkflowDiagramTypes } from '@dialogram/shared';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
 
 /**
@@ -43,10 +42,6 @@ export class WorkflowToolPaletteItemProvider extends ToolPaletteItemProvider {
     @optional()
     protected storageOptions?: StorageRuntimeOptions;
 
-    @inject(ModelState)
-    @optional()
-    protected modelState?: ModelState;
-
     protected counter = 0;
 
     override async getItems(_args?: Args): Promise<PaletteItem[]> {
@@ -63,12 +58,11 @@ export class WorkflowToolPaletteItemProvider extends ToolPaletteItemProvider {
         if (this.storageOptions?.supportsElementCreation === false) {
             return [];
         }
-        // The same, for one view the producer marked read-only: the palette
-        // asks again on the next view, so an editable one gets its items back.
-        const rootArgs = (this.modelState?.root as { args?: Args } | undefined)?.args;
-        if (rootArgs?.[WorkflowDiagramMetadata.READ_ONLY_VIEW] === true) {
-            return [];
-        }
+        // A view the producer marked read-only (`wf:readOnlyView`) still gets
+        // the items: the palette asks for them once per editor, so an editor
+        // that opened on such a view would keep an empty palette after
+        // navigating to an editable one. The client hides them while a
+        // read-only view is shown (read-only-view.ts).
 
         const useAlternateEntityPalette = this.storageOptions?.useAlternateEntityPalette ?? false;
         const platformEntityItems = this.storageOptions?.platformEntityItems ?? true;

@@ -10,14 +10,14 @@ platform API version.
 
 - Read-only views: a producer marks one view read-only with
   `graph.meta.readOnly: true` (a projection of a file it reads but does not
-  write, a project overview). The root carries `wf:readOnlyView`; the palette
-  is empty for that view and its tools are hidden while it is shown (the
-  palette's header stays), and the context menu leaves out Rename Entity,
-  Duplicate, Edit Parameters and the boundary-port edits. Moving and laying
-  out stay. Per view, so one editor passes between editable and read-only
-  views in place; `supportsElementCreation: false` still empties the palette
-  of a whole profile. A keyboard delete or label edit still reaches the
-  producer's sidecar, which is expected to refuse it.
+  write, a project overview). The root carries `wf:readOnlyView`; the
+  palette's tools are hidden while that view is shown (its header stays, and
+  the tools come back on the next editable view), and the context menu
+  leaves out Rename Entity, Duplicate, Edit Parameters and the boundary-port
+  edits. Moving and laying out stay. Per view, so one editor passes between
+  editable and read-only views in place; `supportsElementCreation: false`
+  still empties the palette of a whole profile. A keyboard delete or label
+  edit still reaches the producer's sidecar, which is expected to refuse it.
 
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the

@@ -362,8 +362,8 @@ export namespace WorkflowDiagramMetadata {
      * On the root: the view shown is read-only, as the producer marked it
      * (`graph.meta.readOnly`). A projection of a file it reads but does not
      * write, a project overview: nothing in it can be created, renamed,
-     * duplicated or removed, so the palette offers nothing and the editing
-     * items leave the context menu. Moving nodes and laying them out stay;
+     * duplicated or removed, so the client hides the palette's tools while it
+     * is shown and the editing items leave the context menu. Moving nodes and laying them out stay;
      * they change the drawing, not the source. Per view, so one editor can
      * pass from an editable view to a read-only one and back.
      */
