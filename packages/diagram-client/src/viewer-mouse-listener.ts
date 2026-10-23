@@ -9,7 +9,7 @@ import {
 import { openTargetOf } from './open-target';
 import { inject, injectable } from 'inversify';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
-import { settingsNamespace } from './profile';
+import { clientBehavior, settingsNamespace } from './profile';
 
 const VIEWER_ACTION_ARG = 'wf:viewerAction';
 const VIEWER_VIEW_TYPE_ARG = 'wf:viewerViewType';
@@ -334,6 +334,24 @@ function buildDefinitionNavigationAction(
     });
 }
 
+/**
+ * Whether the network navigation listener opens something itself for this
+ * node on a double-click (its `openLeaf`): the node's first view, or, with
+ * `doubleClickOpensSource`, its definition for real. Answering here too opened
+ * a second thing beside it: a specification clause opened its refinement
+ * trace and its heading as a preview at once.
+ */
+function leafOpensItself(node: GModelElement): boolean {
+    const args = (node as unknown as { args?: Args }).args;
+    const uri = args?.[WorkflowDiagramMetadata.REFERENCED_URI];
+    if (typeof uri !== 'string' || uri.trim() === '') {
+        return false;
+    }
+    const views = args?.[WorkflowDiagramMetadata.VIEWS] as unknown;
+    const hasView = Array.isArray(views) && views.some(view => typeof view?.id === 'string' && view.id.trim() !== '');
+    return hasView || clientBehavior().doubleClickOpensSource === true;
+}
+
 @injectable()
 export class ViewerMouseListener extends MouseListener implements Ranked {
     // Run early so it triggers before default tools.
@@ -366,7 +384,7 @@ export class ViewerMouseListener extends MouseListener implements Ranked {
                 return [];
             }
 
-            if (!definitionNavigationAction) {
+            if (!definitionNavigationAction || leafOpensItself(node)) {
                 return [];
             }
 
@@ -381,7 +399,7 @@ export class ViewerMouseListener extends MouseListener implements Ranked {
         const annotations = Array.isArray(defAnnotations) ? (defAnnotations as DefinitionAnnotation[]) : [];
         const viewer = annotations.find(a => a && a.name === 'viewer');
         if (!viewer) {
-            return definitionNavigationAction ? [definitionNavigationAction] : [];
+            return definitionNavigationAction && !leafOpensItself(node) ? [definitionNavigationAction] : [];
         }
 
         const argByName = new Map<string, string>();
