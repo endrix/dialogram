@@ -6,6 +6,8 @@ export {
     type DiagramRunHost,
     type DiagramRunDriverFactory,
     type DiagramLiveOverlaySource,
+    type DiagramStatusSource,
+    type DiagramStatusContext,
     type DialogramApi,
     type DiagramProfile,
     type DiagramProfileHandle,

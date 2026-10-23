@@ -26,8 +26,9 @@ function isRunStartedEvent(event: unknown): boolean {
 
 /**
  * Neutral per-diagram execution-state registry (v2 seam). Consumers push
- * node states from whatever runner they own; the platform's rendering
- * reads them. Nothing here spawns processes or reads run artifacts.
+ * node states from whatever runner they own (a run driver, a profile's status
+ * source); the host forwards each change to the diagram, which draws them.
+ * Nothing here spawns processes or reads run artifacts.
  */
 export class ExecutionOverlayRegistry implements ExecutionOverlaySink {
     private readonly states = new Map<string, ExecutionNodeState[]>();
@@ -51,22 +52,35 @@ export class ExecutionOverlayRegistry implements ExecutionOverlaySink {
      */
     constructor(private readonly bufferKeyOf: (sourceUri: string) => string = uri => uri) {}
 
+    /**
+     * Replace the states of a source; an empty list takes them off. The states
+     * key through the same canonicalization as the replay window, for the same
+     * reason: the publisher names the diagram with one URI form and the editor
+     * provider asks for it, on a reopen, with another. Listeners get the URI as
+     * it was published.
+     */
     publish(sourceUri: string, states: ExecutionNodeState[]): void {
-        this.states.set(sourceUri, [...states]);
+        const key = this.bufferKeyOf(sourceUri);
+        if (states.length === 0) {
+            this.states.delete(key);
+        } else {
+            this.states.set(key, [...states]);
+        }
         for (const l of this.listeners) l(sourceUri);
     }
 
     clear(sourceUri: string): void {
         // A cleared source has no live run: drop its replay window too so a later
         // reopen does not resurrect a stale run's bar.
-        this.replayBuffers.delete(this.bufferKeyOf(sourceUri));
-        if (this.states.delete(sourceUri)) {
+        const key = this.bufferKeyOf(sourceUri);
+        this.replayBuffers.delete(key);
+        if (this.states.delete(key)) {
             for (const l of this.listeners) l(sourceUri);
         }
     }
 
     get(sourceUri: string): readonly ExecutionNodeState[] {
-        return this.states.get(sourceUri) ?? [];
+        return this.states.get(this.bufferKeyOf(sourceUri)) ?? [];
     }
 
     onDidChange(listener: ExecutionOverlayListener): { dispose(): void } {

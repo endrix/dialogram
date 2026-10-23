@@ -183,6 +183,27 @@ platform API version.
   workflow) with its change-type button: for a product whose pins mean
   nothing, whose facts already say it all, whose nodes have no parameters but
   their own fields, or whose node kinds are its own.
+- `DiagramProfile.statusSource`: node states from a report the product's tool
+  makes (which requirements are covered, which checks pass), shown on demand
+  with the run overlay's drawing and no run driver. The profile gives a label,
+  a show and a clear command, and `collect(file)` returning
+  `ExecutionNodeState[]`; the platform registers the two commands (they take
+  the diagram's URI, as an editor-title menu passes it, or act on the active
+  diagram), offers "Show <label>" and "Clear <label>" on the canvas's context
+  menu, and publishes what `collect` answers through the execution overlay a
+  run driver gets as `DiagramRunHost.overlay`. A failure is reported and
+  leaves the diagram as it was. `SidecarProfileInput.statusSource` is the same
+  with `collect(file, cli)`, where `cli(args)` runs the configured CLI in the
+  file's folder and resolves to its stdout parsed as JSON.
+- Published node states are drawn. `overlay.publish(sourceUri, states)` held
+  them and nothing sent them to the diagram; now each change goes to the
+  webview as the whole set, and a node draws its state with the run overlay's
+  classes (`running` the turning ring, `succeeded` green, `failed` red, `idle`
+  nothing), matched by node id in whatever view is shown. They are re-applied
+  to every model the server sends, and sent again when the editor reopens.
+- `wf:graphNodeId` on every node: the id the producer's graph document gave
+  it. The diagram names a node after its label, so this is how a state that
+  names the producer's id finds its node; a state may name either.
 
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the

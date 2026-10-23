@@ -10,6 +10,14 @@ export {
 } from './sidecar-diagram-profile.js';
 
 export {
+    createCliStatusSource,
+    runCliJson,
+    type SidecarStatusSourceInput,
+    type StatusCli,
+    type CliJsonOptions
+} from './cli-status-source.js';
+
+export {
     registerNewSourceFileCommand,
     scaffoldSource,
     type NewSourceFileConfig

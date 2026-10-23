@@ -28,7 +28,8 @@ import type { ContainerModule } from 'inversify';
 import { registerWorkflowEditorProvider } from './diagram-editor-provider';
 import type { WorkflowEditorProvider } from './diagram-editor-provider';
 import { ExecutionOverlayRegistry } from './execution-overlay';
-import { forwardExecutionOverlayEvents, type ExecutionOverlayWebviewSink } from './execution-overlay-bridge';
+import { forwardExecutionOverlayEvents, forwardExecutionOverlayStates, type ExecutionOverlayWebviewSink } from './execution-overlay-bridge';
+import { registerStatusSource } from './status-source';
 import { readRequestedNetworkName, resolveDiagramOpenTarget, type DiagramOpenTargetArg } from './open-diagram-target';
 import { matchesSourceExtension, sourceFileNoun } from './source-extensions';
 import { normalizeSourceUriKey } from './uri-keys';
@@ -981,13 +982,30 @@ export async function activateGlspIntegration(
     const executionOverlaySubscription = executionOverlay.onDidEmitEvents((uri, events) => {
         sendOverlayBatch(uri, events, 'live');
     });
+    // The node states (a status source's, or a driver's) go to the diagram as
+    // the whole set on every change, over the same ungated path as the events.
+    // Unlike the events they are kept, so a diagram that registers later gets
+    // the set it should be showing.
+    const sendOverlayStates = (uri: string): void => {
+        const clientId = editorProvider.getClientIdForDocumentUri(vscode.Uri.parse(uri));
+        forwardExecutionOverlayStates(
+            glspVscodeConnector as unknown as ExecutionOverlayWebviewSink,
+            clientId,
+            uri,
+            executionOverlay.get(uri)
+        );
+    };
+    const executionStatesSubscription = executionOverlay.onDidChange(sendOverlayStates);
     // Replay-on-(re)registration: when a webview registers for a source URI, drain
     // its bounded replay window through the SAME bridge BEFORE any subsequent live
     // batch. The drain is synchronous within the provider's registration event, so
     // on the single-threaded host loop the replayed window is enqueued ahead of any
     // live batch emitted afterwards (postMessage preserves order). A fresh source
-    // has an empty window → nothing is sent.
+    // has an empty window → nothing is sent. The states it should show go first.
     const executionOverlayReplaySubscription = editorProvider.onDidRegisterClient(uri => {
+        if (executionOverlay.get(uri).length > 0) {
+            sendOverlayStates(uri);
+        }
         const replay = executionOverlay.replayEvents(uri);
         if (replay.length === 0) {
             return;
@@ -1003,6 +1021,7 @@ export async function activateGlspIntegration(
         editorProviderDisposable,
         glspVscodeConnector,
         executionOverlaySubscription,
+        executionStatesSubscription,
         executionOverlayReplaySubscription
     );
 
@@ -1521,6 +1540,49 @@ function registerCalDiagramCommands(
         };
 
         context.subscriptions.push(profile.runDriver(context, host));
+    }
+
+    // Status source: node states from a report the product's tool makes, shown
+    // on demand. Its answer goes into the same overlay a run driver publishes
+    // to (`DiagramRunHost.overlay`), and is drawn the same way; no driver is
+    // needed, so a profile without one gets it too.
+    if (profile.statusSource) {
+        const statusSource = profile.statusSource;
+        const statusOutput = vscode.window.createOutputChannel(`${profile.chat?.fullName ?? profile.displayName} ${statusSource.label}`);
+        context.subscriptions.push(statusOutput);
+        // An editor-title menu passes the editor's resource; the diagram's own
+        // context menu, the command palette and a keybinding pass nothing, and
+        // mean the diagram in front of the person.
+        const statusTargetUri = (arg: unknown): vscode.Uri | undefined => {
+            if (arg instanceof vscode.Uri) {
+                return arg;
+            }
+            const text = typeof arg === 'string'
+                ? arg
+                : typeof (arg as { sourceUri?: unknown } | null)?.sourceUri === 'string'
+                    ? (arg as { sourceUri: string }).sourceUri
+                    : undefined;
+            if (text && text.trim() !== '') {
+                return /^\w[\w+.-]*:/.test(text) && !/^[a-zA-Z]:[\\/]/.test(text) ? vscode.Uri.parse(text) : vscode.Uri.file(text);
+            }
+            return getActiveWorkflowDiagramUri();
+        };
+        context.subscriptions.push(registerStatusSource(statusSource, {
+            targetOf: (arg) => {
+                const uri = statusTargetUri(arg);
+                return uri ? { sourceUri: uri.toString(), file: uri.fsPath } : undefined;
+            },
+            overlay: executionOverlay,
+            output: statusOutput,
+            registerCommand: (id, handler) => vscode.commands.registerCommand(id, handler),
+            withProgress: (title, task) => Promise.resolve(vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title }, task)),
+            showError: (message) => void vscode.window.showErrorMessage(message),
+            showWarning: (message) => void vscode.window.showWarningMessage(message),
+            // Hides itself after the timeout; nothing to dispose.
+            setStatusMessage: (message) => {
+                vscode.window.setStatusBarMessage(message, 5000);
+            }
+        }));
     }
 
     context.subscriptions.push(

@@ -53,8 +53,10 @@ function fieldsOf(file: string, name: string): string[] {
  *   resumeAtStep   derived by the toolkit from the product's `cliResumeArgs`:
  *                  the button is there exactly when the run driver can build
  *                  the arguments it needs
+ *   statusSource   derived from `DiagramProfile.statusSource`: the context
+ *                  menu offers exactly the commands the host registered
  */
-const PLATFORM_DERIVED = ['chatBackend', 'acpConnectors', 'resumeAtStep'];
+const PLATFORM_DERIVED = ['chatBackend', 'acpConnectors', 'resumeAtStep', 'statusSource'];
 
 describe('sidecar client behavior mirrors the platform', () => {
     const sidecar = fieldsOf(

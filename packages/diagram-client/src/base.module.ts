@@ -31,6 +31,7 @@ import {
     bindAsService,
     configureModelElement,
     configureActionHandler,
+    configureCommand,
     ConsoleLogger,
     LogLevel,
     DefaultTypes,
@@ -51,6 +52,7 @@ import { ExecutionOverlayMessageBridge } from './execution-overlay-message-bridg
 import { RunAgentStreamActionHandler } from './editing-action-handlers';
 import { ContainedMovementRestrictor } from './contained-movement-restrictor';
 import { NodeSizePreservingBoundsApplicator } from './node-size-preserving-bounds-applicator';
+import { ExecutionStatesFeedbackCommand } from './execution-states';
 
 /**
  * The neutral base bindings shared by all diagram-client consumers. Loaded first
@@ -121,4 +123,8 @@ export const diagramBaseModule = new ContainerModule((bind, unbind, isBound, reb
     // Fold streamed run events into the RunningAgentsBar (the neutral overlay
     // glow path). No-ops until the execution-overlay channel feeds it.
     configureActionHandler(context, EXECUTION_OVERLAY_ACTION_KIND, RunAgentStreamActionHandler);
+
+    // Draws the published node states, as feedback the dispatcher re-applies
+    // to every model (see execution-states.ts).
+    configureCommand(context, ExecutionStatesFeedbackCommand);
 });

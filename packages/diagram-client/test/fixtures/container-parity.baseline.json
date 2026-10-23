@@ -441,5 +441,19 @@
         "id": "Symbol(stub.IGModelRootListener)",
         "op": "bind",
         "to": "service:FocusAfterLoadService"
+    },
+    {
+        "handler": "RunStatusCommandActionHandler",
+        "kind": "dialogram.runStatusCommand",
+        "op": "actionHandler"
+    },
+    {
+        "impl": "StatusSourceContextMenuItemProvider",
+        "op": "bindAsService",
+        "service": "Symbol(stub.IContextMenuItemProvider)"
+    },
+    {
+        "command": "ExecutionStatesFeedbackCommand",
+        "op": "command"
     }
 ]
