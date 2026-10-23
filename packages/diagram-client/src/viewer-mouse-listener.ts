@@ -7,9 +7,10 @@ import {
     NavigateToExternalTargetAction
 } from '@eclipse-glsp/sprotty';
 import { openTargetOf } from './open-target';
+import { openLeaf } from './network-navigation-mouse-listener';
 import { inject, injectable } from 'inversify';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
-import { clientBehavior, settingsNamespace } from './profile';
+import { settingsNamespace } from './profile';
 
 const VIEWER_ACTION_ARG = 'wf:viewerAction';
 const VIEWER_VIEW_TYPE_ARG = 'wf:viewerViewType';
@@ -342,14 +343,9 @@ function buildDefinitionNavigationAction(
  * trace and its heading as a preview at once.
  */
 function leafOpensItself(node: GModelElement): boolean {
-    const args = (node as unknown as { args?: Args }).args;
-    const uri = args?.[WorkflowDiagramMetadata.REFERENCED_URI];
-    if (typeof uri !== 'string' || uri.trim() === '') {
-        return false;
-    }
-    const views = args?.[WorkflowDiagramMetadata.VIEWS] as unknown;
-    const hasView = Array.isArray(views) && views.some(view => typeof view?.id === 'string' && view.id.trim() !== '');
-    return hasView || clientBehavior().doubleClickOpensSource === true;
+    // Asked of `openLeaf` itself, so the two never disagree: a node it opens
+    // nothing for (a view but no referenced name, say) keeps its definition.
+    return openLeaf(node).length > 0;
 }
 
 @injectable()

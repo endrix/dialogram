@@ -2,7 +2,7 @@
  * Opening a reference a person clicked in the property panel.
  *
  * The panel's text is the producer's, and it names files the way people do:
- * `gen/membus/memif.py`, `picorv32.v:1202-1210`, `memif.py::MemIf.hold_nop`,
+ * `gen/bus/bridge.py`, `core.v:1202-1210`, `bridge.py::Bridge.hold`,
  * `rtl/top.sv#L40`, or an absolute path the producer resolved itself. The
  * webview cannot tell which of those exist, so the host resolves them, the way
  * a person would look:
@@ -140,7 +140,7 @@ export async function resolveReferencePath(
 
 /**
  * The 1-based line `symbol` is defined on in `text`, else first mentioned on:
- * the last segment of a dotted name (`MemIf.hold_nop` → `hold_nop`) after a
+ * the last segment of a dotted name (`Bridge.hold` → `hold`) after a
  * definition keyword of the common languages, then as a whole word anywhere.
  */
 export function symbolLine(text: string, symbol: string): number | undefined {

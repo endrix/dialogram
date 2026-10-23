@@ -38,7 +38,10 @@ afterEach(() => {
 });
 
 describe('the viewer listener on a double-click', () => {
-    const views = { [WorkflowDiagramMetadata.VIEWS]: [{ id: 'refines', label: 'Refinement trace' }] };
+    const views = {
+        [WorkflowDiagramMetadata.VIEWS]: [{ id: 'refines', label: 'Refinement trace' }],
+        [WorkflowDiagramMetadata.REFERENCED_ENTITY_NAME]: 'PIPE-001'
+    };
 
     it('stands back for a node whose first view opens', () => {
         behaviour({});
@@ -49,6 +52,13 @@ describe('the viewer listener on a double-click', () => {
     it('stands back when the product opens a node’s definition itself', () => {
         behaviour({ doubleClickOpensSource: true });
         expect(viewerAnswer(node(WorkflowDiagramTypes.NODE_ACTOR, {}))).toEqual([]);
+    });
+
+    it('still opens the definition of a node whose view the other listener cannot open (no name to open it by)', () => {
+        behaviour({});
+        const unnamed = { [WorkflowDiagramMetadata.VIEWS]: [{ id: 'refines', label: 'Refinement trace' }] };
+        const [action] = viewerAnswer(node(WorkflowDiagramTypes.NODE_ACTOR, unnamed)) as any[];
+        expect(action?.kind).toBe('navigateToExternalTarget');
     });
 
     it('still opens the definition of a node nothing else opens', () => {
