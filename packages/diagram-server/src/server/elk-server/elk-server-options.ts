@@ -8,10 +8,10 @@
  * graphs; small ones stay on elkjs, which answers before a JVM would, and
  * lays them out exactly as before.
  *
- * Measured with the platform's own layout of NDF documents (warm JVM):
- * Free Ports on 500 clauses 2.1 s on elkjs, 0.6 s on the server; on 2000,
- * 8.2 s and 2.6 s. With the default preset kept on 500 clauses, 10.2 s and
- * 1.2 s.
+ * Measured with the platform's own layout of a producer's document graphs
+ * (warm JVM): Free Ports on 500 nodes 2.1 s on elkjs, 0.6 s on the server; on
+ * 2000, 8.2 s and 2.6 s. With the default preset kept on 500 nodes, 10.2 s
+ * and 1.2 s.
  */
 
 /** Which engine lays a graph out. */
