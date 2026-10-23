@@ -23,6 +23,11 @@ import { WhitespaceRootPropertiesMouseListener } from './whitespace-root-propert
 import { WorkflowElkLiveDragRouter } from './elk-live-drag-router';
 import { WorkflowChangeBoundsTool } from './change-bounds-drag-threshold';
 import { LibavoidEdgeRouter } from './libavoid-edge-router';
+import {
+    RunStatusCommandAction,
+    RunStatusCommandActionHandler,
+    StatusSourceContextMenuItemProvider
+} from './status-source-menu';
 import { HierarchyOutlinePanel } from './hierarchy-outline';
 import { FocusAfterLoadService } from './focus-after-load';
 import { preloadLibavoid } from './libavoid-loader';
@@ -128,6 +133,11 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     configureActionHandler(context, WorkflowShowWorkspaceEntitiesAction.KIND, WorkflowShowWorkspaceEntitiesActionHandler);
     configureActionHandler(context, WorkflowShowAgentSkillsAction.KIND, WorkflowShowAgentSkillsActionHandler);
     configureActionHandler(context, WorkflowShowClaudeAgentsAction.KIND, WorkflowShowClaudeAgentsActionHandler);
+
+    // The profile's status source on the canvas's context menu ("Show <label>",
+    // "Clear <label>"), merged with the server's items; nothing without one.
+    bindAsService(context, TYPES.IContextMenuItemProvider, StatusSourceContextMenuItemProvider);
+    configureActionHandler(context, RunStatusCommandAction.KIND, RunStatusCommandActionHandler);
 
     // Ignore the pixel or two of pointer travel a double-click carries, so
     // navigating into a nested network no longer nudges the node and triggers a

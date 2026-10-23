@@ -13,7 +13,7 @@
  * smoke-events-debug report.
  */
 import type { ActionMessage } from '@eclipse-glsp/protocol';
-import { EXECUTION_OVERLAY_ACTION_KIND, type ExecutionOverlayActionPayload } from '@dialogram/shared';
+import { EXECUTION_OVERLAY_ACTION_KIND, type ExecutionNodeState, type ExecutionOverlayActionPayload } from '@dialogram/shared';
 
 /**
  * Minimal connector seam the bridge depends on: the direct-to-webview send that
@@ -55,5 +55,35 @@ export function forwardExecutionOverlayEvents(
     // shows whether a batch left the host and whether it arrived in the webview.
     // eslint-disable-next-line no-console
     console.log(`[wf-lang overlay] sent ${events.length} events for ${sourceUri} (client ${clientId})`);
+    return true;
+}
+
+/**
+ * Send the node states the diagram of `sourceUri` shows to the webview owning
+ * it: the whole set, so an empty list takes them all off.
+ *
+ * The same envelope and the same ungated transport as the events (see the
+ * ROOT-CAUSE NOTE above), with `states` in place of `events`. Nothing is lost
+ * when no diagram is open: the registry keeps the states, and the host sends
+ * them again when one registers for the source.
+ *
+ * @returns `true` if the states were sent, `false` if no diagram is open for `sourceUri`.
+ */
+export function forwardExecutionOverlayStates(
+    connector: ExecutionOverlayWebviewSink,
+    clientId: string | undefined,
+    sourceUri: string,
+    states: readonly ExecutionNodeState[]
+): boolean {
+    if (!clientId) {
+        return false;
+    }
+    const action: ExecutionOverlayActionPayload = {
+        kind: EXECUTION_OVERLAY_ACTION_KIND,
+        sourceUri,
+        states: [...states]
+    };
+    const message: ActionMessage = { clientId, action: action as unknown as ActionMessage['action'] };
+    connector.sendMessageToClient(clientId, message);
     return true;
 }

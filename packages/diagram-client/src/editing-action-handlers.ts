@@ -7,6 +7,7 @@ import { rerunActorFor, WorkflowNavigationUi } from './navigation-ui';
 import { NETWORK_NAME_ARG, OPEN_DIAGRAM_ARG } from './network-navigation-target';
 import { FocusAfterLoadService } from './focus-after-load';
 import { EXECUTION_OVERLAY_ACTION_KIND, type ExecutionOverlayActionPayload } from '@dialogram/shared';
+import { showExecutionStates } from './execution-states';
 
 export type WorkflowWorkspaceEntity = {
     name: string;
@@ -1168,6 +1169,15 @@ export class RunAgentStreamActionHandler implements IActionHandler {
         }
         guarded.__wfOverlayHandled = true;
         const payload = action as unknown as ExecutionOverlayActionPayload;
+        // The node states, when the batch carries them: the whole set the
+        // diagram shows from now on (see execution-states.ts). A batch of
+        // states alone has no events to fold.
+        if (Array.isArray(payload.states)) {
+            showExecutionStates(payload.states);
+            if (!Array.isArray(payload.events)) {
+                return;
+            }
+        }
         const events = Array.isArray(payload.events) ? (payload.events as RunStreamEvent[]) : [];
         for (const ev of events) {
             this.apply(ev);

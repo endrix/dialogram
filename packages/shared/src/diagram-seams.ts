@@ -250,6 +250,9 @@ export interface DiagramClientAssets {
 
 export type ExecutionNodeStatus = 'idle' | 'running' | 'succeeded' | 'failed';
 export interface ExecutionNodeState {
+    /** The node's id in the graph document the producer emitted (kept on
+     *  the diagram's node as `wf:graphNodeId`), or the diagram's own id for
+     *  it, which is its label. */
     nodeId: string;
     status: ExecutionNodeStatus;
     detail?: string;
@@ -267,6 +270,14 @@ export const EXECUTION_OVERLAY_ACTION_KIND = 'dialogram.executionOverlay';
  *  yet connected is DROPPED — consumers relying on completeness must replay
  *  history on connect (the SSE run stream does). */
 export interface ExecutionOverlaySink {
+    /**
+     * The node states the diagram of `sourceUri` shows, replacing the ones it
+     * showed: an empty list takes them all off. Unlike the events, the states
+     * are kept and shown again on a diagram opened after they were published.
+     * A node draws its state with the run overlay's classes (`running` the
+     * turning ring, `succeeded` green, `failed` red, `idle` nothing), matched
+     * by node id in whatever view the diagram shows.
+     */
     publish(sourceUri: string, states: ExecutionNodeState[]): void;
     emitEvents(sourceUri: string, events: unknown[]): void;
 }
@@ -274,6 +285,7 @@ export interface ExecutionOverlaySink {
 export interface ExecutionOverlayActionPayload {
     kind: typeof EXECUTION_OVERLAY_ACTION_KIND;
     sourceUri: string;
+    /** Present, the whole set of node states the diagram shows from now on. */
     states?: ExecutionNodeState[];
     /** Opaque consumer-defined stream events (e.g. agent token stream). */
     events?: unknown[];

@@ -22,6 +22,7 @@ import type {
   DiagramClientAssets,
   EntityPaletteItemSpec,
   NodeFamilySpec,
+  ExecutionNodeState,
   ExecutionOverlaySink,
 } from "@dialogram/shared";
 
@@ -276,6 +277,48 @@ export type DiagramRunDriverFactory = (
 ) => vscode.Disposable;
 
 /**
+ * Node states that come from a report rather than a run: what a product's tool
+ * says about each node of the file a diagram shows (which of its requirements
+ * are covered, which checks pass), painted with the run overlay's drawing.
+ *
+ * A run streams its states while it lasts and needs a driver for that; a
+ * report is one answer, asked for and shown. So the platform does the asking:
+ * it registers {@link showCommand} and {@link clearCommand}, offers them on the
+ * diagram's context menu ("Show <label>", "Clear <label>"), calls
+ * {@link collect} for the diagram a command is invoked on, and publishes the
+ * answer through the same execution-overlay sink a run driver gets as
+ * `DiagramRunHost.overlay`. No run driver is involved and none is needed.
+ *
+ * The states replace the ones shown; they stay until shown again or cleared,
+ * also across a view change in place (a state is matched by node id in
+ * whatever view is shown) and a reopened editor.
+ */
+export interface DiagramStatusSource {
+  /** What the states say, in a word or two (`Coverage`): the menu items, the
+   *  progress and the messages are worded from it. */
+  label: string;
+  /** Consumer-owned command id: collect the states and show them. Takes the
+   *  diagram's source URI (a `vscode.Uri`, as an editor-title menu passes it,
+   *  or a string); without one it acts on the active diagram. */
+  showCommand: string;
+  /** Consumer-owned command id: take the states off. Same argument. */
+  clearCommand: string;
+  /**
+   * The node states for the diagram of `file` (absolute path), `nodeId` as the
+   * producer's graph names the node. A node left out, or `idle`, draws
+   * nothing. A throw is reported to the person, and the states shown stay as
+   * they were.
+   */
+  collect(file: string, context: DiagramStatusContext): Promise<ExecutionNodeState[]>;
+}
+
+/** What the platform hands {@link DiagramStatusSource.collect}. */
+export interface DiagramStatusContext {
+  /** The status source's output channel, `<display name> <label>`. */
+  output: vscode.OutputChannel;
+}
+
+/**
  * v2 diagram profile — the complete activation contract at
  * `DIALOGRAM_API_VERSION` 0.3.0. It carries everything the platform needs to
  * activate a diagram for one consumer; NO external-tool/product vocabulary appears
@@ -376,6 +419,13 @@ export interface DiagramClientBehavior {
    * product's run arguments for it (`cliResumeArgs`), not set by hand.
    */
   resumeAtStep?: boolean;
+  /**
+   * The profile's status source, as the diagram's context menu offers it:
+   * its label and its two commands. Derived by the platform from
+   * `DiagramProfile.statusSource`, like {@link chatBackend}; read it, do not
+   * write it.
+   */
+  statusSource?: { label: string; showCommand: string; clearCommand: string };
 }
 
 export interface DiagramProfile {
@@ -521,6 +571,9 @@ export interface DiagramProfile {
   elkServer?: { jar: string };
   /** Run driver factory; when absent no run/stop commands or live glow are wired. */
   runDriver?: DiagramRunDriverFactory;
+  /** Node states from a report the product's tool makes, shown on demand with
+   *  the run overlay's drawing; independent of {@link runDriver}. */
+  statusSource?: DiagramStatusSource;
   /** Registers the new-source-file (and any edit-backend) commands; returns their disposable. */
   newSourceFile?: (context: vscode.ExtensionContext) => vscode.Disposable;
 }

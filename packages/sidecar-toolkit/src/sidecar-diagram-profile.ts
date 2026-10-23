@@ -6,7 +6,7 @@
  * shell owns every product string/behavior and passes it here as
  * {@link SidecarProfileInput}; this helper wires the toolkit's model source,
  * server/operation modules, edit backend, openability check, run driver,
- * navigation provider and new-source-file commands into the shape the platform's
+ * status source, navigation provider and new-source-file commands into the shape the platform's
  * `DiagramProfile` expects. The return type is left to inference so the toolkit
  * needs no `@dialogram/extension-core` dependency; the shell annotates the
  * result as `DiagramProfile` at the assignment site.
@@ -38,6 +38,7 @@ import { createSidecarEditBackend } from './chat-edit-backend.js';
 import { createPythonNavigationProvider } from './python-navigation.js';
 import { registerSidecarCommands } from './sidecar-commands.js';
 import { registerNewSourceFileCommand } from './new-source-file-command.js';
+import { createCliStatusSource, type SidecarStatusSourceInput } from './cli-status-source.js';
 import {
     CliRunDriver,
     resumeFailedRunCommandId,
@@ -297,6 +298,15 @@ export interface SidecarProfileInput {
      * `false`.
      */
     documentErrorsToProblems?: boolean;
+
+    /**
+     * Node states from a report the CLI prints, shown on demand with the run
+     * overlay's drawing: the platform registers the two commands, offers them
+     * on the diagram's context menu, and calls `collect` with a runner for the
+     * configured CLI (see `cli-status-source.ts`). Independent of the run
+     * driver. Absent, there is none.
+     */
+    statusSource?: SidecarStatusSourceInput;
 
     // Run driver.
     runOutputDirSettingKey: string;
@@ -710,6 +720,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
                 : undefined
         },
         runDriver,
+        statusSource: input.statusSource ? createCliStatusSource(input.statusSource, runtimeConfig) : undefined,
         newSourceFile
     };
     // Brand: assembled inside the platform bundle — DI fields may round-trip the API.

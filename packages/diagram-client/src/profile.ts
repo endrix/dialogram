@@ -53,6 +53,10 @@ type DiagramClientBehavior = {
      *  Type row (task, workflow) and its change-type button, for one whose
      *  node kinds are its own. */
     propertySections?: { ports?: boolean; annotations?: boolean; parameters?: boolean; entityType?: boolean };
+    /** The profile's status source, as the context menu offers it: "Show
+     *  <label>" runs `showCommand`, "Clear <label>" runs `clearCommand`.
+     *  Derived by the platform from the profile. */
+    statusSource?: { label: string; showCommand: string; clearCommand: string };
 };
 
 export type AcpConnectorInfo = {

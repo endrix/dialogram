@@ -218,7 +218,7 @@ export namespace WorkflowDiagramMetadata {
     export const OPEN_TARGET = 'wf:open';
     /** The node's id in the producer's graph document. The diagram names a
      *  node after its label, so this is how a producer's own reference to a
-     *  node (a `#<id>` link in its text) finds it. */
+     *  node (a `#<id>` link in its text, a published node state) finds it. */
     export const GRAPH_NODE_ID = 'wf:graphNodeId';
     export const IS_EXTERNAL_ACTOR = 'cal:isExternalActor';
     /** Marks a regular task that contains external function declarations or agent annotations. */

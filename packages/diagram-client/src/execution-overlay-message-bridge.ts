@@ -15,11 +15,12 @@
  * composes automatically (GLSP's direct `messenger.onNotification` is interposed
  * by the channel), so this is independent of registration order.
  */
-import { IActionDispatcher, IDiagramStartup, TYPES } from '@eclipse-glsp/client';
-import { Action as GlspAction } from '@eclipse-glsp/sprotty';
-import { inject, injectable } from 'inversify';
+import { IActionDispatcher, IDiagramStartup, IFeedbackActionDispatcher, TYPES } from '@eclipse-glsp/client';
+import { Action as GlspAction, type Disposable } from '@eclipse-glsp/sprotty';
+import { inject, injectable, optional } from 'inversify';
 import { EXECUTION_OVERLAY_ACTION_KIND } from '@dialogram/shared';
 import { RunAgentStreamActionHandler } from './editing-action-handlers';
+import { ExecutionStatesFeedbackAction, setExecutionStatePainter } from './execution-states';
 import { DiagramWebviewChannel } from './webview-channel';
 
 /** Host-initiated grid toggle — a client-only kind routed to the dispatcher. */
@@ -79,15 +80,40 @@ export function installExecutionOverlayRouting(channel: DiagramWebviewChannel): 
 }
 
 /**
- * IDiagramStartup whose only job is to hand the container's action dispatcher to
- * the module-level router (used for `showGrid`; the overlay path needs no DI).
+ * IDiagramStartup whose job is to hand the container's services to the
+ * module-level routes: the action dispatcher (used for `showGrid`; the events
+ * need no DI) and the feedback dispatcher, which draws the node states.
  */
 @injectable()
 export class ExecutionOverlayMessageBridge implements IDiagramStartup {
     @inject(TYPES.IActionDispatcher)
     protected readonly actionDispatcher!: IActionDispatcher;
 
+    @inject(TYPES.IFeedbackActionDispatcher)
+    @optional()
+    protected readonly feedbackDispatcher?: IFeedbackActionDispatcher;
+
+    /** The states drawn now, as registered feedback; disposing it takes them off. */
+    private statesFeedback?: Disposable;
+
     postModelInitialization(): void {
         setOverlayActionDispatcher(this.actionDispatcher);
+        const feedback = this.feedbackDispatcher;
+        if (!feedback) {
+            return;
+        }
+        // Each set replaces the last: the old feedback is withdrawn (its cleanup
+        // takes the classes off) before the new one is registered, with this
+        // bridge, a singleton, as the stable emitter the dispatcher keys it by.
+        setExecutionStatePainter(states => {
+            this.statesFeedback?.dispose();
+            this.statesFeedback = states.length > 0
+                ? feedback.registerFeedback(
+                    this,
+                    [ExecutionStatesFeedbackAction.create(states)],
+                    [ExecutionStatesFeedbackAction.create(states, true)]
+                )
+                : undefined;
+        });
     }
 }
