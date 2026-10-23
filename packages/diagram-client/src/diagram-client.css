@@ -3397,3 +3397,53 @@ details[open] > summary .agent-chat-expand-arrow {
     color: var(--vscode-errorForeground, #f48771);
     opacity: 1;
 }
+
+/* A producer's richer rows: the detail is often long (a title), so it gives
+   way first; a node family's colour; badges as a node header's; a group row
+   reads as a heading. */
+.workflow-hierarchy-outline-type {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.workflow-hierarchy-outline-label {
+    flex: none;
+    max-width: 60%;
+}
+
+.workflow-hierarchy-outline-chip {
+    width: 8px;
+    height: 8px;
+    flex: none;
+    border-radius: 2px;
+}
+
+.workflow-hierarchy-outline-badge {
+    flex: none;
+    padding: 0 4px;
+    border-radius: 7px;
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 14px;
+    background: color-mix(in srgb, var(--vscode-descriptionForeground, #8b8b8b) 35%, transparent);
+}
+
+.workflow-hierarchy-outline-badge.badge-tone-info {
+    background: var(--vscode-editorInfo-foreground, #3794ff);
+    color: #ffffff;
+}
+
+.workflow-hierarchy-outline-badge.badge-tone-warning {
+    background: var(--vscode-editorWarning-foreground, #cca700);
+    color: var(--vscode-editor-background, #1e1e1e);
+}
+
+.workflow-hierarchy-outline-badge.badge-tone-error {
+    background: var(--vscode-editorError-foreground, #f14c4c);
+    color: #ffffff;
+}
+
+.workflow-hierarchy-outline-row.role-group .workflow-hierarchy-outline-label {
+    font-weight: 600;
+}

@@ -90,8 +90,13 @@ export interface GraphDocument {
 /**
  * One instance in a workflow hierarchy, for an outline: where it is (its
  * `path` of instance names from the root, `[]` for the root), what it
- * instantiates, the file defining it, its node in the parent's graph, and how
- * big it is. No graph: an outline is light enough to ride on every view.
+ * instantiates, the file defining it, its node in the parent's graph (by the
+ * producer's node id), and how big it is. No graph: an outline is light
+ * enough to ride on every view.
+ *
+ * A producer whose units have a structure of their own says more about a
+ * row: what it is called and what follows (`label`, `detail`), a node
+ * family's colour (`family`), short marks (`badges`), and its `role`.
  */
 export interface HierarchyOutlineEntry {
     path: string[];
@@ -102,6 +107,24 @@ export interface HierarchyOutlineEntry {
     error?: string;
     truncated?: boolean;
     children: HierarchyOutlineEntry[];
+    /**
+     * What the row stands for. `view` (the default): a view of its own, which
+     * a double click opens. `group`: a heading over other rows (a folder, a
+     * layer), which only opens and closes; it is transparent to paths, so its
+     * children's paths are written as if it were not there, and its own path
+     * only has to be unique. `node`: a node inside the view of the row above
+     * (`nodeId`), not a view; a click finds it, a double click does what a
+     * double click on that node does.
+     */
+    role?: 'view' | 'group' | 'node';
+    /** What the row says, instead of its last path segment. */
+    label?: string;
+    /** Said after the label, dimmed: a title for an id, an id for a title. */
+    detail?: string;
+    /** A node family's name (its `id` or annotation): the row carries its colour. */
+    family?: string;
+    /** Short marks after the label, as a node header's badges. */
+    badges?: Array<{ text: string; tone?: string }>;
 }
 
 export interface ModelSourceOptions {

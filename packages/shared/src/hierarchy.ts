@@ -10,13 +10,43 @@ export interface HierarchyCrumb {
     workflowInstanceName?: string;
 }
 
+/** An entry's children as paths see them: a group row's children in its place. */
+export function hierarchyPathChildren(entry: HierarchyOutlineEntry): HierarchyOutlineEntry[] {
+    return entry.children.flatMap(child => (child.role === 'group' ? hierarchyPathChildren(child) : [child]));
+}
+
 /** The entry at `path` (instance names from the root), if the outline has it. */
 export function hierarchyEntryAt(root: HierarchyOutlineEntry, path: string[]): HierarchyOutlineEntry | undefined {
     let current: HierarchyOutlineEntry | undefined = root;
     for (const name of path) {
-        current = current?.children.find(child => child.path[child.path.length - 1] === name);
+        current = current ? hierarchyPathChildren(current).find(child => child.path[child.path.length - 1] === name) : undefined;
     }
     return current;
+}
+
+/**
+ * The rows from the root down to the entry at `path`, group rows included:
+ * what has to be open for that entry's row to show. Empty when the outline
+ * has no such entry.
+ */
+export function hierarchyRowsTo(root: HierarchyOutlineEntry, path: string[]): HierarchyOutlineEntry[] {
+    const target = hierarchyEntryAt(root, path);
+    if (!target) {
+        return [];
+    }
+    const walk = (entry: HierarchyOutlineEntry): HierarchyOutlineEntry[] | undefined => {
+        if (entry === target) {
+            return [entry];
+        }
+        for (const child of entry.children) {
+            const below = walk(child);
+            if (below) {
+                return [entry, ...below];
+            }
+        }
+        return undefined;
+    };
+    return walk(root) ?? [];
 }
 
 /**

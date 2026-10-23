@@ -176,6 +176,10 @@ export namespace WorkflowDiagramMetadata {
      *  structure, `[{ id, label }]` as it listed them on `meta.views` (a leaf's
      *  synthesis, say). On the root: the views of the unit shown. */
     export const VIEWS = 'wf:views';
+    /** The node's id in the producer's graph document. The diagram names a
+     *  node after its label, so this is how a producer's own reference to a
+     *  node (a `#<id>` link in its text, an outline row) finds it. */
+    export const GRAPH_NODE_ID = 'wf:graphNodeId';
     export const IS_EXTERNAL_ACTOR = 'cal:isExternalActor';
     /** Marks a regular task that contains external function declarations or agent annotations. */
     export const HAS_EXTERNAL_MEMBERS = 'cal:hasExternalMembers';
