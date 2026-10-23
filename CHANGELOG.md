@@ -12,7 +12,10 @@ platform API version.
   rules coloured external nodes and subgraphs only, so a product whose own
   nodes are plain saw its families only on nodes brought in from elsewhere,
   and every kind of its own in the task amber; a plain node in a family now
-  takes the family's colour in its header.
+  takes the family's colour in its header, and its watermark icon too. The
+  server put a plain node's family class on its header compartment only,
+  where neither rule looks; it is now on the node as well, as it already was
+  for external nodes and subgraphs.
 
 ### Added
 

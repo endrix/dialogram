@@ -1134,29 +1134,30 @@ export class GraphGModelSource {
         if (kindClass) {
             classes.push(kindClass);
         }
+        const defAnnots = node.meta?.['definitionAnnotations'] as Array<{ name?: string }> | undefined;
+        const family = this.nodeFamilyOf(Array.isArray(defAnnots) ? defAnnots : undefined);
         if (this.isNetworkInstanceNode(node)) {
             classes.push(WorkflowDiagramCss.NODE_NETWORK, 'network-node');
             // A subgraph can be in a product's family too — one the product
             // draws differently from the rest, say — and without the class its
             // stylesheet has nothing to select it by. No default class here:
             // an unannotated network is the platform's own, already styled.
-            const defAnnots = node.meta?.['definitionAnnotations'] as Array<{ name?: string }> | undefined;
-            const family = this.nodeFamilyOf(Array.isArray(defAnnots) ? defAnnots : undefined);
             if (family) {
                 classes.push(`external-actor-${family}`);
             }
         } else if (this.isExternal(node)) {
             classes.push(WorkflowDiagramCss.NODE_EXTERNAL_ACTOR, 'external-actor-node');
-            const defAnnots = node.meta?.['definitionAnnotations'] as Array<{ name?: string }> | undefined;
-            const annots = Array.isArray(defAnnots) ? defAnnots : undefined;
-            const family = this.nodeFamilyOf(annots);
-            if (family) {
-                classes.push(`external-actor-${family}`);
-            } else {
-                classes.push('external-actor-default');
-            }
+            classes.push(family ? `external-actor-${family}` : 'external-actor-default');
         } else {
             classes.push(WorkflowDiagramCss.NODE_ACTOR, 'actor-node');
+            // A plain node in a family is selected the same way. The class used
+            // to reach only its header compartment, where neither the family's
+            // header rule (`.actor-node.external-actor-<name> …`) nor its
+            // watermark rule (`.external-actor-<name> .node-icon-<name>`) looks,
+            // so every plain node kept the task amber whatever its family.
+            if (family) {
+                classes.push(`external-actor-${family}`);
+            }
         }
         return classes;
     }

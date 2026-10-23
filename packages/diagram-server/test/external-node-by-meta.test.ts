@@ -225,3 +225,35 @@ describe('the colour family of a network node', () => {
         expect(node.cssClasses.some((c: string) => c.startsWith('external-actor-'))).toBe(false);
     });
 });
+
+/**
+ * A plain node in a product's family.
+ *
+ * NDF draws every clause of the open document as a plain node and colours it
+ * by its kind. The family class has to be on the node itself: the header rule
+ * and the watermark rule both select from there, so a class only on the
+ * header left every clause in the task amber.
+ */
+describe('the colour family of a plain node', () => {
+    const plainWith = (meta?: Record<string, unknown>): any =>
+        new GraphGModelSource({ nodeFamilies: [{ annotation: 'requirement', color: '#2f6fd6' }] } as any)
+            .transform(docWith('requirement', meta)).graph.children
+            ?.find((child: any) => child.id === 'adder');
+
+    it('is on the node and its header when the product declared it', () => {
+        const node = plainWith({ definitionAnnotations: [{ name: 'requirement', arguments: [] }] });
+        const header = (node.children ?? []).find((child: any) =>
+            (child.cssClasses ?? []).includes('header-compartment'));
+
+        expect(node.cssClasses).toContain('actor-node');
+        expect(node.cssClasses).toContain('external-actor-requirement');
+        expect(header.cssClasses).toContain('external-actor-requirement');
+    });
+
+    it('leaves an unannotated plain node in no family', () => {
+        const node = plainWith();
+
+        expect(node.cssClasses).toContain('actor-node');
+        expect(node.cssClasses.some((c: string) => c.startsWith('external-actor-'))).toBe(false);
+    });
+});
