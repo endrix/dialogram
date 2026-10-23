@@ -142,8 +142,8 @@ describe('an outline with group and node rows', () => {
         ]);
     });
 
-    it('opens the rows down to the current view, groups and the view itself included', () => {
-        expect(rowIdsTo(rich, ['DOC-PIPE'])).toEqual(['', 'dir:arch', 'DOC-PIPE']);
+    it('opens the rows down to the current view, and the groups that arrange what it holds', () => {
+        expect(rowIdsTo(rich, ['DOC-PIPE'])).toEqual(['', 'dir:arch', 'DOC-PIPE', 'DOC-PIPE/layer:L1']);
         expect(rowIdsTo(rich, ['NOPE'])).toEqual([]);
     });
 
