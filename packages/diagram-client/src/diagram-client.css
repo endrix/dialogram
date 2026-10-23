@@ -3403,6 +3403,8 @@ details[open] > summary .agent-chat-expand-arrow {
    way first; a node family's colour; badges as a node header's; a group row
    reads as a heading. */
 .workflow-hierarchy-outline-type {
+    /* Takes what is left of the row and gives way before the label does. */
+    flex: 1 1 0;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
