@@ -373,8 +373,9 @@ describe('AgentDispatchCreateEdgesMcpToolHandler (name-addressable endpoints)', 
             const fwd = cap.forwarded();
             expect(fwd.edges[0].sourceElementId).toBe('producer.out');
             expect(fwd.edges[0].targetElementId).toBe('consumer.in');
-            // The name specs are addressing, not model metadata — stripped from args.
-            expect(fwd.edges[0].args).toBeUndefined();
+            // The name specs are addressing, not model metadata — stripped from args; an agent's
+            // edge is made headless, so no question reaches the person mid tool call.
+            expect(fwd.edges[0].args).toEqual({ headless: true });
         } finally {
             cap.restore();
         }

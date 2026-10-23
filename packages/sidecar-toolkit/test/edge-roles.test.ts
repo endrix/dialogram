@@ -9,10 +9,16 @@
  */
 import { describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
-import { WorkflowDiagramMetadata } from '@dialogram/shared';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 
 import { parseCapabilitiesDiagnostic, parseEdgeRoles } from '../src/sidecar-capabilities.js';
 import { CreateEdgeOperationHandler } from '../src/server/operations/create-edge-handler.js';
+import { SidecarInvoker } from '../src/server/operations/sidecar-invoker';
+import { DeleteElementOperationHandler } from '../src/server/operations/delete-handler.js';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const ROLES = [
     { id: 'refines', label: 'Refines: this clause narrows the target' },
@@ -67,14 +73,27 @@ function modelState() {
     };
 }
 
-function handlerWith(capabilities: unknown, sent: Array<{ op: string; args: Record<string, unknown> }>) {
-    const handler = new CreateEdgeOperationHandler();
-    (handler as any).modelState = modelState();
-    (handler as any).sidecar = {
+/** A sidecar invoker whose capabilities answer is `capabilities`, counting the asks. */
+function invokerWith(capabilities: unknown, asks = { count: 0 }, answers: Array<boolean> = []): any {
+    const invoker: any = {
+        edgeRolesByCommand: new Map(),
         sidecarOp: (op: string) => `ndf.${op}`,
         undoLabelSuffix: () => ' (ndf)',
-        sendSidecarCapabilitiesDetailed: async () => ({ ok: true, response: { status: 'ok', diagnostic: capabilities } })
+        sidecarCommand: () => 'ndf-sidecar',
+        sendSidecarCapabilitiesDetailed: async () => {
+            asks.count++;
+            const ok = answers.length > 0 ? answers.shift()! : true;
+            return ok ? { ok: true, response: { status: 'ok', diagnostic: capabilities } } : { ok: false, message: 'no answer' };
+        }
     };
+    invoker.edgeRoles = SidecarInvoker.prototype.edgeRoles.bind(invoker);
+    return invoker;
+}
+
+function handlerWith(capabilities: unknown, sent: Array<{ op: string; args: Record<string, unknown> }>, invoker = invokerWith(capabilities)) {
+    const handler = new CreateEdgeOperationHandler();
+    (handler as any).modelState = modelState();
+    (handler as any).sidecar = invoker;
     (handler as any).sendSidecarOp = async (_uri: string, payload: { op: string; args: Record<string, unknown> }) => {
         sent.push(payload);
         return true;
@@ -179,5 +198,75 @@ describe('the create-edge handler and the kind of edge', () => {
             windowAny.showQuickPick = original;
         }
         expect(asked).toBe(0);
+    });
+    it('asks the sidecar what it offers once per session, not on every connect', async () => {
+        const asks = { count: 0 };
+        const capabilities = { supportedOps: ['connect'], edgeRoles: [{ id: 'refines' }] };
+        const invoker = invokerWith(capabilities, asks);
+        const sent: Array<{ op: string; args: Record<string, unknown> }> = [];
+        await connect(handlerWith(capabilities, sent, invoker));
+        await connect(handlerWith(capabilities, sent, invoker));
+        expect(sent.map(payload => payload.args.role)).toEqual(['refines', 'refines']);
+        expect(asks.count).toBe(1);
+    });
+
+    it('asks again after an ask that failed', async () => {
+        const asks = { count: 0 };
+        const invoker = invokerWith({ supportedOps: ['connect'], edgeRoles: [{ id: 'refines' }] }, asks, [false, true]);
+        expect(await invoker.edgeRoles('file:///spec/a.md')).toBeUndefined();
+        expect((await invoker.edgeRoles('file:///spec/a.md'))?.map((r: any) => r.id)).toEqual(['refines']);
+        expect(asks.count).toBe(2);
+    });
+
+    it('never asks the person when an agent makes the edge (headless)', async () => {
+        const sent: Array<{ op: string; args: Record<string, unknown> }> = [];
+        const capabilities = { supportedOps: ['connect'], edgeRoles: [{ id: 'refines' }, { id: 'verifies' }] };
+        await connect(handlerWith(capabilities, sent), { headless: true });
+        expect(sent).toHaveLength(1);
+        expect(sent[0].args.role).toBeUndefined();
+    });
+});
+
+describe('the delete handler and the kind of edge', () => {
+    async function deleteEdge(capabilities: unknown): Promise<Array<{ op: string; args: Record<string, unknown> }>> {
+        const file = path.join(mkdtempSync(path.join(tmpdir(), 'edge-roles-')), 'doc.md');
+        writeFileSync(file, '# doc\n');
+        const edge = {
+            id: 'e1',
+            type: WorkflowDiagramTypes.EDGE_CONNECTION,
+            args: { 'wf:from': 'A', 'wf:to': 'B', 'wf:outPort': 'out', 'wf:inPort': 'in', [WorkflowDiagramMetadata.EDGE_ROLE]: 'refines' }
+        };
+        const sent: Array<{ op: string; args: Record<string, unknown> }> = [];
+        const handler = new DeleteElementOperationHandler() as any;
+        handler.modelState = {
+            root: { args: { sourceUri: pathToFileURL(file).href, 'wf:workflowName': 'DOC' } },
+            index: { get: (id: string) => (id === 'e1' ? edge : undefined) }
+        };
+        handler.sidecar = invokerWith(capabilities);
+        handler.sidecar.sendSidecarOp = async (_uri: string, payload: { op: string; args: Record<string, unknown> }) => {
+            sent.push(payload);
+            return true;
+        };
+        const workspaceAny = vscode.workspace as any;
+        const original = workspaceAny.openTextDocument;
+        workspaceAny.openTextDocument = async () => ({ getText: () => '# doc\n' });
+        try {
+            const command = handler.createCommand({ kind: 'deleteElement', elementIds: ['e1'] });
+            await ((command as any).options?.computeEdits?.() ?? (command as any).computeEdits?.());
+        } finally {
+            workspaceAny.openTextDocument = original;
+        }
+        return sent;
+    }
+
+    it("sends the edge's role when the sidecar makes edges of several kinds", async () => {
+        const sent = await deleteEdge({ supportedOps: ['deleteEdge'], edgeRoles: [{ id: 'refines' }, { id: 'verifies' }] });
+        expect(sent.map(payload => payload.args.role)).toEqual(['refines']);
+    });
+
+    it('sends no role to a sidecar that lists none, as before', async () => {
+        const sent = await deleteEdge({ supportedOps: ['deleteEdge'] });
+        expect(sent).toHaveLength(1);
+        expect(sent[0].args.role).toBeUndefined();
     });
 });
