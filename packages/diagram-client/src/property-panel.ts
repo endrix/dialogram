@@ -81,7 +81,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             if (!anchor || !anchor.closest('#property-panel')) {
                 return;
             }
-            const link = classifyLink(anchor.getAttribute('href'));
+            const link = classifyLink(anchor.getAttribute('href'), anchor.getAttribute('title'));
             if (!link) {
                 return;
             }
@@ -117,6 +117,10 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     protected followLink(link: PanelLink): void {
         if (link.kind === 'element') {
             const id = this.elementIdFor(link.id);
+            if (!id && link.fallback) {
+                this.followLink({ kind: 'reference', href: link.fallback });
+                return;
+            }
             if (!id) {
                 VscodeUi.instance.infoMessage(`${link.id} is not in this diagram.`);
                 return;

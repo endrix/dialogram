@@ -13,7 +13,8 @@
  * - The property panel's text can carry links (Markdown, the producer's
  *   facts). A click opens the target: `#<id>` is an element of this diagram
  *   (its id, or the producer's own, `wf:graphNodeId`), selected and brought
- *   into view; `http(s):` and `mailto:` go to the
+ *   into view, or, when the diagram does not draw it, the file reference in
+ *   the link's title (`[X](#id "/abs/doc.md#L12")`), opened instead; `http(s):` and `mailto:` go to the
  *   browser; anything else is a file reference, resolved by the extension
  *   host (an absolute path, or a path relative to the node's own file, else
  *   searched for in the workspace), with `#L12`, `#L12-L20` or a symbol after
@@ -81,19 +82,29 @@ export function openTargetAction(element: GModelElement | undefined): Action | u
 }
 
 export type PanelLink =
-    | { kind: 'element'; id: string }
+    | { kind: 'element'; id: string; fallback?: string }
     | { kind: 'external'; href: string }
     | { kind: 'reference'; href: string };
 
-/** What a link in the property panel points at, or undefined for nothing to follow. */
-export function classifyLink(href: string | null | undefined): PanelLink | undefined {
+/**
+ * What a link in the property panel points at, or undefined for nothing to
+ * follow. An element link keeps its title as a fallback when the title is a
+ * file reference (not a URL, not plain words).
+ */
+export function classifyLink(href: string | null | undefined, title?: string | null): PanelLink | undefined {
     const value = href?.trim();
     if (!value) {
         return undefined;
     }
     if (value.startsWith('#')) {
         const id = decodeURIComponentSafe(value.slice(1));
-        return id ? { kind: 'element', id } : undefined;
+        if (!id) {
+            return undefined;
+        }
+        const fallback = title?.trim();
+        return fallback && !/\s/.test(fallback) && !/^[a-z][a-z0-9+.-]*:/i.test(fallback)
+            ? { kind: 'element', id, fallback }
+            : { kind: 'element', id };
     }
     if (/^(https?|mailto):/i.test(value)) {
         return { kind: 'external', href: value };

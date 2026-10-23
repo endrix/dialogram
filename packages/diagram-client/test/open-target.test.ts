@@ -46,6 +46,13 @@ describe('a link in the property panel', () => {
         expect(classifyLink('#node%3Aa%20b')).toEqual({ kind: 'element', id: 'node:a b' });
     });
 
+    it('keeps a file reference in the title as where to go when the diagram does not draw the element', () => {
+        expect(classifyLink('#node:x', '/w/spec/fsm.md#L90')).toEqual({ kind: 'element', id: 'node:x', fallback: '/w/spec/fsm.md#L90' });
+        // A title that is words, or a URL, is a tooltip and nothing more.
+        expect(classifyLink('#node:x', 'The fetch state')).toEqual({ kind: 'element', id: 'node:x' });
+        expect(classifyLink('#node:x', 'https://example.org')).toEqual({ kind: 'element', id: 'node:x' });
+    });
+
     it('is a URL for the browser, or a file reference for the host', () => {
         expect(classifyLink('https://example.org/x')).toEqual({ kind: 'external', href: 'https://example.org/x' });
         expect(classifyLink('gen/membus/memif.py#L12')).toEqual({ kind: 'reference', href: 'gen/membus/memif.py#L12' });
