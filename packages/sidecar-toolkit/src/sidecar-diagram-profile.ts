@@ -204,6 +204,13 @@ export interface SidecarProfileInput {
      */
     mcp?: { enabled: boolean };
 
+    /**
+     * The Java ELK server the product ships, for large graphs: its fat jar,
+     * relative to the extension's root. Threaded onto `profile.elkServer`; the
+     * engine is the person's choice, under `<settingsNamespace>.layout.*`.
+     */
+    elkServer?: { jar: string };
+
     // New-source-file scaffold. `template` gives the whole text from the name,
     // for a product whose file is not a decorated Python function; absent, the
     // scaffold is the import line, the decorator and an empty function.
@@ -539,6 +546,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         // the `<ns>.chat.useGlspMcp` setting (read per-turn in ChatRuntime), so no
         // setting is read here. An explicit `input.mcp` wins (e.g. `{enabled:false}`).
         mcp: input.mcp ?? { enabled: true },
+        elkServer: input.elkServer,
         chat: {
             name: input.chat.name,
             fullName: input.chat.fullName,

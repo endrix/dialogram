@@ -8,6 +8,19 @@ platform API version.
 
 ### Added
 
+- Large graphs on the Java ELK server. A profile that ships the server's jar
+  (`elkServer: { jar }`; Dialogram keeps one in
+  `packages/diagram-server/resources/elk-server/`) lays out every graph past
+  150 nodes or 400 edges there, and the rest on elkjs as before; anything the
+  server cannot do falls back to elkjs. `<settingsNamespace>.layout.engine`
+  (`auto`, `elkjs`, `elk-server`), `.layout.javaPath`, `.layout.javaOpts`
+  (default `-Xmx2g`) and `.layout.serverTimeoutMs` are the person's. One JVM
+  per extension host, started by the first layout that needs it and stopped
+  with the extension. On NDF documents: Free Ports on 2000 clauses 8.2 s on
+  elkjs, 2.6 s on the server. From mlir-viewer's elk-server engine, speaking
+  only the server's gzip-framed mode (its plain mode hangs on a brace in an
+  id) over one connection per layout. The jar carries ELK 0.8.1, elkjs 0.9.3.
+
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the
   tooltip on hover still says what it carries. Default `true`, as before.

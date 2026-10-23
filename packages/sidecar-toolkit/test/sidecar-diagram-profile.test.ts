@@ -143,6 +143,12 @@ describe('createSidecarDiagramProfile', () => {
         expect(other.storageOptions?.entityPaletteItems?.map(i => i.label)).toEqual(['Module Instance']);
     });
 
+    it('carries the product’s ELK server jar onto the profile', () => {
+        expect(createSidecarDiagramProfile(baseInput()).elkServer).toBeUndefined();
+        expect(createSidecarDiagramProfile(baseInput({ elkServer: { jar: 'resources/elk.jar' } })).elkServer)
+            .toEqual({ jar: 'resources/elk.jar' });
+    });
+
     it('turns on resuming at a step exactly when the product says how', () => {
         const without = createSidecarDiagramProfile(baseInput({ clientBehavior: { noneSentinel: 'x' } }));
         expect((without.clientBehavior as any)?.resumeAtStep).toBeUndefined();

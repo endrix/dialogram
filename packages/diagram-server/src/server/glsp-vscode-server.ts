@@ -15,6 +15,7 @@ import { createWorkflowServerModules } from './server-module';
 import { createSessionGatedGlspClient } from './session-gated-glsp-client';
 import type { EditStrategy, DiagramModelSource } from '@dialogram/shared';
 import type { StorageRuntimeOptions } from './storage-runtime-options';
+import type { ElkServerOptions } from './elk-server/index';
 import type { McpServerModuleOptions } from './mcp-diagram-module';
 
 /**
@@ -53,6 +54,8 @@ export interface WorkflowGlspVscodeServerOptions extends Partial<Omit<NodeGlspVs
      *  wire-level `mcpServer` config that actually starts the listener is a separate option
      *  (inherited from `NodeGlspVscodeServerOptions`), threaded by the extension host. */
     mcp?: McpServerModuleOptions;
+    /** Large graphs on the Java ELK server; absent, elkjs lays out everything (see server-module.ts). */
+    elkServer?: ElkServerOptions;
 }
 
 /**
@@ -93,7 +96,8 @@ export function createWorkflowGlspVscodeServer(
             additionalServerModules: mergedOptions.additionalServerModules,
             edits: mergedOptions.edits,
             diagramModuleFactory: mergedOptions.diagramModuleFactory,
-            mcp: mergedOptions.mcp
+            mcp: mergedOptions.mcp,
+            elkServer: mergedOptions.elkServer
         })
     });
     return server;
