@@ -3,6 +3,7 @@ import { looksLikeDiff, isBlock, parseEmbedded } from './agent-outputs';
 import { ISelectionListener, IActionDispatcher, TYPES } from '@eclipse-glsp/client';
 import {
     renderMarkdownSafe,
+    renderDocumentMarkdownSafe,
     renderInlineMarkdownSafe,
     looksLikeMarkdown as looksLikeMarkdownShared,
 } from './markdown';
@@ -4466,8 +4467,9 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             if (fact.markdown) {
                 const block = document.createElement('div');
                 block.className = 'pp-aval pp-fact-markdown';
-                // renderMarkdownSafe sanitizes before this assignment.
-                block.innerHTML = renderMarkdownSafe(fact.value);
+                // Sanitized before this assignment. A fact's text is a
+                // document's, wrapped at a column: its newlines join.
+                block.innerHTML = renderDocumentMarkdownSafe(fact.value);
                 row.appendChild(block);
             } else {
                 const val = document.createElement('span');

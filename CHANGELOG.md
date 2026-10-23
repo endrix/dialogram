@@ -14,7 +14,9 @@ platform API version.
   under the identity header, one read-only row per entry in the producer's
   order, label on the left and value on the right. An entry with
   `markdown: true` has its value rendered as Markdown, as a block under the
-  label, through the same sanitizer the chat uses. No label is special and
+  label, through the same sanitizer the chat uses but as CommonMark (a single
+  newline joins the lines, so a document's wrapped prose reads as a
+  paragraph rather than breaking at every column). No label is special and
   nothing is interpreted; an entry without a string label and value is
   dropped on the way in. Carried on `wf:facts`.
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
