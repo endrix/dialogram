@@ -43,6 +43,7 @@ import {
 } from './model';
 import { EDGE_OPEN_ANCHOR_X_ARG, EDGE_OPEN_ANCHOR_Y_ARG } from './edge-open-mouse-listener';
 import { clientBehavior } from './profile';
+import { captionIsShared, carriedTextOf } from './edge-caption-sharing';
 import { isIncidentEdgeInActiveDrag } from './elk-live-drag-router';
 import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide } from '@dialogram/shared';
 import { WorkflowDiagramConstants } from '@dialogram/shared';
@@ -1762,6 +1763,9 @@ export class WorkflowEdgeView extends PolylineEdgeView {
         // many and whose ports already say what they carry turns it off: the
         // line alone, with the tooltip still there on hover.
         const captions = clientBehavior().edgeCaptions !== false;
+        // 'once': the carried label is written by one edge of each bundle
+        // that leaves or reaches a port together (edge-caption-sharing.ts).
+        const sharedCaption = clientBehavior().edgeCaptions === 'once' && captionIsShared(edge);
         const structureBranch = (edgeArgs?.[WorkflowDiagramMetadata.STRUCTURE_BRANCH] as string | undefined) ?? undefined;
         const structureCondition = (edgeArgs?.[WorkflowDiagramMetadata.STRUCTURE_CONDITION] as string | undefined) ?? undefined;
         const structureForeach = (edgeArgs?.[WorkflowDiagramMetadata.STRUCTURE_FOREACH] as string | undefined) ?? undefined;
@@ -1770,21 +1774,11 @@ export class WorkflowEdgeView extends PolylineEdgeView {
         const viewerLastTokenText = this.formatViewerLastTokenForTooltip(viewerLastToken);
         const queueSizeRaw = edgeArgs?.[WorkflowDiagramMetadata.QUEUE_SIZE];
         const queueSize = typeof queueSizeRaw === 'number' && Number.isFinite(queueSizeRaw) ? Math.max(0, Math.trunc(queueSizeRaw)) : undefined;
-        // What this connection carries, when the producer says.
-        //
-        // `EDGE_LABEL` is text the producer formatted — a payload type, a
-        // protocol name — and `EDGE_WIDTH` is a bit count. Both describe the
-        // same thing at different resolutions, so only one is drawn: the label
-        // when there is one, the width otherwise. Drawing both would put two
-        // captions on one line for no extra information.
-        const edgeLabelText = (edgeArgs?.[WorkflowDiagramMetadata.EDGE_LABEL] as string | undefined)?.trim();
-        const edgeWidthRaw = edgeArgs?.[WorkflowDiagramMetadata.EDGE_WIDTH];
-        const edgeWidth = typeof edgeWidthRaw === 'number' && Number.isFinite(edgeWidthRaw)
-            ? Math.max(0, Math.trunc(edgeWidthRaw))
-            : undefined;
-        const carriedText = edgeLabelText && edgeLabelText !== ''
-            ? edgeLabelText
-            : edgeWidth !== undefined ? String(edgeWidth) : undefined;
+        // What this connection carries, when the producer says: its label,
+        // else its width (one caption, not two; see carriedTextOf).
+        const carriedText = carriedTextOf(edgeArgs);
+        // Written on the wire, or else said by the tooltip.
+        const carriedWritten = captions && !!carriedText && !sharedCaption;
 
         const fromEntity = (edgeArgs?.['wf:from'] as string | undefined) ?? undefined;
         const toEntity = (edgeArgs?.['wf:to'] as string | undefined) ?? undefined;
@@ -1798,6 +1792,7 @@ export class WorkflowEdgeView extends PolylineEdgeView {
         const hasViewerToken = !!viewerLastTokenText;
         const tooltipLines = [
             endpointLine,
+            carriedText && !carriedWritten ? carriedText : undefined,
             viewerLastTokenText ? `Last token: ${viewerLastTokenText}` : undefined,
             queueSize !== undefined ? `Queue size: ${queueSize}` : undefined
         ].filter(Boolean) as string[];
@@ -1855,7 +1850,7 @@ export class WorkflowEdgeView extends PolylineEdgeView {
             }),
             ...(captions && hasViewerToken ? this.renderEdgeOpenButton(workflowEdge as any, normalizedSegments as any) : []),
             ...(captions && queueSize !== undefined ? this.renderEdgeQueueSizeBadge(normalizedSegments as any, queueSize, hasViewerToken) : []),
-            ...(captions && carriedText
+            ...(captions && carriedText && carriedWritten
                 ? this.renderEdgeCarriedLabel(
                     normalizedSegments as any,
                     carriedText,

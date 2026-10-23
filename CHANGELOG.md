@@ -8,6 +8,13 @@ platform API version.
 
 ### Added
 
+- `clientBehavior.edgeCaptions: 'once'`: of the edges that leave one port, or
+  reach one port, with the same carried label, only the first in model order
+  writes it; the router bundles them on one trunk, where their captions used
+  to stack (twenty `depends-on` on one line). An edge whose caption is left
+  out, or not written because captions are off, says what it carries in its
+  hover tooltip. `true` (the default) and `false` are unchanged.
+
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the
   tooltip on hover still says what it carries. Default `true`, as before.
