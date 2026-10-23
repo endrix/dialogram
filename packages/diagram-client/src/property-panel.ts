@@ -34,7 +34,7 @@ import { ppField, ppNumberField, ppReadonlyRow, renderInto } from './property-fi
 import { type PropertyElement, readNumberArg } from './property-model';
 import { PropertyPanelChrome } from './property-panel-chrome';
 import { clientBehavior, commandId, operationKind } from './profile';
-import { classifyLink, openTargetOf, referenceAction, type PanelLink } from './open-target';
+import { classifyLink, decodeURIComponentSafe, openTargetOf, referenceAction, type PanelLink } from './open-target';
 import { producerFields, type ProducerField } from './producer-fields';
 
 /**
@@ -4940,7 +4940,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         const showType = clientBehavior().propertySections?.entityType !== false;
         // The file the node stands for, a double-click away and here a click away.
         const opens = openTargetOf(node);
-        const opensPath = opens ? decodeURIComponent(opens.uri.replace(/^file:\/\//, '')) : '';
+        const opensPath = opens ? decodeURIComponentSafe(opens.uri.replace(/^file:\/\//, '')) : '';
         const opensRow = opens
             ? html`<div class="pp-arow">
                   <span class="pp-akey">Opens</span>

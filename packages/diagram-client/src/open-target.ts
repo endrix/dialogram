@@ -129,7 +129,7 @@ export function referenceAction(link: Extract<PanelLink, { kind: 'external' | 'r
     }) as Action;
 }
 
-function decodeURIComponentSafe(value: string): string {
+export function decodeURIComponentSafe(value: string): string {
     try {
         return decodeURIComponent(value);
     } catch {

@@ -112,7 +112,7 @@ function isSerializedRange(value: unknown): value is SerializedRange {
  * preview: the reader asked for the code. Both look the node up through the
  * element's ancestry, so a port or label resolves to its node.
  */
-function openLeaf(target: GModelElement): Action[] {
+export function openLeaf(target: GModelElement): Action[] {
     let current: GModelElement | undefined = target;
     while (current) {
         const args = (current as unknown as { args?: Args }).args;
