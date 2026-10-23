@@ -58,6 +58,11 @@ export class WorkflowToolPaletteItemProvider extends ToolPaletteItemProvider {
         if (this.storageOptions?.supportsElementCreation === false) {
             return [];
         }
+        // A view the producer marked read-only (`wf:readOnlyView`) still gets
+        // the items: the palette asks for them once per editor, so an editor
+        // that opened on such a view would keep an empty palette after
+        // navigating to an editable one. The client hides them while a
+        // read-only view is shown (read-only-view.ts).
 
         const useAlternateEntityPalette = this.storageOptions?.useAlternateEntityPalette ?? false;
         const platformEntityItems = this.storageOptions?.platformEntityItems ?? true;

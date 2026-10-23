@@ -321,6 +321,12 @@ body.vscode-high-contrast {
     pointer-events: none;
 }
 
+/* A read-only view (wf:readOnlyView, see read-only-view.ts) has nothing to
+   create, so the palette keeps its header and drops its tools. */
+body.wf-read-only-view .tool-palette .palette-body {
+    display: none;
+}
+
 .feedback-edge {
      pointer-events: none;
 }

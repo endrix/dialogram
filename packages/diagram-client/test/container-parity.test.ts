@@ -29,7 +29,8 @@
  * workflow node from a measurement, the status source's context-menu provider with its
  * `dialogram.runStatusCommand` handler ("Show <label>" and "Clear <label>" on the canvas, running
  * the profile's commands), and the `ExecutionStatesFeedbackCommand` that draws published node
- * states — plus one change: `label:boundary:type` is bound to
+ * states, and the read-only view marker (hides the palette's tools while the view shown is
+ * read-only, bound to itself and as a model-root listener) — plus one change: `label:boundary:type` is bound to
  * the non-editable `BoundaryLabel`, because editing it renamed the port.
  * The oracle still does its job: it fails on any binding this composition gains
  * or loses, and updating the fixture is the deliberate act of accepting one.

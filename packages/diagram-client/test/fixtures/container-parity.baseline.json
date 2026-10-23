@@ -455,5 +455,16 @@
     {
         "command": "ExecutionStatesFeedbackCommand",
         "op": "command"
+    },
+    {
+        "id": "ReadOnlyViewMarker",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "id": "Symbol(stub.IGModelRootListener)",
+        "op": "bind",
+        "to": "service:ReadOnlyViewMarker"
     }
 ]

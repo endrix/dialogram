@@ -1031,6 +1031,9 @@ export class GraphGModelSource {
         if (graphFacts) {
             graphArgs[WorkflowDiagramMetadata.FACTS] = graphFacts;
         }
+        if (doc.graph.meta?.['readOnly'] === true) {
+            graphArgs[WorkflowDiagramMetadata.READ_ONLY_VIEW] = true;
+        }
         if (doc.partial) {
             graphArgs['wf:partial'] = true;
         }
