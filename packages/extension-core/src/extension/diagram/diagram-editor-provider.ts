@@ -847,7 +847,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             return webviewUri.with({ query: `v=${Math.trunc(mtime)}` });
         } catch {
             console.warn(
-                `[WorkflowEditorProvider] Configured clientAssets path is not readable; serving with v=0: ${fileUri.fsPath}`
+                `[WorkflowEditorProvider] A configured client asset (clientAssets or clientStylesheets) is not readable; serving with v=0: ${fileUri.fsPath}`
             );
             return webviewUri.with({ query: 'v=0' });
         }
