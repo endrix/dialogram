@@ -36,6 +36,7 @@ import { executeViewerCommand, executeViewerOpen, executeViewerReveal } from './
 import { decideDiagramOpen } from './diagram-open-decision';
 import { readMcpServerUrl } from './mcp-server-url';
 import { composeStorageRuntimeOptions } from './profile-storage-options';
+import { composeElkServerOptions } from './profile-elk-server-options';
 import { type DiagramChatConfirm, type DiagramChatConfirmAnswer, type DiagramChatTask, type DiagramProfile, type DiagramRunAnswer, type DiagramRunHost, type DiagramRunQuestion } from '../../api';
 
 // Define the diagram type constant locally to avoid import
@@ -389,7 +390,7 @@ export async function activateGlspIntegration(
     console.log('[Workflow GLSP] Creating GLSP server...');
 
     // Lazy import to avoid loading modules at extension activation time
-    const { createWorkflowGlspVscodeServer } = await import('@dialogram/diagram-server');
+    const { createWorkflowGlspVscodeServer, disposeElkServers } = await import('@dialogram/diagram-server');
 
     // GLSP-MCP opt-in gate. When on, load the MCP DI modules (bridging the profile's
     // read-only chat tools into diagram-scope MCP tools) AND send the wire-level
@@ -401,6 +402,13 @@ export async function activateGlspIntegration(
     // here. See `profile-storage-options.ts` for the one case that is not a
     // straight pass-through.
     const storageOptions = composeStorageRuntimeOptions(profile);
+
+    // Large graphs on the product's Java ELK server, as its settings choose.
+    const layoutSettings = vscode.workspace.getConfiguration(profile.settingsNamespace);
+    const elkServer = composeElkServerOptions(profile, context.extensionPath, key => layoutSettings.get(key));
+    if (elkServer) {
+        context.subscriptions.push({ dispose: () => disposeElkServers() });
+    }
 
     // Create the GLSP server (runs in the extension process). Every product
     // detail — model source, extra DI modules, edit operation modules and the
@@ -420,7 +428,8 @@ export async function activateGlspIntegration(
         mcp: mcpEnabled ? { enabled: true, tools: profile.chat?.tools } : undefined,
         // Wire-level opt-in: a distinct server name per profile so two installed consumers
         // never collide on the built-in MCP host registry.
-        mcpServer: mcpEnabled ? { name: `glsp-${profile.key}` } : undefined
+        mcpServer: mcpEnabled ? { name: `glsp-${profile.key}` } : undefined,
+        elkServer
     });
 
     // Start the server

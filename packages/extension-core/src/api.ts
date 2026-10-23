@@ -504,6 +504,15 @@ export interface DiagramProfile {
    * activation handle for the agent clients.
    */
   mcp?: { enabled: boolean };
+  /**
+   * The Java ELK server this product ships, for laying out large graphs.
+   * `jar` is the server's fat jar, relative to the extension's root or
+   * absolute. With it, `<settingsNamespace>.layout.engine` (`auto`, the
+   * default; `elkjs`; `elk-server`) picks the engine, and `.layout.javaPath`,
+   * `.layout.javaOpts` and `.layout.serverTimeoutMs` tune the process; see
+   * diagram-server `elk-server/`. Absent, every layout runs on elkjs.
+   */
+  elkServer?: { jar: string };
   /** Run driver factory; when absent no run/stop commands or live glow are wired. */
   runDriver?: DiagramRunDriverFactory;
   /** Registers the new-source-file (and any edit-backend) commands; returns their disposable. */

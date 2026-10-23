@@ -38,6 +38,7 @@ import { WorkflowRerouteEdgesAvoidOverlapsOperationHandler } from '../operations
 import { WorkflowLayoutBoundaryFlowOperationHandler } from '../operations/layout-boundary-flow-handler';
 import { DIAGRAM_MODEL_SOURCE } from './model-source-token';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
+import { createElkFactory, type ElkServerOptions } from './elk-server/index';
 import { WorkflowServerLogger } from './disposed-request-logger';
 
 /**
@@ -113,6 +114,11 @@ export function createWorkflowServerModules(
          * config (threaded separately by the extension host).
          */
         mcp?: McpServerModuleOptions;
+        /**
+         * Lay large graphs out on the Java ELK server (see `elk-server/`).
+         * Absent, or `engine: 'elkjs'`, every layout runs on elkjs as before.
+         */
+        elkServer?: ElkServerOptions;
     }
 ): ServerModule[] {
     const serverModule = new ServerModule();
@@ -121,17 +127,26 @@ export function createWorkflowServerModules(
     const additionalModules: ContainerModule[] = [];
     
     // Add ELK layout module for automatic layout
-    const elkLayoutModule = configureELKLayoutModule({
+    const elkDefaults = {
         algorithms: ['layered'],
-        layoutConfigurator: WorkflowLayoutConfigurator,
         defaultLayoutOptions: {
             'elk.algorithm': 'layered',
             'elk.direction': 'RIGHT',
             'elk.layered.spacing.nodeNodeBetweenLayers': '80',
             'elk.spacing.nodeNode': '40'
         }
-    });
+    };
+    const elkLayoutModule = configureELKLayoutModule({ ...elkDefaults, layoutConfigurator: WorkflowLayoutConfigurator });
     additionalModules.push(elkLayoutModule);
+
+    // Large graphs on the Java ELK server, when the product ships it: the
+    // engine's ELK becomes one that sends them there and keeps the rest on elkjs.
+    if (options?.elkServer && options.elkServer.engine !== 'elkjs') {
+        const elkFactory = createElkFactory(elkDefaults, options.elkServer);
+        additionalModules.push(new ContainerModule((_bind, _unbind, _isBound, rebind) => {
+            rebind(ElkFactory).toConstantValue(elkFactory);
+        }));
+    }
     
     // Helper to create WorkflowElkLayoutEngine with proper dependencies
     const createWorkflowElkLayoutEngine = (container: interfaces.Container): WorkflowElkLayoutEngine => {
