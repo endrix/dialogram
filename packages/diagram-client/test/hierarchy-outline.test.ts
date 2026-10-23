@@ -11,11 +11,13 @@ import {
     foreignFileName,
     outlineMatches,
     pathOfTrail,
+    rowDetail,
     rowId,
+    rowIdsTo,
     rowLabel,
     trailTo
 } from '../src/hierarchy-outline-tree';
-import { findNodeIdByEntityName, trailOfRoot } from '../src/hierarchy-outline';
+import { findNodeIdByEntityName, findNodeIdByGraphId, trailOfRoot } from '../src/hierarchy-outline';
 
 const TOP = 'file:///w/top.py';
 const BLOCK = 'file:///w/layers/block.py';
@@ -98,5 +100,72 @@ describe('looking at an instance', () => {
         };
         expect(findNodeIdByEntityName(root, 'b1')).toBe('b1-node');
         expect(findNodeIdByEntityName(root, 'missing')).toBeUndefined();
+    });
+});
+
+/**
+ * A producer's richer outline: folders and layers as group rows, transparent
+ * to paths; documents as views by their title; clauses as node rows, found by
+ * the producer's node id in the document's view.
+ */
+describe('an outline with group and node rows', () => {
+    const PROJECT = 'file:///w/ndf.yaml';
+    const PIPELINE = 'file:///w/arch/pipeline.md';
+    const clause = (doc: string, id: string, title: string): HierarchyOutlineEntry => ({
+        path: [doc, id], workflowName: id, sourceUri: PIPELINE, role: 'node', nodeId: `node:scope:root:${id}`,
+        label: id, detail: title, family: 'requirement', badges: [{ text: 'MUST', tone: 'info' }], children: []
+    });
+    const rich: HierarchyOutlineEntry = {
+        path: [], workflowName: 'proj', sourceUri: PROJECT, nodeCount: 1,
+        children: [{
+            path: ['dir:arch'], workflowName: 'arch', role: 'group', label: 'arch',
+            children: [{
+                path: ['DOC-PIPE'], workflowName: 'DOC-PIPE', sourceUri: PIPELINE, nodeCount: 2, label: 'Pipeline', detail: 'DOC-PIPE',
+                children: [{
+                    path: ['DOC-PIPE', 'layer:L1'], workflowName: 'L1', role: 'group', label: 'L1',
+                    children: [clause('DOC-PIPE', 'PIPE-001', 'Issue contract'), clause('DOC-PIPE', 'PIPE-002', 'Issue rate')]
+                }]
+            }]
+        }]
+    };
+
+    it('finds a document and its clauses through the groups, by their own paths', () => {
+        expect(entryAt(rich, ['DOC-PIPE'])?.label).toBe('Pipeline');
+        expect(entryAt(rich, ['DOC-PIPE', 'PIPE-002'])?.detail).toBe('Issue rate');
+        expect(entryAt(rich, ['dir:arch'])).toBeUndefined();
+    });
+
+    it('opens a document at the trail a drill-down gives, the folder no crumb of it', () => {
+        expect(trailTo(rich, PROJECT, ['DOC-PIPE'])).toEqual([
+            { sourceUri: PROJECT, workflowName: 'proj' },
+            { sourceUri: PIPELINE, workflowName: 'DOC-PIPE', workflowInstanceName: 'DOC-PIPE' }
+        ]);
+    });
+
+    it('opens the rows down to the current view, and the groups that arrange what it holds', () => {
+        expect(rowIdsTo(rich, ['DOC-PIPE'])).toEqual(['', 'dir:arch', 'DOC-PIPE', 'DOC-PIPE/layer:L1']);
+    });
+
+    it('opens the rows down to the deepest one it lists for a view it does not (a row cut short)', () => {
+        expect(rowIdsTo(rich, ['DOC-PIPE', 'PIPE-009'])).toEqual(['', 'dir:arch', 'DOC-PIPE']);
+        expect(rowIdsTo(rich, ['NOPE'])).toEqual(['']);
+    });
+
+    it('says the producer’s label and detail, and filters by either', () => {
+        const pipeline = entryAt(rich, ['DOC-PIPE'])!;
+        expect(rowLabel(pipeline)).toBe('Pipeline');
+        expect(rowDetail(pipeline)).toBe('DOC-PIPE');
+        expect(rowDetail(rich.children[0])).toBeUndefined();
+        // An instance the producer says nothing more about keeps its workflow as the detail.
+        expect(rowDetail(outline.children[0])).toBe('block');
+        expect(outlineMatches(rich, 'issue rate')).toBe(true);
+        expect(outlineMatches(rich, 'pipe-001')).toBe(true);
+        expect(outlineMatches(rich, 'nothing like it')).toBe(false);
+    });
+
+    it('finds a node row’s node by the producer’s id, whatever the diagram named it', () => {
+        const root = { id: 'g', children: [{ id: 'Issue contract', type: 'node:actor', args: { [WorkflowDiagramMetadata.GRAPH_NODE_ID]: 'node:scope:root:PIPE-001' }, children: [] }] };
+        expect(findNodeIdByGraphId(root, 'node:scope:root:PIPE-001')).toBe('Issue contract');
+        expect(findNodeIdByGraphId(root, 'node:scope:root:PIPE-404')).toBeUndefined();
     });
 });
