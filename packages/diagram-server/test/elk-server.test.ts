@@ -23,6 +23,7 @@ import { DefaultElementFilter } from '@eclipse-glsp/layout-elk';
 import { FRAME_HEADER_BYTES, FRAME_MAGIC, encodeFrame, layoutOnServer } from '../src/server/elk-server/elk-server-client';
 import { ElkServerProcess, type SpawnFunction } from '../src/server/elk-server/elk-server-process';
 import { SwitchingElk, elkGraphSize, goesToServer } from '../src/server/elk-server/switching-elk';
+import { createElkFactory, disposeElkServers, sharedElkServerProcess } from '../src/server/elk-server/index';
 import { GraphGModelSource } from '../src/model/graph-gmodel-source';
 import { convertToGModelRoot } from '../src/server/gmodel-convert';
 import { WorkflowElkLayoutEngine } from '../src/server/elk-layout-engine';
@@ -231,6 +232,24 @@ describe('the engine a graph goes to', () => {
 
         expect(noServer.calls).toBe(1);
         expect(failing.calls).toBe(1);
+    });
+});
+
+describe('the ELK factory a diagram server gets', () => {
+    const defaults = { algorithms: ['layered'], defaultLayoutOptions: {} };
+
+    it('is plain elkjs without a server, or with elkjs chosen', () => {
+        expect(createElkFactory(defaults)()).not.toBeInstanceOf(SwitchingElk);
+        expect(createElkFactory(defaults, { engine: 'elkjs', jar: '/x.jar' })()).not.toBeInstanceOf(SwitchingElk);
+    });
+
+    it('is the switch otherwise, every session sharing one process per jar and JVM', () => {
+        const options = { engine: 'auto' as const, jar: '/x.jar', javaOpts: '-Xmx1g' };
+
+        expect(createElkFactory(defaults, options)()).toBeInstanceOf(SwitchingElk);
+        expect(sharedElkServerProcess(options)).toBe(sharedElkServerProcess({ ...options }));
+        expect(sharedElkServerProcess(options)).not.toBe(sharedElkServerProcess({ ...options, javaOpts: '-Xmx4g' }));
+        disposeElkServers();
     });
 });
 
