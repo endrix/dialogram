@@ -98,10 +98,14 @@ interface PaintableElement {
     children?: readonly PaintableElement[];
 }
 
+/** The classes the states put on each element, so taking them off leaves a run's own. */
+const paintedBy = new WeakMap<object, Set<string>>();
+
 /**
  * Put each state's class on the node it names in `root`, by the node's id or
- * its producer's id (`remove`: take it off). Returns the ids of the nodes it
- * changed.
+ * its producer's id (`remove`: take it off). A class the node already had (a
+ * live run marked it) is left to whoever put it there: removing the states
+ * takes off only what they added. Returns the ids of the nodes it changed.
  */
 export function applyExecutionStates(root: PaintableElement, states: readonly ExecutionNodeState[], remove = false): string[] {
     const classOf = new Map<string, string>();
@@ -117,10 +121,15 @@ export function applyExecutionStates(root: PaintableElement, states: readonly Ex
         const cssClass = classOf.get(element.id) ?? (typeof producerId === 'string' ? classOf.get(producerId) : undefined);
         if (cssClass) {
             const classes = element.cssClasses ?? [];
+            const painted = paintedBy.get(element) ?? new Set<string>();
             if (remove) {
-                element.cssClasses = classes.filter(existing => existing !== cssClass);
+                if (painted.delete(cssClass)) {
+                    element.cssClasses = classes.filter(existing => existing !== cssClass);
+                }
             } else if (!classes.includes(cssClass)) {
                 element.cssClasses = [...classes, cssClass];
+                painted.add(cssClass);
+                paintedBy.set(element, painted);
             }
             changed.push(element.id);
         }

@@ -177,6 +177,15 @@ describe('how a state is drawn', () => {
         expect(contract.cssClasses).toEqual(['workflow-node']);
     });
 
+    it('takes off only what the states put on: a class a live run gave the node stays', () => {
+        const { root, contract } = model();
+        contract.cssClasses = ['workflow-node', 'cal-node-error'];
+
+        applyExecutionStates(root, STATES);
+        applyExecutionStates(root, STATES, true);
+        expect(contract.cssClasses).toEqual(['workflow-node', 'cal-node-error']);
+    });
+
     /** What the feedback dispatcher does with it after each model the server sends. */
     it('by a feedback command that paints the model it is given', () => {
         const { root, verified } = model();
