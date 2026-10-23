@@ -14,20 +14,28 @@
  * drill-down and the breadcrumb would give it. The current view's row is
  * highlighted and its ancestors opened, so the outline and the breadcrumb are
  * the same trail.
+ *
+ * A producer can give its units more of a shape (`HierarchyOutlineEntry.role`):
+ * group rows (a folder, a layer) only open and close; node rows stand for a node
+ * in the view above them, which a single click finds there and a double click
+ * double-clicks, so it does what the canvas would (open its file, its first
+ * view, the unit behind it). Rows carry the producer's label and detail, its
+ * node family's colour and its badges.
  */
-import { inject, injectable } from 'inversify';
-import { EditorContextService, TYPES, type IActionDispatcher } from '@eclipse-glsp/client';
+import { inject, injectable, multiInject, optional } from 'inversify';
+import { EditorContextService, TYPES, type IActionDispatcher, type MouseListener } from '@eclipse-glsp/client';
 import { RequestModelAction } from '@eclipse-glsp/sprotty';
 import { CenterAction, SelectAction } from '@eclipse-glsp/protocol';
 import { WorkflowDiagramMetadata, type HierarchyOutlineEntry } from '@dialogram/shared';
 import { navigatesInPlace } from './navigation-ui';
+import { clientBehavior } from './profile';
 import {
-    ancestorIds,
-    entryAt,
     foreignFileName,
     outlineMatches,
     pathOfTrail,
+    rowDetail,
     rowId,
+    rowIdsTo,
     rowLabel,
     trailTo
 } from './hierarchy-outline-tree';
@@ -60,6 +68,8 @@ function storeOpen(open: boolean): void {
 export class HierarchyOutlinePanel {
     @inject(TYPES.IActionDispatcher) protected readonly dispatcher!: IActionDispatcher;
     @inject(EditorContextService) protected readonly editorContext!: EditorContextService;
+    /** The canvas's own double-click handling, which a node row's double click runs. */
+    @multiInject(TYPES.MouseListener) @optional() protected readonly mouseListeners: MouseListener[] = [];
 
     private outline: HierarchyOutlineEntry | undefined;
     private renderedJson: string | undefined;
@@ -70,8 +80,10 @@ export class HierarchyOutlinePanel {
     private root: unknown;
     private wired = false;
     private clickTimer: ReturnType<typeof setTimeout> | undefined;
-    /** An instance to select once the view containing it has loaded. */
-    private pendingFocus: string | undefined;
+    /** What to select once the view containing it has loaded, and whether to open it. */
+    private pendingFocus: Focus | undefined;
+    /** The entry behind each rendered row, by row id: group rows have no path to look up. */
+    private readonly rowEntries = new Map<string, HierarchyOutlineEntry>();
 
     modelRootChanged(root: unknown): void {
         this.root = root;
@@ -92,7 +104,7 @@ export class HierarchyOutlinePanel {
         // The trail the server echoes on the root: this view's own, whichever
         // listener the model reaches first.
         this.currentPath = pathOfTrail(trailOfRoot(root));
-        for (const id of ancestorIds(this.currentPath)) {
+        for (const id of this.outline ? rowIdsTo(this.outline, this.currentPath) : []) {
             this.expanded.add(id);
         }
         this.setAvailable(true);
@@ -220,6 +232,7 @@ export class HierarchyOutlinePanel {
         if (!body || !this.outline || !this.open) {
             return;
         }
+        this.rowEntries.clear();
         body.replaceChildren(...this.renderRows(this.outline, 0));
     }
 
@@ -228,6 +241,7 @@ export class HierarchyOutlinePanel {
             return [];
         }
         const id = rowId(entry);
+        this.rowEntries.set(id, entry);
         // A filter opens every row with a match beneath it.
         const isOpen = this.query !== '' || this.expanded.has(id);
         const row = document.createElement('div');
@@ -235,7 +249,10 @@ export class HierarchyOutlinePanel {
         row.dataset.rowId = id;
         row.setAttribute('role', 'treeitem');
         row.style.paddingLeft = `${6 + depth * 14}px`;
-        row.classList.toggle('current', id === this.currentPath.join('/'));
+        row.classList.toggle('current', entry.role !== 'group' && entry.role !== 'node' && id === this.currentPath.join('/'));
+        if (entry.role) {
+            row.classList.add(`role-${entry.role}`);
+        }
 
         const twisty = document.createElement('span');
         twisty.className = 'workflow-hierarchy-outline-twisty codicon';
@@ -245,18 +262,33 @@ export class HierarchyOutlinePanel {
         }
         row.appendChild(twisty);
 
+        const color = entry.family ? familyColor(entry.family) : undefined;
+        if (color) {
+            const chip = document.createElement('span');
+            chip.className = 'workflow-hierarchy-outline-chip';
+            chip.style.background = color;
+            row.appendChild(chip);
+        }
+
         const label = document.createElement('span');
         label.className = 'workflow-hierarchy-outline-label';
         label.textContent = rowLabel(entry);
         row.appendChild(label);
 
-        if (entry.path.length > 0) {
+        const detail = rowDetail(entry);
+        if (detail) {
             const type = document.createElement('span');
             type.className = 'workflow-hierarchy-outline-type';
-            type.textContent = entry.workflowName;
+            type.textContent = detail;
             row.appendChild(type);
         }
-        const file = foreignFileName(entry, this.outline?.sourceUri);
+        for (const badge of entry.badges ?? []) {
+            const mark = document.createElement('span');
+            mark.className = `workflow-hierarchy-outline-badge badge-tone-${/^[a-z]+$/.test(badge.tone ?? '') ? badge.tone : 'neutral'}`;
+            mark.textContent = badge.text;
+            row.appendChild(mark);
+        }
+        const file = entry.role === 'node' ? undefined : foreignFileName(entry, this.outline?.sourceUri);
         if (file) {
             const chip = document.createElement('span');
             chip.className = 'workflow-hierarchy-outline-file';
@@ -272,10 +304,13 @@ export class HierarchyOutlinePanel {
         } else if (entry.truncated) {
             meta.textContent = '…';
             row.title = 'Not expanded: it nests itself, or is too deep';
-        } else {
+        } else if (entry.role === 'group') {
+            meta.textContent = String(entry.children.length);
+        } else if (entry.role !== 'node') {
+            const nested = entry.children.filter(child => child.role !== 'node' && child.role !== 'group').length;
             const parts = [
                 typeof entry.nodeCount === 'number' ? `${entry.nodeCount} nodes` : undefined,
-                entry.children.length > 0 ? `${entry.children.length} nested` : undefined
+                nested > 0 ? `${nested} nested` : undefined
             ].filter(Boolean);
             meta.textContent = parts.join(' · ');
         }
@@ -304,9 +339,7 @@ export class HierarchyOutlinePanel {
             return;
         }
         const row = target.closest<HTMLElement>('.workflow-hierarchy-outline-row');
-        const entry = row && this.outline
-            ? entryAt(this.outline, row.dataset.rowId ? row.dataset.rowId.split('/') : [])
-            : undefined;
+        const entry = row ? this.rowEntries.get(row.dataset.rowId ?? '') : undefined;
         if (!entry) {
             return;
         }
@@ -314,14 +347,34 @@ export class HierarchyOutlinePanel {
             clearTimeout(this.clickTimer);
             this.clickTimer = undefined;
         }
+        const act = (double: boolean): void => {
+            if (entry.role === 'group') {
+                this.toggle(rowId(entry));
+            } else if (entry.role === 'node') {
+                this.focusNode(entry, double);
+            } else if (double) {
+                this.openView(entry.path);
+            } else {
+                this.look(entry);
+            }
+        };
         if (isDouble) {
-            this.openView(entry.path);
+            act(true);
             return;
         }
         this.clickTimer = setTimeout(() => {
             this.clickTimer = undefined;
-            this.look(entry);
+            act(false);
         }, DOUBLE_CLICK_GRACE_MS);
+    }
+
+    private toggle(id: string): void {
+        if (this.expanded.has(id)) {
+            this.expanded.delete(id);
+        } else {
+            this.expanded.add(id);
+        }
+        this.render();
     }
 
     // ── Navigation ──────────────────────────────────────────────────────
@@ -332,14 +385,22 @@ export class HierarchyOutlinePanel {
             this.openView([]);
             return;
         }
-        const parentPath = entry.path.slice(0, -1);
-        const name = entry.path[entry.path.length - 1];
-        if (parentPath.join('/') === this.currentPath.join('/')) {
-            this.selectAndCenter(name);
+        this.focus(entry.path.slice(0, -1), { name: entry.path[entry.path.length - 1], nodeId: entry.nodeId });
+    }
+
+    /** A node row: find its node in the view above it, and double-click it when `open`. */
+    private focusNode(entry: HierarchyOutlineEntry, open: boolean): void {
+        this.focus(entry.path.slice(0, -1), { name: entry.path[entry.path.length - 1], nodeId: entry.nodeId, open });
+    }
+
+    /** Act on a node of the view at `viewPath`, opening that view first when another is shown. */
+    private focus(viewPath: string[], focus: Focus): void {
+        if (viewPath.join('/') === this.currentPath.join('/')) {
+            this.applyFocus(focus);
             return;
         }
-        this.pendingFocus = name;
-        this.openView(parentPath);
+        this.pendingFocus = focus;
+        this.openView(viewPath);
     }
 
     /** Open the view at `path`, at the trail a drill-down would give it. */
@@ -365,23 +426,57 @@ export class HierarchyOutlinePanel {
     }
 
     private resolvePendingFocus(): void {
-        const name = this.pendingFocus;
-        if (!name) {
+        const focus = this.pendingFocus;
+        if (!focus) {
             return;
         }
         this.pendingFocus = undefined;
         // After the view has rendered it.
-        setTimeout(() => this.selectAndCenter(name), 0);
+        setTimeout(() => this.applyFocus(focus), 0);
     }
 
-    private selectAndCenter(instanceName: string): void {
-        const id = findNodeIdByEntityName(this.root, instanceName);
+    /**
+     * Select and center the node (by the producer's id when the row has one,
+     * else by its instance name), then, for an open, run the canvas's own
+     * double-click on it.
+     */
+    private applyFocus(focus: Focus): void {
+        const id = (focus.nodeId ? findNodeIdByGraphId(this.root, focus.nodeId) : undefined)
+            ?? (focus.name ? findNodeIdByEntityName(this.root, focus.name) : undefined);
         if (!id) {
             return;
         }
-        void this.dispatcher.dispatch(SelectAction.create({ selectedElementsIDs: [id] }) as never);
+        void this.dispatcher.dispatch(SelectAction.create({ selectedElementsIDs: [id], deselectedElementsIDs: true }) as never);
         void this.dispatcher.dispatch(CenterAction.create([id], { animate: true, retainZoom: true }) as never);
+        if (!focus.open) {
+            return;
+        }
+        const element = (this.root as { index?: { getById(id: string): unknown } } | undefined)?.index?.getById(id);
+        if (!element) {
+            return;
+        }
+        const event = new MouseEvent('dblclick');
+        for (const listener of this.mouseListeners) {
+            for (const action of listener.doubleClick(element as never, event)) {
+                void Promise.resolve(action).then(resolved => this.dispatcher.dispatch(resolved as never));
+            }
+        }
     }
+}
+
+interface Focus {
+    /** The node's instance name, for a row the producer gives no node id. */
+    name?: string;
+    /** The node's id in the producer's graph (`wf:graphNodeId`). */
+    nodeId?: string;
+    /** Double-click it once selected. */
+    open?: boolean;
+}
+
+/** A node family's colour, by its id or annotation, from the profile's families. */
+function familyColor(family: string): string | undefined {
+    const spec = (clientBehavior().nodeFamilies ?? []).find(candidate => (candidate.id ?? candidate.annotation) === family);
+    return spec && /^#[0-9a-fA-F]{3,8}$|^[a-z]+$/.test(spec.color) ? spec.color : undefined;
 }
 
 /** Space between the button and the panel, and kept from the window's top edge. */
@@ -438,6 +533,24 @@ export function trailOfRoot(root: unknown): Array<{ workflowName: string; workfl
     } catch {
         return [];
     }
+}
+
+/** The id of the node the producer calls `graphId` (`wf:graphNodeId`, or the id itself), in a model root. */
+export function findNodeIdByGraphId(root: unknown, graphId: string): string | undefined {
+    const stack: any[] = [root];
+    while (stack.length > 0) {
+        const element = stack.pop();
+        if (!element) {
+            continue;
+        }
+        if (element.args?.[WorkflowDiagramMetadata.GRAPH_NODE_ID] === graphId || (element.id === graphId && element.type?.startsWith?.('node'))) {
+            return element.id;
+        }
+        for (const child of element.children ?? []) {
+            stack.push(child);
+        }
+    }
+    return undefined;
 }
 
 /** The id of the node whose entity (instance) name is `name`, in a model root. */

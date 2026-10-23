@@ -195,6 +195,16 @@ platform API version.
 - `wf:graphNodeId` on every node: the id the producer's graph document gave
   it. The diagram names a node after its label, so this is how a state that
   names the producer's id finds its node; a state may name either.
+- Richer hierarchy outlines. A producer can shape its outline rows
+  (`HierarchyOutlineEntry`): `label` and `detail` (a title for an id, an id
+  for a title), a node `family` (the row carries its colour), `badges`, and a
+  `role`. A `group` row (a folder, a layer) only opens and closes and is
+  transparent to paths: its children's paths are written as if it were not
+  there. A `node` row stands for a node in the view above it, by the
+  producer's `nodeId` (kept on every node as `wf:graphNodeId`): a click selects
+  and centres it, opening that view first when another is shown, and a double
+  click runs the canvas's own double-click on it. The filter matches labels
+  and details too, and the current view's row opens with what is in it.
 
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the

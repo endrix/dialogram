@@ -3,7 +3,7 @@
  * testable headlessly (the panel imports GLSP values and cannot load without a
  * DOM) -- the split mlir-viewer's outline uses, for the same reason.
  */
-import { hierarchyEntryAt, hierarchyTrailTo, type HierarchyOutlineEntry } from '@dialogram/shared';
+import { hierarchyEntryAt, hierarchyRowsTo, hierarchyTrailTo, type HierarchyOutlineEntry } from '@dialogram/shared';
 
 export interface OutlineCrumb {
     sourceUri: string;
@@ -16,9 +16,23 @@ export function rowId(entry: { path: string[] }): string {
     return entry.path.join('/');
 }
 
-/** What a row is called: its instance name, or the workflow for the root. */
+/** What a row is called: the producer's label, else its instance name, or the workflow for the root. */
 export function rowLabel(entry: HierarchyOutlineEntry): string {
+    if (entry.label) {
+        return entry.label;
+    }
     return entry.path.length > 0 ? entry.path[entry.path.length - 1] : entry.workflowName;
+}
+
+/**
+ * What follows the label, dimmed: the producer's detail, else, for an
+ * instance it says nothing more about, the workflow it instantiates.
+ */
+export function rowDetail(entry: HierarchyOutlineEntry): string | undefined {
+    if (entry.detail) {
+        return entry.detail;
+    }
+    return entry.path.length > 0 && !entry.label && entry.role !== 'group' ? entry.workflowName : undefined;
 }
 
 /**
@@ -30,7 +44,8 @@ export function outlineMatches(entry: HierarchyOutlineEntry, query: string): boo
     if (!query) {
         return true;
     }
-    if (rowLabel(entry).toLowerCase().includes(query) || entry.workflowName.toLowerCase().includes(query)) {
+    const words = [rowLabel(entry), entry.workflowName, entry.detail ?? ''];
+    if (words.some(word => word.toLowerCase().includes(query))) {
         return true;
     }
     return entry.children.some(child => outlineMatches(child, query));
@@ -49,6 +64,14 @@ export const trailTo: (root: HierarchyOutlineEntry, rootSourceUri: string, path:
 /** The path the shown view is at, from its trail. */
 export function pathOfTrail(trail: Array<{ workflowName: string; workflowInstanceName?: string }>): string[] {
     return trail.slice(1).map(crumb => crumb.workflowInstanceName ?? crumb.workflowName);
+}
+
+/**
+ * The ids of the rows down to the entry at `path`, group rows and the entry's
+ * own included: what to open so the current view's row shows with what is in it.
+ */
+export function rowIdsTo(root: HierarchyOutlineEntry, path: string[]): string[] {
+    return hierarchyRowsTo(root, path).map(rowId);
 }
 
 /** The ids of every ancestor of `path`, so the current row can be revealed. */
