@@ -610,17 +610,17 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             })
         );
 
-        const factsSection = this.buildFactsSection(args);
-        if (factsSection) {
-            content.appendChild(factsSection);
-        }
-
         // Fields the producer lets a person edit, in any profile: a select
         // where it listed the values, an input with suggestions where it
         // offered some, a plain input otherwise.
         const fields = producerFields(args[WorkflowDiagramMetadata.ENTITY_PARAMETERS]);
         if (fields.length > 0) {
             content.appendChild(this.buildProducerFieldsSection(node.id, fields));
+        }
+
+        const factsSection = this.buildFactsSection(args);
+        if (factsSection) {
+            content.appendChild(factsSection);
         }
 
         const sections = clientBehavior().propertySections;
