@@ -92,6 +92,12 @@ export function paletteIconCss(
  * product's graph plain. So the rules are generated from the declaration, and
  * the platform names no family.
  *
+ * A node in a family wears its colour whatever kind of node it is: an
+ * external node, a subgraph, and a plain one too. Plain nodes were left out,
+ * so a product whose own nodes are all plain (a specification's clauses in
+ * the document they belong to) saw its families only on the nodes brought in
+ * from elsewhere, and every kind of its own in the platform's task amber.
+ *
  * Exported for the test; see `installPaletteIcons`.
  */
 export function nodeFamilyCss(families: readonly NodeFamilySpec[] | undefined): string {
@@ -120,6 +126,11 @@ export function nodeFamilyCss(families: readonly NodeFamilySpec[] | undefined): 
 }`);
         rules.push(`.network-node.external-actor-${name} .node-body.network-border {
     stroke: ${family.color};
+}`);
+        // A plain node in the family: its header, instead of the task amber.
+        rules.push(`.actor-node.external-actor-${name} .header-compartment .header-background {
+    fill: ${family.color};
+    fill-opacity: 0.26;
 }`);
         if (family.icon) {
             rules.push(`.external-actor-${name} .node-icon-${name} {
