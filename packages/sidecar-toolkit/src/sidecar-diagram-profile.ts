@@ -80,8 +80,11 @@ export interface SidecarClientBehavior {
     /** Whether anything is written on a wire: the carried label (a width, a
      *  payload type), the queue badge and last-token button of a run, the
      *  index labels of a list connection. Default true. Off, an edge is its
-     *  line, and the tooltip on hover still says what it carries. */
-    edgeCaptions?: boolean;
+     *  line, and the tooltip on hover still says what it carries. 'once': as
+     *  true, but of the edges that leave or reach one port together with the
+     *  same carried label, only the first writes it; the others say it in
+     *  their tooltip (a node with many edges of one type, all on one trunk). */
+    edgeCaptions?: boolean | 'once';
     /** Property-panel sections the product does without (`ports`, `annotations`, `parameters`, `entityType`), each `false` to hide it. */
     propertySections?: { ports?: boolean; annotations?: boolean; parameters?: boolean; entityType?: boolean };
     /** What the hierarchy outline panel is called; "Hierarchy" by default. */
