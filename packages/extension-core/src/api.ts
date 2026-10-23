@@ -344,6 +344,9 @@ export interface DiagramClientBehavior {
    *  index labels of a list connection. Default true. Off, an edge is its
    *  line, and the tooltip on hover still says what it carries. */
   edgeCaptions?: boolean;
+  /** What the hierarchy outline panel is called (its title and its button's
+   *  tooltip); "Hierarchy" by default. */
+  outlineTitle?: string;
   /**
    * Whether the host has a chat backend behind this diagram.
    *

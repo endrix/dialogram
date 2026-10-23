@@ -44,6 +44,9 @@ type DiagramClientBehavior = {
      *  index labels of a list connection. Default true. Off, an edge is its
      *  line, and the tooltip on hover still says what it carries. */
     edgeCaptions?: boolean;
+    /** What the hierarchy outline panel is called (its title, its button's
+     *  tooltip): plain words, "Hierarchy" by default. */
+    outlineTitle?: string;
 };
 
 export type AcpConnectorInfo = {

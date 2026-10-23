@@ -75,6 +75,8 @@ export interface SidecarClientBehavior {
      *  index labels of a list connection. Default true. Off, an edge is its
      *  line, and the tooltip on hover still says what it carries. */
     edgeCaptions?: boolean;
+    /** What the hierarchy outline panel is called; "Hierarchy" by default. */
+    outlineTitle?: string;
 }
 
 /** The 24 consumer-owned command ids a sidecar diagram profile carries. */

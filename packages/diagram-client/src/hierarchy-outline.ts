@@ -118,11 +118,12 @@ export class HierarchyOutlinePanel {
         if (typeof document === 'undefined' || !document.body || document.getElementById(PANEL_ID)) {
             return;
         }
+        const title = outlineTitle();
         const holder = document.createElement('div');
         holder.innerHTML = `
-            <aside id="${PANEL_ID}" class="workflow-hierarchy-outline" aria-label="Hierarchy" hidden>
+            <aside id="${PANEL_ID}" class="workflow-hierarchy-outline" aria-label="${title}" hidden>
                 <div class="workflow-hierarchy-outline-header">
-                    <span class="workflow-hierarchy-outline-title">Hierarchy</span>
+                    <span class="workflow-hierarchy-outline-title">${title}</span>
                     <button class="workflow-hierarchy-outline-btn" data-action="collapse" type="button" title="Collapse all rows">
                         <span class="codicon codicon-collapse-all"></span>
                     </button>
@@ -131,11 +132,11 @@ export class HierarchyOutlinePanel {
                     </button>
                 </div>
                 <input id="${SEARCH_ID}" class="workflow-hierarchy-outline-search" type="text"
-                       placeholder="Filter instances…" aria-label="Filter instances" spellcheck="false" />
+                       placeholder="Filter…" aria-label="Filter the ${title.toLowerCase()}" spellcheck="false" />
                 <div id="${BODY_ID}" class="workflow-hierarchy-outline-body" role="tree"></div>
             </aside>
             <button id="${TOGGLE_ID}" class="workflow-fab-btn workflow-hierarchy-outline-toggle floating" type="button"
-                    title="Hierarchy (O)" aria-label="Toggle hierarchy outline" hidden>
+                    title="${title} (O)" aria-label="Toggle the ${title.toLowerCase()}" hidden>
                 <span class="codicon codicon-type-hierarchy"></span>
             </button>`;
         while (holder.firstChild) {
@@ -288,7 +289,9 @@ export class HierarchyOutlinePanel {
             mark.textContent = badge.text;
             row.appendChild(mark);
         }
-        const file = entry.role === 'node' ? undefined : foreignFileName(entry, this.outline?.sourceUri);
+        // A row the producer labels says what it is; the file chip is for an
+        // instance known only by name.
+        const file = entry.role || entry.label ? undefined : foreignFileName(entry, this.outline?.sourceUri);
         if (file) {
             const chip = document.createElement('span');
             chip.className = 'workflow-hierarchy-outline-file';
@@ -471,6 +474,13 @@ interface Focus {
     nodeId?: string;
     /** Double-click it once selected. */
     open?: boolean;
+}
+
+/** What the panel is called: the profile's word (`clientBehavior.outlineTitle`), else "Hierarchy". */
+function outlineTitle(): string {
+    const title = clientBehavior().outlineTitle;
+    // Plain words only: it goes into markup.
+    return typeof title === 'string' && /^[\p{L}\p{N} ._-]{1,40}$/u.test(title.trim()) ? title.trim() : 'Hierarchy';
 }
 
 /** A node family's colour, by its id or annotation, from the profile's families. */

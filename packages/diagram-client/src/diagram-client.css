@@ -3292,7 +3292,8 @@ details[open] > summary .agent-chat-expand-arrow {
     bottom: calc(var(--workflow-wf-nav-height, 0px) + 16px);
     max-height: 70vh;
     z-index: 1002;
-    width: 300px;
+    /* Room for a row's label and detail; never wider than half the editor. */
+    width: min(380px, 50vw);
     display: flex;
     flex-direction: column;
     border: 1px solid var(--vscode-editorWidget-border, #454545);
@@ -3408,8 +3409,12 @@ details[open] > summary .agent-chat-expand-arrow {
 }
 
 .workflow-hierarchy-outline-label {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.workflow-hierarchy-outline-meta {
     flex: none;
-    max-width: 60%;
 }
 
 .workflow-hierarchy-outline-chip {

@@ -17,7 +17,12 @@ platform API version.
   producer's `nodeId` (kept on every node as `wf:graphNodeId`): a click selects
   and centres it, opening that view first when another is shown, and a double
   click runs the canvas's own double-click on it. The filter matches labels
-  and details too, and the current view's row opens with what is in it.
+  and details too, and the current view's row opens with what is in it
+  (with its own group rows). A labelled row drops the file chip; the panel is
+  wider (up to 380 px, half the editor at most).
+- `clientBehavior.outlineTitle`: what the hierarchy outline panel is called,
+  its title and its button's tooltip ("Hierarchy" by default). The filter's
+  placeholder now just says "Filter…".
 
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the
