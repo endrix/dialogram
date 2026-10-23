@@ -6,6 +6,14 @@ platform API version.
 
 ## [Unreleased]
 
+### Fixed
+
+- A node family's colour now reaches every node in the family. The generated
+  rules coloured external nodes and subgraphs only, so a product whose own
+  nodes are plain saw its families only on nodes brought in from elsewhere,
+  and every kind of its own in the task amber; a plain node in a family now
+  takes the family's colour in its header.
+
 ### Added
 
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
