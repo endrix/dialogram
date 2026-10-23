@@ -95,6 +95,20 @@ platform API version.
   it: a modality, a status, a count, whatever a reader must see without
   opening the panel. Carried on `wf:badges`.
 
+- `SidecarProfileInput.readOnly`: a profile whose diagram is a projection of
+  a file drawn by the CLI, with no sidecar and nothing to edit. The assembled
+  profile's `edits` is `'read-only'` and `supportsElementCreation` is `false`;
+  the toolkit spawns no sidecar (no capability or openability probe, no
+  create-node type listing, no sidecar graph export when the plan fails), so
+  `graphAcquisition` must be `'cli-plan'` and `sidecarCommandSettingKey`,
+  `sidecarCommandDefault` and `exportOp` may be left out. The chat stays, read
+  only: `get_graph` and the session's graph context come from the CLI plan
+  document, there is no edit backend, and the raw sidecar commands are not
+  registered. Default `false`, which changes nothing.
+- `SidecarProfileInput.openability.predicate`: the product's own answer to
+  "can this file be shown as a diagram?", from the file's text and path. Given,
+  it decides alone -- no sidecar probe, no decorator scan -- and it is the one
+  form of openability a read-only profile may have.
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the
   tooltip on hover still says what it carries. Default `true`, as before.

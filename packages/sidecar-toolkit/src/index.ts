@@ -67,10 +67,18 @@ export {
 export {
     shouldOpenDiagram,
     createDiagramOpenabilityCheck,
+    createPredicateOpenabilityCheck,
     type DiagramOpenabilityConfig,
+    type DiagramOpenabilityPredicate,
     type DiagramOpenabilityProbe,
-    type DecoratedDefinitionChecker
+    type DecoratedDefinitionChecker,
+    type PredicateOpenabilityConfig
 } from './diagram-openability.js';
+
+export {
+    exportGraphFromCli,
+    type CliGraphExportOptions
+} from './cli-graph-export.js';
 
 export {
     createSidecarEditBackend,

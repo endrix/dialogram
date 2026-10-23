@@ -1,3 +1,4 @@
+import { promises as fs } from 'node:fs';
 import * as vscode from 'vscode';
 import type { DiagramOpenabilityCheck } from '@dialogram/shared';
 import { hasRequestedDecoratedDefinition } from './python-diagram-definitions.js';
@@ -21,8 +22,10 @@ export const OPENABILITY_PROBE_TIMEOUT_MS = 20_000;
  */
 export interface DiagramOpenabilityConfig {
     settingsNamespace: string;
-    sidecarCommandSettingKey: string;
-    sidecarCommandDefault: string;
+    /** The setting and default naming the sidecar command. Needed by the
+     *  probe alone; without them (a profile with no sidecar) no probe runs. */
+    sidecarCommandSettingKey?: string;
+    sidecarCommandDefault?: string;
     sidecarOperationPrefix: string;
     /** Graph-export op (without prefix) used to probe openability; probe is
      *  skipped entirely when absent. */
@@ -65,6 +68,8 @@ async function probeDiagramOpenability(
 ): Promise<boolean | undefined> {
     if (
         !cfg.probeOp
+        || cfg.sidecarCommandSettingKey === undefined
+        || cfg.sidecarCommandDefault === undefined
         || targetUri.scheme !== 'file'
         || !hasSourceExtension(targetUri.fsPath, cfg)
     ) {
@@ -156,5 +161,49 @@ export function createDiagramOpenabilityCheck(cfg: DiagramOpenabilityConfig): Di
     return async (uri, context) => {
         const targetUri = vscode.Uri.parse(uri.toString());
         return shouldOpenDiagram(targetUri, cfg, context.requestedName);
+    };
+}
+
+/**
+ * A product's own answer to "can this file be shown as a diagram?", from the
+ * file's text and path alone.
+ *
+ * Synchronous and cheap: it runs on every candidate file before anything is on
+ * screen, so it should look at the text it is given (a marker, a header, a
+ * pattern) and nothing else. No I/O beyond that text, no process, no parse of
+ * the whole file when a prefix would do. A throw counts as `false`.
+ */
+export type DiagramOpenabilityPredicate = (text: string, file: string) => boolean;
+
+/** What the predicate-driven check needs: the predicate and the extensions it applies to. */
+export interface PredicateOpenabilityConfig {
+    predicate: DiagramOpenabilityPredicate;
+    /** Source-file extension the diagram editor handles (e.g. `.py`). */
+    sourceExtension: string;
+    /** Every extension it handles, for a language with several; `sourceExtension` alone when absent. */
+    sourceExtensions?: string[];
+    /** How the file's text is read; the file system unless a test says otherwise. */
+    readFile?: (path: string) => Promise<string>;
+}
+
+/**
+ * The openability check decided by a {@link DiagramOpenabilityPredicate}: the
+ * toolkit reads the file and calls the predicate with its text and path. No
+ * sidecar probe and no decorator scan run; a file with none of the extensions,
+ * one that cannot be read, or a predicate that throws, answers `false`.
+ */
+export function createPredicateOpenabilityCheck(cfg: PredicateOpenabilityConfig): DiagramOpenabilityCheck {
+    const readFile = cfg.readFile ?? (async (p: string) => fs.readFile(p, 'utf-8'));
+    return async (uri) => {
+        const targetUri = vscode.Uri.parse(uri.toString());
+        if (targetUri.scheme !== 'file' || !hasSourceExtension(targetUri.fsPath, cfg)) {
+            return false;
+        }
+        try {
+            const text = await readFile(targetUri.fsPath);
+            return cfg.predicate(text, targetUri.fsPath) === true;
+        } catch {
+            return false;
+        }
     };
 }

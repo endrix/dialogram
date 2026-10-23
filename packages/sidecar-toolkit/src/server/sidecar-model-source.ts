@@ -350,6 +350,11 @@ export class SidecarModelSource implements DiagramModelSource {
         filePath: string,
         opts: Record<string, unknown>
     ): Promise<{ graph?: Record<string, unknown>; error?: string; warning?: string }> {
+        // A read-only config has no sidecar to ask: the CLI's answer is the
+        // only one, and a plan that failed stays a failure.
+        if (this.cfg.readOnly) {
+            return { error: 'This profile has no sidecar: the graph is read from the CLI alone.' };
+        }
         try {
             const vscode = require('vscode') as typeof import('vscode');
             const sidecarCmd = getSidecarCommand(this.cfg, vscode, vscode.Uri.file(filePath));

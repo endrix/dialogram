@@ -136,6 +136,15 @@ modules, operation handlers, edit backend, run driver, navigation provider
 and new-source-file command — everything DI-decorated stays inside the
 platform bundle (see [The bundle-boundary law](#the-bundle-boundary-law)).
 
+A consumer whose diagram is a pure projection of a file — drawn by a CLI,
+with nothing to edit — takes the same path without a sidecar: `readOnly:
+true` with `graphAcquisition: 'cli-plan'` assembles a profile whose `edits`
+is `'read-only'`, spawns no sidecar anywhere (no probes, no fallback export,
+no raw sidecar commands) and still gives the chat its graph, from the plan
+document. Openability can then be the product's own call,
+`openability.predicate: (text, file) => boolean`, a cheap synchronous look at
+the file's text that wins over the sidecar probe and the decorator scan.
+
 ### 2. Build-time library (custom views and model source)
 
 For a consumer with **fully custom views and its own model source**. Instead
