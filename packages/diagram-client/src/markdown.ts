@@ -9,10 +9,19 @@ import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
+// CommonMark's own line handling: a single newline joins the lines. Text a
+// producer took from a document is wrapped at a column, and chat's
+// line-per-newline breaks it mid-sentence at every one of them.
+const documentMd = new MarkdownIt({ html: false, linkify: true, breaks: false });
 
 /** Render Markdown to sanitized HTML, safe for innerHTML/unsafeHTML. */
 export function renderMarkdownSafe(src: string): string {
   return DOMPurify.sanitize(md.render(src));
+}
+
+/** Render Markdown written in a document (wrapped prose) to sanitized HTML. */
+export function renderDocumentMarkdownSafe(src: string): string {
+  return DOMPurify.sanitize(documentMd.render(src));
 }
 
 /** Render inline Markdown (no block wrapping) to sanitized HTML. */

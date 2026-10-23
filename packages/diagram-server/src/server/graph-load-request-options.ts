@@ -82,6 +82,37 @@ export function parseViewsMeta(raw: unknown): UnitView[] | undefined {
     return out.length > 0 ? out : undefined;
 }
 
+/** One labelled value a producer states about a unit, as `meta.facts` lists it. */
+export interface UnitFact {
+    label: string;
+    value: string;
+    markdown?: boolean;
+}
+
+/**
+ * `meta.facts` as the producer wrote it: `[{ label, value, markdown? }]`, else
+ * nothing. An entry without a string label and a string value is dropped
+ * rather than failing the list, so one bad row costs the producer that row
+ * and not the section; the order of the rest is the producer's.
+ */
+export function parseFactsMeta(raw: unknown): UnitFact[] | undefined {
+    if (!Array.isArray(raw)) {
+        return undefined;
+    }
+    const out: UnitFact[] = [];
+    for (const item of raw) {
+        if (!item || typeof item !== 'object') {
+            continue;
+        }
+        const { label, value, markdown } = item as Record<string, unknown>;
+        if (typeof label !== 'string' || typeof value !== 'string') {
+            continue;
+        }
+        out.push(markdown === true ? { label, value, markdown: true } : { label, value });
+    }
+    return out.length > 0 ? out : undefined;
+}
+
 export interface NormalizedGraphLoadError {
     message: string;
     file?: string;

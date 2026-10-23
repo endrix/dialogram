@@ -190,6 +190,18 @@ export namespace WorkflowDiagramMetadata {
      *  structure, `[{ id, label }]` as it listed them on `meta.views` (a leaf's
      *  synthesis, say). On the root: the views of the unit shown. */
     export const VIEWS = 'wf:views';
+    /**
+     * Labelled values a producer states about the unit behind a node, as it
+     * listed them on `meta.facts`: `[{ label, value, markdown? }]`, in its
+     * order. On the root: the facts of the unit shown.
+     *
+     * The platform displays them and never interprets them. No label is
+     * special and none is expected, so a product says whatever it knows (a
+     * clock, a cost, a revision) without the platform learning the word. An
+     * entry with `markdown: true` has its value rendered as Markdown through
+     * the same sanitizer the chat uses; the rest is shown verbatim.
+     */
+    export const FACTS = 'wf:facts';
     export const IS_EXTERNAL_ACTOR = 'cal:isExternalActor';
     /** Marks a regular task that contains external function declarations or agent annotations. */
     export const HAS_EXTERNAL_MEMBERS = 'cal:hasExternalMembers';
