@@ -8,6 +8,12 @@ platform API version.
 
 ### Fixed
 
+- Export as SVG drew a running node's ring as a rainbow square over the
+  node's title. In the editor the ring is HTML in a foreignObject, a turning
+  gradient placed absolutely and masked down to a band, and the export copies
+  neither the placement nor the mask for HTML. The export now draws the ring
+  as a stroke of the same colours on the node's edge, which standalone SVG
+  renderers draw too. The headless renderer's `--states` gets the same ring.
 - A node family's colour now reaches every node in the family. The generated
   rules coloured external nodes and subgraphs only, so a product whose own
   nodes are plain saw its families only on nodes brought in from elsewhere,
