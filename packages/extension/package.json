@@ -1,7 +1,7 @@
 {
     "name": "dialogram",
     "description": "Dialogram — talk to your diagrams. GLSP diagram platform with integrated agent chat, consumed by other extensions through its exported API.",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "displayName": "Dialogram",
     "publisher": "ebezati",
     "author": "Endri Bezati",
