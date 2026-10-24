@@ -177,6 +177,16 @@ describe('how a state is drawn', () => {
         expect(contract.cssClasses).toEqual(['workflow-node']);
     });
 
+    it('skips a status that is only a name every object inherits', () => {
+        const { root, contract } = model();
+        const odd = [{ nodeId: 'node:scope:root:A-001', status: 'toString' }, { nodeId: 'node:scope:root:A-001', status: 'constructor' }] as any;
+
+        expect(applyExecutionStates(root, odd)).toEqual([]);
+        expect(contract.cssClasses).toEqual(['workflow-node']);
+        showExecutionStates(odd);
+        expect(shownExecutionStates()).toEqual([]);
+    });
+
     it('takes off only what the states put on: a class a live run gave the node stays', () => {
         const { root, contract } = model();
         contract.cssClasses = ['workflow-node', 'cal-node-error'];
