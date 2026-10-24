@@ -6,31 +6,6 @@ platform API version.
 
 ## [Unreleased]
 
-### Fixed
-
-- Export as SVG drew a running node's ring as a rainbow square over the
-  node's title. In the editor the ring is HTML in a foreignObject, a turning
-  gradient placed absolutely and masked down to a band, and the export copies
-  neither the placement nor the mask for HTML. The export now draws the ring
-  as a stroke of the same colours on the node's edge (without the glow),
-  which standalone SVG renderers draw too; where the editor draws no ring (no
-  band width, fewer than two colours) the export draws none. Colours are
-  resolved to `rgb()` first, so `oklch()`, `color-mix()` or a stop with
-  positions comes out right. The headless renderer's `--states` gets the same
-  ring.
-- A node state whose status is a name every object inherits (`toString`,
-  `constructor`) passed the status check and put a function where a CSS
-  class goes; the whole diagram then failed to draw. Only the four statuses
-  pass now.
-- A node family's colour now reaches every node in the family. The generated
-  rules coloured external nodes and subgraphs only, so a product whose own
-  nodes are plain saw its families only on nodes brought in from elsewhere,
-  and every kind of its own in the task amber; a plain node in a family now
-  takes the family's colour in its header, and its watermark icon too. The
-  server put a plain node's family class on its header compartment only,
-  where neither rule looks; it is now on the node as well, as it already was
-  for external nodes and subgraphs.
-
 ### Added
 
 - `DiagramProfile.clientStylesheets` (and `SidecarProfileInput.clientStylesheets`):
@@ -59,7 +34,6 @@ platform API version.
   edge; a piece several edges share lists them (`wf:edgesOf`) and is not
   deleted on its own. Every piece stays at the root of the model, so saved,
   restored and rerouted routes keep their absolute coordinates.
-
 - A dragged member of a group stays inside its group: the bound
   `IMovementRestrictor` refuses a position outside it, and a drop there is
   not committed. A group's area is open to the right and downwards: a member
@@ -67,43 +41,6 @@ platform API version.
   any group around it, to fit, and the ports on its right-hand side follow).
   Past the left edge or under the header is refused. Members of other
   containers (a control structure's branch) move as freely as before.
-
-### Fixed
-
-- Reopening a saved layout put every node inside a container outside it: the
-  layout file holds absolute positions and the loader wrote them back as
-  positions relative to the parent, adding the container's offset twice. A
-  reopened group also lost its size and the ports on its frame, which only the
-  layout run produces; they are now rebuilt from the saved positions and
-  routes.
-- Moving a container saved only its own position: the layout file holds
-  absolute positions, so its members reopened where they had been, out of
-  the frame. A move now saves the new position of everything inside the
-  moved node.
-- The edge rerouter that runs after a move treated a group's frame as an
-  obstacle, so an edge inside a group was routed around the group it is in.
-- Clicking a node inside a group grew it. The group was declared resizable,
-  so GLSP took the click for the start of a resize of the group, measured the
-  group and its members in the hidden model and wrote the measured sizes
-  back, larger than the nodes' own. Groups are no longer resizable by hand;
-  measured bounds never resize a workflow node on the client
-  (`NodeSizePreservingBoundsApplicator`, the `ComputedBoundsApplicator`); and
-  a move never changes a node's size on the server unless its type is
-  declared resizable, whatever size the client sends.
-
-### Tooling
-
-- `scripts/render-svg/render.mjs`: a graph document in (what a producer's
-  plan command prints), an SVG out, through the server's layout and the real
-  client in headless Chrome, extracted as "Export as SVG" extracts it. Picks a
-  layout (`--layout default|untangled|free-ports`, `--all-layouts` for all
-  three side by side), extra ELK options (`--elk key=value`), the product's
-  node families and stylesheets, client behavior flags and a theme. For
-  looking at what a change does to a real diagram without opening VS Code.
-- `scripts/render-svg/render.mjs` left its work directory in the system's
-  temporary folder after a failed layout or render, or an interrupt; it is
-  now removed on every exit, or kept and named with `--keep`.
-
 - A Facts section in the property panel. A producer lists what it knows about
   a unit on a node's `meta.facts` (`[{ label, value, markdown? }]`, and on
   `graph.meta.facts` for the unit shown); the panel shows them as `Facts (n)`
@@ -122,7 +59,6 @@ platform API version.
   name. The text is the producer's word and the platform reads nothing into
   it: a modality, a status, a count, whatever a reader must see without
   opening the panel. Carried on `wf:badges`.
-
 - `SidecarProfileInput.readOnly`: a profile whose diagram is a projection of
   a file drawn by the CLI, with no sidecar and nothing to edit. The assembled
   profile's `edits` is `'read-only'` and `supportsElementCreation` is `false`;
@@ -252,7 +188,6 @@ platform API version.
   to stack (twenty `depends-on` on one line). An edge whose caption is left
   out, or not written because captions are off, says what it carries in its
   hover tooltip. `true` (the default) and `false` are unchanged.
-
 - `clientBehavior.edgeCaptions`: `false` draws an edge as its line alone, with
   no carried label, queue badge, last-token button or index label on it; the
   tooltip on hover still says what it carries. Default `true`, as before.
@@ -271,20 +206,6 @@ platform API version.
   passes `--view <id>` to the plan command, the export op gets `view`), and
   keeps a layout of its own under `<unit>@<view>`. The view items sit last in
   the context menu, under a separator.
-
-### Fixed
-
-- A double-click opens one thing. On a node that is not a network instance,
-  the network navigation listener opens its first view (or, with
-  `doubleClickOpensSource`, its definition), and the viewer listener opened
-  its definition as a preview as well: a specification clause opened its
-  refinement trace and its heading at once. The viewer listener now stands
-  back whenever the other opens something.
-
-- Running a workflow no longer shows a "Model loading in progress" notification
-  on every firing. The live overlay's signature changes with each firing and the
-  editor reloads the model to redraw the glow; that refresh is now silent, as
-  the run driver's own polling refreshes already were.
 
 ### Changed
 
@@ -336,17 +257,6 @@ platform API version.
   navigates. A hierarchy export of a large netlist repeated one absolute path on
   every element, a third of the export. A document with every file spelled out
   reads exactly as before.
-
-### Fixed
-
-- ELK is told the side the producer placed a port on. It was told the side
-  from the direction alone, so a bundle's `ready`, placed in the other margin,
-  was routed to as if it sat on the far edge: the wire came around the outside
-  of the margin and crossed the whole node, label included, to reach the glyph.
-  It now arrives from the side the glyph faces, in one straight run.
-
-### Changed
-
 - The server's ELK layout picks its option preset by the graph's size, so large
   graphs lay out in seconds instead of minutes. The default preset, with
   network-simplex placement and model order, took 41 s on a 344-node netlist
@@ -364,6 +274,81 @@ platform API version.
   did before. Each layout logs
   `[dialogram perf] layout <network>: tier=<default|middle|fast> nodes=<n> edges=<m>`,
   and a fast-tier layout says so in the diagram's status line.
+
+### Fixed
+
+- Export as SVG drew a running node's ring as a rainbow square over the
+  node's title. In the editor the ring is HTML in a foreignObject, a turning
+  gradient placed absolutely and masked down to a band, and the export copies
+  neither the placement nor the mask for HTML. The export now draws the ring
+  as a stroke of the same colours on the node's edge (without the glow),
+  which standalone SVG renderers draw too; where the editor draws no ring (no
+  band width, fewer than two colours) the export draws none. Colours are
+  resolved to `rgb()` first, so `oklch()`, `color-mix()` or a stop with
+  positions comes out right. The headless renderer's `--states` gets the same
+  ring.
+- A node state whose status is a name every object inherits (`toString`,
+  `constructor`) passed the status check and put a function where a CSS
+  class goes; the whole diagram then failed to draw. Only the four statuses
+  pass now.
+- A node family's colour now reaches every node in the family. The generated
+  rules coloured external nodes and subgraphs only, so a product whose own
+  nodes are plain saw its families only on nodes brought in from elsewhere,
+  and every kind of its own in the task amber; a plain node in a family now
+  takes the family's colour in its header, and its watermark icon too. The
+  server put a plain node's family class on its header compartment only,
+  where neither rule looks; it is now on the node as well, as it already was
+  for external nodes and subgraphs.
+- Reopening a saved layout put every node inside a container outside it: the
+  layout file holds absolute positions and the loader wrote them back as
+  positions relative to the parent, adding the container's offset twice. A
+  reopened group also lost its size and the ports on its frame, which only the
+  layout run produces; they are now rebuilt from the saved positions and
+  routes.
+- Moving a container saved only its own position: the layout file holds
+  absolute positions, so its members reopened where they had been, out of
+  the frame. A move now saves the new position of everything inside the
+  moved node.
+- The edge rerouter that runs after a move treated a group's frame as an
+  obstacle, so an edge inside a group was routed around the group it is in.
+- Clicking a node inside a group grew it. The group was declared resizable,
+  so GLSP took the click for the start of a resize of the group, measured the
+  group and its members in the hidden model and wrote the measured sizes
+  back, larger than the nodes' own. Groups are no longer resizable by hand;
+  measured bounds never resize a workflow node on the client
+  (`NodeSizePreservingBoundsApplicator`, the `ComputedBoundsApplicator`); and
+  a move never changes a node's size on the server unless its type is
+  declared resizable, whatever size the client sends.
+- A double-click opens one thing. On a node that is not a network instance,
+  the network navigation listener opens its first view (or, with
+  `doubleClickOpensSource`, its definition), and the viewer listener opened
+  its definition as a preview as well: a specification clause opened its
+  refinement trace and its heading at once. The viewer listener now stands
+  back whenever the other opens something.
+- Running a workflow no longer shows a "Model loading in progress" notification
+  on every firing. The live overlay's signature changes with each firing and the
+  editor reloads the model to redraw the glow; that refresh is now silent, as
+  the run driver's own polling refreshes already were.
+- ELK is told the side the producer placed a port on. It was told the side
+  from the direction alone, so a bundle's `ready`, placed in the other margin,
+  was routed to as if it sat on the far edge: the wire came around the outside
+  of the margin and crossed the whole node, label included, to reach the glyph.
+  It now arrives from the side the glyph faces, in one straight run.
+
+### Tooling
+
+- `scripts/render-svg/render.mjs`: a graph document in (what a producer's
+  plan command prints), an SVG out, through the server's layout and the real
+  client in headless Chrome, extracted as "Export as SVG" extracts it. Picks a
+  layout (`--layout default|untangled|free-ports`, `--all-layouts` for all
+  three side by side), extra ELK options (`--elk key=value`), the product's
+  node families and stylesheets, client behavior flags and a theme, and node
+  states to draw (`--states`, as a status source publishes them, through the
+  client's own painter). For looking at what a change does to a real diagram
+  without opening VS Code.
+- `scripts/render-svg/render.mjs` left its work directory in the system's
+  temporary folder after a failed layout or render, or an interrupt; it is
+  now removed on every exit, or kept and named with `--keep`.
 
 ## [0.7.0] - 2026-09-01
 
