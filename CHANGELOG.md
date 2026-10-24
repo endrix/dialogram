@@ -8,6 +8,20 @@ platform API version.
 
 ### Fixed
 
+- Export as SVG drew a running node's ring as a rainbow square over the
+  node's title. In the editor the ring is HTML in a foreignObject, a turning
+  gradient placed absolutely and masked down to a band, and the export copies
+  neither the placement nor the mask for HTML. The export now draws the ring
+  as a stroke of the same colours on the node's edge (without the glow),
+  which standalone SVG renderers draw too; where the editor draws no ring (no
+  band width, fewer than two colours) the export draws none. Colours are
+  resolved to `rgb()` first, so `oklch()`, `color-mix()` or a stop with
+  positions comes out right. The headless renderer's `--states` gets the same
+  ring.
+- A node state whose status is a name every object inherits (`toString`,
+  `constructor`) passed the status check and put a function where a CSS
+  class goes; the whole diagram then failed to draw. Only the four statuses
+  pass now.
 - A node family's colour now reaches every node in the family. The generated
   rules coloured external nodes and subgraphs only, so a product whose own
   nodes are plain saw its families only on nodes brought in from elsewhere,
@@ -86,6 +100,9 @@ platform API version.
   three side by side), extra ELK options (`--elk key=value`), the product's
   node families and stylesheets, client behavior flags and a theme. For
   looking at what a change does to a real diagram without opening VS Code.
+- `scripts/render-svg/render.mjs` left its work directory in the system's
+  temporary folder after a failed layout or render, or an interrupt; it is
+  now removed on every exit, or kept and named with `--keep`.
 
 - A Facts section in the property panel. A producer lists what it knows about
   a unit on a node's `meta.facts` (`[{ label, value, markdown? }]`, and on

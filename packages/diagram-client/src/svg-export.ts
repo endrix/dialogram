@@ -185,6 +185,237 @@ function isHtmlElement(el: Element): boolean {
     return el.namespaceURI === 'http://www.w3.org/1999/xhtml';
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/**
+ * The colours of a CSS colour list (`#f00, rgb(0 255 0), #00f`): split at the
+ * commas that are not inside a function's parentheses.
+ */
+export function splitColorList(value: string): string[] {
+    const colors: string[] = [];
+    let depth = 0;
+    let current = '';
+    for (const character of value) {
+        if (character === '(') {
+            depth++;
+        } else if (character === ')') {
+            depth = Math.max(0, depth - 1);
+        }
+        if (character === ',' && depth === 0) {
+            colors.push(current.trim());
+            current = '';
+        } else {
+            current += character;
+        }
+    }
+    colors.push(current.trim());
+    return colors.filter(color => color !== '');
+}
+
+/** Where a running node's ring goes as a plain stroke, in the node's coordinates. */
+export interface RunRingStroke {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    rx: number;
+    strokeWidth: number;
+}
+
+/**
+ * The stroke that stands for a running node's ring in an export. The ring is
+ * a band `ringWidth` wide just inside the node's edge (the foreignObject that
+ * holds it reaches `bleed` past the edge on every side, for the glow), so the
+ * stroke runs down the middle of that band, its corners following the band's
+ * outer radius.
+ */
+export function runRingStroke(
+    box: { x: number; y: number; width: number; height: number },
+    bleed: number,
+    ringWidth: number,
+    outerRadius: number
+): RunRingStroke {
+    const half = ringWidth / 2;
+    return {
+        x: box.x + bleed + half,
+        y: box.y + bleed + half,
+        width: Math.max(0, box.width - 2 * bleed - ringWidth),
+        height: Math.max(0, box.height - 2 * bleed - ringWidth),
+        rx: Math.max(0, outerRadius - half),
+        strokeWidth: ringWidth
+    };
+}
+
+/** The numbering of the ring gradients in the export being made (reset per export). */
+let runRingCount = 0;
+
+/**
+ * A colour stop's colour: a conic gradient's stop may carry positions after
+ * its colour (`#0af 0 50%`), which no colour property takes.
+ */
+export function stopColor(stop: string): string {
+    const parts: string[] = [];
+    let depth = 0;
+    let current = '';
+    for (const character of stop.trim()) {
+        if (character === '(') {
+            depth++;
+        } else if (character === ')') {
+            depth = Math.max(0, depth - 1);
+        }
+        if (/\s/.test(character) && depth === 0) {
+            if (current !== '') {
+                parts.push(current);
+            }
+            current = '';
+        } else {
+            current += character;
+        }
+    }
+    if (current !== '') {
+        parts.push(current);
+    }
+    while (parts.length > 1 && /^-?[\d.]+(%|deg|grad|rad|turn|px|em|rem)?$/.test(parts[parts.length - 1])) {
+        parts.pop();
+    }
+    return parts.join(' ');
+}
+
+let colorCanvas: CanvasRenderingContext2D | null | undefined;
+
+/**
+ * A colour as `rgb()`/`rgba()`, as the browser resolves it, or nothing when
+ * it is not one. Painted on a pixel and read back, so a colour any engine
+ * takes (`oklch()`, `color-mix()`) comes out in a form every SVG renderer
+ * reads; a canvas keeps such a colour as written when asked for its style.
+ */
+function resolveColor(stop: string): string | undefined {
+    const color = stopColor(stop);
+    if (colorCanvas === undefined) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        colorCanvas = canvas.getContext('2d', { willReadFrequently: true });
+    }
+    const context = colorCanvas;
+    if (!context) {
+        return color !== '' ? normalizeColors(color) : undefined;
+    }
+    // A colour the canvas does not take leaves its fill as it was: try it over
+    // two different fills, and only a colour neither keeps is not one.
+    const takes = ['#000000', '#ffffff'].some(previous => {
+        context.fillStyle = previous;
+        context.fillStyle = color;
+        return String(context.fillStyle) !== previous;
+    });
+    if (!takes) {
+        return undefined;
+    }
+    context.clearRect(0, 0, 1, 1);
+    context.fillStyle = color;
+    context.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
+    return a === 255 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${Number((a / 255).toFixed(3))})`;
+}
+
+/** What the export needs of a ring, as the browser resolved it. */
+export interface RunRingLook {
+    /** The band's width, the editor's padding. */
+    ringWidth: number;
+    /** How far the foreignObject reaches past the node's edge. */
+    bleed: number;
+    /** The band's outer corner radius. */
+    radius: number;
+    /** The ring's colours, resolved. */
+    colors: string[];
+}
+
+/** The two methods of a document `runRingElement` builds with. */
+type ElementFactory = { createElementNS(namespace: string, name: string): Element };
+
+/**
+ * The ring as the export draws it: a rect stroked with the ring's colours
+ * (as a linear sweep, where the editor turns a conic one) down the middle of
+ * the band. Nothing where the editor draws nothing: a band of no width, or
+ * fewer than two colours, which is no conic gradient at all. The glow is left
+ * out; the band alone says the node is running.
+ */
+export function runRingElement(
+    doc: ElementFactory,
+    box: { x: number; y: number; width: number; height: number },
+    look: RunRingLook,
+    gradientId: string
+): Element | undefined {
+    if (!(look.ringWidth > 0) || look.colors.length < 2) {
+        return undefined;
+    }
+    const stroke = runRingStroke(box, look.bleed, look.ringWidth, look.radius);
+    const group = doc.createElementNS(SVG_NS, 'g');
+    group.setAttribute('class', 'node-run-ring');
+    const defs = doc.createElementNS(SVG_NS, 'defs');
+    const gradient = doc.createElementNS(SVG_NS, 'linearGradient');
+    gradient.setAttribute('id', gradientId);
+    gradient.setAttribute('x1', '0');
+    gradient.setAttribute('y1', '0');
+    gradient.setAttribute('x2', '1');
+    gradient.setAttribute('y2', '1');
+    look.colors.forEach((color, index) => {
+        const stop = doc.createElementNS(SVG_NS, 'stop');
+        stop.setAttribute('offset', String(index / (look.colors.length - 1)));
+        stop.setAttribute('stop-color', color);
+        gradient.appendChild(stop);
+    });
+    defs.appendChild(gradient);
+    group.appendChild(defs);
+    const rect = doc.createElementNS(SVG_NS, 'rect');
+    rect.setAttribute('x', String(stroke.x));
+    rect.setAttribute('y', String(stroke.y));
+    rect.setAttribute('width', String(stroke.width));
+    rect.setAttribute('height', String(stroke.height));
+    rect.setAttribute('rx', String(stroke.rx));
+    rect.setAttribute('style', `fill:none;stroke:url(#${gradientId});stroke-width:${stroke.strokeWidth}`);
+    group.appendChild(rect);
+    return group;
+}
+
+/**
+ * A running node's ring, for the export.
+ *
+ * In the editor the ring is HTML inside a foreignObject: a turning
+ * conic-gradient square, absolutely placed and masked down to a band. A file
+ * cannot carry that. Standalone SVG renderers do not draw HTML at all, and
+ * even a browser would need the box placement and the mask, which the export
+ * copies for no other HTML. So the ring is drawn as what it reads as, from
+ * the band as the browser laid it out: its padding is the ring's width, its
+ * offset the bleed, its corner the radius.
+ */
+function exportedRunRing(source: Element, clone: Element): Element | undefined {
+    const doc = clone.ownerDocument;
+    const band = source.querySelector('.node-run-ring-band');
+    if (!doc || !band) {
+        return undefined;
+    }
+    const number = (name: string) => Number(source.getAttribute(name));
+    const box = { x: number('x'), y: number('y'), width: number('width'), height: number('height') };
+    if (![box.x, box.y, box.width, box.height].every(Number.isFinite) || box.width <= 0 || box.height <= 0) {
+        return undefined;
+    }
+    const style = window.getComputedStyle(band);
+    const resolvedOr = (value: string, fallback: number) => {
+        const parsed = parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    };
+    const look: RunRingLook = {
+        ringWidth: resolvedOr(style.paddingTop, 0),
+        bleed: resolvedOr(style.top, -box.x),
+        radius: resolvedOr(style.borderTopLeftRadius, 0),
+        colors: splitColorList(style.getPropertyValue('--wf-ring-colors'))
+            .map(resolveColor)
+            .filter((color): color is string => color !== undefined)
+    };
+    return runRingElement(doc, box, look, `run-ring-${++runRingCount}`);
+}
+
 /**
  * Walk the rendered element and its clone in step, writing the computed look
  * onto the clone. Hidden elements are dropped rather than styled, so a file is
@@ -194,6 +425,15 @@ function inlineStyles(source: Element, clone: Element): void {
     const computed = window.getComputedStyle(source);
     if (computed.display === 'none' || computed.visibility === 'hidden') {
         clone.remove();
+        return;
+    }
+    if (source.localName === 'foreignObject' && source.classList.contains('node-run-ring')) {
+        const ring = exportedRunRing(source, clone);
+        if (ring) {
+            clone.replaceWith(ring);
+        } else {
+            clone.remove();
+        }
         return;
     }
 
@@ -293,6 +533,9 @@ export function extractSvg(el: SVGGraphicsElement, label: string, atScaleOne = t
     }
     const bounds = transformedBounds(el, matrix);
     const pad = 12;
+    // Ring gradients are numbered per export, so two exports of one diagram
+    // are the same text.
+    runRingCount = 0;
 
     const clone = el.cloneNode(true) as SVGGraphicsElement;
     inlineStyles(el, clone);

@@ -43,6 +43,19 @@ export const EXECUTION_STATUS_CLASS: Readonly<Record<ExecutionNodeStatus, string
     failed: 'cal-node-error'
 };
 
+/**
+ * Whether `status` is one of the statuses, and its class. Asked of the map's
+ * own keys: `in` also answers for what every object inherits, so a status
+ * named `toString` passed and put a function where a class name goes.
+ */
+function isStatus(status: unknown): status is ExecutionNodeStatus {
+    return typeof status === 'string' && Object.prototype.hasOwnProperty.call(EXECUTION_STATUS_CLASS, status);
+}
+
+function statusClass(status: unknown): string | undefined {
+    return isStatus(status) ? EXECUTION_STATUS_CLASS[status] : undefined;
+}
+
 type ExecutionStatePainter = (states: readonly ExecutionNodeState[]) => void;
 
 let shown: ExecutionNodeState[] = [];
@@ -51,7 +64,7 @@ let painter: ExecutionStatePainter | undefined;
 /** Replace the states shown with `states`; an empty list takes them all off. */
 export function showExecutionStates(states: readonly ExecutionNodeState[]): void {
     shown = states.filter(state =>
-        !!state && typeof state.nodeId === 'string' && state.nodeId !== '' && state.status in EXECUTION_STATUS_CLASS
+        !!state && typeof state.nodeId === 'string' && state.nodeId !== '' && isStatus(state.status)
     );
     painter?.(shown);
 }
@@ -110,7 +123,7 @@ const paintedBy = new WeakMap<object, Set<string>>();
 export function applyExecutionStates(root: PaintableElement, states: readonly ExecutionNodeState[], remove = false): string[] {
     const classOf = new Map<string, string>();
     for (const state of states) {
-        const cssClass = EXECUTION_STATUS_CLASS[state.status];
+        const cssClass = statusClass(state.status);
         if (cssClass) {
             classOf.set(state.nodeId, cssClass);
         }
