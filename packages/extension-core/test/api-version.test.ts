@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { DIALOGRAM_API_VERSION, isApiVersionCompatible } from '../src/api';
 
 describe('DIALOGRAM_API_VERSION', () => {
-    it('is 0.7.0', () => {
-        expect(DIALOGRAM_API_VERSION).toBe('0.7.0');
+    it('is 0.8.0', () => {
+        expect(DIALOGRAM_API_VERSION).toBe('0.8.0');
     });
 });
 
@@ -32,6 +32,10 @@ describe('isApiVersionCompatible', () => {
         expect(isApiVersionCompatible('0.7.0', '0.7.0')).toBe(true);
         expect(isApiVersionCompatible('0.7.0', '0.6.0')).toBe(false);
         expect(isApiVersionCompatible('0.6.0', '0.7.0')).toBe(false);
+        // 0.8.0 likewise: every shell raises its expectation to 0.8.0.
+        expect(isApiVersionCompatible('0.8.0', '0.8.0')).toBe(true);
+        expect(isApiVersionCompatible('0.8.0', '0.7.0')).toBe(false);
+        expect(isApiVersionCompatible('0.7.0', '0.8.0')).toBe(false);
         expect(isApiVersionCompatible('1.0.0', '0.1.0')).toBe(false);
     });
 

@@ -6,6 +6,20 @@ platform API version.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-24
+
+What a producer of document-like diagrams needs: group containers, facts,
+header badges, links and editable fields in the property panel, outline rows,
+read-only views, a status overlay, edge kinds on connect, captions once per
+trunk, and the Java ELK server for large graphs; plus the headless renderer
+and a faithful SVG export of running nodes. (#90-#107)
+
+Every addition is opt-in and the exported API only grows, but the minor bump
+is deliberate: a product that uses any of it needs this platform, and
+compatibility is exact major.minor while pre-1.0. **Consumers must raise
+`EXPECTED_DIALOGRAM_API_VERSION` to `0.8.0`** in their `extension/main.ts`, or
+the platform refuses to load for them.
+
 ### Added
 
 - `DiagramProfile.clientStylesheets` (and `SidecarProfileInput.clientStylesheets`):
