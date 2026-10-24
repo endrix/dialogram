@@ -27,7 +27,9 @@
  *   --behavior <json>       client behavior flags, as a profile's clientBehavior
  *   --theme <dark|light>    the editor colours the page is drawn in (default: dark)
  *   --states <path.json>    node states to draw (ExecutionNodeState[]), as a status
- *                           source publishes them: through the client's own painter
+ *                           source publishes them: through the client's own painter.
+ *                           A nodeId is the producer's id or the diagram's; ids the
+ *                           view does not have are skipped; idle draws nothing
  *   --chrome <path>         Chrome/Chromium binary (default: $CHROME or google-chrome)
  *   --keep                  keep the intermediate schema, bundle and page
  */
@@ -44,6 +46,32 @@ const esbuild = createRequire(path.join(REPO, 'packages/extension/package.json')
 const LAYOUTS = ['default', 'untangled', 'free-ports'];
 /** Canvas size for the headless page: larger than any diagram, so nothing is culled. */
 const CANVAS_PX = 40000;
+
+/** A JSON file's value, or an error that names the file. */
+function readJson(file, what) {
+    try {
+        return JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch (error) {
+        throw new Error(`${what} ${file}: ${error.message}`);
+    }
+}
+
+/** The states file: an array of `{ nodeId, status }`, or an error that says so. */
+function readStates(file) {
+    const states = readJson(file, '--states');
+    if (!Array.isArray(states)) {
+        throw new Error(`--states ${file}: expected an array of { nodeId, status }, got ${states === null ? 'null' : typeof states}`);
+    }
+    return states;
+}
+
+/**
+ * JSON written into an inline `<script>`: a `<` in a string (a node id
+ * holding `</script>`) would end the script early, so each one is escaped.
+ */
+function inlineJson(text) {
+    return text.replace(/</g, '\\u003c');
+}
 
 function parseArgs(argv) {
     const positional = [];
@@ -83,10 +111,10 @@ function parseArgs(argv) {
         layout: single.layout ?? 'default',
         elk,
         allLayouts: flags.has('all-layouts'),
-        families: single.families ? JSON.parse(fs.readFileSync(single.families, 'utf8')) : [],
+        families: single.families ? readJson(single.families, '--families') : [],
         css: repeated.css.map(file => path.resolve(file)),
         behavior: single.behavior ? JSON.parse(single.behavior) : {},
-        states: single.states ? JSON.parse(fs.readFileSync(single.states, 'utf8')) : [],
+        states: single.states ? readStates(single.states) : [],
         // The client draws a family's colour and icon from its own copy of the
         // families (`clientBehavior.nodeFamilies`), as the webview gets them
         // from the profile; the server copy only classifies the nodes.
@@ -223,9 +251,9 @@ html, body { margin: 0; ${themeVariables(args.theme)} background: var(--vscode-e
 </style>
 </head><body class="vscode-${args.theme}"><div class="sprotty" id="dialogram-headless"></div>
 <div id="dialogram-headless_hidden"></div><div id="dialogram-headless_popup"></div>
-<script>window.diagramIdentifier = { clientBehavior: ${JSON.stringify({ nodeFamilies: args.families, ...args.behavior })} };
-window.__SCHEMA__ = ${fs.readFileSync(schemaPath, 'utf8')};
-window.__STATES__ = ${JSON.stringify(args.states)};
+<script>window.diagramIdentifier = { clientBehavior: ${inlineJson(JSON.stringify({ nodeFamilies: args.families, ...args.behavior }))} };
+window.__SCHEMA__ = ${inlineJson(fs.readFileSync(schemaPath, 'utf8'))};
+window.__STATES__ = ${inlineJson(JSON.stringify(args.states))};
 window.__CANVAS__ = ${CANVAS_PX};</script>
 <script src="file://${path.join(bundleDir, 'headless-entry.js')}"></script>
 </body></html>`);
