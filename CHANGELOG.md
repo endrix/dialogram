@@ -12,8 +12,12 @@ platform API version.
   node's title. In the editor the ring is HTML in a foreignObject, a turning
   gradient placed absolutely and masked down to a band, and the export copies
   neither the placement nor the mask for HTML. The export now draws the ring
-  as a stroke of the same colours on the node's edge, which standalone SVG
-  renderers draw too. The headless renderer's `--states` gets the same ring.
+  as a stroke of the same colours on the node's edge (without the glow),
+  which standalone SVG renderers draw too; where the editor draws no ring (no
+  band width, fewer than two colours) the export draws none. Colours are
+  resolved to `rgb()` first, so `oklch()`, `color-mix()` or a stop with
+  positions comes out right. The headless renderer's `--states` gets the same
+  ring.
 - A node state whose status is a name every object inherits (`toString`,
   `constructor`) passed the status check and put a function where a CSS
   class goes; the whole diagram then failed to draw. Only the four statuses
@@ -97,8 +101,8 @@ platform API version.
   node families and stylesheets, client behavior flags and a theme. For
   looking at what a change does to a real diagram without opening VS Code.
 - `scripts/render-svg/render.mjs` left its work directory in the system's
-  temporary folder after a failed layout or render; it is now removed on
-  every exit, or kept and named with `--keep`.
+  temporary folder after a failed layout or render, or an interrupt; it is
+  now removed on every exit, or kept and named with `--keep`.
 
 - A Facts section in the property panel. A producer lists what it knows about
   a unit on a node's `meta.facts` (`[{ label, value, markdown? }]`, and on

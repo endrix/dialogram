@@ -273,7 +273,19 @@ async function main() {
     const args = parseArgs(process.argv.slice(2));
     const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dialogram-render-'));
     // The work directory goes whatever happens, a failed layout or render
-    // included, unless it was asked to be kept (then it is said where).
+    // or an interrupt included, unless it was asked to be kept (then it is
+    // said where).
+    const leave = async signal => {
+        // esbuild bundles in a process of its own, which would go on writing
+        // into the directory after it is removed: stop it first.
+        await Promise.race([Promise.resolve(esbuild.stop()), new Promise(resolve => setTimeout(resolve, 2000))]);
+        if (!args.keep) {
+            fs.rmSync(workDir, { recursive: true, force: true });
+        }
+        process.exit(signal === 'SIGINT' ? 130 : 143);
+    };
+    process.once('SIGINT', leave);
+    process.once('SIGTERM', leave);
     try {
         const docPath = path.join(workDir, 'doc.json');
         fs.writeFileSync(docPath, args.doc === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(args.doc, 'utf8'));
