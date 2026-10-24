@@ -96,6 +96,9 @@ platform API version.
   three side by side), extra ELK options (`--elk key=value`), the product's
   node families and stylesheets, client behavior flags and a theme. For
   looking at what a change does to a real diagram without opening VS Code.
+- `scripts/render-svg/render.mjs` left its work directory in the system's
+  temporary folder after a failed layout or render; it is now removed on
+  every exit, or kept and named with `--keep`.
 
 - A Facts section in the property panel. A producer lists what it knows about
   a unit on a node's `meta.facts` (`[{ label, value, markdown? }]`, and on
