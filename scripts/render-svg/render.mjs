@@ -234,8 +234,7 @@ async function renderOne(args, workDir, schemaBuilder, bundleDir, docPath, layou
     const build = spawnSync(process.execPath, [schemaBuilder, configPath], { encoding: 'utf8', cwd: REPO });
     if (build.status !== 0) {
         console.log('layout failed');
-        console.error(build.stderr || build.stdout);
-        process.exit(1);
+        throw new Error((build.stderr || build.stdout || `exit ${build.status}`).trim());
     }
     process.stdout.write(`${build.stdout.trim()}; `);
 
@@ -261,8 +260,7 @@ window.__CANVAS__ = ${CANVAS_PX};</script>
     const result = renderInChrome(args.chrome, pagePath);
     if (result.error) {
         console.log('render failed');
-        console.error(result.error);
-        process.exit(1);
+        throw new Error(String(result.error));
     }
     fs.writeFileSync(out, result.svg);
     console.log(`${result.elementCount} elements → ${out}`);
@@ -274,23 +272,27 @@ window.__CANVAS__ = ${CANVAS_PX};</script>
 async function main() {
     const args = parseArgs(process.argv.slice(2));
     const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dialogram-render-'));
-    const docPath = path.join(workDir, 'doc.json');
-    fs.writeFileSync(docPath, args.doc === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(args.doc, 'utf8'));
+    // The work directory goes whatever happens, a failed layout or render
+    // included, unless it was asked to be kept (then it is said where).
+    try {
+        const docPath = path.join(workDir, 'doc.json');
+        fs.writeFileSync(docPath, args.doc === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(args.doc, 'utf8'));
 
-    process.stdout.write('· bundling the layout and the client… ');
-    const [schemaBuilder, bundleDir] = await Promise.all([bundleSchemaBuilder(workDir), bundleClient(workDir)]);
-    console.log('done');
+        process.stdout.write('· bundling the layout and the client… ');
+        const [schemaBuilder, bundleDir] = await Promise.all([bundleSchemaBuilder(workDir), bundleClient(workDir)]);
+        console.log('done');
 
-    const layouts = args.allLayouts ? LAYOUTS : [args.layout];
-    for (const layout of layouts) {
-        const out = args.allLayouts ? args.out.replace(/\.svg$/, `-${layout}.svg`) : args.out;
-        await renderOne(args, workDir, schemaBuilder, bundleDir, docPath, layout, out);
-    }
-
-    if (args.keep) {
-        console.log(`· intermediates kept in ${workDir}`);
-    } else {
-        fs.rmSync(workDir, { recursive: true, force: true });
+        const layouts = args.allLayouts ? LAYOUTS : [args.layout];
+        for (const layout of layouts) {
+            const out = args.allLayouts ? args.out.replace(/\.svg$/, `-${layout}.svg`) : args.out;
+            await renderOne(args, workDir, schemaBuilder, bundleDir, docPath, layout, out);
+        }
+    } finally {
+        if (args.keep) {
+            console.log(`· intermediates kept in ${workDir}`);
+        } else {
+            fs.rmSync(workDir, { recursive: true, force: true });
+        }
     }
 }
 

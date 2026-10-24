@@ -38,12 +38,12 @@ const NOT_EXPORTED: Record<string, string> = {
     content: 'panel chrome (pseudo-elements, which do not clone anyway)',
     contain: 'a rendering hint, not an appearance',
     'z-index': 'HTML panel stacking; SVG paints in document order',
-    position: 'HTML panel layout; the diagram is positioned by transforms',
-    top: 'HTML panel layout',
+    position: 'HTML panel layout, and the run ring, which the export redraws as a stroke; the diagram is positioned by transforms',
+    top: 'HTML panel layout, and the run ring, which the export redraws as a stroke',
     right: 'HTML panel layout',
     bottom: 'HTML panel layout',
-    left: 'HTML panel layout',
-    inset: 'HTML panel layout',
+    left: 'HTML panel layout, and the run ring, which the export redraws as a stroke',
+    inset: 'HTML panel layout, and the run ring, which the export redraws as a stroke',
     visibility: 'hidden elements are dropped from the export, not styled',
     font: 'shorthand; the computed longhands are carried instead',
     'text-decoration': 'shorthand; the computed longhands are carried instead',
@@ -55,18 +55,19 @@ const NOT_EXPORTED: Record<string, string> = {
     'image-rendering': 'the diagram holds no raster images',
     '-webkit-backdrop-filter': 'panel chrome, never inside the diagram svg',
     // The palette's agent icon is a masked pseudo-element: chrome, and a
-    // pseudo-element does not clone anyway.
+    // pseudo-element does not clone anyway. The run ring's band is masked
+    // too; the export draws it as a stroke instead (`exportedRunRing`).
     'mask-image': 'palette icon chrome',
     'mask-size': 'palette icon chrome',
     'mask-position': 'palette icon chrome',
     'mask-repeat': 'palette icon chrome',
-    'mask-composite': 'palette icon chrome',
-    '-webkit-mask': 'palette icon chrome',
+    'mask-composite': 'palette icon chrome, and the run ring, which the export redraws as a stroke',
+    '-webkit-mask': 'palette icon chrome, and the run ring, which the export redraws as a stroke',
     '-webkit-mask-image': 'palette icon chrome',
     '-webkit-mask-size': 'palette icon chrome',
     '-webkit-mask-position': 'palette icon chrome',
     '-webkit-mask-repeat': 'palette icon chrome',
-    '-webkit-mask-composite': 'palette icon chrome',
+    '-webkit-mask-composite': 'palette icon chrome, and the run ring, which the export redraws as a stroke',
     // `body:not(...)` is a selector the property regex reads as a declaration.
     body: 'a selector, not a property'
 };
