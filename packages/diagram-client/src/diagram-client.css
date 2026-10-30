@@ -1314,6 +1314,69 @@ body.vscode-high-contrast-light .node-center-image-light {
     stroke-width: 1px;
 }
 
+/* ============================================
+   Selection trace (`clientBehavior.selectionTrace`, selection-trace.ts):
+   what leads to the selection in one colour, what it leads to in another,
+   the rest faded. The classes come from the model, so they sit on the
+   element's own group: `.sprotty-edge` for an edge, the node's group for a
+   node. A container is never faded (its opacity would multiply into every
+   member, traced or not), so a frame keeps its look.
+   ============================================ */
+.wf-trace-faded {
+    opacity: 0.3;
+}
+
+.sprotty-edge.wf-trace-faded {
+    opacity: 0.18;
+}
+
+/* An edge's line and arrowhead are drawn in `currentColor`: one colour moves
+   both, and a product's dash patterns per edge type stay as they are. */
+.sprotty-edge.wf-trace-upstream .workflow-edge {
+    color: var(--vscode-charts-green, #89d185);
+}
+
+.sprotty-edge.wf-trace-downstream .workflow-edge {
+    color: var(--vscode-charts-blue, #3794ff);
+}
+
+/* The other pieces of a selected edge look selected too: they are the same edge. */
+.sprotty-edge.wf-trace-focus .workflow-edge {
+    color: var(--vscode-focusBorder, #007fd4);
+}
+
+.wf-trace-upstream > .node-body {
+    stroke: var(--vscode-charts-green, #89d185);
+    stroke-width: 2.5px;
+}
+
+.wf-trace-downstream > .node-body {
+    stroke: var(--vscode-charts-blue, #3794ff);
+    stroke-width: 2.5px;
+}
+
+.boundary-node.wf-trace-upstream .boundary-glyph {
+    fill: var(--vscode-charts-green, #89d185);
+    stroke: var(--vscode-charts-green, #89d185);
+}
+
+.boundary-node.wf-trace-downstream .boundary-glyph {
+    fill: var(--vscode-charts-blue, #3794ff);
+    stroke: var(--vscode-charts-blue, #3794ff);
+}
+
+.workflow-group-boundary-port.wf-trace-upstream .group-boundary-dot {
+    fill: var(--vscode-charts-green, #89d185);
+}
+
+.workflow-group-boundary-port.wf-trace-downstream .group-boundary-dot {
+    fill: var(--vscode-charts-blue, #3794ff);
+}
+
+.workflow-group-boundary-port.wf-trace-focus .group-boundary-dot {
+    fill: var(--vscode-focusBorder, #007fd4);
+}
+
 /* A node dragged outside the node that holds it: refused, and shown so. */
 .movement-not-allowed .node-body {
     stroke: var(--vscode-editorError-foreground, #f14c4c);
