@@ -1,0 +1,1426 @@
+{
+ "graph": {
+  "edges": [
+   {
+    "from": "port:node:scope:root:MODEL-CPU-LAUNCHTRAP:out",
+    "id": "edge:port:node:scope:root:MODEL-CPU-LAUNCHTRAP:out->port:node:scope:root:TRAP-ALIGN-001:in:implements",
+    "meta": {
+     "label": "implements",
+     "role": "implements"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 43
+    },
+    "to": "port:node:scope:root:TRAP-ALIGN-001:in"
+   },
+   {
+    "from": "port:node:scope:root:MODEL-CPU-LDMISALIGN:out",
+    "id": "edge:port:node:scope:root:MODEL-CPU-LDMISALIGN:out->port:node:scope:root:TRAP-ALIGN-001:in:implements",
+    "meta": {
+     "label": "implements",
+     "role": "implements"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 168
+    },
+    "to": "port:node:scope:root:TRAP-ALIGN-001:in"
+   },
+   {
+    "from": "port:node:scope:root:MODEL-CPU-LDMISALIGN:out",
+    "id": "edge:port:node:scope:root:MODEL-CPU-LDMISALIGN:out->port:node:scope:root:TRAP-CAUSE-001:in:implements",
+    "meta": {
+     "label": "implements",
+     "role": "implements"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 168
+    },
+    "to": "port:node:scope:root:TRAP-CAUSE-001:in"
+   },
+   {
+    "from": "port:node:scope:root:MODEL-CPU-PCPIEXPIRE:out",
+    "id": "edge:port:node:scope:root:MODEL-CPU-PCPIEXPIRE:out->port:node:scope:root:TRAP-ILL-001:in:implements",
+    "meta": {
+     "label": "implements",
+     "role": "implements"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 63
+    },
+    "to": "port:node:scope:root:TRAP-ILL-001:in"
+   },
+   {
+    "from": "port:node:scope:root:MODEL-CPU-RS2STMEM:out",
+    "id": "edge:port:node:scope:root:MODEL-CPU-RS2STMEM:out->port:node:scope:root:TRAP-ALIGN-001:in:implements",
+    "meta": {
+     "label": "implements",
+     "role": "implements"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 118
+    },
+    "to": "port:node:scope:root:TRAP-ALIGN-001:in"
+   },
+   {
+    "from": "port:node:scope:root:MODEL-CPU-STMISALIGN:out",
+    "id": "edge:port:node:scope:root:MODEL-CPU-STMISALIGN:out->port:node:scope:root:TRAP-ALIGN-001:in:implements",
+    "meta": {
+     "label": "implements",
+     "role": "implements"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 153
+    },
+    "to": "port:node:scope:root:TRAP-ALIGN-001:in"
+   },
+   {
+    "from": "port:node:scope:root:MODEL-CPU-STMISALIGN:out",
+    "id": "edge:port:node:scope:root:MODEL-CPU-STMISALIGN:out->port:node:scope:root:TRAP-CAUSE-001:in:implements",
+    "meta": {
+     "label": "implements",
+     "role": "implements"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 153
+    },
+    "to": "port:node:scope:root:TRAP-CAUSE-001:in"
+   },
+   {
+    "from": "port:node:scope:root:MODEL-CPU-TOLDMEM:out",
+    "id": "edge:port:node:scope:root:MODEL-CPU-TOLDMEM:out->port:node:scope:root:TRAP-ALIGN-001:in:implements",
+    "meta": {
+     "label": "implements",
+     "role": "implements"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 83
+    },
+    "to": "port:node:scope:root:TRAP-ALIGN-001:in"
+   },
+   {
+    "from": "port:node:scope:root:MODEL-CPU-TOOFFER:out",
+    "id": "edge:port:node:scope:root:MODEL-CPU-TOOFFER:out->port:node:scope:root:TRAP-ILL-001:in:implements",
+    "meta": {
+     "label": "implements",
+     "role": "implements"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 93
+    },
+    "to": "port:node:scope:root:TRAP-ILL-001:in"
+   },
+   {
+    "from": "port:node:scope:root:MODEL-CPU-TOSTMEM:out",
+    "id": "edge:port:node:scope:root:MODEL-CPU-TOSTMEM:out->port:node:scope:root:TRAP-ALIGN-001:in:implements",
+    "meta": {
+     "label": "implements",
+     "role": "implements"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 78
+    },
+    "to": "port:node:scope:root:TRAP-ALIGN-001:in"
+   },
+   {
+    "from": "port:node:scope:root:MODEL-CPU-TOTRAP:out",
+    "id": "edge:port:node:scope:root:MODEL-CPU-TOTRAP:out->port:node:scope:root:TRAP-ILL-001:in:implements",
+    "meta": {
+     "label": "implements",
+     "role": "implements"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 98
+    },
+    "to": "port:node:scope:root:TRAP-ILL-001:in"
+   },
+   {
+    "from": "port:node:scope:root:MODEL-CPU-TRAPHALT:out",
+    "id": "edge:port:node:scope:root:MODEL-CPU-TRAPHALT:out->port:node:scope:root:TRAP-001:in:implements",
+    "meta": {
+     "label": "implements",
+     "role": "implements"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 173
+    },
+    "to": "port:node:scope:root:TRAP-001:in"
+   },
+   {
+    "from": "port:node:scope:root:PRM-CATCH-001:out",
+    "id": "edge:port:node:scope:root:PRM-CATCH-001:out->port:node:scope:root:TRAP-001:in:affects",
+    "meta": {
+     "label": "affects",
+     "role": "affects"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 309
+    },
+    "to": "port:node:scope:root:TRAP-001:in"
+   },
+   {
+    "from": "port:node:scope:root:Q-003:out",
+    "id": "edge:port:node:scope:root:Q-003:out->port:node:scope:root:TRAP-ILL-001:in:blocks",
+    "meta": {
+     "label": "blocks",
+     "role": "blocks"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 9
+    },
+    "to": "port:node:scope:root:TRAP-ILL-001:in"
+   },
+   {
+    "from": "port:node:scope:root:TRAP-001:out",
+    "id": "edge:port:node:scope:root:TRAP-001:out->port:node:scope:root:PIPE-FSM-001:in:refines",
+    "meta": {
+     "label": "refines",
+     "role": "refines"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 25
+    },
+    "to": "port:node:scope:root:PIPE-FSM-001:in"
+   },
+   {
+    "from": "port:node:scope:root:TRAP-ALIGN-001:out",
+    "id": "edge:port:node:scope:root:TRAP-ALIGN-001:out->port:node:scope:root:PRM-CATCH-001:in:depends-on",
+    "meta": {
+     "label": "depends-on",
+     "role": "depends-on"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 181
+    },
+    "to": "port:node:scope:root:PRM-CATCH-001:in"
+   },
+   {
+    "from": "port:node:scope:root:TRAP-ALIGN-001:out",
+    "id": "edge:port:node:scope:root:TRAP-ALIGN-001:out->port:node:scope:root:TRAP-CAUSE-001:in:refines",
+    "meta": {
+     "label": "refines",
+     "role": "refines"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 181
+    },
+    "to": "port:node:scope:root:TRAP-CAUSE-001:in"
+   },
+   {
+    "from": "port:node:scope:root:TRAP-CAUSE-001:out",
+    "id": "edge:port:node:scope:root:TRAP-CAUSE-001:out->port:node:scope:root:TRAP-001:in:refines",
+    "meta": {
+     "label": "refines",
+     "role": "refines"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 53
+    },
+    "to": "port:node:scope:root:TRAP-001:in"
+   },
+   {
+    "from": "port:node:scope:root:TRAP-ILL-001:out",
+    "id": "edge:port:node:scope:root:TRAP-ILL-001:out->port:node:scope:root:TRAP-CAUSE-001:in:refines",
+    "meta": {
+     "label": "refines",
+     "role": "refines"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 104
+    },
+    "to": "port:node:scope:root:TRAP-CAUSE-001:in"
+   },
+   {
+    "from": "port:node:scope:root:VER-TRAP-001:out",
+    "id": "edge:port:node:scope:root:VER-TRAP-001:out->port:node:scope:root:TRAP-001:in:verifies",
+    "meta": {
+     "label": "verifies",
+     "role": "verifies"
+    },
+    "scope": "scope:root",
+    "source": {
+     "file": "<path>",
+     "line": 216
+    },
+    "to": "port:node:scope:root:TRAP-001:in"
+   }
+  ],
+  "id": "wf:DOC-PICORV32-TRAP",
+  "meta": {
+   "title": "Traps",
+   "workflow": "DOC-PICORV32-TRAP"
+  },
+  "nodes": [
+   {
+    "id": "node:scope:root:TRAP-001",
+    "kind": "requirement",
+    "label": "A trap is a halt",
+    "meta": {
+     "badges": [
+      {
+       "text": "MUST",
+       "tone": "info"
+      },
+      {
+       "text": "L1",
+       "tone": "neutral"
+      }
+     ],
+     "definitionAnnotations": [
+      {
+       "name": "requirement"
+      },
+      {
+       "arguments": [
+        {
+         "name": "id",
+         "value": "TRAP-001"
+        },
+        {
+         "name": "modality",
+         "value": "must"
+        },
+        {
+         "name": "refinement",
+         "value": "L1"
+        },
+        {
+         "name": "status",
+         "value": "active"
+        },
+        {
+         "name": "owner",
+         "value": "picorv32-spec"
+        },
+        {
+         "name": "derived-from",
+         "value": "picorv32.v#cpu_state_trap"
+        },
+        {
+         "name": "since",
+         "value": "1.0"
+        }
+       ],
+       "name": "ndf"
+      },
+      {
+       "name": "body",
+       "text": "Entering `cpu_state_trap` MUST stop the machine permanently: the state is\nabsorbing, `trap` is asserted and stays asserted, and **the only exit is reset**\n([[FSM-TRAP-001]]).\n\n```text ndf:normative\nwhat stops                     what does not\nthe CPU state machine          the two counters keep counting -- count_cycle\n                               is assigned unconditionally (:1433, CNT-001)\ninstruction fetch              the timer keeps counting down, and can still\n                               raise a pending bit that nothing will service\n                               (:1442-1443, IRQ-TIMER-001)\nthe memory interface, once     eoi holds whatever it held\nany outstanding transfer       (IRQ-EOI-001)\ncompletes (MEM-FSM-001)\n```\n\nSo a trapped core is **not** a quiescent core, and a testbench that waits for\nactivity to cease will wait for ever. What it must watch is the `trap` output,\nwhich is the only signal that says the machine has stopped\n([[VER-TRAP-001]]).\n\nAn implementation MUST NOT provide a return path. There is no `mepc`, no\n`mcause`, no vector, and nothing reads `reg_pc` after the trap\n([[CHR-NG-002]])."
+      }
+     ]
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:TRAP-001:in",
+      "name": "in"
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:TRAP-001:out",
+      "name": "out"
+     }
+    ],
+    "scope": "scope:group:L1",
+    "type": "TRAP-001"
+   },
+   {
+    "id": "node:scope:root:TRAP-ALIGN-001",
+    "kind": "requirement",
+    "label": "The alignment checks",
+    "meta": {
+     "badges": [
+      {
+       "text": "MUST",
+       "tone": "info"
+      },
+      {
+       "text": "L2",
+       "tone": "neutral"
+      }
+     ],
+     "definitionAnnotations": [
+      {
+       "name": "requirement"
+      },
+      {
+       "arguments": [
+        {
+         "name": "id",
+         "value": "TRAP-ALIGN-001"
+        },
+        {
+         "name": "modality",
+         "value": "must"
+        },
+        {
+         "name": "refinement",
+         "value": "L2"
+        },
+        {
+         "name": "status",
+         "value": "active"
+        },
+        {
+         "name": "owner",
+         "value": "picorv32-spec"
+        },
+        {
+         "name": "derived-from",
+         "value": "picorv32.v#CATCH_MISALIGN"
+        },
+        {
+         "name": "since",
+         "value": "1.0"
+        }
+       ],
+       "name": "ndf"
+      },
+      {
+       "name": "body",
+       "text": "With `CATCH_MISALIGN`, the core MUST check two alignments after the state `case`\n([[FSM-POST-001]]) and escalate per [[TRAP-CAUSE-001]] on interrupt 2:\n\n```text ndf:normative\ncheck                                              guard                 line\na word data access with reg_op1[1:0] != 0          CATCH_MISALIGN &&     1922-1929\na halfword data access with reg_op1[0] != 0        resetn &&             1930-1937\n                                                   (mem_do_rdata ||\n                                                    mem_do_wdata)\nan instruction fetch with reg_pc[0] != 0, or       CATCH_MISALIGN &&     1938-1944\n  |reg_pc[1:0] != 0 without COMPRESSED_ISA          resetn &&\n                                                   mem_do_rinst\n```\n\nFive obligations.\n\n1. **The data check reads `reg_op1`, not the presented address.** By the time a\n   request flag is set, `reg_op1` holds the effective address\n   ([[FSM-STMEM-001]]#1), and `mem_addr` has been word-aligned by `mem_la_addr`\n   ([[MIF-LA-001]]) \u2014 so checking the bus address would find every access\n   aligned.\n2. **The data check is on `mem_wordsize`, and a byte access is never\n   misaligned.** There are only two arms, for word and halfword; `mem_wordsize`\n   2 has none ([[MEM-SIZE-001]]).\n3. **The instruction check narrows under `COMPRESSED_ISA`** to `reg_pc[0]`\n   alone, because a 16-bit instruction may start at any even address\n   ([[RVC-001]]).\n4. **The instruction check fires on `mem_do_rinst` and not on\n   `mem_do_prefetch`**, so a prefetch to a misaligned address raises nothing \u2014\n   it cannot, because a prefetch's address is `reg_next_pc` advanced by 2 or 4\n   from an address already checked ([[PC-ADV-001]]). An implementation that\n   checks the prefetch traps on a target it was never going to execute.\n5. **The data checks do NOT redirect.** Unlike the instruction cases of\n   [[TRAP-ILL-001]], the escalating arms here set `next_irq_pending` and leave\n   `cpu_state` alone (`picorv32.v:1925-1927`, `:1932-1934`) \u2014 so the misaligned\n   access **proceeds** and the interrupt is taken when the instruction finishes.\n   Only the halting arm assigns `cpu_state`. That asymmetry is in the RTL and an\n   implementation that redirects here would skip the access.\n\nWith `CATCH_MISALIGN` off, neither check exists and the low address bits are\n**forced to zero** on `reg_pc` and `reg_next_pc` every cycle instead\n(`picorv32.v:1965-1972`, [[PC-ADV-001]]). A misaligned **data** access is then\nnot truncated at all \u2014 `reg_op1` is untouched \u2014 so the access proceeds with the\nlow bits as the byte-lane selector they already were\n([[MEM-SIZE-001]]), and a word load from an odd address returns the word\ncontaining it. That is silently wrong rather than detected, which is what\n[[PRM-CATCH-001]] records.\n\n**WHERE THE HALT IS REPORTED, MEASURED.** The instruction check fires in the cycle\n*after* `reg_pc` becomes the misaligned address, because `reg_pc` is assigned\nnon-blockingly in `cpu_state_fetch` while `mem_do_rinst` rises with it\n(`picorv32.v:1938`). By then no instruction at the new address has been decoded, so\n`dbg_insn_addr` still holds the **previous** one \u2014 and the trap is therefore\nreported as that instruction's retirement, carrying whatever register write it\nperformed (`picorv32.v:2014-2023`, [[VER-RVFI-001]]). There is **one** event, not\ntwo: the retirement and the halt coincide.\n\nThat was established by running the module rather than by reading it\n([[D-0004]]#1). `gen/tests/rtl.py` compiles `picorv32.v` with Verilator, runs it on\nthe same images the model runs, and compares its RVFI stream against\n`gen/harness/refmodel.py`; the model and the reference both emitted two events\nuntil 2026-09-09, and no real run produces that.\n\nThe data checks differ, and the difference is obligation 5's: the access is already\nrequested when the check fires, so the halt is reported on the instruction that\nmade it, at its own address."
+      }
+     ]
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:TRAP-ALIGN-001:in",
+      "name": "in"
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:TRAP-ALIGN-001:out",
+      "name": "out"
+     }
+    ],
+    "scope": "scope:group:L2",
+    "type": "TRAP-ALIGN-001"
+   },
+   {
+    "id": "node:scope:root:TRAP-CAUSE-001",
+    "kind": "requirement",
+    "label": "Three conditions, each with two outcomes",
+    "meta": {
+     "badges": [
+      {
+       "text": "MUST",
+       "tone": "info"
+      },
+      {
+       "text": "L1",
+       "tone": "neutral"
+      }
+     ],
+     "definitionAnnotations": [
+      {
+       "name": "requirement"
+      },
+      {
+       "arguments": [
+        {
+         "name": "id",
+         "value": "TRAP-CAUSE-001"
+        },
+        {
+         "name": "modality",
+         "value": "must"
+        },
+        {
+         "name": "refinement",
+         "value": "L1"
+        },
+        {
+         "name": "status",
+         "value": "active"
+        },
+        {
+         "name": "owner",
+         "value": "picorv32-spec"
+        },
+        {
+         "name": "since",
+         "value": "1.0"
+        }
+       ],
+       "name": "ndf"
+      },
+      {
+       "name": "body",
+       "text": "Exactly three conditions MUST be able to reach `cpu_state_trap`, and each MUST\nprefer raising an **interrupt** over halting when three things hold: interrupts\nare enabled, the corresponding mask bit is clear, and no interrupt routine is\nalready running.\n\n```text ndf:normative\ncondition                       internal     raises     halts instead when\n                                interrupt    clause\nan undecoded instruction        1 (ebreak)   TRAP-      !ENABLE_IRQ, or\n  (DEF-INSTRTRAP-001), an                    ILL-001    irq_mask[1], or\n  ECALL, or an EBREAK                                   irq_active\na misaligned data access        2 (buserror) TRAP-      the same, with bit 2\n                                             ALIGN-001\na misaligned instruction fetch  2 (buserror) TRAP-      the same\n                                             ALIGN-001\n```\n\nThe escalation test is written out identically in **six** places \u2014 three for\ninterrupt 1 and three for interrupt 2 (`picorv32.v:1608`, `:1619`, `:1780`,\n`:1925`, `:1932`, `:1940`):\n\n```text ndf:normative\nif (ENABLE_IRQ && !irq_mask[irq_N] && !irq_active)\n    next_irq_pending[irq_N] = 1;     -- a BLOCKING assignment\n    and, for the instruction cases, cpu_state <= cpu_state_fetch\nelse\n    cpu_state <= cpu_state_trap;\n```\n\nThree obligations.\n\n1. **`irq_mask` resets to all ones** ([[ARCH-RESET-001]], [[IRQ-MASK-001]]), so\n   **a core that has not executed `maskirq` halts** on any of the three. The\n   README says so: \"an illegal instruction or bus error while the illegal\n   instruction or bus error interrupt is disabled will cause the processor to\n   halt.\"\n2. **`irq_active` blocks the escalation**, so a fault *inside* the interrupt\n   routine halts rather than re-entering it. There is no nesting and no double\n   fault ([[IRQ-ACTIVE-001]]).\n3. **`MASKED_IRQ` can make the halt unconditional.** A bit set in that parameter\n   is OR-ed into every `maskirq` write (`picorv32.v:1682`), so software cannot\n   clear it and the condition halts for ever\n   ([[PRM-IRQMASKS-001]], [[CON-BASIC-001]]#11).\n\n---"
+      }
+     ]
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:TRAP-CAUSE-001:in",
+      "name": "in"
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:TRAP-CAUSE-001:out",
+      "name": "out"
+     }
+    ],
+    "scope": "scope:group:L1",
+    "type": "TRAP-CAUSE-001"
+   },
+   {
+    "id": "node:scope:root:TRAP-ILL-001",
+    "kind": "requirement",
+    "label": "The illegal-instruction path",
+    "meta": {
+     "badges": [
+      {
+       "text": "MUST",
+       "tone": "info"
+      },
+      {
+       "text": "L2",
+       "tone": "neutral"
+      }
+     ],
+     "definitionAnnotations": [
+      {
+       "name": "requirement"
+      },
+      {
+       "arguments": [
+        {
+         "name": "id",
+         "value": "TRAP-ILL-001"
+        },
+        {
+         "name": "modality",
+         "value": "must"
+        },
+        {
+         "name": "refinement",
+         "value": "L2"
+        },
+        {
+         "name": "status",
+         "value": "active"
+        },
+        {
+         "name": "owner",
+         "value": "picorv32-spec"
+        },
+        {
+         "name": "derived-from",
+         "value": "picorv32.v#instr_trap"
+        },
+        {
+         "name": "since",
+         "value": "1.0"
+        }
+       ],
+       "name": "ndf"
+      },
+      {
+       "name": "body",
+       "text": "An undecoded instruction, an `ECALL` and an `EBREAK` MUST reach the **same**\nescalation, and MUST reach it through the co-processor interface\n([[PCPI-001]], [[DEC-TRAP-001]]):\n\n```text ndf:normative\nstep                                                              line\n1  instr_trap fires -- the NOR of 48 of the 49 decode flags,       679-685\n   gated by CATCH_ILLINSN || WITH_PCPI. An ECALL sets it too,\n   because instr_ecall_ebreak is the flag left OUT of the NOR\n2  cpu_state_ld_rs1's first arm offers the instruction: pcpi_valid  1585-1625\n   rises with pcpi_insn, pcpi_rs1 and pcpi_rs2 (PCPI-001).\n   At one read port the offer is made in ld_rs2 instead            1768-1786\n3  if pcpi_int_ready: take the result, drop pcpi_valid, go to       1598-1603\n   cpu_state_fetch -- NOT a trap at all\n4  else if CATCH_ILLINSN && (pcpi_timeout || instr_ecall_ebreak):   1605-1613\n   escalate per TRAP-CAUSE-001 on interrupt 1\n```\n\nFour obligations.\n\n1. **`instr_ecall_ebreak` short-circuits the timeout.** Step 4's disjunction\n   means a system instruction escalates in the **first** cycle of\n   `cpu_state_ld_rs1`, while an unknown instruction waits for `pcpi_timeout`\n   ([[PCPI-TIMEOUT-001]]). So `ECALL` costs four cycles and an unclaimed\n   instruction costs twenty ([[PIPE-CPI-001]]). The offer of step 2 is never\n   SEEN for a system instruction: the escalation's `pcpi_valid <= 0` overrides\n   the offer's `<= 1` in that same cycle ([[DEC-TRAP-001]]#3, measured\n   2026-09-24).\n2. **The escalation raises interrupt 1, not a cause code.** `irq_ebreak` is the\n   localparam `1` ([[CON-WIDTH-001]]), and the interrupt routine learns which of\n   the three conditions fired only from the **bitmask** in `q1`\n   ([[IRQ-ENTRY-001]]) \u2014 which cannot distinguish an illegal instruction from an\n   `ECALL` at all. That is a real loss of information relative to `mcause` and it\n   is the machine's ([[D-0002]]).\n3. **With `WITH_PCPI` and no `CATCH_ILLINSN`, the path HANGS.** Step 1 still\n   fires, step 2 still offers, and step 4 is `CATCH_ILLINSN`-guarded \u2014 so\n   nothing escalates and nothing advances. `pcpi_timeout_counter` is not even\n   counted, its own guard being `WITH_PCPI && CATCH_ILLINSN`\n   (`picorv32.v:1423`). The core stays in `cpu_state_ld_rs1` with `pcpi_valid`\n   asserted and `trap` **low**, which is the one failure a testbench watching\n   `trap` cannot see. MEASURED, 2026-09-09: at `CATCH_ILLINSN = 0` with\n   `ENABLE_MUL` the machine retires the instructions before the undecoded one,\n   emits no trapped event and reaches the harness's cycle bound\n   ([[Q-003]], `gen/tests/questions.py`). Recorded also as\n   [[CON-BASIC-001]]#12, which is why `gen/params.py` refuses to elaborate the\n   combination at all.\n4. **With neither `CATCH_ILLINSN` nor `WITH_PCPI`, `instr_trap` is constant\n   zero** and an undecoded instruction is **executed** \u2014 it falls to\n   `cpu_state_ld_rs1`'s default arm, reaches `cpu_state_exec`, and writes X to\n   its destination register ([[DEC-TRAP-001]], [[ALU-OUT-001]]). It does not\n   trap, interrupt or hang.\n\n`ECALL` and `EBREAK` have a **second** path that exists only at\n`!CATCH_ILLINSN` (`picorv32.v:1945-1947`):\n\n```text ndf:normative\nif (!CATCH_ILLINSN && decoder_trigger_q && !decoder_pseudo_trigger_q\n    && instr_ecall_ebreak)\n    cpu_state <= cpu_state_trap;\n```\n\nThis is an **unconditional halt**: it does not consult `irq_mask` and does not\nraise an interrupt, which is what the README means by \"with this option set to\n0, an `EBREAK` will trap the processor without triggering an interrupt\". It sits\nafter the state `case` ([[FSM-POST-001]]) and therefore overrides whatever state\nthe `case` chose.\n\nIts guard uses `decoder_trigger_q` and `decoder_pseudo_trigger_q` \u2014 the\n**delayed** copies (`picorv32.v:1447`, `:1449`) \u2014 rather than the live signals,\nbecause `instr_ecall_ebreak` is a phase-2 result and is not valid until the cycle\nafter `decoder_trigger` ([[DEC-PHASE-001]]). An implementation that tests the\nlive signals misses the halt by one cycle and then traps on the *following*\ninstruction."
+      }
+     ]
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:TRAP-ILL-001:in",
+      "name": "in"
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:TRAP-ILL-001:out",
+      "name": "out"
+     }
+    ],
+    "scope": "scope:group:L2",
+    "type": "TRAP-ILL-001"
+   },
+   {
+    "id": "node:scope:root:MODEL-CPU-LAUNCHTRAP",
+    "kind": "source",
+    "label": "`core/cpu.py::Cpu.launch_trap`",
+    "meta": {
+     "badges": [],
+     "definitionAnnotations": [
+      {
+       "name": "source"
+      },
+      {
+       "arguments": [
+        {
+         "name": "id",
+         "value": "MODEL-CPU-LAUNCHTRAP"
+        },
+        {
+         "name": "status",
+         "value": "active"
+        },
+        {
+         "name": "owner",
+         "value": "picorv32-spec"
+        }
+       ],
+       "name": "ndf"
+      },
+      {
+       "name": "body",
+       "text": "TRAP-ALIGN-001: the instruction about to launch is misaligned: ONE event, the previous instruction's, marked trapped; then halt."
+      }
+     ],
+     "external": true,
+     "instanceName": "DOC-PICORV32-MODEL",
+     "networkInstance": true,
+     "referencedEntityName": "DOC-PICORV32-MODEL"
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:MODEL-CPU-LAUNCHTRAP:in",
+      "name": "in"
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:MODEL-CPU-LAUNCHTRAP:out",
+      "name": "out"
+     }
+    ],
+    "scope": "scope:root",
+    "type": "MODEL-CPU-LAUNCHTRAP"
+   },
+   {
+    "id": "node:scope:root:MODEL-CPU-LDMISALIGN",
+    "kind": "source",
+    "label": "`core/cpu.py::Cpu.ld_misalign`",
+    "meta": {
+     "badges": [],
+     "definitionAnnotations": [
+      {
+       "name": "source"
+      },
+      {
+       "arguments": [
+        {
+         "name": "id",
+         "value": "MODEL-CPU-LDMISALIGN"
+        },
+        {
+         "name": "status",
+         "value": "active"
+        },
+        {
+         "name": "owner",
+         "value": "picorv32-spec"
+        }
+       ],
+       "name": "ndf"
+      },
+      {
+       "name": "body",
+       "text": "(no docstring)"
+      }
+     ],
+     "external": true,
+     "instanceName": "DOC-PICORV32-MODEL",
+     "networkInstance": true,
+     "referencedEntityName": "DOC-PICORV32-MODEL"
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:MODEL-CPU-LDMISALIGN:in",
+      "name": "in"
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:MODEL-CPU-LDMISALIGN:out",
+      "name": "out"
+     }
+    ],
+    "scope": "scope:root",
+    "type": "MODEL-CPU-LDMISALIGN"
+   },
+   {
+    "id": "node:scope:root:MODEL-CPU-PCPIEXPIRE",
+    "kind": "source",
+    "label": "`core/cpu.py::Cpu.pcpi_expire`",
+    "meta": {
+     "badges": [],
+     "definitionAnnotations": [
+      {
+       "name": "source"
+      },
+      {
+       "arguments": [
+        {
+         "name": "id",
+         "value": "MODEL-CPU-PCPIEXPIRE"
+        },
+        {
+         "name": "status",
+         "value": "active"
+        },
+        {
+         "name": "owner",
+         "value": "picorv32-spec"
+        }
+       ],
+       "name": "ndf"
+      },
+      {
+       "name": "body",
+       "text": "PCPI-001 step 4: the offer expired; escalate to the trap."
+      }
+     ],
+     "external": true,
+     "instanceName": "DOC-PICORV32-MODEL",
+     "networkInstance": true,
+     "referencedEntityName": "DOC-PICORV32-MODEL"
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:MODEL-CPU-PCPIEXPIRE:in",
+      "name": "in"
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:MODEL-CPU-PCPIEXPIRE:out",
+      "name": "out"
+     }
+    ],
+    "scope": "scope:root",
+    "type": "MODEL-CPU-PCPIEXPIRE"
+   },
+   {
+    "id": "node:scope:root:MODEL-CPU-RS2STMEM",
+    "kind": "source",
+    "label": "`core/cpu.py::Cpu.rs2_stmem`",
+    "meta": {
+     "badges": [],
+     "definitionAnnotations": [
+      {
+       "name": "source"
+      },
+      {
+       "arguments": [
+        {
+         "name": "id",
+         "value": "MODEL-CPU-RS2STMEM"
+        },
+        {
+         "name": "status",
+         "value": "active"
+        },
+        {
+         "name": "owner",
+         "value": "picorv32-spec"
+        }
+       ],
+       "name": "ndf"
+      },
+      {
+       "name": "body",
+       "text": "(no docstring)"
+      }
+     ],
+     "external": true,
+     "instanceName": "DOC-PICORV32-MODEL",
+     "networkInstance": true,
+     "referencedEntityName": "DOC-PICORV32-MODEL"
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:MODEL-CPU-RS2STMEM:in",
+      "name": "in"
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:MODEL-CPU-RS2STMEM:out",
+      "name": "out"
+     }
+    ],
+    "scope": "scope:root",
+    "type": "MODEL-CPU-RS2STMEM"
+   },
+   {
+    "id": "node:scope:root:MODEL-CPU-STMISALIGN",
+    "kind": "source",
+    "label": "`core/cpu.py::Cpu.st_misalign`",
+    "meta": {
+     "badges": [],
+     "definitionAnnotations": [
+      {
+       "name": "source"
+      },
+      {
+       "arguments": [
+        {
+         "name": "id",
+         "value": "MODEL-CPU-STMISALIGN"
+        },
+        {
+         "name": "status",
+         "value": "active"
+        },
+        {
+         "name": "owner",
+         "value": "picorv32-spec"
+        }
+       ],
+       "name": "ndf"
+      },
+      {
+       "name": "body",
+       "text": "TRAP-ALIGN-001: the access is ISSUED (the RTL's check is after the case) and the machine halts."
+      }
+     ],
+     "external": true,
+     "instanceName": "DOC-PICORV32-MODEL",
+     "networkInstance": true,
+     "referencedEntityName": "DOC-PICORV32-MODEL"
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:MODEL-CPU-STMISALIGN:in",
+      "name": "in"
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:MODEL-CPU-STMISALIGN:out",
+      "name": "out"
+     }
+    ],
+    "scope": "scope:root",
+    "type": "MODEL-CPU-STMISALIGN"
+   },
+   {
+    "id": "node:scope:root:MODEL-CPU-TOLDMEM",
+    "kind": "source",
+    "label": "`core/cpu.py::Cpu.to_ldmem`",
+    "meta": {
+     "badges": [],
+     "definitionAnnotations": [
+      {
+       "name": "source"
+      },
+      {
+       "arguments": [
+        {
+         "name": "id",
+         "value": "MODEL-CPU-TOLDMEM"
+        },
+        {
+         "name": "status",
+         "value": "active"
+        },
+        {
+         "name": "owner",
+         "value": "picorv32-spec"
+        }
+       ],
+       "name": "ndf"
+      },
+      {
+       "name": "body",
+       "text": "FSM-LDRS1-001 arm 9: the conversion is issued BEFORE the load (MEM-PREFETCH-001#2's invariant); the address and its alignment here."
+      }
+     ],
+     "external": true,
+     "instanceName": "DOC-PICORV32-MODEL",
+     "networkInstance": true,
+     "referencedEntityName": "DOC-PICORV32-MODEL"
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:MODEL-CPU-TOLDMEM:in",
+      "name": "in"
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:MODEL-CPU-TOLDMEM:out",
+      "name": "out"
+     }
+    ],
+    "scope": "scope:root",
+    "type": "MODEL-CPU-TOLDMEM"
+   },
+   {
+    "id": "node:scope:root:MODEL-CPU-TOOFFER",
+    "kind": "source",
+    "label": "`core/cpu.py::Cpu.to_offer`",
+    "meta": {
+     "badges": [],
+     "definitionAnnotations": [
+      {
+       "name": "source"
+      },
+      {
+       "arguments": [
+        {
+         "name": "id",
+         "value": "MODEL-CPU-TOOFFER"
+        },
+        {
+         "name": "status",
+         "value": "active"
+        },
+        {
+         "name": "owner",
+         "value": "picorv32-spec"
+        }
+       ],
+       "name": "ndf"
+      },
+      {
+       "name": "body",
+       "text": "PCPI-001 step 2: an undecoded instruction is offered, to every core (MD-MUX-001#1's broadcast is one port a core), with the WORD."
+      }
+     ],
+     "external": true,
+     "instanceName": "DOC-PICORV32-MODEL",
+     "networkInstance": true,
+     "referencedEntityName": "DOC-PICORV32-MODEL"
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:MODEL-CPU-TOOFFER:in",
+      "name": "in"
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:MODEL-CPU-TOOFFER:out",
+      "name": "out"
+     }
+    ],
+    "scope": "scope:root",
+    "type": "MODEL-CPU-TOOFFER"
+   },
+   {
+    "id": "node:scope:root:MODEL-CPU-TOSTMEM",
+    "kind": "source",
+    "label": "`core/cpu.py::Cpu.to_stmem`",
+    "meta": {
+     "badges": [],
+     "definitionAnnotations": [
+      {
+       "name": "source"
+      },
+      {
+       "arguments": [
+        {
+         "name": "id",
+         "value": "MODEL-CPU-TOSTMEM"
+        },
+        {
+         "name": "status",
+         "value": "active"
+        },
+        {
+         "name": "owner",
+         "value": "picorv32-spec"
+        }
+       ],
+       "name": "ndf"
+      },
+      {
+       "name": "body",
+       "text": "FSM-LDRS1-001 arm 12. The effective address (FSM-STMEM-001#1) and its alignment are computed HERE, so the stmem guard reads one bit."
+      }
+     ],
+     "external": true,
+     "instanceName": "DOC-PICORV32-MODEL",
+     "networkInstance": true,
+     "referencedEntityName": "DOC-PICORV32-MODEL"
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:MODEL-CPU-TOSTMEM:in",
+      "name": "in"
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:MODEL-CPU-TOSTMEM:out",
+      "name": "out"
+     }
+    ],
+    "scope": "scope:root",
+    "type": "MODEL-CPU-TOSTMEM"
+   },
+   {
+    "id": "node:scope:root:MODEL-CPU-TOTRAP",
+    "kind": "source",
+    "label": "`core/cpu.py::Cpu.to_trap`",
+    "meta": {
+     "badges": [],
+     "definitionAnnotations": [
+      {
+       "name": "source"
+      },
+      {
+       "arguments": [
+        {
+         "name": "id",
+         "value": "MODEL-CPU-TOTRAP"
+        },
+        {
+         "name": "status",
+         "value": "active"
+        },
+        {
+         "name": "owner",
+         "value": "picorv32-spec"
+        }
+       ],
+       "name": "ndf"
+      },
+      {
+       "name": "body",
+       "text": "FSM-LDRS1-001 arm 1: straight to the trap -- no co-processor, or an ECALL/EBREAK, which the RTL escalates in the first ld_rs1 cycle (picorv32.v:1605) before any offer is seen."
+      }
+     ],
+     "external": true,
+     "instanceName": "DOC-PICORV32-MODEL",
+     "networkInstance": true,
+     "referencedEntityName": "DOC-PICORV32-MODEL"
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:MODEL-CPU-TOTRAP:in",
+      "name": "in"
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:MODEL-CPU-TOTRAP:out",
+      "name": "out"
+     }
+    ],
+    "scope": "scope:root",
+    "type": "MODEL-CPU-TOTRAP"
+   },
+   {
+    "id": "node:scope:root:MODEL-CPU-TRAPHALT",
+    "kind": "source",
+    "label": "`core/cpu.py::Cpu.trap_halt`",
+    "meta": {
+     "badges": [],
+     "definitionAnnotations": [
+      {
+       "name": "source"
+      },
+      {
+       "arguments": [
+        {
+         "name": "id",
+         "value": "MODEL-CPU-TRAPHALT"
+        },
+        {
+         "name": "status",
+         "value": "active"
+        },
+        {
+         "name": "owner",
+         "value": "picorv32-spec"
+        }
+       ],
+       "name": "ndf"
+      },
+      {
+       "name": "body",
+       "text": "TRAP-001: absorbing; one event says it happened."
+      }
+     ],
+     "external": true,
+     "instanceName": "DOC-PICORV32-MODEL",
+     "networkInstance": true,
+     "referencedEntityName": "DOC-PICORV32-MODEL"
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:MODEL-CPU-TRAPHALT:in",
+      "name": "in"
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:MODEL-CPU-TRAPHALT:out",
+      "name": "out"
+     }
+    ],
+    "scope": "scope:root",
+    "type": "MODEL-CPU-TRAPHALT"
+   },
+   {
+    "id": "node:scope:root:PIPE-FSM-001",
+    "kind": "requirement",
+    "label": "The eight CPU states and their transitions",
+    "meta": {
+     "badges": [
+      {
+       "text": "MUST",
+       "tone": "info"
+      },
+      {
+       "text": "L2",
+       "tone": "neutral"
+      }
+     ],
+     "definitionAnnotations": [
+      {
+       "name": "requirement"
+      },
+      {
+       "arguments": [
+        {
+         "name": "id",
+         "value": "PIPE-FSM-001"
+        },
+        {
+         "name": "modality",
+         "value": "must"
+        },
+        {
+         "name": "refinement",
+         "value": "L2"
+        },
+        {
+         "name": "status",
+         "value": "active"
+        },
+        {
+         "name": "owner",
+         "value": "picorv32-spec"
+        },
+        {
+         "name": "derived-from",
+         "value": "picorv32.v#picorv32"
+        },
+        {
+         "name": "since",
+         "value": "1.0"
+        }
+       ],
+       "name": "ndf"
+      },
+      {
+       "name": "body",
+       "text": "The core MUST implement a state register `cpu_state` holding exactly these\neight states, **one-hot in eight bits** (`picorv32.v:1172-1181`):\n\n```text ndf:normative\nstate               encoding    what occupies it\ncpu_state_trap      8'b10000000 the machine has stopped (TRAP-001)\ncpu_state_fetch     8'b01000000 retire the previous instruction, advance the\n                                PC, launch the next (FSM-FETCH-001)\ncpu_state_ld_rs1    8'b00100000 read the first source, and DISPATCH on the\n                                decoded instruction (FSM-LDRS1-001)\ncpu_state_ld_rs2    8'b00010000 read the second source, single-port register\n                                file only (FSM-LDRS2-001)\ncpu_state_exec      8'b00001000 take the ALU result, resolve control flow\n                                (FSM-EXEC-001)\ncpu_state_shift     8'b00000100 one iteration of a multi-cycle shift\n                                (FSM-SHIFT-001)\ncpu_state_stmem     8'b00000010 issue and complete a store (FSM-STMEM-001)\ncpu_state_ldmem     8'b00000001 issue and complete a load (FSM-LDMEM-001)\n```\n\nThe one-hot encoding is **not** an implementation detail to be optimized away:\n`dbg_ascii_state` and the formal validity check both compare `cpu_state`\nagainst the whole eight-bit constant (`picorv32.v:2126-2134`), and a\nthree-bit-index implementation would permit a ninth value the formal property\nexists to exclude ([[VER-ASSERT-001]]).\n\nThe core MUST reset to `cpu_state_fetch` ([[ARCH-RESET-001]]) and MUST then\nmake exactly these transitions:\n\n```text ndf:normative\nfrom        to          when                                       line\n(reset)     fetch       always                                     1483\nfetch       fetch       no fresh decode yet; or an interrupt entry\n                        pass; or `waitirq`; or a `jal`, whose\n                        target needs no operand                    1491-1577\nfetch       ld_rs1      a fresh decode, and the instruction is\n                        not a `jal`                                1572-1575\nld_rs1      ld_rs1      an undecoded instruction is being offered\n                        to the co-processor and it is not ready    1585-1625\nld_rs1      ld_rs2      the register file is single-port           1754\nld_rs1      exec        LUI / AUIPC / JAL link, JALR, an\n                        immediate ALU form, or a shift with\n                        BARREL_SHIFTER                             1641-1723\nld_rs1      shift       a shift-immediate without BARREL_SHIFTER   1704-1711\nld_rs1      stmem       a store, dual-port                         1737-1740\nld_rs1      ldmem       a load                                     1696-1703\nld_rs1      fetch       a counter read, a q-register instruction,\n                        `retirq`, `maskirq`, `timer`, or a\n                        co-processor result                        1626-1695\nld_rs1      trap        an undecoded instruction with nothing to\n                        claim it and no interrupt to take          1585-1624\nld_rs2      ld_rs2      as ld_rs1 -> ld_rs1                        1768-1786\nld_rs2      stmem       a store                                    1787-1790\nld_rs2      shift       a register shift without BARREL_SHIFTER    1791-1793\nld_rs2      exec        anything else                              1794-1801\nld_rs2      fetch       a co-processor result                      1768-1786\nld_rs2      trap        as ld_rs1 -> trap                          1768-1786\nexec        exec        TWO_CYCLE_ALU or TWO_CYCLE_COMPARE is\n                        waiting (1807-1810); or a taken branch\n                        whose re-fetch has not completed           1811-1820\nexec        fetch       otherwise                                  1805-1827\nshift       shift       the shift count has not reached zero       1835-1851\nshift       fetch       the shift count has reached zero           1831-1834\nstmem       stmem       the transfer has not completed             1854-1878\nstmem       fetch       the transfer has completed                 1872-1876\nldmem       ldmem       the transfer has not completed             1880-1926\nldmem       fetch       the transfer has completed                 1900-1910\ntrap        trap        always -- the state is ABSORBING           1487-1489\n```\n\nThree properties of that table are normative and are easy to lose:\n\n1. **`cpu_state_ld_rs1` reaches all eight states**, itself included. It is the\n   machine's dispatch point: the decoded instruction selects the state, and the\n   selection is a `case (1'b1)` over fourteen arms in a fixed order\n   ([[FSM-LDRS1-001]]). No other state has more than three successors.\n2. **`cpu_state_fetch` is reachable from every state and `cpu_state_trap` is\n   reachable from all but one.** Every instruction ends by returning to\n   `fetch`, which is what makes `fetch` and not a separate writeback stage the\n   place the architectural write happens ([[REG-WRITE-001]]).\n3. **A transition into `cpu_state_trap` MAY come from outside the table.**\n   Three blocking assignments after the `case` statement override whatever the\n   occupied state decided: a misaligned data access (`picorv32.v:1922-1937`), a\n   misaligned instruction fetch (`:1938-1944`), and an `ECALL`/`EBREAK` when\n   `CATCH_ILLINSN` is off (`:1945-1947`). They are specified by\n   [[TRAP-ALIGN-001]] and [[TRAP-ILL-001]] and they MUST take precedence,\n   because a blocking assignment in the same `always` block is what the RTL\n   uses to express exactly that.\n\n\u27e8COMB: `ld_rs1`'s dispatch reads the `instr_*` and `is_*` flags, `cpuregs_rs1`\nand `cpuregs_rs2` in the same cycle it assigns `cpu_state`; the register file\nread is combinational from `decoded_rs1` ([[REG-READ-001]])\u27e9"
+      }
+     ],
+     "external": true,
+     "instanceName": "DOC-PICORV32-ARCH-PIPELINE",
+     "networkInstance": true,
+     "referencedEntityName": "DOC-PICORV32-ARCH-PIPELINE"
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:PIPE-FSM-001:in",
+      "name": "in"
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:PIPE-FSM-001:out",
+      "name": "out"
+     }
+    ],
+    "scope": "scope:root",
+    "type": "PIPE-FSM-001"
+   },
+   {
+    "id": "node:scope:root:PRM-CATCH-001",
+    "kind": "option",
+    "label": "`CATCH_MISALIGN` and `CATCH_ILLINSN`",
+    "meta": {
+     "badges": [
+      {
+       "text": "MUST",
+       "tone": "info"
+      },
+      {
+       "text": "L2",
+       "tone": "neutral"
+      }
+     ],
+     "definitionAnnotations": [
+      {
+       "name": "option"
+      },
+      {
+       "arguments": [
+        {
+         "name": "id",
+         "value": "PRM-CATCH-001"
+        },
+        {
+         "name": "modality",
+         "value": "must"
+        },
+        {
+         "name": "refinement",
+         "value": "L2"
+        },
+        {
+         "name": "status",
+         "value": "active"
+        },
+        {
+         "name": "owner",
+         "value": "picorv32-spec"
+        },
+        {
+         "name": "since",
+         "value": "1.0"
+        }
+       ],
+       "name": "ndf"
+      },
+      {
+       "name": "body",
+       "text": "Both default 1. They select whether the two trap-detection mechanisms exist at\nall, and **switching one off does not make the condition harmless** \u2014 it makes\nit undetected, which is the distinction an implementation MUST preserve.\n\n```text ndf:normative\nparameter       at 1                           at 0\nCATCH_MISALIGN  a misaligned data access or    no check. The low address bits\n                instruction fetch raises       are FORCED to zero instead, on\n                IRQ 2 or halts                 reg_pc and reg_next_pc\n                (TRAP-ALIGN-001)               (picorv32.v:1962-1969), and a\n                                               misaligned DATA access simply\n                                               uses the truncated address\nCATCH_ILLINSN   an undecoded instruction, an   no illegal-instruction check\n                ECALL or an EBREAK raises      and no co-processor timeout.\n                IRQ 1 or halts after the       An ECALL or EBREAK still HALTS,\n                co-processor timeout           unconditionally and without\n                (TRAP-ILL-001)                 raising an interrupt\n                                               (picorv32.v:1945-1947)\n```\n\n`CATCH_ILLINSN` at 0 is the subtler of the two and the README says so: an\n`EBREAK` still traps, it simply stops raising IRQ 1 first. The mechanism is a\nseparate `if` after the state `case`, reached only when `!CATCH_ILLINSN`\n([[PIPE-FSM-001]]), so the two paths to `cpu_state_trap` are different code and\nonly one of them can ever be present.\n\n`instr_trap` itself is `(CATCH_ILLINSN || WITH_PCPI) && !{\u2026}`\n(`picorv32.v:679`), so an undecoded instruction is still **detected** when\n`CATCH_ILLINSN` is 0 as long as some co-processor is present \u2014 it is offered to\nthe interface and, if unclaimed, the core hangs in `cpu_state_ld_rs1` with\n`pcpi_valid` asserted, because the timeout that would have rescued it is\n`CATCH_ILLINSN`-guarded (`picorv32.v:1605`, `:1777`). Recorded as an obligation of\n[[TRAP-ILL-001]] and tracked by [[Q-003]].\n\n---"
+      }
+     ],
+     "external": true,
+     "instanceName": "DOC-PICORV32-PARAMETERS",
+     "networkInstance": true,
+     "referencedEntityName": "DOC-PICORV32-PARAMETERS"
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:PRM-CATCH-001:in",
+      "name": "in"
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:PRM-CATCH-001:out",
+      "name": "out"
+     }
+    ],
+    "scope": "scope:root",
+    "type": "PRM-CATCH-001"
+   },
+   {
+    "id": "node:scope:root:Q-003",
+    "kind": "question",
+    "label": "Q-003: an undecoded instruction hangs when `CATCH_ILLINSN` is off and a co-processor is present",
+    "meta": {
+     "badges": [
+      {
+       "text": "TBD",
+       "tone": "warning"
+      },
+      {
+       "text": "L1",
+       "tone": "neutral"
+      },
+      {
+       "text": "resolved",
+       "tone": "neutral"
+      }
+     ],
+     "definitionAnnotations": [
+      {
+       "name": "question"
+      },
+      {
+       "arguments": [
+        {
+         "name": "id",
+         "value": "Q-003"
+        },
+        {
+         "name": "modality",
+         "value": "tbd"
+        },
+        {
+         "name": "refinement",
+         "value": "L1"
+        },
+        {
+         "name": "status",
+         "value": "resolved"
+        },
+        {
+         "name": "owner",
+         "value": "picorv32-spec"
+        },
+        {
+         "name": "author",
+         "value": "endri-bezati"
+        },
+        {
+         "name": "date",
+         "value": "2026-09-09"
+        }
+       ],
+       "name": "ndf"
+      },
+      {
+       "name": "body",
+       "text": "`instr_trap` \u2014 the NOR of the whole decoded instruction set\n([[DEF-INSTRTRAP-001]]) \u2014 is gated on `CATCH_ILLINSN || WITH_PCPI`\n(`picorv32.v:679`). The sixteen-cycle timeout that rescues an instruction no\nco-processor claims is gated on `CATCH_ILLINSN` alone\n(`picorv32.v:1605`, `:1777`).\n\nSo at `CATCH_ILLINSN = 0` with any of `ENABLE_PCPI`, `ENABLE_MUL`,\n`ENABLE_FAST_MUL` or `ENABLE_DIV` set:\n\n1. An undecoded instruction still sets `instr_trap`, because `WITH_PCPI` is\n   true.\n2. `cpu_state_ld_rs1` still raises `pcpi_valid` and offers it\n   (`picorv32.v:1586-1624`).\n3. If nothing asserts `pcpi_ready` \u2014 which is every instruction the attached\n   core does not implement \u2014 there is no timeout, no trap and no transition.\n   The core **stays in `cpu_state_ld_rs1` with `pcpi_valid` asserted, for\n   ever**.\n\n`pcpi_timeout_counter` is still counted down, because its own guard is\n`WITH_PCPI && CATCH_ILLINSN` (`picorv32.v:1423`) \u2014 so at\n`CATCH_ILLINSN = 0` it is not counted at all, and `pcpi_timeout` is never set.\nThe machine does not trap, does not interrupt and does not halt: it hangs with\n`trap` low, which is the one failure mode a testbench watching `trap` cannot\nsee.\n\n**Tested, 2026-09-09:** read from the three guards named above rather than\nsimulated. What would settle it is `make test` with `-DCATCH_ILLINSN=0` and\n`ENABLE_MUL=1` and a program containing one `DIV` \u2014 the multiplier core does\nnot claim it \u2014 which is the experiment this entry is asking for and which has\nnot been run. Recording the bound without the simulation is what [[D-0004]]\nrequires to be said out loud.\n\n**Why it may be intended.** `CATCH_ILLINSN = 0` means \"I have removed the\nillegal-instruction circuitry\", and the README is explicit that an `EBREAK`\nstill traps at that setting while no longer raising IRQ 1. A reading in which\nthe parameter also removes the timeout \u2014 so that a co-processor is trusted to\nclaim everything offered to it \u2014 is coherent, and in a closed system where the\nintegrator knows the instruction set it is free area.\n\n**Why it may not be.** The combination is not documented, no named\nconfiguration point uses it ([[CON-CFG-001]]), and the failure is silent. The\nalternative implementation \u2014 keep the timeout whenever `WITH_PCPI`, and halt\nrather than interrupt at `CATCH_ILLINSN = 0` \u2014 costs the same counter and has\nno silent mode.\n\n**The question.** Whether [[TRAP-ILL-001]] should state the hang as a\n**property of the machine** at that parameter combination, or\n[[CON-BASIC-001]] should state the combination as **excluded**. Row 12 of\n[[CON-BASIC-001]] currently does the second, which has the effect of declaring\na parameter combination out of scope on this tree's authority rather than on\nthe RTL's \u2014 and this tree's authority does not extend to narrowing the design\nspace ([[D-0001]]).\n\nThe honest resolution is probably both: the constraint for a reader choosing\nparameters, and the property for a reader implementing the machine. What is\nundecided is whether the property is a defect to report upstream. The project\nis archived, so there is nowhere to report it."
+      }
+     ],
+     "external": true,
+     "instanceName": "DOC-PICORV32-Q-003",
+     "networkInstance": true,
+     "referencedEntityName": "DOC-PICORV32-Q-003"
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:Q-003:in",
+      "name": "in"
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:Q-003:out",
+      "name": "out"
+     }
+    ],
+    "scope": "scope:root",
+    "type": "Q-003"
+   },
+   {
+    "id": "node:scope:root:VER-TRAP-001",
+    "kind": "verification",
+    "label": "A trapped core is detected by `trap` and by nothing else",
+    "meta": {
+     "badges": [
+      {
+       "text": "MUST",
+       "tone": "info"
+      },
+      {
+       "text": "L3",
+       "tone": "neutral"
+      }
+     ],
+     "definitionAnnotations": [
+      {
+       "name": "verification"
+      },
+      {
+       "arguments": [
+        {
+         "name": "id",
+         "value": "VER-TRAP-001"
+        },
+        {
+         "name": "modality",
+         "value": "must"
+        },
+        {
+         "name": "refinement",
+         "value": "L3"
+        },
+        {
+         "name": "status",
+         "value": "active"
+        },
+        {
+         "name": "owner",
+         "value": "picorv32-spec"
+        },
+        {
+         "name": "since",
+         "value": "1.0"
+        }
+       ],
+       "name": "ndf"
+      },
+      {
+       "name": "body",
+       "text": "A test MUST detect a halt by watching the `trap` output, and MUST NOT detect it by\nwaiting for activity to cease: a trapped core still counts cycles and still counts\nits timer down ([[TRAP-001]]).\n\nA test MUST additionally distinguish a halt from a **hang**, which `trap` does\nnot report. Two hangs are reachable and neither asserts it:\n\n```text ndf:normative\nhang                                                        clause\nan unclaimed instruction at CATCH_ILLINSN = 0 with a        Q-003\nco-processor present: ld_rs1 with pcpi_valid asserted and\nno timeout\na memory peer that never asserts mem_ready                  MIF-001\n```\n\nSo a test MUST carry a step or cycle bound of its own, and a run that reaches it\nMUST be reported as a failure rather than as completion. `testbench.v` does this\nwith a `$finish` on a memory-mapped write and a cycle limit; the model does it\nwith the runtime's iteration bound."
+      }
+     ],
+     "external": true,
+     "instanceName": "DOC-PICORV32-VER-ACCEPTANCE",
+     "networkInstance": true,
+     "referencedEntityName": "DOC-PICORV32-VER-ACCEPTANCE"
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:VER-TRAP-001:in",
+      "name": "in"
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:VER-TRAP-001:out",
+      "name": "out"
+     }
+    ],
+    "scope": "scope:root",
+    "type": "VER-TRAP-001"
+   }
+  ],
+  "subgraphs": [
+   {
+    "id": "scope:group:L1",
+    "kind": "group",
+    "label": "L1",
+    "nodes": [
+     "node:scope:root:TRAP-001",
+     "node:scope:root:TRAP-CAUSE-001"
+    ]
+   },
+   {
+    "id": "scope:group:L2",
+    "kind": "group",
+    "label": "L2",
+    "nodes": [
+     "node:scope:root:TRAP-ALIGN-001",
+     "node:scope:root:TRAP-ILL-001"
+    ]
+   }
+  ]
+ },
+ "version": "1.0"
+}

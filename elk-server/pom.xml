@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The Java ELK layout server, as one fat jar:
+  `mvn -q package` writes target/elk-server-<version>-all.jar.
+
+  `-Delk.version=0.8.1 -Dmaven.compiler.release=11` builds it on the ELK the
+  original 0.2.0 jar bundled, to check that a rebuild lays a graph out exactly
+  as that jar did.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>io.typefox</groupId>
+    <artifactId>elk-server</artifactId>
+    <version>0.3.0</version>
+    <packaging>jar</packaging>
+
+    <properties>
+        <!-- The same ELK as the platform's elkjs: ELK 0.10.0 and elkjs 0.10.0 lay every
+             graph out alike (the elk-server parity test holds them to it), where elkjs
+             0.9.x matches no ELK release. Raise the two together. -->
+        <elk.version>0.10.0</elk.version>
+        <gson.version>2.10</gson.version>
+        <!-- ELK 0.10 is built for Java 17. -->
+        <maven.compiler.release>17</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.eclipse.elk</groupId>
+            <artifactId>org.eclipse.elk.core</artifactId>
+            <version>${elk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.elk</groupId>
+            <artifactId>org.eclipse.elk.graph</artifactId>
+            <version>${elk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.elk</groupId>
+            <artifactId>org.eclipse.elk.graph.json</artifactId>
+            <version>${elk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.elk</groupId>
+            <artifactId>org.eclipse.elk.alg.layered</artifactId>
+            <version>${elk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.elk</groupId>
+            <artifactId>org.eclipse.elk.alg.force</artifactId>
+            <version>${elk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.elk</groupId>
+            <artifactId>org.eclipse.elk.alg.mrtree</artifactId>
+            <version>${elk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>${gson.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <finalName>elk-server-${project.version}-all</finalName>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <filters>
+                                <filter>
+                                    <!-- Signatures of the dependencies no longer match once merged. -->
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <transformers>
+                                <!-- Each ELK bundle lists its layout providers here: keep every list. -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>io.typefox.elkserver.ElkServerApplication</mainClass>
+                                    <manifestEntries>
+                                        <Implementation-Version>${project.version}</Implementation-Version>
+                                        <ELK-Version>${elk.version}</ELK-Version>
+                                    </manifestEntries>
+                                </transformer>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
