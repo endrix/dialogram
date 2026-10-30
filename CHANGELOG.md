@@ -24,7 +24,8 @@ platform API version.
   0.10.0**, so a graph lays out the same on either engine; before, the
   server's ELK 0.8.1 put some graphs' nodes in another order than elkjs 0.9.3.
   The server's source, recovered from the shipped jar, now lives in
-  `elk-server/` (Maven, `mvn package`), wire format unchanged (the gzip-framed
+  `elk-server/` (Maven, `mvn package`) under the EPL-2.0 only, as before, its
+  licence now inside the jar too; wire format unchanged (the gzip-framed
   socket mode included). `test/elk-server-parity.test.ts` lays two real
   documents out on both engines and requires them to match. **Products must
   rename the jar they copy and name in their profile to

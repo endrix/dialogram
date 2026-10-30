@@ -17,6 +17,14 @@
     <version>0.3.0</version>
     <packaging>jar</packaging>
 
+    <!-- EPL-2.0 only, like ELK: not the rest of the repository's GPL secondary licence. -->
+    <licenses>
+        <license>
+            <name>EPL-2.0</name>
+            <url>https://www.eclipse.org/legal/epl-2.0/</url>
+        </license>
+    </licenses>
+
     <properties>
         <!-- The same ELK as the platform's elkjs: ELK 0.10.0 and elkjs 0.10.0 lay every
              graph out alike (the elk-server parity test holds them to it), where elkjs
@@ -67,6 +75,17 @@
     </dependencies>
 
     <build>
+        <resources>
+            <!-- The server's licence, inside the jar beside the bundled libraries' own:
+                 META-INF/LICENSE there is Guava's Apache License. -->
+            <resource>
+                <directory>${project.basedir}</directory>
+                <includes>
+                    <include>LICENSE</include>
+                </includes>
+                <targetPath>META-INF/elk-server</targetPath>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -105,6 +124,7 @@
                                     <manifestEntries>
                                         <Implementation-Version>${project.version}</Implementation-Version>
                                         <ELK-Version>${elk.version}</ELK-Version>
+                                        <Bundle-License>EPL-2.0</Bundle-License>
                                     </manifestEntries>
                                 </transformer>
                             </transformers>

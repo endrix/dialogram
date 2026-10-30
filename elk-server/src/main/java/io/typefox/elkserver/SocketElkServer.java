@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: EPL-2.0
 package io.typefox.elkserver;
 
 import com.google.gson.Gson;

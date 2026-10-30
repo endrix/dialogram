@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: EPL-2.0
 package io.typefox.elkserver;
 
 import java.io.PrintWriter;

@@ -61,3 +61,13 @@ To move to another ELK, raise `elk.version` here and `elkjs` in
 jar, and run `test/elk-server-parity.test.ts`.
 
 ELK 0.10 is built for Java 17, so the server needs Java 17 or later.
+
+## Licence
+
+The Eclipse Public License 2.0 only, like ELK and the server this was recovered
+from: this directory and the jar are not under the GPL secondary licence the
+rest of the repository is also offered under. The text is in [`LICENSE`](LICENSE),
+each source file says so (`SPDX-License-Identifier: EPL-2.0`), and the build
+puts the same file in the jar at `META-INF/elk-server/LICENSE`, beside the
+bundled libraries' own notices (`META-INF/LICENSE` there is Guava's Apache
+License).

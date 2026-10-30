@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: EPL-2.0
 /*
  * The ELK layout server: TypeFox's elk-server 0.2.0, with the gzip-framed socket
  * mode added for ascpp-graph-sprotty (af9cc65). Recovered from the shipped
