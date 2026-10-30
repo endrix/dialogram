@@ -60,6 +60,12 @@ type DiagramClientBehavior = {
      *  <label>" runs `showCommand`, "Clear <label>" runs `clearCommand`.
      *  Derived by the platform from the profile. */
     statusSource?: { label: string; showCommand: string; clearCommand: string };
+    /** Whether selecting an element draws its path: what leads to it in one
+     *  colour, what it leads to in another, the rest faded. A node traces
+     *  every path through it, an edge itself and its two ends, a container
+     *  what feeds it and what it feeds across its frame; a path crosses group
+     *  frames as its edge does. Off by default. See selection-trace.ts. */
+    selectionTrace?: boolean;
     /** What the hierarchy outline panel is called (its title, its button's
      *  tooltip): plain words, "Hierarchy" by default. */
     outlineTitle?: string;

@@ -394,6 +394,12 @@ export interface DiagramClientBehavior {
    *  same carried label, only the first writes it; the others say it in
    *  their tooltip (a node with many edges of one type, all on one trunk). */
   edgeCaptions?: boolean | 'once';
+  /** Whether selecting an element draws its path: what leads to it in one
+   *  colour, what it leads to in another, the rest faded. A node traces every
+   *  path through it, an edge itself and its two ends, a container what feeds
+   *  it and what it feeds across its frame; a path crosses group frames as
+   *  its edge does. Off by default. */
+  selectionTrace?: boolean;
   /** Property-panel sections a product does without, each `false` to hide it:
    *  `ports` (the input and output port lists), `annotations` (the raw
    *  definition annotations), `parameters` (the definition's parameters; a

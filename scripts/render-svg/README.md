@@ -26,6 +26,7 @@ node scripts/render-svg/render.mjs - --elk elk.direction=DOWN < doc.json        
 | `--behavior <json>` | Client behavior flags, as a profile's `clientBehavior` |
 | `--theme <dark\|light>` | The editor colours the page is drawn in (default dark) |
 | `--states <path.json>` | Node states to draw (`ExecutionNodeState[]`, `[{ nodeId, status }]`), as a status source publishes them, through the client's own painter. A `nodeId` is the producer's id or the diagram's; ids this view does not have are skipped (a project's states fit any of its documents); `idle` draws nothing |
+| `--select <id>` | Select an element, as a click would; repeatable. The id is the diagram's or the producer's (`wf:graphNodeId`). The selection listeners see it, so with `--behavior '{"selectionTrace":true}'` the element's path is drawn (upstream, downstream, the rest faded) |
 | `--chrome <path>` | Chrome or Chromium (default `$CHROME` or `google-chrome`) |
 | `--keep` | Keep the schema, bundles and page in the work directory |
 

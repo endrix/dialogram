@@ -6,6 +6,24 @@ platform API version.
 
 ## [Unreleased]
 
+### Added
+
+- **Selection trace** (`clientBehavior.selectionTrace`, opt-in): selecting a
+  node draws every path through it, what leads to it in green and what it
+  leads to in blue, and fades the rest; after mlir-viewer's trace highlighter.
+  A path crosses group frames through their boundary ports, at any depth, every
+  piece of a cut edge drawn. On a cycle the trace is cut to the node's direct
+  neighbours, since reachability would light the whole diagram. A selected
+  edge draws all its pieces and its two ends; a selected container, what feeds
+  it and what it feeds, leaving its members as they are. Drawn as GLSP
+  feedback, so it survives a relayout or an edit.
+
+### Tooling
+
+- `scripts/render-svg --select <id>` selects an element (the diagram's id or
+  the producer's) as a click would, so a selection trace can be rendered and
+  looked at headlessly.
+
 ## [0.8.0] - 2026-10-24
 
 What a producer of document-like diagrams needs: group containers, facts,

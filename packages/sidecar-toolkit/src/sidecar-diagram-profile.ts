@@ -85,6 +85,8 @@ export interface SidecarClientBehavior {
      *  same carried label, only the first writes it; the others say it in
      *  their tooltip (a node with many edges of one type, all on one trunk). */
     edgeCaptions?: boolean | 'once';
+    /** Whether selecting an element draws its path (upstream and downstream, the rest faded), across group frames. Off by default. */
+    selectionTrace?: boolean;
     /** Property-panel sections the product does without (`ports`, `annotations`, `parameters`, `entityType`), each `false` to hide it. */
     propertySections?: { ports?: boolean; annotations?: boolean; parameters?: boolean; entityType?: boolean };
     /** What the hierarchy outline panel is called; "Hierarchy" by default. */
