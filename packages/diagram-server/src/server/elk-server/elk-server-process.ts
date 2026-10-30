@@ -110,7 +110,7 @@ export class ElkServerProcess {
         const listening = await this.waitForListening(child);
         if (listening === undefined) {
             this.stop();
-            return this.failed(`the ELK server did not start within ${this.startTimeoutMs} ms (is Java 11 or later installed?)`);
+            return this.failed(`the ELK server did not start within ${this.startTimeoutMs} ms (is Java 17 or later installed?)`);
         }
         this.port = listening;
         this.lastFailure = undefined;

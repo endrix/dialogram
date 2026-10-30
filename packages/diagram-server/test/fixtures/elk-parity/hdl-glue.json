@@ -1,0 +1,627 @@
+{
+ "graph": {
+  "edges": [
+   {
+    "from": "port:wf:input:a:out",
+    "fromNode": "wf:input:a",
+    "id": "edge:port:wf:input:a:out->port:node:scope:root:assign:t:in:0",
+    "meta": {
+     "signal": "a"
+    },
+    "scope": "scope:root",
+    "source": {
+     "column": 10,
+     "file": "<fixtures>/glue.sv",
+     "line": 19
+    },
+    "to": "port:node:scope:root:assign:t:in:0",
+    "toNode": "node:scope:root:assign:t"
+   },
+   {
+    "from": "port:node:scope:root:assign:any_b:out",
+    "fromNode": "node:scope:root:assign:any_b",
+    "id": "edge:port:node:scope:root:assign:any_b:out->port:wf:output:any_b:in",
+    "meta": {
+     "signal": "any_b"
+    },
+    "scope": "scope:root",
+    "source": {
+     "column": 24,
+     "file": "<fixtures>/glue.sv",
+     "line": 15
+    },
+    "to": "port:wf:output:any_b:in",
+    "toNode": "wf:output:any_b"
+   },
+   {
+    "from": "port:wf:input:b:out",
+    "fromNode": "wf:input:b",
+    "id": "edge:port:wf:input:b:out->port:node:scope:root:assign:t:in:1",
+    "meta": {
+     "signal": "b"
+    },
+    "scope": "scope:root",
+    "source": {
+     "column": 10,
+     "file": "<fixtures>/glue.sv",
+     "line": 19
+    },
+    "to": "port:node:scope:root:assign:t:in:1",
+    "toNode": "node:scope:root:assign:t"
+   },
+   {
+    "from": "port:wf:input:b:out",
+    "fromNode": "wf:input:b",
+    "id": "edge:port:wf:input:b:out->port:node:scope:root:assign:any_b:in:0",
+    "meta": {
+     "signal": "b"
+    },
+    "scope": "scope:root",
+    "source": {
+     "column": 10,
+     "file": "<fixtures>/glue.sv",
+     "line": 25
+    },
+    "to": "port:node:scope:root:assign:any_b:in:0",
+    "toNode": "node:scope:root:assign:any_b"
+   },
+   {
+    "from": "port:node:scope:root:u_buf:y",
+    "fromNode": "node:scope:root:u_buf",
+    "id": "edge:port:node:scope:root:u_buf:y->port:wf:output:lo:in",
+    "meta": {
+     "signal": "lo"
+    },
+    "scope": "scope:root",
+    "source": {
+     "column": 24,
+     "file": "<fixtures>/glue.sv",
+     "line": 13
+    },
+    "to": "port:wf:output:lo:in",
+    "toNode": "wf:output:lo"
+   },
+   {
+    "from": "port:wf:input:sel:out",
+    "fromNode": "wf:input:sel",
+    "id": "edge:port:wf:input:sel:out->port:node:scope:root:assign:y[1:0]:in:2",
+    "meta": {
+     "signal": "sel"
+    },
+    "scope": "scope:root",
+    "source": {
+     "column": 10,
+     "file": "<fixtures>/glue.sv",
+     "line": 24
+    },
+    "to": "port:node:scope:root:assign:y[1:0]:in:2",
+    "toNode": "node:scope:root:assign:y[1:0]"
+   },
+   {
+    "from": "port:node:scope:root:assign:t:out",
+    "fromNode": "node:scope:root:assign:t",
+    "id": "edge:port:node:scope:root:assign:t:out->port:node:scope:root:assign:y[1:0]:in:0",
+    "meta": {
+     "signal": "t"
+    },
+    "scope": "scope:root",
+    "source": {
+     "column": 10,
+     "file": "<fixtures>/glue.sv",
+     "line": 24
+    },
+    "to": "port:node:scope:root:assign:y[1:0]:in:0",
+    "toNode": "node:scope:root:assign:y[1:0]"
+   },
+   {
+    "from": "port:node:scope:root:assign:t:out",
+    "fromNode": "node:scope:root:assign:t",
+    "id": "edge:port:node:scope:root:assign:t:out->port:node:scope:root:u_buf:a",
+    "meta": {
+     "signal": "t"
+    },
+    "scope": "scope:root",
+    "source": {
+     "column": 8,
+     "file": "<fixtures>/glue.sv",
+     "line": 21
+    },
+    "to": "port:node:scope:root:u_buf:a",
+    "toNode": "node:scope:root:u_buf"
+   },
+   {
+    "from": "port:node:scope:root:assign:t:out",
+    "fromNode": "node:scope:root:assign:t",
+    "id": "edge:port:node:scope:root:assign:t:out->port:node:scope:root:assign:y[1:0]:in:1",
+    "meta": {
+     "signal": "t"
+    },
+    "scope": "scope:root",
+    "source": {
+     "column": 10,
+     "file": "<fixtures>/glue.sv",
+     "line": 24
+    },
+    "to": "port:node:scope:root:assign:y[1:0]:in:1",
+    "toNode": "node:scope:root:assign:y[1:0]"
+   },
+   {
+    "from": "port:node:scope:root:assign:y[3:2]:out",
+    "fromNode": "node:scope:root:assign:y[3:2]",
+    "id": "edge:port:node:scope:root:assign:y[3:2]:out->port:wf:output:y:in",
+    "meta": {
+     "signal": "y"
+    },
+    "scope": "scope:root",
+    "source": {
+     "column": 24,
+     "file": "<fixtures>/glue.sv",
+     "line": 14
+    },
+    "to": "port:wf:output:y:in",
+    "toNode": "wf:output:y"
+   },
+   {
+    "from": "port:node:scope:root:assign:y[1:0]:out",
+    "fromNode": "node:scope:root:assign:y[1:0]",
+    "id": "edge:port:node:scope:root:assign:y[1:0]:out->port:wf:output:y:in",
+    "meta": {
+     "signal": "y"
+    },
+    "scope": "scope:root",
+    "source": {
+     "column": 24,
+     "file": "<fixtures>/glue.sv",
+     "line": 14
+    },
+    "to": "port:wf:output:y:in",
+    "toNode": "wf:output:y"
+   }
+  ],
+  "id": "wf:glue",
+  "meta": {
+   "file": "<fixtures>/glue.sv",
+   "source": {
+    "column": 8,
+    "file": "<fixtures>/glue.sv",
+    "line": 8
+   },
+   "unitKind": "module"
+  },
+  "nodes": [
+   {
+    "id": "wf:input:a",
+    "kind": "wf-input",
+    "label": "a",
+    "meta": {
+     "source": {
+      "column": 24,
+      "file": "<fixtures>/glue.sv",
+      "line": 10
+     },
+     "width": 4
+    },
+    "ports": [
+     {
+      "direction": "out",
+      "id": "port:wf:input:a:out",
+      "name": "a",
+      "role": "data",
+      "source": {
+       "column": 24,
+       "file": "<fixtures>/glue.sv",
+       "line": 10
+      },
+      "type": "logic[3:0]"
+     }
+    ],
+    "scope": "scope:root"
+   },
+   {
+    "id": "wf:input:b",
+    "kind": "wf-input",
+    "label": "b",
+    "meta": {
+     "source": {
+      "column": 24,
+      "file": "<fixtures>/glue.sv",
+      "line": 11
+     },
+     "width": 4
+    },
+    "ports": [
+     {
+      "direction": "out",
+      "id": "port:wf:input:b:out",
+      "name": "b",
+      "role": "data",
+      "source": {
+       "column": 24,
+       "file": "<fixtures>/glue.sv",
+       "line": 11
+      },
+      "type": "logic[3:0]"
+     }
+    ],
+    "scope": "scope:root"
+   },
+   {
+    "id": "wf:input:sel",
+    "kind": "wf-input",
+    "label": "sel",
+    "meta": {
+     "source": {
+      "column": 24,
+      "file": "<fixtures>/glue.sv",
+      "line": 12
+     },
+     "width": 1
+    },
+    "ports": [
+     {
+      "direction": "out",
+      "id": "port:wf:input:sel:out",
+      "name": "sel",
+      "role": "data",
+      "source": {
+       "column": 24,
+       "file": "<fixtures>/glue.sv",
+       "line": 12
+      },
+      "type": "logic"
+     }
+    ],
+    "scope": "scope:root"
+   },
+   {
+    "id": "wf:output:lo",
+    "kind": "wf-output",
+    "label": "lo",
+    "meta": {
+     "source": {
+      "column": 24,
+      "file": "<fixtures>/glue.sv",
+      "line": 13
+     },
+     "width": 2
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:wf:output:lo:in",
+      "name": "lo",
+      "role": "data",
+      "source": {
+       "column": 24,
+       "file": "<fixtures>/glue.sv",
+       "line": 13
+      },
+      "type": "logic[1:0]"
+     }
+    ],
+    "scope": "scope:root"
+   },
+   {
+    "id": "wf:output:y",
+    "kind": "wf-output",
+    "label": "y",
+    "meta": {
+     "source": {
+      "column": 24,
+      "file": "<fixtures>/glue.sv",
+      "line": 14
+     },
+     "width": 4
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:wf:output:y:in",
+      "name": "y",
+      "role": "data",
+      "source": {
+       "column": 24,
+       "file": "<fixtures>/glue.sv",
+       "line": 14
+      },
+      "type": "logic[3:0]"
+     }
+    ],
+    "scope": "scope:root"
+   },
+   {
+    "id": "wf:output:any_b",
+    "kind": "wf-output",
+    "label": "any_b",
+    "meta": {
+     "source": {
+      "column": 24,
+      "file": "<fixtures>/glue.sv",
+      "line": 15
+     },
+     "width": 1
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:wf:output:any_b:in",
+      "name": "any_b",
+      "role": "data",
+      "source": {
+       "column": 24,
+       "file": "<fixtures>/glue.sv",
+       "line": 15
+      },
+      "type": "logic"
+     }
+    ],
+    "scope": "scope:root"
+   },
+   {
+    "id": "node:scope:root:u_buf",
+    "kind": "instance",
+    "label": "u_buf",
+    "meta": {
+     "definitionAnnotations": [
+      {
+       "name": "instance"
+      }
+     ],
+     "referencedEntityName": "buf2",
+     "referencedSource": {
+      "column": 8,
+      "file": "<fixtures>/glue.sv",
+      "line": 4
+     },
+     "source": {
+      "column": 8,
+      "file": "<fixtures>/glue.sv",
+      "line": 21
+     }
+    },
+    "ports": [
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:u_buf:a",
+      "name": "a",
+      "role": "data",
+      "source": {
+       "column": 32,
+       "file": "<fixtures>/glue.sv",
+       "line": 4
+      },
+      "type": "logic[1:0]",
+      "width": 2
+     },
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:u_buf:y",
+      "name": "y",
+      "role": "data",
+      "source": {
+       "column": 54,
+       "file": "<fixtures>/glue.sv",
+       "line": 4
+      },
+      "type": "logic[1:0]",
+      "width": 2
+     }
+    ],
+    "scope": "scope:root",
+    "type": "buf2"
+   },
+   {
+    "id": "node:scope:root:assign:t",
+    "kind": "logic",
+    "label": "a & b",
+    "meta": {
+     "assignment": "t",
+     "definitionAnnotations": [
+      {
+       "name": "logic"
+      }
+     ],
+     "expression": "a & b",
+     "readOnly": true,
+     "source": {
+      "column": 10,
+      "file": "<fixtures>/glue.sv",
+      "line": 19
+     }
+    },
+    "ports": [
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:assign:t:out",
+      "name": "t",
+      "role": "data",
+      "type": "logic",
+      "width": 4
+     },
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:assign:t:in:0",
+      "name": "a",
+      "role": "data",
+      "type": "logic",
+      "width": 4
+     },
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:assign:t:in:1",
+      "name": "b",
+      "role": "data",
+      "type": "logic",
+      "width": 4
+     }
+    ],
+    "scope": "scope:root",
+    "type": "logic"
+   },
+   {
+    "id": "node:scope:root:assign:y[3:2]",
+    "kind": "logic",
+    "label": "2'b00",
+    "meta": {
+     "assignment": "y[3:2]",
+     "definitionAnnotations": [
+      {
+       "name": "logic"
+      }
+     ],
+     "expression": "2'b00",
+     "readOnly": true,
+     "source": {
+      "column": 10,
+      "file": "<fixtures>/glue.sv",
+      "line": 23
+     }
+    },
+    "ports": [
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:assign:y[3:2]:out",
+      "name": "y[3:2]",
+      "role": "data",
+      "type": "logic",
+      "width": 2
+     }
+    ],
+    "scope": "scope:root",
+    "type": "logic"
+   },
+   {
+    "id": "node:scope:root:assign:y[1:0]",
+    "kind": "logic",
+    "label": "sel ? t[1:0] : u[3:2]",
+    "meta": {
+     "assignment": "y[1:0]",
+     "definitionAnnotations": [
+      {
+       "name": "logic"
+      }
+     ],
+     "expression": "sel ? t[1:0] : u[3:2]",
+     "readOnly": true,
+     "source": {
+      "column": 10,
+      "file": "<fixtures>/glue.sv",
+      "line": 24
+     }
+    },
+    "ports": [
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:assign:y[1:0]:out",
+      "name": "y[1:0]",
+      "role": "data",
+      "type": "logic",
+      "width": 2
+     },
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:assign:y[1:0]:in:0",
+      "name": "t[1:0]",
+      "role": "data",
+      "type": "logic",
+      "width": 2
+     },
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:assign:y[1:0]:in:1",
+      "name": "u[3:2]",
+      "role": "data",
+      "type": "logic",
+      "width": 2
+     },
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:assign:y[1:0]:in:2",
+      "name": "sel",
+      "role": "data",
+      "type": "logic",
+      "width": 1
+     }
+    ],
+    "scope": "scope:root",
+    "type": "logic"
+   },
+   {
+    "id": "node:scope:root:assign:any_b",
+    "kind": "logic",
+    "label": "|b",
+    "meta": {
+     "assignment": "any_b",
+     "definitionAnnotations": [
+      {
+       "name": "logic"
+      }
+     ],
+     "expression": "|b",
+     "readOnly": true,
+     "source": {
+      "column": 10,
+      "file": "<fixtures>/glue.sv",
+      "line": 25
+     }
+    },
+    "ports": [
+     {
+      "direction": "out",
+      "id": "port:node:scope:root:assign:any_b:out",
+      "name": "any_b",
+      "role": "data",
+      "type": "logic",
+      "width": 1
+     },
+     {
+      "direction": "in",
+      "id": "port:node:scope:root:assign:any_b:in:0",
+      "name": "b",
+      "role": "data",
+      "type": "logic",
+      "width": 4
+     }
+    ],
+    "scope": "scope:root",
+    "type": "logic"
+   }
+  ],
+  "subgraphs": [
+   {
+    "children": [],
+    "controlNodeId": null,
+    "edges": [
+     "edge:port:wf:input:a:out->port:node:scope:root:assign:t:in:0",
+     "edge:port:node:scope:root:assign:any_b:out->port:wf:output:any_b:in",
+     "edge:port:wf:input:b:out->port:node:scope:root:assign:t:in:1",
+     "edge:port:wf:input:b:out->port:node:scope:root:assign:any_b:in:0",
+     "edge:port:node:scope:root:u_buf:y->port:wf:output:lo:in",
+     "edge:port:wf:input:sel:out->port:node:scope:root:assign:y[1:0]:in:2",
+     "edge:port:node:scope:root:assign:t:out->port:node:scope:root:assign:y[1:0]:in:0",
+     "edge:port:node:scope:root:assign:t:out->port:node:scope:root:u_buf:a",
+     "edge:port:node:scope:root:assign:t:out->port:node:scope:root:assign:y[1:0]:in:1",
+     "edge:port:node:scope:root:assign:y[3:2]:out->port:wf:output:y:in",
+     "edge:port:node:scope:root:assign:y[1:0]:out->port:wf:output:y:in"
+    ],
+    "id": "scope:root",
+    "kind": "root",
+    "nodes": [
+     "wf:input:a",
+     "wf:input:b",
+     "wf:input:sel",
+     "wf:output:lo",
+     "wf:output:y",
+     "wf:output:any_b",
+     "node:scope:root:u_buf",
+     "node:scope:root:assign:t",
+     "node:scope:root:assign:y[3:2]",
+     "node:scope:root:assign:y[1:0]",
+     "node:scope:root:assign:any_b"
+    ],
+    "parent": null
+   }
+  ]
+ },
+ "version": "1.1"
+}

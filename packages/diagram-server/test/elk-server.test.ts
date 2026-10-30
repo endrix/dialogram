@@ -28,6 +28,7 @@ import { GraphGModelSource } from '../src/model/graph-gmodel-source';
 import { convertToGModelRoot } from '../src/server/gmodel-convert';
 import { WorkflowElkLayoutEngine } from '../src/server/elk-layout-engine';
 import { WorkflowLayoutConfigurator } from '../src/server/layout-configurator';
+import { javaMajor } from './java-version';
 
 const frame = (json: unknown): Buffer => {
     const body = gzipSync(Buffer.from(JSON.stringify(json)));
@@ -253,10 +254,8 @@ describe('the ELK factory a diagram server gets', () => {
     });
 });
 
-const JAR = path.resolve(__dirname, '../resources/elk-server/elk-server-0.2.0-all.jar');
-const hasJava = spawnSync('java', ['-version']).status === 0;
-
-describe.skipIf(!hasJava || !existsSync(JAR))('the shipped ELK server', () => {
+const JAR = path.resolve(__dirname, '../resources/elk-server/elk-server-0.3.0-all.jar');
+describe.skipIf(javaMajor() < 17 || !existsSync(JAR))('the shipped ELK server', () => {
     it('lays out a diagram through the platform’s layout engine', async () => {
         // Braces in every id, which the server's plain mode would hang on.
         const nodes = Array.from({ length: 12 }, (_, i) => ({
