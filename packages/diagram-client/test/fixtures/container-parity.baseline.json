@@ -466,5 +466,20 @@
         "id": "Symbol(stub.IGModelRootListener)",
         "op": "bind",
         "to": "service:ReadOnlyViewMarker"
+    },
+    {
+        "command": "SelectionTraceFeedbackCommand",
+        "op": "command"
+    },
+    {
+        "id": "SelectionTraceListener",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "id": "Symbol(stub.ISelectionListener)",
+        "op": "bind",
+        "to": "service:SelectionTraceListener"
     }
 ]

@@ -30,6 +30,9 @@
  *                           source publishes them: through the client's own painter.
  *                           A nodeId is the producer's id or the diagram's; ids the
  *                           view does not have are skipped; idle draws nothing
+ *   --select <id>           select an element (the diagram's id or the producer's), as a
+ *                           click would, repeatable; with
+ *                           --behavior '{"selectionTrace":true}' its path is drawn
  *   --chrome <path>         Chrome/Chromium binary (default: $CHROME or google-chrome)
  *   --keep                  keep the intermediate schema, bundle and page
  */
@@ -75,7 +78,7 @@ function inlineJson(text) {
 
 function parseArgs(argv) {
     const positional = [];
-    const repeated = { elk: [], css: [] };
+    const repeated = { elk: [], css: [], select: [] };
     const single = {};
     const flags = new Set();
     for (let i = 0; i < argv.length; i++) {
@@ -115,6 +118,7 @@ function parseArgs(argv) {
         css: repeated.css.map(file => path.resolve(file)),
         behavior: single.behavior ? JSON.parse(single.behavior) : {},
         states: single.states ? readStates(single.states) : [],
+        select: repeated.select,
         // The client draws a family's colour and icon from its own copy of the
         // families (`clientBehavior.nodeFamilies`), as the webview gets them
         // from the profile; the server copy only classifies the nodes.
@@ -253,6 +257,7 @@ html, body { margin: 0; ${themeVariables(args.theme)} background: var(--vscode-e
 <script>window.diagramIdentifier = { clientBehavior: ${inlineJson(JSON.stringify({ nodeFamilies: args.families, ...args.behavior }))} };
 window.__SCHEMA__ = ${inlineJson(fs.readFileSync(schemaPath, 'utf8'))};
 window.__STATES__ = ${inlineJson(JSON.stringify(args.states))};
+window.__SELECT__ = ${inlineJson(JSON.stringify(args.select))};
 window.__CANVAS__ = ${CANVAS_PX};</script>
 <script src="file://${path.join(bundleDir, 'headless-entry.js')}"></script>
 </body></html>`);

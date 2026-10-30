@@ -53,6 +53,7 @@ import { RunAgentStreamActionHandler } from './editing-action-handlers';
 import { ContainedMovementRestrictor } from './contained-movement-restrictor';
 import { NodeSizePreservingBoundsApplicator } from './node-size-preserving-bounds-applicator';
 import { ExecutionStatesFeedbackCommand } from './execution-states';
+import { SelectionTraceFeedbackCommand, SelectionTraceListener } from './selection-trace';
 
 /**
  * The neutral base bindings shared by all diagram-client consumers. Loaded first
@@ -127,4 +128,11 @@ export const diagramBaseModule = new ContainerModule((bind, unbind, isBound, reb
     // Draws the published node states, as feedback the dispatcher re-applies
     // to every model (see execution-states.ts).
     configureCommand(context, ExecutionStatesFeedbackCommand);
+
+    // The selection's path (`clientBehavior.selectionTrace`), drawn as feedback
+    // re-applied to every model (see selection-trace.ts). The listener reads the
+    // flag on each selection, so a product that leaves it off sees nothing.
+    bind(SelectionTraceListener).toSelf().inSingletonScope();
+    bind(TYPES.ISelectionListener).toService(SelectionTraceListener);
+    configureCommand(context, SelectionTraceFeedbackCommand);
 });
