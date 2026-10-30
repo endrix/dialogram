@@ -19,7 +19,10 @@ platform in return:
 - run integration: execution overlays streamed onto the diagram (live node
   glow, running-agents bar with SSE token streaming), run/stop commands,
   bounded event replay when a webview is closed and reopened mid-run,
-- cross-file drill-down navigation and file watching.
+- cross-file drill-down navigation and file watching,
+- selection tracing (opt-in, `clientBehavior.selectionTrace`): select a node
+  and every path through it is drawn, what leads to it in green and what it
+  leads to in blue, the rest faded, across nested group frames.
 
 The platform core is **strictly product-neutral**: no consumer vocabulary
 appears in the core packages (enforced in CI, see
