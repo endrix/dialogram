@@ -39,6 +39,9 @@ export function goesToServer(engine: ElkServerOptions['engine'], size: { nodes: 
     return engine === 'auto' && (size.nodes > LAYOUT_TIER_MIDDLE_NODES || size.edges > LAYOUT_TIER_MIDDLE_EDGES);
 }
 
+/** What `ELK.layout` answers a graph of type `T` with: the graph, laid out (elkjs's own declaration). */
+type LaidOut<T extends ElkNode> = Awaited<ReturnType<ELK['layout']>> & Omit<T, 'children'>;
+
 export class SwitchingElk implements ELK {
     constructor(
         private readonly elkjs: ELK,
@@ -47,16 +50,17 @@ export class SwitchingElk implements ELK {
         private readonly layoutOnPort: typeof layoutOnServer = layoutOnServer
     ) {}
 
-    async layout(graph: ElkNode, args?: ElkLayoutArguments): Promise<ElkNode> {
+    async layout<T extends ElkNode>(graph: T, args?: ElkLayoutArguments): Promise<LaidOut<T>> {
         const size = elkGraphSize(graph);
         if (goesToServer(this.options.engine, size)) {
             const port = await this.server.ensureStarted();
             if (port !== undefined) {
                 const started = Date.now();
                 try {
+                    // The server's layout is written into the graph it was given, as elkjs's is.
                     const result = await this.layoutOnPort(port, graph, this.options.timeoutMs ?? DEFAULT_ELK_SERVER_TIMEOUT_MS);
                     console.log(`[dialogram layout] ELK server: ${size.nodes} nodes, ${size.edges} edges in ${Date.now() - started} ms`);
-                    return result;
+                    return result as LaidOut<T>;
                 } catch (error) {
                     console.warn(`[dialogram layout] ${error instanceof Error ? error.message : String(error)}; laying out with elkjs`);
                 }
