@@ -143,6 +143,25 @@ export function countCoincidentNodes(positions: Iterable<{ x: number; y: number 
  * Source model storage for Workflow diagrams.
  * Acquires the graph via the injected DiagramModelSource seam and transforms it to GModel.
  */
+/** Take off an edge what a run put on it: the token it carried, its queue size at a step. */
+function clearEdgeOverlay(edge: GEdge): void {
+    const args = edge.args as Record<string, unknown> | undefined;
+    if (args) {
+        delete args[WorkflowDiagramMetadata.VIEWER_LAST_TOKEN];
+        delete args[WorkflowDiagramMetadata.QUEUE_SIZE];
+    }
+}
+
+/** Call `fn` on every edge under `element`. */
+function walkGEdges(element: { children?: unknown[] }, fn: (edge: GEdge) => void): void {
+    for (const child of element.children ?? []) {
+        if (child instanceof GEdge) {
+            fn(child);
+        }
+        walkGEdges(child as { children?: unknown[] }, fn);
+    }
+}
+
 @injectable()
 export class WorkflowSourceModelStorage implements SourceModelStorage {
 
@@ -194,6 +213,24 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
      * caller already did).
      */
     private readonly runLogEntryCache = new Map<string, { mtimeMs: number; size: number; entries: ReadonlyArray<Record<string, unknown>> }>();
+
+    /**
+     * What each run-output JSON file last parsed to, by path, keyed on the file's size and mtime
+     * (see {@link readJsonFileMemo}). A run writes `run.wf-viewer.live.json` at every firing and the
+     * diagram re-reads it every 400ms, so now and then it reads the file halfway written, which does
+     * not parse. That used to count as no file: the loader fell through to the previous run, the
+     * ring went off and the previous run's queue sizes came on, and the next read put things back.
+     * A file that does not parse is now read as it last did.
+     */
+    private readonly jsonFileMemo = new Map<string, { mtimeMs: number; size: number; value: unknown }>();
+
+    /**
+     * The live overlay last read from each run-output dir, as the file held it. When a run ends
+     * its live file goes (or says it is not running) before the run's record is in `run-log.jsonl`,
+     * and in between the loader found only the previous run. While the log has no record of the
+     * run, its last live overlay stands, as finished.
+     */
+    private readonly lastLiveOverlay = new Map<string, unknown>();
 
     /**
      * Short-TTL memo for the run-output *workspace* fallback scans (see
@@ -1076,6 +1113,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 console.log(`[WorkflowSourceModelStorage] applyViewerOverlay: no overlay found for workflowFile=${workflowFilePath} workflow=${workflowName}`);
                 // Clear any stale glow state left from a previous cycle.
                 this.clearExecutionGlowState(root);
+                walkGEdges(root, clearEdgeOverlay);
                 return;
             }
             const activeNamesLog = overlay.active
@@ -1093,6 +1131,10 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             const queueTrace = queueTraceVisible === false
                 ? undefined
                 : await this.tryLoadQueueTraceAtStep(overlay.outDir, queueTraceStep);
+            // The eye on the palette, off: nothing the run put on the edges is drawn, neither the
+            // token an edge carried nor the queue size at a step. The nodes keep the run's state;
+            // the ring is the live run, with its own setting.
+            const edgeOverlayHidden = queueTraceVisible === false;
             if (queueTrace) {
                 (root as any).args['wf:queueTraceStep'] = queueTrace.selectedStep;
                 (root as any).args['wf:queueTraceStepCount'] = queueTrace.stepCount;
@@ -1219,7 +1261,9 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 if (!element) {
                     return;
                 }
-                if (element instanceof GEdge) {
+                if (element instanceof GEdge && edgeOverlayHidden) {
+                    clearEdgeOverlay(element);
+                } else if (element instanceof GEdge) {
                     const args = element.args as Record<string, unknown> | undefined;
                     let queueSizeForEdge: number | undefined;
                     let queueTokenForEdge: unknown;
@@ -1277,6 +1321,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                     if (queueSizeForEdge !== undefined) {
                         element.args = element.args || {};
                         (element.args as any)[WorkflowDiagramMetadata.QUEUE_SIZE] = queueSizeForEdge;
+                    } else if (element.args) {
+                        delete (element.args as any)[WorkflowDiagramMetadata.QUEUE_SIZE];
                     }
                 }
                 if (element instanceof GNode) {
@@ -2188,6 +2234,39 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         return runs;
     }
 
+    /**
+     * The JSON a run-output file holds, through {@link jsonFileMemo}: `undefined` when there is no
+     * file. A file that fails to parse is one being written, and is answered with what it last
+     * parsed to, or `undefined` when it never did.
+     */
+    private async readJsonFileMemo(filePath: string): Promise<unknown> {
+        const fs = await import('fs/promises');
+        let stat: import('fs').Stats;
+        try {
+            stat = await fs.stat(filePath);
+        } catch {
+            this.jsonFileMemo.delete(filePath);
+            return undefined;
+        }
+        const cached = this.jsonFileMemo.get(filePath);
+        if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+            return cached.value;
+        }
+        let value: unknown;
+        try {
+            value = JSON.parse(await fs.readFile(filePath, 'utf-8'));
+        } catch {
+            return cached?.value;
+        }
+        this.jsonFileMemo.set(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, value });
+        return value;
+    }
+
+    /** Whether `run-log.jsonl` at `runLogPath` records the run `runId`. */
+    private async runLogHasRun(runLogPath: string, runId: string): Promise<boolean> {
+        return (await this.readRunLogEntries(runLogPath)).some(entry => entry.runId === runId);
+    }
+
     private async tryLoadQueueTraceAtStep(
         outDir: string,
         requestedStep?: number
@@ -2207,23 +2286,10 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             lastToken?: unknown;
         }>;
     } | undefined> {
-        const fs = await import('fs/promises');
         const path = await import('path');
 
         const queueTracePath = path.join(outDir, 'run.wf-queues.json');
-        let text: string;
-        try {
-            text = await fs.readFile(queueTracePath, 'utf-8');
-        } catch {
-            return undefined;
-        }
-
-        let trace: any;
-        try {
-            trace = JSON.parse(text);
-        } catch {
-            return undefined;
-        }
+        const trace: any = await this.readJsonFileMemo(queueTracePath);
 
         if (!trace || typeof trace !== 'object' || trace.version !== 1 || !Array.isArray(trace.steps) || trace.steps.length === 0) {
             return undefined;
@@ -2335,30 +2401,18 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             return typeof candidate === 'string' && wantWorkflowNames.has(candidate.trim());
         };
 
-        const readOverlayFromPath = async (
-            overlayPath: string,
-            requireRunning = false
-        ): Promise<{
+        type ViewerOverlay = {
             runId: string;
             outDir: string;
             running: boolean;
             edges: Record<string, { lastToken?: unknown }>;
             active?: Array<{ entityInstanceName?: string; entityInstancePath?: string[] }>;
             error?: { entityInstanceName?: string; entityInstancePath?: string[]; message?: string };
-        } | undefined> => {
-            let overlayText: string;
-            try {
-                overlayText = await fs.readFile(overlayPath, 'utf-8');
-            } catch {
-                return undefined;
-            }
+        };
 
-            let overlay: any;
-            try {
-                overlay = JSON.parse(overlayText);
-            } catch {
-                return undefined;
-            }
+        // The overlay `overlay` (a file's JSON) is, for this view: undefined when it is not one, or
+        // is another run's, another workflow's, or (`requireRunning`) a finished run's.
+        const acceptOverlay = (overlay: any, overlayPath: string, requireRunning = false): ViewerOverlay | undefined => {
             if (!overlay || typeof overlay !== 'object') {
                 return undefined;
             }
@@ -2425,14 +2479,10 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             };
         };
 
-        const readOverlay = async (entry: { workflowName?: string; sourcePath?: string; outDir?: string; runId?: string }): Promise<{
-            runId: string;
-            outDir: string;
-            running: boolean;
-            edges: Record<string, { lastToken?: unknown }>;
-            active?: Array<{ entityInstanceName?: string; entityInstancePath?: string[] }>;
-            error?: { entityInstanceName?: string; entityInstancePath?: string[]; message?: string };
-        } | undefined> => {
+        const readOverlayFromPath = async (overlayPath: string, requireRunning = false): Promise<ViewerOverlay | undefined> =>
+            acceptOverlay(await this.readJsonFileMemo(overlayPath), overlayPath, requireRunning);
+
+        const readOverlay = async (entry: { workflowName?: string; sourcePath?: string; outDir?: string; runId?: string }): Promise<ViewerOverlay | undefined> => {
             if (preferredRunId && entry.runId !== preferredRunId) {
                 return undefined;
             }
@@ -2464,10 +2514,21 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         for (const baseOutDir of baseOutDirs) {
             if (liveGlowEnabled) {
                 const liveOverlayPath = path.join(baseOutDir, 'run.wf-viewer.live.json');
-                const liveOverlay = await readOverlayFromPath(liveOverlayPath, true);
+                const liveJson = await this.readJsonFileMemo(liveOverlayPath);
+                const liveOverlay = acceptOverlay(liveJson, liveOverlayPath, true);
                 console.log(`[WorkflowSourceModelStorage] viewer live overlay: ${liveOverlayPath} found=${!!liveOverlay}`);
                 if (liveOverlay) {
+                    this.lastLiveOverlay.set(baseOutDir, liveJson);
                     return liveOverlay;
+                }
+                // The run has ended: its live file says so, or is gone. Until the log records the
+                // run the loader would find the previous one, so the run's last live overlay
+                // stands, finished and with nothing active (what the run's final overlay says
+                // of it comes with the record).
+                const ended = acceptOverlay(liveJson ?? this.lastLiveOverlay.get(baseOutDir), liveOverlayPath);
+                if (ended && !(await this.runLogHasRun(path.join(baseOutDir, 'run-log.jsonl'), ended.runId))) {
+                    console.log(`[WorkflowSourceModelStorage] viewer live overlay: run ${ended.runId} ended, not yet in the log`);
+                    return { ...ended, running: false, active: undefined };
                 }
             }
             const runLogPath = path.join(baseOutDir, 'run-log.jsonl');
