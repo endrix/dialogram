@@ -235,7 +235,7 @@ function patchHeaderTools(headerTools: HTMLElement): void {
             queueIcon.classList.toggle('codicon-eye', visible);
             queueIcon.classList.toggle('codicon-eye-closed', !visible);
             queueIcon.classList.toggle('cal-queue-hidden-icon', !visible);
-            queueIcon.title = visible ? 'Hide queue overlay' : 'Show queue overlay';
+            queueIcon.title = visible ? 'Hide what the run put on the edges (tokens, queue sizes)' : 'Show what the run put on the edges (tokens, queue sizes)';
             queueIcon.setAttribute('aria-label', queueIcon.title);
         };
 

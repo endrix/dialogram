@@ -32,6 +32,23 @@ platform API version.
   `elk-server-0.3.0-all.jar`**, and the server now needs **Java 17** (ELK 0.10
   is built for it); without it layouts stay on elkjs, as before.
 
+### Fixed
+
+- **The running ring and the queue sizes no longer blink through a run.** The
+  runtime writes `run.wf-viewer.live.json` at every firing and the server
+  re-reads it every 400ms, so now and then it read the file halfway written,
+  took that for no run at all and fell through to the previous run: the ring
+  went off, the previous run's queue sizes came on, and the next read put
+  things back. A run-output file that does not parse is now read as it last
+  did (the queue trace too), and from the end of a run until its record is in
+  `run-log.jsonl` its last live overlay stands, as finished, where the
+  previous run showed for a moment.
+- **The eye on the palette, off, takes the run's tokens and queue sizes off
+  the edges.** It took only the step counter away: the carried colour, the
+  token pills and the sizes stayed, so it looked as if it did nothing. The
+  nodes keep the run's state (the ring is the live run, with its own
+  setting). A queue size the trace no longer has is taken off the edge too.
+
 ### Tooling
 
 - `scripts/render-svg --select <id>` selects an element (the diagram's id or
