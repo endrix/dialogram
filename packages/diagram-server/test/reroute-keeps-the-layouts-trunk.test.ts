@@ -4,7 +4,8 @@
  * one port share a trunk; routing a moved node's edges anew, one at a time,
  * turned that trunk into a comb of parallel lines, and a move of a few
  * pixels scrambled the picture. The router runs only for an edge whose kept
- * route would not do.
+ * route would not do, and that router is libavoid, which routes the edges
+ * on one port as one shared path.
  */
 import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
@@ -51,11 +52,14 @@ function graph(...elements: Array<GNode | GEdge>): { root: GGraph; handler: any;
     return { root, handler, find: id => index.find(id) };
 }
 
-async function moveAndReroute(g: ReturnType<typeof graph>, nodeId: string, to: Point, edgeIds: string[]): Promise<void> {
+/** Moves the node, reroutes the edges, and says which router drew the routes the slide refused. */
+async function moveAndReroute(g: ReturnType<typeof graph>, nodeId: string, to: Point, edgeIds: string[]): Promise<string> {
     g.find(nodeId).position = to;
+    const timing = { router: 'none' };
     await g.handler.executeOperation({
         kind: 'dialogram.rerouteEdgesAvoidOverlaps', isOperation: true, elementIds: edgeIds, preview: false, source: 'changeBounds'
-    });
+    }, timing);
+    return timing.router;
 }
 
 const routeOf = (g: ReturnType<typeof graph>, id: string): Point[] => g.find(id).routingPoints;
@@ -79,7 +83,7 @@ function fanIn(): ReturnType<typeof graph> {
 describe('reroute after a move keeps the layout\'s routes', () => {
     it('slides the ends onto the ports and keeps the trunk, at any distance', async () => {
         const g = fanIn();
-        await moveAndReroute(g, 't', { x: 400, y: 160 }, ['a-t', 'b-t']);
+        expect(await moveAndReroute(g, 't', { x: 400, y: 160 }, ['a-t', 'b-t'])).toBe('slide');
         const movedIn = { x: 400, y: 189.5 };
         expect(routeOf(g, 'a-t')).toEqual(trunk(A_OUT, movedIn));
         expect(routeOf(g, 'b-t')).toEqual(trunk(B_OUT, movedIn));
@@ -106,7 +110,7 @@ describe('reroute after a move keeps the layout\'s routes', () => {
             edge('a-t', 'a', 't', trunk(A_OUT, T_IN)),
             edge('b-t', 'b', 't', trunk(B_OUT, T_IN))
         );
-        await moveAndReroute(g, 't', { x: 400, y: 250 }, ['a-t', 'b-t']);
+        expect(await moveAndReroute(g, 't', { x: 400, y: 250 }, ['a-t', 'b-t'])).toBe('libavoid');
         const xBox = { id: 'x', x: 230, y: 240, r: 370, b: 300 };
         for (const id of ['a-t', 'b-t']) {
             const route = routeOf(g, id);
@@ -121,7 +125,7 @@ describe('reroute after a move keeps the layout\'s routes', () => {
     it('routes anew an edge whose stub would turn back through its node', async () => {
         const g = fanIn();
         // t now stands left of the trunk: a kept route would enter it from behind.
-        await moveAndReroute(g, 't', { x: 200, y: 100 }, ['a-t', 'b-t']);
+        expect(await moveAndReroute(g, 't', { x: 200, y: 100 }, ['a-t', 'b-t'])).toBe('libavoid');
         for (const id of ['a-t', 'b-t']) {
             const route = routeOf(g, id);
             expect(route[route.length - 1]).toEqual({ x: 200, y: 129.5 });
@@ -132,7 +136,7 @@ describe('reroute after a move keeps the layout\'s routes', () => {
 
     it('routes anew a straight edge, which has no bend to carry', async () => {
         const g = graph(node('c', 0, 0), node('d', 400, 0), edge('c-d', 'c', 'd', [{ x: 140, y: 29.5 }, { x: 400, y: 29.5 }]));
-        await moveAndReroute(g, 'd', { x: 400, y: 60 }, ['c-d']);
+        expect(await moveAndReroute(g, 'd', { x: 400, y: 60 }, ['c-d'])).toBe('libavoid');
         const route = routeOf(g, 'c-d');
         expect(route.length).toBeGreaterThanOrEqual(4);
         expect(isOrthogonalPolyline(route)).toBe(true);

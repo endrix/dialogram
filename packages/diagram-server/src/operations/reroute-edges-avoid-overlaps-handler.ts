@@ -142,20 +142,25 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
     private readonly debugReroute: number = Number(process.env.WORKFLOW_DIAGRAM_DEBUG_REROUTE ?? '0') || 0;
 
     /**
-     * Which router computes edge routes.
+     * Which router computes the routes an edge cannot keep (see `slideRoute`).
      *
-     * libavoid measures better than the built-in router on every axis in an
-     * offline harness (crossings, overlaps, bends, length), but it changed drag
-     * behaviour for the worse on a real network in a way the harness does not
-     * reproduce, so it is OPT-IN until that is understood:
+     * libavoid, routing the edges on one port as one shared path: that is
+     * what the layout drew, a trunk into the port, and what the built-in
+     * router cannot draw, since it gives every edge its own channel. libavoid
+     * also measures better on crossings, overlaps, bends and length. What
+     * made it worse on a real drag before was the stagger of the endpoints on
+     * a port, which turned every fan-in into a comb; `sharedPortPaths` is the
+     * cure. The built-in router remains the fallback when libavoid is
+     * unavailable or cannot solve an edge, and the choice for a reroute of
+     * every edge in a large diagram, since libavoid's cost is superlinear in
+     * the connector count (58 edges 337ms).
      *
-     *   WORKFLOW_DIAGRAM_ROUTER=libavoid
-     *
-     * Do not flip the default back without a reproduction — see
-     * `dumpRoutingInput` below for capturing one.
+     *   WORKFLOW_DIAGRAM_ROUTER=manhattan   the built-in router throughout
      */
     private readonly useLibavoid: boolean =
-        (process.env.WORKFLOW_DIAGRAM_ROUTER ?? '').toLowerCase() === 'libavoid';
+        (process.env.WORKFLOW_DIAGRAM_ROUTER ?? '').toLowerCase() !== 'manhattan';
+    /** A reroute of every edge goes to libavoid only up to this many edges. */
+    private static readonly LIBAVOID_MAX_EDGES = 200;
 
     /**
      * `WORKFLOW_DIAGRAM_DUMP_ROUTING=1` writes the exact router input — node
@@ -1190,7 +1195,7 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
         if (timing) { timing.anchorMs = Date.now() - anchorStartedAt; }
         const routeStartedAt = Date.now();
         let usedLibavoid = false;
-        if (this.useLibavoid) {
+        if (this.useLibavoid && routable.length <= WorkflowRerouteEdgesAvoidOverlapsOperationHandler.LIBAVOID_MAX_EDGES) {
             const shapes: RouterObstacle[] = obstacles.map(o => ({
                 id: o.id,
                 // `obstacles` carries PAD already baked in; libavoid keeps its own
@@ -1212,7 +1217,8 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
                 idealNudgingDistance: WorkflowRerouteEdgesAvoidOverlapsOperationHandler.EDGE_GAP,
                 // Matches the built-in router's stub, so edges leave a port the
                 // same distance either way and clearance stays at PAD.
-                portStub: WorkflowRerouteEdgesAvoidOverlapsOperationHandler.STUB
+                portStub: WorkflowRerouteEdgesAvoidOverlapsOperationHandler.STUB,
+                sharedPortPaths: true
             });
             if (routes) {
                 usedLibavoid = true;

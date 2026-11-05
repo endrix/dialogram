@@ -101,12 +101,23 @@ export interface LibavoidRoutingOptions {
      * and the stub is axis-aligned so the result stays orthogonal.
      */
     portStub?: number;
+    /**
+     * Edges on one port start at one point, so libavoid routes them as one
+     * shared path: a trunk with a junction where they part, the way a layout
+     * draws a fan-in and a schematic draws a bus out of a pin. Off, each edge
+     * on a port starts at its own staggered point and is nudged into its own
+     * channel, which reads as a comb of parallel lines where edges meet.
+     * The shared endpoints are not nudged apart (libavoid's default), so an
+     * edge still leaves its port straight.
+     */
+    sharedPortPaths?: boolean;
 }
 
 const DEFAULT_OPTIONS: Required<LibavoidRoutingOptions> = {
     shapeBufferDistance: 15,
     idealNudgingDistance: 8,
-    portStub: 20
+    portStub: 20,
+    sharedPortPaths: true
 };
 
 /**
@@ -125,6 +136,8 @@ function candidateDirs(): string[] {
     if (typeof __dirname === 'string') {
         dirs.push(path.join(__dirname, 'libavoid'));
         dirs.push(__dirname);
+        // A dev run or a test from the sources: the vendored build in the repo.
+        dirs.push(path.join(__dirname, '..', '..', '..', '..', 'vendor', 'libavoid'));
     }
     return dirs;
 }
@@ -189,6 +202,32 @@ export async function isLibavoidAvailable(): Promise<boolean> {
  */
 
 /**
+ * Put a route end that libavoid nudged off its port's row back onto it.
+ *
+ * Edges that start at one point are not nudged apart as shared paths, but the
+ * nudging of segments connected to shapes still moves their first segments
+ * half a nudging distance each way, and the L back to the anchor then draws a
+ * 4px kink a few pixels off the port. A step smaller than the nudging
+ * distance is that kink, not a turn; the first segment goes back onto the
+ * row, and the bend after it follows, so the edges leave the port together
+ * and part where their ways part.
+ */
+function unkink(points: RouterPoint[], anchor: RouterPoint, nudge: number): void {
+    if (points.length < 2) {
+        return;
+    }
+    const atStart = Math.abs(points[0].x - anchor.x) <= Math.abs(points[points.length - 1].x - anchor.x);
+    const i0 = atStart ? 0 : points.length - 1;
+    const i1 = atStart ? 1 : points.length - 2;
+    const step = Math.abs(points[i0].y - anchor.y);
+    if (step < 0.01 || step >= nudge || Math.abs(points[i0].y - points[i1].y) > 0.01) {
+        return;
+    }
+    points[i0] = { x: points[i0].x, y: anchor.y };
+    points[i1] = { x: points[i1].x, y: anchor.y };
+}
+
+/**
  * The corner needed to join a port anchor to the route, when libavoid's end
  * does not sit on the anchor's row. Empty when they already align.
  */
@@ -248,11 +287,13 @@ export async function routeOrthogonal(
     // invalidate, derive the ceiling from the anchors actually passed in.
     // Push each endpoint out along its port's side before routing; the stub back
     // to the true anchor is re-attached afterwards.
-    // Staggered where a port carries several edges, so they do not all turn on
-    // one x and blur together at the port. The rule is shared with the client's
-    // live router — see `portStubDistances` — because the two must agree or the
-    // edge visibly jumps the moment the mouse is released.
-    const stubs = portStubOffsets(
+    //
+    // With `sharedPortPaths` every edge on a port starts at the same point and
+    // libavoid keeps them on one path for as long as they go the same way.
+    // Otherwise they are staggered, so they do not all turn on one x, the rule
+    // the client's live router shares (`portStubOffsets`).
+    const base: PortStubOffset = { distance: requested.portStub, across: 0 };
+    const stubs = requested.sharedPortPaths ? new Map<string, PortStubOffset>() : portStubOffsets(
         connectors.flatMap(c => [
             ...(c.sourceSide
                 ? [{ id: c.id, end: 'source' as const, ...c.source, side: c.sourceSide, towardY: c.target.y }]
@@ -264,7 +305,6 @@ export async function routeOrthogonal(
         obstacles,
         { portStub: requested.portStub, nudge: requested.idealNudgingDistance }
     );
-    const base: PortStubOffset = { distance: requested.portStub, across: 0 };
     const offsetOf = (p: RouterPoint, side: 'WEST' | 'EAST' | undefined, at: PortStubOffset): RouterPoint =>
         side === 'EAST' ? { x: p.x + at.distance, y: p.y + at.across }
             : side === 'WEST' ? { x: p.x - at.distance, y: p.y + at.across }
@@ -361,6 +401,10 @@ export async function routeOrthogonal(
                 // So the join is an L where the lines differ: out along the
                 // anchor's row first, then across to meet the route. Orthogonal,
                 // and the nudging survives.
+                if (opts.sharedPortPaths) {
+                    unkink(points, c.source, opts.idealNudgingDistance);
+                    unkink(points, c.target, opts.idealNudgingDistance);
+                }
                 const withStubs = [c.source, ...bridge(c.source, points[0]), ...points,
                     ...bridge(c.target, points[points.length - 1]).reverse(), c.target];
                 routes.set(id, snapRouteEndpoints(withStubs, c.source, c.target));

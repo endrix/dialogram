@@ -103,6 +103,37 @@ describe('libavoid router', () => {
         expect(new Set(ys).size).toBe(4);
     });
 
+    it('routes the edges on one port as one shared path, leaving the port straight', async () => {
+        // Two sources feeding one input port, the fan-in a layout draws as a
+        // trunk. Shared endpoints keep the two on one path from where they
+        // meet to the port; staggered endpoints made a comb of two channels.
+        const obstacles: RouterObstacle[] = [
+            { id: 'a', x: 0, y: 0, width: 100, height: 40 },
+            { id: 'b', x: 0, y: 200, width: 100, height: 40 },
+            { id: 't', x: 400, y: 100, width: 100, height: 40 }
+        ];
+        const into = (id: string, y: number): RouterConnector => ({
+            id, source: { x: 100, y }, target: { x: 400, y: 120 }, sourceSide: 'EAST', targetSide: 'WEST'
+        });
+        const connectors = [into('a-t', 20), into('b-t', 220)];
+
+        const shared = (await routeOrthogonal(obstacles, connectors))!;
+        const [ra, rb] = [shared.get('a-t')!, shared.get('b-t')!];
+        // The last segment, into the port, lies on the port's row and the two
+        // edges arrive down the same vertical.
+        for (const r of [ra, rb]) {
+            expect(r[r.length - 1]).toEqual({ x: 400, y: 120 });
+            expect(r[r.length - 2].y).toBe(120);
+            expect(r[0].y).toBe(r[1].y);
+        }
+        expect(ra[ra.length - 2].x).toBe(rb[rb.length - 2].x);
+        expect(ra[ra.length - 3].x).toBe(rb[rb.length - 3].x);
+
+        const staggered = (await routeOrthogonal(obstacles, connectors, { sharedPortPaths: false }))!;
+        const [sa, sb] = [staggered.get('a-t')!, staggered.get('b-t')!];
+        expect(sa[sa.length - 3].x).not.toBe(sb[sb.length - 3].x);
+    });
+
     it('returns an empty map for no connectors without touching the solver', async () => {
         const routes = await routeOrthogonal([{ id: 'a', x: 0, y: 0, width: 10, height: 10 }], []);
         expect(routes).toBeDefined();
@@ -354,88 +385,53 @@ describe('libavoid router — several edges leaving one port', () => {
         }
     });
 
-    it('still separates two edges that share a port', async () => {
+    /**
+     * Two edges leaving one port go out together and part where their ways
+     * part, the way a layout draws a fan-out and a schematic draws a bus out
+     * of a pin: one shared stub, a junction, then each its own way.
+     *
+     * This replaces the staggered stub, which started each edge on a port at
+     * its own point so that libavoid would give each its own channel. That
+     * drew every fan-in and fan-out as a comb of parallel lines, which is the
+     * scramble a move of a few pixels made of the layout's trunks. The kink
+     * that the stagger was for (libavoid nudging two edges with one start
+     * half a nudging distance each way, an L back to the port 4px off its
+     * row) is taken out after routing instead: a step smaller than the
+     * nudging distance at a port goes back onto the port's row.
+     */
+    it('takes two edges off one port on one stub, parting at a junction', async () => {
         const routes = (await routeOrthogonal(fx.nodes, connectors, opts))!;
         const shared = connectors.filter(c => c.id.includes('rob:Com'));
         expect(shared.length).toBe(2);
+        const [a, b] = shared.map(c => routes.get(c.id)!);
 
-        // They start at the same anchor, so they must diverge somewhere: the
-        // long horizontal runs need to sit on different rows.
-        const rows = shared.map(c => {
-            const r = routes.get(c.id)!;
+        // Both leave the port along its row, straight, with no step back onto it.
+        for (const r of [a, b]) {
+            expect(orthogonal(r)).toBe(true);
+            const firstOffRow = r.slice(1).find(p => Math.abs(p.y - r[0].y) > 0.5);
+            expect(Math.abs(firstOffRow!.y - r[0].y)).toBeGreaterThan(opts.idealNudgingDistance);
+        }
+        // They share the stub, at least the port stub long, then part.
+        const sharedUntilX = Math.min(a[1].x, b[1].x);
+        expect(Math.abs(sharedUntilX - a[0].x)).toBeGreaterThanOrEqual(opts.portStub);
+        expect(a[1].y).toBe(b[1].y);
+        // And they end up on different rows, each heading for its own target.
+        const longestRow = (r: typeof a): number => {
             let longest = { len: 0, y: 0 };
             for (let i = 1; i < r.length; i++) {
-                if (Math.abs(r[i].y - r[i - 1].y) > 0.5) continue;
+                if (Math.abs(r[i].y - r[i - 1].y) > 0.5) { continue; }
                 const len = Math.abs(r[i].x - r[i - 1].x);
-                if (len > longest.len) longest = { len, y: r[i].y };
+                if (len > longest.len) { longest = { len, y: r[i].y }; }
             }
             return longest.y;
-        });
-        expect(Math.abs(rows[0] - rows[1])).toBeGreaterThan(4);
-    });
-
-    /**
-     * The reported artifact, and the one that matters most: an edge on a shared
-     * port must leave it STRAIGHT, like an edge on any other port.
-     *
-     * Handed two edges with the same start, libavoid separates them the only way
-     * it can — half the nudging distance each, in opposite directions. Both then
-     * come back off the anchor's row, both need an L to get back to it, and a
-     * 4px step a few pixels off the port does not read as a branch. It reads as
-     * a kink in an edge that should have gone straight out, which is exactly
-     * what was reported at `rob.Com` (`Rb` and `Trap`, one edge each, leave
-     * perfectly straight right below it).
-     *
-     * So the starts are separated BEFORE routing instead: the first edge keeps
-     * the port's row and libavoid has no reason to move it. A "real" turn is one
-     * bigger than the nudging distance; anything at or below that is the kink.
-     */
-    it('leaves the first edge on a shared port straight', async () => {
-        const routes = (await routeOrthogonal(fx.nodes, connectors, opts))!;
-        const shared = connectors
-            .filter(c => c.id.includes('rob:Com'))
-            .sort((a, b) => (a.id < b.id ? -1 : 1));
-        expect(shared.length).toBe(2);
-
-        /** How far the route first departs the anchor's row. */
-        const firstTurn = (id: string): number => {
-            const r = routes.get(id)!;
-            const step = r.slice(1).find(p => Math.abs(p.y - r[0].y) > 0.5);
-            return step ? Math.abs(step.y - r[0].y) : Infinity;
         };
-
-        // The first edge goes straight out and only leaves the row to head for
-        // its target.
-        expect(firstTurn(shared[0].id)).toBeGreaterThan(opts.idealNudgingDistance);
-        // The second branches off it by a FULL nudge, not the half-nudge kink
-        // that libavoid produces when it has to separate them itself.
-        expect(firstTurn(shared[1].id)).toBeGreaterThanOrEqual(opts.idealNudgingDistance);
+        expect(a[a.length - 1].y).not.toBe(b[b.length - 1].y);
+        expect(longestRow(a) === longestRow(b) || a[a.length - 2].x !== b[b.length - 2].x).toBe(true);
     });
 
-    /**
-     * ...and they must not TURN at the same place either, which is the third
-     * way this join has looked broken.
-     *
-     * Every end starts `portStub` off its port, so the L back to the anchor
-     * turned at exactly that distance for every edge — put two edges on one port
-     * and both corners landed on one x (444 here). The routes then ran
-     * superimposed for the whole stub and split there in a 4px step. At stroke
-     * width, with rounded joins, that is not a fan-out; it is a blob on the port,
-     * which is what was reported at `rob.Com`.
-     *
-     * libavoid separates such corners by itself when both edges turn and run a
-     * long way (three edges off one port in `fixtures-dense-core` come back
-     * 12px apart with no help). It cannot here, because the first move is only
-     * the 4px nudge — far too short for segment nudging to bite. Hence the
-     * staggered stub, and hence this test: the previous two assertions both pass
-     * with every corner piled on one x.
-     */
-    it('does not turn two edges off one port at the same x', async () => {
-        const routes = (await routeOrthogonal(fx.nodes, connectors, opts))!;
+    it('staggers the starts on a port when shared paths are off', async () => {
+        const routes = (await routeOrthogonal(fx.nodes, connectors, { ...opts, sharedPortPaths: false }))!;
         const shared = connectors.filter(c => c.id.includes('rob:Com'));
-        expect(shared.length).toBe(2);
-
-        // The corner is the last point still on the anchor's own row.
         const corners = shared.map(c => {
             const r = routes.get(c.id)!;
             let i = 1;
