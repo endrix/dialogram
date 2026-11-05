@@ -1,8 +1,8 @@
 import { EditorContextService, IActionDispatcher, TYPES } from '@eclipse-glsp/client';
 import type { GModelElement, SEdgeImpl } from '@eclipse-glsp/client';
-import { Action, IActionHandler, MoveAction, SetModelAction, UpdateModelAction } from '@eclipse-glsp/sprotty';
+import { Action, IActionHandler, MoveAction } from '@eclipse-glsp/sprotty';
 import { inject, injectable } from 'inversify';
-import { WorkflowDiagramTypes } from '@dialogram/shared';
+import { WorkflowDiagramTypes, portAnchor } from '@dialogram/shared';
 import { WorkflowRerouteEdgesAvoidOverlapsOperation } from './editing-action-handlers';
 
 type ModelIndexLike = {
@@ -98,12 +98,69 @@ function setIncidentEdgesForDrag(root: Readonly<GModelElement>, edgeIds: Set<str
 // after a drop. Keyed by the root, as the drag session is.
 const dragHiddenEdgeIds = new Map<string, Set<string>>();
 
-/** Whether this edge is hidden because the node it is attached to is being dragged. */
-export function isEdgeHiddenForDrag(root: Readonly<GModelElement> | undefined, edgeId: string): boolean {
+/**
+ * Whether this edge is hidden because the node it is attached to is being
+ * dragged. It is hidden from the first move until its stored route reaches
+ * its ports again: at the drop, with the first model update that carries a
+ * route for the node's new place, whichever server round trip brings it, or
+ * at once when the drag is cancelled and the node goes back. No update is
+ * waited for by name, since the ChangeBounds answer, the reroute answer or
+ * a bounds pass may be the one that carries the route.
+ */
+export function isEdgeHiddenForDrag(root: Readonly<GModelElement> | undefined, edge: Readonly<GModelElement>): boolean {
     if (!root) {
         return false;
     }
-    return dragHiddenEdgeIds.get(getDragKey(root))?.has(edgeId) ?? false;
+    const hidden = dragHiddenEdgeIds.get(getDragKey(root));
+    const id = String((edge as any).id);
+    if (!hidden?.has(id)) {
+        return false;
+    }
+    if (routeReachesPorts(root, edge)) {
+        hidden.delete(id);
+        return false;
+    }
+    return true;
+}
+
+function absolutePosition(element: any): { x: number; y: number } {
+    let x = 0;
+    let y = 0;
+    for (let current = element; current; current = current.parent) {
+        x += current.position?.x ?? 0;
+        y += current.position?.y ?? 0;
+    }
+    return { x, y };
+}
+
+function anchorOfPort(port: any): { x: number; y: number } | undefined {
+    if (!port || !isPortElement(port)) {
+        return undefined;
+    }
+    return portAnchor({
+        absolute: absolutePosition(port),
+        size: port.size ?? port.bounds,
+        direction: port.args?.['cal:portDirection'] as string | undefined,
+        side: port.args?.['cal:portSide'] as string | undefined,
+        type: port.type
+    });
+}
+
+/** Whether the edge's stored route starts and ends where its ports are now. */
+function routeReachesPorts(root: Readonly<GModelElement>, edge: Readonly<GModelElement>): boolean {
+    const route = (edge as any).routingPoints as Array<{ x: number; y: number }> | undefined;
+    if (!Array.isArray(route) || route.length < 2) {
+        return false;
+    }
+    const index: ModelIndexLike | undefined = (root as any)?.index;
+    const source = anchorOfPort(getById(index, (edge as any).sourceId));
+    const target = anchorOfPort(getById(index, (edge as any).targetId));
+    if (!source || !target) {
+        return false;
+    }
+    const near = (a: { x: number; y: number }, b: { x: number; y: number }): boolean =>
+        Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5;
+    return near(route[0], source) && near(route[route.length - 1], target);
 }
 
 /** How long hidden edges may wait for the server's routes before they are drawn as they were. */
@@ -138,17 +195,9 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
 
     /** The moved ids the hidden edge set was computed for, so a drag computes it once. */
     private hiddenForMovedIds = '';
-    /** Set when the final reroute went out: the next model update carries its routes. */
-    private revealOnNextModelUpdate = false;
     private revealTimer: ReturnType<typeof setTimeout> | undefined;
 
     handle(action: Action): void {
-        if (action.kind === UpdateModelAction.KIND || action.kind === SetModelAction.KIND) {
-            if (this.revealOnNextModelUpdate) {
-                this.revealHiddenEdges();
-            }
-            return;
-        }
         if (action.kind !== MoveAction.KIND) {
             return;
         }
@@ -236,15 +285,13 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
             return;
         }
         dragHiddenEdgeIds.set(getDragKey(root), incidentEdgeIds);
-        this.revealOnNextModelUpdate = false;
     }
 
-    /** The hidden edges wait for the server's routes from now on, or for the fallback. */
+    /** From the final reroute on, the hidden edges may wait this long for a route; then they are drawn as they are. */
     private armReveal(): void {
         if (dragHiddenEdgeIds.size === 0) {
             return;
         }
-        this.revealOnNextModelUpdate = true;
         if (this.revealTimer) {
             clearTimeout(this.revealTimer);
         }
@@ -256,7 +303,6 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
             clearTimeout(this.revealTimer);
             this.revealTimer = undefined;
         }
-        this.revealOnNextModelUpdate = false;
         this.hiddenForMovedIds = '';
         dragHiddenEdgeIds.clear();
     }
