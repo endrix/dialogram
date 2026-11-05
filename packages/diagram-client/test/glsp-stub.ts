@@ -30,8 +30,6 @@ export const ApplyLabelEditOperation = {
 
 /** Drag-time reroute trigger — the base container binds a handler on this kind. */
 export const MoveAction = { KIND: 'move' };
-export const UpdateModelAction = { KIND: 'updateModel' };
-export const SetModelAction = { KIND: 'setModel' };
 
 export const NavigateToExternalTargetAction = {
     KIND: 'navigateToExternalTarget',

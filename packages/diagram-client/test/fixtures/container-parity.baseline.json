@@ -481,15 +481,5 @@
         "id": "Symbol(stub.ISelectionListener)",
         "op": "bind",
         "to": "service:SelectionTraceListener"
-    },
-    {
-        "handler": "WorkflowElkLiveDragRouter",
-        "kind": "updateModel",
-        "op": "actionHandler"
-    },
-    {
-        "handler": "WorkflowElkLiveDragRouter",
-        "kind": "setModel",
-        "op": "actionHandler"
     }
 ]

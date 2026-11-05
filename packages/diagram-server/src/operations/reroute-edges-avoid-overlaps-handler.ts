@@ -1020,6 +1020,7 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
 
     private async executeOperation(operation: WorkflowRerouteEdgesAvoidOverlapsOperation, timing?: RerouteTiming): Promise<void> {
         const nowMs = Date.now();
+        const startedAt = nowMs;
         const src = operation.source ?? 'client';
         this.modelState.set('workflow.lastRerouteAtMs', nowMs);
         this.modelState.set('workflow.lastRerouteSource', src);
@@ -1138,6 +1139,7 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
                 console.info('[cal-reroute] slide — ' + slidEdgeIds.size + ' edges kept their routes');
             }
             await this.persistRoutes(root, operation);
+            this.logPerf(operation, startedAt, slidEdgeIds.size, 0, 'slide');
             return;
         }
 
@@ -1262,6 +1264,14 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
         }
 
         await this.persistRoutes(root, operation);
+        this.logPerf(operation, startedAt, slidEdgeIds.size, routed, usedLibavoid ? 'libavoid' : 'manhattan');
+    }
+
+    /** Always-on breadcrumb, like the layout's: what a persisted reroute did and how long it took. */
+    private logPerf(operation: WorkflowRerouteEdgesAvoidOverlapsOperation, startedAt: number, kept: number, routed: number, router: string): void {
+        if (operation.preview) { return; }
+        // eslint-disable-next-line no-console
+        console.log(`[dialogram perf] reroute (${operation.source ?? 'client'}): ${kept} kept, ${routed} routed by ${router}, ${Date.now() - startedAt}ms`);
     }
 
     /** Persist the layout, positions and routes; not for a preview (a drag). */

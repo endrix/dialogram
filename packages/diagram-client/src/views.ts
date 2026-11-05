@@ -1765,9 +1765,9 @@ export class WorkflowEdgeView extends PolylineEdgeView {
         // is not visible. That shared geometry is what made this possible: the
         // client router previously computed anchors differently, which is why
         // this code used to bypass the router registry entirely.
-        // An edge of a node being dragged is not drawn until the drop's routes
-        // arrive (see `isEdgeHiddenForDrag`).
-        if (isEdgeHiddenForDrag(rootOfEdge(edge), String((edge as any).id))) {
+        // An edge of a node being dragged is not drawn until a route for the
+        // node's new place arrives (see `isEdgeHiddenForDrag`).
+        if (isEdgeHiddenForDrag(rootOfEdge(edge), edge as any)) {
             return svg('g', { class: { 'workflow-edge': true, 'edge-hidden-for-drag': true } });
         }
         const serverRoute = (edge as any).routingPoints as { x: number; y: number }[] | undefined;
