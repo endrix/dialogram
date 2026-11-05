@@ -104,6 +104,20 @@ describe('edges hidden while their node is dragged', () => {
         }
     });
 
+    it('stays hidden through a bounds pass that draws the node where the server last saw it', () => {
+        const m = model();
+        const { handler } = router(m.root);
+        drag(m, handler, 't', { x: 400, y: 160 });
+        expect(hidden(m, 'a-t', 'b-t')).toEqual([true, true]);
+        // The server's model, drawn in the hidden layer for its bounds: the same
+        // root id, the node still at its old place, the routes reaching its ports.
+        const server = model();
+        expect(hidden(server, 'a-t', 'b-t')).toEqual([false, false]);
+        expect(hidden(m, 'a-t', 'b-t')).toEqual([true, true]);
+        drag(m, handler, 't', { x: 400, y: 170 });
+        expect(hidden(m, 'a-t', 'b-t')).toEqual([true, true]);
+    });
+
     it('draws them again at once when the drag is cancelled and the node goes back', () => {
         const m = model();
         const { handler } = router(m.root);
