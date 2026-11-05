@@ -37,11 +37,11 @@ interface RerouteTiming {
     routeMs: number;
     persistMs: number;
     /**
-     * `dead-zone-slide` means no router ran because none was needed — the
-     * endpoints had already settled and the existing route was slid onto them.
-     * That is the fast path working, not a failure.
+     * `slide` means no router ran because none was needed: every edge kept
+     * its route, with its ends moved onto the ports. That is the fast path
+     * working, not a failure.
      */
-    router: 'libavoid' | 'manhattan' | 'dead-zone-slide' | 'none';
+    router: 'libavoid' | 'manhattan' | 'slide' | 'none';
 }
 
 export const WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND = 'dialogram.rerouteEdgesAvoidOverlaps' as const;
@@ -295,8 +295,10 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
     private static readonly EDGE_GAP = 8;  // px between parallel edges in same channel
 
     /** Collect padded bounding boxes for all GNodes in the graph. */
-    private collectObstacles(root: GGraph): Array<{ id: string; x: number; y: number; r: number; b: number }> {
-        const pad = WorkflowRerouteEdgesAvoidOverlapsOperationHandler.PAD;
+    private collectObstacles(
+        root: GGraph,
+        pad: number = WorkflowRerouteEdgesAvoidOverlapsOperationHandler.PAD
+    ): Array<{ id: string; x: number; y: number; r: number; b: number }> {
         const obs: Array<{ id: string; x: number; y: number; r: number; b: number }> = [];
         const visit = (el: any): void => {
             // A group is a region, not an obstacle: its members are the
@@ -931,6 +933,86 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
     // Main execution
     // ═══════════════════════════════════════════════════════════════════
 
+    /**
+     * The edge's route with its ends moved onto the ports as they are now,
+     * or undefined when that route would not do and the router has to run.
+     *
+     * ELK routes the edges together: edges into one port share a trunk. The
+     * router here routes each edge on its own and gives each its own
+     * channel, so rerouting a moved node's edges from scratch turns the
+     * trunk into a comb of parallel lines with a knot at the port, and the
+     * picture drifts from the layout with every move. Keeping the route and
+     * sliding only its ends keeps the trunk where the layout put it.
+     *
+     * The end goes to the port's anchor and the bend next to it follows on
+     * the movement axis, so the stub out of the port stays straight. The
+     * route is refused when it has no interior bend to carry (sliding a
+     * straight line gives a diagonal, and a persisted one at that), when the
+     * stub would turn back through its own node, when a segment would run
+     * through a node, or when the result is not orthogonal.
+     */
+    private slideRoute(
+        edge: GEdge,
+        nodeBoxes: ReadonlyArray<{ id: string; x: number; y: number; r: number; b: number }>
+    ): { x: number; y: number }[] | undefined {
+        const rps = (edge as any).routingPoints as { x: number; y: number }[] | undefined;
+        if (!Array.isArray(rps) || rps.length < 3) { return undefined; }
+        const srcId = typeof edge.sourceId === 'string' ? edge.sourceId : undefined;
+        const tgtId = typeof edge.targetId === 'string' ? edge.targetId : undefined;
+        const srcA = srcId ? this.portAnchorInfo(srcId) : undefined;
+        const tgtA = tgtId ? this.portAnchorInfo(tgtId) : undefined;
+        if (!srcA || !tgtA) { return undefined; }
+
+        const slid = rps.map(p => ({ x: p.x, y: p.y }));
+        const last = slid.length - 1;
+        slid[0] = { x: srcA.x, y: srcA.y };
+        slid[1] = { x: slid[1].x, y: srcA.y };
+        slid[last] = { x: tgtA.x, y: tgtA.y };
+        slid[last - 1] = { x: slid[last - 1].x, y: tgtA.y };
+        if (!isOrthogonalPolyline(slid)) { return undefined; }
+
+        // The stub leaves the port outwards: an EAST port to the right, a
+        // WEST port to the left. A node moved past its bend would send the
+        // stub back through itself.
+        const outward = (anchor: { x: number; side: 'WEST' | 'EAST' }, bend: { x: number }): boolean =>
+            anchor.side === 'EAST' ? bend.x >= anchor.x - 0.5 : bend.x <= anchor.x + 0.5;
+        if (!outward(srcA, slid[1]) || !outward(tgtA, slid[last - 1])) { return undefined; }
+
+        // No segment through a node. The stubs are allowed to touch their
+        // own node; the trunk is not allowed to touch any, the moved node
+        // included: a node dragged onto its own trunk gets a new route.
+        for (let i = 0; i < last; i++) {
+            for (const box of nodeBoxes) {
+                if (i === 0 && box.id === srcA.nodeId) { continue; }
+                if (i === last - 1 && box.id === tgtA.nodeId) { continue; }
+                if (this.segmentHitsBox(slid[i], slid[i + 1], box)) { return undefined; }
+            }
+        }
+        return this.clean(slid);
+    }
+
+    /**
+     * The nodes at the ends of a route that moved since the route was drawn:
+     * the end whose port anchor is no longer where the route starts or
+     * ends. The operation names the incident edges, not the dragged node,
+     * and the node at the far end of an edge did not move with it.
+     */
+    private movedEndpointNodeIds(edge: GEdge): Set<string> {
+        const rps = (edge as any).routingPoints as { x: number; y: number }[] | undefined;
+        if (!Array.isArray(rps) || rps.length < 2) { return this.edgeEndpointNodeIds(edge); }
+        const ids = new Set<string>();
+        const ends: Array<[string | undefined, { x: number; y: number }]> = [
+            [typeof edge.sourceId === 'string' ? edge.sourceId : undefined, rps[0]],
+            [typeof edge.targetId === 'string' ? edge.targetId : undefined, rps[rps.length - 1]]
+        ];
+        for (const [portId, point] of ends) {
+            const anchor = portId ? this.portAnchorInfo(portId) : undefined;
+            if (!anchor?.nodeId) { continue; }
+            if (Math.abs(anchor.x - point.x) > 0.5 || Math.abs(anchor.y - point.y) > 0.5) { ids.add(anchor.nodeId); }
+        }
+        return ids;
+    }
+
     private async executeOperation(operation: WorkflowRerouteEdgesAvoidOverlapsOperation, timing?: RerouteTiming): Promise<void> {
         const nowMs = Date.now();
         const src = operation.source ?? 'client';
@@ -957,91 +1039,6 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
 
         // Apply pending move positions.
         this.applyMovedElements(root, operation);
-
-        // ── Dead zone: slide endpoints instead of full reroute for micro-moves ──
-        // After a micro-movement (a few pixels), recomputing routes from scratch
-        // can cause large jumps because channel allocation is sensitive to ordering
-        // and obstacle geometry. Instead, we keep the existing intermediate bends
-        // and only slide the first/last routing points to the current port anchors,
-        // plus shift the adjacent bend's coordinate on the movement axis so the
-        // stub segment stays straight.
-        const DEAD_ZONE_PX = 5;
-        if (!resetAll && selectedIds.size > 0) {
-            let allWithinDeadZone = true;
-            const slideOps: Array<{
-                edge: GEdge;
-                rps: { x: number; y: number }[];
-                srcA: { x: number; y: number };
-                tgtA: { x: number; y: number };
-            }> = [];
-            for (const edgeId of selectedIds) {
-                const el = this.modelState.index.find(edgeId);
-                if (!(el instanceof GEdge)) { continue; }
-                const rps = (el as any).routingPoints as { x: number; y: number }[] | undefined;
-                // A 2-point route has no interior bend to carry, so sliding it just
-                // moves both endpoints and leaves a straight line between them —
-                // diagonal unless the anchors happen to share an axis, and then
-                // PERSISTED. Every later nudge re-enters the dead zone and slides
-                // the same degenerate route again, so the edge can never recover.
-                // Anything without a bend must go through the real router.
-                if (!Array.isArray(rps) || rps.length < 3) {
-                    allWithinDeadZone = false;
-                    break;
-                }
-                const srcId = typeof el.sourceId === 'string' ? el.sourceId : undefined;
-                const tgtId = typeof el.targetId === 'string' ? el.targetId : undefined;
-                const srcA = srcId ? this.portAnchorInfo(srcId) : undefined;
-                const tgtA = tgtId ? this.portAnchorInfo(tgtId) : undefined;
-                if (!srcA || !tgtA) {
-                    allWithinDeadZone = false;
-                    break;
-                }
-                const first = rps[0];
-                const last = rps[rps.length - 1];
-                const dSrc = Math.abs(srcA.x - first.x) + Math.abs(srcA.y - first.y);
-                const dTgt = Math.abs(tgtA.x - last.x) + Math.abs(tgtA.y - last.y);
-                if (dSrc > DEAD_ZONE_PX || dTgt > DEAD_ZONE_PX) {
-                    allWithinDeadZone = false;
-                    break;
-                }
-                // Slide into a candidate and keep it only if it stays orthogonal.
-                // The slide assumes the first and last segments are horizontal
-                // (true for WEST/EAST ports); a route that violates that would be
-                // bent into a diagonal here, so verify rather than assume.
-                const slid = rps.map(p => ({ x: p.x, y: p.y }));
-                slid[0] = { x: srcA.x, y: srcA.y };
-                slid[1] = { x: slid[1].x, y: srcA.y };
-                slid[slid.length - 1] = { x: tgtA.x, y: tgtA.y };
-                slid[slid.length - 2] = { x: slid[slid.length - 2].x, y: tgtA.y };
-                if (!isOrthogonalPolyline(slid)) {
-                    allWithinDeadZone = false;
-                    break;
-                }
-                slideOps.push({ edge: el, rps: slid, srcA, tgtA });
-            }
-            if (allWithinDeadZone && slideOps.length > 0) {
-                // Slide endpoints and adjacent bends to keep segments orthogonal.
-                for (const { edge, rps } of slideOps) {
-                    // Already slid and verified orthogonal during collection.
-                    (edge as any).routingPoints = rps;
-                }
-                if (timing) { timing.router = 'dead-zone-slide'; }
-                if (this.debugReroute >= 1) {
-                    console.info('[cal-reroute] dead-zone slide — ' + slideOps.length + ' edges endpoints updated');
-                }
-                // Persist the slid routes so they survive a model refresh.
-                if (!operation.preview) {
-                    const dm = this.modelState.get(WORKFLOW_NETWORK_MODEL_KEY) as WorkflowDiagramModel | undefined;
-                    if (dm) {
-                        const { filePath: workflowFilePath, networkId } = layoutTargetOf(dm as any);
-                        const positions = this.collectNodePositions(root);
-                        const routes = this.collectEdgeRoutes(root);
-                        await this.layoutPersistence.saveLayoutImmediate(workflowFilePath, networkId, positions, routes);
-                    }
-                }
-                return;
-            }
-        }
 
         // Snapshot existing routes for debug comparison.
         const preEdgeRoutesById = new Map<string, { x: number; y: number }[] | undefined>();
@@ -1075,7 +1072,7 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
         for (const id of selectedIds) {
             const el = this.modelState.index.find(id);
             if (el instanceof GEdge) {
-                for (const nid of this.edgeEndpointNodeIds(el)) { movedNodeIds.add(nid); }
+                for (const nid of this.movedEndpointNodeIds(el)) { movedNodeIds.add(nid); }
             } else {
                 const nid = this.nodeIdForElement(id);
                 if (nid) { movedNodeIds.add(nid); }
@@ -1085,7 +1082,10 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
             const nid = this.nodeIdForElement(String((m as any)?.elementId));
             if (nid) { movedNodeIds.add(nid); }
         }
-        const movedNodeBoxes = resetAll ? [] : obstacles.filter(o => movedNodeIds.has(o.id));
+        // A foreign edge is rerouted when the node now covers it, not when
+        // the node came within the router's padding of it.
+        const nodeBoxes = this.collectObstacles(root, 0);
+        const movedNodeBoxes = resetAll ? [] : nodeBoxes.filter(o => movedNodeIds.has(o.id));
         const edgeHitByMovedNode = (edge: GEdge): boolean => {
             if (movedNodeBoxes.length === 0) { return false; }
             const rps = (edge as any).routingPoints as { x: number; y: number }[] | undefined;
@@ -1100,16 +1100,41 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
             return false;
         };
 
+        // ── Slide: a selected edge keeps its route, with its ends on the ports ──
+        // See slideRoute. An edge it refuses goes to the router below.
+        const slidEdgeIds = new Set<string>();
+        if (!resetAll) {
+            for (const edgeId of selectedIds) {
+                const el = this.modelState.index.find(edgeId);
+                if (!(el instanceof GEdge)) { continue; }
+                const route = this.slideRoute(el, nodeBoxes);
+                if (route) {
+                    (el as any).routingPoints = route;
+                    slidEdgeIds.add(String((el as any).id));
+                }
+            }
+        }
+
         // ── Collect edges to route, then sort for deterministic channel allocation ──
         const edgesToRoute: GEdge[] = [];
         const visitCollect = (el: any): void => {
-            if (el instanceof GEdge && (this.shouldRerouteEdge(el, selectedIds, resetAll) || edgeHitByMovedNode(el))) {
+            if (el instanceof GEdge && !slidEdgeIds.has(String((el as any).id))
+                && (this.shouldRerouteEdge(el, selectedIds, resetAll) || edgeHitByMovedNode(el))) {
                 edgesToRoute.push(el);
             }
             const ch = (el as any).children as any[] | undefined;
             if (Array.isArray(ch)) { for (const c of ch) { visitCollect(c); } }
         };
         visitCollect(root);
+
+        if (edgesToRoute.length === 0) {
+            if (timing) { timing.router = 'slide'; }
+            if (this.debugReroute >= 1) {
+                console.info('[cal-reroute] slide — ' + slidEdgeIds.size + ' edges kept their routes');
+            }
+            await this.persistRoutes(root, operation);
+            return;
+        }
 
         // Sort edges by source port Y (top→bottom) so top-most edges get inside
         // channels and later edges spread outward. Break ties by target Y.
@@ -1230,7 +1255,11 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
             });
         }
 
-        // Persist layout (skip for preview/drag).
+        await this.persistRoutes(root, operation);
+    }
+
+    /** Persist the layout, positions and routes; not for a preview (a drag). */
+    private async persistRoutes(root: GGraph, operation: WorkflowRerouteEdgesAvoidOverlapsOperation): Promise<void> {
         if (operation.preview) { return; }
         const dm = this.modelState.get(WORKFLOW_NETWORK_MODEL_KEY) as WorkflowDiagramModel | undefined;
         if (!dm) { return; }

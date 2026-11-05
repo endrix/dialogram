@@ -48,6 +48,20 @@ platform API version.
   token pills and the sizes stayed, so it looked as if it did nothing. The
   nodes keep the run's state (the ring is the live run, with its own
   setting). A queue size the trace no longer has is taken off the edge too.
+- **Moving a node no longer scrambles its edges.** The layout routes the
+  edges together, so edges into one port share a trunk. After a move the
+  server routed the moved node's edges anew, each on its own and each in its
+  own channel, so the trunk came back as a comb of parallel lines with a
+  knot at the port, and the picture drifted from the layout with every
+  nudge (a move counts from 4px, and an arrow key on a selected node is a
+  move). Now an edge keeps its route and only its ends follow the ports, at
+  any distance, not just under 5px as before; the router runs only for an
+  edge whose kept route would not do: a straight edge with no bend to
+  carry, a stub that would turn back through its node, a segment that
+  would run through a node. An edge is rerouted for a node that moved onto
+  it only when the node covers it, not when it came within the router's
+  padding, and only the node that moved counts, not the one at the far end
+  of its edges.
 
 ### Tooling
 
