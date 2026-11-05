@@ -24,6 +24,23 @@ platform API version.
 
 ### Changed
 
+- **After a drop, the routes an edge cannot keep are drawn by libavoid, with
+  the edges on one port as one shared path.** The layout draws the edges into
+  a port as a trunk; the built-in router gives every edge its own channel and
+  drew a comb, and libavoid did the same because every edge on a port was
+  started at its own staggered point. Now they start at one point and
+  libavoid keeps them on one path for as long as they go the same way, a
+  trunk with a junction. The half-nudge kink the stagger was for is taken
+  out after routing. libavoid is the router from now on; the built-in one
+  remains the fallback when libavoid is unavailable or cannot solve an edge,
+  the choice for a reroute of every edge in a diagram of more than 200
+  edges, and available throughout with `WORKFLOW_DIAGRAM_ROUTER=manhattan`.
+- **The edges of a node being dragged are not drawn while it moves.** They
+  come back with the drop's routes, as a schematic editor redraws a block's
+  nets after it is placed; before, they trailed the pointer on their old
+  routes and jumped at the drop. A move by arrow key hides nothing. If the
+  routes do not arrive within 1.5s the edges are drawn as they were.
+
 - **The Java ELK server is rebuilt on ELK 0.10.0, and elkjs is pinned to
   0.10.0**, so a graph lays out the same on either engine; before, the
   server's ELK 0.8.1 put some graphs' nodes in another order than elkjs 0.9.3.

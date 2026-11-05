@@ -1,6 +1,6 @@
 import { EditorContextService, IActionDispatcher, TYPES } from '@eclipse-glsp/client';
 import type { GModelElement, SEdgeImpl } from '@eclipse-glsp/client';
-import { Action, IActionHandler, MoveAction } from '@eclipse-glsp/sprotty';
+import { Action, IActionHandler, MoveAction, SetModelAction, UpdateModelAction } from '@eclipse-glsp/sprotty';
 import { inject, injectable } from 'inversify';
 import { WorkflowDiagramTypes } from '@dialogram/shared';
 import { WorkflowRerouteEdgesAvoidOverlapsOperation } from './editing-action-handlers';
@@ -90,6 +90,25 @@ function setIncidentEdgesForDrag(root: Readonly<GModelElement>, edgeIds: Set<str
     dragIncidentEdgeIds.set(getDragKey(root), edgeIds);
 }
 
+// The edges of a node being dragged are not drawn while it moves. Their
+// stored routes were drawn for where the node used to be, so drawing them
+// gave a stub trailing the pointer; a live route per frame gave an edge that
+// jumped at the drop when the server's route replaced it. They come back
+// with the server's routes, as a schematic editor redraws a block's nets
+// after a drop. Keyed by the root, as the drag session is.
+const dragHiddenEdgeIds = new Map<string, Set<string>>();
+
+/** Whether this edge is hidden because the node it is attached to is being dragged. */
+export function isEdgeHiddenForDrag(root: Readonly<GModelElement> | undefined, edgeId: string): boolean {
+    if (!root) {
+        return false;
+    }
+    return dragHiddenEdgeIds.get(getDragKey(root))?.has(edgeId) ?? false;
+}
+
+/** How long hidden edges may wait for the server's routes before they are drawn as they were. */
+const REVEAL_FALLBACK_MS = 1500;
+
 @injectable()
 export class WorkflowElkLiveDragRouter implements IActionHandler {
     @inject(EditorContextService)
@@ -117,7 +136,19 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
     /** Which path armed the pending reroute — reported to the server for timing. */
     private pendingTrigger: 'finished' | 'quiet' | 'requeue' = 'quiet';
 
+    /** The moved ids the hidden edge set was computed for, so a drag computes it once. */
+    private hiddenForMovedIds = '';
+    /** Set when the final reroute went out: the next model update carries its routes. */
+    private revealOnNextModelUpdate = false;
+    private revealTimer: ReturnType<typeof setTimeout> | undefined;
+
     handle(action: Action): void {
+        if (action.kind === UpdateModelAction.KIND || action.kind === SetModelAction.KIND) {
+            if (this.revealOnNextModelUpdate) {
+                this.revealHiddenEdges();
+            }
+            return;
+        }
         if (action.kind !== MoveAction.KIND) {
             return;
         }
@@ -155,6 +186,14 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
         // treat brief pauses mid-drag as a drag end.
         markAnyDragActive(root, 650);
 
+        // A drag in progress hides the moved nodes' edges until the drop's
+        // routes arrive. A move that is finished as it arrives (an arrow key)
+        // hides nothing: the routes follow within the round trip, and a blink
+        // on every key press would be worse than the stub it replaces.
+        if ((action as any).finished !== true) {
+            this.hideIncidentEdges(root);
+        }
+
         // Schedule a final reroute shortly after the MoveAction stream goes quiet.
         if (this.dragEndTimer) {
             clearTimeout(this.dragEndTimer);
@@ -184,6 +223,42 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
         }
 
         // Preview rerouting is disabled; compute incident edges once on drag-end/quiet.
+    }
+
+    private hideIncidentEdges(root: Readonly<GModelElement>): void {
+        const movedIds = Array.from(this.pendingMovedElementIds).sort().join('\u0000');
+        if (movedIds === this.hiddenForMovedIds && dragHiddenEdgeIds.has(getDragKey(root))) {
+            return;
+        }
+        const { incidentEdgeIds } = this.collectIncidentEdgesFromMovedElements(root, this.pendingMovedElementIds, new Map());
+        this.hiddenForMovedIds = movedIds;
+        if (incidentEdgeIds.size === 0) {
+            return;
+        }
+        dragHiddenEdgeIds.set(getDragKey(root), incidentEdgeIds);
+        this.revealOnNextModelUpdate = false;
+    }
+
+    /** The hidden edges wait for the server's routes from now on, or for the fallback. */
+    private armReveal(): void {
+        if (dragHiddenEdgeIds.size === 0) {
+            return;
+        }
+        this.revealOnNextModelUpdate = true;
+        if (this.revealTimer) {
+            clearTimeout(this.revealTimer);
+        }
+        this.revealTimer = setTimeout(() => this.revealHiddenEdges(), REVEAL_FALLBACK_MS);
+    }
+
+    private revealHiddenEdges(): void {
+        if (this.revealTimer) {
+            clearTimeout(this.revealTimer);
+            this.revealTimer = undefined;
+        }
+        this.revealOnNextModelUpdate = false;
+        this.hiddenForMovedIds = '';
+        dragHiddenEdgeIds.clear();
     }
 
     private collectIncidentEdgesFromMovedElements(
@@ -348,6 +423,8 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
             if (!preview) {
                 this.forceNonPreviewFlush = false;
                 this.lastDispatchedEdgeIds = [];
+                // Nothing to reroute (a cancelled drag): draw the edges as they are.
+                this.revealHiddenEdges();
             }
             return;
         }
@@ -365,6 +442,9 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
         }
 
         this.dispatchInFlight = true;
+        if (!effectivePreview) {
+            this.armReveal();
+        }
         try {
             await this.actionDispatcher.dispatch(
                 WorkflowRerouteEdgesAvoidOverlapsOperation.create({
@@ -387,6 +467,8 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
                 this.lastDispatchedEdgeIds = [];
             }
         } catch (e) {
+            // The routes are not coming: draw the edges as they are.
+            this.revealHiddenEdges();
             // Re-queue so we can retry on the next tick; avoids getting stuck with stale routes.
             for (const id of edgeIds) {
                 this.dispatchPendingEdgeIds.add(id);

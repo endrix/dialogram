@@ -11,7 +11,7 @@
  */
 import { ContainerModule } from 'inversify';
 import { ChangeBoundsTool, TYPES, bindAsService, configureActionHandler } from '@eclipse-glsp/client';
-import { MoveAction } from '@eclipse-glsp/sprotty';
+import { MoveAction, SetModelAction, UpdateModelAction } from '@eclipse-glsp/sprotty';
 import { PropertyPanel } from './property-panel';
 import { ChatPanel } from './chat-panel-integrated';
 import { clientBehavior } from './profile';
@@ -152,7 +152,11 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     rebind(ChangeBoundsTool).to(WorkflowChangeBoundsTool).inSingletonScope();
 
     // Drag-time rerouting: client streams MoveAction updates; server recomputes routes (ELK fixed).
+    // The moved node's edges are hidden through the drag and drawn again with
+    // the model update that carries the drop's routes.
     configureActionHandler(context, MoveAction.KIND, WorkflowElkLiveDragRouter);
+    configureActionHandler(context, UpdateModelAction.KIND, WorkflowElkLiveDragRouter);
+    configureActionHandler(context, SetModelAction.KIND, WorkflowElkLiveDragRouter);
 
     // The live tier: edges routed in the webview during a drag, with the same
     // router and the same anchors the server uses on commit, so the committed
