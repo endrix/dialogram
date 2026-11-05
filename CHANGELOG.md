@@ -41,8 +41,10 @@ platform API version.
   trailed the pointer on their old routes and jumped at the drop. A move by
   arrow key hides nothing, and a cancelled drag draws them again at once. A
   node held still mid-drag keeps its edges hidden: a drag with no move for 5s
-  is taken as one that never finishes. If no route arrives within 1.5s of
-  the drop the edges are drawn as they were.
+  is taken as one that never finishes. A bounds pass mid-drag, which draws
+  the server's model in the hidden layer with the node still at its old
+  place, no longer draws the edges again for the rest of the drag. If no
+  route arrives within 1.5s of the drop the edges are drawn as they were.
 - The server logs one `[dialogram perf] reroute` line per reroute it
   persists: edges kept, edges routed, the router and the time taken.
 

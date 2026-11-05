@@ -1,4 +1,4 @@
-import { EditorContextService, IActionDispatcher, TYPES } from '@eclipse-glsp/client';
+import { EditorContextService, IActionDispatcher, ModifyCSSFeedbackAction, TYPES } from '@eclipse-glsp/client';
 import type { GModelElement, SEdgeImpl } from '@eclipse-glsp/client';
 import { Action, IActionHandler, MoveAction } from '@eclipse-glsp/sprotty';
 import { inject, injectable } from 'inversify';
@@ -106,21 +106,21 @@ const dragHiddenEdgeIds = new Map<string, Set<string>>();
  * at once when the drag is cancelled and the node goes back. No update is
  * waited for by name, since the ChangeBounds answer, the reroute answer or
  * a bounds pass may be the one that carries the route.
+ *
+ * A question, not a step: it is asked of whatever model is being drawn, and
+ * the hidden model a bounds pass draws mid-drag has the node where the
+ * server last saw it, with routes that reach its ports. Were an edge crossed
+ * off here, that pass would cross it off for the rest of the drag.
  */
 export function isEdgeHiddenForDrag(root: Readonly<GModelElement> | undefined, edge: Readonly<GModelElement>): boolean {
     if (!root) {
         return false;
     }
     const hidden = dragHiddenEdgeIds.get(getDragKey(root));
-    const id = String((edge as any).id);
-    if (!hidden?.has(id)) {
+    if (!hidden?.has(String((edge as any).id))) {
         return false;
     }
-    if (routeReachesPorts(root, edge)) {
-        hidden.delete(id);
-        return false;
-    }
-    return true;
+    return !routeReachesPorts(root, edge);
 }
 
 function absolutePosition(element: any): { x: number; y: number } {
@@ -244,6 +244,11 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
         // hides nothing: the routes follow within the round trip, and a blink
         // on every key press would be worse than the stub it replaces.
         if ((action as any).finished !== true) {
+            // A drop's reveal still pending belongs to the drag before this one.
+            if (this.revealTimer) {
+                clearTimeout(this.revealTimer);
+                this.revealTimer = undefined;
+            }
             this.hideIncidentEdges(root);
         }
 
@@ -312,7 +317,13 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
             this.revealTimer = undefined;
         }
         this.hiddenForMovedIds = '';
+        const wereHidden = dragHiddenEdgeIds.size > 0;
         dragHiddenEdgeIds.clear();
+        if (wereHidden) {
+            // The edges are drawn at the next render; make sure there is one, as
+            // no model update need follow (the fallback fires on its own).
+            void this.actionDispatcher.dispatch(ModifyCSSFeedbackAction.create({ elements: [], add: [] }) as any).catch(() => undefined);
+        }
     }
 
     private collectIncidentEdgesFromMovedElements(

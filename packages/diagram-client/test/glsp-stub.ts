@@ -304,3 +304,8 @@ const moveFeedbackModule = requireGlsp('@eclipse-glsp/client/lib/features/tools/
 export const ChangeBoundsTool = changeBoundsToolModule.ChangeBoundsTool;
 export const ChangeBoundsListener = changeBoundsToolModule.ChangeBoundsListener;
 export const FeedbackMoveMouseListener = moveFeedbackModule.FeedbackMoveMouseListener;
+
+export const ModifyCSSFeedbackAction = {
+    KIND: 'modifyCSSFeedback',
+    create: (options: { elements?: unknown[]; add?: string[]; remove?: string[] } = {}) => ({ kind: 'modifyCSSFeedback', ...options })
+};
