@@ -86,6 +86,24 @@ describe('edges hidden while their node is dragged', () => {
         }
     });
 
+    it('keeps them hidden while the node is held still mid-drag', async () => {
+        vi.useFakeTimers();
+        try {
+            const m = model();
+            const { handler, dispatched } = router(m.root);
+            drag(m, handler, 't', { x: 400, y: 160 });
+            await vi.advanceTimersByTimeAsync(3000);
+            expect(hidden(m, 'a-t', 'b-t')).toEqual([true, true]);
+            expect(dispatched.length).toBe(0);
+            drag(m, handler, 't', { x: 400, y: 170 });
+            drag(m, handler, 't', { x: 400, y: 170 }, true);
+            await vi.advanceTimersByTimeAsync(100);
+            expect(dispatched.length).toBe(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('draws them again at once when the drag is cancelled and the node goes back', () => {
         const m = model();
         const { handler } = router(m.root);
