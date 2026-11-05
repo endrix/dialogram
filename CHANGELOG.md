@@ -35,8 +35,10 @@ platform API version.
   come back as soon as a route for the node's new place is in the model, as
   a schematic editor redraws a block's nets after it is placed; before, they
   trailed the pointer on their old routes and jumped at the drop. A move by
-  arrow key hides nothing, and a cancelled drag draws them again at once. If
-  no route arrives within 1.5s of the drop the edges are drawn as they were.
+  arrow key hides nothing, and a cancelled drag draws them again at once. A
+  node held still mid-drag keeps its edges hidden: a drag with no move for 5s
+  is taken as one that never finishes. If no route arrives within 1.5s of
+  the drop the edges are drawn as they were.
 - The server logs one `[dialogram perf] reroute` line per reroute it
   persists: edges kept, edges routed, the router and the time taken.
 

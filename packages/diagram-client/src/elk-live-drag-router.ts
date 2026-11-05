@@ -165,6 +165,10 @@ function routeReachesPorts(root: Readonly<GModelElement>, edge: Readonly<GModelE
 
 /** How long hidden edges may wait for the server's routes before they are drawn as they were. */
 const REVEAL_FALLBACK_MS = 1500;
+/** A finished move with no further move this long after it is the last of its series. */
+const QUIET_MS = 700;
+/** A drag with no move this long is taken as one that never finishes. */
+const ABANDONED_DRAG_MS = 5000;
 
 @injectable()
 export class WorkflowElkLiveDragRouter implements IActionHandler {
@@ -243,14 +247,18 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
             this.hideIncidentEdges(root);
         }
 
-        // Schedule a final reroute shortly after the MoveAction stream goes quiet.
+        // Schedule a final reroute after the MoveAction stream goes quiet. While
+        // the pointer is down the drop brings a finished move, so for a drag this
+        // only catches one that never finishes (the pointer released off the
+        // diagram); it waits long enough that a node held still mid-drag is not
+        // taken for a drop, which would draw its edges again before the drop.
         if (this.dragEndTimer) {
             clearTimeout(this.dragEndTimer);
         }
         this.dragEndTimer = setTimeout(() => {
             this.pendingTrigger = 'quiet';
             void this.flushPendingReroute(false);
-        }, 700);
+        }, (action as any).finished === true ? QUIET_MS : ABANDONED_DRAG_MS);
 
         // If this MoveAction marks the end of the drag, reroute right after release.
         if ((action as any).finished === true) {
