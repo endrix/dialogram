@@ -16,9 +16,16 @@
  *
  * Cycles. Reachability answers "what does this touch" where the graph is a
  * DAG. On a cycle it answers "everything": every successor of a state in a
- * state machine leads back to it, the whole diagram lights up, and the trace
- * reads as broken. So when the walk comes back to the node it started from, the
- * trace is cut to the direct neighbours: the edges into the node and out of it.
+ * state machine leads back to it, and in a handshake netlist every `ready`
+ * wire runs against the data it answers, so every two neighbours form a
+ * cycle and nothing past them is a path. So the walk reads the diagram the
+ * way its reader does, left to right: a wire drawn back to the left (a
+ * `ready`, a loop's feedback) is walked against its arrow, as if it ran from
+ * the node it points at to the node it leaves. A laid-out diagram is then a
+ * DAG, and upstream is what sits to the left on the path, downstream what
+ * sits to the right. Where a cycle remains all the same (a model with no
+ * layout yet), the trace is cut to the direct neighbours: the edges into the
+ * node and out of it.
  *
  * A selected edge draws itself, every piece of it, and its two ends. A selected
  * container draws the nodes that feed it and the nodes it feeds, across its
@@ -43,6 +50,9 @@ export interface TraceElement {
     sourceId?: string;
     targetId?: string;
     cssClasses?: string[];
+    /** Where the element is drawn, relative to the element that holds it. */
+    position?: { x: number; y: number };
+    size?: { width: number; height: number };
 }
 
 /** One step along an edge: the port at its other end, and the edge. */
@@ -54,8 +64,15 @@ export interface TraceGraph {
     ownerOf: Map<string, string>;
     /** A node to its ports, and to itself when an edge ends on it directly. */
     portsOf: Map<string, string[]>;
+    /** The edges as the model has them: from source port to target port. */
     forward: Map<string, Hop[]>;
     backward: Map<string, Hop[]>;
+    /**
+     * The edges as the diagram reads them, left to right: an edge drawn back
+     * to the left is turned around. What the walks follow.
+     */
+    flowForward: Map<string, Hop[]>;
+    flowBackward: Map<string, Hop[]>;
     edges: Map<string, { source: string; target: string }>;
     /** Ports on a group's frame, walked through without counting the group. */
     passThrough: Set<string>;
@@ -107,6 +124,8 @@ export function buildTraceGraph(root: TraceElement): TraceGraph {
         portsOf: new Map(),
         forward: new Map(),
         backward: new Map(),
+        flowForward: new Map(),
+        flowBackward: new Map(),
         edges: new Map(),
         passThrough: new Set(),
         parentOf: new Map(),
@@ -114,9 +133,18 @@ export function buildTraceGraph(root: TraceElement): TraceGraph {
     };
     const groups = new Set<string>();
     const edges: TraceElement[] = [];
+    /** The middle of each node and port across the page, for a model that is laid out. */
+    const middle = new Map<string, number>();
 
-    const visit = (element: TraceElement, node: string | undefined): void => {
+    const visit = (element: TraceElement, node: string | undefined, originX: number): void => {
         let owner = node;
+        let x = originX;
+        if (element !== root && typeof element.position?.x === 'number') {
+            x += element.position.x;
+            if (startsWith(element, 'node') || startsWith(element, 'port')) {
+                middle.set(element.id, x + (element.size?.width ?? 0) / 2);
+            }
+        }
         if (startsWith(element, 'node')) {
             graph.parentOf.set(element.id, node);
             if (node !== undefined) {
@@ -141,10 +169,10 @@ export function buildTraceGraph(root: TraceElement): TraceGraph {
             edges.push(element);
         }
         for (const child of element.children ?? []) {
-            visit(child, owner);
+            visit(child, owner, x);
         }
     };
-    visit(root, undefined);
+    visit(root, undefined, 0);
 
     for (const edge of edges) {
         const source = edge.sourceId as string;
@@ -162,6 +190,12 @@ export function buildTraceGraph(root: TraceElement): TraceGraph {
         graph.edges.set(edge.id, { source, target });
         push(graph.forward, source, { port: target, edge: edge.id });
         push(graph.backward, target, { port: source, edge: edge.id });
+        // Drawn back to the left: read as running the other way.
+        const [sourceX, targetX] = [middle.get(source), middle.get(target)];
+        const turned = sourceX !== undefined && targetX !== undefined && targetX < sourceX;
+        const [from, to] = turned ? [target, source] : [source, target];
+        push(graph.flowForward, from, { port: to, edge: edge.id });
+        push(graph.flowBackward, to, { port: from, edge: edge.id });
     }
     return graph;
 }
@@ -177,8 +211,8 @@ interface Walk {
 }
 
 /**
- * Walk from the ports of `start` along `adjacency` (forward: downstream,
- * backward: upstream). A node reached is recorded and walked on from; a
+ * Walk from the ports of `start` along `adjacency` (flowForward: downstream,
+ * flowBackward: upstream). A node reached is recorded and walked on from; a
  * boundary port is passed through, unrecorded and without costing a hop, so
  * one hop still reaches the neighbour on the other side of two frames. Nodes in
  * `blocked` are not entered.
@@ -232,8 +266,10 @@ function walk(
             } else if (owner !== undefined) {
                 nodes.add(owner);
                 if (hops + 1 < maxHops) {
+                    // The port reached is walked on from too: a wire read
+                    // against its arrow lands on a port that has wires of its own.
                     for (const own of graph.portsOf.get(owner) ?? []) {
-                        if (!visited.has(own)) {
+                        if (own === next.port || !visited.has(own)) {
                             visited.add(own);
                             queue.push({ port: own, hops: hops + 1 });
                         }
@@ -261,11 +297,11 @@ function union(...sets: ReadonlyArray<Iterable<string>>): Set<string> {
 /** A node's path: every node that leads to it and every node it leads to. */
 function traceNode(graph: TraceGraph, node: string): Trace {
     const start = new Set([node]);
-    let up = walk(graph, graph.backward, start);
-    let down = walk(graph, graph.forward, start);
+    let up = walk(graph, graph.flowBackward, start);
+    let down = walk(graph, graph.flowForward, start);
     if (up.cyclic || down.cyclic) {
-        up = walk(graph, graph.backward, start, 1);
-        down = walk(graph, graph.forward, start, 1);
+        up = walk(graph, graph.flowBackward, start, 1);
+        down = walk(graph, graph.flowForward, start, 1);
     }
     return {
         focus: start,
@@ -321,8 +357,8 @@ function traceContainer(graph: TraceGraph, container: string): Trace {
         }
     }
     const start = new Set([container]);
-    const up = walk(graph, graph.backward, start, 1, held);
-    const down = walk(graph, graph.forward, start, 1, held);
+    const up = walk(graph, graph.flowBackward, start, 1, held);
+    const down = walk(graph, graph.flowForward, start, 1, held);
     const inside = union(held, start);
     const scope = new Set(held);
     for (const [id, { source, target }] of graph.edges) {
