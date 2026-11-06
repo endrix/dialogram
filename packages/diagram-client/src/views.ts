@@ -44,7 +44,7 @@ import {
 import { EDGE_OPEN_ANCHOR_X_ARG, EDGE_OPEN_ANCHOR_Y_ARG } from './edge-open-mouse-listener';
 import { clientBehavior } from './profile';
 import { captionIsShared, carriedTextOf } from './edge-caption-sharing';
-import { isIncidentEdgeInActiveDrag } from './elk-live-drag-router';
+import { isEdgeHiddenForDrag, isIncidentEdgeInActiveDrag } from './elk-live-drag-router';
 import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide } from '@dialogram/shared';
 import { WorkflowDiagramConstants } from '@dialogram/shared';
 
@@ -1765,6 +1765,11 @@ export class WorkflowEdgeView extends PolylineEdgeView {
         // is not visible. That shared geometry is what made this possible: the
         // client router previously computed anchors differently, which is why
         // this code used to bypass the router registry entirely.
+        // An edge of a node being dragged is not drawn until a route for the
+        // node's new place arrives (see `isEdgeHiddenForDrag`).
+        if (isEdgeHiddenForDrag(rootOfEdge(edge), edge as any)) {
+            return svg('g', { class: { 'workflow-edge': true, 'edge-hidden-for-drag': true } });
+        }
         const serverRoute = (edge as any).routingPoints as { x: number; y: number }[] | undefined;
         const hasServerRoute = Array.isArray(serverRoute) && serverRoute.length >= 2;
         const liveRouted = isIncidentEdgeInActiveDrag(rootOfEdge(edge), String((edge as any).id));

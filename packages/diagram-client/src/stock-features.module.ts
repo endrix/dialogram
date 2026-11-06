@@ -152,6 +152,8 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     rebind(ChangeBoundsTool).to(WorkflowChangeBoundsTool).inSingletonScope();
 
     // Drag-time rerouting: client streams MoveAction updates; server recomputes routes (ELK fixed).
+    // The moved node's edges are hidden through the drag and drawn again once
+    // a route for the node's new place is in the model (`isEdgeHiddenForDrag`).
     configureActionHandler(context, MoveAction.KIND, WorkflowElkLiveDragRouter);
 
     // The live tier: edges routed in the webview during a drag, with the same
