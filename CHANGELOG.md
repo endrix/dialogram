@@ -15,9 +15,11 @@ platform API version.
   piece of a cut edge drawn. The walk reads the diagram left to right: a wire
   drawn back to the left, a handshake's `ready` or a loop's feedback, is
   walked against its arrow, so a netlist's ready wires do not make a cycle of
-  every two neighbours and the trace follows the data as far as it goes. On a
-  cycle that remains, the trace is cut to the node's direct neighbours, since
-  reachability would light the whole diagram. A selected
+  every two neighbours and the trace follows the data as far as it goes. A
+  wire is read by where its two nodes stand, not their ports, so two nodes
+  that overlap across the page do not turn it. On a cycle that remains, the
+  trace is cut to the node's direct neighbours, since reachability would
+  light the whole diagram. A selected
   edge draws all its pieces and its two ends; a selected container, what feeds
   it and what it feeds, leaving its members as they are. Drawn as GLSP
   feedback, so it survives a relayout or an edit.
@@ -43,8 +45,12 @@ platform API version.
   node held still mid-drag keeps its edges hidden: a drag with no move for 5s
   is taken as one that never finishes. A bounds pass mid-drag, which draws
   the server's model in the hidden layer with the node still at its old
-  place, no longer draws the edges again for the rest of the drag. If no
-  route arrives within 1.5s of the drop the edges are drawn as they were.
+  place, no longer draws the edges again for the rest of the drag. A route
+  that reaches the ports is drawn the moment it arrives, inside the drag's
+  settling window too, instead of a client route that is swapped out
+  later. If no route arrives the edges are drawn as they were: after 1.5s,
+  plus 25ms an edge hidden and 6s at most, since a dense node's routes take
+  the router longer.
 - The server logs one `[dialogram perf] reroute` line per reroute it
   persists: edges kept, edges routed, the router and the time taken.
 
@@ -85,8 +91,8 @@ platform API version.
   move). Now an edge keeps its route and only its ends follow the ports, at
   any distance, not just under 5px as before; the router runs only for an
   edge whose kept route would not do: a straight edge with no bend to
-  carry, a stub that would turn back through its node, a segment that
-  would run through a node. An edge is rerouted for a node that moved onto
+  carry, a stub that would turn back through its node or shrink under 8px,
+  a segment that would run through a node. An edge is rerouted for a node that moved onto
   it only when the node covers it, not when it came within the router's
   padding, and only the node that moved counts, not the one at the far end
   of its edges.

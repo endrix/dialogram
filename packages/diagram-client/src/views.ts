@@ -44,7 +44,7 @@ import {
 import { EDGE_OPEN_ANCHOR_X_ARG, EDGE_OPEN_ANCHOR_Y_ARG } from './edge-open-mouse-listener';
 import { clientBehavior } from './profile';
 import { captionIsShared, carriedTextOf } from './edge-caption-sharing';
-import { isEdgeHiddenForDrag, isIncidentEdgeInActiveDrag } from './elk-live-drag-router';
+import { isEdgeHiddenForDrag, isIncidentEdgeInActiveDrag, routeReachesPorts } from './elk-live-drag-router';
 import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide } from '@dialogram/shared';
 import { WorkflowDiagramConstants } from '@dialogram/shared';
 
@@ -1772,7 +1772,11 @@ export class WorkflowEdgeView extends PolylineEdgeView {
         }
         const serverRoute = (edge as any).routingPoints as { x: number; y: number }[] | undefined;
         const hasServerRoute = Array.isArray(serverRoute) && serverRoute.length >= 2;
-        const liveRouted = isIncidentEdgeInActiveDrag(rootOfEdge(edge), String((edge as any).id));
+        // The live router stands in only while the stored route is stale: a
+        // route that reaches the ports where they are now is the server's
+        // answer for the drop, and drawing it at once saves the swap.
+        const liveRouted = isIncidentEdgeInActiveDrag(rootOfEdge(edge), String((edge as any).id))
+            && !routeReachesPorts(rootOfEdge(edge), edge as any);
         const route = hasServerRoute && !liveRouted
             ? serverRoute
             : ((this.edgeRouterRegistry?.route(edge as any, args) as any) ?? serverRoute ?? []);

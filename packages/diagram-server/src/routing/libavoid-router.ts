@@ -212,11 +212,10 @@ export async function isLibavoidAvailable(): Promise<boolean> {
  * row, and the bend after it follows, so the edges leave the port together
  * and part where their ways part.
  */
-function unkink(points: RouterPoint[], anchor: RouterPoint, nudge: number): void {
+function unkink(points: RouterPoint[], anchor: RouterPoint, nudge: number, atStart: boolean): void {
     if (points.length < 2) {
         return;
     }
-    const atStart = Math.abs(points[0].x - anchor.x) <= Math.abs(points[points.length - 1].x - anchor.x);
     const i0 = atStart ? 0 : points.length - 1;
     const i1 = atStart ? 1 : points.length - 2;
     const step = Math.abs(points[i0].y - anchor.y);
@@ -402,8 +401,9 @@ export async function routeOrthogonal(
                 // anchor's row first, then across to meet the route. Orthogonal,
                 // and the nudging survives.
                 if (opts.sharedPortPaths) {
-                    unkink(points, c.source, opts.idealNudgingDistance);
-                    unkink(points, c.target, opts.idealNudgingDistance);
+                    // libavoid lists the points source to target.
+                    unkink(points, c.source, opts.idealNudgingDistance, true);
+                    unkink(points, c.target, opts.idealNudgingDistance, false);
                 }
                 const withStubs = [c.source, ...bridge(c.source, points[0]), ...points,
                     ...bridge(c.target, points[points.length - 1]).reverse(), c.target];

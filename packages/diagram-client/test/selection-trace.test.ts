@@ -141,6 +141,15 @@ describe('a selected node', () => {
         expect(sorted(result.downstream)).toEqual(['b->c', 'c', 'c->d', 'c.rdy->b.ack', 'd', 'd.rdy->c.ack']);
     });
 
+    it('reads a wire by where its nodes stand, so two nodes that overlap across the page do not turn it', () => {
+        // b sits under a, a little to the right: b's input port is left of
+        // a's output port, but b is not left of a.
+        const root = model(placed('a', 0), placed('b', 50), edge('a', 'b'));
+        const { result } = trace(root, 'a');
+        expect(sorted(result.upstream)).toEqual([]);
+        expect(sorted(result.downstream)).toEqual(['a->b', 'b']);
+    });
+
     it('reads a loop left to right: its feedback wire is on the downstream side of the node it enters', () => {
         // s1 -> s2 -> s3 -> s1 laid out left to right, the wire back to s1
         // drawn right to left, and s3 -> s4.

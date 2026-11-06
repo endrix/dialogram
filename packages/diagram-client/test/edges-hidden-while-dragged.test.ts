@@ -143,6 +143,19 @@ describe('edges hidden while their node is dragged', () => {
         }
     });
 
+    it('walks the model once per drag for a node with no edges', () => {
+        const m = model();
+        const e: any = { id: 'e', type: 'node:actor', parent: m.root, children: [], position: { x: 800, y: 0 }, size: { width: 140, height: 60 } };
+        m.root.children.push(e);
+        m.elements.set('e', e);
+        const { handler } = router(m.root);
+        const walks = vi.spyOn(handler as any, 'collectIncidentEdgesFromMovedElements');
+        drag(m, handler, 'e', { x: 810, y: 0 });
+        drag(m, handler, 'e', { x: 820, y: 0 });
+        drag(m, handler, 'e', { x: 830, y: 0 });
+        expect(walks).toHaveBeenCalledTimes(1);
+    });
+
     it('hides nothing for a move by arrow key', () => {
         const m = model();
         const { handler } = router(m.root);

@@ -145,6 +145,13 @@ export function buildTraceGraph(root: TraceElement): TraceGraph {
                 middle.set(element.id, x + (element.size?.width ?? 0) / 2);
             }
         }
+        // A port on a node stands where its node does: two nodes that overlap
+        // across the page (one under the other, or moved by hand) would
+        // otherwise turn a wire between them by a few pixels of port offset.
+        // A port on a group's frame keeps its own place; the frame is wide.
+        if (startsWith(element, 'port') && node !== undefined && !groups.has(node) && middle.has(node)) {
+            middle.set(element.id, middle.get(node)!);
+        }
         if (startsWith(element, 'node')) {
             graph.parentOf.set(element.id, node);
             if (node !== undefined) {
