@@ -147,7 +147,7 @@ function anchorOfPort(port: any): { x: number; y: number } | undefined {
 }
 
 /** Whether the edge's stored route starts and ends where its ports are now. */
-function routeReachesPorts(root: Readonly<GModelElement>, edge: Readonly<GModelElement>): boolean {
+export function routeReachesPorts(root: Readonly<GModelElement>, edge: Readonly<GModelElement>): boolean {
     const route = (edge as any).routingPoints as Array<{ x: number; y: number }> | undefined;
     if (!Array.isArray(route) || route.length < 2) {
         return false;
@@ -165,6 +165,9 @@ function routeReachesPorts(root: Readonly<GModelElement>, edge: Readonly<GModelE
 
 /** How long hidden edges may wait for the server's routes before they are drawn as they were. */
 const REVEAL_FALLBACK_MS = 1500;
+/** libavoid's cost grows faster than the edge count: a dense node's routes are given longer. */
+const REVEAL_PER_EDGE_MS = 25;
+const REVEAL_FALLBACK_MAX_MS = 6000;
 /** A finished move with no further move this long after it is the last of its series. */
 const QUIET_MS = 700;
 /** A drag with no move this long is taken as one that never finishes. */
@@ -289,7 +292,8 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
 
     private hideIncidentEdges(root: Readonly<GModelElement>): void {
         const movedIds = Array.from(this.pendingMovedElementIds).sort().join('\u0000');
-        if (movedIds === this.hiddenForMovedIds && dragHiddenEdgeIds.has(getDragKey(root))) {
+        // Once per drag, a node with no edges included (a reveal resets the key).
+        if (movedIds === this.hiddenForMovedIds) {
             return;
         }
         const { incidentEdgeIds } = this.collectIncidentEdgesFromMovedElements(root, this.pendingMovedElementIds, new Map());
@@ -308,7 +312,12 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
         if (this.revealTimer) {
             clearTimeout(this.revealTimer);
         }
-        this.revealTimer = setTimeout(() => this.revealHiddenEdges(), REVEAL_FALLBACK_MS);
+        let hidden = 0;
+        for (const ids of dragHiddenEdgeIds.values()) {
+            hidden += ids.size;
+        }
+        const wait = Math.min(REVEAL_FALLBACK_MAX_MS, REVEAL_FALLBACK_MS + REVEAL_PER_EDGE_MS * hidden);
+        this.revealTimer = setTimeout(() => this.revealHiddenEdges(), wait);
     }
 
     private revealHiddenEdges(): void {

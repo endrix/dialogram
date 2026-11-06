@@ -296,6 +296,8 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
     // ═══════════════════════════════════════════════════════════════════
 
     private static readonly PAD = 15;      // obstacle padding around node boxes
+    /** The shortest stub a kept route may leave a port on (see `slideRoute`). */
+    private static readonly MIN_STUB_PX = 8;
     private static readonly STUB = 25;     // horizontal stub length from ports
     private static readonly EDGE_GAP = 8;  // px between parallel edges in same channel
 
@@ -977,10 +979,12 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
         if (!isOrthogonalPolyline(slid)) { return undefined; }
 
         // The stub leaves the port outwards: an EAST port to the right, a
-        // WEST port to the left. A node moved past its bend would send the
-        // stub back through itself.
+        // WEST port to the left, and by a real length. A node moved past its
+        // bend would send the stub back through itself; one moved up to its
+        // bend would leave the port on a vertical.
+        const minStub = WorkflowRerouteEdgesAvoidOverlapsOperationHandler.MIN_STUB_PX;
         const outward = (anchor: { x: number; side: 'WEST' | 'EAST' }, bend: { x: number }): boolean =>
-            anchor.side === 'EAST' ? bend.x >= anchor.x - 0.5 : bend.x <= anchor.x + 0.5;
+            anchor.side === 'EAST' ? bend.x >= anchor.x + minStub : bend.x <= anchor.x - minStub;
         if (!outward(srcA, slid[1]) || !outward(tgtA, slid[last - 1])) { return undefined; }
 
         // No segment through a node. The stubs are allowed to touch their
@@ -1090,7 +1094,8 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
         }
         // A foreign edge is rerouted when the node now covers it, not when
         // the node came within the router's padding of it.
-        const nodeBoxes = this.collectObstacles(root, 0);
+        const pad = WorkflowRerouteEdgesAvoidOverlapsOperationHandler.PAD;
+        const nodeBoxes = obstacles.map(o => ({ id: o.id, x: o.x + pad, y: o.y + pad, r: o.r - pad, b: o.b - pad }));
         const movedNodeBoxes = resetAll ? [] : nodeBoxes.filter(o => movedNodeIds.has(o.id));
         const edgeHitByMovedNode = (edge: GEdge): boolean => {
             if (movedNodeBoxes.length === 0) { return false; }

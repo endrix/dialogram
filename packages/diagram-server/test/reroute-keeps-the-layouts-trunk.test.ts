@@ -134,6 +134,21 @@ describe('reroute after a move keeps the layout\'s routes', () => {
         }
     });
 
+    it('routes anew an edge whose stub would shrink to nothing', async () => {
+        const g = fanIn();
+        // t stands one pixel right of the trunk: the kept route would leave
+        // its port on a 1 px stub, a vertical to the eye.
+        expect(await moveAndReroute(g, 't', { x: 271, y: 100 }, ['a-t', 'b-t'])).toBe('libavoid');
+        for (const id of ['a-t', 'b-t']) {
+            const route = routeOf(g, id);
+            const [bend, end] = route.slice(-2);
+            expect(end).toEqual({ x: 271, y: 129.5 });
+            expect(bend.y).toBe(end.y);
+            expect(end.x - bend.x).toBeGreaterThanOrEqual(8);
+            expect(isOrthogonalPolyline(route)).toBe(true);
+        }
+    });
+
     it('routes anew a straight edge, which has no bend to carry', async () => {
         const g = graph(node('c', 0, 0), node('d', 400, 0), edge('c-d', 'c', 'd', [{ x: 140, y: 29.5 }, { x: 400, y: 29.5 }]));
         expect(await moveAndReroute(g, 'd', { x: 400, y: 60 }, ['c-d'])).toBe('libavoid');
