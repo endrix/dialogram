@@ -13,7 +13,6 @@ export {
     type DiagramProfileHandle,
     type ChatPayload,
     type ChatMessageSink,
-    type ChatSlashCommand,
     type ChatCommandContribution,
     type ChatCommandContext,
     type ChatCommandResult,

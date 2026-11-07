@@ -901,11 +901,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         // Use a content security policy to only allow loading specific resources
         const nonce = this.getNonce();
 
-        // Debug toggles (set via launch.json env). These get applied inside the webview.
-        const debugPortLabels = process.env.WORKFLOW_DIAGRAM_DEBUG_PORT_LABELS === '1';
-        const debugPortLabelsAll = process.env.WORKFLOW_DIAGRAM_DEBUG_PORT_LABELS_ALL === '1';
-        const debugPortLabelsThresholdPx = process.env.WORKFLOW_DIAGRAM_DEBUG_PORT_LABELS_THRESHOLD_PX;
-        const debugPortLabelsFilter = process.env.WORKFLOW_DIAGRAM_DEBUG_PORT_LABELS_FILTER;
+        // Debug toggle (set via launch.json env), applied inside the webview.
         const debugEdgePoints = process.env.WORKFLOW_DEBUG_EDGE_POINTS === '1';
 
         // The stylesheet link is emitted only when a style URI is present; a
@@ -1011,34 +1007,14 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             libavoidModuleUri: options.libavoidModuleUri?.toString()
         })};
 
-        // Optional debug config injected from the extension host (launch.json env).
-        try {
-            if (${debugPortLabels ? 'true' : 'false'}) {
-                localStorage.setItem('workflow.diagram.debug.portLabels', '1');
-            }
-            if (${debugPortLabelsAll ? 'true' : 'false'}) {
-                localStorage.setItem('workflow.diagram.debug.portLabels.all', '1');
-            }
-            const thresholdRaw = ${debugPortLabelsThresholdPx ? JSON.stringify(debugPortLabelsThresholdPx) : 'undefined'};
-            if (thresholdRaw !== undefined && thresholdRaw !== '') {
-                localStorage.setItem('workflow.diagram.debug.portLabels.thresholdPx', String(thresholdRaw));
-            }
-            const filterRaw = ${debugPortLabelsFilter ? JSON.stringify(debugPortLabelsFilter) : 'undefined'};
-            if (filterRaw !== undefined && filterRaw !== '') {
-                localStorage.setItem('workflow.diagram.debug.portLabels.filter', String(filterRaw));
-            }
-
-            // Edge route/bendpoint overlay (WorkflowEdgeView).
-            // This is a purely visual client-side debug aid.
-            if (${debugEdgePoints ? 'true' : 'false'}) {
-                (window).WORKFLOW_DEBUG_EDGE_POINTS = true;
-            }
-        } catch {
-            // ignore
+        // Edge route/bendpoint overlay (WorkflowEdgeView), a purely visual
+        // client-side debug aid injected from the extension host (launch.json env).
+        if (${debugEdgePoints ? 'true' : 'false'}) {
+            (window).WORKFLOW_DEBUG_EDGE_POINTS = true;
         }
 
-        // Debug plumbing: verify webview -> extension host messaging works and surface
-        // any runtime errors from the webview/client bundle in the Extension Host console.
+        // Surface any runtime errors from the webview/client bundle in the
+        // Extension Host console.
         try {
             // NOTE: VS Code only allows acquiring the API once per webview.
             // Cache and reuse it; also override acquireVsCodeApi so libraries that
@@ -1048,17 +1024,6 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             window.__calVscodeApi = vscode;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (window).acquireVsCodeApi = () => vscode;
-            vscode.postMessage({ type: 'dialogram.diagram.clientDebug.inlinePing', payload: { when: Date.now() } });
-            vscode.postMessage({
-                type: 'dialogram.diagram.clientDebug.inlineConfig',
-                payload: {
-                    debugPortLabels: ${debugPortLabels ? 'true' : 'false'},
-                    debugPortLabelsAll: ${debugPortLabelsAll ? 'true' : 'false'},
-                    thresholdPx: ${debugPortLabelsThresholdPx ? JSON.stringify(debugPortLabelsThresholdPx) : 'undefined'},
-                    filter: ${debugPortLabelsFilter ? JSON.stringify(debugPortLabelsFilter) : 'undefined'},
-                    debugEdgePoints: ${debugEdgePoints ? 'true' : 'false'}
-                }
-            });
             window.addEventListener('error', (e) => {
                 vscode.postMessage({
                     type: 'dialogram.diagram.clientDebug.webviewError',

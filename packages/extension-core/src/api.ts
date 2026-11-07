@@ -656,21 +656,6 @@ export interface InProcessChatTool {
   mutates?: boolean;
 }
 
-/**
- * A `/command` suggestion surfaced in the chat composer's slash menu.
- *
- * @deprecated Since 0.3.0 use {@link ChatCommandContribution}, which is a
- * superset (adds optional `modes` and a host-side `handler`). This 0.2.0 shape
- * remains exported and is structurally a subset of `ChatCommandContribution`,
- * so existing `slashCommands` literals keep compiling — a contribution without a
- * handler is still a pass-through suggestion whose raw text goes to the agent.
- */
-export interface ChatSlashCommand {
-  command: string;
-  description: string;
-  usage?: string;
-}
-
 export interface DialogramApi {
   apiVersion: string;
   /**
