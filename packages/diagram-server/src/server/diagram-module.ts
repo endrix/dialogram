@@ -131,8 +131,8 @@ export class WorkflowDiagramModule extends GModelDiagramModule {
         // diagram was generated from.
         //
         // Registering none of them made a read-only diagram one that cannot be
-        // laid out. The three layout entries in the context menu are offered
-        // unconditionally, so all three appeared and all three did nothing when
+        // laid out. The layout entries in the context menu are offered
+        // unconditionally, so they all appeared and all did nothing when
         // clicked: no handler was bound for the operation they dispatch, and a
         // GLSP operation nobody handles fails silently. Dragging a node did not
         // persist either, so the arrangement someone made by hand to compensate

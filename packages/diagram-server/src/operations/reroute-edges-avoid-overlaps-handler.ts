@@ -60,10 +60,6 @@ export interface WorkflowRerouteEdgesAvoidOverlapsOperation extends Operation {
      * - 'changeBounds': reroute triggered by ChangeBounds (e.g. keyboard nudge)
      */
     source?: 'client' | 'changeBounds';
-    /**
-     * Optional routing strategy (not currently used — always Manhattan).
-     */
-    routingStrategy?: 'legacy' | 'stable';
     /** Client clock at dispatch — end-to-end timing only. */
     clientDispatchedAt?: number;
     /** Which client path armed this reroute. */

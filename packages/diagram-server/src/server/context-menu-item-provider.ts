@@ -112,31 +112,6 @@ function isSerializedRange(value: unknown): value is SerializedRange {
     return isSerializedPosition(v.start) && isSerializedPosition(v.end);
 }
 
-function navigationTargetFromElement(element: unknown, fallbackSourceUri: string): NavigationTarget | undefined {
-    let current: any = element;
-    while (current) {
-        const args: Args | undefined = current.args;
-
-        const referencedUri = args?.[WorkflowDiagramMetadata.REFERENCED_URI];
-        const referencedRange = args?.[WorkflowDiagramMetadata.REFERENCED_SOURCE_RANGE];
-        if (typeof referencedUri === 'string') {
-            if (isSerializedRange(referencedRange)) {
-                return { uri: referencedUri, range: referencedRange };
-            }
-            return { uri: referencedUri };
-        }
-
-        const range = args?.[WorkflowDiagramMetadata.SOURCE_RANGE];
-        if (isSerializedRange(range)) {
-            return { uri: fallbackSourceUri, range };
-        }
-
-        current = current.parent;
-    }
-
-    return undefined;
-}
-
 function declarationTargetFromElement(element: unknown, fallbackSourceUri: string): NavigationTarget | undefined {
     let current: any = element;
     while (current) {
@@ -501,21 +476,7 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
                 ]
             });
 
-            items.push({
-                id: 'dialogram.rerouteEdgesSelectionAvoidOverlapsStable',
-                label: 'Reroute Edges (Stable, Experimental)',
-                sortString: 'g1.2',
-                actions: [
-                    {
-                        kind: REROUTE_EDGES_AVOID_OVERLAPS_KIND,
-                        isOperation: true,
-                        elementIds: selectedElementIds,
-                        routingStrategy: 'stable'
-                    } as any
-                ]
-            });
-
-            // Keep the simple "clear routes" variant available while we experiment.
+            // The plain variant: drop the routes and let the layout draw them anew.
             items.push({
                 id: 'dialogram.rerouteEdgesSelection',
                 label: 'Reroute Edges (Clear Routes Only)',

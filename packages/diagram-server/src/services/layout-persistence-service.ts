@@ -239,6 +239,15 @@ export class LayoutPersistenceService {
         return path.join(this.getLayoutDirectoryPath(workflowFilePath), `${base}.layout.json`);
     }
 
+    private async readLayoutFile(layoutPath: string): Promise<LayoutFileContent | undefined> {
+        try {
+            const content = await fs.readFile(layoutPath, 'utf-8');
+            return JSON.parse(content) as LayoutFileContent;
+        } catch {
+            return undefined;
+        }
+    }
+
     /**
      * Previous layout file paths for backward compatibility.
      */
@@ -249,15 +258,6 @@ export class LayoutPersistenceService {
             path.join(dir, `.${base}.layout.json`),
             `${workflowFilePath}.layout.json`
         ];
-    }
-
-    private async readLayoutFile(layoutPath: string): Promise<LayoutFileContent | undefined> {
-        try {
-            const content = await fs.readFile(layoutPath, 'utf-8');
-            return JSON.parse(content) as LayoutFileContent;
-        } catch {
-            return undefined;
-        }
     }
 
     private async readAnyLayoutFile(workflowFilePath: string): Promise<LayoutFileContent | undefined> {
@@ -305,67 +305,6 @@ export class LayoutPersistenceService {
         return positions;
     }
 
-    async loadLayoutAndRoutes(workflowFilePath: string, networkId: string): Promise<{ positions: Map<string, NodePosition>; routes: Map<string, NodePosition[]> } | undefined> {
-        if (this.disablePersistence) {
-            return undefined;
-        }
-
-        const layoutPath = this.getLayoutFilePath(workflowFilePath);
-        const pending = this.pendingSaves.get(layoutPath);
-        
-        let positions: Map<string, NodePosition> | undefined;
-        let routes: Map<string, NodePosition[]> | undefined;
-
-        // 1. Try to get data from pending save logic
-        if (pending && pending.networkId === networkId) {
-            positions = new Map(pending.positions);
-            // If edgeRoutes is explicitly set in pending save, use it.
-            if (pending.edgeRoutes) {
-                routes = new Map(pending.edgeRoutes);
-            }
-        }
-
-        // 2. If we are missing either positions or routes (because pending didn't have routes, or no pending), consult disk
-        if (!positions || !routes) {
-            const snapshot = await this.loadLayoutSnapshot(workflowFilePath, networkId);
-            
-            // If disk has data...
-            if (snapshot) {
-                // If we didn't get positions from pending, use disk positions
-                if (!positions) {
-                    positions = new Map<string, NodePosition>();
-                    const normalizedNodes = normalizeNodePositions(snapshot.nodes);
-                    for (const [name, pos] of Object.entries(normalizedNodes)) {
-                        positions.set(name, pos);
-                    }
-                }
-
-                // If we didn't get routes from pending, use disk routes (unless disabled)
-                if (!routes && !this.disableEdgeRoutePersistence && snapshot.edges && typeof snapshot.edges === 'object') {
-                    routes = new Map<string, NodePosition[]>();
-                    for (const [key, rawPoints] of Object.entries(snapshot.edges)) {
-                        if (typeof key === 'string') {
-                            const normalized = normalizePoints(rawPoints);
-                            if (normalized.length > 0) {
-                                routes.set(key, normalized);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // If we still don't have positions (no pending, no disk), returning undefined is correct behavior for "no layout found"
-        // But wait, if we had pending positions but no disk content? (e.g. creating new layout file). 
-        // Then positions is set, routes might be undefined (which is fine, return empty map).
-        
-        if (!positions) {
-            return undefined;
-        }
-
-        return { positions, routes: routes ?? new Map() };
-    }
-
     /**
      * Load persisted edge routing points for a network, if present.
      */
@@ -398,32 +337,6 @@ export class LayoutPersistenceService {
             }
         }
         return routes.size > 0 ? routes : undefined;
-    }
-
-    /**
-        * Load layout data from a layout file.
-        *
-        * Note: the current on-disk schema stores a single networkId per file, so the
-        * returned map contains at most one entry.
-     */
-    async loadAllLayouts(workflowFilePath: string): Promise<Map<string, Map<string, NodePosition>>> {
-        const result = new Map<string, Map<string, NodePosition>>();
-        const data = await this.readAnyLayoutFile(workflowFilePath);
-        if (!data) {
-            return result;
-        }
-
-        const layouts = this.normalizeLayoutsFromFile(data);
-        for (const [networkId, snapshot] of Object.entries(layouts)) {
-            const positions = new Map<string, NodePosition>();
-            const normalizedNodes = normalizeNodePositions(snapshot.nodes);
-            for (const [name, pos] of Object.entries(normalizedNodes)) {
-                positions.set(name, pos);
-            }
-            result.set(networkId, positions);
-        }
-
-        return result;
     }
 
     /**
@@ -572,47 +485,6 @@ export class LayoutPersistenceService {
     }
 
     /**
-     * Update a single node's position in the layout.
-     */
-    async updateNodePosition(
-        workflowFilePath: string,
-        networkId: string,
-        nodeName: string,
-        position: NodePosition
-    ): Promise<void> {
-        // Load existing content (nodes + optional edges)
-        const data = await this.loadLayoutSnapshot(workflowFilePath, networkId);
-        const positions = new Map<string, NodePosition>();
-        for (const [name, pos] of Object.entries(data?.nodes ?? {})) {
-            positions.set(name, pos);
-        }
-
-        const normalized = normalizeNodePosition(position);
-        if (normalized) {
-            positions.set(nodeName, normalized);
-        }
-
-        // Do not clear edge routes on node moves. Drag rerouting and manual routing edits are
-        // responsible for updating routes; preserving them avoids churn and instability.
-        this.saveLayout(workflowFilePath, networkId, positions);
-    }
-
-    /**
-     * Remove a node from the layout (e.g., when entity is deleted).
-     */
-    async removeNode(
-        workflowFilePath: string,
-        networkId: string,
-        nodeName: string
-    ): Promise<void> {
-        const positions = await this.loadLayout(workflowFilePath, networkId);
-        if (positions) {
-            positions.delete(nodeName);
-            this.saveLayout(workflowFilePath, networkId, positions);
-        }
-    }
-
-    /**
      * Rename a node in the layout (e.g., when entity is renamed).
      */
     async renameNode(
@@ -639,71 +511,5 @@ export class LayoutPersistenceService {
         }
         const layouts = this.normalizeLayoutsFromFile(data);
         return layouts[networkId];
-    }
-
-    /**
-     * Check if a layout file exists for the given CAL file.
-     */
-    async hasLayoutFile(workflowFilePath: string): Promise<boolean> {
-        const candidatePaths = [
-            this.getLayoutFilePath(workflowFilePath),
-            ...this.getLegacyLayoutFilePaths(workflowFilePath)
-        ];
-
-        for (const candidatePath of candidatePaths) {
-            try {
-                await fs.access(candidatePath);
-                return true;
-            } catch {
-                // Keep trying candidates.
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Delete the layout file for a CAL file.
-     */
-    async deleteLayoutFile(workflowFilePath: string): Promise<void> {
-        const candidatePaths = [
-            this.getLayoutFilePath(workflowFilePath),
-            ...this.getLegacyLayoutFilePaths(workflowFilePath)
-        ];
-
-        await Promise.all(
-            candidatePaths.map(async candidatePath => {
-                try {
-                    await fs.unlink(candidatePath);
-                } catch {
-                    // Ignore if file doesn't exist
-                }
-            })
-        );
-
-        try {
-            await fs.rmdir(this.getLayoutDirectoryPath(workflowFilePath));
-        } catch {
-            // Ignore if directory is missing or not empty.
-        }
-    }
-
-    /**
-     * Flush any pending saves (useful for shutdown).
-     */
-    async flush(): Promise<void> {
-        const saves = Array.from(this.pendingSaves.entries());
-        this.pendingSaves.clear();
-
-        for (const [, pending] of saves) {
-            clearTimeout(pending.timeout);
-        }
-
-        // Persist the latest queued state for each file.
-        await Promise.all(
-            saves.map(async ([layoutPath, pending]) => {
-                await this.doSave(layoutPath, pending.networkId, pending.positions, pending.edgeRoutes);
-            })
-        );
     }
 }
