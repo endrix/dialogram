@@ -156,6 +156,19 @@ function normalizePoints(points: unknown): NodePosition[] {
  * Service for persisting diagram layout to layout files.
  * Layout is stored in a .layout directory alongside workflow source files.
  */
+/**
+ * Every service instance alive in this process, so the host can drain their
+ * debounced saves when it deactivates ({@link flushLayoutPersistence}). A
+ * closed editor needs nothing: its timers still fire. Only the process ending
+ * inside the debounce window would lose a save.
+ */
+const liveServices = new Set<LayoutPersistenceService>();
+
+/** Write out every save still waiting on a debounce timer, in every session. */
+export async function flushLayoutPersistence(): Promise<void> {
+    await Promise.all(Array.from(liveServices, service => service.flush()));
+}
+
 export class LayoutPersistenceService {
     private pendingSaves = new Map<
         string,
@@ -173,6 +186,7 @@ export class LayoutPersistenceService {
 
     constructor(saveDebounceMs = 500) {
         this.saveDebounceMs = saveDebounceMs;
+        liveServices.add(this);
     }
 
     private get disableEdgeRoutePersistence(): boolean {
@@ -511,5 +525,22 @@ export class LayoutPersistenceService {
         }
         const layouts = this.normalizeLayoutsFromFile(data);
         return layouts[networkId];
+    }
+
+    /**
+     * Persist every save still waiting on its debounce timer. Called through
+     * {@link flushLayoutPersistence} when the host deactivates.
+     */
+    async flush(): Promise<void> {
+        const saves = Array.from(this.pendingSaves.entries());
+        this.pendingSaves.clear();
+        for (const [, pending] of saves) {
+            clearTimeout(pending.timeout);
+        }
+        await Promise.all(
+            saves.map(([layoutPath, pending]) =>
+                this.doSave(layoutPath, pending.networkId, pending.positions, pending.edgeRoutes)
+            )
+        );
     }
 }

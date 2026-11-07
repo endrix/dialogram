@@ -90,6 +90,9 @@ platform API version.
 
 ### Fixed
 
+- A layout change still on its 500 ms debounce timer when the window closes
+  is written out: the host flushes every diagram's pending layout saves on
+  deactivation.
 - **The running ring and the queue sizes no longer blink through a run.** The
   runtime writes `run.wf-viewer.live.json` at every firing and the server
   re-reads it every 400ms, so now and then it read the file halfway written,

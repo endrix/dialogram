@@ -93,7 +93,6 @@ export namespace WorkflowDiagramCss {
     export const NODE_NETWORK = 'workflow-node-network';
     export const NODE_STRUCTURE = 'workflow-node-structure';
     export const NODE_STRUCTURE_IF = 'workflow-node-structure-if';
-    export const NODE_STRUCTURE_IF_BRANCH = 'workflow-node-structure-if-branch';
     export const NODE_STRUCTURE_FOREACH = 'workflow-node-structure-foreach';
     export const NODE_GROUP = 'workflow-node-group';
     export const GROUP_BOUNDARY_PORT = 'workflow-group-boundary-port';

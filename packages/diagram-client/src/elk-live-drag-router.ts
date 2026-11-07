@@ -42,7 +42,6 @@ function nowMs(): number {
     return Date.now();
 }
 
-
 // A "drag session" is detected heuristically (MoveAction stream). While active, we keep
 // a set of incident edges so the view can freeze non-incident edges to their last stable route.
 const dragActiveUntilMs = new Map<string, number>();

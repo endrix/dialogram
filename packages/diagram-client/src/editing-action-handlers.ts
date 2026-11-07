@@ -1,4 +1,4 @@
-import { inject, injectable, optional } from 'inversify';
+import { inject, injectable } from 'inversify';
 import { EditorContextService, IActionDispatcher, TYPES } from '@eclipse-glsp/client';
 import { Action as GlspAction, ApplyLabelEditOperation, ICommand, IActionHandler, NavigateToExternalTargetAction, RequestModelAction } from '@eclipse-glsp/sprotty';
 import { VscodeUi, type VscodeQuickPickItem } from './vscode-ui';

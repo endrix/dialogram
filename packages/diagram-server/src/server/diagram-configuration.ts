@@ -177,8 +177,7 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
                 deletable: false,
                 resizable: false,
                 reparentable: false
-            },
-
+            }
         ];
     }
 

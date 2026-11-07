@@ -392,6 +392,7 @@ export class WorkflowNavigationUi {
                 sourceUri,
                 workflowName: selected,
                 runtimeProfile: typeof args['wf:runtimeProfile'] === 'string' ? args['wf:runtimeProfile'] : undefined,
+                namespaceName: args['wf:namespace'],
                 selectedRunId,
                 queueTraceVisible: isQueueTraceVisible(),
                 // The run a "Rerun from here" resumes: the one the overlay shows.
