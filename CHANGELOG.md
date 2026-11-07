@@ -97,6 +97,20 @@ platform API version.
   padding, and only the node that moved counts, not the one at the far end
   of its edges.
 
+### Removed
+
+- The `workflow.*` legacy-settings shim: the three core chat settings are read
+  from `dialogram.chat` directly, the extension no longer contributes the dead
+  `workflow.chat.enableMcpTools` key, and a session store written under
+  `workflow.sessions` before the rename is not migrated any more. Twelve
+  SessionManager methods nothing called, the deprecated `ChatSlashCommand`
+  type, the webview's port-label debug toggles and the `clientDebug.inlinePing`
+  / `inlineConfig` messages no host handler answered, the `chat.setModel` and
+  `chat.getStatus` message aliases the panel never sent. The sidecar toolkit's
+  package index names only what products import (the profile assembler, the
+  API type and the input literal's types); its unused `mcp` input and
+  `clearSidecarCapabilitiesCache` are gone.
+
 ### Tooling
 
 - `scripts/render-svg --select <id>` selects an element (the diagram's id or
