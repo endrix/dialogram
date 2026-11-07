@@ -839,73 +839,6 @@ body.vscode-high-contrast-light .node-center-image-light {
     cursor: pointer;
 }
 
-/* Collapsed node styles */
-.collapsed-node .node-body.collapsed-border {
-    fill: var(--workflow-node-fill);
-    stroke: var(--vscode-disabledForeground, #6e6e6e);
-    stroke-dasharray: 4,2;
-}
-
-.collapsed-node .badge {
-    fill: var(--vscode-badge-background, #4d4d4d);
-}
-
-.collapsed-node .badge-text {
-    fill: var(--vscode-badge-foreground, #ffffff);
-    font-family: var(--vscode-font-family);
-}
-
-.conditional-node .conditional-badge {
-    fill: var(--vscode-charts-orange, #d18616);
-}
-
-.array-node .array-badge {
-    fill: var(--vscode-charts-blue, #3794ff);
-}
-
-/* Proxy node styles (indexed entity references like c[i], c[nSegs-1]) */
-.proxy-node .node-body,
-.workflow-node-proxy .node-body {
-    fill: var(--workflow-node-fill);
-    stroke: var(--vscode-disabledForeground, #6e6e6e);
-    stroke-dasharray: 4,2;
-}
-
-.proxy-node.selected .node-body,
-.workflow-node-proxy.selected .node-body {
-    stroke: var(--sprotty-edge-selected);
-    stroke-dasharray: 4,2;
-}
-
-/* Virtual edge styles (derived from foreach loops) */
-.workflow-edge-virtual,
-.virtual-edge {
-    color: var(--vscode-disabledForeground, #6e6e6e);
-    stroke-dasharray: 5,3;
-    stroke-width: 2px;
-    opacity: 0.7;
-}
-
-.workflow-edge-virtual .edge-line,
-.virtual-edge .edge-line {
-    stroke-dasharray: 5,3;
-    stroke-width: 2px;
-    opacity: 0.7;
-}
-
-.workflow-edge-virtual.selected,
-.virtual-edge.selected {
-    color: var(--sprotty-edge-selected);
-    stroke-width: 2px;
-    opacity: 0.9;
-}
-
-.workflow-edge-virtual.selected .edge-line,
-.virtual-edge.selected .edge-line {
-    stroke-width: 2px;
-    opacity: 0.9;
-}
-
 /* Read-only indicator */
 .workflow-node.read-only {
     opacity: 0.8;
@@ -1255,20 +1188,6 @@ body.vscode-high-contrast-light .node-center-image-light {
     font-size: 10px;
 }
 
-/* Branch container nodes (real then/else/elsif children) */
-.workflow-node-structure-if-branch .structure-if-section {
-    fill: transparent;
-    stroke: var(--vscode-descriptionForeground, #8b8b8b);
-    stroke-width: 1px;
-    opacity: 0.8;
-}
-
-.workflow-node-structure-if-branch .structure-if-section-label {
-    fill: var(--vscode-descriptionForeground, #8b8b8b);
-    font-family: var(--vscode-font-family);
-    font-size: 10px;
-}
-
 /* Group containers: a producer's own grouping of nodes (a layer, a domain, a
    stage), drawn as a nested region: a tinted body, a header band with the
    label, a border over both. The body stays translucent because the edges
@@ -1382,20 +1301,6 @@ body.vscode-high-contrast-light .node-center-image-light {
     stroke: var(--vscode-editorError-foreground, #f14c4c);
 }
 
-/* Join node (phi-like merge point) */
-.workflow-node-structure-if-join .structure-if-join-body {
-    fill: transparent;
-    stroke: var(--vscode-descriptionForeground, #8b8b8b);
-    stroke-width: 1px;
-    opacity: 0.9;
-}
-
-.workflow-node-structure-if-join .structure-if-join-label {
-    fill: var(--vscode-descriptionForeground, #8b8b8b);
-    font-family: var(--vscode-font-family);
-    font-size: 10px;
-}
-
 /* ============================================
    Structure foreach node (grouping)
    ============================================ */
@@ -1412,20 +1317,6 @@ body.vscode-high-contrast-light .node-center-image-light {
     font-family: var(--vscode-font-family);
     font-size: 11px;
     font-weight: 600;
-}
-
-/* Inline if statement marker (inside foreach) */
-.workflow-node-structure-if-inline .inline-if-body {
-    fill: transparent;
-    stroke: var(--vscode-descriptionForeground, #8b8b8b);
-    stroke-width: 1px;
-    opacity: 0.9;
-}
-
-.workflow-node-structure-if-inline .inline-if-label {
-    fill: var(--vscode-descriptionForeground, #8b8b8b);
-    font-family: var(--vscode-font-family);
-    font-size: 10px;
 }
 
 /* ============================================

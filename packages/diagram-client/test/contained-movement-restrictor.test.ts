@@ -37,9 +37,9 @@ describe('inside the parent', () => {
     });
 
     it('leaves a node in another container free: such a container does not grow', () => {
-        expect(isInsideParent('node:structure:if:branch', parent, child, { x: 0, y: 0 })).toBe(true);
-        expect(isInsideParent('node:structure:if:branch', parent, child, { x: 201, y: 0 })).toBe(true);
-        expect(isInsideParent('node:structure:if:branch', parent, child, { x: -500, y: 900 })).toBe(true);
+        expect(isInsideParent('node:structure:then', parent, child, { x: 0, y: 0 })).toBe(true);
+        expect(isInsideParent('node:structure:then', parent, child, { x: 201, y: 0 })).toBe(true);
+        expect(isInsideParent('node:structure:then', parent, child, { x: -500, y: 900 })).toBe(true);
     });
 
     it('allows the move when the parent has no size to judge by', () => {
@@ -71,7 +71,7 @@ describe('the restrictor', () => {
     });
 
     it('never restricts a member of another container (an if or loop branch)', () => {
-        const node = member('node:structure:if:branch');
+        const node = member('node:structure:then');
         expect(restrictor.validate(node as any, { x: 200, y: 140 })).toBe(true);
         expect(restrictor.validate(node as any, { x: 400, y: 40 })).toBe(true);
         expect(restrictor.validate(node as any, { x: -40, y: -40 })).toBe(true);

@@ -58,7 +58,7 @@ const TODAY: Record<string, string> = {
 describe('countLayoutElements', () => {
     it('counts nodes at any depth, skips compartments, counts edges', () => {
         const container = node('if', WorkflowDiagramTypes.NODE_STRUCTURE_IF, [
-            node('then', WorkflowDiagramTypes.NODE_STRUCTURE_IF_BRANCH, [node('a'), node('b')]),
+            node('then', WorkflowDiagramTypes.NODE_STRUCTURE_THEN, [node('a'), node('b')]),
             node('header', WorkflowDiagramTypes.COMPARTMENT_HEADER)
         ]);
         const root = GGraph.builder().id('g').type(WorkflowDiagramTypes.GRAPH)

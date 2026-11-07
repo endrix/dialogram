@@ -49,23 +49,14 @@ export namespace WorkflowDiagramTypes {
     /** Palette-only element type: creates a viewer external task definition + instance. */
     export const NODE_VIEWER_TASK = 'node:viewer-task';
     export const NODE_WORKFLOW = NODE_NETWORK;
-    /** Proxy node for indexed entity references like c[i], c[nSegs-1]. Spec: 'node:proxy' */
-    export const NODE_PROXY = 'node:proxy';
-    export const NODE_COLLAPSED_CONDITIONAL = 'node:collapsed:conditional';
-    export const NODE_COLLAPSED_ARRAY = 'node:collapsed:array';
     // Structure visualization nodes
     export const NODE_STRUCTURE_IF = 'node:structure:if';
-    export const NODE_STRUCTURE_IF_BRANCH = 'node:structure:if:branch';
     /** Then container. Spec: 'node:structure:then' */
     export const NODE_STRUCTURE_THEN = 'node:structure:then';
     /** Else container. Spec: 'node:structure:else' */
     export const NODE_STRUCTURE_ELSE = 'node:structure:else';
-    export const NODE_STRUCTURE_IF_JOIN = 'node:structure:if:join';
-    /** Alias for spec compatibility: 'node:join' */
-    export const NODE_JOIN = 'node:join';
-    // Foreach container + inline statement nodes (purely structural)
+    // Foreach container (purely structural)
     export const NODE_STRUCTURE_FOREACH = 'node:structure:foreach';
-    export const NODE_STRUCTURE_FOREACH_JOIN = 'node:structure:foreach:join';
     /**
      * A producer's own grouping of nodes: a scope of kind `group` in the
      * document, drawn as a labelled container around its members. The
@@ -74,7 +65,6 @@ export namespace WorkflowDiagramTypes {
      * producer's business and shows only in its label.
      */
     export const NODE_GROUP = 'node:group';
-    export const NODE_STRUCTURE_IF_INLINE = 'node:structure:if:inline';
     export const NODE_BOUNDARY_INPUT = 'node:boundary:input';
     export const NODE_BOUNDARY_OUTPUT = 'node:boundary:output';
     
@@ -98,13 +88,9 @@ export namespace WorkflowDiagramTypes {
     export const EDGE_CONNECTION = 'edge:connection';
     /** Connection edge variant without arrowheads (used for structural wiring inside grouping nodes like if/then/else/join). */
     export const EDGE_CONNECTION_NO_ARROW = 'edge:connection:no-arrow';
-    /** Virtual edge derived from loop structure (e.g., c[nSegs-1] shows connections from c[i] when i=nSegs-1). Read-only. */
-    export const EDGE_VIRTUAL = 'edge:virtual';
     
     // Compartment types
     export const COMPARTMENT_HEADER = 'comp:header';
-    export const COMPARTMENT_PORTS = 'comp:ports';
-    export const COMPARTMENT_PORT_ROW = 'comp:port-row';
     
     // Label types
     export const LABEL_NAME = 'label:name';
@@ -131,16 +117,10 @@ export namespace WorkflowDiagramCss {
     export const NODE_TASK = NODE_ACTOR;
     export const NODE_EXTERNAL_TASK = NODE_EXTERNAL_ACTOR;
     export const NODE_WORKFLOW = NODE_NETWORK;
-    /** Proxy node for indexed entity references */
-    export const NODE_PROXY = 'workflow-node-proxy';
-    export const NODE_COLLAPSED = 'workflow-node-collapsed';
     export const NODE_STRUCTURE = 'workflow-node-structure';
     export const NODE_STRUCTURE_IF = 'workflow-node-structure-if';
     export const NODE_STRUCTURE_IF_BRANCH = 'workflow-node-structure-if-branch';
-    export const NODE_STRUCTURE_IF_JOIN = 'workflow-node-structure-if-join';
     export const NODE_STRUCTURE_FOREACH = 'workflow-node-structure-foreach';
-    export const NODE_STRUCTURE_FOREACH_JOIN = 'workflow-node-structure-foreach-join';
-    export const NODE_STRUCTURE_IF_INLINE = 'workflow-node-structure-if-inline';
     export const NODE_GROUP = 'workflow-node-group';
     export const GROUP_BOUNDARY_PORT = 'workflow-group-boundary-port';
     export const NODE_BOUNDARY = 'workflow-node-boundary';
@@ -152,8 +132,6 @@ export namespace WorkflowDiagramCss {
     export const PORT_OUTPUT = 'workflow-port-output';
     
     export const EDGE = 'workflow-edge';
-    /** Virtual edge (dashed, read-only) derived from loop structure. */
-    export const EDGE_VIRTUAL = 'workflow-edge-virtual';
     /**
      * A connection that closes a feedback loop — it feeds a stage that runs
      * before it. Always applied by the server; whether it is drawn differently
@@ -184,7 +162,6 @@ export namespace WorkflowDiagramMetadata {
     export const ENTITY_TYPE = 'cal:entityType';
     export const AST_PATH = 'cal:astPath';
     export const IS_READ_ONLY = 'cal:readOnly';
-    export const IS_COLLAPSED = 'cal:isCollapsed';
     export const IS_NETWORK_INSTANCE = 'cal:isNetworkInstance';
     /** The views the producer offers of the unit behind a node besides its
      *  structure, `[{ id, label }]` as it listed them on `meta.views` (a leaf's
@@ -274,12 +251,6 @@ export namespace WorkflowDiagramMetadata {
     export const EDGE_ROLE = 'cal:edgeRole';
     /** What a port is for, beyond carrying data. Producer-defined. */
     export const PORT_ROLE = 'cal:portRole';
-    /** Marks a node as a proxy (indexed entity reference like c[i]) */
-    export const IS_PROXY = 'cal:isProxy';
-    /** Index expression for proxy nodes (e.g., "i", "i-1", "nSegs-1") */
-    export const PROXY_INDEX_EXPR = 'cal:proxyIndexExpr';
-    /** Base entity name for proxy nodes (e.g., "c" for c[i]) */
-    export const PROXY_BASE_ENTITY = 'cal:proxyBaseEntity';
     export const REFERENCED_URI = 'cal:referencedUri';
     /** Resolved referenced definition name (not alias text), used for robust drill-down. */
     export const REFERENCED_ENTITY_NAME = 'cal:referencedEntityName';
@@ -361,21 +332,12 @@ export namespace WorkflowDiagramMetadata {
     export const STRUCTURE_CONDITION = 'cal:structureCondition';
     export const STRUCTURE_FOREACH = 'cal:structureForeach';
 
-    // The AST path of the structure statement that owns this edge (e.g. StructureStatementIf).
-    // Used for stable grouping/routing decisions.
-    export const STRUCTURE_OWNER_AST_PATH = 'cal:structureOwnerAstPath';
-
     // Indexed entity/list references in connections (e.g. bf[0].In)
     export const EDGE_FROM_INDEX = 'cal:fromIndex';
     export const EDGE_TO_INDEX = 'cal:toIndex';
 
-    // Virtual edge metadata (derived from loop structure, read-only)
-    /** Marks an edge as virtual (derived, not in AST). */
+    /** Marks an edge as derived (not in the source), hence read-only. */
     export const IS_VIRTUAL = 'cal:isVirtual';
-    /** The ID of the loop edge this virtual edge was derived from. */
-    export const DERIVED_FROM = 'cal:derivedFrom';
-    /** The foreach AST path that the virtual edge is derived from. */
-    export const DERIVED_FOREACH_PATH = 'cal:derivedForeachPath';
     
     // Entity parameter metadata
     export const ENTITY_PARAMETERS = 'cal:entityParameters';
@@ -428,10 +390,7 @@ export namespace WorkflowDiagramMetadata {
     export const WORKFLOW_INPUT_PORTS = NETWORK_INPUT_PORTS;
     export const WORKFLOW_OUTPUT_PORTS = NETWORK_OUTPUT_PORTS;
     
-    // Collapsed node metadata
     export const CONDITION_TEXT = 'cal:conditionText';
-    export const ARRAY_GENERATOR_TEXT = 'cal:arrayGeneratorText';
-    export const ARRAY_COUNT = 'cal:arrayCount';
 
     // Structure node metadata (used on node:structure:* elements)
     export const STRUCTURE_KIND = 'cal:structureKind';
@@ -504,30 +463,6 @@ export namespace WorkflowDiagramTypeGuards {
         return type === WorkflowDiagramTypes.NODE_TASK
             || type === WorkflowDiagramTypes.NODE_WORKFLOW
             || type === WorkflowDiagramTypes.NODE_EXTERNAL_TASK;
-    }
-    
-    /** Check if element is a proxy node */
-    export function isProxyNode(type: string): boolean {
-        return type === WorkflowDiagramTypes.NODE_PROXY;
-    }
-    
-    /** Check if element is a container node */
-    export function isContainerNode(type: string): boolean {
-        // wf-lang diagrams currently do not model CAL control-structure containers (if/foreach).
-        // Only flat structure connections are visualized.
-        return false;
-    }
-    
-    /** Check if element is a join node (derived, read-only) */
-    export function isJoinNode(type: string): boolean {
-        // wf-lang diagrams do not emit join nodes.
-        return false;
-    }
-    
-    /** Check if element is a virtual edge (derived, read-only) */
-    export function isVirtualEdge(type: string): boolean {
-        // wf-lang diagrams do not emit virtual edges.
-        return false;
     }
     
     /** Check if element is read-only (derived elements like joins and virtual edges) */

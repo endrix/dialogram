@@ -286,51 +286,10 @@ export class WorkflowLayoutConfigurator extends AbstractLayoutConfigurator {
             };
         }
 
-        if (nodeType === WorkflowDiagramTypes.NODE_STRUCTURE_IF_BRANCH) {
-            // Branch container: hierarchical layout for nested entities
-            return {
-                'elk.algorithm': 'layered',
-                'elk.direction': 'RIGHT',
-                'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-                'elk.nodeSize.constraints': 'MINIMUM_SIZE',
-                'elk.padding': '[top=30,left=20,bottom=15,right=20]',
-                'elk.portConstraints': 'FIXED_POS',
-                'elk.spacing.nodeNode': '20',
-                'elk.spacing.edgeNode': '20',
-                'elk.spacing.portPort': '8'
-            };
-        }
-
         if (nodeType === WorkflowDiagramTypes.NODE_GROUP) {
             // A producer's group: laid out on its own, members first, with its
             // header band and the boundary ports its crossing edges pass through.
             return groupLayoutOptions();
-        }
-
-        if (nodeType === WorkflowDiagramTypes.NODE_STRUCTURE_IF_JOIN) {
-            // Join is a small helper node; size comes from server.
-            const nodeWidth = node.size?.width ?? 70;
-            const nodeHeight = node.size?.height ?? 34;
-            return {
-                'elk.nodeSize.constraints': 'MINIMUM_SIZE',
-                'elk.nodeSize.minimum': `(${nodeWidth},${nodeHeight})`,
-                'elk.portConstraints': 'FIXED_POS',
-                'elk.padding': '[top=0,left=0,bottom=0,right=0]',
-                'elk.layered.layering.layerConstraint': 'LAST'
-            };
-        }
-
-        if (nodeType === WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH_JOIN) {
-            // Foreach join is a small helper node similar to if join
-            const nodeWidth = node.size?.width ?? 60;
-            const nodeHeight = node.size?.height ?? 30;
-            return {
-                'elk.nodeSize.constraints': 'MINIMUM_SIZE',
-                'elk.nodeSize.minimum': `(${nodeWidth},${nodeHeight})`,
-                'elk.portConstraints': 'FIXED_POS',
-                'elk.padding': '[top=0,left=0,bottom=0,right=0]',
-                'elk.layered.layering.layerConstraint': 'LAST'
-            };
         }
 
         if (nodeType === WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH) {
@@ -347,32 +306,6 @@ export class WorkflowLayoutConfigurator extends AbstractLayoutConfigurator {
             };
         }
 
-        if (nodeType === WorkflowDiagramTypes.NODE_PROXY) {
-            // Proxy nodes (indexed entity access like c[i], c[nSegs-1])
-            const nodeWidth = node.size?.width ?? 160;
-            const nodeHeight = node.size?.height ?? 80;
-            return {
-                'elk.nodeSize.constraints': 'MINIMUM_SIZE',
-                'elk.nodeSize.minimum': `(${nodeWidth},${nodeHeight})`,
-                'elk.portConstraints': 'FIXED_POS',
-                'elk.spacing.portPort': '10',
-                // Port label placement: INSIDE forces them into the node body (same as actors)
-                'elk.portLabels.placement': 'INSIDE NEXT_TO_PORT_IF_POSSIBLE',
-                'elk.spacing.labelPortHorizontal': '0',
-                'elk.spacing.labelPortVertical': '0'
-            };
-        }
-
-        if (nodeType === WorkflowDiagramTypes.NODE_STRUCTURE_IF_INLINE) {
-            const nodeWidth = node.size?.width ?? 140;
-            const nodeHeight = node.size?.height ?? 24;
-            return {
-                'elk.nodeSize.constraints': 'MINIMUM_SIZE',
-                'elk.nodeSize.minimum': `(${nodeWidth},${nodeHeight})`,
-                'elk.padding': '[top=0,left=0,bottom=0,right=0]'
-            };
-        }
-        
         if (nodeType === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT) {
             // Boundary input nodes - place in dedicated leftmost layer.
             // FIXED_SIZE prevents ELK from resizing the node: the port is positioned at
@@ -407,23 +340,6 @@ export class WorkflowLayoutConfigurator extends AbstractLayoutConfigurator {
             };
         }
 
-        if (nodeType === WorkflowDiagramTypes.COMPARTMENT_PORTS) {
-            return {
-                'elk.nodeSize.constraints': 'MINIMUM_SIZE',
-                'elk.spacing.nodeNode': '0',
-                'elk.padding': '[top=5,left=0,bottom=5,right=0]',
-                'elk.alignment': 'FILL'
-            };
-        }
-
-        if (nodeType === WorkflowDiagramTypes.COMPARTMENT_PORT_ROW) {
-            return {
-                'elk.nodeSize.constraints': 'MINIMUM_SIZE',
-                'elk.padding': '[top=0,left=5,bottom=0,right=5]',
-                'elk.alignment': 'FILL'
-            };
-        }
-        
         // Actor/Network nodes - use the server-provided size as fixed size
         // The server calculates exact dimensions based on ports and label width
         const nodeWidth = node.size?.width ?? 160;

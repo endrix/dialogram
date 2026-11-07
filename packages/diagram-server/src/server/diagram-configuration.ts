@@ -62,18 +62,11 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
         mapping.set(WorkflowDiagramTypes.NODE_ACTOR, GNode);
         mapping.set(WorkflowDiagramTypes.NODE_EXTERNAL_ACTOR, GNode);
         mapping.set(WorkflowDiagramTypes.NODE_NETWORK, GNode);
-        mapping.set(WorkflowDiagramTypes.NODE_PROXY, GNode);  // Indexed entity references
-        mapping.set(WorkflowDiagramTypes.NODE_COLLAPSED_CONDITIONAL, GNode);
-        mapping.set(WorkflowDiagramTypes.NODE_COLLAPSED_ARRAY, GNode);
         // Structure visualization nodes
         mapping.set(WorkflowDiagramTypes.NODE_STRUCTURE_IF, GNode);
-        mapping.set(WorkflowDiagramTypes.NODE_STRUCTURE_IF_BRANCH, GNode);
         mapping.set(WorkflowDiagramTypes.NODE_STRUCTURE_THEN, GNode);
         mapping.set(WorkflowDiagramTypes.NODE_STRUCTURE_ELSE, GNode);
-        mapping.set(WorkflowDiagramTypes.NODE_STRUCTURE_IF_JOIN, GNode);
         mapping.set(WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH, GNode);
-        mapping.set(WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH_JOIN, GNode);
-        mapping.set(WorkflowDiagramTypes.NODE_STRUCTURE_IF_INLINE, GNode);
         mapping.set(WorkflowDiagramTypes.NODE_GROUP, GNode);
         mapping.set(WorkflowDiagramTypes.NODE_BOUNDARY_INPUT, GNode);
         mapping.set(WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT, GNode);
@@ -86,7 +79,6 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
         // Edge types
         mapping.set(WorkflowDiagramTypes.EDGE_CONNECTION, GEdge);
         mapping.set(WorkflowDiagramTypes.EDGE_CONNECTION_NO_ARROW, GEdge);
-        mapping.set(WorkflowDiagramTypes.EDGE_VIRTUAL, GEdge);  // Virtual edges (derived from foreach)
 
         // Label types
         mapping.set(WorkflowDiagramTypes.LABEL_NAME, GLabel);
@@ -98,8 +90,6 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
 
         // Compartment types
         mapping.set(WorkflowDiagramTypes.COMPARTMENT_HEADER, GCompartment);
-        mapping.set(WorkflowDiagramTypes.COMPARTMENT_PORTS, GCompartment);
-        mapping.set(WorkflowDiagramTypes.COMPARTMENT_PORT_ROW, GCompartment);
 
         return mapping;
     }
@@ -146,15 +136,6 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
                 resizable: false,
                 reparentable: false
             },
-            // Proxy nodes (indexed entity references like c[i], c[nSegs-1])
-            // Movable but not deletable (derived from foreach)
-            {
-                elementTypeId: WorkflowDiagramTypes.NODE_PROXY,
-                repositionable: true,
-                deletable: false,
-                resizable: false,
-                reparentable: false
-            },
             // Structure containers (movable for layout, not deletable)
             {
                 elementTypeId: WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH,
@@ -166,13 +147,6 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
             {
                 elementTypeId: WorkflowDiagramTypes.NODE_STRUCTURE_IF,
                 repositionable: true,
-                deletable: false,
-                resizable: true,
-                reparentable: false
-            },
-            {
-                elementTypeId: WorkflowDiagramTypes.NODE_STRUCTURE_IF_BRANCH,
-                repositionable: false,  // Branch position is determined by parent if
                 deletable: false,
                 resizable: true,
                 reparentable: false
@@ -204,42 +178,7 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
                 resizable: false,
                 reparentable: false
             },
-            {
-                elementTypeId: WorkflowDiagramTypes.NODE_STRUCTURE_IF_JOIN,
-                repositionable: false,  // Join position is derived
-                deletable: false,
-                resizable: false,
-                reparentable: false
-            },
-            {
-                elementTypeId: WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH_JOIN,
-                repositionable: false,  // Foreach join position is derived
-                deletable: false,
-                resizable: false,
-                reparentable: false
-            },
-            {
-                elementTypeId: WorkflowDiagramTypes.NODE_STRUCTURE_IF_INLINE,
-                repositionable: true,
-                deletable: false,
-                resizable: false,
-                reparentable: false
-            },
-            // Collapsed nodes (movable, not directly deletable)
-            {
-                elementTypeId: WorkflowDiagramTypes.NODE_COLLAPSED_CONDITIONAL,
-                repositionable: true,
-                deletable: false,
-                resizable: false,
-                reparentable: false
-            },
-            {
-                elementTypeId: WorkflowDiagramTypes.NODE_COLLAPSED_ARRAY,
-                repositionable: true,
-                deletable: false,
-                resizable: false,
-                reparentable: false
-            }
+
         ];
     }
 

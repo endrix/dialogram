@@ -57,10 +57,8 @@ function instancePathFromTrail(trail: Array<{ workflowInstanceName?: string }>):
 }
 
 /**
- * Find a network instance node in the element's ancestry.
- * This includes:
- * - NODE_NETWORK type nodes
- * - NODE_PROXY nodes where IS_NETWORK_INSTANCE is true (e.g., c[i] where c is a list of networks)
+ * Find a network instance node in the element's ancestry: a NODE_NETWORK whose
+ * IS_NETWORK_INSTANCE is true.
  */
 function findContainingNetworkInstanceNode(element: GModelElement | undefined): GModelElement | undefined {
     let current: GModelElement | undefined = element;
@@ -68,13 +66,7 @@ function findContainingNetworkInstanceNode(element: GModelElement | undefined): 
         const args = (current as unknown as { args?: Args }).args;
         const isNetworkInstance = args?.[WorkflowDiagramMetadata.IS_NETWORK_INSTANCE] === true;
 
-        // Direct network node type
         if (current.type === WorkflowDiagramTypes.NODE_NETWORK && isNetworkInstance) {
-            return current;
-        }
-        
-        // Proxy node (e.g., c[i]) that represents a network instance
-        if (current.type === WorkflowDiagramTypes.NODE_PROXY && isNetworkInstance) {
             return current;
         }
         

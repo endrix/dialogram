@@ -164,12 +164,6 @@ describe('a selected node', () => {
         expect(sorted(s2.upstream)).toEqual(['s1', 's1->s2']);
         expect(sorted(s2.downstream)).toEqual(['s2->s3', 's3', 's3->s4', 's4']);
     });
-
-    it('leaves a virtual edge out of the path', () => {
-        const root = model(node('a'), node('b'),
-            { ...edge('a', 'b'), type: WorkflowDiagramTypes.EDGE_VIRTUAL });
-        expect(trace(root, 'a').result.downstream.size).toBe(0);
-    });
 });
 
 describe('nested groups', () => {

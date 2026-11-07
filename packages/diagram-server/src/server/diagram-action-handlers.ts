@@ -264,32 +264,6 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
         const validator = (this as any).validator as ModelValidator | undefined;
         const requestModelAction = (this as any).requestModelAction;
 
-        // Debug: Check if virtual edges have routing points before serialization
-        // Compare ROOT tree edges vs INDEX edges to verify they're the same objects
-        const virtualEdgesFromRoot: any[] = [];
-        const checkEdgesForRouting = (element: any): void => {
-            if (!element) return;
-            if (element.type?.startsWith('edge:virtual') || element.id?.startsWith('V:')) {
-                virtualEdgesFromRoot.push(element);
-                // Also check if the index has the same object
-                const indexEdge = modelState.index.get(element.id);
-                const isSameObject = indexEdge === element;
-                console.log('[WorkflowModelSubmissionHandler] Virtual edge ROOT vs INDEX:', {
-                    id: element.id,
-                    rootRoutingPoints: element.routingPoints?.length ?? 0,
-                    indexRoutingPoints: (indexEdge as any)?.routingPoints?.length ?? 0,
-                    isSameObject,
-                    indexEdgeExists: !!indexEdge
-                });
-            }
-            if (Array.isArray(element.children)) {
-                for (const child of element.children) {
-                    checkEdgesForRouting(child);
-                }
-            }
-        };
-        checkEdgesForRouting(modelState.root);
-
         // Persisted-layout reopen path typically skips ELK, which means port-label positions
         // won't be updated by the layout engine. Ensure stable, deterministic placement.
         this.applyDeterministicPortLabelPositions(modelState.root);
