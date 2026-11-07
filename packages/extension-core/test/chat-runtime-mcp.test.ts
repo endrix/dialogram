@@ -61,10 +61,13 @@ describe('ChatRuntime GLSP-MCP parallel-run', () => {
         runtime.dispose();
     });
 
-    it('respects the useGlspMcp rollback setting when off', () => {
-        vi.spyOn(vscode.workspace, 'getConfiguration').mockReturnValue({
-            get: (key: string, def?: unknown) => (key === 'useGlspMcp' ? false : def)
-        } as any);
+    it('reads the useGlspMcp rollback setting from the core dialogram.chat section', () => {
+        // The mock answers `false` only for the core section: a reader that
+        // asked the profile's own section instead would get the default and
+        // keep advertising the server.
+        vi.spyOn(vscode.workspace, 'getConfiguration').mockImplementation(((section?: string) => ({
+            get: (key: string, def?: unknown) => (section === 'dialogram.chat' && key === 'useGlspMcp' ? false : def)
+        })) as any);
         const runtime = makeRuntime({
             glspMcpEnabled: true,
             mcpServerUrl: 'http://127.0.0.1:9/mcp'

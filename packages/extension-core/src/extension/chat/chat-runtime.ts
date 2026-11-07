@@ -14,6 +14,7 @@
  */
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { CORE_CHAT_SECTION } from "./edit-capability";
 import { ACPClientService, type AcpAgentSpec, type TurnPart } from "../acp-client.js";
 import type { DiagramChatConfirm, DiagramChatConfirmAnswer, DiagramRunAnswer, DiagramRunQuestion } from "../../api";
 import { SessionManager } from "../session-manager.js";
@@ -31,7 +32,6 @@ import { copySessionId, openSessionNatively, type NativeSession } from "./native
 import { KNOWN_CONNECTORS } from "./acp-connectors.js";
 
 /** Core chat settings section (shared by every profile, not namespaced). */
-const CORE_CHAT_SECTION = "dialogram.chat";
 /** workspaceState key of the last model the user explicitly chose. */
 const PREFERRED_MODEL_STATE_KEY = "dialogram.chat.preferredModel";
 

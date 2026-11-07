@@ -102,14 +102,18 @@ platform API version.
 - The `workflow.*` legacy-settings shim: the three core chat settings are read
   from `dialogram.chat` directly, the extension no longer contributes the dead
   `workflow.chat.enableMcpTools` key, and a session store written under
-  `workflow.sessions` before the rename is not migrated any more. Twelve
+  `workflow.sessions` before the rename is not migrated any more (every
+  release from 0.1.0 to 0.8.0 performed that migration on first open, so only
+  a workspace never opened with any Dialogram build still holds one). Twelve
   SessionManager methods nothing called, the deprecated `ChatSlashCommand`
   type, the webview's port-label debug toggles and the `clientDebug.inlinePing`
   / `inlineConfig` messages no host handler answered, the `chat.setModel` and
   `chat.getStatus` message aliases the panel never sent. The sidecar toolkit's
   package index names only what products import (the profile assembler, the
   API type and the input literal's types); its unused `mcp` input and
-  `clearSidecarCapabilitiesCache` are gone.
+  `clearSidecarCapabilitiesCache` are gone. `SidecarProfileInput.mcp` was
+  optional and read by nothing, but a profile literal that still spells it no
+  longer compiles: drop the line (the chat tools are always on).
 
 ### Tooling
 
