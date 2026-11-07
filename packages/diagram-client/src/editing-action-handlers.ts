@@ -1,5 +1,5 @@
 import { inject, injectable, optional } from 'inversify';
-import { EditorContextService, IActionDispatcher, IGridManager, TYPES } from '@eclipse-glsp/client';
+import { EditorContextService, IActionDispatcher, TYPES } from '@eclipse-glsp/client';
 import { Action as GlspAction, ApplyLabelEditOperation, ICommand, IActionHandler, NavigateToExternalTargetAction, RequestModelAction } from '@eclipse-glsp/sprotty';
 import { VscodeUi, type VscodeQuickPickItem } from './vscode-ui';
 import { clientBehavior, commandId, settingsNamespace } from './profile';
@@ -8,18 +8,6 @@ import { NETWORK_NAME_ARG, OPEN_DIAGRAM_ARG } from './network-navigation-target'
 import { FocusAfterLoadService } from './focus-after-load';
 import { EXECUTION_OVERLAY_ACTION_KIND, type ExecutionOverlayActionPayload } from '@dialogram/shared';
 import { showExecutionStates } from './execution-states';
-
-export type WorkflowWorkspaceEntity = {
-    name: string;
-    type: 'task' | 'workflow';
-    namespace: string;
-    documentUri: string;
-    inputPorts: string[];
-    outputPorts: string[];
-    importAlias?: string;
-    /** Optional: text to use when referencing this type (e.g. alias.Task) */
-    referenceText?: string;
-};
 
 export type WorkflowAgentSkill = {
     name: string;
@@ -265,23 +253,6 @@ export namespace WorkflowUpdateEdgeCapacityOperation {
     }
 }
 
-export namespace WorkflowRequestWorkspaceEntitiesOperation {
-    export const KIND = 'dialogram.requestWorkspaceEntities';
-
-    export type ExpectedType = 'task' | 'workflow' | 'any';
-
-    export interface Operation extends GlspAction {
-        kind: typeof KIND;
-        elementId: string;
-        expectedType?: ExpectedType;
-        currentType?: string;
-    }
-
-    export function create(options: Omit<Operation, 'kind'>): Operation {
-        return { kind: KIND, ...options };
-    }
-}
-
 export namespace WorkflowRequestAgentSkillsOperation {
     export const KIND = 'dialogram.requestAgentSkills';
 
@@ -295,22 +266,6 @@ export namespace WorkflowRequestAgentSkillsOperation {
 
     export function create(options: Omit<Operation, 'kind'>): Operation {
         return { kind: KIND, ...options };
-    }
-}
-
-export namespace WorkflowShowWorkspaceEntitiesAction {
-    export const KIND = 'dialogram.showWorkspaceEntities';
-
-    export interface Action extends GlspAction {
-        kind: typeof KIND;
-        elementId: string;
-        expectedType?: WorkflowRequestWorkspaceEntitiesOperation.ExpectedType;
-        currentType?: string;
-        entities: WorkflowWorkspaceEntity[];
-    }
-
-    export function is(action: unknown): action is Action {
-        return !!action && typeof action === 'object' && (action as any).kind === KIND;
     }
 }
 
@@ -352,22 +307,6 @@ export namespace WorkflowShowClaudeAgentsAction {
 
     export function is(action: unknown): action is Action {
         return !!action && typeof action === 'object' && (action as any).kind === KIND;
-    }
-}
-
-export namespace WorkflowUpdateEntityInstanceTypeOperation {
-    export const KIND = 'dialogram.updateEntityInstanceType';
-
-    export interface Operation extends GlspAction {
-        kind: typeof KIND;
-        elementId: string;
-        newEntityName: string;
-        inputPorts: string[];
-        outputPorts: string[];
-    }
-
-    export function create(options: Omit<Operation, 'kind'>): Operation {
-        return { kind: KIND, ...options };
     }
 }
 
@@ -435,19 +374,6 @@ export namespace WorkflowRerouteEdgesAvoidOverlapsOperation {
     }
 }
 
-export namespace WorkflowToggleGridAction {
-    export const KIND = 'dialogram.toggleGrid';
-
-    export interface Action extends GlspAction {
-        kind: typeof KIND;
-        show?: boolean;
-    }
-
-    export function is(action: unknown): action is Action {
-        return !!action && typeof action === 'object' && (action as any).kind === KIND;
-    }
-}
-
 @injectable()
 export class WorkflowPromptLabelEditActionHandler implements IActionHandler {
     @inject(TYPES.IActionDispatcher)
@@ -482,33 +408,6 @@ export class WorkflowPromptLabelEditActionHandler implements IActionHandler {
                 text: trimmed
             })
         );
-    }
-}
-
-@injectable()
-export class WorkflowToggleGridActionHandler implements IActionHandler {
-    @inject(TYPES.IActionDispatcher)
-    protected readonly actionDispatcher!: IActionDispatcher;
-
-    @optional()
-    @inject(TYPES.IGridManager)
-    protected readonly gridManager?: IGridManager;
-
-    handle(action: GlspAction): ICommand | GlspAction | void {
-        if (!WorkflowToggleGridAction.is(action)) {
-            return;
-        }
-
-        const nextVisible = typeof action.show === 'boolean'
-            ? action.show
-            : !(this.gridManager?.isGridVisible ?? true);
-
-        if (this.gridManager) {
-            this.gridManager.setGridVisible(nextVisible);
-            return;
-        }
-
-        void this.actionDispatcher.dispatch({ kind: 'showGrid', show: nextVisible } as any);
     }
 }
 
@@ -891,64 +790,6 @@ export class WorkflowEditAnnotationsActionHandler implements IActionHandler {
                 action: 'upsert',
                 annotationName,
                 annotationText
-            })
-        );
-    }
-}
-
-@injectable()
-export class WorkflowShowWorkspaceEntitiesActionHandler implements IActionHandler {
-    @inject(TYPES.IActionDispatcher)
-    protected readonly actionDispatcher!: IActionDispatcher;
-
-    handle(action: GlspAction): ICommand | GlspAction | void {
-        if (!WorkflowShowWorkspaceEntitiesAction.is(action)) {
-            return;
-        }
-        void this.promptAndApply(action);
-    }
-
-    protected async promptAndApply(action: WorkflowShowWorkspaceEntitiesAction.Action): Promise<void> {
-        const entities = action.entities ?? [];
-        if (entities.length === 0) {
-            VscodeUi.instance.infoMessage('No workspace entities available (or none imported into this file).');
-            return;
-        }
-
-        const expected = action.expectedType ?? 'any';
-        const filtered = expected === 'any'
-            ? entities
-            : entities.filter(e => e.type === expected);
-
-        const items: VscodeQuickPickItem[] = filtered.map(e => ({
-            id: e.referenceText ?? `${e.namespace ? e.namespace + '.' : ''}${e.name}`,
-            label: e.referenceText ?? `${e.namespace ? e.namespace + '.' : ''}${e.name}`,
-            description: e.type,
-            detail: e.documentUri
-        }));
-
-        const chosenId = await VscodeUi.instance.quickPick({
-            items,
-            placeHolder: 'Select a new type'
-        });
-        if (!chosenId) {
-            return;
-        }
-
-        const chosen =
-            filtered.find(e => (e.referenceText ?? e.name) === chosenId) ??
-            entities.find(e => (e.referenceText ?? e.name) === chosenId);
-        if (!chosen) {
-            VscodeUi.instance.errorMessage('Selected entity not found.');
-            return;
-        }
-
-        await this.actionDispatcher.dispatch(
-            WorkflowUpdateEntityInstanceTypeOperation.create({
-                elementId: action.elementId,
-                newEntityName: chosen.referenceText ?? chosen.name,
-                inputPorts: chosen.inputPorts ?? [],
-                outputPorts: chosen.outputPorts ?? []
             })
         );
     }

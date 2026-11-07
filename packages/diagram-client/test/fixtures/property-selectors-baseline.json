@@ -74,7 +74,6 @@
 ".property-panel .pp-btn-xs": 1,
 ".property-panel .pp-btn:active": 1,
 ".property-panel .pp-btn:hover": 1,
-".property-panel .pp-change": 2,
 ".property-panel .pp-chip": 1,
 ".property-panel .pp-defparam-row .pp-defparam-save": 1,
 ".property-panel .pp-defparam-row.dirty .pp-defparam-save": 1,

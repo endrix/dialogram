@@ -2233,37 +2233,21 @@ export class WorkflowLabelView implements IView {
             labelKind = 'badge';
         }
         
-        const labelRole = (label as any).args?.['wf:labelRole'];
-        // Skip rendering type labels (except boundary labels handled above)
+        // Type labels are drawn by the node view (the footer type label), not here.
         if (labelKind === 'type') {
-            if (labelRole !== 'type-footer') {
-                return undefined;
-            }
+            return undefined;
         }
         
         // Simplest possible label - just text, no positioning
-        const textAnchor = labelKind === 'type' ? 'middle' : 'start';
-        const parent = (label as any).parent as { size?: { width?: number; height?: number }; bounds?: { width?: number; height?: number } } | undefined;
-        const parentSize = parent?.size ?? parent?.bounds;
-        const footerPos = labelRole === 'type-footer' && parentSize
-            ? { x: (parentSize.width ?? 0) / 2, y: (parentSize.height ?? 0) + 4 }
-            : pos;
         return svg('g', {
             attrs: {
-                transform: `translate(${footerPos.x}, ${footerPos.y})`
+                transform: `translate(${pos.x}, ${pos.y})`
             }
         },
             svg('text', {
-                class: {
-                    'sprotty-label': true,
-                    'type-footer-label': labelKind === 'type'
-                },
-                style: labelKind === 'type' ? {
-                    'font-style': 'italic',
-                    'fill': 'var(--vscode-descriptionForeground, #8b8b8b)'
-                } : undefined,
+                class: { 'sprotty-label': true },
                 attrs: {
-                    'text-anchor': textAnchor,
+                    'text-anchor': 'start',
                     'dominant-baseline': 'hanging'
                 }
             }, label.text || '')

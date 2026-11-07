@@ -35,8 +35,6 @@ import { preloadLibavoid } from './libavoid-loader';
 import {
     WorkflowPromptLabelEditAction,
     WorkflowPromptLabelEditActionHandler,
-    WorkflowToggleGridAction,
-    WorkflowToggleGridActionHandler,
     WorkflowPromptRenameEntityAction,
     WorkflowPromptRenameEntityActionHandler,
     WorkflowRerunFromHereAction,
@@ -51,8 +49,6 @@ import {
     WorkflowEditParametersActionHandler,
     WorkflowEditAnnotationsAction,
     WorkflowEditAnnotationsActionHandler,
-    WorkflowShowWorkspaceEntitiesAction,
-    WorkflowShowWorkspaceEntitiesActionHandler,
     WorkflowShowAgentSkillsAction,
     WorkflowShowAgentSkillsActionHandler,
     WorkflowShowClaudeAgentsAction,
@@ -127,7 +123,6 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
 
     // Client-side handlers for server-driven context menu actions.
     configureActionHandler(context, WorkflowPromptLabelEditAction.KIND, WorkflowPromptLabelEditActionHandler);
-    configureActionHandler(context, WorkflowToggleGridAction.KIND, WorkflowToggleGridActionHandler);
     configureActionHandler(context, WorkflowPromptRenameEntityAction.KIND, WorkflowPromptRenameEntityActionHandler);
     configureActionHandler(context, WorkflowRerunFromHereAction.KIND, WorkflowRerunFromHereActionHandler);
     configureActionHandler(context, WorkflowOpenInOwnEditorAction.KIND, WorkflowOpenInOwnEditorActionHandler);
@@ -135,7 +130,6 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     configureActionHandler(context, WorkflowOpenViewAction.KIND, WorkflowOpenViewActionHandler);
     configureActionHandler(context, WorkflowEditParametersAction.KIND, WorkflowEditParametersActionHandler);
     configureActionHandler(context, WorkflowEditAnnotationsAction.KIND, WorkflowEditAnnotationsActionHandler);
-    configureActionHandler(context, WorkflowShowWorkspaceEntitiesAction.KIND, WorkflowShowWorkspaceEntitiesActionHandler);
     configureActionHandler(context, WorkflowShowAgentSkillsAction.KIND, WorkflowShowAgentSkillsActionHandler);
     configureActionHandler(context, WorkflowShowClaudeAgentsAction.KIND, WorkflowShowClaudeAgentsActionHandler);
 

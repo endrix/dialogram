@@ -1,7 +1,7 @@
 /**
  * Container parity — the SP3 Task-2 oracle.
  *
- * The old monolith `workflowDiagramModule` mixed neutral GLSP infrastructure,
+ * The old monolith client module mixed neutral GLSP infrastructure,
  * stock workflow model/view registration, and workflow feature UI. Task 2 splits
  * it into a neutral base module (`diagramBaseModule`) + `workflowViewsModule` +
  * `workflowFeaturesModule`, recomposed by `createDiagramContainer`. The shipped
@@ -10,7 +10,7 @@
  * This test records the DI registrations of the modules the factory composes
  * (`composeDiagramModules`) and asserts their union equals a baseline captured
  * from the pre-refactor monolith (`fixtures/container-parity.baseline.json`,
- * generated from commit 26442ac's `workflowDiagramModule`). No binding may be
+ * generated from commit 26442ac's monolith module). No binding may be
  * dropped, added, or altered. It also pins the module composition order.
  *
  * The baseline is no longer a pure capture of that commit: features added since

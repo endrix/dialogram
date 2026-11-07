@@ -50,16 +50,6 @@
         "op": "actionHandler"
     },
     {
-        "handler": "WorkflowShowWorkspaceEntitiesActionHandler",
-        "kind": "dialogram.showWorkspaceEntities",
-        "op": "actionHandler"
-    },
-    {
-        "handler": "WorkflowToggleGridActionHandler",
-        "kind": "dialogram.toggleGrid",
-        "op": "actionHandler"
-    },
-    {
         "id": "ChangeBoundsTool",
         "op": "rebind",
         "scope": "singleton",

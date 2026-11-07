@@ -544,13 +544,6 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         this.update();
         break;
 
-      case 'chat.sessionLoaded':
-        if (data?.sessionId) {
-          this.currentSessionId = data.sessionId;
-          this.update();
-        }
-        break;
-
       case 'chat.messageIds':
         this.applyMessageIds(data);
         break;

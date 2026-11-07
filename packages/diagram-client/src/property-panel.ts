@@ -22,7 +22,6 @@ import {
     WorkflowPromptLabelEditAction,
     WorkflowRequestClaudeAgentsOperation,
     WorkflowRequestAgentSkillsOperation,
-    WorkflowRequestWorkspaceEntitiesOperation,
     WorkflowEditAnnotationsAction,
     WorkflowUpdateDefinitionAnnotationOperation,
     WorkflowUpdateEntityParameterOperation,
@@ -4994,7 +4993,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         return section;
     }
 
-    /** Basic Info section: name, type (kind + chip + Change), optional skill status. */
+    /** Basic Info section: name, type (kind + chip), optional skill status. */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     protected buildBasicInfoSection(
         node: any,
@@ -5008,16 +5007,8 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             skillStatus?: string;
         }
     ): HTMLElement {
-        const onChange = () =>
-            void this.actionDispatcher.dispatch(
-                WorkflowRequestWorkspaceEntitiesOperation.create({
-                    elementId: node.id,
-                    expectedType: info.isNetworkInstance ? 'workflow' : 'task',
-                    currentType: info.entityType,
-                })
-            );
-        // The platform's kind of node (task, workflow) and the button that
-        // changes it mean nothing to a product whose kinds are its own.
+        // The platform's kind of node (task, workflow) means nothing to a
+        // product whose kinds are its own.
         const showType = clientBehavior().propertySections?.entityType !== false;
         // The file the node stands for, a double-click away and here a click away.
         const opens = openTargetOf(node);
@@ -5042,15 +5033,6 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                     <span class="pp-aval">
                         <span>${info.typeLabel}</span>
                         <code class="pp-chip" title=${info.typeBadge}>${info.typeBadge}</code>
-                        ${info.isBoundary
-                            ? nothing
-                            : html`<button
-                                  class="pp-icon-btn pp-change"
-                                  title="Change referenced type"
-                                  @click=${onChange}
-                              >
-                                  <span class="codicon codicon-edit"></span>
-                              </button>`}
                     </span>
                 </div>`
                 : nothing}

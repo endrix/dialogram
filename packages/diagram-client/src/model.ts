@@ -325,19 +325,6 @@ export class WorkflowLabel extends GLabel implements Selectable {
 }
 
 /**
- * Editable name label
- */
-export class WorkflowEditableLabel extends WorkflowLabel {
-    static override readonly DEFAULT_FEATURES = [
-        selectFeature,
-        editFeature,
-        withEditLabelFeature
-    ];
-    
-    editControlDimension = { width: 100, height: 20 };
-}
-
-/**
  * Boundary labels should not capture drag gestures.
  *
  * If boundary labels are selectable, the selection tool can consume the
@@ -393,10 +380,3 @@ export class HeaderCompartment extends WorkflowCompartment {
     override compartmentKind: 'header' = 'header';
 }
 
-/**
- * Decoration marker for validation issues
- */
-export interface ValidationDecoration {
-    severity: 'error' | 'warning' | 'info' | 'hint';
-    message: string;
-}

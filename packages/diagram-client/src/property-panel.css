@@ -547,10 +547,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.property-panel .pp-change {
-    margin-left: auto;
-}
-
 .property-panel .pp-icon-btn {
     display: inline-flex;
     align-items: center;
@@ -702,10 +698,6 @@
     /* Break only at spaces / genuinely unbreakable strings — never mid-word
        like "Exter/nal". */
     overflow-wrap: break-word;
-}
-.property-panel .pp-change {
-    margin-left: auto;
-    flex: none;
 }
 .property-panel .pp-aval-wrap {
     display: block;

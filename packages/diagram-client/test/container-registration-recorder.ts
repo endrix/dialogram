@@ -8,7 +8,7 @@
  *
  * This is the oracle for the container-parity test: the union of registrations
  * from the split neutral-base + stock modules must equal the union from the old
- * monolith (`workflowDiagramModule`). Comparison is order-insensitive within the
+ * monolith module. Comparison is order-insensitive within the
  * union (see `sortEntries`) because splitting one module into three inevitably
  * reorders the multi-bindings (e.g. IDiagramStartup) relative to each other; the
  * SET of bindings — which is what determines DI behaviour, each identifier being

@@ -42,7 +42,6 @@ function nowMs(): number {
     return Date.now();
 }
 
-const edgeDragActiveUntilMs = new Map<string, number>();
 
 // A "drag session" is detected heuristically (MoveAction stream). While active, we keep
 // a set of incident edges so the view can freeze non-incident edges to their last stable route.
@@ -55,13 +54,6 @@ function getDragKey(root: Readonly<GModelElement>): string {
     return typeof id === 'string' ? id : '__root__';
 }
 
-export function isAnyDragActive(root: Readonly<GModelElement> | undefined): boolean {
-    if (!root) return false;
-    const key = getDragKey(root);
-    const until = dragActiveUntilMs.get(key);
-    return typeof until === 'number' && until > nowMs();
-}
-
 export function isIncidentEdgeInActiveDrag(root: Readonly<GModelElement> | undefined, edgeId: string): boolean {
     if (!root || typeof edgeId !== 'string') return false;
     const key = getDragKey(root);
@@ -71,15 +63,6 @@ export function isIncidentEdgeInActiveDrag(root: Readonly<GModelElement> | undef
     }
     const set = dragIncidentEdgeIds.get(key);
     return !!set && set.has(edgeId);
-}
-
-export function isDragActiveForEdge(edgeId: string): boolean {
-    const until = edgeDragActiveUntilMs.get(edgeId);
-    return typeof until === 'number' && until > nowMs();
-}
-
-function markDragActive(edgeId: string, ttlMs: number): void {
-    edgeDragActiveUntilMs.set(edgeId, nowMs() + ttlMs);
 }
 
 function markAnyDragActive(root: Readonly<GModelElement>, ttlMs: number): void {
@@ -432,12 +415,6 @@ export class WorkflowElkLiveDragRouter implements IActionHandler {
 
         // Publish incident edges for this drag session so view logic can react if needed.
         setIncidentEdgesForDrag(root, incidentEdgeIds);
-
-        // Also mark each incident edge as "drag active" for a short time window.
-        // This survives model root refreshes that may change root ids on drop.
-        for (const id of incidentEdgeIds) {
-            markDragActive(id, 1200);
-        }
 
         this.queueServerReroute(incidentEdgeIds, movedElements);
     }
