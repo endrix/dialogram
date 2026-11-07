@@ -29,11 +29,11 @@ import {
 import { attachAcpEventForwarding } from "./acp-event-forwarding";
 import { copySessionId, openSessionNatively, type NativeSession } from "./native-session.js";
 import { KNOWN_CONNECTORS } from "./acp-connectors.js";
-import {
-  LEGACY_KEYS,
-  readStateWithFallback,
-  getChatSetting,
-} from "../legacy-settings-compat";
+
+/** Core chat settings section (shared by every profile, not namespaced). */
+const CORE_CHAT_SECTION = "dialogram.chat";
+/** workspaceState key of the last model the user explicitly chose. */
+const PREFERRED_MODEL_STATE_KEY = "dialogram.chat.preferredModel";
 
 /**
  * Everything project-specific the unified chat runtime needs. The diagram
@@ -362,18 +362,15 @@ export class ChatRuntime {
   /**
    * The per-user rollback lever for the GLSP-MCP parallel-run path
    * (`dialogram.chat.useGlspMcp`, default on). Turning it off makes the chat
-   * fall back to the legacy stdio/HTTP MCP servers only — identical to 0.4.x.
+   * fall back to the read-only registry MCP server only.
    *
-   * Read through the neutral chat-settings compat resolver (same as the sibling
-   * core chat settings `autoLayoutAfterEdits` / `checkSourceRevision`): it reads
-   * the neutral `dialogram.chat.useGlspMcp` and falls back to the legacy
-   * `workflow.chat.useGlspMcp` key. Reading it here off the per-profile
-   * `settingsSection` (`<ns>.chat`) is wrong: this is a core-runtime rollback
-   * lever, not profile behaviour, so users set it under the shared core
-   * namespace — the profile-namespaced read silently ignored their value.
+   * Read from the core `dialogram.chat` section like the sibling core chat
+   * settings `autoLayoutAfterEdits` / `checkSourceRevision`. Reading it off the
+   * per-profile `settingsSection` (`<ns>.chat`) would be wrong: this is a
+   * core-runtime rollback lever, not profile behaviour.
    */
   private useGlspMcp(): boolean {
-    return getChatSetting<boolean>("useGlspMcp", true);
+    return vscode.workspace.getConfiguration(CORE_CHAT_SECTION).get<boolean>("useGlspMcp", true);
   }
 
   /**
@@ -548,8 +545,7 @@ export class ChatRuntime {
     const cwd = this.cwdFor(file);
 
     switch (type) {
-      case "chat.ready":
-      case "chat.getStatus": {
+      case "chat.ready": {
         // Post the current status immediately: the integrated panel's 5 s
         // handshake must not wait out an opencode spawn.
         this.postToWebview(uri, {
@@ -828,19 +824,15 @@ export class ChatRuntime {
         this.sessions.setCurrentSession(data.sessionId);
         await this.sessions.updateSessionMode(data.mode);
         return;
-      case "chat.setProvider":
-      case "chat.setModel": {
-        const modelId = data.modelId ?? data.providerId;
+      case "chat.setProvider": {
+        const modelId = data.providerId;
         if (!data?.sessionId) {
           this.pendingModel = modelId;
           return;
         }
         await this.acp.setProvider(data.sessionId, modelId);
         // Persist the choice as the preferred model for future sessions.
-        void this.context.workspaceState.update(
-          LEGACY_KEYS.preferredModel.current,
-          modelId,
-        );
+        void this.context.workspaceState.update(PREFERRED_MODEL_STATE_KEY, modelId);
         this.postToWebview(uri, {
           type: "chat.providerChanged",
           data: { provider: modelId },
@@ -968,14 +960,9 @@ export class ChatRuntime {
     return true;
   }
 
-  /** The last model the user explicitly chose (migrated from the legacy key). */
+  /** The last model the user explicitly chose. */
   private getPreferredModel(): string | undefined {
-    return readStateWithFallback<string | undefined>(
-      this.context.workspaceState,
-      LEGACY_KEYS.preferredModel.current,
-      LEGACY_KEYS.preferredModel.legacy,
-      undefined,
-    );
+    return this.context.workspaceState.get<string | undefined>(PREFERRED_MODEL_STATE_KEY, undefined);
   }
 
   /** Apply the preferred model first, then any pre-session mode/model the user
