@@ -40,7 +40,7 @@ vi.mock('../src/run-event-stream-client.js', () => ({
     RunEventStreamClient: class { constructor(_o: unknown) {} start(): void {} stop(): void {} }
 }));
 
-import { CliRunDriver, type CliRunDriverConfig } from '../src/index';
+import { CliRunDriver, type CliRunDriverConfig } from '../src/cli-run-driver';
 
 const RUN_CMD = 'test.fix.runWorkflow';
 

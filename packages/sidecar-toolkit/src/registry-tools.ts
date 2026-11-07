@@ -1,5 +1,5 @@
 /**
- * Sidecar-registry READ tools, as in-process chat tools (T7, GLSP-MCP Phase B).
+ * Sidecar-registry READ tools, as in-process chat tools.
  *
  * These express sidecar knowledge the GLSP GModel does not carry (the type
  * registry, the elaboration verdict), so they cannot become GModel operations —
@@ -38,9 +38,9 @@ export interface RegistryChatTool {
    * BUILT-IN operation tools only; the bridge filters on this explicit marker (not a name
    * match — see `bridgeableChatTools`).
    *
-   * Post-0.6.0 NO assembled registry tool sets this: the former `create_task_type` chat tool
-   * became a reversible GLSP operation tool. The marker + filter are KEPT as a DEFENSIVE
-   * guardrail so any future source-writing chat tool is still excluded from the read-only bridge.
+   * No assembled registry tool sets this (type creation is a reversible GLSP operation tool).
+   * The marker + filter are KEPT as a DEFENSIVE guardrail so any future source-writing chat
+   * tool is still excluded from the read-only bridge.
    */
   mutates?: boolean;
 }
@@ -104,7 +104,7 @@ export function createRegistryChatTools(cfg: RegistryToolsConfig): RegistryChatT
     handler: async (file, args) => renderResult(await cfg.invoke(file, opName, scope(args))),
   });
 
-  // Ported from the deleted legacy stdio MCP server (0.6.0). Returns the RAW resolved graph as
+  // Returns the RAW resolved graph as
   // JSON (the GModel `diagram-model`/`query-elements` built-ins expose the GModel, not the
   // sidecar's raw export). Non-mutating and bridgeable; mirrors `validate_workflow`'s transport
   // but renders the export payload verbatim instead of summarizing it.
@@ -136,9 +136,7 @@ export function createRegistryChatTools(cfg: RegistryToolsConfig): RegistryChatT
         return JSON.stringify(summarizeValidation(result.response), null, 2);
       },
     },
-    // `create_task_type` was RE-HOMED (0.6.0) as a reversible GLSP operation + custom GLSP-MCP
-    // operation tool (`create-task-type`), so it is undoable via the editor's undo stack. It is no
-    // longer assembled as an in-process chat tool (which would have been a non-undoable direct-file
-    // scaffold on the read-only bridge).
+    // Type creation is a reversible GLSP operation tool (`create-task-type`), undoable via the
+    // editor's undo stack, so it is not assembled as an in-process chat tool here.
   ];
 }

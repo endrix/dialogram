@@ -221,8 +221,7 @@ describe('createSidecarDiagramProfile', () => {
         expect(names).not.toContain('connect');
     });
 
-    it('defaults profile.mcp ON (GLSP-MCP opt-in) and honors an explicit override', () => {
+    it('ships profile.mcp ON (the in-host GLSP-MCP server)', () => {
         expect(createSidecarDiagramProfile(baseInput()).mcp).toEqual({ enabled: true });
-        expect(createSidecarDiagramProfile(baseInput({ mcp: { enabled: false } })).mcp).toEqual({ enabled: false });
     });
 });

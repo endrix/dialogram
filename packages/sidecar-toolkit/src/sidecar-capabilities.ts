@@ -144,8 +144,3 @@ export async function sidecarSupportsOp(
   if (!caps) return true;
   return caps.supportedOps.has(canonicalOp);
 }
-
-/** Clear the capability cache (e.g. after a sidecar command setting change). */
-export function clearSidecarCapabilitiesCache(): void {
-  cache.clear();
-}

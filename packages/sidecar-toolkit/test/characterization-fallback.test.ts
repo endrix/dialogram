@@ -20,7 +20,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscodeMock from './vscode-mock';
 import { WorkflowSourceModelStorage } from '@dialogram/diagram-server/server/diagram-glsp-module';
-import { createSidecarModelSource, type SidecarRuntimeConfig } from '../src/index';
+import { createSidecarModelSource } from '../src/server/cli-graph-model-source';
+import { type SidecarRuntimeConfig } from '../src/server/sidecar-runtime-config';
 import { NEUTRAL_CREATE_NODE_CONFIG } from './fixtures/create-node-config';
 
 const FIXTURES = path.join(__dirname, 'fixtures');

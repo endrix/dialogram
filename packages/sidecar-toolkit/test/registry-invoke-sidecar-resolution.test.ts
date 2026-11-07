@@ -28,7 +28,7 @@ import {
     createSidecarDiagramProfile,
     type SidecarProfileInput
 } from '../src/sidecar-diagram-profile.js';
-import { getSidecarCommand, type SidecarRuntimeConfig } from '../src/index.js';
+import { getSidecarCommand, type SidecarRuntimeConfig } from '../src/server/sidecar-runtime-config';
 import type { CreateNodeStrings, CreateNodeBehavior } from '../src/server/sidecar-runtime-config.js';
 
 const CREATE_NODE_STRINGS: CreateNodeStrings = {

@@ -3,9 +3,9 @@
  *
  * Builds the concrete {@link DiagramOperationModule}(s) the consuming extension passes through the
  * neutral `EditStrategy.operationModules` seam. The single module returned here registers all
- * sidecar-backed operation handlers into GLSP's operation-handler multibinding, exactly mirroring
- * the pre-SP2c hardcoded registration set (registration order is irrelevant — each handler responds
- * to a distinct operation kind). The runtime services those handlers depend on (SidecarInvoker,
+ * sidecar-backed operation handlers into GLSP's operation-handler multibinding (registration
+ * order is irrelevant — each handler responds to a distinct operation kind). The runtime services
+ * those handlers depend on (SidecarInvoker,
  * SidecarRuntimeService, SIDECAR_RUNTIME_CONFIG) are bound separately by
  * {@link createSidecarServerModule}, which the consumer contributes as an `additionalServerModule`.
  *
@@ -36,7 +36,7 @@ import { DuplicateOperationHandler } from './operations/duplicate-handler.js';
 
 /**
  * Build the canonical sidecar-backed operation-handler set for a product
- * {@link SidecarRuntimeConfig}, in the same set/order the pre-SP2c hardcoded registration used.
+ * {@link SidecarRuntimeConfig}.
  *
  * The entity-port CRUD handlers (`EntityPortCrudHandler` / `DeleteEntityPortCrudHandler`) are
  * generated per-config with their product create/delete kinds baked in as plain `operationType`

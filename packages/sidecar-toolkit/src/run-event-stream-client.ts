@@ -10,7 +10,7 @@
  * read-only — it never sends anything to the run, so observing cannot disturb it. The
  * file-polling path remains the fallback if the stream is unavailable.
  *
- * ## Transport (Round 8): raw socket to survive the extension host
+ * ## Transport: raw socket to survive the extension host
  *
  * In the VS Code extension host, `@vscode/proxy-agent` patches Node's
  * `http`/`https` (with `http.proxySupport: "override"`) and BUFFERS/stalls
