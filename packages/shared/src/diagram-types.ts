@@ -7,32 +7,19 @@
 import type { GGraph } from '@eclipse-glsp/server';
 
 /**
- * Minimal diagram model interface used by language-mode operation handlers.
+ * Minimal diagram model interface used by the operation handlers.
  *
- * The model source populates `workflowName` and the graph;
- * `workflow` is an opaque object whose only accessed property is `.name: string`.
+ * The model source populates the graph and `workflowName`.
  */
 export interface WorkflowDiagramModel {
     graph: GGraph;
     documentUri: string;
     /** Set when loading the source model as `(diagramModel as any).workflowName`. */
     workflowName?: string;
-    /** Opaque; the model source sets this to `undefined`. */
-    workflow?: { name?: string };
-    /**
-     * AST-node lookup table.  The model source does NOT populate this;
-     * it is only present for legacy code paths that will be removed.
-     */
-    idToAstNode: Map<string, any>;
-    astNodeToId: Map<any, string>;
 }
 
 /**
  * Type identifiers for Workflow diagram elements
- * 
- * Spec compliance note: The spec defines types like 'node:entity', 'port:in', 'port:out'.
- * We use more specific types (node:actor, node:network, port:input, port:output) but provide
- * aliases and type guards for spec compatibility.
  */
 export namespace WorkflowDiagramTypes {
     // Graph container
@@ -68,17 +55,9 @@ export namespace WorkflowDiagramTypes {
     export const NODE_BOUNDARY_INPUT = 'node:boundary:input';
     export const NODE_BOUNDARY_OUTPUT = 'node:boundary:output';
     
-    // Type aliases for spec compatibility
-    /** Spec alias: entity nodes are actors or networks */
-    export const NODE_ENTITY = NODE_ACTOR;
-    
     // Port types
     export const PORT_INPUT = 'port:input';
     export const PORT_OUTPUT = 'port:output';
-    /** Spec alias: 'port:in' */
-    export const PORT_IN = PORT_INPUT;
-    /** Spec alias: 'port:out' */
-    export const PORT_OUT = PORT_OUTPUT;
     /** Where an edge crosses a group's frame: the server splits an edge that
      *  enters or leaves a group at one of these, so each group lays out on its
      *  own. Not a port anyone connects to. */
@@ -112,11 +91,6 @@ export namespace WorkflowDiagramCss {
     export const NODE_ACTOR = 'workflow-node-actor';
     export const NODE_EXTERNAL_ACTOR = 'workflow-node-external-actor';
     export const NODE_NETWORK = 'workflow-node-network';
-
-    // wf-lang semantic aliases (keep CSS class names stable)
-    export const NODE_TASK = NODE_ACTOR;
-    export const NODE_EXTERNAL_TASK = NODE_EXTERNAL_ACTOR;
-    export const NODE_WORKFLOW = NODE_NETWORK;
     export const NODE_STRUCTURE = 'workflow-node-structure';
     export const NODE_STRUCTURE_IF = 'workflow-node-structure-if';
     export const NODE_STRUCTURE_IF_BRANCH = 'workflow-node-structure-if-branch';
@@ -131,7 +105,6 @@ export namespace WorkflowDiagramCss {
     export const PORT_INPUT = 'workflow-port-input';
     export const PORT_OUTPUT = 'workflow-port-output';
     
-    export const EDGE = 'workflow-edge';
     /**
      * A connection that closes a feedback loop — it feeds a stage that runs
      * before it. Always applied by the server; whether it is drawn differently
@@ -140,17 +113,6 @@ export namespace WorkflowDiagramCss {
     export const EDGE_FEEDBACK = 'workflow-edge-feedback';
     
     export const LABEL = 'workflow-label';
-    export const LABEL_NAME = 'workflow-label-name';
-    export const LABEL_TYPE = 'workflow-label-type';
-
-    export const COMPARTMENT = 'workflow-compartment';
-    export const COMPARTMENT_HEADER = 'workflow-compartment-header';
-    
-    export const BADGE_CONDITIONAL = 'workflow-badge-conditional';
-    export const BADGE_ARRAY = 'workflow-badge-array';
-    
-    export const ERROR = 'workflow-error';
-    export const WARNING = 'workflow-warning';
 }
 
 /**
@@ -199,8 +161,6 @@ export namespace WorkflowDiagramMetadata {
      *  row) finds it. */
     export const GRAPH_NODE_ID = 'wf:graphNodeId';
     export const IS_EXTERNAL_ACTOR = 'cal:isExternalActor';
-    /** Marks a regular task that contains external function declarations or agent annotations. */
-    export const HAS_EXTERNAL_MEMBERS = 'cal:hasExternalMembers';
     /** Marks a node as actively executing during a live run overlay. */
     export const IS_EXECUTING = 'cal:isExecuting';
     /** Marks a node as the entity that was last active when a run finished successfully. */
@@ -293,7 +253,6 @@ export namespace WorkflowDiagramMetadata {
     export const PORT_ID = 'cal:portId';
     export const PORT_NAME = 'cal:portName';
     export const PORT_TYPE = 'cal:portType';
-    export const PORT_INDEX = 'cal:portIndex';
     export const PORT_DIRECTION = 'cal:portDirection';
     export const IS_INPUT_PORT = 'cal:isInputPort';
     /**
@@ -378,17 +337,9 @@ export namespace WorkflowDiagramMetadata {
     export const NETWORK_NAME = 'cal:networkName';
     export const NETWORK_FACTORY_NAME = 'cal:networkFactoryName';
     export const NETWORK_PARAMETERS = 'cal:networkParameters';
-    export const NETWORK_VARIABLES = 'cal:networkVariables';
-    export const NETWORK_INPUT_PORTS = 'cal:networkInputPorts';
-    export const NETWORK_OUTPUT_PORTS = 'cal:networkOutputPorts';
 
-    // wf-lang semantic aliases (keep metadata keys stable)
+    // wf-lang semantic alias (keeps the metadata key stable)
     export const WORKFLOW_NAME = NETWORK_NAME;
-    export const WORKFLOW_FACTORY_NAME = NETWORK_FACTORY_NAME;
-    export const WORKFLOW_PARAMETERS = NETWORK_PARAMETERS;
-    export const WORKFLOW_VARIABLES = NETWORK_VARIABLES;
-    export const WORKFLOW_INPUT_PORTS = NETWORK_INPUT_PORTS;
-    export const WORKFLOW_OUTPUT_PORTS = NETWORK_OUTPUT_PORTS;
     
     export const CONDITION_TEXT = 'cal:conditionText';
 
@@ -408,76 +359,14 @@ export namespace WorkflowDiagramMetadata {
      *  the outermost frames), or `target`. */
     export const EDGE_SEGMENT = 'wf:edgeSegment';
 }
-/**
- * Consolidated origin metadata interface (spec-compliant).
- * Use `createOrigin()` and `extractOrigin()` helpers for conversion.
- */
-export interface OriginMeta {
-    /** AST path (e.g., "/namespaces@0/entities@0/structure/connections@1") */
-    astPath: string;
-    /** Source range for incremental edits */
-    range?: {
-        start: { line: number; character: number };
-        end: { line: number; character: number };
-    };
-}
-
-/**
- * Create an OriginMeta object from AST path and optional range.
- */
-export function createOrigin(astPath: string, range?: OriginMeta['range']): OriginMeta {
-    return range ? { astPath, range } : { astPath };
-}
-
-/**
- * Extract OriginMeta from GModel element args (converts flat metadata to spec object).
- */
-export function extractOrigin(args: Record<string, unknown> | undefined): OriginMeta | undefined {
-    if (!args) return undefined;
-    const astPath = args[WorkflowDiagramMetadata.AST_PATH];
-    if (typeof astPath !== 'string') return undefined;
-    
-    const range = args[WorkflowDiagramMetadata.SOURCE_RANGE] as OriginMeta['range'] | undefined;
-    return createOrigin(astPath, range);
-}
-
-/**
- * Convert OriginMeta back to flat args for GModel elements.
- */
-export function originToArgs(origin: OriginMeta): Record<string, unknown> {
-    const args: Record<string, unknown> = {
-        [WorkflowDiagramMetadata.AST_PATH]: origin.astPath,
-    };
-    if (origin.range) {
-        args[WorkflowDiagramMetadata.SOURCE_RANGE] = origin.range;
-    }
-    return args;
-}
 
 /**
  * Type guards for diagram element types
  */
 export namespace WorkflowDiagramTypeGuards {
-    /** Check if element is an entity node (task/workflow, or external task) */
-    export function isEntityNode(type: string): boolean {
-        return type === WorkflowDiagramTypes.NODE_TASK
-            || type === WorkflowDiagramTypes.NODE_WORKFLOW
-            || type === WorkflowDiagramTypes.NODE_EXTERNAL_TASK;
-    }
-    
-    /** Check if element is read-only (derived elements like joins and virtual edges) */
+    /** Check if element is read-only (a derived element, or one the producer marked so) */
     export function isReadOnlyElement(type: string, args?: Record<string, unknown>): boolean {
         return args?.[WorkflowDiagramMetadata.IS_READ_ONLY] === true 
             || args?.[WorkflowDiagramMetadata.IS_VIRTUAL] === true;
-    }
-    
-    /** Check if element is an input port */
-    export function isInputPort(type: string): boolean {
-        return type === WorkflowDiagramTypes.PORT_INPUT;
-    }
-    
-    /** Check if element is an output port */
-    export function isOutputPort(type: string): boolean {
-        return type === WorkflowDiagramTypes.PORT_OUTPUT;
     }
 }
