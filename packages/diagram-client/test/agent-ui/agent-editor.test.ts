@@ -4,17 +4,17 @@
  * the property panel draws and sends them today for wfpy's agent nodes.
  * Characterization before the move to wfpy-ide: see `harness.ts`.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { WorkflowShowAgentSkillsActionHandler, WorkflowShowClaudeAgentsActionHandler } from '../../src/editing-action-handlers';
 import { ui, installPage, taskNode, dumpDom, ANALYST_AGENT } from './harness';
-import { TestPanel, button, card, rootOf, tick } from './panel';
+import { TestPanel, button, card, resetAgentUi, section, tick } from './panel';
 
 vi.mock('../../src/vscode-ui', async () => (await import('./harness')).vscodeUiModule());
 
 const content = () => document.getElementById('property-content')!;
 
 beforeEach(() => {
-    ui.reset();
+    resetAgentUi();
     installPage();
 });
 
@@ -97,6 +97,7 @@ describe('discovered skills and agent presets', () => {
         const node = taskNode('picker', [ANALYST_AGENT]);
         const panel = new TestPanel();
         panel.listenForDiscovery();
+        onTestFinished(() => panel.dispose());
         panel.show(node);
         new WorkflowShowAgentSkillsActionHandler().handle({ kind: 'dialogram.showAgentSkills', elementId: node.id, skills: SKILLS } as any);
         await tick();
@@ -132,7 +133,7 @@ describe('discovered skills and agent presets', () => {
     it('offers the agent presets the server found once the preset is enabled', async () => {
         const node = taskNode('preset', [ANALYST_AGENT]);
         const panel = new TestPanel();
-        panel.show(node, rootOf(node));
+        panel.show(node);
         new WorkflowShowClaudeAgentsActionHandler().handle({
             kind: 'dialogram.showClaudeAgents', elementId: node.id,
             agents: [{ name: 'code-reviewer', description: 'Reviews diffs', path: '/w/.claude/agents/code-reviewer.md', ignoredFields: ['tools'] }]
@@ -160,7 +161,7 @@ describe('the annotation section’s buttons', () => {
     it('adds an @agent and a @tool from their templates, and opens the wizard', async () => {
         const panel = new TestPanel();
         panel.show(taskNode('plain', []));
-        const header = document.querySelector('.section-actions')!;
+        const header = section('Annotations')!.querySelector('.section-actions')!;
         button(header, 'Add @agent').click();
         button(header, 'Add @tool').click();
         button(header, 'Wizard…').click();

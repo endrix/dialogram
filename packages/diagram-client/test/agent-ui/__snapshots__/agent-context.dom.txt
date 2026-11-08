@@ -60,7 +60,7 @@ div .property-section.agent-context-live-section
                 span .agent-json-file-name
                   "…/r3/round.json"
                 span .agent-chat-expand-arrow.codicon.codicon-chevron-right
-              div .agent-json-file-content [hidden]
+              div .agent-json-file-content style="display: none;"
                 "{"round": 3, "cycles": {"dhrystone": 41210}}"
       div .agent-chat-card.agent-chat-assistant
         div .agent-chat-header

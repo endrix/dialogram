@@ -4,10 +4,10 @@
  * annotation today. Characterization before the move to wfpy-ide: see
  * `harness.ts`. The wizard is the Annotations section's "Wizard…" button.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkflowEditAnnotationsActionHandler } from '../../src/editing-action-handlers';
 import { ui, installPage, taskNode, BASH_TOOL } from './harness';
-import { rootOf } from './panel';
+import { resetAgentUi, rootOf } from './panel';
 
 vi.mock('../../src/vscode-ui', async () => (await import('./harness')).vscodeUiModule());
 
@@ -35,8 +35,12 @@ async function wizard(answers: unknown[], annotations: any[] = []): Promise<{ se
 }
 
 beforeEach(() => {
-    ui.reset();
+    resetAgentUi();
     installPage();
+});
+
+afterEach(() => {
+    delete (globalThis as any).diagramIdentifier;
 });
 
 describe('the annotation wizard', () => {

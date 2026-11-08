@@ -7,12 +7,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
 import { ui, installPage, taskNode, dumpDom, ANALYST_AGENT, BASH_TOOL } from './harness';
-import { TestPanel, button, card, rootOf, section, tick } from './panel';
+import { TestPanel, button, card, resetAgentUi, rootOf, section, tick } from './panel';
 
 vi.mock('../../src/vscode-ui', async () => (await import('./harness')).vscodeUiModule());
 
 beforeEach(() => {
-    ui.reset();
+    resetAgentUi();
     installPage();
 });
 
@@ -29,13 +29,16 @@ describe('Agent Tools', () => {
         const tools = section('Agent Tools')!;
         await expect(dumpDom(tools)).toMatchFileSnapshot('./__snapshots__/agent-tools.dom.txt');
 
+        // As a person can: pick another auth mode while the tools are on, then turn them off.
+        const auth = tools.querySelector('select') as HTMLSelectElement;
+        expect(auth.disabled).toBe(false);
+        auth.value = 'deny-all';
+        auth.dispatchEvent(new Event('change', { bubbles: true }));
         const enabled = tools.querySelector('input[type="checkbox"]') as HTMLInputElement;
         enabled.checked = false;
         enabled.dispatchEvent(new Event('change', { bubbles: true }));
-        const auth = tools.querySelector('select') as HTMLSelectElement;
-        auth.value = [...auth.options].map(o => o.value).find(v => v !== auth.value)!;
-        auth.dispatchEvent(new Event('change', { bubbles: true }));
         await tick();
+        expect(auth.disabled).toBe(true);
         await expect(JSON.stringify(ui.calls, null, 2) + '\n').toMatchFileSnapshot('./__snapshots__/agent-tools.calls.json');
     });
 
@@ -131,6 +134,11 @@ describe('a @tool node', () => {
         await tick();
         const op = panel.last('dialogram.updateDefinitionAnnotation');
         expect(op).toMatchObject({ elementId: 'node:scope:root:builder', action: 'upsert', annotationName: 'tool' });
+        // KNOWN DEFECT, pinned as it ships: the text says `inherit_stdio=True` while
+        // the argument updates say `inheritStdio: "true"`, so the operation names one
+        // argument two ways. Fixing it changes these two snapshots on purpose.
+        expect(op.annotationText).toContain('inherit_stdio=True');
+        expect(op.argUpdates.inheritStdio).toBe('true');
         await expect(op.annotationText + '\n').toMatchFileSnapshot('./__snapshots__/tool-save.annotation.txt');
         await expect(JSON.stringify(op.argUpdates, null, 2) + '\n').toMatchFileSnapshot('./__snapshots__/tool-save.arg-updates.json');
     });

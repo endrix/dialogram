@@ -1,14 +1,33 @@
 /**
- * The shipped property panel, with only its window chrome skipped and its
- * dispatcher a recorder. Shared by the agent-UI characterization tests.
+ * The shipped property panel with its window wiring skipped and its dispatcher
+ * a recorder. Shared by the agent-UI characterization tests.
+ *
+ * `initialize` is skipped whole: the window chrome (it needs the editor's
+ * page), the discovered-skills listener (installed on demand, see
+ * `listenForDiscovery`) and the document's link listener. So link handling in
+ * a rendered reply is not exercised here.
  */
 import { PropertyPanel } from '../../src/property-panel';
+import { WorkflowShowAgentSkillsActionHandler, WorkflowShowClaudeAgentsActionHandler } from '../../src/editing-action-handlers';
+import { ui } from './harness';
+
+/**
+ * A clean slate for each test: the recorders, and the static per-element
+ * caches of discovered skills and presets, so a test never sees what an
+ * earlier one discovered for the same node.
+ */
+export function resetAgentUi(): void {
+    ui.reset();
+    (WorkflowShowAgentSkillsActionHandler as any).skillsByElementId.clear();
+    (WorkflowShowClaudeAgentsActionHandler as any).agentsByElementId.clear();
+}
 
 export class TestPanel extends PropertyPanel {
     readonly dispatched: any[] = [];
+    private readonly windowListeners: Array<[string, EventListenerOrEventListenerObject]> = [];
 
     protected override initialize(): void {
-        // The window chrome needs the editor's page; the content does not.
+        // Skipped whole; see the class comment.
     }
 
     constructor() {
@@ -25,9 +44,28 @@ export class TestPanel extends PropertyPanel {
         this.updateContent(node);
     }
 
-    /** The re-render when discovered skills arrive (the shipped `initialize` installs it). */
+    /**
+     * The re-render when discovered skills arrive (the shipped `initialize`
+     * installs it). Removed again by `dispose`, so a later test's panel is the
+     * only one drawing into the page.
+     */
     listenForDiscovery(): void {
-        this.initializeAsyncDiscoveryRefresh();
+        const add = window.addEventListener.bind(window);
+        (window as any).addEventListener = (type: string, listener: EventListenerOrEventListenerObject, options?: unknown) => {
+            this.windowListeners.push([type, listener]);
+            add(type, listener, options as never);
+        };
+        try {
+            this.initializeAsyncDiscoveryRefresh();
+        } finally {
+            (window as any).addEventListener = add;
+        }
+    }
+
+    dispose(): void {
+        for (const [type, listener] of this.windowListeners.splice(0)) {
+            window.removeEventListener(type, listener);
+        }
     }
 
     /** The last operation of a kind the panel dispatched. */

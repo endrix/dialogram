@@ -1,7 +1,8 @@
 /**
  * A harness for the property panel's wfpy agent UI, in a real DOM (happy-dom).
  *
- * The panel is the shipped class with only its window chrome skipped. Its
+ * The panel is the shipped class with its window wiring skipped (see
+ * `panel.ts`). Its
  * dispatcher and the VS Code bridge are recorders, so a test reads back what
  * the panel drew and what it sent. Everything else is the real code: lit, the
  * Markdown renderer and DOMPurify run against happy-dom's window.
@@ -13,6 +14,8 @@ import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared
 
 export interface UiCall { method: string; args: unknown[] }
 
+// This module must not import panel code: the VS Code bridge mock loads it,
+// and panel code imports the bridge (a cycle the module loader waits on forever).
 export const ui = {
     calls: [] as UiCall[],
     /** What `executeCommand(id)` answers, by command id; any other method, by its name. */
@@ -25,6 +28,9 @@ export const ui = {
         this.picks.length = 0;
     }
 };
+
+/** What the real bridge answers when a test does not say: its declared types' empty values. */
+const DEFAULT_ANSWERS: Record<string, unknown> = { getViewerEditors: [], appendViewerEditor: true };
 
 /**
  * The VS Code bridge as a recorder. A test file mocks `../../src/vscode-ui` with
@@ -39,7 +45,7 @@ export function vscodeUiModule(): unknown {
         if (method === 'quickPick' || method === 'inputBox') {
             return ui.picks.shift();
         }
-        return ui.answers.get(method);
+        return ui.answers.has(method) ? ui.answers.get(method) : DEFAULT_ANSWERS[method];
     };
     const instance = {
         executeCommand: record('executeCommand'),
@@ -135,11 +141,12 @@ export const BASH_TOOL = {
 
 /**
  * The panel's DOM as indented text: tag, class, the attributes a person sees
- * or a control carries, and trimmed text. Lit's comment markers are dropped.
+ * or a control carries (inline styles too: the panel draws switches, dimming
+ * and hiding with them), and trimmed text. Lit's comment markers are dropped.
  */
 export function dumpDom(root: Element): string {
     const lines: string[] = [];
-    const ATTRS = ['type', 'title', 'placeholder', 'value', 'checked', 'selected', 'disabled', 'href', 'data-annotation', 'data-arg', 'aria-label', 'role'];
+    const ATTRS = ['type', 'title', 'placeholder', 'value', 'checked', 'selected', 'disabled', 'href', 'data-annotation', 'data-arg', 'aria-label', 'role', 'style'];
     const walk = (node: Node, depth: number): void => {
         if (node.nodeType === 3) {
             const text = (node.textContent ?? '').replace(/\s+/g, ' ').trim();
@@ -182,7 +189,7 @@ export function dumpDom(root: Element): string {
                 parts.push(value === '' ? attr : `${attr}=${JSON.stringify(value)}`);
             }
         }
-        if (el.hidden || el.style?.display === 'none') {
+        if (el.hidden) {
             parts.push('[hidden]');
         }
         lines.push(`${'  '.repeat(depth)}${parts.join(' ')}`);

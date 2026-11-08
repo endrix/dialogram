@@ -15,8 +15,8 @@
       [
         {
           "entityName": "tooled",
-          "enabled": false,
-          "auth": "policy"
+          "enabled": true,
+          "auth": "deny-all"
         }
       ]
     ]

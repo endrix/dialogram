@@ -38,7 +38,7 @@ div .annotation-item
             span .codicon.codicon-remove
       button .mini-btn type="button"
         "Add item"
-      div .annotation-field [hidden]
+      div .annotation-field style="display: none;"
         div .annotation-label
           "args (expression)"
         textarea .annotation-input.annotation-textarea placeholder="e.g. [\"-lc\", \"{in.exe} {in.input} > {out.stdout}\"]"
@@ -50,5 +50,5 @@ div .annotation-item
         div .annotation-checkbox-text
           "true"
     div
-    button type="button"
+    button type="button" style="background: none none; border: 1px dashed; color: var(--vscode-foreground); padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; width: 100%; margin-top: 8px; border-width: var(--vscode-panel-border, #555); border-style: var(--vscode-panel-border, #555); border-color: var(--vscode-panel-border, #555);"
       "+ Add Argument"

@@ -12,8 +12,8 @@ div .annotation-item
       div .agent-prompt-header
         div .agent-prompt-label
           "Prompt"
-          span .codicon.codicon-info title="Use {in.portName} or {out.portName} to reference port data"
-        div
+          span .codicon.codicon-info title="Use {in.portName} or {out.portName} to reference port data" style="cursor:help;opacity:0.6;font-size:12px"
+        div style="display: flex; gap: 8px;"
           label .agent-enabled-toggle
             span .agent-enabled-text
               "Enabled"
@@ -21,12 +21,12 @@ div .annotation-item
               input .agent-enabled-input type="checkbox" value="on" checked
               span .agent-enabled-slider
                 span .agent-enabled-knob
-      div .agent-section-content
+      div .agent-section-content style="position: relative;"
         div .agent-skill-actions
-          button .mini-btn
+          button .mini-btn style="display: flex; gap: 4px; align-items: center;"
             span .codicon.codicon-screen-full
             "Expand Editor"
-        div [hidden]
+        div style="position: absolute; display: none; background-color: var(--vscode-editorSuggestWidget-background, #252526); border: 1px solid; border-radius: 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.4); z-index: 999999; max-height: 150px; overflow-y: auto; min-width: 150px; font-size: 12px; border-width: var(--vscode-editorSuggestWidget-border, #454545); border-style: var(--vscode-editorSuggestWidget-border, #454545); border-color: var(--vscode-editorSuggestWidget-border, #454545);"
         textarea .annotation-input.annotation-textarea.agent-prompt-input placeholder="Transform inputs into outputs...\nWait for { to trigger autocomplete!" value="You are the analyst of a hardware design loop.\nSay, per program, the budget in cycles."
     div .agent-skill-block.disabled
       div .agent-section-head
@@ -39,7 +39,7 @@ div .annotation-item
             input .agent-enabled-input type="checkbox" value="on"
             span .agent-enabled-slider
               span .agent-enabled-knob
-      div .agent-section-content [hidden]
+      div .agent-section-content style="display: none;"
         input .annotation-input placeholder="e.g. code-reviewer" disabled
         div .agent-skill-hint
           "Resolved from .claude/agents/<name>.md"
@@ -50,8 +50,8 @@ div .annotation-item
             "Open Preset"
         div .agent-skill-status
           "Agent preset is deactivated."
-        div .agent-skill-chips [hidden]
-        div .agent-skill-warning [hidden]
+        div .agent-skill-chips style="display: none;"
+        div .agent-skill-warning style="display: none;"
     div .agent-skill-block
       div .agent-section-head
         div .agent-skill-label
@@ -64,7 +64,7 @@ div .annotation-item
             span .agent-enabled-slider
               span .agent-enabled-knob
       div .agent-section-content
-        input .annotation-input placeholder="e.g. writer" value="turnus-reader"
+        input .annotation-input placeholder="e.g. writer" value="turnus-reader" style="width: 100%; box-sizing: border-box;"
         div .agent-skill-hint
           "Resolved at runtime from .wf/skills/<name>/SKILL.md"
         div .agent-skill-actions
@@ -80,12 +80,12 @@ div .annotation-item
             "Enable Skill Hooks"
         div .agent-skill-status
           "Reads Turnus analyses"
-        div .agent-skill-chips
+        div .agent-skill-chips style="display: flex;"
           span .agent-chip.info
             "INFO 1 script hook"
           span .agent-chip.ok
             "OK Skill ready"
-        div .agent-skill-warning [hidden]
+        div .agent-skill-warning style="display: none;"
     details .agent-skill-block.agent-collapsible.disabled
       summary .agent-section-head
         span .agent-collapsible-title
@@ -100,17 +100,17 @@ div .annotation-item
             span .agent-enabled-slider
               span .agent-enabled-knob
       div .agent-section-content
-        div
+        div style="font-size: 10px; opacity: 0.8; font-weight: 500; margin-bottom: 4px;"
           "Servers"
-        input .annotation-input placeholder="e.g. filesystem, github" disabled
+        input .annotation-input placeholder="e.g. filesystem, github" disabled style="width: 100%; box-sizing: border-box;"
         div .agent-skill-hint
           "Comma-separated MCP server names from agent-tools.json registry"
-        div
-          button
+        div style="margin-top: 8px;"
+          button style="background: none none; border: 1px dashed; color: var(--vscode-foreground); padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; width: 100%; border-width: var(--vscode-panel-border, #555); border-style: var(--vscode-panel-border, #555); border-color: var(--vscode-panel-border, #555);"
             "+ Add MCP Server"
-        div
+        div style="font-size: 10px; opacity: 0.8; font-weight: 500; margin-top: 8px; margin-bottom: 4px;"
           "Transport"
-        select .annotation-input value="bridge" disabled
+        select .annotation-input value="bridge" disabled style="width: 100%; box-sizing: border-box;"
           option value="bridge" selected
             "bridge"
           option value="stdio"
@@ -133,33 +133,33 @@ div .annotation-item
             span .agent-enabled-slider
               span .agent-enabled-knob
       div .agent-section-content
-        div
+        div style="font-size: 10px; opacity: 0.8; font-weight: 500; margin-bottom: 4px;"
           "Servers"
-        input .annotation-input placeholder="e.g. pylance, typescript" disabled
+        input .annotation-input placeholder="e.g. pylance, typescript" disabled style="width: 100%; box-sizing: border-box;"
         div .agent-skill-hint
           "Comma-separated LSP server names available to this agent"
-        div
-          button
+        div style="margin-top: 8px;"
+          button style="background: none none; border: 1px dashed; color: var(--vscode-foreground); padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; width: 100%; border-width: var(--vscode-panel-border, #555); border-style: var(--vscode-panel-border, #555); border-color: var(--vscode-panel-border, #555);"
             "+ Add LSP Server"
-        div
+        div style="font-size: 10px; opacity: 0.8; font-weight: 500; margin-top: 8px; margin-bottom: 4px;"
           "Command"
-        input .annotation-input placeholder="e.g. pylsp" disabled
+        input .annotation-input placeholder="e.g. pylsp" disabled style="width: 100%; box-sizing: border-box;"
         div
-          div
+          div style="font-size: 10px; opacity: 0.8; font-weight: 500; margin-top: 8px; margin-bottom: 4px;"
             "Args"
-          input .annotation-input placeholder="space-separated"
+          input .annotation-input placeholder="space-separated" style="width: 100%; box-sizing: border-box;"
         div
-          div
+          div style="font-size: 10px; opacity: 0.8; font-weight: 500; margin-top: 8px; margin-bottom: 4px;"
             "Language"
-          input .annotation-input placeholder="e.g. cpp"
+          input .annotation-input placeholder="e.g. cpp" style="width: 100%; box-sizing: border-box;"
         div
-          div
+          div style="font-size: 10px; opacity: 0.8; font-weight: 500; margin-top: 8px; margin-bottom: 4px;"
             "Extra Flags"
-          input .annotation-input placeholder="space-separated"
+          input .annotation-input placeholder="space-separated" style="width: 100%; box-sizing: border-box;"
         div
-          div
+          div style="font-size: 10px; opacity: 0.8; font-weight: 500; margin-top: 8px; margin-bottom: 4px;"
             "Severity"
-          select .annotation-input value="error"
+          select .annotation-input value="error" style="width: 100%; box-sizing: border-box;"
             option value="error" selected
               "error"
             option value="warning"
@@ -169,12 +169,12 @@ div .annotation-item
             option value="hint"
               "hint"
         div
-          div
+          div style="font-size: 10px; opacity: 0.8; font-weight: 500; margin-top: 8px; margin-bottom: 4px;"
             "Max Repairs"
-          input .annotation-input type="number" placeholder="2"
-        div
+          input .annotation-input type="number" placeholder="2" style="width: 100%; box-sizing: border-box;"
+        div style="font-size: 10px; opacity: 0.8; font-weight: 500; margin-top: 8px; margin-bottom: 4px;"
           "Port"
-        input .annotation-input type="number" placeholder="e.g. 2087" disabled
+        input .annotation-input type="number" placeholder="e.g. 2087" disabled style="width: 100%; box-sizing: border-box;"
     details .agent-skill-block.agent-collapsible
       summary .agent-section-head
         span .agent-collapsible-title
@@ -185,56 +185,56 @@ div .annotation-item
       div .agent-section-content
         div .agent-skill-hint
           "Validate agent output by running a command or an LSP server; failures re-prompt the agent."
-        div
-          button
+        div style="margin-top: 4px;"
+          button style="background: none none; border: 1px dashed; color: var(--vscode-foreground); padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; width: 100%; border-width: var(--vscode-panel-border, #555); border-style: var(--vscode-panel-border, #555); border-color: var(--vscode-panel-border, #555);"
             "+ Add Output Validator"
-    div
-      div
-        div
+    div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;"
+      div style="display: flex; flex-direction: column; gap: 4px;"
+        div style="font-size: 10px; opacity: 0.8; font-weight: 500;"
           "Model"
-        input .annotation-input placeholder="e.g. gpt-4" value="opus"
-      div
-        div
+        input .annotation-input placeholder="e.g. gpt-4" value="opus" style="width: 100%; box-sizing: border-box;"
+      div style="display: flex; flex-direction: column; gap: 4px;"
+        div style="font-size: 10px; opacity: 0.8; font-weight: 500;"
           "Provider"
-        input .annotation-input placeholder="e.g. openai"
-    div
-      div
+        input .annotation-input placeholder="e.g. openai" style="width: 100%; box-sizing: border-box;"
+    div style="margin-bottom: 12px;"
+      div style="font-size: 10px; opacity: 0.8; font-weight: 500; margin-bottom: 4px;"
         "Endpoint"
-      input .annotation-input placeholder="https://api.openai.com/v1"
-    div
-      div
-        div
+      input .annotation-input placeholder="https://api.openai.com/v1" style="width: 100%; box-sizing: border-box;"
+    div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; padding-top: 4px; border-top-width: var(--vscode-editorWidget-border); border-top-style: var(--vscode-editorWidget-border); border-top-color: var(--vscode-editorWidget-border);"
+      div style="display: flex; flex-direction: column; gap: 4px;"
+        div style="font-size: 10px; opacity: 0.8;"
           "Timeout (ms)"
-        input .annotation-input type="number" placeholder="30000" value="1800000"
-      div
-        div
+        input .annotation-input type="number" placeholder="30000" value="1800000" style="width: 100%; box-sizing: border-box;"
+      div style="display: flex; flex-direction: column; gap: 4px;"
+        div style="font-size: 10px; opacity: 0.8;"
           "Context Budget"
-        input .annotation-input type="number" placeholder="20" value="50"
-      div
-        div
+        input .annotation-input type="number" placeholder="20" value="50" style="width: 100%; box-sizing: border-box;"
+      div style="display: flex; flex-direction: column; gap: 4px; align-items: center;"
+        div style="font-size: 10px; opacity: 0.8;"
           "Stateful"
-        label
-          input type="checkbox" value="on"
-          span
-            span
-    div
-      div
-        div
+        label style="display: inline-block; position: relative; width: 32px; height: 18px; margin-bottom: 3px;"
+          input type="checkbox" value="on" style="opacity: 0; width: 0px; height: 0px;"
+          span style="position: absolute; cursor: pointer; top: 0px; left: 0px; right: 0px; bottom: 0px; background-color: var(--vscode-input-background); border: 1px solid; transition: .2s; border-radius: 18px; border-width: var(--vscode-input-border); border-style: var(--vscode-input-border); border-color: var(--vscode-input-border);"
+            span style="position: absolute; content: \"\"; height: 12px; width: 12px; left: 3px; bottom: 2px; background-color: var(--vscode-foreground); transition: .2s; border-radius: 50%; opacity: 0.6;"
+    div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;"
+      div style="display: flex; flex-direction: column; gap: 4px;"
+        div style="font-size: 10px; opacity: 0.8; font-weight: 500;"
           "Truncation"
-        select .annotation-input value="sliding"
+        select .annotation-input value="sliding" style="width: 100%; box-sizing: border-box;"
           option value="sliding" selected
             "sliding"
           option value="summarize"
             "summarize"
-      div
-        div
+      div style="display: flex; flex-direction: column; gap: 4px;"
+        div style="font-size: 10px; opacity: 0.8; font-weight: 500;"
           "Fireable w/o input"
-        input .annotation-input type="number" placeholder="0"
-    div
-      div
-        div
+        input .annotation-input type="number" placeholder="0" style="width: 100%; box-sizing: border-box;"
+    div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;"
+      div style="display: flex; flex-direction: column; gap: 4px;"
+        div style="font-size: 10px; opacity: 0.8; font-weight: 500;"
           "Transport"
-        select .annotation-input value="claude-cli"
+        select .annotation-input value="claude-cli" style="width: 100%; box-sizing: border-box;"
           optgroup
             option value="http"
               "http"
@@ -250,10 +250,10 @@ div .annotation-item
               "claude-cli"
             option value="codex-cli"
               "codex-cli"
-      div title="Applies to the ACP transports"
-        div
+      div title="Applies to the ACP transports" style="display: flex; flex-direction: column; gap: 4px; opacity: 0.45;"
+        div style="font-size: 10px; opacity: 0.8; font-weight: 500;"
           "Connector"
-        select .annotation-input disabled
+        select .annotation-input disabled style="width: 100%; box-sizing: border-box;"
           option value selected
             "(run's default)"
           optgroup
@@ -261,22 +261,22 @@ div .annotation-item
               "claude-code"
             option value="opencode"
               "opencode (not on PATH)"
-      div
-        div
+      div style="display: flex; flex-direction: column; gap: 4px; opacity: 0.45;"
+        div style="font-size: 10px; opacity: 0.8; font-weight: 500;"
           "Session mode"
-        input .annotation-input placeholder="agent's default" disabled
-      div title
-        div
+        input .annotation-input placeholder="agent's default" disabled style="width: 100%; box-sizing: border-box;"
+      div title style="display: flex; flex-direction: column; gap: 4px; opacity: 1;"
+        div style="font-size: 10px; opacity: 0.8; font-weight: 500;"
           "CLI Tools"
-        select .annotation-input value="native"
+        select .annotation-input value="native" style="width: 100%; box-sizing: border-box;"
           option value="wfpy-none"
             "wfpy-none"
           option value="native" selected
             "native"
-      div title
-        div
+      div title style="display: flex; flex-direction: column; gap: 4px; opacity: 1;"
+        div style="font-size: 10px; opacity: 0.8; font-weight: 500;"
           "Reasoning"
-        select .annotation-input
+        select .annotation-input style="width: 100%; box-sizing: border-box;"
           option value selected
             "default"
           option value="minimal"
@@ -291,5 +291,5 @@ div .annotation-item
         input .annotation-input.annotation-add-value placeholder="value (expression)" value="true"
         button .mini-btn.icon-only.danger type="button" title="Remove this argument" aria-label="Remove this argument"
           span .codicon.codicon-close
-    button type="button"
+    button type="button" style="background: none none; border: 1px dashed; color: var(--vscode-foreground); padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; width: 100%; margin-top: 8px; border-width: var(--vscode-panel-border, #555); border-style: var(--vscode-panel-border, #555); border-color: var(--vscode-panel-border, #555);"
       "+ Add Argument"

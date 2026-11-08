@@ -20,7 +20,7 @@ div .agent-skill-block
         "Open Preset"
     div .agent-skill-status
       "Reviews diffs"
-    div .agent-skill-chips
+    div .agent-skill-chips style="display: flex;"
       span .agent-chip.warn
         "IGNORED tools"
-    div .agent-skill-warning [hidden]
+    div .agent-skill-warning style="display: none;"
