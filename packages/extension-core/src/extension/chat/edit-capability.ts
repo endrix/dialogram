@@ -36,13 +36,6 @@ export interface EditChatCapability {
 }
 
 /** Default node-creation commands when the chat config supplies none. */
-const DEFAULT_NODE_COMMANDS: Array<{ command: string; nodeType: string; description: string }> = [
-    { command: 'create-task', nodeType: 'task', description: 'Create a new task node' },
-    { command: 'create-agent', nodeType: 'agent', description: 'Create a new agent node' },
-    { command: 'create-viewer', nodeType: 'viewer', description: 'Create a new viewer node' },
-    { command: 'create-workflow', nodeType: 'workflow', description: 'Create a new workflow node' }
-];
-
 const AUTO_LAYOUT_DEBOUNCE_MS = 400;
 const VIEW_OP_SETTLE_MS = 500;
 
@@ -112,7 +105,7 @@ export function createEditChatCapability(deps: EditChatCapabilityDeps): EditChat
 
     const slashCommands: ChatCommandContribution[] = [];
 
-    for (const nc of profile.chat?.nodeCommands ?? DEFAULT_NODE_COMMANDS) {
+    for (const nc of profile.chat?.nodeCommands ?? []) {
         slashCommands.push({
             command: nc.command,
             description: nc.description,

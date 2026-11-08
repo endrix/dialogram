@@ -1,4 +1,5 @@
 import { Action, Command, ModelState, OperationHandler } from '@eclipse-glsp/server';
+import { normalizeWorkflowReferenceName } from '../source-analysis';
 import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
@@ -57,7 +58,7 @@ export class UpdateDefinitionAnnotationOperationHandler extends OperationHandler
         const element: any = this.modelState.index.find(operation.elementId);
         const args: any = element?.args ?? {};
         const entityType = (args[WorkflowDiagramMetadata.ENTITY_TYPE] as string | undefined) ?? '';
-        const defName = unqualifyName(entityType);
+        const defName = normalizeWorkflowReferenceName(entityType) ?? '';
         if (!defName) {
             return undefined;
         }
@@ -181,10 +182,4 @@ function normalizePythonLiteralNames(text: string): string {
     }
 
     return out;
-}
-
-function unqualifyName(name: string): string {
-    const afterDots = name.split('.').pop() ?? name;
-    const parts = afterDots.split('__');
-    return parts.length > 0 ? (parts[parts.length - 1] ?? '') : afterDots;
 }

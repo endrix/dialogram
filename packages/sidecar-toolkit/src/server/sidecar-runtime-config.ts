@@ -336,8 +336,11 @@ export function getGraphLoadTimeoutMs(
 }
 
 /** Resolve the CLI command from VS Code settings (falling back to the default). */
+/** The four fields the CLI command is resolved from; a run-driver config has them too. */
+export type CliCommandConfig = Pick<SidecarRuntimeConfig, 'settingsNamespace' | 'cliCommandSettingKey' | 'cliCommandDefault' | 'cliPythonModule'>;
+
 export function getCliCommand(
-    cfg: SidecarRuntimeConfig,
+    cfg: CliCommandConfig,
     vscodeModule: typeof import('vscode'),
     scopeUri?: import('vscode').Uri
 ): string {
@@ -348,7 +351,7 @@ export function getCliCommand(
 
 /** Resolve the CLI command + args-prefix (e.g. `python -m <module>` vs a bare binary). */
 export function getCliInvocation(
-    cfg: SidecarRuntimeConfig,
+    cfg: CliCommandConfig,
     vscodeModule: typeof import('vscode'),
     scopeUri?: import('vscode').Uri
 ): { cmd: string; argsPrefix: string[] } {

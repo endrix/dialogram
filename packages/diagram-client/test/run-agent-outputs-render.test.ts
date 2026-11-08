@@ -11,7 +11,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/markdown', () => ({
     renderMarkdownSafe: (src: string) => `<rendered>${src}</rendered>`,
-    renderInlineMarkdownSafe: (src: string) => src,
     looksLikeMarkdown: () => true
 }));
 

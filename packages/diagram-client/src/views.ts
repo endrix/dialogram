@@ -628,206 +628,109 @@ export class HeaderCompartmentView extends ShapeView {
     }
 }
 
+type NodeAnnotations = Array<{ name?: string; arguments?: Array<{ name?: string; value?: string }> }>;
+
 /**
- * Base view for Workflow nodes
+ * The body every entity node is drawn as: the server-sized rounded rect, the
+ * run ring while it executes, the family's icon or image at the centre, the
+ * children (header, ports, badges) and the type footer. The three node views
+ * differ only in the root classes they wear, which `rootClasses` names from
+ * the node's family.
  */
-/**
- * Actor node view - renders node body AND port labels
- * Port labels are rendered from the node (not the port) to avoid SVG clipping issues.
- */
+function renderEntityNode(
+    node: Readonly<WorkflowNode>,
+    context: RenderingContext,
+    rootClasses: (family: NodeFamilySpec | undefined) => Record<string, boolean>
+): VNode {
+    // Use server-provided size, not Sprotty-computed bounds
+    const { width, height } = getNodeSize(node, NODE_WIDTH, NODE_HEIGHT);
+    const cssClasses = Array.isArray((node as any).cssClasses) ? (node as any).cssClasses as string[] : [];
+    const isExecuting = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_EXECUTING]) || cssClasses.includes('cal-node-active');
+    const isFinished = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_FINISHED]) || cssClasses.includes('cal-node-finished');
+    const isErrored = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_ERRORED]) || cssClasses.includes('cal-node-error') || cssClasses.includes('cal-node-graph-error');
+    const isWarned = !isErrored && cssClasses.includes('cal-node-graph-warning');
+
+    // A node in a product's family wears its mark; a subgraph as an actor does.
+    const defAnnotations = ((node as any).args?.[WorkflowDiagramMetadata.ENTITY_DEFINITION_ANNOTATIONS] as NodeAnnotations | undefined) ?? [];
+    const family = resolveNodeFamily(defAnnotations, clientBehavior().nodeFamilies ?? []);
+    const { height: bodyHeight, footerLabel } = getNodeBody(node as any, { width, height });
+    const footerLabelNode = footerLabel
+        ? svg('text', {
+            class: { 'type-footer-label': true },
+            attrs: {
+                x: width / 2,
+                y: bodyHeight + WorkflowDiagramConstants.NODE_FOOTER_LABEL_GAP_PX,
+                'text-anchor': 'middle',
+                'dominant-baseline': 'hanging'
+            }
+        }, footerLabel)
+        : undefined;
+    return svg('g', {
+        class: {
+            'workflow-node': true,
+            ...rootClasses(family),
+            'cal-node-active': isExecuting,
+            'cal-node-finished': isFinished,
+            'cal-node-error': isErrored,
+            'cal-node-warning': isWarned,
+            selected: node.selected,
+            'hover': node.hoverFeedback
+        },
+        attrs: {
+            transform: `translate(${node.position.x}, ${node.position.y})`
+        }
+    },
+        svg('rect', {
+            class: { 'node-body': true },
+            attrs: {
+                x: 0, y: 0,
+                width, height: bodyHeight,
+                rx: 4, ry: 4
+            }
+        }),
+        // Above the body so the travelling head is not painted over by it.
+        ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
+        ...(family?.icon ? [renderNodeCenterIcon(family, width, bodyHeight)] : []),
+        ...(family?.image ? renderNodeCenterImage(family, width, bodyHeight) : []),
+        ...context.renderChildren(node),
+        ...(footerLabelNode ? [footerLabelNode] : [])
+    );
+}
+
+/** An actor: the node body and its port labels (drawn from the node, not the port, against SVG clipping). */
 @injectable()
 export class ActorNodeView extends ShapeView {
-    override render(node: Readonly<ActorNode>, context: RenderingContext, args?: IViewArgs): VNode | undefined {
+    override render(node: Readonly<ActorNode>, context: RenderingContext, _args?: IViewArgs): VNode | undefined {
         if (!this.isVisible(node, context)) {
             return undefined;
         }
-
-        const { width, height } = getNodeSize(node, NODE_WIDTH, NODE_HEIGHT);
-        const cssClasses = Array.isArray((node as any).cssClasses) ? (node as any).cssClasses as string[] : [];
-        const isExecuting = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_EXECUTING]) || cssClasses.includes('cal-node-active');
-        const isFinished = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_FINISHED]) || cssClasses.includes('cal-node-finished');
-        const isErrored = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_ERRORED]) || cssClasses.includes('cal-node-error') || cssClasses.includes('cal-node-graph-error');
-        const isWarned = !isErrored && cssClasses.includes('cal-node-graph-warning');
-
-        const defAnnotations = ((node as any).args?.[WorkflowDiagramMetadata.ENTITY_DEFINITION_ANNOTATIONS] as Array<{ name?: string; arguments?: Array<{ name?: string; value?: string }> }> | undefined) ?? [];
-        const family = resolveNodeFamily(defAnnotations, clientBehavior().nodeFamilies ?? []);
-        const { height: bodyHeight, footerLabel } = getNodeBody(node as any, { width, height });
-        const footerLabelNode = footerLabel
-            ? svg('text', {
-                class: { 'type-footer-label': true },
-                attrs: {
-                    x: width / 2,
-                    y: bodyHeight + WorkflowDiagramConstants.NODE_FOOTER_LABEL_GAP_PX,
-                    'text-anchor': 'middle',
-                    'dominant-baseline': 'hanging'
-                }
-            }, footerLabel)
-            : undefined;
-        return svg('g', {
-            class: {
-                'workflow-node': true,
-                'actor-node': true,
-                'cal-node-active': isExecuting,
-                'cal-node-finished': isFinished,
-                'cal-node-error': isErrored,
-                'cal-node-warning': isWarned,
-                selected: node.selected,
-                'hover': node.hoverFeedback
-            },
-            attrs: {
-                transform: `translate(${node.position.x}, ${node.position.y})`
-            }
-        },
-            svg('rect', {
-                class: { 'node-body': true },
-                attrs: {
-                    x: 0, y: 0,
-                    width, height: bodyHeight,
-                    rx: 4, ry: 4
-                }
-            }),
-            // Above the body so the travelling head is not painted over by it.
-            ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
-            ...(family?.icon ? [renderNodeCenterIcon(family, width, bodyHeight)] : []),
-            ...(family?.image ? renderNodeCenterImage(family, width, bodyHeight) : []),
-            ...context.renderChildren(node),
-            ...(footerLabelNode ? [footerLabelNode] : [])
-        );
+        return renderEntityNode(node, context, () => ({ 'actor-node': true }));
     }
 }
 
-/**
- * External actor node view - with port labels
- */
+/** An external actor: as an actor, with the family it belongs to as a class of its own. */
 @injectable()
 export class ExternalActorNodeView extends ShapeView {
-    override render(node: Readonly<WorkflowNode>, context: RenderingContext, args?: IViewArgs): VNode | undefined {
+    override render(node: Readonly<WorkflowNode>, context: RenderingContext, _args?: IViewArgs): VNode | undefined {
         if (!this.isVisible(node, context)) {
             return undefined;
         }
-
-        // Use server-provided size, not Sprotty-computed bounds
-        const { width, height } = getNodeSize(node, NODE_WIDTH, NODE_HEIGHT);
-
-        const defAnnotations = ((node as any).args?.[WorkflowDiagramMetadata.ENTITY_DEFINITION_ANNOTATIONS] as Array<{ name?: string; arguments?: Array<{ name?: string; value?: string }> }> | undefined)
-            ?? [];
-        const family = resolveNodeFamily(defAnnotations, clientBehavior().nodeFamilies ?? []);
-        const cssClasses = Array.isArray((node as any).cssClasses) ? (node as any).cssClasses as string[] : [];
-        const isExecuting = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_EXECUTING]) || cssClasses.includes('cal-node-active');
-        const isFinished = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_FINISHED]) || cssClasses.includes('cal-node-finished');
-        const isErrored = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_ERRORED]) || cssClasses.includes('cal-node-error') || cssClasses.includes('cal-node-graph-error');
-        const isWarned = !isErrored && cssClasses.includes('cal-node-graph-warning');
-
-        const { height: bodyHeight, footerLabel } = getNodeBody(node as any, { width, height });
-        const footerLabelNode = footerLabel
-            ? svg('text', {
-                class: { 'type-footer-label': true },
-                attrs: {
-                    x: width / 2,
-                    y: bodyHeight + WorkflowDiagramConstants.NODE_FOOTER_LABEL_GAP_PX,
-                    'text-anchor': 'middle',
-                    'dominant-baseline': 'hanging'
-                }
-            }, footerLabel)
-            : undefined;
-        return svg('g', {
-            class: {
-                'workflow-node': true,
-                'external-actor-node': true,
-                'external-actor-default': !family,
-                ...(family ? { [`external-actor-${family.id ?? family.annotation}`]: true } : {}),
-                'cal-node-active': isExecuting,
-                'cal-node-finished': isFinished,
-                'cal-node-error': isErrored,
-                'cal-node-warning': isWarned,
-                selected: node.selected,
-                'hover': node.hoverFeedback
-            },
-            attrs: {
-                transform: `translate(${node.position.x}, ${node.position.y})`
-            }
-        },
-            svg('rect', {
-                class: { 'node-body': true },
-                attrs: {
-                    x: 0, y: 0,
-                    width, height: bodyHeight,
-                    rx: 4, ry: 4
-                }
-            }),
-            // Above the body so the travelling head is not painted over by it.
-            ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
-            ...(family?.icon ? [renderNodeCenterIcon(family, width, bodyHeight)] : []),
-            ...(family?.image ? renderNodeCenterImage(family, width, bodyHeight) : []),
-            ...context.renderChildren(node),
-            ...(footerLabelNode ? [footerLabelNode] : [])
-        );
+        return renderEntityNode(node, context, family => ({
+            'external-actor-node': true,
+            'external-actor-default': !family,
+            ...(family ? { [`external-actor-${family.id ?? family.annotation}`]: true } : {})
+        }));
     }
 }
 
-/**
- * Network node view - with port labels
- */
+/** A network (subgraph) instance: as an actor. */
 @injectable()
 export class NetworkNodeView extends ShapeView {
-    override render(node: Readonly<NetworkNode>, context: RenderingContext, args?: IViewArgs): VNode | undefined {
+    override render(node: Readonly<NetworkNode>, context: RenderingContext, _args?: IViewArgs): VNode | undefined {
         if (!this.isVisible(node, context)) {
             return undefined;
         }
-
-        // Use server-provided size, not Sprotty-computed bounds
-        const { width, height } = getNodeSize(node, NODE_WIDTH, NODE_HEIGHT);
-        const cssClasses = Array.isArray((node as any).cssClasses) ? (node as any).cssClasses as string[] : [];
-        const isExecuting = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_EXECUTING]) || cssClasses.includes('cal-node-active');
-        const isFinished = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_FINISHED]) || cssClasses.includes('cal-node-finished');
-        const isErrored = Boolean((node as any).args?.[WorkflowDiagramMetadata.IS_ERRORED]) || cssClasses.includes('cal-node-error') || cssClasses.includes('cal-node-graph-error');
-        const isWarned = !isErrored && cssClasses.includes('cal-node-graph-warning');
-
-        // A subgraph in a product's family wears its mark, as an actor does.
-        const defAnnotations = ((node as any).args?.[WorkflowDiagramMetadata.ENTITY_DEFINITION_ANNOTATIONS] as Array<{ name?: string; arguments?: Array<{ name?: string; value?: string }> }> | undefined) ?? [];
-        const family = resolveNodeFamily(defAnnotations, clientBehavior().nodeFamilies ?? []);
-        const { height: bodyHeight, footerLabel } = getNodeBody(node as any, { width, height });
-        const footerLabelNode = footerLabel
-            ? svg('text', {
-                class: { 'type-footer-label': true },
-                attrs: {
-                    x: width / 2,
-                    y: bodyHeight + WorkflowDiagramConstants.NODE_FOOTER_LABEL_GAP_PX,
-                    'text-anchor': 'middle',
-                    'dominant-baseline': 'hanging'
-                }
-            }, footerLabel)
-            : undefined;
-        return svg('g', {
-            class: {
-                'workflow-node': true,
-                'network-node': true,
-                'cal-node-active': isExecuting,
-                'cal-node-finished': isFinished,
-                'cal-node-error': isErrored,
-                'cal-node-warning': isWarned,
-                selected: node.selected,
-                'hover': node.hoverFeedback
-            },
-            attrs: {
-                transform: `translate(${node.position.x}, ${node.position.y})`
-            }
-        },
-            svg('rect', {
-                class: { 'node-body': true },
-                attrs: {
-                    x: 0, y: 0,
-                    width, height: bodyHeight,
-                    rx: 4, ry: 4
-                }
-            }),
-            // Above the body so the travelling head is not painted over by it.
-            ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
-            ...(family?.icon ? [renderNodeCenterIcon(family, width, bodyHeight)] : []),
-            ...(family?.image ? renderNodeCenterImage(family, width, bodyHeight) : []),
-            ...context.renderChildren(node),
-            ...(footerLabelNode ? [footerLabelNode] : [])
-        );
+        return renderEntityNode(node, context, () => ({ 'network-node': true }));
     }
 }
 

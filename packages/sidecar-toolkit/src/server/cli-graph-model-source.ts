@@ -26,7 +26,8 @@ import {
     parseViewArg
 } from '@dialogram/diagram-server/server/graph-load-request-options';
 import { HierarchyCache, findInstance, outlineOf } from './hierarchy-cache';
-import { extractWorkflowDefinitionNames, normalizeSourceUriKey } from './source-analysis';
+import { extractWorkflowDefinitionNames } from './source-analysis';
+import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
 import {
     type SidecarRuntimeConfig,
     DEFAULT_GRAPH_LOAD_TIMEOUT_MS,

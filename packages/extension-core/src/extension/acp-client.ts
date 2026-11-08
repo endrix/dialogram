@@ -866,22 +866,15 @@ export class ACPClientService extends EventEmitter {
     session.injectedWorkflowMtimeMs = stat.mtimeMs;
     const name = path.basename(session.workflowFile);
 
-    // Generic framing + the runtime's domain "skill" (profile-specific). Falls
-    // back to the default wording only if no skill was supplied, to preserve behavior.
+    // Generic framing + the runtime's domain "skill" (profile-specific). A profile
+    // that supplies none gets the framing alone: the platform has no product's
+    // tools or nouns to describe.
     const framing =
       `Context for this conversation: the user is editing the file "${name}" ` +
       `(${session.workflowFile}) in a visual diagram editor. The file below and the ` +
       `resolved graph are the authoritative definition of the diagram — when the user ` +
       `refers to "this", "the workflow/network", or asks about its nodes, treat them as ` +
       `the source of truth and do not search other files unless explicitly asked.`;
-    const skill =
-      this.chatSkill ??
-      `You also have MCP tools: read tools (list_task_types, get_graph, validate_workflow) and, ` +
-        `when the diagram MCP server is available, GLSP diagram tools (create-task-type, create-nodes, ` +
-        `create-edges, modify-nodes, delete-elements). For STRUCTURAL edits prefer the GLSP tools when ` +
-        `present — their edits go through the editor's undo stack. To add a BRAND-NEW task: call ` +
-        `create-task-type to scaffold it, then edit the generated @task class to implement its ` +
-        `behavior, and verify with get_graph.`;
 
     // A diagram-tool usage hint, present only when the extension layer says the
     // diagram MCP server is advertised to the agent.
@@ -891,7 +884,7 @@ export class ACPClientService extends EventEmitter {
       {
         type: "text",
         text:
-          `${framing}\n\n${skill}` +
+          this.withSkill(framing) +
           (toolHint ? `\n\n${toolHint}` : "") +
           (reinjectedFlag ? "\n\n(Updated file content follows.)" : ""),
       },
@@ -981,11 +974,17 @@ export class ACPClientService extends EventEmitter {
           `Context for this conversation: the user is editing "${path.basename(workflowFile)}" ` +
           `(${workflowFile}) in a visual diagram editor. The file itself is NOT attached: it is ` +
           `${megabytes} MB, and reading it whole exhausts the context before anything is answered. ` +
-          `Use the diagram tools for structure, and read only specific line ranges when you need ` +
-          `the source text.` +
-          (this.chatSkill ? `\n\n${this.chatSkill}` : ""),
+          this.withSkill(
+            `Use the diagram tools for structure, and read only specific line ranges when you need ` +
+            `the source text.`
+          ),
       },
     ];
+  }
+
+  /** `framing` with the profile's domain skill after it, when the profile named one. */
+  private withSkill(framing: string): string {
+    return this.chatSkill ? `${framing}\n\n${this.chatSkill}` : framing;
   }
 
   /** 0 disables the attachment entirely; undefined keeps the default bound. */

@@ -135,13 +135,6 @@
 ".property-section-header:hover": 3,
 ".property-section.collapsed .property-section-content": 1,
 ".property-section.collapsed .property-section-header .section-icon": 1,
-".property-tab-btn": 2,
-".property-tab-btn.active": 2,
-".property-tab-btn:hover": 2,
-".property-tab-content": 1,
-".property-tab-content.active": 1,
-".property-tabs-header": 2,
-".property-tabs-header::-webkit-scrollbar": 1,
 ".property-value": 1,
 ".property-value.read-only": 1,
 ".property-value.read-only .mini-btn": 1

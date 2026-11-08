@@ -244,8 +244,8 @@ describe('createSidecarDiagramProfile with readOnly', () => {
             .toThrow(/openability\.probeOp/);
         expect(() => createSidecarDiagramProfile(editableInput({ sidecarCommandDefault: undefined })))
             .toThrow(/sidecarCommandSettingKey and sidecarCommandDefault are required/);
-        expect(() => createSidecarDiagramProfile(editableInput({ sidecarCommandSettingKey: undefined })))
-            .toThrow(/required unless readOnly/);
+        // The setting key alone is derived (`sidecarCommand`) once the default names a sidecar.
+        expect(createSidecarDiagramProfile(editableInput({ sidecarCommandSettingKey: undefined }))).toBeDefined();
     });
 });
 

@@ -1,16 +1,5 @@
 import * as fs from 'node:fs/promises';
-
-function countParenDelta(line: string): number {
-    let delta = 0;
-    for (const ch of line) {
-        if (ch === '(') {
-            delta += 1;
-        } else if (ch === ')') {
-            delta -= 1;
-        }
-    }
-    return delta;
-}
+import { countParenDelta } from './server/python-text.js';
 
 export function extractDecoratedDefinitionNames(sourceText: string, decoratorName: string): string[] {
     const lines = sourceText.split(/\r?\n/);
