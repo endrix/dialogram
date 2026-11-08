@@ -80,12 +80,28 @@ export function composeDiagramModules(options: DiagramContainerOptions): Contain
 }
 
 /**
- * The feature modules the stock diagram loads: the stock views, the stock
- * feature UI, then a product's own modules, last so they may `rebind` what a
- * stock module bound. `startStockDiagram` composes exactly this.
+ * The container options of the stock diagram with a product's feature modules
+ * added: the stock views (through `withStockViews`), the stock feature UI, then
+ * the product's modules in the order given. `startStockDiagram` composes exactly
+ * this, so the order a product's bundle gets is testable without a webview.
+ *
+ * The product's modules come after every stock *feature* module, but
+ * `createDiagramContainer` still loads the VS Code integration and GLSP's grid,
+ * helper-line, hover and context-menu modules after them and rebinds the
+ * context-menu service last: those bindings cannot be replaced from here.
+ *
+ * Throws when `features` repeats a stock module: GLSP would throw on the
+ * duplicate element registration and leave the webview blank.
  */
-export function stockFeatureModules(features: readonly ContainerModule[] = []): ContainerModule[] {
-    return [workflowViewsModule, workflowFeaturesModule, ...features];
+export function stockDiagramOptions(clientId: string, features: readonly ContainerModule[] = []): DiagramContainerOptions {
+    for (const module of features) {
+        if (module === workflowViewsModule || module === workflowFeaturesModule || module === diagramBaseModule) {
+            throw new TypeError(
+                'stockDiagramOptions: features must not repeat a stock module; the stock diagram already loads the base, the stock views and the stock feature UI'
+            );
+        }
+    }
+    return { clientId, withStockViews: true, features: [workflowFeaturesModule, ...features] };
 }
 
 /**

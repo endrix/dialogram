@@ -116,14 +116,51 @@ The consumer-path proof test (`test/consumer-build.test.ts`) runs exactly this
 build headlessly against a fixture that imports `createDiagramContainer`, so this
 recipe is exercised in CI.
 
+**Path imports need a resolver.** The package has no `exports` map, so a
+product built against a Dialogram checkout maps `@dialogram/<pkg>[/<subpath>]`
+to the package sources itself. That is what makes the path imports in §4
+(`@dialogram/diagram-client/stock-starter`,
+`@dialogram/diagram-client/diagram-client.css`) resolve:
+
+```js
+const resolveDialogram = {
+    name: 'resolve-dialogram-packages',
+    setup(build) {
+        build.onResolve({ filter: /^@dialogram\// }, args => {
+            const rest = args.path.slice('@dialogram/'.length);
+            const slash = rest.indexOf('/');
+            const pkg = slash < 0 ? rest : rest.slice(0, slash);
+            const subpath = slash < 0 ? undefined : rest.slice(slash + 1);
+            const base = path.join(dialogramPackages, pkg, 'src');
+            if (!subpath) return { path: path.join(base, 'index.ts') };
+            return { path: path.join(base, path.extname(subpath) ? subpath : `${subpath}.ts`) };
+        });
+    }
+};
+```
+
+A product with its own `node_modules` also pins GLSP, Sprotty and inversify to
+the platform's copy, so the bundle has one inversify realm (chisel-ide's
+`esbuild.mjs`, `pinPlatformRealmPlugin`). `test/stock-starter-build.test.ts`
+builds a product entry through this resolver and checks its stylesheet order.
+
 ### 4. Wiring your starter
 
 **The stock diagram with your modules added.** When your bundle is the stock
 diagram plus a few modules of your own (a property-panel contribution, a view,
 a rebinding), do not write a starter: call the stock one. It is what the
 shipped bundle runs, so you get the same channel, overlay routing, palette
-header controls and SVG export, and your modules load after every stock one,
-where a `rebind` replaces a stock binding.
+header controls and SVG export. Your modules load after the stock views and
+feature UI, where a `rebind` replaces what a stock feature module bound. The
+VS Code integration and GLSP's grid, helper-line, hover and context-menu
+modules still load after yours, and the context-menu service is rebound last,
+so those you cannot replace this way. Do not pass a stock module in
+`features`: the starter already loads them, and it throws rather than register
+them twice.
+
+`@dialogram/diagram-client/stock-starter` is a path import. The package has no
+`exports` map, so your bundler must resolve `@dialogram/<pkg>/<subpath>` to
+`packages/<pkg>/src/<subpath>.ts`, as the resolver plugin in §3 does.
 
 ```ts
 // Import the starter FIRST: its imports bring GLSP's own stylesheets, and

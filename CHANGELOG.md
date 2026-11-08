@@ -33,7 +33,7 @@ platform API version.
 - **A product's own webview bundle starts the stock diagram.**
   `startStockDiagram({ features })` (`@dialogram/diagram-client/stock-starter`)
   is what the stock bundle runs, with the product's feature modules loaded
-  after every stock one; the stock entry is now that call with nothing added,
+  after the stock views and feature UI; the stock entry is now that call with nothing added,
   and its bundle's stylesheet is byte-identical. A sidecar product names its
   bundle with `clientAssets` on the `createSidecarDiagramProfile` input, as a
   hand-assembled profile already could.
