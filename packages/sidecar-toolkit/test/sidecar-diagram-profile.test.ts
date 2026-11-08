@@ -167,6 +167,18 @@ describe('createSidecarDiagramProfile', () => {
         expect(withResume.clientBehavior).toMatchObject({ noneSentinel: 'x', resumeAtStep: true });
     });
 
+    it('builds no run driver, offers no resume, for a product whose CLI has no run', () => {
+        const resume = (runDir: string, step: number) => ['--resume-from', runDir, '--at-step', String(step)];
+        const runs = createSidecarDiagramProfile(baseInput({ cliResumeArgs: resume }));
+        expect(typeof runs.runDriver).toBe('function');
+        expect(runs.chat?.tools?.map(t => t.name)).toContain('resume_failed_run');
+
+        const none = createSidecarDiagramProfile(baseInput({ runDriver: false, cliResumeArgs: resume }));
+        expect(none.runDriver).toBeUndefined();
+        expect((none.clientBehavior as any)?.resumeAtStep).toBeUndefined();
+        expect(none.chat?.tools?.map(t => t.name)).not.toContain('resume_failed_run');
+    });
+
     it('leaves the creation palette alone unless the product suppresses it', () => {
         // Default `true` by omission, so the assembler cannot silently empty the
         // palette of a product that never mentioned it.

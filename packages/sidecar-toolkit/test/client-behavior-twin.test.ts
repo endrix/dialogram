@@ -55,8 +55,10 @@ function fieldsOf(file: string, name: string): string[] {
  *                  the arguments it needs
  *   statusSource   derived from `DiagramProfile.statusSource`: the context
  *                  menu offers exactly the commands the host registered
+ *   runDriver      derived from `DiagramProfile.runDriver` being present: Run
+ *                  and Stop are offered exactly when something runs the diagram
  */
-const PLATFORM_DERIVED = ['chatBackend', 'acpConnectors', 'resumeAtStep', 'statusSource'];
+const PLATFORM_DERIVED = ['chatBackend', 'acpConnectors', 'resumeAtStep', 'statusSource', 'runDriver'];
 
 describe('sidecar client behavior mirrors the platform', () => {
     const sidecar = fieldsOf(

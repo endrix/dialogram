@@ -202,6 +202,14 @@ export interface SidecarProfileInput {
      * it; without it the stepper offers no resume.
      */
     cliResumeArgs?: (runDir: string, step: number) => string[];
+    /**
+     * Whether the product's CLI runs a diagram (`<cli> run <file> --out-dir ...`),
+     * which the toolkit's run driver calls. Default `true`. `false` for a
+     * product whose CLI has no `run`: no run driver is registered, the
+     * diagram offers no Run or Stop, the chat offers no resume, and the
+     * run-driver setting keys are not read.
+     */
+    runDriver?: boolean;
 
     // User-visible strings / behavior.
     undoLabelSuffix: string;
@@ -568,7 +576,9 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
     // A product that can resume runs gives the chat a way to offer it: the
     // agent that fixed a failed run proposes resuming it, and the person says
     // yes or no.
-    if (input.cliResumeArgs) {
+    // A run can only be resumed where something runs it.
+    const runs = input.runDriver !== false;
+    if (runs && input.cliResumeArgs) {
         chatTools.push(resumeFailedRunTool(input.commands.runWorkflow));
     }
 
@@ -666,7 +676,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         // A projection creates nothing, whatever the input says.
         supportsElementCreation: readOnly ? false : input.supportsElementCreation,
         operationKinds: input.operationKinds,
-        clientBehavior: input.cliResumeArgs
+        clientBehavior: runs && input.cliResumeArgs
             ? { ...input.clientBehavior, resumeAtStep: true }
             : input.clientBehavior,
         clientStylesheets: input.clientStylesheets,
@@ -716,7 +726,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
                 ? { settingKey: input.acpConnectorSettingKey, files: input.acpConnectorFiles }
                 : undefined
         },
-        runDriver,
+        runDriver: runs ? runDriver : undefined,
         statusSource: input.statusSource ? createCliStatusSource(input.statusSource, runtimeConfig) : undefined,
         newSourceFile
     };

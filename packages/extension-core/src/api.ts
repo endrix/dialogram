@@ -410,6 +410,14 @@ export interface DiagramClientBehavior {
    *  tooltip); "Hierarchy" by default. */
   outlineTitle?: string;
   /**
+   * Whether a run driver is behind this diagram: the Run and Stop buttons are
+   * offered exactly then. Derived by the platform from `DiagramProfile.runDriver`,
+   * like {@link chatBackend}; read it, do not write it. A button that invokes a
+   * command nothing registered, or a CLI subcommand that does not exist, is
+   * worse than no button.
+   */
+  runDriver?: boolean;
+  /**
    * Whether the host has a chat backend behind this diagram.
    *
    * Derived by the platform from `DiagramProfile.chat`, not supplied by a

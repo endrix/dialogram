@@ -990,6 +990,9 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
                 // absent is exactly what "the chat backend is not activated"
                 // means, so it is the honest source.
                 chatBackend: this.profile.chat !== undefined,
+                // The same for the run driver: Run and Stop are offered exactly
+                // when something is registered to run the diagram.
+                runDriver: this.profile.runDriver !== undefined,
                 // The same for the status source: the menu offers exactly the
                 // commands the host registered, or none. Data only; `collect`
                 // stays on the host.

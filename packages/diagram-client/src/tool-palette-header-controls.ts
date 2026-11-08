@@ -1,7 +1,7 @@
 import { codiconCSSClasses } from '@eclipse-glsp/sprotty';
 import { VscodeUi } from './vscode-ui';
 import { exportDiagramSvg } from './svg-export-command';
-import { commandId, feedbackEdgesVisibleStorageKey, queueTraceVisibleStorageKey } from './profile';
+import { commandId, feedbackEdgesVisibleStorageKey, queueTraceVisibleStorageKey, offersRun } from './profile';
 
 type DiagramContext = {
     sourceUri?: string;
@@ -182,8 +182,8 @@ function patchHeaderTools(headerTools: HTMLElement): void {
         };
     }
 
-    // 2) Add Run button as first header tool.
-    if (!headerTools.querySelector('i.codicon.codicon-play.cal-run-workflow')) {
+    // 2) Add Run button as first header tool, when something runs the diagram.
+    if (offersRun() && !headerTools.querySelector('i.codicon.codicon-play.cal-run-workflow')) {
         const runIcon = createHeaderIcon('play');
         runIcon.classList.add('cal-run-workflow');
         runIcon.title = 'Run workflow';
@@ -209,8 +209,8 @@ function patchHeaderTools(headerTools: HTMLElement): void {
         headerTools.insertBefore(runIcon, headerTools.firstChild);
     }
 
-    // 3) Add Stop button to cancel an active workflow run.
-    if (!headerTools.querySelector('i.codicon.codicon-debug-stop.cal-stop-workflow')) {
+    // 3) Add Stop button to cancel an active workflow run, under the same condition.
+    if (offersRun() && !headerTools.querySelector('i.codicon.codicon-debug-stop.cal-stop-workflow')) {
         const stopIcon = createHeaderIcon('debug-stop');
         stopIcon.classList.add('cal-stop-workflow');
         stopIcon.title = 'Stop workflow run';

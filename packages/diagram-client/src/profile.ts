@@ -24,6 +24,8 @@ type DiagramClientBehavior = {
     nodeFamilies?: NodeFamilySpec[];
     /** Whether the host has a chat backend; derived by the platform. */
     chatBackend?: boolean;
+    /** Whether a run driver is behind the diagram; derived by the platform. */
+    runDriver?: boolean;
     /** The ACP connectors the runtime discovered or the user declared, for an
      *  agent's `connector` (extension-core `AcpConnectorInfo`). */
     acpConnectors?: AcpConnectorInfo[];
@@ -154,6 +156,15 @@ export function feedbackEdgesVisibleStorageKey(): string {
 export function clientBehavior(): DiagramClientBehavior {
     const configured = getDiagramIdentifier().clientBehavior;
     return configured && typeof configured === 'object' ? configured : {};
+}
+
+/**
+ * Whether the diagram offers Run and Stop: unless the host says no run driver
+ * is behind it. A webview the host did not describe (dev, standalone) keeps
+ * them, as before.
+ */
+export function offersRun(): boolean {
+    return clientBehavior().runDriver !== false;
 }
 
 /**

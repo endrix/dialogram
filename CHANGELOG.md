@@ -30,6 +30,14 @@ platform API version.
 
 ### Added
 
+- **A product whose CLI has no `run` says so: `runDriver: false`.** The
+  toolkit then registers no run driver, the chat offers no resume, and the
+  diagram shows no Run or Stop. The webview learns it from a derived
+  `clientBehavior.runDriver` (like `chatBackend`), so every consumer without
+  a run driver (ndf once it opts out, chisel-ide, the library-mode
+  mlir-viewer, read-only profiles) loses a Run button that invoked a command
+  nothing registered or a CLI subcommand that does not exist. sv and vhdl keep
+  theirs: `hdl run` simulates through it.
 - **Selection trace** (`clientBehavior.selectionTrace`, opt-in): selecting a
   node draws every path through it, what leads to it in green and what it
   leads to in blue, and fades the rest; after mlir-viewer's trace highlighter.
