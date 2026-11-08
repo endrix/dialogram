@@ -6,7 +6,7 @@
  */
 import { RequestClipboardDataAction } from '@eclipse-glsp/protocol';
 import { describe, expect, it } from 'vitest';
-import { parseClipboardPayload, WorkflowDiagramMetadata, WorkflowDiagramTypes, WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
+import { nextFreeName, parseClipboardPayload, WorkflowDiagramMetadata, WorkflowDiagramTypes, WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import { WorkflowRequestClipboardDataActionHandler } from '../src/server/request-clipboard-data-action-handler';
 
 function modelStateWith(elements: Record<string, any>, sourceUri?: string) {
@@ -61,10 +61,11 @@ describe('WorkflowRequestClipboardDataActionHandler', () => {
                 type: WorkflowDiagramTypes.NODE_ACTOR,
                 args: { [WorkflowDiagramMetadata.ENTITY_NAME]: 'x', [WorkflowDiagramMetadata.ENTITY_TYPE]: 'X', [WorkflowDiagramMetadata.IS_READ_ONLY]: true }
             },
-            nameless: { type: WorkflowDiagramTypes.NODE_ACTOR, args: {} }
+            nameless: { type: WorkflowDiagramTypes.NODE_ACTOR, args: {} },
+            blank: { type: WorkflowDiagramTypes.NODE_ACTOR, args: { [WorkflowDiagramMetadata.ENTITY_NAME]: ' ', [WorkflowDiagramMetadata.ENTITY_TYPE]: 'X' } }
         }, 'file:///hdl/top.sv');
 
-        const [action] = await copyOf(handler, ['locked', 'nameless', 'missing']);
+        const [action] = await copyOf(handler, ['locked', 'nameless', 'blank', 'missing']);
         expect(parseClipboardPayload((action as any).clipboardData)?.items).toEqual([]);
     });
 
@@ -75,6 +76,14 @@ describe('WorkflowRequestClipboardDataActionHandler', () => {
         const [action] = await copyOf(handler, ['anything']);
         expect((action as any).clipboardData).toEqual({});
         expect(parseClipboardPayload((action as any).clipboardData)).toBeUndefined();
+    });
+});
+
+describe('nextFreeName', () => {
+    it('keeps a free name and numbers a taken one from 2', () => {
+        expect(nextFreeName('add', new Set())).toBe('add');
+        expect(nextFreeName('add', new Set(['add']))).toBe('add2');
+        expect(nextFreeName('add', new Set(['add', 'add2', 'add3']))).toBe('add4');
     });
 });
 

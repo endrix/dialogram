@@ -400,8 +400,7 @@ function sidecarRuntimeConfig(input: SidecarProfileInput): SidecarRuntimeConfig 
         createNodeBehavior: input.createNodeBehavior,
         createNodeVariants: input.createNodeVariants,
         navigation: input.navigation,
-        documentErrorsToProblems: input.documentErrorsToProblems,
-        sourceExtensions: sourceExtensionsOf(input)
+        documentErrorsToProblems: input.documentErrorsToProblems
     };
 }
 

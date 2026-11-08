@@ -10,7 +10,7 @@
 
 export const CLIPBOARD_FORMAT = 'application/json';
 
-export type ClipboardItem =
+export type DiagramClipboardItem =
     | {
           kind: 'entity';
           elementTypeId: string;
@@ -33,19 +33,35 @@ export type ClipboardItem =
           inPort?: string;
       };
 
-export interface ClipboardPayload {
+export interface DiagramClipboardPayload {
     version: 1;
     sourceUri: string;
-    items: ClipboardItem[];
+    items: DiagramClipboardItem[];
+}
+
+/**
+ * The name a pasted or duplicated element gets: `base` when free, else
+ * `base2`, `base3`, ... The sidecar writes this name, and the webview
+ * predicts it to select the new element, so both apply this one rule.
+ */
+export function nextFreeName(base: string, taken: ReadonlySet<string>): string {
+    if (!taken.has(base)) {
+        return base;
+    }
+    let index = 2;
+    while (taken.has(`${base}${index}`)) {
+        index += 1;
+    }
+    return `${base}${index}`;
 }
 
 /** The GLSP clipboard-data record carrying `payload`. */
-export function clipboardDataFromPayload(payload: ClipboardPayload): Record<string, string> {
+export function clipboardDataFromPayload(payload: DiagramClipboardPayload): Record<string, string> {
     return { [CLIPBOARD_FORMAT]: JSON.stringify(payload) };
 }
 
 /** The payload in a GLSP clipboard-data record, or `undefined` when it carries none. */
-export function parseClipboardPayload(clipboardData: Record<string, string> | undefined): ClipboardPayload | undefined {
+export function parseClipboardPayload(clipboardData: Record<string, string> | undefined): DiagramClipboardPayload | undefined {
     if (!clipboardData) {
         return undefined;
     }
@@ -54,7 +70,7 @@ export function parseClipboardPayload(clipboardData: Record<string, string> | un
         return undefined;
     }
     try {
-        const parsed = JSON.parse(json) as ClipboardPayload;
+        const parsed = JSON.parse(json) as DiagramClipboardPayload;
         if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.items) || typeof parsed.sourceUri !== 'string') {
             return undefined;
         }

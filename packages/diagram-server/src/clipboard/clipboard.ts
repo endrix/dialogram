@@ -1,8 +1,8 @@
 import type { Args } from '@eclipse-glsp/protocol';
 import type { ModelState } from '@eclipse-glsp/server';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes, type ClipboardItem, type ClipboardPayload } from '@dialogram/shared';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes, type DiagramClipboardItem, type DiagramClipboardPayload } from '@dialogram/shared';
 
-export { clipboardDataFromPayload, parseClipboardPayload, type ClipboardItem, type ClipboardPayload } from '@dialogram/shared';
+export { clipboardDataFromPayload, parseClipboardPayload, type DiagramClipboardItem, type DiagramClipboardPayload } from '@dialogram/shared';
 
 function isReadOnly(element: any): boolean {
     const args: Args | undefined = element?.args;
@@ -17,8 +17,8 @@ function isReadOnly(element: any): boolean {
  * boundary port and connection among them, by the names a paste re-creates
  * it from. Read-only and virtual elements are left out.
  */
-export function buildClipboardPayload(modelState: ModelState, sourceUri: string, selectedElementIds: string[]): ClipboardPayload {
-    const items: ClipboardItem[] = [];
+export function buildClipboardPayload(modelState: ModelState, sourceUri: string, selectedElementIds: string[]): DiagramClipboardPayload {
+    const items: DiagramClipboardItem[] = [];
     for (const id of selectedElementIds) {
         const element: any = modelState.index.get(id);
         if (!element || isReadOnly(element)) {
@@ -34,7 +34,7 @@ export function buildClipboardPayload(modelState: ModelState, sourceUri: string,
         ) {
             const name = args?.[WorkflowDiagramMetadata.ENTITY_NAME];
             const typeName = args?.[WorkflowDiagramMetadata.ENTITY_TYPE];
-            if (typeof name === 'string' && typeof typeName === 'string') {
+            if (typeof name === 'string' && name.trim() !== '' && typeof typeName === 'string' && typeName.trim() !== '') {
                 items.push({ kind: 'entity', elementTypeId, name, typeName });
             }
             continue;
@@ -43,7 +43,7 @@ export function buildClipboardPayload(modelState: ModelState, sourceUri: string,
         if (elementTypeId === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || elementTypeId === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
             const portName = args?.[WorkflowDiagramMetadata.PORT_NAME];
             const portType = args?.[WorkflowDiagramMetadata.PORT_TYPE];
-            if (typeof portName === 'string') {
+            if (typeof portName === 'string' && portName.trim() !== '') {
                 items.push({
                     kind: 'boundaryPort',
                     elementTypeId,

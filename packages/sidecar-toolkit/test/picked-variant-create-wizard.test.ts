@@ -108,7 +108,6 @@ async function runCreate(options: {
             settingsNamespace: () => 'wfLang',
             sidecarOp: (op: string) => `wfpy.${op}`,
             undoLabelSuffix: () => ' (wf)',
-            handlesSource: () => true,
             createNodeStrings: () => STRINGS,
             createNodeBehavior: () => BEHAVIOR,
             createNodeVariants: () => VARIANTS

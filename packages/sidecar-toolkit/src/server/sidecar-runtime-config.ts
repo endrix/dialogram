@@ -220,13 +220,6 @@ export interface SidecarRuntimeConfig {
      * errors stay in the diagram's overlay, as they always have.
      */
     documentErrorsToProblems?: boolean;
-    /**
-     * The extensions, dot included, of the source files this runtime edits
-     * (`['.sv', '.v']` for a Verilog product). An operation handler that
-     * writes to the model's source refuses a `sourceUri` carrying none of
-     * them. Absent: no gate, every source is accepted.
-     */
-    sourceExtensions?: string[];
     operationKinds: { createEntityPort: string; deleteEntityPort: string };
     /** Op prefixes this runtime accepts when rewriting foreign-prefixed ops
      *  (replaces the hardcoded product-prefix literal check). */
@@ -266,19 +259,6 @@ function toNonEmptyString(value: string | undefined, fallback: string): string {
 
 function isPythonInterpreterCommand(command: string): boolean {
     return /(^|\/)python(?:\d+(?:\.\d+)*)?$/i.test(command.trim());
-}
-
-/**
- * Whether `sourceUri` ends in one of the config's `sourceExtensions`, case
- * ignored. A config that names none accepts every source.
- */
-export function handlesSource(cfg: Pick<SidecarRuntimeConfig, 'sourceExtensions'>, sourceUri: string): boolean {
-    const extensions = cfg.sourceExtensions ?? [];
-    if (extensions.length === 0) {
-        return true;
-    }
-    const lower = sourceUri.toLowerCase();
-    return extensions.some(ext => lower.endsWith(ext.toLowerCase()));
 }
 
 /** `<prefix>.<opName>` — the fully-qualified sidecar op name for this runtime. */
@@ -418,11 +398,6 @@ export class SidecarRuntimeService {
 
     sidecarOp(opName: string): string {
         return sidecarOp(this.cfg, opName);
-    }
-
-    /** Whether `sourceUri` names a file this runtime edits (see `SidecarRuntimeConfig.sourceExtensions`). */
-    handlesSource(sourceUri: string): boolean {
-        return handlesSource(this.cfg, sourceUri);
     }
 
     rewriteSidecarOperation(operation: string): string {

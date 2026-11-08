@@ -30,12 +30,8 @@ describe('PostEditSelectionService.prepareForPaste', () => {
 
         service.prepareForPaste(clipboardData, root);
 
-        const pending = (service as any).pending;
-        expect(pending.entityNames).toHaveLength(1);
-        expect(pending.entityNames[0]).not.toBe('add');
-        expect(pending.entityNames[0]).toMatch(/^add/);
-        expect(pending.boundaryPortNames).toHaveLength(1);
-        expect(pending.boundaryPortNames[0]).toMatch(/^a/);
+        // The same names the toolkit's paste writes (see `nextFreeName`).
+        expect((service as any).pending).toEqual({ entityNames: ['add2'], boundaryPortNames: ['a2'] });
     });
 
     it('plans nothing for clipboard data that is not a diagram payload', () => {

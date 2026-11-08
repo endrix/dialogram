@@ -44,7 +44,7 @@ export class CutOperationHandler extends OperationHandler {
             uri: vscodeUri,
             computeEdits: async () => {
                 const beforeText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
-                const payload = await buildClipboardPayload(this.modelState, sourceUri, elementIds);
+                const payload = buildClipboardPayload(this.modelState, sourceUri, elementIds);
                 if (payload.items.length === 0) {
                     return undefined;
                 }

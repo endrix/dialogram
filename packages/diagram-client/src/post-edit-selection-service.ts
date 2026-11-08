@@ -1,21 +1,14 @@
 import { injectable } from 'inversify';
-import { parseClipboardPayload, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { nextFreeName, parseClipboardPayload, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 
 export type PendingSelection = {
     entityNames: string[];
     boundaryPortNames: string[];
 };
 
+/** The name the pasted element will get, by the rule the edit backend applies. */
 function generateUnique(base: string, used: Set<string>): string {
-    if (!used.has(base)) {
-        used.add(base);
-        return base;
-    }
-    let i = 1;
-    while (used.has(`${base}${i}`)) {
-        i++;
-    }
-    const name = `${base}${i}`;
+    const name = nextFreeName(base, used);
     used.add(name);
     return name;
 }

@@ -3,7 +3,7 @@ import { OperationHandler, ModelState, type Command, type MaybePromise } from '@
 import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
-import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
+import { nextFreeName, WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { parseClipboardPayload } from '@dialogram/diagram-server/clipboard/clipboard';
@@ -43,8 +43,8 @@ export class PasteOperationHandler extends OperationHandler {
         sourceUri: string,
     ): Promise<vscode.TextEdit[] | undefined> {
         const payload = parseClipboardPayload(operation.clipboardData as Record<string, string> | undefined);
-        if (!payload) {
-            void vscode.window.showWarningMessage('The clipboard holds no diagram elements.');
+        if (!payload || payload.items.length === 0) {
+            void vscode.window.showWarningMessage('The clipboard holds no diagram elements to paste.');
             return undefined;
         }
         const workflowName = this.modelState.root.args?.['wf:workflowName'] as string | undefined;
@@ -54,16 +54,13 @@ export class PasteOperationHandler extends OperationHandler {
         });
         const taken = new Set((takenResp?.diagnostic?.names as string[] | undefined) ?? []);
         const beforeText = (await vscode.workspace.openTextDocument(vscode.Uri.parse(sourceUri))).getText();
+        // A pasted connection joins the pasted copies, not the entities it was copied from.
+        const renamed = new Map<string, string>();
         for (const item of payload.items) {
             if (item.kind === 'entity') {
-                const base = item.name;
-                let name = base;
-                let idx = 2;
-                while (taken.has(name)) {
-                    name = `${base}${idx}`;
-                    idx += 1;
-                }
+                const name = nextFreeName(item.name, taken);
                 taken.add(name);
+                renamed.set(item.name, name);
                 await this.sendSidecarOp(sourceUri, {
                     op: this.sidecar.sidecarOp('createNode'),
                     args: { workflow: workflowName, type: item.typeName, name }
@@ -76,10 +73,10 @@ export class PasteOperationHandler extends OperationHandler {
             } else if (item.kind === 'connection') {
                 if (!item.outPort || !item.inPort) continue;
                 const fromPort = item.from
-                    ? { type: 'actor', actor: item.from, port: item.outPort }
+                    ? { type: 'actor', actor: renamed.get(item.from) ?? item.from, port: item.outPort }
                     : { type: 'workflow', name: item.outPort };
                 const toPort = item.to
-                    ? { type: 'actor', actor: item.to, port: item.inPort }
+                    ? { type: 'actor', actor: renamed.get(item.to) ?? item.to, port: item.inPort }
                     : { type: 'workflow', name: item.inPort };
                 await this.sendSidecarOp(sourceUri, {
                     op: this.sidecar.sidecarOp('connect'),

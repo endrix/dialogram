@@ -220,7 +220,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
 
     createCommand(operation: CreateNodeOperation): MaybePromise<Command | undefined> {
         const sourceUri = this.modelState.root.args?.['sourceUri'] as string | undefined;
-        if (!sourceUri || !this.sidecar.handlesSource(sourceUri)) {
+        if (!sourceUri) {
             return undefined;
         }
         return this.createPythonCommand(operation, sourceUri);

@@ -47,11 +47,6 @@ export class SidecarInvoker {
         return this.runtimeProfile.undoLabelSuffix;
     }
 
-    /** Whether `sourceUri` names a file this product's sidecar edits. */
-    handlesSource(sourceUri: string): boolean {
-        return this.runtimeProfile.handlesSource(sourceUri);
-    }
-
     createNodeStrings(): CreateNodeStrings {
         return this.runtimeProfile.createNodeStrings;
     }
