@@ -1,4 +1,5 @@
 import { inject, injectable } from 'inversify';
+import { findNodeIdByGraphId } from './producer-ids';
 import { looksLikeDiff, isBlock, parseEmbedded } from './agent-outputs';
 import { ISelectionListener, IActionDispatcher, TYPES } from '@eclipse-glsp/client';
 import {
@@ -97,20 +98,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
      */
     /** The element a link names: by the diagram's id, or by the producer's (`wf:graphNodeId`). */
     protected elementIdFor(id: string): string | undefined {
-        const index = this.lastRoot?.index;
-        if (!index) {
-            return undefined;
-        }
-        if (index.getById(id)) {
-            return id;
-        }
-        const all: Iterable<any> = typeof index.all === 'function' ? index.all() : [];
-        for (const element of all) {
-            if (element?.args?.[WorkflowDiagramMetadata.GRAPH_NODE_ID] === id) {
-                return element.id;
-            }
-        }
-        return undefined;
+        return this.lastRoot ? findNodeIdByGraphId(this.lastRoot, id) : undefined;
     }
 
     protected followLink(link: PanelLink): void {

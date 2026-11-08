@@ -6,7 +6,7 @@ import { clientBehavior, commandId, settingsNamespace } from './profile';
 import { rerunActorFor, WorkflowNavigationUi } from './navigation-ui';
 import { NETWORK_NAME_ARG, OPEN_DIAGRAM_ARG } from './network-navigation-target';
 import { FocusAfterLoadService } from './focus-after-load';
-import { EXECUTION_OVERLAY_ACTION_KIND, type ExecutionOverlayActionPayload } from '@dialogram/shared';
+import { EXECUTION_OVERLAY_ACTION_KIND, type ExecutionOverlayActionPayload, unqualifiedName } from '@dialogram/shared';
 import { showExecutionStates } from './execution-states';
 
 export type WorkflowAgentSkill = {
@@ -515,11 +515,6 @@ export class WorkflowEditParametersActionHandler implements IActionHandler {
     }
 }
 
-function unqualifyName(name: string): string {
-    const afterDots = name.split('.').pop() ?? name;
-    const parts = afterDots.split('__');
-    return parts.length > 0 ? parts[parts.length - 1] : afterDots;
-}
 
 function toWfStringLiteral(value: string): string {
     const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -730,7 +725,7 @@ export class WorkflowEditAnnotationsActionHandler implements IActionHandler {
                 value: ''
             });
             if (name === undefined) return;
-            annotationName = unqualifyName(name.trim());
+            annotationName = unqualifiedName(name.trim());
             if (!annotationName) return;
 
             const argsRaw = await VscodeUi.instance.inputBox({

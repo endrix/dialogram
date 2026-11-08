@@ -17,7 +17,7 @@ import { promises as fsp } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-    collectPythonFilesUnderRoots,
+    callerScanSourceFiles,
     MAX_SOURCE_FILES_PER_SCAN,
     MAX_DIRS_PER_SCAN
 } from '../src/server/source-analysis';
@@ -39,7 +39,7 @@ async function writeFile(filePath: string, content = ''): Promise<void> {
  * Build a wide, `.py`-sparse tree: `dirCount` sibling directories under `root`, none of which hold
  * any Python file. This is the shape that defeats the file-count ceiling (it never trips) so the
  * walk visits every directory — the pathology this suite bounds. A single `.py` lives at the root so
- * `collectPythonFilesUnderRoots` still has one collectible result.
+ * `callerScanSourceFiles` still has one collectible result.
  */
 async function seedSparseWideTree(root: string, dirCount: number): Promise<void> {
     await writeFile(path.join(root, 'root.py'), '# the only python file\n');
@@ -64,7 +64,7 @@ describe('caller-reference source walk: directory-visit ceiling', () => {
 
         const readdirSpy = vi.spyOn(fsp, 'readdir');
         // Cap dirs far below the tree size; a bounded implementation must stop early.
-        await collectPythonFilesUnderRoots([root], path.join(root, 'root.py'), MAX_SOURCE_FILES_PER_SCAN, 200);
+        await callerScanSourceFiles([root], path.join(root, 'root.py'), MAX_SOURCE_FILES_PER_SCAN, 200);
 
         // With the ceiling honored, readdir fires at most (ceiling + the root) times — never once per
         // directory in the tree. On the pre-fix implementation this count was ~DIR_COUNT+1.
@@ -78,7 +78,7 @@ describe('caller-reference source walk: directory-visit ceiling', () => {
         const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         const readdirSpy = vi.spyOn(fsp, 'readdir');
 
-        await collectPythonFilesUnderRoots([root], path.join(root, 'root.py'), MAX_SOURCE_FILES_PER_SCAN, 50);
+        await callerScanSourceFiles([root], path.join(root, 'root.py'), MAX_SOURCE_FILES_PER_SCAN, 50);
 
         expect(readdirSpy.mock.calls.length).toBeLessThanOrEqual(51);
         expect(warnSpy).toHaveBeenCalledTimes(1);
@@ -98,7 +98,7 @@ describe('caller-reference source walk: directory-visit ceiling', () => {
         await writeFile(realC, '# c\n');
 
         // A generous ceiling (well above the handful of dirs here) must not change the result.
-        const files = await collectPythonFilesUnderRoots([root], target, MAX_SOURCE_FILES_PER_SCAN, 10_000);
+        const files = await callerScanSourceFiles([root], target, MAX_SOURCE_FILES_PER_SCAN, 10_000);
 
         expect(files.sort()).toEqual([path.resolve(realA), path.resolve(realB), path.resolve(realC)].sort());
         expect(files).not.toContain(path.resolve(target));

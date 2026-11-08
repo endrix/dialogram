@@ -20,9 +20,9 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import { DefaultElementFilter } from '@eclipse-glsp/layout-elk';
 import { GraphGModelSource } from '@dialogram/diagram-server/model/graph-gmodel-source';
 import { convertToGModelRoot } from '@dialogram/diagram-server/server/gmodel-convert';
-import { PORT_ORDER_FREE, PORT_ORDER_OPTION, WorkflowElkLayoutEngine } from '@dialogram/diagram-server/server/elk-layout-engine';
+import { WorkflowElkLayoutEngine } from '@dialogram/diagram-server/server/elk-layout-engine';
 import { WorkflowLayoutConfigurator } from '@dialogram/diagram-server/server/layout-configurator';
-import { UNTANGLED_ELK_OPTIONS } from '@dialogram/diagram-server/operations/layout-tuned-handler';
+import { tunedLayoutOptions } from '@dialogram/diagram-server/operations/layout-tuned-handler';
 
 interface Config {
     doc: string;
@@ -32,11 +32,11 @@ interface Config {
     elk?: Record<string, string>;
 }
 
-/** The graph options of each layout the editor's Layout menu offers. */
+/** The graph options of each layout the editor's Layout menu offers, from the menu's own table. */
 const LAYOUTS: Record<string, Record<string, string>> = {
     default: {},
-    untangled: { ...UNTANGLED_ELK_OPTIONS },
-    'free-ports': { ...UNTANGLED_ELK_OPTIONS, [PORT_ORDER_OPTION]: PORT_ORDER_FREE }
+    untangled: tunedLayoutOptions('untangled'),
+    'free-ports': tunedLayoutOptions('free-ports')
 };
 
 function index(element: any, map = new Map<string, any>()): Map<string, any> {

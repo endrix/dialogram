@@ -14,7 +14,8 @@
  */
 
 import type { InstanceMultiBinding, OperationHandlerConstructor } from '@eclipse-glsp/server';
-import type { DiagramOperationModule } from '@dialogram/diagram-server/server/operation-modules';
+import type { DiagramOperationModule, McpToolBinding } from '@dialogram/diagram-server/server/operation-modules';
+import { CreateTaskTypeMcpToolHandler } from './operations/create-task-type-mcp-tool-handler';
 import type { SidecarRuntimeConfig } from './sidecar-runtime-config.js';
 import { CreateNodeOperationHandler } from './operations/create-node-handler.js';
 import { CreateEdgeOperationHandler } from './operations/create-edge-handler.js';
@@ -83,6 +84,11 @@ export function createSidecarOperationModules(cfg: SidecarRuntimeConfig): Diagra
             for (const handler of handlers) {
                 binding.add(handler);
             }
+        },
+        // The type scaffold is this module's operation (`CreateTaskTypeOperationHandler`),
+        // so its MCP tool comes with it rather than from the platform.
+        configureMcpTools(binding: McpToolBinding): void {
+            binding.add(CreateTaskTypeMcpToolHandler);
         }
     };
     return [module];
