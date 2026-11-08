@@ -13,7 +13,7 @@ import { statSync } from 'node:fs';
 import { WORKFLOW_DIAGRAM_TYPE } from '@dialogram/shared';
 import { type DiagramClientBehavior, type DiagramProfile } from '../../api';
 import { listAcpConnectors, workspaceDirFor } from '../chat/acp-connectors';
-import { normalizeSourceUriKey } from './uri-keys';
+import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
 import { matchesSourceExtension, sourceWatchGlobs } from './source-extensions';
 
 const RUN_ID_ARG = 'wf:runId';

@@ -8,30 +8,14 @@
  * instead of being duplicated across the model-source seam.
  */
 
-import * as path from 'node:path';
-import { URI } from 'vscode-uri';
 
 /**
  * Normalize a source URI to a canonical key (absolute, scheme-normalized, no query/fragment).
  * Small pure helper kept local to this module so it has no dependency on the language-specific
  * source-analysis module (which now lives in the language toolkit).
  */
-export function normalizeSourceUriKey(value: string): string {
-    const trimmed = value.trim();
-    if (trimmed === '') {
-        return trimmed;
-    }
-    try {
-        const uri = URI.parse(trimmed);
-        if (uri.scheme === 'file') {
-            const normalizedFsPath = path.resolve(uri.fsPath);
-            return URI.file(normalizedFsPath).toString();
-        }
-        return uri.with({ query: '', fragment: '' }).toString();
-    } catch {
-        return trimmed;
-    }
-}
+import { normalizeSourceUriKey } from './uri-keys';
+export { normalizeSourceUriKey };
 
 // Request-option arg keys used to pass navigation/runtime context through GLSP RequestModelAction
 // options.

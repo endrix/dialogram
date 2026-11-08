@@ -10,76 +10,41 @@ import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { URI } from 'vscode-uri';
 import { WorkflowDiagramMetadata, type WorkflowRelationshipInfo, type WorkflowCallerReference } from '@dialogram/shared';
+import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
+import { countParenDelta, escapeRegExp, stripPythonCommentsAndStrings } from './python-text';
+import { collectPythonFilesUnderRoots as collectSourceFiles, fileExists, findPackageRootForFile } from './source-files';
 
 export type { WorkflowRelationshipInfo, WorkflowCallerReference };
+export { countParenDelta, escapeRegExp, fileExists, findPackageRootForFile, normalizeSourceUriKey, stripPythonCommentsAndStrings };
 
-export function normalizeSourceUriKey(value: string): string {
-    const trimmed = value.trim();
-    if (trimmed === '') {
-        return trimmed;
-    }
-    try {
-        const uri = URI.parse(trimmed);
-        if (uri.scheme === 'file') {
-            const normalizedFsPath = path.resolve(uri.fsPath);
-            return URI.file(normalizedFsPath).toString();
-        }
-        return uri.with({ query: '', fragment: '' }).toString();
-    } catch {
-        return trimmed;
-    }
-}
+/**
+ * Directories a caller-reference scan never descends into: they never hold
+ * first-party source and can be enormous. Dot-directories (`.git`, `.venv`,
+ * `.tox`) are skipped as well; the directory ceiling backs up anything heavy
+ * that is not named here.
+ */
+const CALLER_SCAN_EXCLUDED_DIRS: ReadonlySet<string> = new Set([
+    'node_modules', 'venv', '__pycache__', 'wf-out', 'dist', 'out', 'build',
+    'third_party', 'external', 'vendor'
+]);
 
-export async function fileExists(pathValue: string): Promise<boolean> {
-    try {
-        await fs.access(pathValue);
-        return true;
-    } catch {
-        return false;
-    }
-}
-
-export async function findPackageRootForFile(filePath: string): Promise<string | undefined> {
-    let current = path.dirname(filePath);
-    for (;;) {
-        const marker = path.join(current, '__init__.py');
-        if (!(await fileExists(marker))) {
-            break;
-        }
-        const parent = path.dirname(current);
-        if (parent === current) {
-            return undefined;
-        }
-        current = parent;
-    }
-    return current;
-}
-
-export function countParenDelta(line: string): number {
-    let delta = 0;
-    for (const ch of line) {
-        if (ch === '(') {
-            delta += 1;
-        } else if (ch === ')') {
-            delta -= 1;
-        }
-    }
-    return delta;
+/** The `.py` files a caller-reference scan reads, bounded by the two ceilings. */
+export function collectPythonFilesUnderRoots(
+    scanRoots: string[],
+    excludeFilePath: string,
+    maxFiles: number = MAX_SOURCE_FILES_PER_SCAN,
+    maxDirs: number = MAX_DIRS_PER_SCAN
+): Promise<string[]> {
+    return collectSourceFiles(scanRoots, excludeFilePath, {
+        excludedDirs: CALLER_SCAN_EXCLUDED_DIRS,
+        maxFiles,
+        maxDirs,
+        scanLabel: 'caller-reference scan'
+    });
 }
 
 export function hasWorkflowDecorator(decorators: string[]): boolean {
     return decorators.some(line => /^@\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*\.)*workflow\b/.test(line.trim()));
-}
-
-export function escapeRegExp(value: string): string {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-export function stripPythonCommentsAndStrings(sourceText: string): string {
-    return sourceText
-        .replace(/"""[\s\S]*?"""|'''[\s\S]*?'''/g, match => ' '.repeat(match.length))
-        .replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, match => ' '.repeat(match.length))
-        .replace(/#.*$/gm, '');
 }
 
 type WorkflowDefinition = {
@@ -367,95 +332,6 @@ export const MAX_SOURCE_FILES_PER_SCAN = 2000;
  * node/edge geometry. When it trips we log a one-line warning naming the root.
  */
 export const MAX_DIRS_PER_SCAN = 20_000;
-
-export async function collectPythonFilesUnderRoots(
-    scanRoots: string[],
-    excludeFilePath: string,
-    maxFiles: number = MAX_SOURCE_FILES_PER_SCAN,
-    maxDirs: number = MAX_DIRS_PER_SCAN
-): Promise<string[]> {
-    const files: string[] = [];
-    const seen = new Set<string>();
-    // Directories that never hold first-party workflow source but can be enormous. Anything whose
-    // name begins with '.' (dotdirs such as `.git`, `.venv`, `.idea`, `.tox`) is skipped as well.
-    // `build`/`dist`/`out` cover the common build roots; `third_party`/`external`/`vendor` cover the
-    // heavy vendored trees an LLVM/MLIR-scale checkout drags in. The {@link maxDirs} ceiling is the
-    // backstop for any heavy directory whose name is not enumerated here.
-    const excluded = new Set([
-        'node_modules', 'venv', '__pycache__', 'wf-out', 'dist', 'out', 'build',
-        'third_party', 'external', 'vendor'
-    ]);
-    const targetPath = path.resolve(excludeFilePath);
-    let ceilingHit = false;
-    let dirCeilingHit = false;
-    let dirsVisited = 0;
-
-    const visit = async (dirPath: string, root: string): Promise<void> => {
-        if (ceilingHit || dirCeilingHit) {
-            return;
-        }
-        dirsVisited += 1;
-        if (dirsVisited > maxDirs) {
-            dirCeilingHit = true;
-            // eslint-disable-next-line no-console
-            console.warn(
-                `[dialogram] caller-reference scan hit the ${maxDirs}-directory ceiling under `
-                + `${root}; cross-file "Used By" references may be incomplete for this project.`
-            );
-            return;
-        }
-        let entries: Array<{ name: string; isDirectory(): boolean; isFile(): boolean }>;
-        try {
-            entries = await fs.readdir(dirPath, { withFileTypes: true }) as Array<{ name: string; isDirectory(): boolean; isFile(): boolean }>;
-        } catch {
-            return;
-        }
-        for (const entry of entries) {
-            if (ceilingHit || dirCeilingHit) {
-                return;
-            }
-            const entryPath = path.join(dirPath, entry.name);
-            if (entry.isDirectory()) {
-                if (entry.name.startsWith('.') || excluded.has(entry.name)) {
-                    continue;
-                }
-                await visit(entryPath, root);
-                continue;
-            }
-            if (!entry.isFile() || !entry.name.endsWith('.py')) {
-                continue;
-            }
-            const normalizedPath = path.resolve(entryPath);
-            if (normalizedPath === targetPath || seen.has(normalizedPath)) {
-                continue;
-            }
-            seen.add(normalizedPath);
-            files.push(normalizedPath);
-            if (files.length >= maxFiles) {
-                ceilingHit = true;
-                // eslint-disable-next-line no-console
-                console.warn(
-                    `[dialogram] caller-reference scan hit the ${maxFiles}-file ceiling under `
-                    + `${root}; cross-file "Used By" references may be incomplete for this project.`
-                );
-                return;
-            }
-        }
-    };
-
-    for (const root of scanRoots) {
-        if (ceilingHit || dirCeilingHit) {
-            break;
-        }
-        const normalizedRoot = path.resolve(root);
-        if (seen.has(`dir:${normalizedRoot}`)) {
-            continue;
-        }
-        seen.add(`dir:${normalizedRoot}`);
-        await visit(normalizedRoot, normalizedRoot);
-    }
-    return files;
-}
 
 export async function discoverCrossFileWorkflowCallers(
     targetFilePath: string,

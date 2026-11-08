@@ -44,6 +44,7 @@ import {
     normalizeWorkflowReferenceName,
     normalizeSourceUriKey
 } from './source-analysis';
+import { withPythonPackageRoot } from './source-files';
 import { graphPayloadToDoc } from './graph-payload-to-doc';
 import {
     type SidecarRuntimeConfig,
@@ -386,13 +387,8 @@ export class SidecarModelSource implements DiagramModelSource {
                 op: sidecarOp(this.cfg, exportOp),
                 args: requestArgs
             };
-            const sidecarEnv: NodeJS.ProcessEnv = { ...process.env };
             const packageRoot = await findPackageRootForFile(filePath);
-            if (packageRoot) {
-                sidecarEnv.PYTHONPATH = sidecarEnv.PYTHONPATH && sidecarEnv.PYTHONPATH.trim() !== ''
-                    ? `${packageRoot}${path.delimiter}${sidecarEnv.PYTHONPATH}`
-                    : packageRoot;
-            }
+            const sidecarEnv = withPythonPackageRoot(process.env, packageRoot);
             // Bounded on purpose. Acquisition imports the user's module, so anything that
             // module does at import time can hang the child — and this load is what the
             // "model loading" notification is waiting on, so a child that never exits is a
