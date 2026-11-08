@@ -25,7 +25,15 @@ function makeProfile() {
             center: 'workflow.glsp.center',
             fitToScreen: 'workflow.glsp.fitToScreen'
         },
-        chat: { name: 'wf', fullName: 'Workflow Chat', operationPrefix: 'workflow' }
+        chat: {
+            fullName: 'Workflow Chat',
+            nodeCommands: [
+                { command: 'create-task', nodeType: 'task', description: 'Create a new task node' },
+                { command: 'create-agent', nodeType: 'agent', description: 'Create a new agent node' },
+                { command: 'create-viewer', nodeType: 'viewer', description: 'Create a new viewer node' },
+                { command: 'create-workflow', nodeType: 'workflow', description: 'Create a new workflow node' }
+            ]
+        }
     } as any;
 }
 
@@ -56,7 +64,7 @@ beforeEach(() => {
 });
 
 describe('slash contributions', () => {
-    it('contributes default node commands, edit commands and /layout', () => {
+    it('contributes the profile\'s node commands, edit commands and /layout', () => {
         const { capability } = makeCapability();
         const names = capability.slashCommands.map(c => c.command);
         expect(names).toEqual(

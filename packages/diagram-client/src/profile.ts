@@ -15,8 +15,11 @@ type DiagramOperationKinds = {
 };
 
 type DiagramClientBehavior = {
+    /** On unless the product sets `false`. */
     graphSourceNavigation?: boolean;
+    /** On unless the product sets `false`. */
     networkPropertySections?: boolean;
+    /** On unless the product sets `false`. */
     networkNavigationLabels?: boolean;
     noneSentinel?: string;
     scriptInterpreterCommands?: string[];

@@ -72,9 +72,12 @@ export interface DiagramCommandIds {
   layoutDiagramIfNeeded: string;
   setAgentToolConfig: string;
   getAgentToolConfig: string;
-  createAgentToolPolicyFile: string;
-  chatAddViewerEditor: string;
-  chatAddViewerTask: string;
+  /** @deprecated Nothing registers or runs it; accepted and ignored. */
+  createAgentToolPolicyFile?: string;
+  /** @deprecated Nothing registers or runs it; accepted and ignored. */
+  chatAddViewerEditor?: string;
+  /** @deprecated Nothing registers or runs it; accepted and ignored. */
+  chatAddViewerTask?: string;
   createNewContainer: string;
 }
 
@@ -126,11 +129,14 @@ export interface DiagramStorageOptions {
  * profiles assembled inside the platform bundle) never populates them.
  */
 export interface DiagramChatConfig {
-  name: string;
+  /** @deprecated Nothing reads it; accepted and ignored. */
+  name?: string;
   fullName: string;
-  /** Internal op-dispatcher namespace shared by the chat backend and intent resolver. */
-  operationPrefix: string;
+  /** @deprecated Nothing reads it (the storage options carry their own prefix); accepted and ignored. */
+  operationPrefix?: string;
   skill?: string;
+  /** The slash commands that create a node, one per node type the product has.
+   *  Absent: the chat offers none. */
   nodeCommands?: Array<{
     command: string;
     nodeType: string;
@@ -351,11 +357,14 @@ export interface DiagramClientBehavior {
   /** The ACP connectors the property panel offers on an agent's `connector`;
    *  listed per document by the platform from {@link DiagramChatConfig.acpConnector}. */
   acpConnectors?: AcpConnectorInfo[];
-  /** Cross-file drill-down navigation resolves through the graph source model. */
+  /** Cross-file drill-down navigation resolves through the graph source model.
+   *  On by default; a product whose navigation runs on the file's text sets `false`. */
   graphSourceNavigation?: boolean;
-  /** Property panel renders the network-model sections and labels. */
+  /** Property panel renders the network-model sections and labels.
+   *  On by default; a product whose model is a workflow sets `false`. */
   networkPropertySections?: boolean;
-  /** Cross-file navigation UI uses the network entity vocabulary. */
+  /** Cross-file navigation UI uses the network entity vocabulary.
+   *  On by default; a product whose model is a workflow sets `false`. */
   networkNavigationLabels?: boolean;
   /** Sentinel option value/default for the agent CLI-tools "none" selection. */
   noneSentinel?: string;

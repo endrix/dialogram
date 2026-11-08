@@ -170,7 +170,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     private lastRenderedAgentHistoryJson: string | undefined;
 
     protected isNetworkRuntime(): boolean {
-        return clientBehavior().networkPropertySections === true;
+        return clientBehavior().networkPropertySections !== false;
     }
 
     // ── IGModelRootListener ─────────────────────────────────────────────

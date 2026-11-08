@@ -41,11 +41,11 @@ describe('clientBehavior flag consumption', () => {
         inject(WFPY_BEHAVIOR);
         const cb = clientBehavior();
         // network-navigation-mouse-listener drill-down predicate
-        expect(cb.graphSourceNavigation === true).toBe(false);
+        expect(cb.graphSourceNavigation !== false).toBe(false);
         // property-panel isNetworkRuntime predicate
-        expect(cb.networkPropertySections === true).toBe(false);
+        expect(cb.networkPropertySections !== false).toBe(false);
         // navigation-ui entity-label predicate
-        expect(cb.networkNavigationLabels === true).toBe(false);
+        expect(cb.networkNavigationLabels !== false).toBe(false);
         // property-panel CLI-tools "none" sentinel
         expect(cb.noneSentinel).toBe('wfpy-none');
         // views.ts icon detection
@@ -57,19 +57,19 @@ describe('clientBehavior flag consumption', () => {
     it('resolves the calpy truth table (network behaviors on)', () => {
         inject(CALPY_BEHAVIOR);
         const cb = clientBehavior();
-        expect(cb.graphSourceNavigation === true).toBe(true);
-        expect(cb.networkPropertySections === true).toBe(true);
-        expect(cb.networkNavigationLabels === true).toBe(true);
+        expect(cb.graphSourceNavigation !== false).toBe(true);
+        expect(cb.networkPropertySections !== false).toBe(true);
+        expect(cb.networkNavigationLabels !== false).toBe(true);
         expect(cb.noneSentinel).toBe('wfpy-none');
         expect((cb.scriptInterpreterCommands ?? []).includes('python')).toBe(true);
         expect((cb.scriptInterpreterCommands ?? []).includes('python3')).toBe(true);
     });
 
-    it('reads as all-off with no sentinel when nothing is injected (dev/standalone)', () => {
+    it('reads the network behaviours as on, with no sentinel, when nothing is injected (a product that sets none, dev/standalone)', () => {
         const cb = clientBehavior();
-        expect(cb.graphSourceNavigation === true).toBe(false);
-        expect(cb.networkPropertySections === true).toBe(false);
-        expect(cb.networkNavigationLabels === true).toBe(false);
+        expect(cb.graphSourceNavigation !== false).toBe(true);
+        expect(cb.networkPropertySections !== false).toBe(true);
+        expect(cb.networkNavigationLabels !== false).toBe(true);
         expect(cb.noneSentinel).toBeUndefined();
         expect((cb.scriptInterpreterCommands ?? []).includes('python')).toBe(false);
     });
