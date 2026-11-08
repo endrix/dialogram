@@ -48,6 +48,25 @@ platform API version.
 
 ### Changed
 
+- **A sidecar profile names what is its own; the toolkit derives the rest.**
+  `SidecarProfileInput` no longer requires the command ids, the operation
+  kinds, the GLSP client identity, the CLI and sidecar setting keys, the
+  eight run-driver setting keys, the undo suffix or the scope argument: each
+  is derived as every product spelled it by hand (`<glspClientName>.glsp.<command>`,
+  `<prefix>.sidecar.edit`, `<prefix>.createEntityPort`, `glsp.<name>`,
+  `cliCommand`, `sidecarCommand`, `runOutputDir` and the agent-tool keys,
+  ` (<key>)`, `workflow`), and a value the product gives wins
+  (`resolveSidecarProfileInput`, `resolveSidecarCommandIds`). A product's
+  profile can lose about half its lines; one that keeps them all is unchanged.
+- **Three command ids and three chat fields are deprecated**, accepted and
+  ignored: `createAgentToolPolicyFile`, `chatAddViewerEditor` and
+  `chatAddViewerTask` (nothing registers them), `chat.name` and
+  `chat.operationPrefix` (nothing reads them), and the toolkit input's
+  `mcpEnabledSetting` (the rollback lever is `dialogram.chat.useGlspMcp`).
+- **The chat offers no node-creation slash command the profile did not name.**
+  The built-in `/create-task`, `/create-agent`, `/create-viewer` and
+  `/create-workflow` fallback is gone; every sidecar product names its own
+  `chat.nodeCommands` already.
 - **After a drop, the routes an edge cannot keep are drawn by libavoid, with
   the edges on one port as one shared path.** The layout draws the edges into
   a port as a trunk; the built-in router gives every edge its own channel and
