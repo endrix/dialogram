@@ -249,7 +249,7 @@ describe('characterization: calLang sidecar path', () => {
 
         const sidecarCalls = readLogLines(sidecarLog) as Array<{ op: string }>;
         expect(sidecarCalls).toHaveLength(1);
-        expect(sidecarCalls[0].op).toMatch(/export(Network|Workflow)Graph/);
+        expect(sidecarCalls[0].op).toMatch(/export(Network|Workflow)?Graph/);
 
         expect(collectIds(storage.modelState.root)).toEqual(expect.arrayContaining(['n1', 'n2']));
         // PIN: calLang never falls through to the CLI dispatch, even indirectly.

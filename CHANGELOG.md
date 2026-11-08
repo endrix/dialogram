@@ -67,6 +67,22 @@ platform API version.
 
 ### Changed
 
+- **One sidecar transport.** Six places each spawned the sidecar, wrote the
+  request and parsed the answer with their own wording and deadlines: the
+  invoker behind every diagram edit, the chat's `invokeSidecarOp` and
+  `exportWorkflowGraph`, the model source's graph export, the openability
+  probe and the raw `sidecar.send` command. `sidecar-transport.ts`
+  (`invokeSidecar`) is the one: every request runs from the file's Python
+  package root with it on `PYTHONPATH` (before, the chat's requests did and
+  the diagram's own edits did not), the answer is the whole output when it is
+  one JSON document and its last line when the sidecar logs above it, and a
+  process failure is reported as the child-process module describes it, with
+  the op and the sidecar's stderr. `exportWorkflowGraph` is gone: the export
+  is an op like the others. The graph-export op has one
+  default, `exportGraph`, which every sidecar answers to (the model source
+  used to pick `exportNetworkGraph` or `exportWorkflowGraph` by acquisition
+  strategy and ignore the product's `exportOp`; it now sends the product's,
+  and `SidecarRuntimeConfig` carries it).
 - **An operation module brings the MCP tools of its operations.**
   `DiagramOperationModule.configureMcpTools` (add-only) is the seam; the
   diagram MCP module binds what the profile's modules offer instead of naming
