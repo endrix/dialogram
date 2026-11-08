@@ -552,7 +552,6 @@ export class GraphGModelSource {
                 if (node.meta['tool']) {
                     gnode.args = {
                         ...(gnode.args ?? {}),
-                        'wf:toolSpec': node.meta['tool'],
                         [WorkflowDiagramMetadata.IS_EXTERNAL_ACTOR]: true
                     };
                 }

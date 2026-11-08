@@ -494,42 +494,6 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         container?.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
 
-    protected createTabs(container: HTMLElement, tabs: Array<{ id: string, label: string, buildContent: (content: HTMLElement) => void }>): void {
-        const header = document.createElement('div');
-        header.className = 'property-tabs-header';
-        
-        const bodyWrap = document.createElement('div');
-        bodyWrap.style.flex = '1';
-        bodyWrap.style.overflowY = 'auto';
-
-        let first = true;
-        for (const tab of tabs) {
-            const btn = document.createElement('button');
-            btn.className = 'property-tab-btn' + (first ? ' active' : '');
-            btn.textContent = tab.label;
-            
-            const tabContent = document.createElement('div');
-            tabContent.className = 'property-tab-content' + (first ? ' active' : '');
-            tabContent.dataset.tabId = tab.id;
-            
-            btn.addEventListener('click', () => {
-                Array.from(header.querySelectorAll('.property-tab-btn')).forEach(b => b.classList.remove('active'));
-                Array.from(bodyWrap.querySelectorAll('.property-tab-content')).forEach(c => c.classList.remove('active'));
-                btn.classList.add('active');
-                tabContent.classList.add('active');
-            });
-            
-            tab.buildContent(tabContent);
-            
-            header.appendChild(btn);
-            bodyWrap.appendChild(tabContent);
-            first = false;
-        }
-        
-        container.appendChild(header);
-        container.appendChild(bodyWrap);
-    }
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     protected updateContentForNode(node: any, content: HTMLElement, requestAgentDiscovery = true): void {
         const args = node.args || {};
@@ -936,13 +900,6 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
      */
     protected renderMarkdown(md: string): string {
         return renderMarkdownSafe(md);
-    }
-
-    /**
-     * Convert inline markdown (bold, italic, code, links) to sanitized HTML.
-     */
-    protected inlineMarkdown(text: string): string {
-        return renderInlineMarkdownSafe(text);
     }
 
     /**
@@ -3557,171 +3514,11 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                         body.appendChild(backendGrid);
                     }
 
-                    if (name === 'path') {
-                        if (argsMap.has('path') && !argsMap.has('paths')) {
-                            argsMap.set('paths', argsMap.get('path') ?? '');
-                            argsMap.delete('path');
-                        }
-
-                        const pathsContainer = document.createElement('div');
-                        pathsContainer.className = 'annotation-args-container';
-
-                        const pathsHeader = document.createElement('div');
-                        pathsHeader.className = 'annotation-args-header';
-
-                        const pathsTitle = document.createElement('div');
-                        pathsTitle.className = 'annotation-args-title';
-                        pathsTitle.textContent = 'paths (list)';
-
-                        const pathsMode = document.createElement('div');
-                        pathsMode.className = 'annotation-args-mode';
-
-                        const toRawBtn = document.createElement('button');
-                        toRawBtn.type = 'button';
-                        toRawBtn.className = 'mini-btn';
-                        toRawBtn.textContent = 'Raw…';
-
-                        const toListBtn = document.createElement('button');
-                        toListBtn.type = 'button';
-                        toListBtn.className = 'mini-btn';
-                        toListBtn.textContent = 'List…';
-
-                        pathsMode.appendChild(toListBtn);
-                        pathsMode.appendChild(toRawBtn);
-                        pathsHeader.appendChild(pathsTitle);
-                        pathsHeader.appendChild(pathsMode);
-
-                        const pathsHelp = document.createElement('div');
-                        pathsHelp.className = 'annotation-args-help';
-                        pathsHelp.textContent = 'Each row is a directory path (string literal).';
-
-                        const pathsList = document.createElement('div');
-                        pathsList.className = 'annotation-args-list';
-
-                        const addPathBtn = document.createElement('button');
-                        addPathBtn.type = 'button';
-                        addPathBtn.className = 'mini-btn';
-                        addPathBtn.textContent = 'Add path';
-
-                        const rawRow = document.createElement('div');
-                        rawRow.className = 'annotation-field';
-                        const rawLabel = document.createElement('div');
-                        rawLabel.className = 'annotation-label';
-                        rawLabel.textContent = 'paths (expression)';
-                        const rawTextarea = document.createElement('textarea');
-                        rawTextarea.className = 'annotation-input annotation-textarea';
-                        rawTextarea.rows = 3;
-                        rawTextarea.placeholder = 'e.g. ["./bin", "./tools"]';
-                        rawRow.appendChild(rawLabel);
-                        rawRow.appendChild(rawTextarea);
-
-                        let pathItems: string[] = [];
-                        let mode: 'list' | 'raw' = 'list';
-
-                        const renderPathList = () => {
-                            pathsList.innerHTML = '';
-                            pathItems.forEach((val, idx) => {
-                                const row = document.createElement('div');
-                                row.className = 'annotation-args-item';
-
-                                const idxEl = document.createElement('div');
-                                idxEl.className = 'annotation-args-index';
-                                idxEl.textContent = String(idx);
-
-                                const inp = document.createElement('input');
-                                inp.className = 'annotation-input annotation-args-input';
-                                inp.value = val;
-                                inp.placeholder = 'path';
-                                inp.addEventListener('input', () => {
-                                    pathItems[idx] = inp.value;
-                                    argsMap.set('paths', this.serializeWfStringListExpr(pathItems));
-                                });
-
-                                const rm = document.createElement('button');
-                                rm.type = 'button';
-                                rm.className = 'mini-btn danger icon-only';
-                                rm.title = 'Remove path';
-                                rm.setAttribute('aria-label', 'Remove path');
-                                const rmIcon = document.createElement('span');
-                                rmIcon.className = 'codicon codicon-remove';
-                                rm.appendChild(rmIcon);
-                                rm.addEventListener('click', () => {
-                                    pathItems.splice(idx, 1);
-                                    argsMap.set('paths', this.serializeWfStringListExpr(pathItems));
-                                    renderPathList();
-                                });
-
-                                row.appendChild(idxEl);
-                                row.appendChild(inp);
-                                row.appendChild(rm);
-                                pathsList.appendChild(row);
-                            });
-                        };
-
-                        const setMode = (next: 'list' | 'raw') => {
-                            mode = next;
-                            const showList = mode === 'list';
-                            pathsList.style.display = showList ? '' : 'none';
-                            addPathBtn.style.display = showList ? '' : 'none';
-                            pathsHelp.style.display = showList ? '' : 'none';
-                            rawRow.style.display = showList ? 'none' : '';
-                        };
-
-                        addPathBtn.addEventListener('click', () => {
-                            pathItems.push('');
-                            argsMap.set('paths', this.serializeWfStringListExpr(pathItems));
-                            renderPathList();
-                        });
-
-                        rawTextarea.addEventListener('input', () => {
-                            argsMap.set('paths', rawTextarea.value);
-                        });
-
-                        toRawBtn.addEventListener('click', () => {
-                            rawTextarea.value = argsMap.get('paths') ?? '';
-                            setMode('raw');
-                        });
-
-                        toListBtn.addEventListener('click', () => {
-                            const parsed = this.tryParseWfStringListExpr(argsMap.get('paths') ?? '');
-                            if (!parsed) {
-                                VscodeUi.instance.infoMessage('Cannot switch to list mode: paths is not a list of string literals.');
-                                setMode('raw');
-                                return;
-                            }
-                            pathItems = parsed;
-                            argsMap.set('paths', this.serializeWfStringListExpr(pathItems));
-                            renderPathList();
-                            setMode('list');
-                        });
-
-                        const initialPathsExpr = argsMap.get('paths') ?? '';
-                        const parsed = this.tryParseWfStringListExpr(initialPathsExpr);
-                        if (parsed) {
-                            pathItems = parsed;
-                            argsMap.set('paths', this.serializeWfStringListExpr(pathItems));
-                            renderPathList();
-                            setMode('list');
-                        } else {
-                            rawTextarea.value = initialPathsExpr;
-                            setMode('raw');
-                        }
-
-                        pathsContainer.appendChild(pathsHeader);
-                        pathsContainer.appendChild(pathsHelp);
-                        pathsContainer.appendChild(pathsList);
-                        pathsContainer.appendChild(addPathBtn);
-                        pathsContainer.appendChild(rawRow);
-                        body.appendChild(pathsContainer);
-                    }
-
                     // Show remaining args (custom annotation args, or tool extras)
                     const reserved = new Set(
                         name === 'tool'
                             ? ['cmd', 'args', 'inheritStdio']
-                            : (name === 'path'
-                                ? ['paths', 'path']
-                                : (name === 'agent' ? [
+                            : (name === 'agent' ? [
                                     // Identity / model
                                     'prompt', 'claudeAgent', 'skill', 'model', 'provider', 'endpoint',
                                     'timeoutMs', 'contextBudget', 'stateful',
@@ -3736,7 +3533,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                                     'lspLanguageId', 'lspExtraFlags', 'lspPort', 'lspSeverityThreshold', 'lspMaxRepairAttempts',
                                     // Output validators editor
                                     'outputValidators'
-                                ] : []))
+                                ] : [])
                     );
                     // Remaining args = genuinely custom annotation args (no dedicated control
                     // above). Each renders as an editable key/value row with its own remove button;

@@ -590,7 +590,6 @@ export class WorkflowEditAnnotationsActionHandler implements IActionHandler {
             items: [
                 { id: 'tool', label: '@tool (external execution)', description: 'cmd, args, inheritStdio, ...' },
                 { id: 'viewer', label: '@viewer (open outputs in VS Code)', description: 'open, diff, openWith (viewType)' },
-                { id: 'path', label: '@path (external tool search paths)', description: 'paths=["./bin", "./tools"]' },
                 { id: 'custom', label: 'Custom annotation…', description: 'Enter any name and arguments' }
             ],
             placeHolder: 'Choose an annotation template'
@@ -725,41 +724,6 @@ export class WorkflowEditAnnotationsActionHandler implements IActionHandler {
                 if (title === undefined) return;
                 annotationText = `@viewer(\n    action="diff",\n    inputs=${inputsExpr.trim()},\n    token="last",\n    title=${toWfStringLiteral(title)}\n)`;
             }
-        } else if (template === 'path') {
-            annotationName = 'path';
-
-            const paths: string[] = [];
-
-            for (;;) {
-                const next = await VscodeUi.instance.inputBox({
-                    prompt: paths.length === 0 ? 'Add path (e.g. ./bin)' : 'Add another path (optional)'
-                });
-                if (next === undefined) return;
-                const trimmed = next.trim();
-                if (trimmed) {
-                    paths.push(trimmed);
-                }
-
-                if (paths.length === 0) {
-                    continue;
-                }
-
-                const addMore = await VscodeUi.instance.quickPick({
-                    items: [
-                        { id: 'yes', label: 'Add another path' },
-                        { id: 'no', label: 'Done' }
-                    ],
-                    placeHolder: 'Add another path?'
-                });
-                if (addMore !== 'yes') {
-                    break;
-                }
-            }
-
-            if (paths.length === 0) return;
-
-            const listExpr = `[${paths.map(p => toWfStringLiteral(p)).join(', ')}]`;
-            annotationText = `@path(\n    paths=${listExpr}\n)`;
         } else {
             const name = await VscodeUi.instance.inputBox({
                 prompt: 'Annotation name (without @)',

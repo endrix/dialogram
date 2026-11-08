@@ -8,6 +8,15 @@ platform API version.
 
 ### Removed
 
+- **The `@path` annotation editor and its wizard template.** No producer has
+  a `@path` decorator (wfpy's `path` is an argument of `@viewer`), so the
+  property panel's editor never rendered, and the wizard's template wrote a
+  decorator the Python source cannot import. A `path` annotation a project
+  defines itself still opens in the generic editor.
+- **Agent and tool keys nothing reads**: `wf:toolSpec` on tool nodes (the
+  external-actor flag stays), `cal:agentStateful` and its constant, the
+  never-called agent-metadata reset in the model storage, and the property
+  panel's unused tab builder and inline-Markdown renderer.
 - **Element types the model never emits**, with their client classes and
   views, server mappings, shape hints and layout branches: `node:proxy`, the
   two collapsed nodes, the if-branch, if-join, foreach-join and inline-if
