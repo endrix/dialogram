@@ -16,3 +16,4 @@ export * from './hierarchy';
 export * from './chat-seams';
 export * from './create-task-type-operation';
 export * from './entity-names';
+export * from './clipboard-payload';

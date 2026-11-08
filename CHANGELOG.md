@@ -60,6 +60,39 @@ platform API version.
   `@dialogram/diagram-server/server/uri-keys`, for the host, the server and
   the toolkit; the webview keeps one copy of its own, browser-bound. The
   parity test that kept two copies aligned is gone with the second copy.
+- **One layout snapshot for every handler.** The six handlers that lay nodes
+  out or route edges each carried their own copy of "walk the model, key the
+  nodes and the routes, save": eight `collectNodePositions`, eight
+  `collectEdgeRoutes`, five signature helpers, four snapshot/restore sets,
+  about 1,400 lines, drifted. `diagram-server/src/server/layout-snapshot.ts`
+  holds them once (`collectNodePositions`, `collectEdgeRoutes`,
+  `movableNodeIdsIn`, `snapshot*ById`, `restoreUnselectedLayout`,
+  `persistLayout`), and `persisted-edge-routes.ts` exports the route-key and
+  anchor helpers it always had. Every handler keys a saved route the same way
+  (endpoint signature, AST path where it repeats; four keyed by path alone,
+  which the loader read through its fallback). Reset Routes and the reroute,
+  which noted their save under a model-state key nothing read, now leave the
+  layout meta alone on purpose: lowering "has persisted edge routes" would arm
+  the bootstrap reroute that redraws what was just cleared.
+- **A sidecar profile names what is its own; the toolkit derives the rest.**
+  `SidecarProfileInput` no longer requires the command ids, the operation
+  kinds, the GLSP client identity, the CLI and sidecar setting keys, the
+  eight run-driver setting keys, the undo suffix or the scope argument: each
+  is derived as every product spelled it by hand (`<glspClientName>.glsp.<command>`,
+  `<prefix>.sidecar.edit`, `<prefix>.createEntityPort`, `glsp.<name>`,
+  `cliCommand`, `sidecarCommand`, `runOutputDir` and the agent-tool keys,
+  ` (<key>)`, `workflow`), and a value the product gives wins
+  (`resolveSidecarProfileInput`, `resolveSidecarCommandIds`). A product's
+  profile can lose about half its lines; one that keeps them all is unchanged.
+- **Three command ids and three chat fields are deprecated**, accepted and
+  ignored: `createAgentToolPolicyFile`, `chatAddViewerEditor` and
+  `chatAddViewerTask` (nothing registers them), `chat.name` and
+  `chat.operationPrefix` (nothing reads them), and the toolkit input's
+  `mcpEnabledSetting` (the rollback lever is `dialogram.chat.useGlspMcp`).
+- **The chat offers no node-creation slash command the profile did not name.**
+  The built-in `/create-task`, `/create-agent`, `/create-viewer` and
+  `/create-workflow` fallback is gone; every sidecar product names its own
+  `chat.nodeCommands` already.
 - **After a drop, the routes an edge cannot keep are drawn by libavoid, with
   the edges on one port as one shared path.** The layout draws the edges into
   a port as a trunk; the built-in router gives every edge its own channel and
@@ -102,6 +135,26 @@ platform API version.
 
 ### Fixed
 
+- **The palette creates nodes, and the property panel adds entity ports, in
+  every product's diagram.** Both handlers accepted only a `.py` source, so a
+  Verilog, VHDL or NDF diagram answered a palette drop with nothing. Like every
+  other handler that writes to the source, they now ask only that the model
+  has one.
+- **Copy then paste re-creates the copied elements.** Copy wrote the entity's
+  name as `entityName` with its source text, while paste looked for `name` and
+  `typeName`, so a copied node pasted as nothing; cut and duplicate already
+  wrote the paste shape. One payload now lives in `@dialogram/shared`
+  (`DiagramClipboardPayload`, `parseClipboardPayload`,
+  `clipboardDataFromPayload`), written by copy, cut and duplicate and read by
+  paste and the webview's post-paste selection. The server's
+  `clipboard/py-clipboard` module is gone; its builder is
+  `buildClipboardPayload` in `clipboard/clipboard`.
+- **A pasted or duplicated connection joins the pasted copies**, not the
+  entities it was copied from, which used to get a second wire while the copy
+  stayed unwired. The pasted name follows one rule, `nextFreeName` in
+  `@dialogram/shared` (`add`, then `add2`, `add3`), on the sidecar side and in
+  the webview, which predicted `add1` and so never selected the pasted node.
+  A paste with nothing to paste says so instead of doing nothing.
 - A layout change still on its 500 ms debounce timer when the window closes
   is written out: the host flushes every diagram's pending layout saves on
   deactivation.

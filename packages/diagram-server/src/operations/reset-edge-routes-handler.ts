@@ -9,11 +9,8 @@ import {
 } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
-import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
-import type { WorkflowDiagramModel } from '@dialogram/shared';
-import { WorkflowDiagramMetadata } from '@dialogram/shared';
 import { GModelSerializer } from '@eclipse-glsp/server';
-import { layoutTargetOf } from '../server/layout-target';
+import { persistLayout } from '../server/layout-snapshot';
 
 export const WORKFLOW_RESET_EDGE_ROUTES_OPERATION_KIND = 'dialogram.resetEdgeRoutes' as const;
 
@@ -113,95 +110,9 @@ export class WorkflowResetEdgeRoutesOperationHandler extends OperationHandler {
 
         visit(root);
 
-        // Persist the updated routing points (and keep node positions stable).
-        const diagramModel = this.modelState.get(WORKFLOW_NETWORK_MODEL_KEY) as WorkflowDiagramModel | undefined;
-        if (!diagramModel) {
-            return;
-        }
-
-        const { filePath: workflowFilePath, networkId } = layoutTargetOf(diagramModel as any);
-
-        // Prefer the already-persisted node map (it uses stable keys), falling back to the
-        // current model snapshot if no layout file exists yet.
-        const persistedPositions = await this.layoutPersistence.loadLayout(workflowFilePath, networkId);
-        const positions = persistedPositions ?? this.collectNodePositions(root);
-
-        const routes = this.collectEdgeRoutes(root);
-        await this.layoutPersistence.saveLayoutImmediate(workflowFilePath, networkId, positions, routes);
-
-        const layoutMeta = this.modelState.get('workflow.layoutPersistence') as
-            | {
-                  workflowFilePath: string;
-                  networkId: string;
-                  hasPersistedLayout: boolean;
-                  hasPersistedEdgeRoutes: boolean;
-                  didInitialLayout: boolean;
-                  hasClientBounds: boolean;
-                  allowInitialLayoutPersistence: boolean;
-              }
-            | undefined;
-        if (layoutMeta) {
-            layoutMeta.hasPersistedEdgeRoutes = routes.size > 0;
-            this.modelState.set('workflow.layoutPersistence', layoutMeta);
-        }
-    }
-
-    private collectNodePositions(root: any): Map<string, { x: number; y: number }> {
-        const result = new Map<string, { x: number; y: number }>();
-        const visit = (element: any, parentAbsX: number, parentAbsY: number): void => {
-            if (!element) {
-                return;
-            }
-
-            const relX = element.position?.x ?? 0;
-            const relY = element.position?.y ?? 0;
-            const absX = parentAbsX + relX;
-            const absY = parentAbsY + relY;
-
-            const type = element.type as string | undefined;
-            if (typeof type === 'string' && type.startsWith('node:')) {
-                const args = element.args as Record<string, unknown> | undefined;
-                const key = (args?.[WorkflowDiagramMetadata.AST_PATH] ??
-                    args?.[WorkflowDiagramMetadata.ENTITY_NAME] ??
-                    args?.[WorkflowDiagramMetadata.PORT_NAME]) as unknown;
-                if (typeof key === 'string' && key.trim() !== '' && element.position) {
-                    result.set(key, { x: absX, y: absY });
-                }
-            }
-
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child, absX, absY);
-                }
-            }
-        };
-        visit(root, 0, 0);
-        return result;
-    }
-
-    private collectEdgeRoutes(root: any): Map<string, { x: number; y: number }[]> {
-        const result = new Map<string, { x: number; y: number }[]>();
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-            if (element instanceof GEdge) {
-                const args = element.args as Record<string, unknown> | undefined;
-                const key = args?.[WorkflowDiagramMetadata.AST_PATH];
-                const routingPoints = (element as any).routingPoints as { x: number; y: number }[] | undefined;
-                if (typeof key === 'string' && Array.isArray(routingPoints) && routingPoints.length > 0) {
-                    result.set(key, routingPoints);
-                }
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
-        return result;
+        // Persist the cleared routes; the node positions already on disk stand. The
+        // layout meta is left alone: noting "no persisted routes" would arm the
+        // bootstrap reroute, which would redraw what was just reset.
+        await persistLayout(this.modelState, this.layoutPersistence, { keepPersistedPositions: true, noteInMeta: false });
     }
 }

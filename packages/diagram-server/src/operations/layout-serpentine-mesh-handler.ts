@@ -19,11 +19,17 @@ import {
     WorkflowRerouteEdgesAvoidOverlapsOperationHandler,
     WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND
 } from './reroute-edges-avoid-overlaps-handler';
-import { WORKFLOW_LAYOUT_PERSISTENCE_KEY, WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
-import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { WorkflowDiagramConstants, portSide } from '@dialogram/shared';
-import { layoutTargetOf } from '../server/layout-target';
+import {
+    isMovableNode,
+    movableNodeIdFor,
+    persistLayout,
+    restoreUnselectedLayout,
+    movableNodeIdsIn,
+    snapshotEdgeRoutesById,
+    snapshotNodePositionsById
+} from '../server/layout-snapshot';
 
 export const WORKFLOW_LAYOUT_SERPENTINE_MESH_OPERATION_KIND = 'dialogram.layoutSerpentineMesh' as const;
 
@@ -61,11 +67,11 @@ export class WorkflowLayoutSerpentineMeshOperationHandler extends OperationHandl
     }
 
     private async executeOperation(operation: WorkflowLayoutSerpentineMeshOperation): Promise<void> {
-        const selectedMovableNodeIds = this.getSelectedMovableNodeIds(operation.elementIds);
+        const selectedMovableNodeIds = movableNodeIdsIn(this.modelState.index, operation.elementIds);
         const hasSelection = selectedMovableNodeIds.size > 0;
 
-        const preNodePositionsById = hasSelection ? this.snapshotNodePositionsById(this.modelState.root) : undefined;
-        const preEdgeRoutesById = hasSelection ? this.snapshotEdgeRoutesById(this.modelState.root) : undefined;
+        const preNodePositionsById = hasSelection ? snapshotNodePositionsById(this.modelState.root) : undefined;
+        const preEdgeRoutesById = hasSelection ? snapshotEdgeRoutesById(this.modelState.root) : undefined;
 
         const previousGraphLayoutOptions = this.applySerpentineMeshPlacement(this.modelState.root, selectedMovableNodeIds, hasSelection);
 
@@ -74,7 +80,7 @@ export class WorkflowLayoutSerpentineMeshOperationHandler extends OperationHandl
         (this.modelState.root as any).layoutOptions = previousGraphLayoutOptions ? { ...previousGraphLayoutOptions } : undefined;
 
         if (hasSelection && preNodePositionsById && preEdgeRoutesById) {
-            this.restoreUnselectedLayout(this.modelState.root, selectedMovableNodeIds, preNodePositionsById, preEdgeRoutesById);
+            restoreUnselectedLayout(this.modelState.index, this.modelState.root, selectedMovableNodeIds, preNodePositionsById, preEdgeRoutesById);
         }
 
         // Route the edges with the proven obstacle-aware router (the same one the
@@ -89,32 +95,7 @@ export class WorkflowLayoutSerpentineMeshOperationHandler extends OperationHandl
             ...(hasSelection ? { elementIds: [...selectedMovableNodeIds] } : {})
         });
 
-        const diagramModel = this.modelState.get(WORKFLOW_NETWORK_MODEL_KEY) as WorkflowDiagramModel | undefined;
-        if (!diagramModel) {
-            return;
-        }
-
-        const { filePath: workflowFilePath, networkId } = layoutTargetOf(diagramModel as any);
-        const positions = this.collectNodePositions(this.modelState.root);
-        const routes = this.collectEdgeRoutes(this.modelState.root);
-        await this.layoutPersistence.saveLayoutImmediate(workflowFilePath, networkId, positions, routes);
-
-        const layoutMeta = this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as
-            | {
-                  workflowFilePath: string;
-                  networkId: string;
-                  hasPersistedLayout: boolean;
-                  hasPersistedEdgeRoutes: boolean;
-                  didInitialLayout: boolean;
-                  hasClientBounds: boolean;
-                  allowInitialLayoutPersistence: boolean;
-              }
-            | undefined;
-        if (layoutMeta) {
-            layoutMeta.hasPersistedLayout = true;
-            layoutMeta.hasPersistedEdgeRoutes = routes.size > 0;
-            this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
-        }
+        await persistLayout(this.modelState, this.layoutPersistence, { layoutPerformed: true });
     }
 
     private applySerpentineMeshPlacement(
@@ -338,8 +319,8 @@ export class WorkflowLayoutSerpentineMeshOperationHandler extends OperationHandl
             if (element instanceof GEdge) {
                 const sourceId = (element as any).sourceId as string | undefined;
                 const targetId = (element as any).targetId as string | undefined;
-                const sourceNodeId = typeof sourceId === 'string' ? this.getMovableNodeIdForElementId(sourceId) : undefined;
-                const targetNodeId = typeof targetId === 'string' ? this.getMovableNodeIdForElementId(targetId) : undefined;
+                const sourceNodeId = typeof sourceId === 'string' ? movableNodeIdFor(this.modelState.index, sourceId) : undefined;
+                const targetNodeId = typeof targetId === 'string' ? movableNodeIdFor(this.modelState.index, targetId) : undefined;
 
                 if (sourceNodeId && targetNodeId) {
                     if (boundaryNodeIds.has(sourceNodeId) && !boundaryNodeIds.has(targetNodeId)) {
@@ -424,7 +405,7 @@ export class WorkflowLayoutSerpentineMeshOperationHandler extends OperationHandl
                 return;
             }
 
-            if (this.isMovableNode(element)) {
+            if (isMovableNode(element)) {
                 const id = String((element as any).id);
                 if (!hasSelection || selectedMovableNodeIds.has(id)) {
                     nodes.push(element);
@@ -452,8 +433,8 @@ export class WorkflowLayoutSerpentineMeshOperationHandler extends OperationHandl
             if (element instanceof GEdge) {
                 const sourceId = (element as any).sourceId as string | undefined;
                 const targetId = (element as any).targetId as string | undefined;
-                const sourceNodeId = typeof sourceId === 'string' ? this.getMovableNodeIdForElementId(sourceId) : undefined;
-                const targetNodeId = typeof targetId === 'string' ? this.getMovableNodeIdForElementId(targetId) : undefined;
+                const sourceNodeId = typeof sourceId === 'string' ? movableNodeIdFor(this.modelState.index, sourceId) : undefined;
+                const targetNodeId = typeof targetId === 'string' ? movableNodeIdFor(this.modelState.index, targetId) : undefined;
 
                 if (sourceNodeId && targetNodeId && scopedNodeIdSet.has(sourceNodeId) && scopedNodeIdSet.has(targetNodeId)) {
                     edges.push({ sourceNodeId, targetNodeId });
@@ -613,11 +594,6 @@ export class WorkflowLayoutSerpentineMeshOperationHandler extends OperationHandl
         return ordered;
     }
 
-    private isMovableNode(element: any): boolean {
-        const type = element?.type as string | undefined;
-        return typeof type === 'string' && type.startsWith('node:');
-    }
-
     private isBoundaryNode(element: any): boolean {
         const type = element?.type as string | undefined;
         return type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT;
@@ -629,210 +605,5 @@ export class WorkflowLayoutSerpentineMeshOperationHandler extends OperationHandl
 
     private isBoundaryOutputNode(element: any): boolean {
         return (element?.type as string | undefined) === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT;
-    }
-
-    private getMovableNodeIdForElementId(elementId: string): string | undefined {
-        let current: any = this.modelState.index.find(elementId);
-        while (current) {
-            if (this.isMovableNode(current)) {
-                return String((current as any).id);
-            }
-            current = (current as any).parent;
-        }
-        return undefined;
-    }
-
-    private getSelectedMovableNodeIds(elementIds: string[] | undefined): Set<string> {
-        const result = new Set<string>();
-        const ids = Array.isArray(elementIds) ? elementIds : [];
-
-        for (const id of ids) {
-            const movable = this.getMovableNodeIdForElementId(id);
-            if (movable) {
-                result.add(movable);
-            }
-
-            const element: any = this.modelState.index.find(id);
-            const type = element?.type as string | undefined;
-            const isEdge = element instanceof GEdge || (typeof type === 'string' && type.startsWith('edge:'));
-            if (isEdge) {
-                const sourceId = (element as any).sourceId as string | undefined;
-                const targetId = (element as any).targetId as string | undefined;
-                if (typeof sourceId === 'string') {
-                    const sourceMovable = this.getMovableNodeIdForElementId(sourceId);
-                    if (sourceMovable) {
-                        result.add(sourceMovable);
-                    }
-                }
-                if (typeof targetId === 'string') {
-                    const targetMovable = this.getMovableNodeIdForElementId(targetId);
-                    if (targetMovable) {
-                        result.add(targetMovable);
-                    }
-                }
-            }
-        }
-
-        return result;
-    }
-
-    private snapshotNodePositionsById(root: any): Map<string, { x: number; y: number } | undefined> {
-        const result = new Map<string, { x: number; y: number } | undefined>();
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-            if (this.isMovableNode(element)) {
-                const id = String((element as any).id);
-                const pos = (element as any).position as { x?: number; y?: number } | undefined;
-                if (pos) {
-                    result.set(id, { x: pos.x ?? 0, y: pos.y ?? 0 });
-                } else {
-                    result.set(id, undefined);
-                }
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
-        return result;
-    }
-
-    private snapshotEdgeRoutesById(root: any): Map<string, { x: number; y: number }[] | undefined> {
-        const result = new Map<string, { x: number; y: number }[] | undefined>();
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-            if (element instanceof GEdge) {
-                const id = String((element as any).id);
-                const routingPoints = (element as any).routingPoints as { x: number; y: number }[] | undefined;
-                if (Array.isArray(routingPoints)) {
-                    result.set(
-                        id,
-                        routingPoints.map(p => ({ x: p.x, y: p.y }))
-                    );
-                } else {
-                    result.set(id, undefined);
-                }
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
-        return result;
-    }
-
-    private restoreUnselectedLayout(
-        root: any,
-        selectedMovableNodeIds: Set<string>,
-        preNodePositionsById: Map<string, { x: number; y: number } | undefined>,
-        preEdgeRoutesById: Map<string, { x: number; y: number }[] | undefined>
-    ): void {
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-
-            if (this.isMovableNode(element)) {
-                const id = String((element as any).id);
-                if (!selectedMovableNodeIds.has(id)) {
-                    const prev = preNodePositionsById.get(id);
-                    (element as any).position = prev ? { x: prev.x, y: prev.y } : undefined;
-                }
-            }
-
-            if (element instanceof GEdge) {
-                const id = String((element as any).id);
-                const sourceId = (element as any).sourceId as string | undefined;
-                const targetId = (element as any).targetId as string | undefined;
-
-                const sourceMovable = typeof sourceId === 'string' ? this.getMovableNodeIdForElementId(sourceId) : undefined;
-                const targetMovable = typeof targetId === 'string' ? this.getMovableNodeIdForElementId(targetId) : undefined;
-
-                const sourceSelected = sourceMovable ? selectedMovableNodeIds.has(sourceMovable) : false;
-                const targetSelected = targetMovable ? selectedMovableNodeIds.has(targetMovable) : false;
-
-                if (!sourceSelected && !targetSelected) {
-                    const prevRoute = preEdgeRoutesById.get(id);
-                    (element as any).routingPoints = prevRoute !== undefined ? prevRoute.map(p => ({ x: p.x, y: p.y })) : undefined;
-                }
-            }
-
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
-    }
-
-    private collectNodePositions(root: GModelRoot): Map<string, { x: number; y: number }> {
-        const result = new Map<string, { x: number; y: number }>();
-        const visit = (element: any, parentAbsX: number, parentAbsY: number): void => {
-            if (!element) {
-                return;
-            }
-
-            const relX = element.position?.x ?? 0;
-            const relY = element.position?.y ?? 0;
-            const absX = parentAbsX + relX;
-            const absY = parentAbsY + relY;
-
-            const type = element.type as string | undefined;
-            if (typeof type === 'string' && type.startsWith('node:')) {
-                const args = element.args as Record<string, unknown> | undefined;
-                const key = (args?.[WorkflowDiagramMetadata.AST_PATH] ??
-                    args?.[WorkflowDiagramMetadata.ENTITY_NAME] ??
-                    args?.[WorkflowDiagramMetadata.PORT_NAME]) as unknown;
-                if (typeof key === 'string' && key.trim() !== '' && element.position) {
-                    result.set(key, { x: absX, y: absY });
-                }
-            }
-
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child, absX, absY);
-                }
-            }
-        };
-        visit(root, 0, 0);
-        return result;
-    }
-
-    private collectEdgeRoutes(root: any): Map<string, { x: number; y: number }[]> {
-        const result = new Map<string, { x: number; y: number }[]>();
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-            if (element instanceof GEdge) {
-                const args = element.args as Record<string, unknown> | undefined;
-                const key = args?.[WorkflowDiagramMetadata.AST_PATH];
-                const routingPoints = (element as any).routingPoints as { x: number; y: number }[] | undefined;
-                if (typeof key === 'string' && Array.isArray(routingPoints) && routingPoints.length > 0) {
-                    result.set(key, routingPoints);
-                }
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
-        return result;
     }
 }
