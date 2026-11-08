@@ -54,11 +54,6 @@ export interface McpServerModuleOptions {
     /** Master gate. When false (default), no MCP modules are bound. */
     enabled: boolean;
     /**
-     * Optional adopter persona wired to the MCP `instructions` field. When omitted the
-     * GLSP-default (product-neutral) persona is used.
-     */
-    agentPersona?: string;
-    /**
      * Read-only platform chat tools to bridge into diagram-scope MCP tools. Each becomes a
      * distinct handler resolving `sessionId -> ModelState.sourceUri`. Defaults to none.
      */

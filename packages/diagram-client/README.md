@@ -23,7 +23,7 @@ Import these from the package root (`@dialogram/diagram-client`):
 | `DiagramWebviewChannel`, `installDiagramWebviewChannel`, `getDiagramWebviewChannel` | The ONE host↔webview notification channel (see contract 2). |
 | `diagramBaseModule` | The product-neutral base module (loaded first by the factory). |
 | `workflowViewsModule`, `workflowFeaturesModule` | The stock model/view + feature-UI modules — reuse them or ignore them. |
-| stock model / view classes (`WorkflowNode`, `WorkflowNodeView`, …) | For consumers who want to EXTEND the stock elements. |
+| stock model / view classes (`WorkflowNode`, `ExternalActorNodeView`, …) | For consumers who want to EXTEND the stock elements. |
 
 The library deliberately does **not** re-export GLSP/Sprotty. A custom-view
 consumer imports `configureModelElement`, `RectangularNodeView`,

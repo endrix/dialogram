@@ -7,7 +7,6 @@ type DiagramContext = {
     sourceUri?: string;
     workflowName?: string;
     runtimeProfile?: string;
-    namespaceName?: string;
     queueTraceVisible?: boolean;
     /** The root of the editor's hierarchy: what runs (navigation-ui `rootOfStack`). */
     rootSourceUri?: string;

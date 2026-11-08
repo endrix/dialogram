@@ -215,7 +215,6 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
      */
     private portsMayReorder(node: GNode): boolean {
         return node.type !== WorkflowDiagramTypes.NODE_STRUCTURE_IF
-            && node.type !== WorkflowDiagramTypes.NODE_STRUCTURE_IF_BRANCH
             && node.type !== WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH
             && node.type !== WorkflowDiagramTypes.NODE_GROUP
             && node.type !== WorkflowDiagramTypes.NODE_BOUNDARY_INPUT
@@ -659,7 +658,6 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
      */
     private isAutoSizedContainer(node: GNode): boolean {
         return node.type === WorkflowDiagramTypes.NODE_STRUCTURE_IF
-            || node.type === WorkflowDiagramTypes.NODE_STRUCTURE_IF_BRANCH
             || node.type === WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH
             || node.type === WorkflowDiagramTypes.NODE_GROUP;
     }

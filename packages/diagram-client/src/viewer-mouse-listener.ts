@@ -40,8 +40,7 @@ function findContainingEntityNode(element: GModelElement | undefined): GModelEle
         if (
             current.type === WorkflowDiagramTypes.NODE_EXTERNAL_ACTOR ||
             current.type === WorkflowDiagramTypes.NODE_ACTOR ||
-            current.type === WorkflowDiagramTypes.NODE_NETWORK ||
-            current.type === WorkflowDiagramTypes.NODE_PROXY
+            current.type === WorkflowDiagramTypes.NODE_NETWORK
         ) {
             return current;
         }

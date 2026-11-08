@@ -127,14 +127,12 @@ export function createWorkflowServerModules(
     const additionalModules: ContainerModule[] = [];
     
     // Add ELK layout module for automatic layout
+    // No defaults: ELK applies them only to a root without options of its
+    // own, and `WorkflowLayoutConfigurator.graphOptions` always hands the root
+    // a full set, so a value here was never read.
     const elkDefaults = {
         algorithms: ['layered'],
-        defaultLayoutOptions: {
-            'elk.algorithm': 'layered',
-            'elk.direction': 'RIGHT',
-            'elk.layered.spacing.nodeNodeBetweenLayers': '80',
-            'elk.spacing.nodeNode': '40'
-        }
+        defaultLayoutOptions: {}
     };
     const elkLayoutModule = configureELKLayoutModule({ ...elkDefaults, layoutConfigurator: WorkflowLayoutConfigurator });
     additionalModules.push(elkLayoutModule);
@@ -278,8 +276,7 @@ export function createWorkflowServerModules(
     // the loopback HTTP server lazily on the first `initialize` carrying an `mcpServer` config.
     const serverModules: ServerModule[] = [appModule as unknown as ServerModule, serverModule];
     if (mcpEnabled) {
-        const persona = options?.mcp?.agentPersona;
-        const nodeMcpServerModule = new NodeMcpServerModule(persona ? { agentPersona: persona } : {});
+        const nodeMcpServerModule = new NodeMcpServerModule({});
         serverModules.push(nodeMcpServerModule as unknown as ServerModule);
     }
     return serverModules;

@@ -120,22 +120,6 @@ export class NetworkNode extends WorkflowNode {
 }
 
 /**
- * Collapsed conditional node (EntityIfExpr)
- */
-export class CollapsedConditionalNode extends WorkflowNode {
-    override type = WorkflowDiagramTypes.NODE_COLLAPSED_CONDITIONAL;
-    override readOnly = true;
-}
-
-/**
- * Collapsed array node (EntityListExpr)
- */
-export class CollapsedArrayNode extends WorkflowNode {
-    override type = WorkflowDiagramTypes.NODE_COLLAPSED_ARRAY;
-    override readOnly = true;
-}
-
-/**
  * Structure if node (StructureStatementIf)
  * Rendered as a read-only grouping element.
  * 
@@ -172,70 +156,6 @@ export class StructureForeachNode extends WorkflowNode {
 }
 
 /**
- * Inline if node (used to represent per-iteration ifs inside foreach)
- * Rendered as a small read-only statement marker.
- */
-export class InlineIfNode extends WorkflowNode {
-    override type = WorkflowDiagramTypes.NODE_STRUCTURE_IF_INLINE;
-    override readOnly = true;
-}
-
-/**
- * Proxy node for indexed entity references like c[i], c[nSegs-1].
- * Represents a single element from an entity list inside a foreach loop.
- * Read-only and movable for layout purposes.
- */
-export class ProxyNode extends WorkflowNode {
-    static override readonly DEFAULT_FEATURES = [
-        moveFeature,
-        selectFeature,
-        hoverFeedbackFeature,
-        boundsFeature
-        // NOT deletableFeature - proxy nodes are derived from foreach
-    ];
-
-    override type = WorkflowDiagramTypes.NODE_PROXY;
-    override readOnly = true;
-    
-    /** The base entity name (e.g., 'c' for c[i]) */
-    baseEntity?: string;
-    
-    /** The index expression text (e.g., 'i', 'i-1', 'nSegs-1') */
-    indexExprText?: string;
-}
-
-/**
- * Structure if branch container node (then/else/elsif)
- * Read-only and not user-movable.
- * 
- * IMPORTANT: Has layoutContainerFeature so Sprotty knows the server manages children's layout.
- * We also override the `bounds` setter to only update position, NOT size.
- */
-export class StructureIfBranchNode extends RectangularNode implements Hoverable, Selectable, Fadeable {
-    static override readonly DEFAULT_FEATURES = [
-        selectFeature,
-        hoverFeedbackFeature,
-        boundsFeature,
-        layoutContainerFeature  // Tell Sprotty that children are server-laid-out
-    ];
-
-    override type = WorkflowDiagramTypes.NODE_STRUCTURE_IF_BRANCH;
-    override hoverFeedback: boolean = false;
-    override selected: boolean = false;
-    override opacity: number = 1;
-    readOnly: boolean = true;
-    args?: Args;
-    
-    override set bounds(newBounds: { x: number; y: number; width: number; height: number }) {
-        this.position = { x: newBounds.x, y: newBounds.y };
-    }
-    
-    override get bounds(): { x: number; y: number; width: number; height: number } {
-        return { x: this.position.x, y: this.position.y, width: this.size.width, height: this.size.height };
-    }
-}
-
-/**
  * A producer's group container. Read-only; sized by the server from its
  * members, like a branch container, so `bounds` sets the position only.
  */
@@ -258,64 +178,6 @@ export class GroupNode extends RectangularNode implements Hoverable, Selectable,
         this.position = { x: newBounds.x, y: newBounds.y };
     }
 
-    override get bounds(): { x: number; y: number; width: number; height: number } {
-        return { x: this.position.x, y: this.position.y, width: this.size.width, height: this.size.height };
-    }
-}
-
-/**
- * Structure if join node (phi-like merge point)
- * Read-only and not user-movable.
- * 
- * IMPORTANT: We override the `bounds` setter to only update position, NOT size.
- */
-export class StructureIfJoinNode extends RectangularNode implements Hoverable, Selectable, Fadeable {
-    static override readonly DEFAULT_FEATURES = [
-        selectFeature,
-        hoverFeedbackFeature,
-        boundsFeature
-    ];
-
-    override type = WorkflowDiagramTypes.NODE_STRUCTURE_IF_JOIN;
-    override hoverFeedback: boolean = false;
-    override selected: boolean = false;
-    override opacity: number = 1;
-    readOnly: boolean = true;
-    args?: Args;
-    
-    override set bounds(newBounds: { x: number; y: number; width: number; height: number }) {
-        this.position = { x: newBounds.x, y: newBounds.y };
-    }
-    
-    override get bounds(): { x: number; y: number; width: number; height: number } {
-        return { x: this.position.x, y: this.position.y, width: this.size.width, height: this.size.height };
-    }
-}
-
-/**
- * Structure foreach join node (merge point for foreach loop outputs)
- * Read-only and not user-movable.
- * 
- * IMPORTANT: We override the `bounds` setter to only update position, NOT size.
- */
-export class StructureForeachJoinNode extends RectangularNode implements Hoverable, Selectable, Fadeable {
-    static override readonly DEFAULT_FEATURES = [
-        selectFeature,
-        hoverFeedbackFeature,
-        boundsFeature
-    ];
-
-    override type = WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH_JOIN;
-    override hoverFeedback: boolean = false;
-    override selected: boolean = false;
-    override opacity: number = 1;
-    readOnly: boolean = true;
-    args?: Args;
-    
-    override set bounds(newBounds: { x: number; y: number; width: number; height: number }) {
-        this.position = { x: newBounds.x, y: newBounds.y };
-    }
-    
     override get bounds(): { x: number; y: number; width: number; height: number } {
         return { x: this.position.x, y: this.position.y, width: this.size.width, height: this.size.height };
     }
@@ -463,19 +325,6 @@ export class WorkflowLabel extends GLabel implements Selectable {
 }
 
 /**
- * Editable name label
- */
-export class WorkflowEditableLabel extends WorkflowLabel {
-    static override readonly DEFAULT_FEATURES = [
-        selectFeature,
-        editFeature,
-        withEditLabelFeature
-    ];
-    
-    editControlDimension = { width: 100, height: 20 };
-}
-
-/**
  * Boundary labels should not capture drag gestures.
  *
  * If boundary labels are selectable, the selection tool can consume the
@@ -519,8 +368,8 @@ export class BoundaryLabel extends WorkflowLabel {
  * CAL Compartment for grouping elements
  */
 export class WorkflowCompartment extends GCompartment {
-    /** Compartment kind (header, ports) */
-    compartmentKind?: 'header' | 'ports';
+    /** Compartment kind */
+    compartmentKind?: 'header';
 }
 
 /**
@@ -528,21 +377,6 @@ export class WorkflowCompartment extends GCompartment {
  */
 export class HeaderCompartment extends WorkflowCompartment {
     override type = WorkflowDiagramTypes.COMPARTMENT_HEADER;
-    override compartmentKind: 'header' | 'ports' = 'header';
+    override compartmentKind: 'header' = 'header';
 }
 
-/**
- * Ports compartment containing input/output ports
- */
-export class PortsCompartment extends WorkflowCompartment {
-    override type = WorkflowDiagramTypes.COMPARTMENT_PORTS;
-    override compartmentKind: 'header' | 'ports' = 'ports';
-}
-
-/**
- * Decoration marker for validation issues
- */
-export interface ValidationDecoration {
-    severity: 'error' | 'warning' | 'info' | 'hint';
-    message: string;
-}

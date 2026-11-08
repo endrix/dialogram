@@ -170,7 +170,6 @@ export function buildTraceGraph(root: TraceElement): TraceGraph {
                 }
             }
         } else if (startsWith(element, 'edge')
-            && element.type !== WorkflowDiagramTypes.EDGE_VIRTUAL
             && typeof element.sourceId === 'string'
             && typeof element.targetId === 'string') {
             edges.push(element);

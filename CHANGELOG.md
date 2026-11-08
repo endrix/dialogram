@@ -6,6 +6,28 @@ platform API version.
 
 ## [Unreleased]
 
+### Removed
+
+- **Element types the model never emits**, with their client classes and
+  views, server mappings, shape hints and layout branches: `node:proxy`, the
+  two collapsed nodes, the if-branch, if-join, foreach-join and inline-if
+  structure nodes, `edge:virtual`, `comp:ports` and `comp:port-row`; the
+  metadata keys only they carried; the type guards that always answered
+  false; the shared aliases, Origin helpers, sizing constants and CSS names
+  nothing read.
+- **Dead round-trips and aliases in the client**: the property panel's
+  "Change referenced type" button and the toggle-grid action (no handler on
+  either side), the pre-split back-compat module aliases, two unimported
+  navigation files, a `wf:labelRole` read nothing writes, the
+  `chat.sessionLoaded` case the host never sends, and 39 stylesheet selectors
+  no view or template produces.
+- **Unreached server code**: the serpentine layout's own edge router (its
+  routes were always overwritten by the reroute that follows), the layout-key
+  migration module, seven layout-persistence methods, the clipboard parser no
+  paste reads, the "Stable, Experimental" reroute menu entry and its unread
+  strategy flag, the ELK defaults the configurator always overrode, and the
+  MCP persona option no caller set.
+
 ### Added
 
 - **Selection trace** (`clientBehavior.selectionTrace`, opt-in): selecting a
@@ -68,6 +90,9 @@ platform API version.
 
 ### Fixed
 
+- A layout change still on its 500 ms debounce timer when the window closes
+  is written out: the host flushes every diagram's pending layout saves on
+  deactivation.
 - **The running ring and the queue sizes no longer blink through a run.** The
   runtime writes `run.wf-viewer.live.json` at every firing and the server
   re-reads it every 400ms, so now and then it read the file halfway written,

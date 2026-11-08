@@ -50,16 +50,6 @@
         "op": "actionHandler"
     },
     {
-        "handler": "WorkflowShowWorkspaceEntitiesActionHandler",
-        "kind": "dialogram.showWorkspaceEntities",
-        "op": "actionHandler"
-    },
-    {
-        "handler": "WorkflowToggleGridActionHandler",
-        "kind": "dialogram.toggleGrid",
-        "op": "actionHandler"
-    },
-    {
         "id": "ChangeBoundsTool",
         "op": "rebind",
         "scope": "singleton",
@@ -237,28 +227,10 @@
         "view": "BoundaryOutputNodeView"
     },
     {
-        "model": "CollapsedArrayNode",
-        "op": "modelElement",
-        "typeId": "node:collapsed:array",
-        "view": "CollapsedArrayNodeView"
-    },
-    {
-        "model": "CollapsedConditionalNode",
-        "op": "modelElement",
-        "typeId": "node:collapsed:conditional",
-        "view": "CollapsedConditionalNodeView"
-    },
-    {
         "model": "ExternalActorNode",
         "op": "modelElement",
         "typeId": "node:external-actor",
         "view": "ExternalActorNodeView"
-    },
-    {
-        "model": "GCompartment",
-        "op": "modelElement",
-        "typeId": "comp:port-row",
-        "view": "GCompartmentView"
     },
     {
         "model": "GGraph",
@@ -291,46 +263,16 @@
         "view": "HeaderCompartmentView"
     },
     {
-        "model": "InlineIfNode",
-        "op": "modelElement",
-        "typeId": "node:structure:if:inline",
-        "view": "InlineIfNodeView"
-    },
-    {
         "model": "NetworkNode",
         "op": "modelElement",
         "typeId": "node:network",
         "view": "NetworkNodeView"
     },
     {
-        "model": "PortsCompartment",
-        "op": "modelElement",
-        "typeId": "comp:ports",
-        "view": "GCompartmentView"
-    },
-    {
-        "model": "ProxyNode",
-        "op": "modelElement",
-        "typeId": "node:proxy",
-        "view": "ProxyNodeView"
-    },
-    {
-        "model": "StructureForeachJoinNode",
-        "op": "modelElement",
-        "typeId": "node:structure:foreach:join",
-        "view": "StructureForeachJoinNodeView"
-    },
-    {
         "model": "StructureForeachNode",
         "op": "modelElement",
         "typeId": "node:structure:foreach",
         "view": "StructureForeachNodeView"
-    },
-    {
-        "model": "StructureIfBranchNode",
-        "op": "modelElement",
-        "typeId": "node:structure:if:branch",
-        "view": "StructureIfBranchNodeView"
     },
     {
         "model": "GroupNode",
@@ -343,12 +285,6 @@
         "op": "modelElement",
         "typeId": "port:group-boundary",
         "view": "GroupBoundaryPortView"
-    },
-    {
-        "model": "StructureIfJoinNode",
-        "op": "modelElement",
-        "typeId": "node:structure:if:join",
-        "view": "StructureIfJoinNodeView"
     },
     {
         "model": "StructureIfNode",
@@ -367,12 +303,6 @@
         "op": "modelElement",
         "typeId": "edge:connection:no-arrow",
         "view": "WorkflowNoArrowEdgeView"
-    },
-    {
-        "model": "WorkflowEdge",
-        "op": "modelElement",
-        "typeId": "edge:virtual",
-        "view": "WorkflowVirtualEdgeView"
     },
     {
         "model": "WorkflowInputPort",

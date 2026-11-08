@@ -29,9 +29,6 @@ import {
     ActorNode,
     ExternalActorNode,
     NetworkNode,
-    CollapsedConditionalNode,
-    CollapsedArrayNode,
-    ProxyNode,
     BoundaryInputNode,
     BoundaryOutputNode,
     WorkflowInputPort,
@@ -359,53 +356,6 @@ export class StructureForeachNodeView extends ShapeView {
     }
 }
 
-@injectable()
-export class StructureIfBranchNodeView extends ShapeView {
-    override render(node: Readonly<any>, context: RenderingContext, args?: IViewArgs): VNode | undefined {
-        if (!this.isVisible(node, context)) {
-            return undefined;
-        }
-
-        const { width, height } = getNodeSize(node as any, 200, 60);
-        const branch = (node as any).args?.[WorkflowDiagramMetadata.STRUCTURE_BRANCH] as string | undefined;
-        const label = branch && branch.trim() !== '' ? branch : 'branch';
-
-        return svg('g', {
-            class: {
-                'workflow-node': true,
-                [WorkflowDiagramCss.NODE_STRUCTURE]: true,
-                [WorkflowDiagramCss.NODE_STRUCTURE_IF_BRANCH]: true,
-                selected: (node as any).selected,
-                hover: (node as any).hoverFeedback,
-                'read-only': true
-            },
-            attrs: {
-                transform: `translate(${node.position.x}, ${node.position.y})`
-            }
-        },
-            svg('rect', {
-                class: { 'structure-if-section': true, [label]: true },
-                attrs: {
-                    x: 0, y: 0,
-                    width, height,
-                    rx: 4, ry: 4,
-                    'stroke-dasharray': '2,2'
-                }
-            }),
-            svg('text', {
-                class: { 'structure-if-section-label': true, [label]: true },
-                attrs: {
-                    x: 6,
-                    y: 12,
-                    'text-anchor': 'start',
-                    'dominant-baseline': 'middle'
-                }
-            }, label),
-            ...context.renderChildren(node)
-        );
-    }
-}
-
 /**
  * A producer's group, drawn as a nested region: a body, a header band carrying
  * the group's label, a border over both, and the members below the header. The
@@ -495,150 +445,6 @@ export class GroupBoundaryPortView extends ShapeView {
                 class: { 'group-boundary-dot': true },
                 attrs: { cx: width / 2, cy: height / 2, r: Math.min(width, height) / 2 - 1 }
             })
-        );
-    }
-}
-
-@injectable()
-export class StructureIfJoinNodeView extends ShapeView {
-    override render(node: Readonly<any>, context: RenderingContext, args?: IViewArgs): VNode | undefined {
-        if (!this.isVisible(node, context)) {
-            return undefined;
-        }
-
-        const { width, height } = getNodeSize(node as any, 70, 34);
-        const label = 'join';
-
-        return svg('g', {
-            class: {
-                'workflow-node': true,
-                [WorkflowDiagramCss.NODE_STRUCTURE]: true,
-                [WorkflowDiagramCss.NODE_STRUCTURE_IF_JOIN]: true,
-                selected: (node as any).selected,
-                hover: (node as any).hoverFeedback,
-                'read-only': true
-            },
-            attrs: {
-                transform: `translate(${node.position.x}, ${node.position.y})`
-            }
-        },
-            svg('rect', {
-                class: { 'structure-if-join-body': true },
-                attrs: {
-                    x: 0, y: 0,
-                    width, height,
-                    rx: 4, ry: 4
-                }
-            }),
-            svg('text', {
-                class: { 'structure-if-join-label': true },
-                attrs: {
-                    x: width / 2,
-                    y: height / 2,
-                    'text-anchor': 'middle',
-                    'dominant-baseline': 'middle'
-                }
-            }, label),
-            ...context.renderChildren(node)
-        );
-    }
-}
-
-/**
- * Foreach join node view - merge point for derived outputs from foreach loop.
- * Renders as a small labeled box similar to if-join.
- */
-@injectable()
-export class StructureForeachJoinNodeView extends ShapeView {
-    override render(node: Readonly<any>, context: RenderingContext, args?: IViewArgs): VNode | undefined {
-        if (!this.isVisible(node, context)) {
-            return undefined;
-        }
-
-        const { width, height } = getNodeSize(node as any, 70, 34);
-        const label = 'join';
-
-        return svg('g', {
-            class: {
-                'workflow-node': true,
-                [WorkflowDiagramCss.NODE_STRUCTURE]: true,
-                [WorkflowDiagramCss.NODE_STRUCTURE_FOREACH_JOIN]: true,
-                selected: (node as any).selected,
-                hover: (node as any).hoverFeedback,
-                'read-only': true
-            },
-            attrs: {
-                transform: `translate(${node.position.x}, ${node.position.y})`
-            }
-        },
-            svg('rect', {
-                class: { 'structure-foreach-join-body': true },
-                attrs: {
-                    x: 0, y: 0,
-                    width, height,
-                    rx: 4, ry: 4
-                }
-            }),
-            svg('text', {
-                class: { 'structure-foreach-join-label': true },
-                attrs: {
-                    x: width / 2,
-                    y: height / 2,
-                    'text-anchor': 'middle',
-                    'dominant-baseline': 'middle'
-                }
-            }, label),
-            ...context.renderChildren(node)
-        );
-    }
-}
-
-/**
- * Inline if node view - used inside foreach containers to explicitly represent per-iteration if statements.
- */
-@injectable()
-export class InlineIfNodeView extends ShapeView {
-    override render(node: Readonly<any>, context: RenderingContext, args?: IViewArgs): VNode | undefined {
-        if (!this.isVisible(node, context)) {
-            return undefined;
-        }
-
-        const { width, height } = getNodeSize(node as any, 220, 56);
-        const conditionText = (node as any).args?.[WorkflowDiagramMetadata.CONDITION_TEXT] as string | undefined;
-        const label = conditionText ? `if ${conditionText.trim()}` : 'if …';
-
-        return svg('g', {
-            class: {
-                'workflow-node': true,
-                [WorkflowDiagramCss.NODE_STRUCTURE]: true,
-                [WorkflowDiagramCss.NODE_STRUCTURE_IF_INLINE]: true,
-                selected: (node as any).selected,
-                hover: (node as any).hoverFeedback,
-                'read-only': true
-            },
-            attrs: {
-                transform: `translate(${node.position.x}, ${node.position.y})`
-            }
-        },
-            svg('rect', {
-                class: { 'inline-if-body': true },
-                attrs: {
-                    x: 0, y: 0,
-                    width, height,
-                    rx: 4, ry: 4,
-                    'stroke-dasharray': '2,2'
-                }
-            }),
-            svg('text', {
-                class: { 'inline-if-label': true },
-                attrs: {
-                    x: 8,
-                    y: 14,
-                    'text-anchor': 'start',
-                    'dominant-baseline': 'middle'
-                }
-            }, label),
-            ...context.renderChildren(node)
         );
     }
 }
@@ -825,35 +631,6 @@ export class HeaderCompartmentView extends ShapeView {
 /**
  * Base view for Workflow nodes
  */
-@injectable()
-export class WorkflowNodeView extends ShapeView {
-    override render(node: Readonly<WorkflowNode>, context: RenderingContext, args?: IViewArgs): VNode | undefined {
-        if (!this.isVisible(node, context)) {
-            return undefined;
-        }
-
-        // Use server-provided size, not Sprotty-computed bounds
-        const { width, height } = getNodeSize(node, NODE_WIDTH, NODE_HEIGHT);
-
-        return svg('g', {
-            class: { 'workflow-node': true, selected: node.selected, 'hover': node.hoverFeedback },
-            attrs: {
-                transform: `translate(${node.position.x}, ${node.position.y})`
-            }
-        },
-            svg('rect', {
-                class: { 'node-body': true },
-                attrs: {
-                    x: 0, y: 0,
-                    width, height,
-                    rx: 4, ry: 4
-                }
-            }),
-            ...context.renderChildren(node)
-        );
-    }
-}
-
 /**
  * Actor node view - renders node body AND port labels
  * Port labels are rendered from the node (not the port) to avoid SVG clipping issues.
@@ -1050,149 +827,6 @@ export class NetworkNodeView extends ShapeView {
             ...(family?.image ? renderNodeCenterImage(family, width, bodyHeight) : []),
             ...context.renderChildren(node),
             ...(footerLabelNode ? [footerLabelNode] : [])
-        );
-    }
-}
-
-/**
- * Collapsed conditional node view (EntityIfExpr)
- */
-@injectable()
-export class CollapsedConditionalNodeView extends WorkflowNodeView {
-    override render(node: Readonly<CollapsedConditionalNode>, context: RenderingContext, args?: IViewArgs): VNode | undefined {
-        if (!this.isVisible(node, context)) {
-            return undefined;
-        }
-
-        // Use server-provided size, not Sprotty-computed bounds
-        const { width, height } = getNodeSize(node, NODE_WIDTH, NODE_HEIGHT);
-
-        return svg('g', {
-            class: {
-                'workflow-node': true,
-                'collapsed-node': true,
-                'conditional-node': true,
-                selected: node.selected,
-                'hover': node.hoverFeedback,
-                'read-only': true
-            },
-            attrs: {
-                transform: `translate(${node.position.x}, ${node.position.y})`
-            }
-        },
-            // Dashed border to indicate collapsed
-            svg('rect', {
-                class: { 'node-body': true, 'collapsed-border': true },
-                attrs: {
-                    x: 0, y: 0,
-                    width, height,
-                    rx: 4, ry: 4,
-                    'stroke-dasharray': '4,2'
-                }
-            }),
-            // "if" badge
-            svg('rect', {
-                class: { 'badge': true, 'conditional-badge': true },
-                attrs: {
-                    x: width - 28, y: 4,
-                    width: 24, height: 16,
-                    rx: 3
-                }
-            }),
-            svg('text', {
-                class: { 'badge-text': true },
-                attrs: {
-                    x: width - 16, y: 15,
-                    'text-anchor': 'middle',
-                    'font-size': '10px'
-                }
-            }, 'if'),
-            // Children
-            ...context.renderChildren(node)
-        );
-    }
-}
-
-/**
- * Collapsed array node view (EntityListExpr)
- */
-@injectable()
-export class CollapsedArrayNodeView extends WorkflowNodeView {
-    override render(node: Readonly<CollapsedArrayNode>, context: RenderingContext, args?: IViewArgs): VNode | undefined {
-        if (!this.isVisible(node, context)) {
-            return undefined;
-        }
-
-        // Use server-provided size, not Sprotty-computed bounds
-        const { width, height } = getNodeSize(node, NODE_WIDTH, NODE_HEIGHT);
-
-        return svg('g', {
-            class: {
-                'workflow-node': true,
-                'array-node': true,
-                selected: node.selected,
-                'hover': node.hoverFeedback,
-                'read-only': true
-            },
-            attrs: {
-                transform: `translate(${node.position.x}, ${node.position.y})`
-            }
-        },
-            // Render like a regular entity node (solid border / no badge)
-            svg('rect', {
-                class: { 'node-body': true },
-                attrs: {
-                    x: 0, y: 0,
-                    width, height,
-                    rx: 4, ry: 4
-                }
-            }),
-            // Children
-            ...context.renderChildren(node)
-        );
-    }
-}
-
-/**
- * Proxy node view for indexed entity references like c[i], c[nSegs-1].
- * Renders similarly to entity nodes but with a dashed border to indicate
- * it's a loop-variable-dependent reference.
- */
-@injectable()
-export class ProxyNodeView extends ShapeView {
-    override render(node: Readonly<any>, context: RenderingContext, args?: IViewArgs): VNode | undefined {
-        if (!this.isVisible(node, context)) {
-            return undefined;
-        }
-
-        // Use server-provided size, not Sprotty-computed bounds
-        const { width, height } = getNodeSize(node, NODE_WIDTH, NODE_HEIGHT);
-
-        return svg('g', {
-            class: {
-                'workflow-node': true,
-                'workflow-node-proxy': true,
-                'proxy-node': true,
-                selected: node.selected,
-                'hover': node.hoverFeedback,
-                'read-only': true
-            },
-            attrs: {
-                transform: `translate(${node.position.x}, ${node.position.y})`
-            }
-        },
-            // Dashed border to indicate this is a proxy/indexed reference
-            svg('rect', {
-                class: { 'node-body': true, 'proxy-border': true },
-                attrs: {
-                    x: 0, y: 0,
-                    width, height,
-                    rx: 4, ry: 4,
-                    'stroke-dasharray': '4,2'
-                }
-            }),
-            // Children (header compartment, ports, labels)
-            ...context.renderChildren(node)
         );
     }
 }
@@ -2503,36 +2137,6 @@ export class WorkflowNoArrowEdgeView extends WorkflowEdgeView {
 }
 
 /**
- * Virtual edge view - dashed line for edges derived from foreach loop symbolic substitution.
- * These edges show what connections would exist when the loop variable takes a specific value.
- * Read-only and not user-editable.
- */
-@injectable()
-export class WorkflowVirtualEdgeView extends WorkflowEdgeView {
-    override render(edge: Readonly<SEdgeImpl>, context: RenderingContext, args?: IViewArgs): VNode | undefined {
-        const routingPoints = (edge as any).routingPoints;
-        
-        // If no valid route polyline, don't render - avoids spurious straight-line edges.
-        if (!Array.isArray(routingPoints) || routingPoints.length < 2) {
-            return undefined;
-        }
-        
-        const result = super.render(edge, context, args);
-        if (result) {
-            // Add virtual edge class for dashed styling
-            const existingClasses = (result.data?.class as Record<string, boolean>) ?? {};
-            result.data = result.data ?? {};
-            result.data.class = {
-                ...existingClasses,
-                'workflow-edge-virtual': true,
-                'virtual-edge': true
-            };
-        }
-        return result;
-    }
-}
-
-/**
  * Label view - renders labels with positions computed by ELK.
  */
 @injectable()
@@ -2629,37 +2233,21 @@ export class WorkflowLabelView implements IView {
             labelKind = 'badge';
         }
         
-        const labelRole = (label as any).args?.['wf:labelRole'];
-        // Skip rendering type labels (except boundary labels handled above)
+        // Type labels are drawn by the node view (the footer type label), not here.
         if (labelKind === 'type') {
-            if (labelRole !== 'type-footer') {
-                return undefined;
-            }
+            return undefined;
         }
         
         // Simplest possible label - just text, no positioning
-        const textAnchor = labelKind === 'type' ? 'middle' : 'start';
-        const parent = (label as any).parent as { size?: { width?: number; height?: number }; bounds?: { width?: number; height?: number } } | undefined;
-        const parentSize = parent?.size ?? parent?.bounds;
-        const footerPos = labelRole === 'type-footer' && parentSize
-            ? { x: (parentSize.width ?? 0) / 2, y: (parentSize.height ?? 0) + 4 }
-            : pos;
         return svg('g', {
             attrs: {
-                transform: `translate(${footerPos.x}, ${footerPos.y})`
+                transform: `translate(${pos.x}, ${pos.y})`
             }
         },
             svg('text', {
-                class: {
-                    'sprotty-label': true,
-                    'type-footer-label': labelKind === 'type'
-                },
-                style: labelKind === 'type' ? {
-                    'font-style': 'italic',
-                    'fill': 'var(--vscode-descriptionForeground, #8b8b8b)'
-                } : undefined,
+                class: { 'sprotty-label': true },
                 attrs: {
-                    'text-anchor': textAnchor,
+                    'text-anchor': 'start',
                     'dominant-baseline': 'hanging'
                 }
             }, label.text || '')
@@ -2667,25 +2255,3 @@ export class WorkflowLabelView implements IView {
     }
 }
 
-/**
- * Map of element types to view constructors
- */
-export const workflowDiagramViewMap = new Map<string, new () => IView>([
-    [WorkflowDiagramTypes.NODE_ACTOR, ActorNodeView],
-    [WorkflowDiagramTypes.NODE_EXTERNAL_ACTOR, ExternalActorNodeView],
-    [WorkflowDiagramTypes.NODE_NETWORK, NetworkNodeView],
-    [WorkflowDiagramTypes.NODE_COLLAPSED_CONDITIONAL, CollapsedConditionalNodeView],
-    [WorkflowDiagramTypes.NODE_COLLAPSED_ARRAY, CollapsedArrayNodeView],
-    [WorkflowDiagramTypes.NODE_BOUNDARY_INPUT, BoundaryInputNodeView],
-    [WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT, BoundaryOutputNodeView],
-    [WorkflowDiagramTypes.PORT_INPUT, WorkflowInputPortView],
-    [WorkflowDiagramTypes.PORT_OUTPUT, WorkflowOutputPortView],
-    [WorkflowDiagramTypes.EDGE_CONNECTION, WorkflowEdgeView],
-    [WorkflowDiagramTypes.EDGE_CONNECTION_NO_ARROW, WorkflowNoArrowEdgeView],
-    [WorkflowDiagramTypes.LABEL_NAME, WorkflowLabelView],
-    [WorkflowDiagramTypes.LABEL_TYPE, WorkflowLabelView],
-    [WorkflowDiagramTypes.LABEL_BADGE, WorkflowLabelView],
-    [WorkflowDiagramTypes.LABEL_PORT, WorkflowLabelView],
-    [WorkflowDiagramTypes.LABEL_BOUNDARY_NAME, WorkflowLabelView],
-    [WorkflowDiagramTypes.LABEL_BOUNDARY_TYPE, WorkflowLabelView]
-]);

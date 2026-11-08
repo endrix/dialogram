@@ -2,8 +2,8 @@
  * Stock workflow model/view registration module.
  *
  * The workflow-specific half of the former `workflowDiagramModule`: every
- * `configureModelElement` tuple keyed on `WorkflowDiagramTypes.*` — the 14 node
- * types, 2 ports, 3 edges, labels, compartments — plus the validation issue-marker
+ * `configureModelElement` tuple keyed on `WorkflowDiagramTypes.*` — the node
+ * types, ports, edges, labels, compartments — plus the validation issue-marker
  * view. This is the module SP3 §3 requires to be OPTIONAL: it is NOT part of the
  * neutral base and loads only when a consumer passes it (the stock entry does; a
  * custom-view consumer such as mlir supplies its own instead).
@@ -20,8 +20,6 @@ import {
     GIssueMarker,
     GGraph,
     GGraphView,
-    GCompartment,
-    GCompartmentView,
     GLabelView
 } from '@eclipse-glsp/client';
 import { WorkflowDiagramTypes } from '@dialogram/shared';
@@ -29,17 +27,10 @@ import {
     ActorNode,
     ExternalActorNode,
     NetworkNode,
-    CollapsedConditionalNode,
-    CollapsedArrayNode,
-    ProxyNode,
     StructureIfNode,
     StructureForeachNode,
-    InlineIfNode,
-    StructureIfBranchNode,
     GroupNode,
     GroupBoundaryPort,
-    StructureIfJoinNode,
-    StructureForeachJoinNode,
     BoundaryInputNode,
     BoundaryOutputNode,
     WorkflowInputPort,
@@ -48,31 +39,22 @@ import {
     WorkflowLabel,
     BoundaryEditableLabel,
     BoundaryLabel,
-    HeaderCompartment,
-    PortsCompartment
+    HeaderCompartment
 } from './model';
 import {
     ActorNodeView,
     ExternalActorNodeView,
     NetworkNodeView,
-    CollapsedConditionalNodeView,
-    CollapsedArrayNodeView,
-    ProxyNodeView,
     StructureIfNodeView,
     StructureForeachNodeView,
-    InlineIfNodeView,
-    StructureIfBranchNodeView,
     GroupNodeView,
     GroupBoundaryPortView,
-    StructureIfJoinNodeView,
-    StructureForeachJoinNodeView,
     BoundaryInputNodeView,
     BoundaryOutputNodeView,
     WorkflowInputPortView,
     WorkflowOutputPortView,
     WorkflowEdgeView,
     WorkflowNoArrowEdgeView,
-    WorkflowVirtualEdgeView,
     WorkflowLabelView,
     HeaderCompartmentView
 } from './views';
@@ -93,17 +75,10 @@ export const workflowViewsModule = new ContainerModule((bind, unbind, isBound, r
     configureModelElement(context, WorkflowDiagramTypes.NODE_ACTOR, ActorNode, ActorNodeView);
     configureModelElement(context, WorkflowDiagramTypes.NODE_EXTERNAL_ACTOR, ExternalActorNode, ExternalActorNodeView);
     configureModelElement(context, WorkflowDiagramTypes.NODE_NETWORK, NetworkNode, NetworkNodeView);
-    configureModelElement(context, WorkflowDiagramTypes.NODE_PROXY, ProxyNode, ProxyNodeView);
-    configureModelElement(context, WorkflowDiagramTypes.NODE_COLLAPSED_CONDITIONAL, CollapsedConditionalNode, CollapsedConditionalNodeView);
-    configureModelElement(context, WorkflowDiagramTypes.NODE_COLLAPSED_ARRAY, CollapsedArrayNode, CollapsedArrayNodeView);
     configureModelElement(context, WorkflowDiagramTypes.NODE_STRUCTURE_IF, StructureIfNode, StructureIfNodeView);
     configureModelElement(context, WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH, StructureForeachNode, StructureForeachNodeView);
-    configureModelElement(context, WorkflowDiagramTypes.NODE_STRUCTURE_IF_INLINE, InlineIfNode, InlineIfNodeView);
-    configureModelElement(context, WorkflowDiagramTypes.NODE_STRUCTURE_IF_BRANCH, StructureIfBranchNode, StructureIfBranchNodeView);
     configureModelElement(context, WorkflowDiagramTypes.NODE_GROUP, GroupNode, GroupNodeView);
     configureModelElement(context, WorkflowDiagramTypes.PORT_GROUP_BOUNDARY, GroupBoundaryPort, GroupBoundaryPortView);
-    configureModelElement(context, WorkflowDiagramTypes.NODE_STRUCTURE_IF_JOIN, StructureIfJoinNode, StructureIfJoinNodeView);
-    configureModelElement(context, WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH_JOIN, StructureForeachJoinNode, StructureForeachJoinNodeView);
     configureModelElement(context, WorkflowDiagramTypes.NODE_BOUNDARY_INPUT, BoundaryInputNode, BoundaryInputNodeView);
     configureModelElement(context, WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT, BoundaryOutputNode, BoundaryOutputNodeView);
 
@@ -114,7 +89,6 @@ export const workflowViewsModule = new ContainerModule((bind, unbind, isBound, r
     // Configure edge types
     configureModelElement(context, WorkflowDiagramTypes.EDGE_CONNECTION, WorkflowEdge, WorkflowEdgeView);
     configureModelElement(context, WorkflowDiagramTypes.EDGE_CONNECTION_NO_ARROW, WorkflowEdge, WorkflowNoArrowEdgeView);
-    configureModelElement(context, WorkflowDiagramTypes.EDGE_VIRTUAL, WorkflowEdge, WorkflowVirtualEdgeView);
 
     // Validation marker view (GLSP uses DefaultTypes.ISSUE_MARKER = 'marker')
     configureModelElement(context, DefaultTypes.ISSUE_MARKER, GIssueMarker, WorkflowIssueMarkerView);
@@ -148,6 +122,4 @@ export const workflowViewsModule = new ContainerModule((bind, unbind, isBound, r
 
     // Configure compartment types
     configureModelElement(context, WorkflowDiagramTypes.COMPARTMENT_HEADER, HeaderCompartment, HeaderCompartmentView);
-    configureModelElement(context, WorkflowDiagramTypes.COMPARTMENT_PORTS, PortsCompartment, GCompartmentView);
-    configureModelElement(context, WorkflowDiagramTypes.COMPARTMENT_PORT_ROW, GCompartment, GCompartmentView);
 });

@@ -28,7 +28,7 @@
  * `installDiagramWebviewChannel` + `createDiagramContainer` in it — see README.
  */
 
-// ── Stock model + view classes (back-compat; reuse/extend the stock elements) ──
+// ── Stock model + view classes (reuse/extend the stock elements) ──────────────
 export * from './model';
 export * from './views';
 
@@ -73,9 +73,6 @@ export {
     readNumberArg,
     readBoolArg
 } from './property-model';
-
-// ── Back-compat aliases for the former monolith surface ─────────────────────
-export { workflowDiagramModule, createCalDiagramContainer } from './di.config';
 
 // ── The canonical host↔webview channel ──────────────────────────────────────
 export {

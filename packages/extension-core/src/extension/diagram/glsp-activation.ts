@@ -395,7 +395,9 @@ export async function activateGlspIntegration(
     console.log('[Workflow GLSP] Creating GLSP server...');
 
     // Lazy import to avoid loading modules at extension activation time
-    const { createWorkflowGlspVscodeServer, disposeElkServers } = await import('@dialogram/diagram-server');
+    const { createWorkflowGlspVscodeServer, disposeElkServers, flushLayoutPersistence } = await import('@dialogram/diagram-server');
+    // A layout change made just before the window closes is still on its debounce timer.
+    context.subscriptions.push({ dispose: () => void flushLayoutPersistence() });
 
     // GLSP-MCP opt-in gate. When on, load the MCP DI modules (bridging the profile's
     // read-only chat tools into diagram-scope MCP tools) AND send the wire-level

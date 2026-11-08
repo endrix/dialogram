@@ -171,23 +171,3 @@ export function clipboardDataFromPayload(payload: WorkflowClipboardPayload): Rec
     };
 }
 
-export function parseWorkflowClipboardPayload(clipboardData: Record<string, string>): WorkflowClipboardPayload | undefined {
-    const json = clipboardData[WORKFLOW_CLIPBOARD_FORMAT] ?? Object.values(clipboardData)[0];
-    if (!json) {
-        return undefined;
-    }
-
-    try {
-        const parsed = JSON.parse(json) as WorkflowClipboardPayload;
-        if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.items) || typeof parsed.sourceUri !== 'string') {
-            return undefined;
-        }
-        return parsed;
-    } catch {
-        return undefined;
-    }
-}
-
-export function escapeRegExp(text: string): string {
-    return text.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
-}

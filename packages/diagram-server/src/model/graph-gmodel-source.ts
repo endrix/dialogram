@@ -1093,7 +1093,7 @@ export class GraphGModelSource {
         const node: GNode = {
             id: nodeId,
             type: branchType,
-            cssClasses: [WorkflowDiagramCss.NODE, WorkflowDiagramCss.NODE_STRUCTURE, WorkflowDiagramCss.NODE_STRUCTURE_IF_BRANCH],
+            cssClasses: [WorkflowDiagramCss.NODE, WorkflowDiagramCss.NODE_STRUCTURE],
             layoutOptions: {
                 'elk.algorithm': 'layered',
                 'elk.direction': 'DOWN',

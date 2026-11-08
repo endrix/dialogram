@@ -493,7 +493,6 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
 }
 
 /* The track the ring runs on, so a running node reads as one at a glance. */
-.workflow-node.workflow-node-active .node-body,
 .workflow-node.cal-node-active .node-body {
     stroke: var(--workflow-node-active-stroke);
     stroke-width: 2.5px;
@@ -566,20 +565,17 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
 }
 
 /* Finished state: static green border (no animation) for the last active entity after a successful run. */
-.workflow-node.workflow-node-finished .node-body,
 .workflow-node.cal-node-finished .node-body {
     stroke: var(--workflow-node-active-stroke);
     stroke-width: 2.5px;
     filter: drop-shadow(0 0 6px var(--workflow-node-active-glow));
 }
 
-.workflow-node.selected.workflow-node-finished .node-body,
 .workflow-node.selected.cal-node-finished .node-body {
     stroke: var(--sprotty-edge-selected);
 }
 
 /* Error state: static red border (no animation) for the entity that caused a run failure. */
-.workflow-node.workflow-node-error .node-body,
 .workflow-node.cal-node-error .node-body,
 .workflow-node.cal-node-graph-error .node-body {
     stroke: var(--workflow-node-error-stroke);
@@ -587,7 +583,6 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
     filter: drop-shadow(0 0 6px var(--workflow-node-error-glow));
 }
 
-.workflow-node.selected.workflow-node-error .node-body,
 .workflow-node.selected.cal-node-error .node-body,
 .workflow-node.selected.cal-node-graph-error .node-body {
     stroke: var(--sprotty-edge-selected);
@@ -650,13 +645,11 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
     fill: color-mix(in srgb, var(--workflow-node-fill) 85%, var(--workflow-color-network) 15%);
 }
 
-.header-compartment.header-actor .header-background,
 .header-compartment.header-task .header-background {
     fill: var(--workflow-color-task); /* Palette A task/source amber */
     fill-opacity: 0.26;
 }
 
-.header-compartment.header-network .header-background,
 .header-compartment.header-workflow .header-background {
     fill: var(--workflow-color-network); /* Palette A workflow/network steel blue */
     fill-opacity: 0.26;
@@ -720,15 +713,6 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
    pointer-events: none;
 }
 
-.port-row {
-   stroke: none;
-   fill: transparent;
-}
-
-.port-row.hover {
-   fill: var(--vscode-list-hoverBackground, #2a2d2e);
-}
-
 /* (Avoid duplicate .port-label blocks; keep a single source of truth above.) */
 
 /* Specific Node Colors */
@@ -746,14 +730,9 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
 }
 
 /* Icons */
-.actor-icon, .network-icon {
+.actor-icon {
     fill: var(--vscode-editor-background, #1e1e1e);
     stroke: none;
-}
-
-.external-icon {
-    fill: var(--vscode-editor-background, #1e1e1e);
-    font-weight: bold;
 }
 
 /* Custom palette icon for Agent entry */
@@ -813,11 +792,6 @@ body.vscode-high-contrast-light .node-center-image-light {
     fill: var(--workflow-color-external-default);
 }
 
-.external-actor-node .external-icon {
-    fill: var(--vscode-editor-background, #1e1e1e);
-    font-family: var(--vscode-font-family);
-}
-
 /* Network node styles - blue header */
 .network-node .node-header.network-header {
     fill: var(--workflow-color-network);
@@ -826,84 +800,6 @@ body.vscode-high-contrast-light .node-center-image-light {
 .network-node .node-body.network-border {
     stroke: var(--workflow-color-network);
     stroke-width: 2px;
-}
-
-.network-node .network-icon {
-    fill: var(--vscode-editor-background, #1e1e1e);
-    stroke: none;
-}
-
-.network-node .expand-icon {
-    fill: var(--vscode-foreground, #cccccc);
-    font-size: 12px;
-    cursor: pointer;
-}
-
-/* Collapsed node styles */
-.collapsed-node .node-body.collapsed-border {
-    fill: var(--workflow-node-fill);
-    stroke: var(--vscode-disabledForeground, #6e6e6e);
-    stroke-dasharray: 4,2;
-}
-
-.collapsed-node .badge {
-    fill: var(--vscode-badge-background, #4d4d4d);
-}
-
-.collapsed-node .badge-text {
-    fill: var(--vscode-badge-foreground, #ffffff);
-    font-family: var(--vscode-font-family);
-}
-
-.conditional-node .conditional-badge {
-    fill: var(--vscode-charts-orange, #d18616);
-}
-
-.array-node .array-badge {
-    fill: var(--vscode-charts-blue, #3794ff);
-}
-
-/* Proxy node styles (indexed entity references like c[i], c[nSegs-1]) */
-.proxy-node .node-body,
-.workflow-node-proxy .node-body {
-    fill: var(--workflow-node-fill);
-    stroke: var(--vscode-disabledForeground, #6e6e6e);
-    stroke-dasharray: 4,2;
-}
-
-.proxy-node.selected .node-body,
-.workflow-node-proxy.selected .node-body {
-    stroke: var(--sprotty-edge-selected);
-    stroke-dasharray: 4,2;
-}
-
-/* Virtual edge styles (derived from foreach loops) */
-.workflow-edge-virtual,
-.virtual-edge {
-    color: var(--vscode-disabledForeground, #6e6e6e);
-    stroke-dasharray: 5,3;
-    stroke-width: 2px;
-    opacity: 0.7;
-}
-
-.workflow-edge-virtual .edge-line,
-.virtual-edge .edge-line {
-    stroke-dasharray: 5,3;
-    stroke-width: 2px;
-    opacity: 0.7;
-}
-
-.workflow-edge-virtual.selected,
-.virtual-edge.selected {
-    color: var(--sprotty-edge-selected);
-    stroke-width: 2px;
-    opacity: 0.9;
-}
-
-.workflow-edge-virtual.selected .edge-line,
-.virtual-edge.selected .edge-line {
-    stroke-width: 2px;
-    opacity: 0.9;
 }
 
 /* Read-only indicator */
@@ -1002,11 +898,6 @@ body.vscode-high-contrast-light .node-center-image-light {
 .workflow-port.output-port .port-shape {
     /* Output is a bit lighter/more muted than input */
     stroke: var(--vscode-disabledForeground, #6f6f6f);
-}
-
-.workflow-port.workflow-port-control .port-shape {
-    fill: color-mix(in srgb, var(--vscode-editor-foreground, #cccccc) 70%, #9bd1ff 30%);
-    stroke: color-mix(in srgb, var(--vscode-descriptionForeground, #8b8b8b) 60%, #4f8edc 40%);
 }
 
 .workflow-port .port-shape.array-port {
@@ -1211,20 +1102,6 @@ body.vscode-high-contrast-light .node-center-image-light {
     stroke-dasharray: none;
 }
 
-.workflow-edge-branch-label {
-    fill: var(--vscode-descriptionForeground, #8b8b8b);
-    font-family: var(--vscode-font-family);
-    font-size: 9px;
-    pointer-events: none;
-}
-
-.workflow-edge-index-label {
-    fill: var(--vscode-descriptionForeground, #8b8b8b);
-    font-family: var(--vscode-font-family);
-    font-size: 9px;
-    pointer-events: none;
-}
-
 /* ============================================
    Structure if node (grouping)
    ============================================ */
@@ -1240,33 +1117,6 @@ body.vscode-high-contrast-light .node-center-image-light {
     font-family: var(--vscode-font-family);
     font-size: 11px;
     font-weight: 600;
-}
-
-.workflow-node-structure-if .structure-if-section {
-    fill: transparent;
-    stroke: var(--vscode-descriptionForeground, #8b8b8b);
-    stroke-width: 1px;
-    opacity: 0.8;
-}
-
-.workflow-node-structure-if .structure-if-section-label {
-    fill: var(--vscode-descriptionForeground, #8b8b8b);
-    font-family: var(--vscode-font-family);
-    font-size: 10px;
-}
-
-/* Branch container nodes (real then/else/elsif children) */
-.workflow-node-structure-if-branch .structure-if-section {
-    fill: transparent;
-    stroke: var(--vscode-descriptionForeground, #8b8b8b);
-    stroke-width: 1px;
-    opacity: 0.8;
-}
-
-.workflow-node-structure-if-branch .structure-if-section-label {
-    fill: var(--vscode-descriptionForeground, #8b8b8b);
-    font-family: var(--vscode-font-family);
-    font-size: 10px;
 }
 
 /* Group containers: a producer's own grouping of nodes (a layer, a domain, a
@@ -1382,20 +1232,6 @@ body.vscode-high-contrast-light .node-center-image-light {
     stroke: var(--vscode-editorError-foreground, #f14c4c);
 }
 
-/* Join node (phi-like merge point) */
-.workflow-node-structure-if-join .structure-if-join-body {
-    fill: transparent;
-    stroke: var(--vscode-descriptionForeground, #8b8b8b);
-    stroke-width: 1px;
-    opacity: 0.9;
-}
-
-.workflow-node-structure-if-join .structure-if-join-label {
-    fill: var(--vscode-descriptionForeground, #8b8b8b);
-    font-family: var(--vscode-font-family);
-    font-size: 10px;
-}
-
 /* ============================================
    Structure foreach node (grouping)
    ============================================ */
@@ -1412,20 +1248,6 @@ body.vscode-high-contrast-light .node-center-image-light {
     font-family: var(--vscode-font-family);
     font-size: 11px;
     font-weight: 600;
-}
-
-/* Inline if statement marker (inside foreach) */
-.workflow-node-structure-if-inline .inline-if-body {
-    fill: transparent;
-    stroke: var(--vscode-descriptionForeground, #8b8b8b);
-    stroke-width: 1px;
-    opacity: 0.9;
-}
-
-.workflow-node-structure-if-inline .inline-if-label {
-    fill: var(--vscode-descriptionForeground, #8b8b8b);
-    font-family: var(--vscode-font-family);
-    font-size: 10px;
 }
 
 /* ============================================
@@ -1503,30 +1325,6 @@ body.vscode-high-contrast-light .node-center-image-light {
 }
 
 /* ============================================
-   Validation decoration styles
-   ============================================ */
-
-.validation-decoration {
-    pointer-events: auto;
-}
-
-.validation-decoration.error .decoration-icon {
-    fill: var(--vscode-errorForeground, #f14c4c);
-}
-
-.validation-decoration.warning .decoration-icon {
-    fill: var(--vscode-warningForeground, #cca700);
-}
-
-.validation-decoration.info .decoration-icon {
-    fill: var(--vscode-infoForeground, #3794ff);
-}
-
-.validation-decoration.hint .decoration-icon {
-    fill: var(--vscode-descriptionForeground, #8b8b8b);
-}
-
-/* ============================================
    Tool styles
    ============================================ */
 
@@ -1549,17 +1347,6 @@ body.vscode-high-contrast-light .node-center-image-light {
 }
 
 /* ============================================
-   Selection marquee
-   ============================================ */
-
-.selection-marquee {
-    fill: var(--vscode-editor-selectionBackground, rgba(38, 79, 120, 0.5));
-    stroke: var(--vscode-focusBorder, #007fd4);
-    stroke-width: 1px;
-    stroke-dasharray: 4,4;
-}
-
-/* ============================================
    Tooltip styles
    ============================================ */
 
@@ -1575,16 +1362,6 @@ body.vscode-high-contrast-light .node-center-image-light {
     z-index: 1000;
     pointer-events: none;
     max-width: 300px;
-}
-
-.sprotty-tooltip .tooltip-title {
-    font-weight: 600;
-    margin-bottom: 4px;
-}
-
-.sprotty-tooltip .tooltip-type {
-    color: var(--vscode-descriptionForeground, #8b8b8b);
-    font-style: italic;
 }
 
 /* ============================================
@@ -1721,22 +1498,6 @@ body.workflow-properties-visible .floating-tool-btn {
 .panel-btn.active {
     opacity: 1;
     color: var(--vscode-button-background, #0e639c);
-}
-
-.panel-close-btn {
-    background: none;
-    border: none;
-    color: var(--vscode-foreground);
-    cursor: pointer;
-    padding: 2px 6px;
-    font-size: 12px;
-    opacity: 0.7;
-    border-radius: 3px;
-}
-
-.panel-close-btn:hover {
-    opacity: 1;
-    background: var(--vscode-toolbar-hoverBackground);
 }
 
 #property-content {
@@ -2035,21 +1796,6 @@ body.workflow-properties-visible .floating-tool-btn {
     line-height: 1;
 }
 
-.port-actions {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex: 0 0 auto;
-}
-
-.port-left {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    flex: 1 1 auto;
-    overflow: hidden;
-}
 .property-value.read-only .mini-btn {
     margin-left: auto;
 }
@@ -2159,17 +1905,6 @@ body.workflow-properties-visible .floating-tool-btn {
 
 .port-item.output {
     border-left: 2px solid var(--vscode-charts-blue, #569cd6);
-}
-
-.param-kind {
-    display: inline-block;
-    width: 16px;
-    height: 16px;
-    border-radius: 3px;
-    font-size: 10px;
-    font-weight: bold;
-    text-align: center;
-    line-height: 16px;
 }
 
 /* Annotations List */
@@ -2358,16 +2093,6 @@ body.workflow-properties-visible .floating-tool-btn {
     color: var(--vscode-descriptionForeground);
 }
 
-.param-kind.type {
-    background: var(--vscode-symbolIcon-typeParameterForeground, #7cdcfe);
-    color: var(--vscode-editor-background, #1e1e1e);
-}
-
-.param-kind.value {
-    background: var(--vscode-symbolIcon-variableForeground, #75beff);
-    color: var(--vscode-editor-background, #1e1e1e);
-}
-
 .param-map-list {
     display: flex;
     flex-direction: column;
@@ -2493,12 +2218,6 @@ body.workflow-properties-visible .floating-tool-btn {
     flex: 1 1 auto;
 }
 
-.param-def-actions {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
 .param-def-fields {
     display: grid;
     grid-template-columns: minmax(90px, 1fr) minmax(90px, 1fr);
@@ -2514,17 +2233,6 @@ body.workflow-properties-visible .floating-tool-btn {
 .param-def-label {
     font-size: 10px;
     color: var(--vscode-descriptionForeground);
-}
-
-.param-def-add-row {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    align-items: stretch;
-}
-.param-def-add-row > * {
-    width: 100%;
-    box-sizing: border-box;
 }
 
 .param-def-input {
@@ -2956,9 +2664,6 @@ details[open] > summary .agent-chat-expand-arrow {
     color: var(--vscode-editor-foreground, #ccc);
     word-break: break-word;
 }
-.agent-md-content p.agent-md-p {
-    margin: 4px 0;
-}
 
 /* ── Chain-of-thought / Thinking section ───────────────────────────── */
 
@@ -3008,27 +2713,6 @@ details[open] > summary .agent-chat-expand-arrow {
 .agent-thinking-body .agent-md-content {
     color: var(--vscode-descriptionForeground, #b0a0c8);
     font-style: italic;
-}
-
-.command-name {
-  font-weight: 600;
-  font-size: 0.95em;
-  margin-bottom: 2px;
-}
-
-.command-description {
-  font-size: 0.85em;
-  color: var(--vscode-descriptionForeground);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.command-no-results {
-  padding: 24px;
-  text-align: center;
-  color: var(--vscode-descriptionForeground);
-  font-size: 0.95em;
 }
 
 /* Workflow Chat (integrated bottom drawer): styles live in ./chat-panel.css
