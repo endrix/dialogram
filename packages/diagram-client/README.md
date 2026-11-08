@@ -118,6 +118,33 @@ recipe is exercised in CI.
 
 ### 4. Wiring your starter
 
+**The stock diagram with your modules added.** When your bundle is the stock
+diagram plus a few modules of your own (a property-panel contribution, a view,
+a rebinding), do not write a starter: call the stock one. It is what the
+shipped bundle runs, so you get the same channel, overlay routing, palette
+header controls and SVG export, and your modules load after every stock one,
+where a `rebind` replaces a stock binding.
+
+```ts
+// Import the starter FIRST: its imports bring GLSP's own stylesheets, and
+// esbuild writes CSS in the order it meets it, so the stock rules, then yours,
+// override GLSP's.
+import { startStockDiagram } from '@dialogram/diagram-client/stock-starter';
+import '@eclipse-glsp/vscode-integration-webview/css/glsp-vscode.css';
+import '@eclipse-glsp/client/css/grid.css';
+import '@vscode/codicons/dist/codicon.css';
+import '@dialogram/diagram-client/diagram-client.css';
+import './my-client.css';
+import { myFeaturesModule } from './my-modules';
+
+startStockDiagram({ features: [myFeaturesModule] });
+```
+
+A sidecar product names the built bundle with `clientAssets` on its
+`createSidecarDiagramProfile` input (§5).
+
+**A diagram of your own.** When you compose the container yourself:
+
 ```ts
 import 'reflect-metadata';
 import { GLSPStarter } from '@eclipse-glsp/vscode-integration-webview';

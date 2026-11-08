@@ -37,6 +37,7 @@ import {
 import { WorkflowContextMenuService } from './context-menu-service';
 import { diagramBaseModule } from './base.module';
 import { workflowViewsModule } from './stock-views.module';
+import { workflowFeaturesModule } from './stock-features.module';
 
 /** Options for {@link createDiagramContainer}. */
 export interface DiagramContainerOptions {
@@ -76,6 +77,15 @@ export function composeDiagramModules(options: DiagramContainerOptions): Contain
     }
     modules.push(...options.features);
     return modules;
+}
+
+/**
+ * The feature modules the stock diagram loads: the stock views, the stock
+ * feature UI, then a product's own modules, last so they may `rebind` what a
+ * stock module bound. `startStockDiagram` composes exactly this.
+ */
+export function stockFeatureModules(features: readonly ContainerModule[] = []): ContainerModule[] {
+    return [workflowViewsModule, workflowFeaturesModule, ...features];
 }
 
 /**
