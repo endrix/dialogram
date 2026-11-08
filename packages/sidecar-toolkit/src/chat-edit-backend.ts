@@ -24,8 +24,6 @@ export interface SidecarEditBackendConfig {
     sidecarOperationPrefix: string;
     /** Graph-export op name (without prefix); differs per runtime. */
     exportOp?: string;
-    /** Kill-switch setting for the MCP tool server. */
-    mcpEnabledSetting: { section: string; key: string; default: boolean };
     /** Arg key used to scope ops to a sub-graph (today `'workflow'`). */
     scopeArgKey: string;
 }

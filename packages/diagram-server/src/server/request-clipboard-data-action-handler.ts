@@ -3,7 +3,7 @@ import { ActionHandler, ModelState, type MaybePromise } from '@eclipse-glsp/serv
 import { inject, injectable } from 'inversify';
 import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
-import { buildWorkflowClipboardPayload, clipboardDataFromPayload } from '../clipboard/clipboard';
+import { buildClipboardPayload, clipboardDataFromPayload } from '../clipboard/clipboard';
 
 @injectable()
 export class WorkflowRequestClipboardDataActionHandler implements ActionHandler {
@@ -20,7 +20,7 @@ export class WorkflowRequestClipboardDataActionHandler implements ActionHandler 
             return [SetClipboardDataAction.create({}, { responseId: action.requestId })];
         }
 
-        const payload = await buildWorkflowClipboardPayload(this.modelState, sourceUri, action.editorContext.selectedElementIds);
+        const payload = buildClipboardPayload(this.modelState, sourceUri, action.editorContext.selectedElementIds);
         const clipboardData = clipboardDataFromPayload(payload);
 
         return [SetClipboardDataAction.create(clipboardData, { responseId: action.requestId })];
