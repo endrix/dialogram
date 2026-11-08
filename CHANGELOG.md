@@ -67,6 +67,16 @@ platform API version.
 
 ### Changed
 
+- **One declaration of the webview's behaviour flags, the command ids and
+  the in-process chat tool.** `DiagramClientBehavior` (with
+  `AcpConnectorInfo`), `DiagramCommandIds` and `InProcessChatTool` live in
+  `@dialogram/shared`; the API re-exports them, the toolkit's
+  `SidecarClientBehavior`, `SidecarProfileCommandIds` and `RegistryChatTool`
+  are the shared types (the product-facing behaviour is
+  `ProductClientBehavior`, the shared type minus the four fields the platform
+  derives), and the webview reads them instead of its own copy. The test that
+  kept two hand-written twins in step is gone with the second twin.
+  `scriptInterpreterCommands` is deprecated: nothing reads it.
 - **One sidecar transport.** Six places each spawned the sidecar, wrote the
   request and parsed the answer with their own wording and deadlines: the
   invoker behind every diagram edit, the chat's `invokeSidecarOp` and

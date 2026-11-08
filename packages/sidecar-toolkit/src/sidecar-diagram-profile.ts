@@ -11,7 +11,7 @@
  * needs no `@dialogram/extension-core` dependency; the shell annotates the
  * result as `DiagramProfile` at the assignment site.
  */
-import type { DiagramClientAssets, EntityPaletteItemSpec, NodeFamilySpec } from '@dialogram/shared';
+import type { DiagramClientAssets, DiagramCommandIds, EntityPaletteItemSpec, NodeFamilySpec, ProductClientBehavior } from '@dialogram/shared';
 import * as vscode from 'vscode';
 import { DEFAULT_EXPORT_OP, invokeSidecarOp } from './sidecar-graph-export.js';
 import { createSourceReferenceContext } from './chat-source-reference.js';
@@ -54,44 +54,8 @@ import {
  */
 const AGENT_TOOL_OVERRIDES_STATE_KEY = 'workflow.agentToolEntityOverrides';
 
-/**
- * Neutral, behavior-named client capability flags the shell supplies and the
- * platform forwards into the diagram webview. Structural twin of the platform's
- * `DiagramClientBehavior`; kept local so the toolkit needs no extension-core dep.
- */
-export interface SidecarClientBehavior {
-    paletteIcons?: Record<string, { dark: string; light?: string }>;
-    nodeFamilies?: NodeFamilySpec[];
-    graphSourceNavigation?: boolean;
-    networkPropertySections?: boolean;
-    networkNavigationLabels?: boolean;
-    noneSentinel?: string;
-    scriptInterpreterCommands?: string[];
-    /** Where a nested workflow defined in another file opens: `in-place` shows it in
-     *  this editor, as a view of the editor's root (one editor per hierarchy);
-     *  `new-editor` (the default) opens the file in its own editor. */
-    nestedNavigation?: 'in-place' | 'new-editor';
-    /** Whether a double-click on a node that is not a network instance opens the
-     *  source it references in the text editor. Off (the default), such a node
-     *  does nothing on double-click. For a product whose leaves have a body of
-     *  their own that no diagram shows yet: an HDL module or entity of processes
-     *  and assignments lands at its definition. */
-    doubleClickOpensSource?: boolean;
-    /** Whether anything is written on a wire: the carried label (a width, a
-     *  payload type), the queue badge and last-token button of a run, the
-     *  index labels of a list connection. Default true. Off, an edge is its
-     *  line, and the tooltip on hover still says what it carries. 'once': as
-     *  true, but of the edges that leave or reach one port together with the
-     *  same carried label, only the first writes it; the others say it in
-     *  their tooltip (a node with many edges of one type, all on one trunk). */
-    edgeCaptions?: boolean | 'once';
-    /** Whether selecting an element draws its path (upstream and downstream, the rest faded), across group frames. Off by default. */
-    selectionTrace?: boolean;
-    /** Property-panel sections the product does without (`ports`, `annotations`, `parameters`, `entityType`), each `false` to hide it. */
-    propertySections?: { ports?: boolean; annotations?: boolean; parameters?: boolean; entityType?: boolean };
-    /** What the hierarchy outline panel is called; "Hierarchy" by default. */
-    outlineTitle?: string;
-}
+/** The webview behaviour flags a product sets; the platform's `DiagramClientBehavior` minus what it derives itself. */
+export type SidecarClientBehavior = ProductClientBehavior;
 
 /**
  * The command ids a sidecar diagram profile carries. A product may name any of
@@ -100,33 +64,9 @@ export interface SidecarClientBehavior {
  * `<sidecarOperationPrefix>.sidecar.edit` / `.send` for the two raw sidecar
  * commands. The derived id is what every product spelled by hand before.
  */
-export interface SidecarProfileCommandIds {
-    openDiagram: string;
-    openDiagramSplit: string;
-    layoutDiagram: string;
-    refreshDiagramModel: string;
-    renameEntityByName: string;
-    undo: string;
-    redo: string;
-    fitToScreen: string;
-    center: string;
-    exportSvg: string;
-    toggleGrid: string;
-    setQueueTraceVisible: string;
-    stopWorkflow: string;
-    runWorkflow: string;
-    layoutDiagramIfNeeded: string;
-    setAgentToolConfig: string;
-    getAgentToolConfig: string;
-    /** @deprecated Nothing registers or runs it; accepted and ignored. */
-    createAgentToolPolicyFile?: string;
-    /** @deprecated Nothing registers or runs it; accepted and ignored. */
-    chatAddViewerEditor?: string;
-    /** @deprecated Nothing registers or runs it; accepted and ignored. */
-    chatAddViewerTask?: string;
+export interface SidecarProfileCommandIds extends DiagramCommandIds {
     sidecarEdit: string;
     sidecarSend: string;
-    createNewContainer: string;
 }
 
 /**
