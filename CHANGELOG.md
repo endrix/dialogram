@@ -42,6 +42,16 @@ platform API version.
 
 ### Added
 
+- **A product whose CLI has no `run` says so: `cliRuns: false`.** The
+  toolkit then registers no run driver and the chat offers no resume. The
+  webview learns it from a derived `clientBehavior.runDriver` (like
+  `chatBackend`; `resumeAtStep` is now derived with it), and a diagram with no
+  run driver behind it shows no Run, Stop or edge toggle in the palette
+  header and no Agent Tools switches in the property panel, all of which
+  called the driver's commands. That covers ndf once it opts out, and today
+  chisel-ide and the library-mode mlir-viewer, whose Run invoked a command
+  nothing registered. sv and vhdl keep theirs: `hdl run` simulates through
+  it.
 - **A product's own webview bundle starts the stock diagram.**
   `startStockDiagram({ features })` (`@dialogram/diagram-client/stock-starter`)
   is what the stock bundle runs, with the product's feature modules loaded

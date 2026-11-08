@@ -79,6 +79,22 @@ export function clientBehavior(): DiagramClientBehavior {
 }
 
 /**
+ * Whether the diagram offers what drives a run: Run, Stop, the toggle for what
+ * a run puts on the edges, and the agent-tool switches the run driver serves.
+ * Yes unless the host says no run driver is behind it; a webview the host did
+ * not describe (dev, standalone) keeps them, as before.
+ */
+export function offersRun(): boolean {
+    return clientBehavior().runDriver !== false;
+}
+
+/** The run controls the palette header adds, by {@link offersRun}. */
+export function runHeaderControls(): { run: boolean; stop: boolean; edgeToggle: boolean } {
+    const runs = offersRun();
+    return { run: runs, stop: runs, edgeToggle: runs };
+}
+
+/**
  * The host resolves part of the behavior after the webview is up (what depends
  * on the machine or the workspace, e.g. the ACP connectors the runtime knows)
  * and posts it as `dialogram.clientBehavior.merge`; it is folded into the

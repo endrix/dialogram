@@ -166,6 +166,14 @@ export interface SidecarProfileInput {
      * it; without it the stepper offers no resume.
      */
     cliResumeArgs?: (runDir: string, step: number) => string[];
+    /**
+     * Whether the product's CLI runs a diagram (`<cli> run <file> --out-dir ...`),
+     * which the toolkit's run driver calls. Default `true`. `false` for a
+     * product whose CLI has no `run`: no run driver is registered, the
+     * diagram offers no Run, Stop, run toggle or agent-tool switches, the chat
+     * offers no resume, and the run-driver setting keys are not read.
+     */
+    cliRuns?: boolean;
 
     // User-visible strings / behavior.
     /** Appended to every undo label. Default ` (<key>)`. */
@@ -628,11 +636,13 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
     // A product that can resume runs gives the chat a way to offer it: the
     // agent that fixed a failed run proposes resuming it, and the person says
     // yes or no.
-    if (input.cliResumeArgs) {
+    // A run can only be resumed, or driven at all, where the CLI runs one.
+    const runs = input.cliRuns !== false;
+    if (runs && input.cliResumeArgs) {
         chatTools.push(resumeFailedRunTool(input.commands.runWorkflow));
     }
 
-    const runDriver = (context: vscode.ExtensionContext, host: RunHost): vscode.Disposable => {
+    const runDriver = runs ? (context: vscode.ExtensionContext, host: RunHost): vscode.Disposable => {
         const config: CliRunDriverConfig = {
             settingsNamespace: input.settingsNamespace,
             customEditorViewType: input.customEditorViewType,
@@ -680,7 +690,7 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
             onSignature: (listener) => driver.onLiveOverlaySignature(listener)
         });
         return { dispose: () => driver.dispose() };
-    };
+    } : undefined;
 
     const newSourceFile = (context: vscode.ExtensionContext): vscode.Disposable => {
         // The raw sidecar commands need a sidecar; a read-only profile has none.
@@ -726,7 +736,7 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
         // A projection creates nothing, whatever the input says.
         supportsElementCreation: readOnly ? false : input.supportsElementCreation,
         operationKinds: input.operationKinds,
-        clientBehavior: input.cliResumeArgs
+        clientBehavior: runs && input.cliResumeArgs
             ? { ...input.clientBehavior, resumeAtStep: true }
             : input.clientBehavior,
         clientStylesheets: input.clientStylesheets,

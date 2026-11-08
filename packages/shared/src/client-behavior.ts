@@ -114,12 +114,20 @@ export interface DiagramClientBehavior {
      * write it.
      */
     statusSource?: { label: string; showCommand: string; clearCommand: string };
+    /**
+     * Whether a run driver is behind this diagram: the Run and Stop buttons are
+     * offered exactly then. Derived by the platform from `DiagramProfile.runDriver`,
+     * like {@link chatBackend}; read it, do not write it. A button that invokes a
+     * command nothing registered, or a CLI subcommand that does not exist, is
+     * worse than no button.
+     */
+    runDriver?: boolean;
 }
 
 /**
- * The fields a product may set. The other four ({@link DiagramClientBehavior.chatBackend},
- * `acpConnectors`, `resumeAtStep`, `statusSource`) the platform derives on
- * the way to the webview; a product-facing type that declared them would
- * invite setting them by hand, the one way the two halves could disagree.
+ * The fields a product may set. The other five ({@link DiagramClientBehavior.chatBackend},
+ * `acpConnectors`, `resumeAtStep`, `statusSource`, `runDriver`) the platform
+ * derives on the way to the webview; a product-facing type that declared them
+ * would invite setting them by hand, the one way the two halves could disagree.
  */
-export type ProductClientBehavior = Omit<DiagramClientBehavior, 'chatBackend' | 'acpConnectors' | 'resumeAtStep' | 'statusSource'>;
+export type ProductClientBehavior = Omit<DiagramClientBehavior, 'chatBackend' | 'acpConnectors' | 'resumeAtStep' | 'statusSource' | 'runDriver'>;
