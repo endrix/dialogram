@@ -11,7 +11,7 @@
  * needs no `@dialogram/extension-core` dependency; the shell annotates the
  * result as `DiagramProfile` at the assignment site.
  */
-import type { EntityPaletteItemSpec, NodeFamilySpec } from '@dialogram/shared';
+import type { DiagramClientAssets, EntityPaletteItemSpec, NodeFamilySpec } from '@dialogram/shared';
 import * as vscode from 'vscode';
 import { invokeSidecarOp } from './sidecar-graph-export.js';
 import { createSourceReferenceContext } from './chat-source-reference.js';
@@ -168,6 +168,14 @@ export interface SidecarProfileInput {
      * onto `DiagramProfile.clientStylesheets`.
      */
     clientStylesheets?: string[];
+    /**
+     * The product's own webview bundle, absolute paths: a script that calls
+     * `startStockDiagram` from `@dialogram/diagram-client/stock-starter` with
+     * the product's feature modules, its stylesheet and the directories they
+     * load from. Absent, the platform serves its stock bundle. Data only;
+     * threaded straight onto `DiagramProfile.clientAssets`.
+     */
+    clientAssets?: DiagramClientAssets;
 
     /**
      * A diagram that is a projection of a file drawn by the CLI, with nothing to
@@ -784,6 +792,7 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
             ? { ...input.clientBehavior, resumeAtStep: true }
             : input.clientBehavior,
         clientStylesheets: input.clientStylesheets,
+        clientAssets: input.clientAssets,
         // Read-only, the server registers no writing operation handler at all
         // (the platform's own guard on `'read-only'`), so no create-node flow
         // and no capability probe can ever run.

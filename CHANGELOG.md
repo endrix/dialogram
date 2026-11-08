@@ -42,6 +42,13 @@ platform API version.
 
 ### Added
 
+- **A product's own webview bundle starts the stock diagram.**
+  `startStockDiagram({ features })` (`@dialogram/diagram-client/stock-starter`)
+  is what the stock bundle runs, with the product's feature modules loaded
+  after the stock views and feature UI; the stock entry is now that call with nothing added,
+  and its bundle's stylesheet is byte-identical. A sidecar product names its
+  bundle with `clientAssets` on the `createSidecarDiagramProfile` input, as a
+  hand-assembled profile already could.
 - **Selection trace** (`clientBehavior.selectionTrace`, opt-in): selecting a
   node draws every path through it, what leads to it in green and what it
   leads to in blue, and fades the rest; after mlir-viewer's trace highlighter.
