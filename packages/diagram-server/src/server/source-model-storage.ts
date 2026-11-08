@@ -1895,7 +1895,6 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             const byInstanceName = new Map<string, {
                 fireCount: number;
                 model?: string;
-                stateful: boolean;
                 contextBudget: number;
                 truncationStrategy: string;
                 chatHistory: Array<{ role: string; content: string }>;
@@ -1903,7 +1902,6 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             const byEntityName = new Map<string, {
                 fireCount: number;
                 model?: string;
-                stateful: boolean;
                 contextBudget: number;
                 truncationStrategy: string;
                 chatHistory: Array<{ role: string; content: string }>;
@@ -1976,7 +1974,6 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             entityName: string;
             fireCount: number;
             model?: string;
-            stateful: boolean;
             contextBudget: number;
             truncationStrategy: string;
             chatHistory: Array<{ role: string; content: string }>;
@@ -2004,7 +2001,6 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 entityName: string;
                 fireCount: number;
                 model?: string;
-                stateful: boolean;
                 contextBudget: number;
                 truncationStrategy: string;
                 chatHistory: Array<{ role: string; content: string }>;

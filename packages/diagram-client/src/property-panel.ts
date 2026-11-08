@@ -4,7 +4,6 @@ import { ISelectionListener, IActionDispatcher, TYPES } from '@eclipse-glsp/clie
 import {
     renderMarkdownSafe,
     renderDocumentMarkdownSafe,
-    renderInlineMarkdownSafe,
     looksLikeMarkdown as looksLikeMarkdownShared,
 } from './markdown';
 import { html, render, nothing, type TemplateResult } from 'lit';
@@ -353,8 +352,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
 
         const section = this.buildAgentContextSection(args);
         if (!section) return;
-        const agentTab = content.querySelector('.property-tab-content[data-tab-id="agent"]') as HTMLElement | null;
-        (agentTab ?? content).appendChild(section);
+        content.appendChild(section);
         this.scrollAgentToLatest(section);
     }
 
@@ -3519,21 +3517,21 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                         name === 'tool'
                             ? ['cmd', 'args', 'inheritStdio']
                             : (name === 'agent' ? [
-                                    // Identity / model
-                                    'prompt', 'claudeAgent', 'skill', 'model', 'provider', 'endpoint',
-                                    'timeoutMs', 'contextBudget', 'stateful',
-                                    // Backend / runtime controls (dropdowns above)
-                                    'truncationStrategy', 'fireableWithoutInput', 'transport', 'connector', 'mode', 'cliToolsMode', 'reasoningEffort',
-                                    // Sub-block toggles
-                                    'useClaudeAgent', 'useSkill', 'usePrompt', 'useSkillHooks',
-                                    // MCP block
-                                    'useMcp', 'mcpServers', 'mcpServerConfigs', 'mcpTransport',
-                                    // LSP block (+ shorthand scalars)
-                                    'useLsp', 'lspServers', 'lspServerConfigs', 'lspCommand', 'lspArgs',
-                                    'lspLanguageId', 'lspExtraFlags', 'lspPort', 'lspSeverityThreshold', 'lspMaxRepairAttempts',
-                                    // Output validators editor
-                                    'outputValidators'
-                                ] : [])
+                                // Identity / model
+                                'prompt', 'claudeAgent', 'skill', 'model', 'provider', 'endpoint',
+                                'timeoutMs', 'contextBudget', 'stateful',
+                                // Backend / runtime controls (dropdowns above)
+                                'truncationStrategy', 'fireableWithoutInput', 'transport', 'connector', 'mode', 'cliToolsMode', 'reasoningEffort',
+                                // Sub-block toggles
+                                'useClaudeAgent', 'useSkill', 'usePrompt', 'useSkillHooks',
+                                // MCP block
+                                'useMcp', 'mcpServers', 'mcpServerConfigs', 'mcpTransport',
+                                // LSP block (+ shorthand scalars)
+                                'useLsp', 'lspServers', 'lspServerConfigs', 'lspCommand', 'lspArgs',
+                                'lspLanguageId', 'lspExtraFlags', 'lspPort', 'lspSeverityThreshold', 'lspMaxRepairAttempts',
+                                // Output validators editor
+                                'outputValidators'
+                            ] : [])
                     );
                     // Remaining args = genuinely custom annotation args (no dedicated control
                     // above). Each renders as an editable key/value row with its own remove button;

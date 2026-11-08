@@ -24,11 +24,6 @@ export function renderDocumentMarkdownSafe(src: string): string {
   return DOMPurify.sanitize(documentMd.render(src));
 }
 
-/** Render inline Markdown (no block wrapping) to sanitized HTML. */
-export function renderInlineMarkdownSafe(src: string): string {
-  return DOMPurify.sanitize(md.renderInline(src));
-}
-
 /**
  * Cheap heuristic for "is this worth rendering as Markdown?" — used to keep
  * plain text in pre-wrap form instead of paying markdown layout for it.
