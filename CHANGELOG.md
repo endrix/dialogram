@@ -8,6 +8,18 @@ platform API version.
 
 ### Removed
 
+- **The `@path` annotation editor and its wizard template.** No producer has
+  a `@path` decorator: wfpy sets a workflow's tool search paths with
+  `@config(path=[...])`. The property panel's editor never rendered, and the
+  wizard's "external tool search paths" template wrote `@path(...)`, which the
+  Python source cannot import. A `path` annotation a project defines itself
+  still opens in the generic editor.
+- **Agent and tool keys nothing reads**: `wf:toolSpec` on tool nodes (the
+  external-actor flag stays), `cal:agentStateful` and its constant
+  `WorkflowDiagramMetadata.AGENT_STATEFUL` (a removal from the shared API, for
+  the next minor version), the never-called agent-metadata reset in the model
+  storage, and the property panel's unused tab builder with its stylesheet
+  rules, and its inline-Markdown renderer with the helper only it called.
 - **Element types the model never emits**, with their client classes and
   views, server mappings, shape hints and layout branches: `node:proxy`, the
   two collapsed nodes, the if-branch, if-join, foreach-join and inline-if
