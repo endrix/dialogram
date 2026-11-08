@@ -3,6 +3,12 @@
  * two installed consumers never collide. Neutral successor of the pre-0.2.0
  * per-extension command-ids type.
  */
+/** The product's operation kinds for the two entity-port edits, as the webview dispatches them. */
+export interface DiagramOperationKinds {
+    createEntityPort: string;
+    deleteEntityPort: string;
+}
+
 export interface DiagramCommandIds {
     openDiagram: string;
     openDiagramSplit: string;

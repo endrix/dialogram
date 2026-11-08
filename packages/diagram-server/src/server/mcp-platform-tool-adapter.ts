@@ -27,26 +27,14 @@ import {
     type McpToolResult
 } from '@eclipse-glsp/server-mcp';
 import { jsonSchemaToZodShape } from './json-schema-to-zod';
+import type { InProcessChatTool } from '@dialogram/shared';
 
 /**
- * Structural shape of an in-process, read-only chat tool bridged into MCP. Mirrors the
- * platform's `InProcessChatTool` without importing it, keeping diagram-server free of an
- * extension-core dependency. `handler` receives the session's scoped file and the tool args.
+ * An in-process chat tool as the bridge sees it: the platform's `InProcessChatTool`, read-only.
+ * A tool whose `mutates` is true is never bridged here (the generated handler inherits
+ * `readOnlyHint = true`); {@link bridgeableChatTools} filters it out (see `mcp-diagram-module.ts`).
  */
-export interface PlatformMcpTool {
-    readonly name: string;
-    readonly description: string;
-    readonly inputSchema: Record<string, unknown>;
-    handler(file: string, args: Record<string, unknown>): string | Promise<string>;
-    /**
-     * When `true`, this tool WRITES source and MUST NOT be bridged here: the generated
-     * handler inherits `readOnlyHint = true`, so an auto-approving MCP client could invoke
-     * it and mutate files unconfirmed. Locked design (approach B): mutation-capable tools
-     * ride the GLSP-MCP built-in operation tools only. {@link bridgeableChatTools} filters
-     * these out (see `mcp-diagram-module.ts`).
-     */
-    readonly mutates?: boolean;
-}
+export type PlatformMcpTool = Readonly<InProcessChatTool>;
 
 /** Diagram-scope input = the base `{ sessionId }` plus whatever the tool's schema declares. */
 type PlatformToolInput = { sessionId: string } & Record<string, unknown>;

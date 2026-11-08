@@ -8,10 +8,7 @@ export interface InProcessChatTool {
     name: string;
     description: string;
     inputSchema: Record<string, unknown>;
-    handler(
-      file: string,
-      args: Record<string, unknown>,
-    ): string | Promise<string>;
+    handler(file: string, args: Record<string, unknown>): string | Promise<string>;
     /**
      * When `true`, this tool WRITES source and MUST NOT be bridged onto the read-only
      * GLSP-MCP surface, whose handlers inherit `readOnlyHint = true` (an auto-approving MCP

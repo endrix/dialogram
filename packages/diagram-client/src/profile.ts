@@ -1,15 +1,10 @@
-import type { AcpConnectorInfo, DiagramClientBehavior, DiagramCommandIds } from '@dialogram/shared';
+import type { AcpConnectorInfo, DiagramClientBehavior, DiagramCommandIds, DiagramOperationKinds } from '@dialogram/shared';
 
 export type { AcpConnectorInfo, DiagramClientBehavior };
 
-type DiagramOperationKinds = {
-    createEntityPort?: string;
-    deleteEntityPort?: string;
-};
-
 type DiagramIdentifier = {
     commandIds?: Partial<DiagramCommandIds>;
-    operationKinds?: DiagramOperationKinds;
+    operationKinds?: Partial<DiagramOperationKinds>;
     settingsNamespace?: string;
     clientBehavior?: DiagramClientBehavior;
 };

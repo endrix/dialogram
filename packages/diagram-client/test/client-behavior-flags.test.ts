@@ -16,16 +16,14 @@ const WFPY_BEHAVIOR = {
     graphSourceNavigation: false,
     networkPropertySections: false,
     networkNavigationLabels: false,
-    noneSentinel: 'wfpy-none',
-    scriptInterpreterCommands: ['python', 'python3']
+    noneSentinel: 'wfpy-none'
 };
 
 const CALPY_BEHAVIOR = {
     graphSourceNavigation: true,
     networkPropertySections: true,
     networkNavigationLabels: true,
-    noneSentinel: 'wfpy-none',
-    scriptInterpreterCommands: ['python', 'python3']
+    noneSentinel: 'wfpy-none'
 };
 
 function inject(behavior: unknown): void {
@@ -48,10 +46,6 @@ describe('clientBehavior flag consumption', () => {
         expect(cb.networkNavigationLabels === true).toBe(false);
         // property-panel CLI-tools "none" sentinel
         expect(cb.noneSentinel).toBe('wfpy-none');
-        // views.ts icon detection
-        expect((cb.scriptInterpreterCommands ?? []).includes('python')).toBe(true);
-        expect((cb.scriptInterpreterCommands ?? []).includes('python3')).toBe(true);
-        expect((cb.scriptInterpreterCommands ?? []).includes('bash')).toBe(false);
     });
 
     it('resolves the calpy truth table (network behaviors on)', () => {
@@ -61,8 +55,6 @@ describe('clientBehavior flag consumption', () => {
         expect(cb.networkPropertySections === true).toBe(true);
         expect(cb.networkNavigationLabels === true).toBe(true);
         expect(cb.noneSentinel).toBe('wfpy-none');
-        expect((cb.scriptInterpreterCommands ?? []).includes('python')).toBe(true);
-        expect((cb.scriptInterpreterCommands ?? []).includes('python3')).toBe(true);
     });
 
     it('reads as all-off with no sentinel when nothing is injected (dev/standalone)', () => {
@@ -71,7 +63,6 @@ describe('clientBehavior flag consumption', () => {
         expect(cb.networkPropertySections === true).toBe(false);
         expect(cb.networkNavigationLabels === true).toBe(false);
         expect(cb.noneSentinel).toBeUndefined();
-        expect((cb.scriptInterpreterCommands ?? []).includes('python')).toBe(false);
     });
 
     it('ignores a non-object clientBehavior payload', () => {

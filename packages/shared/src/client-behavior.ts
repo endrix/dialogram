@@ -25,7 +25,7 @@ export interface AcpConnectorInfo {
 
 export interface DiagramClientBehavior {
     /** The ACP connectors the property panel offers on an agent's `connector`;
-     *  listed per document by the platform from {@link DiagramChatConfig.acpConnector}. */
+     *  listed per document by the platform from the profile's `chat.acpConnector`. */
     acpConnectors?: AcpConnectorInfo[];
     /** Cross-file drill-down navigation resolves through the graph source model. */
     graphSourceNavigation?: boolean;

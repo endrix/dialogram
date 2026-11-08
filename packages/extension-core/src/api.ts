@@ -17,6 +17,7 @@ import type {
   AcpConnectorInfo,
   DiagramClientBehavior,
   DiagramCommandIds,
+  DiagramOperationKinds,
   InProcessChatTool,
   EditStrategy,
   DiagramNavigationProvider,
@@ -35,6 +36,7 @@ export type {
   DiagramClientAssets,
   DiagramClientBehavior,
   DiagramCommandIds,
+  DiagramOperationKinds,
   EntityPaletteItemSpec,
   InProcessChatTool,
   NodeFamilySpec,
@@ -63,11 +65,6 @@ export const DIALOGRAM_EXTENSION_ID = "ebezati.dialogram";
 
 /** Port operation-kind strings surfaced to the diagram client. Neutral
  *  successor of the pre-0.2.0 per-extension operation-kinds type. */
-export interface DiagramOperationKinds {
-  createEntityPort: string;
-  deleteEntityPort: string;
-}
-
 /**
  * Neutral storage runtime options core forwards to the diagram server: the
  * settings namespace, the operation-prefix surfaced to the client, and the

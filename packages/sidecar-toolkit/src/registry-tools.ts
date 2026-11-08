@@ -21,12 +21,7 @@ import type { SidecarOpResult } from './sidecar-graph-export.js';
 import type { InProcessChatTool } from '@dialogram/shared';
 import { summarizeValidation } from './validation-summary.js';
 
-/**
- * Structural twin of the platform's `InProcessChatTool` (kept local so the
- * toolkit needs no `@dialogram/extension-core` dependency). `handler` receives
- * the session's absolute file path and the tool args and returns text.
- */
-/** A registry tool is an in-process chat tool, the platform's own shape. */
+/** A registry tool is an in-process chat tool, the platform's own shape: `handler` gets the session's file and the args and returns text. */
 export type RegistryChatTool = InProcessChatTool;
 
 /** Injected sidecar transport: invoke `<prefix>.<opName>` for `file` with `args`. */
