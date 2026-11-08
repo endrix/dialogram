@@ -15,3 +15,6 @@ export * from './diagram-seams';
 export * from './hierarchy';
 export * from './chat-seams';
 export * from './create-task-type-operation';
+export * from './client-behavior';
+export * from './command-ids';
+export * from './chat-tools';

@@ -18,6 +18,7 @@
  */
 
 import type { SidecarOpResult } from './sidecar-graph-export.js';
+import type { InProcessChatTool } from '@dialogram/shared';
 import { summarizeValidation } from './validation-summary.js';
 
 /**
@@ -25,25 +26,8 @@ import { summarizeValidation } from './validation-summary.js';
  * toolkit needs no `@dialogram/extension-core` dependency). `handler` receives
  * the session's absolute file path and the tool args and returns text.
  */
-export interface RegistryChatTool {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  handler(file: string, args: Record<string, unknown>): Promise<string>;
-  /**
-   * When `true`, this tool WRITES source (via the sidecar) and MUST NOT be bridged onto
-   * the read-only GLSP-MCP surface — the platform adapter's handlers inherit
-   * `readOnlyHint = true`, so an auto-approving MCP client could otherwise mutate files
-   * unconfirmed. Locked design (approach B): mutation-capable tools ride the GLSP-MCP
-   * BUILT-IN operation tools only; the bridge filters on this explicit marker (not a name
-   * match — see `bridgeableChatTools`).
-   *
-   * No assembled registry tool sets this (type creation is a reversible GLSP operation tool).
-   * The marker + filter are KEPT as a DEFENSIVE guardrail so any future source-writing chat
-   * tool is still excluded from the read-only bridge.
-   */
-  mutates?: boolean;
-}
+/** A registry tool is an in-process chat tool, the platform's own shape. */
+export type RegistryChatTool = InProcessChatTool;
 
 /** Injected sidecar transport: invoke `<prefix>.<opName>` for `file` with `args`. */
 export type RegistrySidecarInvoke = (
