@@ -40,8 +40,8 @@ import {
     InitializeClientSessionParameters,
     DisposeClientSessionParameters
 } from '@eclipse-glsp/protocol';
-import { WorkflowDiagramMetadata } from '@dialogram/shared';
 import { createDiagramContainer } from '../../packages/diagram-client/src/container';
+import { findNodeIdByGraphId } from '../../packages/diagram-client/src/producer-ids';
 import { ExecutionOverlayMessageBridge } from '../../packages/diagram-client/src/execution-overlay-message-bridge';
 import { showExecutionStates } from '../../packages/diagram-client/src/execution-states';
 import { extractSvg, renderedDiagram } from '../../packages/diagram-client/src/svg-export';
@@ -76,21 +76,6 @@ class StubGLSPClient implements GLSPClient {
 }
 
 /** The diagram's id of the element `id` names: its own, or the one whose producer's id it is. */
-function diagramIdOf(root: { id?: string; args?: Record<string, unknown>; children?: unknown[] }, id: string): string {
-    const stack = [root];
-    let byProducer: string | undefined;
-    while (stack.length > 0) {
-        const element = stack.pop()!;
-        if (element.id === id) {
-            return id;
-        }
-        if (byProducer === undefined && element.args?.[WorkflowDiagramMetadata.GRAPH_NODE_ID] === id) {
-            byProducer = element.id;
-        }
-        stack.push(...((element.children ?? []) as typeof stack));
-    }
-    return byProducer ?? id;
-}
 
 function report(result: unknown): void {
     const out = document.createElement('pre');
@@ -147,7 +132,7 @@ async function main(): Promise<void> {
     // producer's (`wf:graphNodeId`), as with the states.
     const select = (window as any).__SELECT__;
     if (Array.isArray(select) && select.length > 0) {
-        await dispatcher.dispatch(SelectAction.create({ selectedElementsIDs: select.map(id => diagramIdOf(schema, id)) }));
+        await dispatcher.dispatch(SelectAction.create({ selectedElementsIDs: select.map(id => findNodeIdByGraphId(schema, id) ?? id) }));
     }
     // Snabbdom patches on an animation frame; wait for the DOM to exist.
     await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));

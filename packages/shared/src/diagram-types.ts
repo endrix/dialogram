@@ -317,8 +317,6 @@ export namespace WorkflowDiagramMetadata {
     export const AGENT_TRUNCATION_STRATEGY = 'cal:agentTruncationStrategy';
     /** Model identifier (e.g. "openai/gpt-5-mini"). */
     export const AGENT_MODEL = 'cal:agentModel';
-    /** Whether the agent is stateful. */
-    export const AGENT_STATEFUL = 'cal:agentStateful';
     /** Skill status summary for agent node. */
     export const AGENT_SKILL_STATUS = 'cal:agentSkillStatus';
     
