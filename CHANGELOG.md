@@ -48,6 +48,15 @@ platform API version.
 
 ### Changed
 
+- **One entity-node renderer.** The actor, external-actor and network views
+  drew the same body (the sized rect, the run ring, the family's icon or
+  image, the children, the type footer) three times over; `renderEntityNode`
+  draws it once and each view names only its root classes. The three view
+  classes keep their names (a product extends `ExternalActorNodeView`).
+  `findNodeIdByGraphId`, the lookup of a diagram element by a producer's id,
+  is one function (`producer-ids.ts`) for the outline, the property panel
+  and the headless renderer, which also takes its layout table from the
+  Layout menu's instead of its own copy.
 - **After a drop, the routes an edge cannot keep are drawn by libavoid, with
   the edges on one port as one shared path.** The layout draws the edges into
   a port as a trunk; the built-in router gives every edge its own channel and
