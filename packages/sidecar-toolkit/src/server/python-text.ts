@@ -12,7 +12,21 @@ export type PythonDefinition = {
     bodyText: string;
 };
 
-function countParenDelta(line: string): number {
+/** The net change in `(` depth over `line`, every character counted. */
+export function countParenDelta(line: string): number {
+    let delta = 0;
+    for (const ch of line) {
+        if (ch === '(') {
+            delta += 1;
+        } else if (ch === ')') {
+            delta -= 1;
+        }
+    }
+    return delta;
+}
+
+/** The net change in `(` depth over `line`, comments and strings blanked first. */
+function countParenDeltaOutsideStrings(line: string): number {
     let delta = 0;
     const sanitizedLine = stripPythonCommentsAndStrings(line);
     for (const ch of sanitizedLine) {
@@ -55,13 +69,13 @@ export function extractTopLevelPythonDefinitions(sourceText: string): PythonDefi
 
         if (pendingDecorators.length > 0 && decoratorParenDepth > 0) {
             pendingDecorators[pendingDecorators.length - 1] += ` ${trimmed}`;
-            decoratorParenDepth = Math.max(0, decoratorParenDepth + countParenDelta(line));
+            decoratorParenDepth = Math.max(0, decoratorParenDepth + countParenDeltaOutsideStrings(line));
             continue;
         }
 
         if (trimmed.startsWith('@')) {
             pendingDecorators.push(trimmed);
-            decoratorParenDepth = Math.max(0, countParenDelta(line));
+            decoratorParenDepth = Math.max(0, countParenDeltaOutsideStrings(line));
             continue;
         }
 
@@ -119,7 +133,8 @@ export interface PythonPortInfo {
     direction: 'in' | 'out' | 'unknown';
 }
 
-function escapeRegExp(value: string): string {
+/** `value` as a regular-expression literal matching itself. */
+export function escapeRegExp(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 

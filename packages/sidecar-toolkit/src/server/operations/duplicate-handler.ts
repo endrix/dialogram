@@ -3,10 +3,10 @@ import { OperationHandler, ModelState, type Command, type MaybePromise } from '@
 import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
-import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
+import { nextFreeName, WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
-import { buildPyClipboardPayload } from '@dialogram/diagram-server/clipboard/py-clipboard';
+import { buildClipboardPayload } from '@dialogram/diagram-server/clipboard/clipboard';
 import { SidecarInvoker } from './sidecar-invoker';
 
 const WORKFLOW_DUPLICATE_OPERATION_KIND = 'dialogram.duplicate' as const;
@@ -42,7 +42,7 @@ export class DuplicateOperationHandler extends OperationHandler {
             uri: vscodeUri,
             computeEdits: async () => {
                 const beforeText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
-                const payload = await buildPyClipboardPayload(this.modelState, sourceUri, operation.elementIds ?? []);
+                const payload = buildClipboardPayload(this.modelState, sourceUri, operation.elementIds ?? []);
                 if (payload.items.length === 0) return undefined;
                 const workflowName = this.modelState.root.args?.['wf:workflowName'] as string | undefined;
                 const takenResp = await this.sendSidecarList(sourceUri, {
@@ -50,16 +50,13 @@ export class DuplicateOperationHandler extends OperationHandler {
                     args: { workflow: workflowName }
                 });
                 const taken = new Set((takenResp?.diagnostic?.names as string[] | undefined) ?? []);
+                // A duplicated connection joins the copies, not the entities it was copied from.
+                const renamed = new Map<string, string>();
                 for (const item of payload.items) {
                     if (item.kind === 'entity') {
-                        const base = item.name;
-                        let name = base;
-                        let idx = 2;
-                        while (taken.has(name)) {
-                            name = `${base}${idx}`;
-                            idx += 1;
-                        }
+                        const name = nextFreeName(item.name, taken);
                         taken.add(name);
+                        renamed.set(item.name, name);
                         await this.sendSidecarOp(sourceUri, {
                             op: this.sidecar.sidecarOp('createNode'),
                             args: { workflow: workflowName, type: item.typeName, name }
@@ -72,10 +69,10 @@ export class DuplicateOperationHandler extends OperationHandler {
                     } else if (item.kind === 'connection') {
                         if (!item.outPort || !item.inPort) continue;
                         const fromPort = item.from
-                            ? { type: 'actor', actor: item.from, port: item.outPort }
+                            ? { type: 'actor', actor: renamed.get(item.from) ?? item.from, port: item.outPort }
                             : { type: 'workflow', name: item.outPort };
                         const toPort = item.to
-                            ? { type: 'actor', actor: item.to, port: item.inPort }
+                            ? { type: 'actor', actor: renamed.get(item.to) ?? item.to, port: item.inPort }
                             : { type: 'workflow', name: item.inPort };
                         await this.sendSidecarOp(sourceUri, {
                             op: this.sidecar.sidecarOp('connect'),

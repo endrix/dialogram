@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ExecutionOverlaySink } from '@dialogram/shared';
 import { ExecutionOverlayRegistry, EXECUTION_EVENT_REPLAY_LIMIT } from '../src/extension/diagram/execution-overlay';
-import { normalizeSourceUriKey } from '../src/extension/diagram/uri-keys';
+import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
 
 describe('ExecutionOverlayRegistry', () => {
     it('publish/get/clear round-trip per source URI', () => {
