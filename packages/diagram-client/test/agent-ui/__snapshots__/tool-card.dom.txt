@@ -1,0 +1,54 @@
+div .annotation-item
+  div .annotation-header
+    div .annotation-title
+      "@tool"
+    div .annotation-actions
+      button .mini-btn type="button" title="Save changes to the referenced definition"
+        "Save"
+      button .mini-btn.danger type="button" title="Remove this annotation"
+        "Remove"
+  div .annotation-body
+    div .annotation-field
+      div .annotation-label
+        "cmd (string)"
+      input .annotation-input placeholder="e.g. bash" value="bash"
+    div .annotation-args-container
+      div .annotation-args-header
+        div .annotation-args-title
+          "args (list)"
+        div .annotation-args-mode
+          button .mini-btn type="button"
+            "List…"
+          button .mini-btn type="button"
+            "Raw…"
+      div .annotation-args-help
+        "Each row is one CLI argument (string)."
+      div .annotation-args-list
+        div .annotation-args-item
+          div .annotation-args-index
+            "0"
+          input .annotation-input.annotation-args-input placeholder="argument" value="-lc"
+          button .mini-btn.danger.icon-only type="button" title="Remove item" aria-label="Remove item"
+            span .codicon.codicon-remove
+        div .annotation-args-item
+          div .annotation-args-index
+            "1"
+          input .annotation-input.annotation-args-input placeholder="argument" value="make all"
+          button .mini-btn.danger.icon-only type="button" title="Remove item" aria-label="Remove item"
+            span .codicon.codicon-remove
+      button .mini-btn type="button"
+        "Add item"
+      div .annotation-field [hidden]
+        div .annotation-label
+          "args (expression)"
+        textarea .annotation-input.annotation-textarea placeholder="e.g. [\"-lc\", \"{in.exe} {in.input} > {out.stdout}\"]"
+    div .annotation-field
+      div .annotation-label
+        "inheritStdio (bool)"
+      div .annotation-checkbox-wrap
+        input .annotation-checkbox type="checkbox" value="on" checked
+        div .annotation-checkbox-text
+          "true"
+    div
+    button type="button"
+      "+ Add Argument"

@@ -1,0 +1,5 @@
+{
+  "cmd": "\"bash\"",
+  "args": "[\"-lc\", \"make all\"]",
+  "inheritStdio": "true"
+}

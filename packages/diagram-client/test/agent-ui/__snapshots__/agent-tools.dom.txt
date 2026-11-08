@@ -1,0 +1,24 @@
+div .property-section
+  div .property-section-header
+    span .section-icon.codicon.codicon-chevron-down
+    span .section-title
+      "Agent Tools"
+  div .property-section-content
+    div
+      div
+        span .property-label
+          "Enabled"
+        label
+          input type="checkbox" value="on" checked
+          span
+            span
+      div
+        span
+          "Auth Mode"
+        select .annotation-input value="policy"
+          option value="deny-all"
+            "deny-all"
+          option value="allow-all"
+            "allow-all"
+          option value="policy" selected
+            "policy"

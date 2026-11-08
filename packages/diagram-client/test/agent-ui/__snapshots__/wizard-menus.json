@@ -1,0 +1,35 @@
+[
+  {
+    "items": [
+      {
+        "id": "upsert",
+        "label": "Add or Update Annotation…"
+      },
+      {
+        "id": "remove",
+        "label": "Remove Annotation…"
+      }
+    ],
+    "placeHolder": "Choose an annotation operation"
+  },
+  {
+    "items": [
+      {
+        "id": "tool",
+        "label": "@tool (external execution)",
+        "description": "cmd, args, inheritStdio, ..."
+      },
+      {
+        "id": "viewer",
+        "label": "@viewer (open outputs in VS Code)",
+        "description": "open, diff, openWith (viewType)"
+      },
+      {
+        "id": "custom",
+        "label": "Custom annotation…",
+        "description": "Enter any name and arguments"
+      }
+    ],
+    "placeHolder": "Choose an annotation template"
+  }
+]

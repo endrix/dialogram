@@ -1,0 +1,37 @@
+[
+  {
+    "method": "executeCommand",
+    "args": [
+      "wfpy.glsp.getAgentToolConfig",
+      [
+        "tooled"
+      ]
+    ]
+  },
+  {
+    "method": "executeCommand",
+    "args": [
+      "wfpy.glsp.setAgentToolConfig",
+      [
+        {
+          "entityName": "tooled",
+          "enabled": false,
+          "auth": "policy"
+        }
+      ]
+    ]
+  },
+  {
+    "method": "executeCommand",
+    "args": [
+      "wfpy.glsp.setAgentToolConfig",
+      [
+        {
+          "entityName": "tooled",
+          "enabled": false,
+          "auth": "deny-all"
+        }
+      ]
+    ]
+  }
+]

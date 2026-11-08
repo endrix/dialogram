@@ -1,0 +1,14 @@
+{
+  "items": [
+    {
+      "id": "hexEditor.hexedit",
+      "label": "Hex Editor"
+    },
+    {
+      "id": "__custom__",
+      "label": "Custom viewType…",
+      "description": "Enter any VS Code editor viewType string"
+    }
+  ],
+  "placeHolder": "Choose an editor (viewType)"
+}

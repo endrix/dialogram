@@ -1,0 +1,295 @@
+div .annotation-item
+  div .annotation-header
+    div .annotation-title
+      "@agent"
+    div .annotation-actions
+      button .mini-btn type="button" title="Save changes to the referenced definition"
+        "Save"
+      button .mini-btn.danger type="button" title="Remove this annotation"
+        "Remove"
+  div .annotation-body
+    div .agent-skill-block.agent-prompt-block
+      div .agent-prompt-header
+        div .agent-prompt-label
+          "Prompt"
+          span .codicon.codicon-info title="Use {in.portName} or {out.portName} to reference port data"
+        div
+          label .agent-enabled-toggle
+            span .agent-enabled-text
+              "Enabled"
+            span .agent-enabled-switch
+              input .agent-enabled-input type="checkbox" value="on" checked
+              span .agent-enabled-slider
+                span .agent-enabled-knob
+      div .agent-section-content
+        div .agent-skill-actions
+          button .mini-btn
+            span .codicon.codicon-screen-full
+            "Expand Editor"
+        div [hidden]
+        textarea .annotation-input.annotation-textarea.agent-prompt-input placeholder="Transform inputs into outputs...\nWait for { to trigger autocomplete!" value="You are the analyst of a hardware design loop.\nSay, per program, the budget in cycles."
+    div .agent-skill-block.disabled
+      div .agent-section-head
+        div .agent-skill-label
+          "Agent Preset"
+        label .agent-enabled-toggle
+          span .agent-enabled-text
+            "Enabled"
+          span .agent-enabled-switch
+            input .agent-enabled-input type="checkbox" value="on"
+            span .agent-enabled-slider
+              span .agent-enabled-knob
+      div .agent-section-content [hidden]
+        input .annotation-input placeholder="e.g. code-reviewer" disabled
+        div .agent-skill-hint
+          "Resolved from .claude/agents/<name>.md"
+        div .agent-skill-actions
+          button .mini-btn type="button" disabled
+            "Pick Preset"
+          button .mini-btn type="button" disabled
+            "Open Preset"
+        div .agent-skill-status
+          "Agent preset is deactivated."
+        div .agent-skill-chips [hidden]
+        div .agent-skill-warning [hidden]
+    div .agent-skill-block
+      div .agent-section-head
+        div .agent-skill-label
+          "Skill"
+        label .agent-enabled-toggle
+          span .agent-enabled-text
+            "Enabled"
+          span .agent-enabled-switch
+            input .agent-enabled-input type="checkbox" value="on" checked
+            span .agent-enabled-slider
+              span .agent-enabled-knob
+      div .agent-section-content
+        input .annotation-input placeholder="e.g. writer" value="turnus-reader"
+        div .agent-skill-hint
+          "Resolved at runtime from .wf/skills/<name>/SKILL.md"
+        div .agent-skill-actions
+          button .mini-btn type="button"
+            "Pick Skill"
+          button .mini-btn type="button"
+            "Refresh"
+          button .mini-btn type="button"
+            "Open Skill"
+        label .agent-toggle
+          input type="checkbox" value="on" checked
+          span
+            "Enable Skill Hooks"
+        div .agent-skill-status
+          "Reads Turnus analyses"
+        div .agent-skill-chips
+          span .agent-chip.info
+            "INFO 1 script hook"
+          span .agent-chip.ok
+            "OK Skill ready"
+        div .agent-skill-warning [hidden]
+    details .agent-skill-block.agent-collapsible.disabled
+      summary .agent-section-head
+        span .agent-collapsible-title
+          span .codicon.codicon-chevron-right.agent-collapse-chevron
+          div .agent-skill-label
+            "MCP"
+        label .agent-enabled-toggle
+          span .agent-enabled-text
+            "Enabled"
+          span .agent-enabled-switch
+            input .agent-enabled-input type="checkbox" value="on"
+            span .agent-enabled-slider
+              span .agent-enabled-knob
+      div .agent-section-content
+        div
+          "Servers"
+        input .annotation-input placeholder="e.g. filesystem, github" disabled
+        div .agent-skill-hint
+          "Comma-separated MCP server names from agent-tools.json registry"
+        div
+          button
+            "+ Add MCP Server"
+        div
+          "Transport"
+        select .annotation-input value="bridge" disabled
+          option value="bridge" selected
+            "bridge"
+          option value="stdio"
+            "stdio"
+          option value="http"
+            "http"
+          option value="streamable-http"
+            "streamable-http"
+    details .agent-skill-block.agent-collapsible.disabled
+      summary .agent-section-head
+        span .agent-collapsible-title
+          span .codicon.codicon-chevron-right.agent-collapse-chevron
+          div .agent-skill-label
+            "LSP"
+        label .agent-enabled-toggle
+          span .agent-enabled-text
+            "Enabled"
+          span .agent-enabled-switch
+            input .agent-enabled-input type="checkbox" value="on"
+            span .agent-enabled-slider
+              span .agent-enabled-knob
+      div .agent-section-content
+        div
+          "Servers"
+        input .annotation-input placeholder="e.g. pylance, typescript" disabled
+        div .agent-skill-hint
+          "Comma-separated LSP server names available to this agent"
+        div
+          button
+            "+ Add LSP Server"
+        div
+          "Command"
+        input .annotation-input placeholder="e.g. pylsp" disabled
+        div
+          div
+            "Args"
+          input .annotation-input placeholder="space-separated"
+        div
+          div
+            "Language"
+          input .annotation-input placeholder="e.g. cpp"
+        div
+          div
+            "Extra Flags"
+          input .annotation-input placeholder="space-separated"
+        div
+          div
+            "Severity"
+          select .annotation-input value="error"
+            option value="error" selected
+              "error"
+            option value="warning"
+              "warning"
+            option value="information"
+              "information"
+            option value="hint"
+              "hint"
+        div
+          div
+            "Max Repairs"
+          input .annotation-input type="number" placeholder="2"
+        div
+          "Port"
+        input .annotation-input type="number" placeholder="e.g. 2087" disabled
+    details .agent-skill-block.agent-collapsible
+      summary .agent-section-head
+        span .agent-collapsible-title
+          span .codicon.codicon-chevron-right.agent-collapse-chevron
+          span .agent-skill-label
+            "Output Validators"
+        span .agent-collapsible-count
+      div .agent-section-content
+        div .agent-skill-hint
+          "Validate agent output by running a command or an LSP server; failures re-prompt the agent."
+        div
+          button
+            "+ Add Output Validator"
+    div
+      div
+        div
+          "Model"
+        input .annotation-input placeholder="e.g. gpt-4" value="opus"
+      div
+        div
+          "Provider"
+        input .annotation-input placeholder="e.g. openai"
+    div
+      div
+        "Endpoint"
+      input .annotation-input placeholder="https://api.openai.com/v1"
+    div
+      div
+        div
+          "Timeout (ms)"
+        input .annotation-input type="number" placeholder="30000" value="1800000"
+      div
+        div
+          "Context Budget"
+        input .annotation-input type="number" placeholder="20" value="50"
+      div
+        div
+          "Stateful"
+        label
+          input type="checkbox" value="on"
+          span
+            span
+    div
+      div
+        div
+          "Truncation"
+        select .annotation-input value="sliding"
+          option value="sliding" selected
+            "sliding"
+          option value="summarize"
+            "summarize"
+      div
+        div
+          "Fireable w/o input"
+        input .annotation-input type="number" placeholder="0"
+    div
+      div
+        div
+          "Transport"
+        select .annotation-input value="claude-cli"
+          optgroup
+            option value="http"
+              "http"
+          optgroup
+            option value="acp"
+              "acp (connector)"
+            option value="opencode-acp"
+              "opencode-acp"
+          optgroup
+            option value="opencode-cli"
+              "opencode-cli"
+            option value="claude-cli" selected
+              "claude-cli"
+            option value="codex-cli"
+              "codex-cli"
+      div title="Applies to the ACP transports"
+        div
+          "Connector"
+        select .annotation-input disabled
+          option value selected
+            "(run's default)"
+          optgroup
+            option value="claude-code"
+              "claude-code"
+            option value="opencode"
+              "opencode (not on PATH)"
+      div
+        div
+          "Session mode"
+        input .annotation-input placeholder="agent's default" disabled
+      div title
+        div
+          "CLI Tools"
+        select .annotation-input value="native"
+          option value="wfpy-none"
+            "wfpy-none"
+          option value="native" selected
+            "native"
+      div title
+        div
+          "Reasoning"
+        select .annotation-input
+          option value selected
+            "default"
+          option value="minimal"
+            "minimal"
+          option value="high"
+            "high"
+          option value="max"
+            "max"
+    div
+      div .annotation-add-row
+        input .annotation-input.annotation-add-key placeholder="argName" value="askUser"
+        input .annotation-input.annotation-add-value placeholder="value (expression)" value="true"
+        button .mini-btn.icon-only.danger type="button" title="Remove this argument" aria-label="Remove this argument"
+          span .codicon.codicon-close
+    button type="button"
+      "+ Add Argument"
