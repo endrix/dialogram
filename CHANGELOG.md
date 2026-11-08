@@ -55,8 +55,11 @@ platform API version.
   classes keep their names (a product extends `ExternalActorNodeView`).
   `findNodeIdByGraphId`, the lookup of a diagram element by a producer's id,
   is one function (`producer-ids.ts`) for the outline, the property panel
-  and the headless renderer, which also takes its layout table from the
-  Layout menu's instead of its own copy.
+  and the headless renderer, with one rule where the three differed: the
+  producer id wins (a diagram id is a label, which another node's producer id
+  may equal), a direct hit must be a node, the first in document order. The
+  renderer's layout table is the Layout menu's own, so its Untangled now
+  pins the declared port order as the editor's does.
 - **After a drop, the routes an edge cannot keep are drawn by libavoid, with
   the edges on one port as one shared path.** The layout draws the edges into
   a port as a trunk; the built-in router gives every edge its own channel and
