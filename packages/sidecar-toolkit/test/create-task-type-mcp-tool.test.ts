@@ -2,8 +2,10 @@ import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
 import type { Action } from '@eclipse-glsp/server';
 import { CreateTaskTypeOperation } from '@dialogram/shared';
-import { DiagramMcpModule } from '../src/server/mcp-diagram-module';
-import { CreateTaskTypeMcpToolHandler } from '../src/server/create-task-type-mcp-tool-handler';
+import { DiagramMcpModule } from '@dialogram/diagram-server/server/mcp-diagram-module';
+import { CreateTaskTypeMcpToolHandler } from '../src/server/operations/create-task-type-mcp-tool-handler';
+import { createSidecarOperationModules } from '../src/server/operation-modules';
+import { NEUTRAL_CREATE_NODE_CONFIG } from './fixtures/create-node-config';
 
 /**
  * Collect the tool-handler constructors `DiagramMcpModule.configureToolHandlers` registers,
@@ -27,16 +29,28 @@ function resolveToolHandlerCtors(module: DiagramMcpModule): Array<new () => unkn
 }
 
 describe('create-task-type GLSP-MCP operation tool', () => {
-    it('is registered on the diagram MCP module by the operation module that handles it, not by the platform', () => {
-        const names = (module: DiagramMcpModule) => resolveToolHandlerCtors(module).map((c) => (new (c as new () => { name?: string })()).name);
+    const names = (module: DiagramMcpModule) => resolveToolHandlerCtors(module).map((c) => (new (c as new () => { name?: string })()).name);
+    const sidecarEdits = {
+        operationModules: createSidecarOperationModules({
+            settingsNamespace: 'x', sidecarOperationPrefix: 'x', sidecarCommandSettingKey: 'sidecarCommand', sidecarCommandDefault: 'x-sidecar',
+            cliCommandSettingKey: 'cliCommand', cliCommandDefault: 'x', operationKinds: { createEntityPort: 'x.c', deleteEntityPort: 'x.d' },
+            acceptedOperationPrefixes: ['x'], graphAcquisition: 'cli-plan', ...NEUTRAL_CREATE_NODE_CONFIG
+        })
+    };
+
+    it('is offered by the sidecar operation module that handles it, not by the platform', () => {
         expect(names(new DiagramMcpModule())).not.toContain(CreateTaskTypeMcpToolHandler.NAME);
-        const scaffoldModule = {
-            __diagramOperationModule: true,
-            configure: () => undefined,
-            configureMcpTools: (binding: { add(ctor: unknown): void }) => binding.add(CreateTaskTypeMcpToolHandler)
-        };
-        expect(names(new DiagramMcpModule({ operationModules: [scaffoldModule] }))).toContain(CreateTaskTypeMcpToolHandler.NAME);
+        expect(names(new DiagramMcpModule({ edits: sidecarEdits }))).toContain(CreateTaskTypeMcpToolHandler.NAME);
         expect(CreateTaskTypeMcpToolHandler.NAME).toBe('create-task-type');
+    });
+
+    it('is not offered, nor any mutating platform tool, on a read-only diagram', () => {
+        const offered = names(new DiagramMcpModule({ edits: 'read-only' }));
+        expect(offered).not.toContain(CreateTaskTypeMcpToolHandler.NAME);
+        for (const mutating of ['create-nodes', 'create-edges', 'modify-nodes', 'modify-edges', 'delete-elements', 'save-model']) {
+            expect(offered, mutating).not.toContain(mutating);
+        }
+        expect(offered).toContain('query-elements');
     });
 
     it('is a write tool: readOnlyHint is false (inherits the operation-tool base annotations)', () => {

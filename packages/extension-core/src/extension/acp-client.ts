@@ -875,7 +875,6 @@ export class ACPClientService extends EventEmitter {
       `resolved graph are the authoritative definition of the diagram — when the user ` +
       `refers to "this", "the workflow/network", or asks about its nodes, treat them as ` +
       `the source of truth and do not search other files unless explicitly asked.`;
-    const skill = this.chatSkill;
 
     // A diagram-tool usage hint, present only when the extension layer says the
     // diagram MCP server is advertised to the agent.
@@ -885,8 +884,7 @@ export class ACPClientService extends EventEmitter {
       {
         type: "text",
         text:
-          framing +
-          (skill ? `\n\n${skill}` : "") +
+          this.withSkill(framing) +
           (toolHint ? `\n\n${toolHint}` : "") +
           (reinjectedFlag ? "\n\n(Updated file content follows.)" : ""),
       },
@@ -976,11 +974,17 @@ export class ACPClientService extends EventEmitter {
           `Context for this conversation: the user is editing "${path.basename(workflowFile)}" ` +
           `(${workflowFile}) in a visual diagram editor. The file itself is NOT attached: it is ` +
           `${megabytes} MB, and reading it whole exhausts the context before anything is answered. ` +
-          `Use the diagram tools for structure, and read only specific line ranges when you need ` +
-          `the source text.` +
-          (this.chatSkill ? `\n\n${this.chatSkill}` : ""),
+          this.withSkill(
+            `Use the diagram tools for structure, and read only specific line ranges when you need ` +
+            `the source text.`
+          ),
       },
     ];
+  }
+
+  /** `framing` with the profile's domain skill after it, when the profile named one. */
+  private withSkill(framing: string): string {
+    return this.chatSkill ? `${framing}\n\n${this.chatSkill}` : framing;
   }
 
   /** 0 disables the attachment entirely; undefined keeps the default bound. */

@@ -19,13 +19,18 @@ import {
     CreateEdgesMcpToolHandler,
     CreateNodesMcpToolHandler,
     DefaultMcpDiagramModule,
+    DeleteElementsMcpToolHandler,
+    ModifyEdgesMcpToolHandler,
+    ModifyNodesMcpToolHandler,
     RedoMcpToolHandler,
+    SaveModelMcpToolHandler,
     UndoMcpToolHandler,
     type McpDiagramToolHandlerConstructor
 } from '@eclipse-glsp/server-mcp';
 import type { InstanceMultiBinding } from '@eclipse-glsp/server';
+import type { EditStrategy } from '@dialogram/shared';
 import { makePlatformToolHandlerClass, type PlatformMcpTool } from './mcp-platform-tool-adapter';
-import { isDiagramOperationModule } from './operation-modules';
+import { isDiagramOperationModule, type McpToolBinding } from './operation-modules';
 import { AgentDispatchCreateNodesMcpToolHandler } from './create-nodes-mcp-tool-handler';
 import { AgentDispatchCreateEdgesMcpToolHandler } from './create-edges-mcp-tool-handler';
 
@@ -64,8 +69,12 @@ export interface McpServerModuleOptions {
 export interface DiagramMcpModuleOptions {
     /** Read-only platform chat tools bridged into diagram-scope MCP tools. */
     tools?: readonly PlatformMcpTool[];
-    /** The profile's operation modules; each may bring the MCP tools of its operations. */
-    operationModules?: readonly unknown[];
+    /**
+     * The profile's edit strategy: read-only drops the platform's mutating tools
+     * (nothing handles them); otherwise each operation module may bring the MCP
+     * tools of its operations.
+     */
+    edits?: EditStrategy;
 }
 
 /**
@@ -75,12 +84,12 @@ export interface DiagramMcpModuleOptions {
  */
 export class DiagramMcpModule extends DefaultMcpDiagramModule {
     protected readonly platformTools: readonly PlatformMcpTool[];
-    protected readonly operationModules: readonly unknown[];
+    protected readonly edits: EditStrategy | undefined;
 
     constructor(options?: DiagramMcpModuleOptions) {
         super();
         this.platformTools = options?.tools ?? [];
-        this.operationModules = options?.operationModules ?? [];
+        this.edits = options?.edits;
     }
 
     protected override configureToolHandlers(
@@ -100,6 +109,18 @@ export class DiagramMcpModule extends DefaultMcpDiagramModule {
         // Agents are told (session context hint) that edits are user-undoable via the editor.
         binding.remove(UndoMcpToolHandler);
         binding.remove(RedoMcpToolHandler);
+        if (this.edits === 'read-only') {
+            // A projection with nothing to edit registers no writing operation handler, so
+            // a mutating tool could only fail: the agent is not offered one.
+            for (const mutating of [
+                CreateNodesMcpToolHandler, CreateEdgesMcpToolHandler, ModifyNodesMcpToolHandler,
+                ModifyEdgesMcpToolHandler, DeleteElementsMcpToolHandler, SaveModelMcpToolHandler
+            ]) {
+                binding.remove(mutating);
+            }
+            this.bridgePlatformTools(binding);
+            return;
+        }
         // Replace the built-in `create-nodes` with the agent-dispatch override. The stock tool
         // reaches the operation handler's interactive quick-input (a palette-drop affordance),
         // which blocks an agent call on a dialog no agent can answer. The override marks its
@@ -118,12 +139,17 @@ export class DiagramMcpModule extends DefaultMcpDiagramModule {
         // built-in operation-tool path: it dispatches a reversible GLSP operation, so the
         // mutation flows through the undoable workspace edits, the one sanctioned way to
         // expose a mutating tool on the GLSP-MCP surface.
-        for (const module of this.operationModules) {
+        const addOnly: McpToolBinding = { add: handler => binding.add(handler) };
+        for (const module of this.edits?.operationModules ?? []) {
             if (isDiagramOperationModule(module)) {
-                module.configureMcpTools?.(binding);
+                module.configureMcpTools?.(addOnly);
             }
         }
-        // Read-only bridge only: mutation-capable tools are excluded (see bridgeableChatTools).
+        this.bridgePlatformTools(binding);
+    }
+
+    /** Read-only bridge only: mutation-capable tools are excluded (see bridgeableChatTools). */
+    private bridgePlatformTools(binding: InstanceMultiBinding<McpDiagramToolHandlerConstructor>): void {
         for (const tool of bridgeableChatTools(this.platformTools)) {
             binding.add(makePlatformToolHandlerClass(tool));
         }

@@ -13,6 +13,11 @@ import type { InstanceMultiBinding, OperationHandlerConstructor } from '@eclipse
 import type { McpDiagramToolHandlerConstructor } from '@eclipse-glsp/server-mcp';
 import type { DiagramOperationModuleHandle } from '@dialogram/shared';
 
+/** Where an operation module puts the MCP tools of its operations: add only, the platform's own tools stand. */
+export interface McpToolBinding {
+    add(handler: McpDiagramToolHandlerConstructor): void;
+}
+
 /**
  * A consumer-supplied bundle of operation handlers. `configure` is invoked from within
  * `GModelDiagramModule.configureOperationHandlers`, receiving the same
@@ -27,9 +32,10 @@ export interface DiagramOperationModule extends DiagramOperationModuleHandle {
      * The GLSP-MCP tools that dispatch this module's operations, when the
      * diagram MCP server is on: an agent is offered exactly the operations the
      * product handles. The platform's own tools (create-nodes, create-edges,
-     * modify, delete) are bound regardless.
+     * modify, delete) are bound by the platform for an editable diagram and
+     * cannot be replaced here; the binding only adds.
      */
-    configureMcpTools?(binding: InstanceMultiBinding<McpDiagramToolHandlerConstructor>): void;
+    configureMcpTools?(binding: McpToolBinding): void;
 }
 
 /** Narrow an opaque {@link DiagramOperationModuleHandle} to the concrete {@link DiagramOperationModule}. */
