@@ -14,7 +14,6 @@
  */
 import type * as vscode from "vscode";
 import type {
-  AcpConnectorInfo,
   DiagramClientBehavior,
   DiagramCommandIds,
   DiagramOperationKinds,
