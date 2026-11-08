@@ -1,9 +1,9 @@
 /**
  * Sidecar runtime configuration.
  *
- * All product values a sidecar-backed model source needs, supplied by the consuming extension
- * (extension-core's diagram-profile adapter) as configuration. NO product defaults here — the
- * toolkit stays product-neutral; the concrete product values live in the adapter.
+ * All product values a sidecar-backed model source needs, assembled from the
+ * product's `SidecarProfileInput`. NO product defaults here — the toolkit stays
+ * product-neutral; the concrete values live in the product's profile literal.
  */
 
 import { inject, injectable } from 'inversify';

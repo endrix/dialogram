@@ -46,7 +46,7 @@ vi.mock('../src/run-event-stream-client.js', () => ({
     RunEventStreamClient: class { constructor(_o: unknown) {} start(): void {} stop(): void {} }
 }));
 
-import { CliRunDriver, resumeFailedRunCommandId, type CliRunDriverConfig } from '../src/index';
+import { CliRunDriver, resumeFailedRunCommandId, type CliRunDriverConfig } from '../src/cli-run-driver';
 import { resumeFailedRunTool } from '../src/sidecar-diagram-profile';
 
 const RUN_CMD = 'test.resume.runWorkflow';

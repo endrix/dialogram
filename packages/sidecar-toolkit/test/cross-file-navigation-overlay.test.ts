@@ -14,7 +14,8 @@ import {
     resolveWorkflowDefinitionRange,
     resolveViewerOverlayActiveEntityName
 } from '../src/server/source-analysis';
-import { SidecarModelSource, type SidecarRuntimeConfig } from '../src/index';
+import { SidecarModelSource } from '../src/server/sidecar-model-source';
+import { type SidecarRuntimeConfig } from '../src/server/sidecar-runtime-config';
 import { NEUTRAL_CREATE_NODE_CONFIG } from './fixtures/create-node-config';
 
 /** Minimal runtime config for constructing a toolkit SidecarModelSource in these tests. */

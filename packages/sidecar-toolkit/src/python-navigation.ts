@@ -1,13 +1,11 @@
 /**
- * Python source-navigation engine, extracted verbatim from extension-core's
- * `glsp-activation.ts` (SP2b Task 4). Resolves cross-file drill-down requests
- * — definition targets and workflow-definition file URIs — against the VS Code
+ * Python source-navigation engine. Resolves cross-file drill-down requests —
+ * definition targets and workflow-definition file URIs — against the VS Code
  * definition/workspace-symbol providers and a workspace Python-file search.
  *
- * The host re-routes its `NavigateToExternalTargetAction` interception through
- * {@link createPythonNavigationProvider}, which implements the neutral
- * {@link DiagramNavigationProvider} seam. SP2c will supply the provider from a
- * `DiagramProfile` instead of the host constructing it directly.
+ * {@link createPythonNavigationProvider} implements the neutral
+ * {@link DiagramNavigationProvider} seam; the profile assembler supplies it as
+ * `DiagramProfile.navigation` unless the product opts out.
  */
 import * as vscode from 'vscode';
 import * as path from 'node:path';
@@ -16,11 +14,7 @@ import type { DiagramNavigationProvider, DiagramNavigationTarget } from '@dialog
 import { extractDecoratedDefinitionNames } from './python-diagram-definitions.js';
 import { candidateModuleFiles, findImportingModules } from './python-import-resolution.js';
 import { pickBestWorkspaceSymbol } from './python-symbol-ranking.js';
-// `normalizeSourceUriKey` now lives in the neutral uri-keys util; re-exported
-// here for compat with existing importers of this module.
 import { normalizeSourceUriKey } from './uri-keys.js';
-
-export { normalizeSourceUriKey };
 
 type SerializedPosition = { line: number; character: number };
 type SerializedRange = { start: SerializedPosition; end: SerializedPosition };
@@ -885,8 +879,6 @@ function toNavigationTarget(target: { uri: vscode.Uri; selection?: SerializedRan
  *  - `'workflow-definition-uri'` → `{ networkName: string, fallbackUri: string, preferredSourceUri?: string }`
  *                             resolves which `.py` file defines a workflow/network
  *                             (never fails: falls back to `fallbackUri`).
- *
- * SP2c firms the request shape when profiles supply providers directly.
  */
 export function createPythonNavigationProvider(): DiagramNavigationProvider {
     return {

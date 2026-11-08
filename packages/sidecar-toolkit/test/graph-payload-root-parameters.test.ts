@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { SidecarModelSource, type SidecarRuntimeConfig } from '../src/index';
+import { SidecarModelSource } from '../src/server/sidecar-model-source';
+import { type SidecarRuntimeConfig } from '../src/server/sidecar-runtime-config';
 import { NEUTRAL_CREATE_NODE_CONFIG } from './fixtures/create-node-config';
 
 // The payload->doc and failure-doc transforms these pin now live on the toolkit model source;

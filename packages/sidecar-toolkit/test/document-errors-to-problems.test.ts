@@ -6,7 +6,8 @@
  * is the product's say that its document errors are a compiler's.
  */
 import { describe, expect, it } from 'vitest';
-import { SidecarModelSource, type SidecarRuntimeConfig } from '../src/index';
+import { SidecarModelSource } from '../src/server/sidecar-model-source';
+import { type SidecarRuntimeConfig } from '../src/server/sidecar-runtime-config';
 import { NEUTRAL_CREATE_NODE_CONFIG } from './fixtures/create-node-config';
 
 const BASE: SidecarRuntimeConfig = {

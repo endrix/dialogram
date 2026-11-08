@@ -16,7 +16,8 @@ import { RequestModelAction } from '@eclipse-glsp/protocol';
 import { GModelRoot, GNode } from '@eclipse-glsp/server';
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
 import { WorkflowSourceModelStorage } from '@dialogram/diagram-server/server/diagram-glsp-module';
-import { SidecarModelSource, type SidecarRuntimeConfig } from '../src/index';
+import { SidecarModelSource } from '../src/server/sidecar-model-source';
+import { type SidecarRuntimeConfig } from '../src/server/sidecar-runtime-config';
 import { NEUTRAL_CREATE_NODE_CONFIG } from './fixtures/create-node-config';
 
 function testCfg(overrides: Partial<SidecarRuntimeConfig> = {}): SidecarRuntimeConfig {

@@ -55,11 +55,11 @@ describe('SessionManager', () => {
           messages: [],
         },
       ];
-      storageData.set('workflow.sessions', savedSessions);
+      storageData.set('dialogram.sessions', savedSessions);
 
       await sessionManager.initialize();
 
-      expect(sessionManager.getAllSessions()).toHaveLength(1);
+      expect(sessionManager.getSessionsForWorkflow('/test/workflow.py')).toHaveLength(1);
       // Restoring sessions must NOT auto-select one: the chat panel opens on an
       // explicit empty state, and the user picks or creates a session. Auto-
       // selecting here made a phantom "current" session leak into the panel.
@@ -69,7 +69,7 @@ describe('SessionManager', () => {
     it('should handle empty storage', async () => {
       await sessionManager.initialize();
 
-      expect(sessionManager.getAllSessions()).toHaveLength(0);
+      expect(sessionManager.getSessionsForWorkflow('/test/workflow.py')).toHaveLength(0);
       expect(sessionManager.getCurrentSessionId()).toBeNull();
     });
   });
@@ -230,7 +230,7 @@ describe('SessionManager', () => {
       await sessionManager.deleteSession('test-session-123');
 
       expect(mockACPClient.deleteSession).toHaveBeenCalledWith('test-session-123');
-      expect(sessionManager.getAllSessions()).toHaveLength(0);
+      expect(sessionManager.getSessionsForWorkflow('/test/workflow.py')).toHaveLength(0);
       expect(sessionManager.getCurrentSessionId()).toBeNull();
       expect(mockStorage.update).toHaveBeenCalled();
     });
@@ -241,7 +241,7 @@ describe('SessionManager', () => {
       await sessionManager.deleteSession('test-session-123');
 
       // Should still delete from local storage
-      expect(sessionManager.getAllSessions()).toHaveLength(0);
+      expect(sessionManager.getSessionsForWorkflow('/test/workflow.py')).toHaveLength(0);
     });
   });
 
@@ -267,63 +267,6 @@ describe('SessionManager', () => {
     });
   });
 
-  describe('message management', () => {
-    beforeEach(async () => {
-      await sessionManager.createSession('/test/workflow.py', 'Test Session');
-    });
-
-    it('should add message to current session', () => {
-      sessionManager.addMessage({
-        role: 'user',
-        content: 'Hello',
-        timestamp: Date.now(),
-      });
-
-      const messages = sessionManager.getMessages();
-      expect(messages).toHaveLength(1);
-      expect(messages[0].content).toBe('Hello');
-    });
-
-    it('should update last message', () => {
-      sessionManager.addMessage({
-        role: 'assistant',
-        content: 'Hello',
-        timestamp: Date.now(),
-      });
-
-      sessionManager.updateLastMessage({
-        content: 'Hello, how can I help?',
-      });
-
-      const messages = sessionManager.getMessages();
-      expect(messages[0].content).toBe('Hello, how can I help?');
-    });
-
-    it('should clear messages', () => {
-      sessionManager.addMessage({
-        role: 'user',
-        content: 'Hello',
-        timestamp: Date.now(),
-      });
-
-      sessionManager.clearMessages();
-
-      expect(sessionManager.getMessages()).toHaveLength(0);
-    });
-
-    it('should not add message when no current session', () => {
-      sessionManager = new SessionManager(mockACPClient as any, mockStorage);
-
-      sessionManager.addMessage({
-        role: 'user',
-        content: 'Hello',
-        timestamp: Date.now(),
-      });
-
-      expect(sessionManager.getMessages()).toHaveLength(0);
-    });
-  });
-
   describe('session updates', () => {
     beforeEach(async () => {
       await sessionManager.createSession('/test/workflow.py', 'Test Session');
@@ -332,127 +275,16 @@ describe('SessionManager', () => {
     it('should update session mode', async () => {
       await sessionManager.updateSessionMode('plan');
 
-      const session = sessionManager.getCurrentSession();
+      const session = sessionManager.getSession('test-session-123');
       expect(session?.mode).toBe('plan');
       expect(mockStorage.update).toHaveBeenCalled();
-    });
-
-    it('should update session provider', async () => {
-      await sessionManager.updateSessionProvider('new-provider');
-
-      const session = sessionManager.getCurrentSession();
-      expect(session?.provider).toBe('new-provider');
     });
 
     it('should rename session', async () => {
       await sessionManager.renameSession('test-session-123', 'New Name');
 
-      const session = sessionManager.getCurrentSession();
+      const session = sessionManager.getSession('test-session-123');
       expect(session?.name).toBe('New Name');
-    });
-  });
-
-  describe('searchMessages', () => {
-    beforeEach(async () => {
-      await sessionManager.createSession('/test/workflow.py', 'Session 1');
-      sessionManager.addMessage({
-        role: 'user',
-        content: 'Create a task',
-        timestamp: Date.now(),
-      });
-      sessionManager.addMessage({
-        role: 'assistant',
-        content: 'I will create a task for you',
-        timestamp: Date.now(),
-      });
-
-      mockACPClient.createSession.mockResolvedValue('session-2');
-      await sessionManager.createSession('/test/workflow.py', 'Session 2');
-      sessionManager.addMessage({
-        role: 'user',
-        content: 'Create an agent',
-        timestamp: Date.now(),
-      });
-    });
-
-    it('should search messages across sessions', () => {
-      const results = sessionManager.searchMessages('/test/workflow.py', 'task');
-
-      expect(results).toHaveLength(2);
-      expect(results[0].content).toContain('task');
-    });
-
-    it('should be case-insensitive', () => {
-      const results = sessionManager.searchMessages('/test/workflow.py', 'TASK');
-
-      expect(results).toHaveLength(2);
-    });
-
-    it('should return empty array for no matches', () => {
-      const results = sessionManager.searchMessages('/test/workflow.py', 'xyz123');
-
-      expect(results).toHaveLength(0);
-    });
-  });
-
-  describe('export', () => {
-    beforeEach(async () => {
-      await sessionManager.createSession('/test/workflow.py', 'Session 1');
-      mockACPClient.createSession.mockResolvedValue('session-2');
-      await sessionManager.createSession('/test/workflow.py', 'Session 2');
-    });
-
-    it('should export single session', () => {
-      const exported = sessionManager.exportSession('test-session-123');
-
-      expect(exported).toBeDefined();
-      expect(exported?.id).toBe('test-session-123');
-    });
-
-    it('should export all sessions for workflow', () => {
-      const exported = sessionManager.exportWorkflowSessions('/test/workflow.py');
-
-      expect(exported).toHaveLength(2);
-    });
-  });
-
-  describe('statistics', () => {
-    it('should calculate statistics', async () => {
-      await sessionManager.createSession('/test/workflow1.py', 'Session 1');
-      sessionManager.addMessage({
-        role: 'user',
-        content: 'Hello',
-        timestamp: Date.now(),
-      });
-
-      mockACPClient.createSession.mockResolvedValue('session-2');
-      await sessionManager.createSession('/test/workflow2.py', 'Session 2');
-      sessionManager.addMessage({
-        role: 'user',
-        content: 'Hi',
-        timestamp: Date.now(),
-      });
-
-      const stats = sessionManager.getStatistics();
-
-      expect(stats.totalSessions).toBe(2);
-      expect(stats.totalMessages).toBe(2);
-      expect(stats.workflows).toBe(2);
-    });
-  });
-
-  describe('cleanup', () => {
-    it('should cleanup all sessions for workflow', async () => {
-      await sessionManager.createSession('/test/workflow.py', 'Session 1');
-      mockACPClient.createSession.mockResolvedValue('session-2');
-      await sessionManager.createSession('/test/workflow.py', 'Session 2');
-      mockACPClient.createSession.mockResolvedValue('session-3');
-      await sessionManager.createSession('/test/other.py', 'Session 3');
-
-      await sessionManager.cleanupWorkflowSessions('/test/workflow.py');
-
-      expect(sessionManager.getSessionsForWorkflow('/test/workflow.py')).toHaveLength(0);
-      expect(sessionManager.getSessionsForWorkflow('/test/other.py')).toHaveLength(1);
     });
   });
 });

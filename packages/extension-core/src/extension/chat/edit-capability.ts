@@ -13,8 +13,13 @@ import * as vscode from 'vscode';
 import type { DiagramEditBackend } from '@dialogram/shared';
 import type { DiagramProfile } from '../../api';
 import type { WorkflowEditorProvider } from '../diagram/diagram-editor-provider';
-import { getChatSetting } from '../legacy-settings-compat';
 import type { ChatCommandContext, ChatCommandContribution, ChatCommandResult } from './slash-commands';
+
+/**
+ * The platform-wide chat settings section. Shared by every reader of a core
+ * chat setting so the key is spelled in one place.
+ */
+export const CORE_CHAT_SECTION = 'dialogram.chat';
 
 export interface EditChatCapabilityDeps {
     profile: DiagramProfile;
@@ -49,7 +54,7 @@ export function createEditChatCapability(deps: EditChatCapabilityDeps): EditChat
     let autoLayoutTimer: ReturnType<typeof setTimeout> | undefined;
 
     const scheduleAutoLayout = (uri: vscode.Uri): void => {
-        const enabled = getChatSetting<boolean>('autoLayoutAfterEdits', false);
+        const enabled = vscode.workspace.getConfiguration(CORE_CHAT_SECTION).get<boolean>('autoLayoutAfterEdits', false);
         if (!enabled) {
             return;
         }
@@ -78,7 +83,7 @@ export function createEditChatCapability(deps: EditChatCapabilityDeps): EditChat
         }
         const network = deps.getEditorProvider()?.getRefreshContext(uri)?.networkName;
         const builtArgs = { ...editBackend.scopeArgs(uri.toString(), network), ...extraArgs };
-        const enforceRevision = getChatSetting<boolean>('checkSourceRevision', false);
+        const enforceRevision = vscode.workspace.getConfiguration(CORE_CHAT_SECTION).get<boolean>('checkSourceRevision', false);
         const knownRevision = sourceRevisionCache.get(ctx.file);
         const expectedRevision = enforceRevision && knownRevision ? knownRevision : undefined;
         const result = await editBackend.applyNamedEdit(uri.toString(), opName, builtArgs, { expectedRevision });

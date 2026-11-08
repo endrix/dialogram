@@ -8,10 +8,7 @@ import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operat
 import { SidecarInvoker } from './sidecar-invoker';
 import { type SidecarEdgeRole } from '../../sidecar-capabilities';
 
-/**
- * Port reference resolved from GModel args (Python path).
- * Local replacement for the deleted `create-edge-handler.ts` export.
- */
+/** Port reference resolved from GModel args. */
 export interface PortReference {
     entityName?: string;
     portName: string;

@@ -1,12 +1,12 @@
 /**
  * Sidecar server DI module.
  *
- * The consuming extension (extension-core's TRANSITIONAL diagram adapter) builds this from a product
- * {@link SidecarRuntimeConfig} and hands it to diagram-server's neutral `createWorkflowServerModules`
- * via `additionalServerModules`. It binds the runtime services the sidecar operation handlers depend
- * on; the handlers themselves are registered through the `EditStrategy.operationModules` seam (see
- * `createSidecarOperationModules`). diagram-server (core) never imports the toolkit; the wiring flows
- * the other way.
+ * The profile assembler builds this from a product {@link SidecarRuntimeConfig}
+ * and hands it to the diagram server as an additional server module. It binds the
+ * runtime services the sidecar operation handlers depend on; the handlers
+ * themselves are registered through the `EditStrategy.operationModules` seam (see
+ * `createSidecarOperationModules`). diagram-server (core) never imports the
+ * toolkit; the wiring flows the other way.
  */
 
 import { ContainerModule } from 'inversify';

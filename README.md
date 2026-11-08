@@ -309,9 +309,7 @@ headlessly.
 `npm run check:neutrality` enforces that the platform stays product-free:
 
 1. **Core content** — no `sidecar|wfpy|calpy|python` token anywhere in
-   `diagram-server`, `diagram-client`, or `extension-core` sources (single
-   sanctioned exception: `legacy-settings-compat.ts`, which names legacy
-   settings keys).
+   `diagram-server`, `diagram-client`, or `extension-core` sources.
 2. **Toolkit content** — no `wfpy|calpy|calLang` token in `sidecar-toolkit`
    sources; the toolkit is sidecar-generic, products inject their strings.
 3. **File names** — no product-derived file names in the core packages.

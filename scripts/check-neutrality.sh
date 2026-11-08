@@ -6,9 +6,7 @@
 # The four core packages (diagram-server, diagram-client, extension-core,
 # shared) plus the sidecar-toolkit must carry no product vocabulary — including a
 # product's FILE EXTENSION, which reads as punctuation rather than as vocabulary
-# and so slipped past the word-based gates for as long as they have existed. The
-# one sanctioned exception is extension-core's legacy-settings-compat.ts, which is
-# permitted to name legacy settings keys.
+# and so slipped past the word-based gates for as long as they have existed.
 #
 # Exits non-zero if any gate fails.
 
@@ -25,19 +23,16 @@ CORE_SRC=(
     packages/diagram-client/src
     packages/extension-core/src
 )
-GATE1_ALLOW='packages/extension-core/src/extension/legacy-settings-compat.ts'
-
 failures=0
 
 echo '== Gate 1: core content (no sidecar/wfpy/calpy/python) =='
-gate1_hits="$(grep -ri 'sidecar\|wfpy\|calpy\|python' "${CORE_SRC[@]}" \
-    | grep -vE "${GATE1_ALLOW}")"
+gate1_hits="$(grep -ri 'sidecar\|wfpy\|calpy\|python' "${CORE_SRC[@]}")"
 if [ -n "${gate1_hits}" ]; then
-    echo 'FAIL: product tokens found outside the compat allow-list:'
+    echo 'FAIL: product tokens found in the core packages:'
     echo "${gate1_hits}"
     failures=$((failures + 1))
 else
-    echo "PASS (allow-list: ${GATE1_ALLOW})"
+    echo 'PASS'
 fi
 
 echo

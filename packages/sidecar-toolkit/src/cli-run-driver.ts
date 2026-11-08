@@ -1,7 +1,6 @@
 /**
- * CLI run driver: extracted verbatim from `extension-core`'s
- * `registerCalDiagramCommands`. Owns the configured `run`/`stop` commands, the
- * 400ms live-overlay file polling, and the read-only SSE agent stream.
+ * CLI run driver. Owns the configured `run`/`stop` commands, the 400ms
+ * live-overlay file polling, and the read-only SSE agent stream.
  *
  * Seams (the driver never touches the GLSP connector, editor provider, or the
  * profile object directly):

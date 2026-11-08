@@ -93,7 +93,7 @@ export interface SidecarClientBehavior {
     outlineTitle?: string;
 }
 
-/** The 24 consumer-owned command ids a sidecar diagram profile carries. */
+/** The consumer-owned command ids a sidecar diagram profile carries. */
 export interface SidecarProfileCommandIds {
     openDiagram: string;
     openDiagramSplit: string;
@@ -133,9 +133,8 @@ interface RunHost extends CliRunDriverHost {
 }
 
 /**
- * One flat literal of the product values a shell owns. Everything sidecar/
- * product-specific the platform used to receive through the deleted
- * extension-core adapter now enters here.
+ * One flat literal of the product values a shell owns: everything sidecar- or
+ * product-specific the platform needs enters here.
  */
 export interface SidecarProfileInput {
     // Identity + GLSP.
@@ -204,7 +203,7 @@ export interface SidecarProfileInput {
      */
     cliResumeArgs?: (runDir: string, step: number) => string[];
 
-    // User-visible strings / behavior (Task 1 config, now product-supplied here).
+    // User-visible strings / behavior.
     undoLabelSuffix: string;
     createNodeStrings: CreateNodeStrings;
     createNodeBehavior: CreateNodeBehavior;
@@ -246,14 +245,6 @@ export interface SidecarProfileInput {
     exportOp?: string;
     mcpEnabledSetting: { section: string; key: string; default: boolean };
     scopeArgKey: string;
-
-    /**
-     * GLSP-MCP opt-in surfaced to consumers (API 0.5.0). Absent keeps the legacy
-     * 0.4.x path byte-identical (no in-host MCP loopback server); `{ enabled:true }`
-     * boots the in-host GLSP-MCP server and bridges the profile's read-only chat
-     * tools into diagram-scope MCP tools. Threaded straight onto `profile.mcp`.
-     */
-    mcp?: { enabled: boolean };
 
     /**
      * The Java ELK server the product ships, for large graphs: its fat jar,
@@ -703,11 +694,10 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         navigation: input.navigation === 'none' ? undefined : createPythonNavigationProvider(),
         canOpenSource,
         editBackend,
-        // GLSP-MCP opt-in (0.5.0): sidecar-backed products ship it ON by default.
-        // The coarse profile gate defaults enabled; the per-user rollback lever is
-        // the `<ns>.chat.useGlspMcp` setting (read per-turn in ChatRuntime), so no
-        // setting is read here. An explicit `input.mcp` wins (e.g. `{enabled:false}`).
-        mcp: input.mcp ?? { enabled: true },
+        // Sidecar-backed products ship the in-host GLSP-MCP server on; the
+        // per-user rollback lever is the `dialogram.chat.useGlspMcp` setting
+        // (read per-turn in ChatRuntime), so no setting is read here.
+        mcp: { enabled: true },
         elkServer: input.elkServer,
         chat: {
             name: input.chat.name,

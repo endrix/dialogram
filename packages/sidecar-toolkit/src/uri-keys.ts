@@ -1,7 +1,6 @@
 /**
- * Neutral URI-key utility. Extracted from `python-navigation.ts` (SP2c-2 Task 5)
- * so the host can canonicalize source URIs without depending on the Python
- * navigation engine. `python-navigation.ts` re-exports it for compat.
+ * Neutral URI-key utility: canonicalizes source URIs without depending on the
+ * Python navigation engine.
  */
 import * as vscode from 'vscode';
 import * as path from 'node:path';

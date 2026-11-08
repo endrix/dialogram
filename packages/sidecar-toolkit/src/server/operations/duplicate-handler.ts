@@ -9,9 +9,9 @@ import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operat
 import { buildPyClipboardPayload } from '@dialogram/diagram-server/clipboard/py-clipboard';
 import { SidecarInvoker } from './sidecar-invoker';
 
-export const WORKFLOW_DUPLICATE_OPERATION_KIND = 'dialogram.duplicate' as const;
+const WORKFLOW_DUPLICATE_OPERATION_KIND = 'dialogram.duplicate' as const;
 
-export interface DuplicateOperation extends Operation {
+interface DuplicateOperation extends Operation {
     kind: typeof WORKFLOW_DUPLICATE_OPERATION_KIND;
     elementIds: string[];
 }

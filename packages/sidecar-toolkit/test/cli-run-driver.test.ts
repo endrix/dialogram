@@ -38,7 +38,7 @@ vi.mock('../src/run-event-stream-client.js', () => ({
     }
 }));
 
-import { CliRunDriver, type CliRunDriverConfig, type AgentToolEntitySettings } from '../src/index';
+import { CliRunDriver, type CliRunDriverConfig, type AgentToolEntitySettings } from '../src/cli-run-driver';
 
 const SET_CMD = 'test.setAgentToolConfig';
 const GET_CMD = 'test.getAgentToolConfig';

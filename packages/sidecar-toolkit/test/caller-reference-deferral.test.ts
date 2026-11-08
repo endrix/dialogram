@@ -12,7 +12,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { RequestModelAction } from '@eclipse-glsp/protocol';
 import { WorkflowSourceModelStorage } from '@dialogram/diagram-server/server/diagram-glsp-module';
-import { SidecarModelSource, type SidecarRuntimeConfig } from '../src/index';
+import { SidecarModelSource } from '../src/server/sidecar-model-source';
+import { type SidecarRuntimeConfig } from '../src/server/sidecar-runtime-config';
 import { collectPythonFilesUnderRoots, MAX_SOURCE_FILES_PER_SCAN } from '../src/server/source-analysis';
 import { NEUTRAL_CREATE_NODE_CONFIG } from './fixtures/create-node-config';
 

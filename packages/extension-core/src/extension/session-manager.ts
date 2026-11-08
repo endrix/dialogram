@@ -1,6 +1,5 @@
-import { injectable } from 'inversify';
+import * as path from 'node:path';
 import type { ACPClientService, SessionInfo } from './acp-client.js';
-import { LEGACY_KEYS, readStateWithMigration } from './legacy-settings-compat.js';
 
 export interface SessionData {
   id: string;
@@ -40,11 +39,10 @@ export interface WorkspaceStorage {
  * Session Manager for per-workflow session persistence
  * Sessions are scoped to individual workflow files and cannot be shared
  */
-@injectable()
 export class SessionManager {
   private sessions: Map<string, SessionData> = new Map();
   private currentSessionId: string | null = null;
-  private storageKey = LEGACY_KEYS.sessions.current;
+  private storageKey = 'dialogram.sessions';
 
   constructor(
     private acpClient: ACPClientService,
@@ -169,16 +167,6 @@ export class SessionManager {
   }
 
   /**
-   * Get current active session
-   */
-  getCurrentSession(): SessionData | null {
-    if (!this.currentSessionId) {
-      return null;
-    }
-    return this.sessions.get(this.currentSessionId) || null;
-  }
-
-  /**
    * Get current session ID
    */
   getCurrentSessionId(): string | null {
@@ -204,15 +192,6 @@ export class SessionManager {
   }
 
   /**
-   * Get all sessions
-   */
-  getAllSessions(): SessionData[] {
-    return Array.from(this.sessions.values()).sort(
-      (a, b) => b.updatedAt - a.updatedAt
-    );
-  }
-
-  /**
    * Append a message to a specific session and persist it.
    */
   addMessageToSession(sessionId: string, message: MessageData): void {
@@ -233,66 +212,6 @@ export class SessionManager {
   }
 
   /**
-   * Add message to current session
-   */
-  addMessage(message: MessageData): void {
-    if (!this.currentSessionId) {
-      return;
-    }
-
-    const session = this.sessions.get(this.currentSessionId);
-    if (session) {
-      session.messages.push(message);
-      session.updatedAt = Date.now();
-      this.saveSessions(); // Save asynchronously
-    }
-  }
-
-  /**
-   * Update last message in current session (for streaming)
-   */
-  updateLastMessage(updates: Partial<MessageData>): void {
-    if (!this.currentSessionId) {
-      return;
-    }
-
-    const session = this.sessions.get(this.currentSessionId);
-    if (session && session.messages.length > 0) {
-      const lastMessage = session.messages[session.messages.length - 1];
-      Object.assign(lastMessage, updates);
-      session.updatedAt = Date.now();
-    }
-  }
-
-  /**
-   * Get messages for current session
-   */
-  getMessages(): MessageData[] {
-    if (!this.currentSessionId) {
-      return [];
-    }
-
-    const session = this.sessions.get(this.currentSessionId);
-    return session?.messages || [];
-  }
-
-  /**
-   * Clear messages for current session
-   */
-  clearMessages(): void {
-    if (!this.currentSessionId) {
-      return;
-    }
-
-    const session = this.sessions.get(this.currentSessionId);
-    if (session) {
-      session.messages = [];
-      session.updatedAt = Date.now();
-      this.saveSessions();
-    }
-  }
-
-  /**
    * Update session mode
    */
   async updateSessionMode(mode: 'plan' | 'build'): Promise<void> {
@@ -303,22 +222,6 @@ export class SessionManager {
     const session = this.sessions.get(this.currentSessionId);
     if (session) {
       session.mode = mode;
-      session.updatedAt = Date.now();
-      await this.saveSessions();
-    }
-  }
-
-  /**
-   * Update session provider
-   */
-  async updateSessionProvider(provider: string): Promise<void> {
-    if (!this.currentSessionId) {
-      return;
-    }
-
-    const session = this.sessions.get(this.currentSessionId);
-    if (session) {
-      session.provider = provider;
       session.updatedAt = Date.now();
       await this.saveSessions();
     }
@@ -337,49 +240,10 @@ export class SessionManager {
   }
 
   /**
-   * Search messages across all sessions for a workflow
-   */
-  searchMessages(workflowFile: string, query: string): MessageData[] {
-    const sessions = this.getSessionsForWorkflow(workflowFile);
-    const results: MessageData[] = [];
-
-    const lowerQuery = query.toLowerCase();
-
-    for (const session of sessions) {
-      for (const message of session.messages) {
-        if (message.content.toLowerCase().includes(lowerQuery)) {
-          results.push({
-            ...message,
-            // Add session context to message
-            sessionId: session.id,
-            sessionName: session.name,
-          } as any);
-        }
-      }
-    }
-
-    return results;
-  }
-
-  /**
    * Look up a session by id
    */
   getSession(sessionId: string): SessionData | null {
     return this.sessions.get(sessionId) || null;
-  }
-
-  /**
-   * Export session history as JSON
-   */
-  exportSession(sessionId: string): SessionData | null {
-    return this.sessions.get(sessionId) || null;
-  }
-
-  /**
-   * Export all sessions for a workflow
-   */
-  exportWorkflowSessions(workflowFile: string): SessionData[] {
-    return this.getSessionsForWorkflow(workflowFile);
   }
 
   /**
@@ -391,15 +255,17 @@ export class SessionManager {
   }
 
   /**
+   * Get workflow directory from file path
+   */
+  private getWorkflowDirectory(workflowFile: string): string {
+    return path.dirname(workflowFile);
+  }
+
+  /**
    * Restore sessions from workspace storage
    */
   private async restoreSessions(): Promise<void> {
-    const data = await readStateWithMigration<SessionData[]>(
-      this.workspaceStorage,
-      LEGACY_KEYS.sessions.current,
-      LEGACY_KEYS.sessions.legacy,
-      [],
-    );
+    const data = this.workspaceStorage.get<SessionData[]>(this.storageKey, []);
 
     for (const session of data) {
       this.sessions.set(session.id, session);
@@ -412,44 +278,4 @@ export class SessionManager {
     // when the user explicitly loads/creates one.
   }
 
-  /**
-   * Get workflow directory from file path
-   */
-  private getWorkflowDirectory(workflowFile: string): string {
-    const path = require('path');
-    return path.dirname(workflowFile);
-  }
-
-  /**
-   * Cleanup sessions for a workflow file
-   */
-  async cleanupWorkflowSessions(workflowFile: string): Promise<void> {
-    const sessions = this.getSessionsForWorkflow(workflowFile);
-
-    for (const session of sessions) {
-      await this.deleteSession(session.id);
-    }
-  }
-
-  /**
-   * Get session statistics
-   */
-  getStatistics(): {
-    totalSessions: number;
-    totalMessages: number;
-    workflows: number;
-  } {
-    const sessions = Array.from(this.sessions.values());
-    const workflows = new Set(sessions.map((s) => s.workflowFile));
-    const totalMessages = sessions.reduce(
-      (sum, s) => sum + s.messages.length,
-      0
-    );
-
-    return {
-      totalSessions: sessions.length,
-      totalMessages,
-      workflows: workflows.size,
-    };
-  }
 }

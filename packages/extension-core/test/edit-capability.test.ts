@@ -170,9 +170,8 @@ describe('slash contributions', () => {
 
 describe('optimistic-concurrency cache (checkSourceRevision enabled)', () => {
     it('threads the source revision across edits: empty→undefined, success caches, conflict updates', async () => {
-        // getChatSetting reads the neutral `dialogram.chat` config section; the vscode
-        // mock's getConfiguration exposes only `get` (no `inspect`), so getChatSetting
-        // returns whatever `get` yields. Stub it to enable the revision check.
+        // The capability reads the core `dialogram.chat` config section; stub the
+        // vscode mock's getConfiguration to enable the revision check.
         const configSpy = vi.spyOn(vscode.workspace, 'getConfiguration').mockReturnValue({
             get: (key: string, defaultValue?: unknown) =>
                 key === 'checkSourceRevision' ? true : defaultValue
