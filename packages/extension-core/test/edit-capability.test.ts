@@ -37,14 +37,14 @@ function makeProfile() {
     } as any;
 }
 
-function makeCapability(backend = makeBackend()) {
+function makeCapability(backend = makeBackend(), profile = makeProfile()) {
     const refresh = vi.fn();
     const editorProvider = {
         refreshModelFromDisk: refresh,
         getRefreshContext: vi.fn(() => ({ networkName: 'net1' }))
     };
     const capability = createEditChatCapability({
-        profile: makeProfile(),
+        profile,
         editBackend: backend,
         getEditorProvider: () => editorProvider as any,
         log: () => undefined
@@ -64,6 +64,15 @@ beforeEach(() => {
 });
 
 describe('slash contributions', () => {
+    it('offers no node-creation command when the profile names none', () => {
+        const profile = makeProfile();
+        profile.chat = { fullName: 'Workflow Chat' };
+        const { capability } = makeCapability(makeBackend(), profile);
+        const names = capability.slashCommands.map(c => c.command);
+        expect(names.filter(n => n.startsWith('create-'))).toEqual([]);
+        expect(names).toEqual(expect.arrayContaining(['connect', 'delete', 'rename', 'layout']));
+    });
+
     it('contributes the profile\'s node commands, edit commands and /layout', () => {
         const { capability } = makeCapability();
         const names = capability.slashCommands.map(c => c.command);

@@ -115,11 +115,11 @@ export interface DiagramStorageOptions {
 }
 
 /**
- * Chat carry-over: everything the diagram chat backend + intent resolver need
- * that is not already on the profile root. `operationPrefix` is the internal
- * namespace the chat's operation dispatcher routes under; `nodeCommands` are the
- * runtime's node-creation slash commands; `skill` is the domain primer injected
- * into each session's context.
+ * Chat carry-over: everything the diagram chat backend needs that is not
+ * already on the profile root. `nodeCommands` are the runtime's node-creation
+ * slash commands (none when absent); `skill` is the domain primer injected into
+ * each session's context. The operation prefix the edits route under is the
+ * storage options', not this block's.
  *
  * REALM NOTE: the function-valued fields (graph/turn/selection context, tool
  * handlers, slash-command handlers) follow the {@link DiagramProfile.serverDiagramModule}
@@ -357,14 +357,11 @@ export interface DiagramClientBehavior {
   /** The ACP connectors the property panel offers on an agent's `connector`;
    *  listed per document by the platform from {@link DiagramChatConfig.acpConnector}. */
   acpConnectors?: AcpConnectorInfo[];
-  /** Cross-file drill-down navigation resolves through the graph source model.
-   *  On by default; a product whose navigation runs on the file's text sets `false`. */
+  /** Cross-file drill-down navigation resolves through the graph source model. */
   graphSourceNavigation?: boolean;
-  /** Property panel renders the network-model sections and labels.
-   *  On by default; a product whose model is a workflow sets `false`. */
+  /** Property panel renders the network-model sections and labels. */
   networkPropertySections?: boolean;
-  /** Cross-file navigation UI uses the network entity vocabulary.
-   *  On by default; a product whose model is a workflow sets `false`. */
+  /** Cross-file navigation UI uses the network entity vocabulary. */
   networkNavigationLabels?: boolean;
   /** Sentinel option value/default for the agent CLI-tools "none" selection. */
   noneSentinel?: string;

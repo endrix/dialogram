@@ -223,7 +223,7 @@ function labelForParentWorkflow(option: { sourceUri: string; workflowName: strin
 }
 
 function navigationEntityLabel(plural = false): string {
-    if (clientBehavior().networkNavigationLabels !== false) {
+    if (clientBehavior().networkNavigationLabels === true) {
         return plural ? 'Networks' : 'Network';
     }
     return plural ? 'Workflows' : 'Workflow';

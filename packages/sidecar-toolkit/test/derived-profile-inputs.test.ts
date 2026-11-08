@@ -75,6 +75,23 @@ describe('resolveSidecarCommandIds', () => {
         expect(ids.createNewContainer).toBe('sv.glsp.createNewModule');
         expect(ids.undo).toBe('sv.glsp.undo');
     });
+
+    it('leaves a deprecated id a product still spells out of the profile', () => {
+        const ids = resolveSidecarCommandIds({
+            key: 'sv',
+            sidecarOperationPrefix: 'sv',
+            commands: { createAgentToolPolicyFile: 'sv.glsp.createAgentToolPolicyFile', chatAddViewerEditor: 'x', chatAddViewerTask: 'y' }
+        });
+        expect(ids).not.toHaveProperty('createAgentToolPolicyFile');
+        expect(ids).not.toHaveProperty('chatAddViewerEditor');
+        expect(ids).not.toHaveProperty('chatAddViewerTask');
+    });
+
+    it('derives from the key when the GLSP client name is blank', () => {
+        const ids = resolveSidecarCommandIds({ key: 'sv', glspClientName: '  ', sidecarOperationPrefix: 'sv' });
+        expect(ids.openDiagram).toBe('sv.glsp.openDiagram');
+        expect(resolveSidecarProfileInput(minimalInput({ glspClientName: '', glspClientId: ' ' })).glspClientId).toBe('glsp.sv');
+    });
 });
 
 describe('resolveSidecarProfileInput', () => {

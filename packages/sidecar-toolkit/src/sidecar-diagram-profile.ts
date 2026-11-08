@@ -396,9 +396,9 @@ export type ResolvedSidecarProfileInput =
 export function resolveSidecarCommandIds(
     input: Pick<SidecarProfileInput, 'key' | 'glspClientName' | 'sidecarOperationPrefix' | 'commands'>
 ): SidecarProfileCommandIds {
-    const client = input.glspClientName ?? input.key;
+    const client = nonBlank(input.glspClientName) ?? input.key;
     const glsp = (field: string): string => `${client}.glsp.${field}`;
-    const given = input.commands ?? {};
+    const given: Partial<Record<keyof SidecarProfileCommandIds, string>> = input.commands ?? {};
     const derived: SidecarProfileCommandIds = {
         openDiagram: glsp('openDiagram'),
         openDiagramSplit: glsp('openDiagramSplit'),
@@ -421,13 +421,18 @@ export function resolveSidecarCommandIds(
         sidecarSend: `${input.sidecarOperationPrefix}.sidecar.send`,
         createNewContainer: glsp('createNewContainer')
     };
-    const resolved: Record<string, string> = { ...derived };
-    for (const [field, id] of Object.entries(given)) {
-        if (typeof id === 'string' && id.trim() !== '') {
-            resolved[field] = id;
-        }
+    // Only the ids the platform registers come through: a deprecated id a
+    // product still spells, or a key it made up, stays out of the profile.
+    const resolved: Record<string, string> = {};
+    for (const [field, derivedId] of Object.entries(derived)) {
+        resolved[field] = nonBlank(given[field as keyof SidecarProfileCommandIds]) ?? derivedId;
     }
     return resolved as unknown as SidecarProfileCommandIds;
+}
+
+/** `value` when it says something; `undefined` for an absent or blank one, so a default applies. */
+function nonBlank(value: string | undefined): string | undefined {
+    return value !== undefined && value.trim() !== '' ? value : undefined;
 }
 
 /**
@@ -437,31 +442,31 @@ export function resolveSidecarCommandIds(
  * product gives wins.
  */
 export function resolveSidecarProfileInput(input: SidecarProfileInput): ResolvedSidecarProfileInput {
-    const glspClientName = input.glspClientName ?? input.key;
+    const glspClientName = nonBlank(input.glspClientName) ?? input.key;
     const prefix = input.sidecarOperationPrefix;
     return {
         ...input,
         glspClientName,
-        glspClientId: input.glspClientId ?? `glsp.${glspClientName}`,
+        glspClientId: nonBlank(input.glspClientId) ?? `glsp.${glspClientName}`,
         commands: resolveSidecarCommandIds(input),
         operationKinds: input.operationKinds ?? {
             createEntityPort: `${prefix}.createEntityPort`,
             deleteEntityPort: `${prefix}.deleteEntityPort`
         },
-        sidecarCommandSettingKey: input.sidecarCommandSettingKey
+        sidecarCommandSettingKey: nonBlank(input.sidecarCommandSettingKey)
             ?? (input.sidecarCommandDefault !== undefined ? 'sidecarCommand' : undefined),
-        cliCommandSettingKey: input.cliCommandSettingKey ?? 'cliCommand',
+        cliCommandSettingKey: nonBlank(input.cliCommandSettingKey) ?? 'cliCommand',
         acceptedOperationPrefixes: input.acceptedOperationPrefixes ?? [prefix],
-        undoLabelSuffix: input.undoLabelSuffix ?? ` (${input.key})`,
-        scopeArgKey: input.scopeArgKey ?? 'workflow',
-        runOutputDirSettingKey: input.runOutputDirSettingKey ?? 'runOutputDir',
-        liveExecutionGlowSettingKey: input.liveExecutionGlowSettingKey ?? 'liveExecutionGlow',
-        agentToolsSettingKey: input.agentToolsSettingKey ?? 'agentTools',
-        agentToolAuthSettingKey: input.agentToolAuthSettingKey ?? 'agentToolAuth',
-        agentToolPolicySettingKey: input.agentToolPolicySettingKey ?? 'agentToolPolicy',
-        agentToolTimeoutMsSettingKey: input.agentToolTimeoutMsSettingKey ?? 'agentToolTimeoutMs',
-        agentToolRegistrySettingKey: input.agentToolRegistrySettingKey ?? 'agentToolRegistry',
-        agentMcpBridgeCmdSettingKey: input.agentMcpBridgeCmdSettingKey ?? 'agentMcpBridgeCmd'
+        undoLabelSuffix: nonBlank(input.undoLabelSuffix) ?? ` (${input.key})`,
+        scopeArgKey: nonBlank(input.scopeArgKey) ?? 'workflow',
+        runOutputDirSettingKey: nonBlank(input.runOutputDirSettingKey) ?? 'runOutputDir',
+        liveExecutionGlowSettingKey: nonBlank(input.liveExecutionGlowSettingKey) ?? 'liveExecutionGlow',
+        agentToolsSettingKey: nonBlank(input.agentToolsSettingKey) ?? 'agentTools',
+        agentToolAuthSettingKey: nonBlank(input.agentToolAuthSettingKey) ?? 'agentToolAuth',
+        agentToolPolicySettingKey: nonBlank(input.agentToolPolicySettingKey) ?? 'agentToolPolicy',
+        agentToolTimeoutMsSettingKey: nonBlank(input.agentToolTimeoutMsSettingKey) ?? 'agentToolTimeoutMs',
+        agentToolRegistrySettingKey: nonBlank(input.agentToolRegistrySettingKey) ?? 'agentToolRegistry',
+        agentMcpBridgeCmdSettingKey: nonBlank(input.agentMcpBridgeCmdSettingKey) ?? 'agentMcpBridgeCmd'
     };
 }
 

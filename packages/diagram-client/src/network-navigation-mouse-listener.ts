@@ -199,7 +199,7 @@ export class WorkflowNetworkNavigationMouseListener extends MouseListener implem
         const selectedRunId = typeof (globalThis as any)?.__calDiagramContext?.selectedRunId === 'string'
             ? String((globalThis as any).__calDiagramContext.selectedRunId).trim() || undefined
             : undefined;
-        const useGraphSourceNavigation = clientBehavior().graphSourceNavigation !== false;
+        const useGraphSourceNavigation = clientBehavior().graphSourceNavigation === true;
 
         // No-op guard: avoid dispatching when drill-down resolves to the workflow
         // currently displayed in the same document.

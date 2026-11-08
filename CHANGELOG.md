@@ -67,12 +67,6 @@ platform API version.
   The built-in `/create-task`, `/create-agent`, `/create-viewer` and
   `/create-workflow` fallback is gone; every sidecar product names its own
   `chat.nodeCommands` already.
-- **The network behaviours of the webview are on by default**:
-  `graphSourceNavigation`, `networkPropertySections` and
-  `networkNavigationLabels` read as on unless the product sets `false`. Four
-  of five sidecar products set all three on; the workflow product sets them
-  off and keeps doing so. A consumer that set none, such as a library-mode
-  viewer, now gets the network vocabulary and drill-down.
 - **After a drop, the routes an edge cannot keep are drawn by libavoid, with
   the edges on one port as one shared path.** The layout draws the edges into
   a port as a trunk; the built-in router gives every edge its own channel and
