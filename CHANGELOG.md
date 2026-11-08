@@ -48,6 +48,15 @@ platform API version.
 
 ### Changed
 
+- **One layout snapshot for every handler.** The six handlers that lay nodes
+  out or route edges each carried their own copy of "walk the model, key the
+  nodes and the routes, save": eight `collectNodePositions`, eight
+  `collectEdgeRoutes`, five signature helpers, four snapshot/restore sets,
+  about 1,400 lines, drifted. `diagram-server/src/server/layout-snapshot.ts`
+  holds them once (`collectNodePositions`, `collectEdgeRoutes`,
+  `movableNodeIdsIn`, `snapshot*ById`, `restoreUnselectedLayout`,
+  `persistLayout`), and `persisted-edge-routes.ts` exports the route-key and
+  anchor helpers it always had.
 - **After a drop, the routes an edge cannot keep are drawn by libavoid, with
   the edges on one port as one shared path.** The layout draws the edges into
   a port as a trunk; the built-in router gives every edge its own channel and
@@ -90,6 +99,12 @@ platform API version.
 
 ### Fixed
 
+- **Reset Routes and the reroute note their save where the rest of the server
+  reads it.** Both wrote "has persisted edge routes" under a model-state key
+  nothing else used, so after them the flag stayed what the last layout left.
+  Every handler also keys a saved route the same way now (endpoint signature,
+  AST path where it repeats); four keyed by path alone, which the loader's
+  fallback read but the other writers overwrote.
 - A layout change still on its 500 ms debounce timer when the window closes
   is written out: the host flushes every diagram's pending layout saves on
   deactivation.
