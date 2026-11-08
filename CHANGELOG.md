@@ -48,6 +48,18 @@ platform API version.
 
 ### Changed
 
+- **One entity-node renderer.** The actor, external-actor and network views
+  drew the same body (the sized rect, the run ring, the family's icon or
+  image, the children, the type footer) three times over; `renderEntityNode`
+  draws it once and each view names only its root classes. The three view
+  classes keep their names (a product extends `ExternalActorNodeView`).
+  `findNodeIdByGraphId`, the lookup of a diagram element by a producer's id,
+  is one function (`producer-ids.ts`) for the outline, the property panel
+  and the headless renderer, with one rule where the three differed: the
+  producer id wins (a diagram id is a label, which another node's producer id
+  may equal), a direct hit must be a node, the first in document order. The
+  renderer's layout table is the Layout menu's own, so its Untangled now
+  pins the declared port order as the editor's does.
 - **One copy of each toolkit helper.** `server/source-files.ts` holds
   `fileExists`, `findPackageRootForFile`, `withPythonPackageRoot` and
   `collectPythonFilesUnderRoots` (the analysis, the create-node handler, the

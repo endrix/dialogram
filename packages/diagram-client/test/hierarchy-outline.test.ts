@@ -17,7 +17,8 @@ import {
     rowLabel,
     trailTo
 } from '../src/hierarchy-outline-tree';
-import { findNodeIdByEntityName, findNodeIdByGraphId, trailOfRoot } from '../src/hierarchy-outline';
+import { findNodeIdByEntityName, trailOfRoot } from '../src/hierarchy-outline';
+import { findNodeIdByGraphId } from '../src/producer-ids';
 
 const TOP = 'file:///w/top.py';
 const BLOCK = 'file:///w/layers/block.py';
