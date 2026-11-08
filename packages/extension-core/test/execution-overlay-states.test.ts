@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import { EXECUTION_OVERLAY_ACTION_KIND, type ExecutionNodeState } from '@dialogram/shared';
 import { ExecutionOverlayRegistry } from '../src/extension/diagram/execution-overlay';
 import { forwardExecutionOverlayStates } from '../src/extension/diagram/execution-overlay-bridge';
-import { normalizeSourceUriKey } from '../src/extension/diagram/uri-keys';
+import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
 
 const STATES: ExecutionNodeState[] = [
     { nodeId: 'n1', status: 'failed' },

@@ -48,6 +48,18 @@ platform API version.
 
 ### Changed
 
+- **One copy of each toolkit helper.** `server/source-files.ts` holds
+  `fileExists`, `findPackageRootForFile`, `withPythonPackageRoot` and
+  `collectPythonFilesUnderRoots` (the analysis, the create-node handler, the
+  graph export and the run driver had their own); `server/python-text.ts` is
+  the home of `countParenDelta`, `escapeRegExp` and
+  `stripPythonCommentsAndStrings`; `normalizeWorkflowReferenceName` replaces
+  the two `unqualifyName`; the run driver resolves the CLI command through
+  `getCliInvocation` like the server (a blank setting now means the default,
+  as it does everywhere else). `normalizeSourceUriKey` is one function, in
+  `@dialogram/diagram-server/server/uri-keys`, for the host, the server and
+  the toolkit; the webview keeps one copy of its own, browser-bound. The
+  parity test that kept two copies aligned is gone with the second copy.
 - **One layout snapshot for every handler.** The six handlers that lay nodes
   out or route edges each carried their own copy of "walk the model, key the
   nodes and the routes, save": eight `collectNodePositions`, eight

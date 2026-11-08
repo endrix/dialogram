@@ -27,6 +27,8 @@
  * headline case (run started before the diagram opens) is fully covered.
  */
 import * as vscode from 'vscode';
+import { getCliInvocation } from './server/sidecar-runtime-config';
+import { fileExists } from './server/source-files';
 import * as cp from 'node:child_process';
 import { unlinkSync } from 'node:fs';
 import * as net from 'node:net';
@@ -464,15 +466,6 @@ export class CliRunDriver {
         return path.resolve(fileDir, raw);
     }
 
-    private async fileExists(p: string): Promise<boolean> {
-        try {
-            await fs.stat(p);
-            return true;
-        } catch {
-            return false;
-        }
-    }
-
     private async resolveRunRoot(forUri: vscode.Uri): Promise<string | undefined> {
         const wsFolder = vscode.workspace.getWorkspaceFolder(forUri) ?? vscode.workspace.workspaceFolders?.[0];
         const base = wsFolder ? wsFolder.uri.fsPath : path.dirname(forUri.fsPath);
@@ -485,7 +478,7 @@ export class CliRunDriver {
         for (;;) {
             const pkg = path.resolve(current, 'package.json');
             const gitDir = path.resolve(current, '.git');
-            if (await this.fileExists(pkg) || await this.fileExists(gitDir)) {
+            if (await fileExists(pkg) || await fileExists(gitDir)) {
                 return current;
             }
             const parent = path.dirname(current);
@@ -612,30 +605,14 @@ export class CliRunDriver {
         if (!startDir) {
             return undefined;
         }
-
-        const cliCommandRaw = vscode.workspace
-            .getConfiguration(this.config.settingsNamespace)
-            .get<string>(this.config.cliCommandSettingKey, this.config.cliCommandDefault) ?? this.config.cliCommandDefault;
-
-        const cliCommand = String(cliCommandRaw ?? '').trim();
-        if (cliCommand === '') {
+        // The one rule for the CLI command (`getCliInvocation`): the setting under the
+        // product's namespace, its default when blank, `-m <module>` when the command
+        // is a Python interpreter. The module form is for a Python source only.
+        const { cmd, argsPrefix } = getCliInvocation(this.config, vscode, forUri);
+        if (cmd.trim() === '') {
             return undefined;
         }
-
-        const shouldUsePythonModuleFallback =
-            isPython
-            && !!this.config.cliPythonModule
-            && /(^|\/)python(?:\d+(?:\.\d+)*)?$/i.test(cliCommand);
-
-        if (shouldUsePythonModuleFallback) {
-            return {
-                cmd: cliCommand,
-                argsPrefix: ['-m', this.config.cliPythonModule as string],
-                cwd: startDir
-            };
-        }
-
-        return { cmd: cliCommand, argsPrefix: [], cwd: startDir };
+        return { cmd, argsPrefix: isPython ? argsPrefix : [], cwd: startDir };
     }
 
     /** The directory of the latest run of this workflow that started after `startedAfterMs`. */
@@ -703,7 +680,7 @@ export class CliRunDriver {
         }
 
         const queueTracePath = path.join(runDir, 'run.wf-queues.json');
-        if (!(await this.fileExists(queueTracePath))) {
+        if (!(await fileExists(queueTracePath))) {
             return undefined;
         }
         return queueTracePath;
@@ -903,7 +880,7 @@ export class CliRunDriver {
         const cli = await this.resolveCliInvocation(sourceUri, isPython);
         if (!cli) {
             const cliLabel = `${this.config.settingsNamespace}.${this.config.cliCommandSettingKey}`;
-            const message = `Cannot locate CLI command from ${cliLabel} (no workspace folder found).`;
+            const message = `Cannot run: ${cliLabel} names no command, or no workspace folder, package.json or .git was found above the file.`;
             vscode.window.showErrorMessage(message);
             return { error: message };
         }
