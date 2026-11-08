@@ -991,8 +991,10 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
                 // means, so it is the honest source.
                 chatBackend: this.profile.chat !== undefined,
                 // The same for the run driver: Run and Stop are offered exactly
-                // when something is registered to run the diagram.
+                // when something is registered to run the diagram, and a run is
+                // resumable only where something can run it again.
                 runDriver: this.profile.runDriver !== undefined,
+                resumeAtStep: this.profile.clientBehavior?.resumeAtStep === true && this.profile.runDriver !== undefined,
                 // The same for the status source: the menu offers exactly the
                 // commands the host registered, or none. Data only; `collect`
                 // stays on the host.

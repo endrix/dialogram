@@ -206,10 +206,10 @@ export interface SidecarProfileInput {
      * Whether the product's CLI runs a diagram (`<cli> run <file> --out-dir ...`),
      * which the toolkit's run driver calls. Default `true`. `false` for a
      * product whose CLI has no `run`: no run driver is registered, the
-     * diagram offers no Run or Stop, the chat offers no resume, and the
-     * run-driver setting keys are not read.
+     * diagram offers no Run, Stop, run toggle or agent-tool switches, the chat
+     * offers no resume, and the run-driver setting keys are not read.
      */
-    runDriver?: boolean;
+    cliRuns?: boolean;
 
     // User-visible strings / behavior.
     undoLabelSuffix: string;
@@ -576,13 +576,13 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
     // A product that can resume runs gives the chat a way to offer it: the
     // agent that fixed a failed run proposes resuming it, and the person says
     // yes or no.
-    // A run can only be resumed where something runs it.
-    const runs = input.runDriver !== false;
+    // A run can only be resumed, or driven at all, where the CLI runs one.
+    const runs = input.cliRuns !== false;
     if (runs && input.cliResumeArgs) {
         chatTools.push(resumeFailedRunTool(input.commands.runWorkflow));
     }
 
-    const runDriver = (context: vscode.ExtensionContext, host: RunHost): vscode.Disposable => {
+    const runDriver = runs ? (context: vscode.ExtensionContext, host: RunHost): vscode.Disposable => {
         const config: CliRunDriverConfig = {
             settingsNamespace: input.settingsNamespace,
             customEditorViewType: input.customEditorViewType,
@@ -630,7 +630,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             onSignature: (listener) => driver.onLiveOverlaySignature(listener)
         });
         return { dispose: () => driver.dispose() };
-    };
+    } : undefined;
 
     const newSourceFile = (context: vscode.ExtensionContext): vscode.Disposable => {
         // The raw sidecar commands need a sidecar; a read-only profile has none.
@@ -726,7 +726,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
                 ? { settingKey: input.acpConnectorSettingKey, files: input.acpConnectorFiles }
                 : undefined
         },
-        runDriver: runs ? runDriver : undefined,
+        runDriver,
         statusSource: input.statusSource ? createCliStatusSource(input.statusSource, runtimeConfig) : undefined,
         newSourceFile
     };

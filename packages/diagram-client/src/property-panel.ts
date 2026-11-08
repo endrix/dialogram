@@ -33,7 +33,7 @@ import { VscodeUi } from './vscode-ui';
 import { ppField, ppNumberField, ppReadonlyRow, renderInto } from './property-fields';
 import { type PropertyElement, readNumberArg } from './property-model';
 import { PropertyPanelChrome } from './property-panel-chrome';
-import { clientBehavior, commandId, operationKind } from './profile';
+import { clientBehavior, commandId, operationKind, offersRun } from './profile';
 import { classifyLink, decodeURIComponentSafe, openTargetOf, referenceAction, type PanelLink } from './open-target';
 import { producerFields, type ProducerField } from './producer-fields';
 
@@ -627,8 +627,9 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             content.appendChild(this.buildDefinitionAnnotationsSection(node.id, args, undefined, requestAgentDiscovery));
         }
 
-        // Agent Tools section (only rendered for @agent nodes)
-        const agentToolsSection = this.buildAgentToolsSection(entityName, args);
+        // Agent Tools section (only rendered for @agent nodes, and only where a run
+        // driver is behind the diagram: its two commands are the driver's).
+        const agentToolsSection = offersRun() ? this.buildAgentToolsSection(entityName, args) : null;
         if (agentToolsSection) {
             content.appendChild(agentToolsSection);
         }

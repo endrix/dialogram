@@ -86,4 +86,10 @@ describe('the run driver, as the webview sees it', () => {
         const behavior = clientBehaviorFor({ ...PROFILE, clientBehavior: { runDriver: true } as any });
         expect(behavior.runDriver).toBe(false);
     });
+
+    it('takes resuming with it: nothing could run the resumed run', () => {
+        const runDriver = (() => ({ dispose() {} })) as unknown as DiagramProfile['runDriver'];
+        expect(clientBehaviorFor({ ...PROFILE, runDriver, clientBehavior: { resumeAtStep: true } as any }).resumeAtStep).toBe(true);
+        expect(clientBehaviorFor({ ...PROFILE, clientBehavior: { resumeAtStep: true } as any }).resumeAtStep).toBe(false);
+    });
 });

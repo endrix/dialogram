@@ -1,7 +1,7 @@
 import { codiconCSSClasses } from '@eclipse-glsp/sprotty';
 import { VscodeUi } from './vscode-ui';
 import { exportDiagramSvg } from './svg-export-command';
-import { commandId, feedbackEdgesVisibleStorageKey, queueTraceVisibleStorageKey, offersRun } from './profile';
+import { commandId, feedbackEdgesVisibleStorageKey, queueTraceVisibleStorageKey, runHeaderControls } from './profile';
 
 type DiagramContext = {
     sourceUri?: string;
@@ -169,6 +169,7 @@ async function exec(command: string, args: unknown[] = []): Promise<void> {
 }
 
 function patchHeaderTools(headerTools: HTMLElement): void {
+    const offered = runHeaderControls();
     // 1) Replace reset-viewport behavior: screen-normal -> fit + center
     const resetIcon = headerTools.querySelector('i.codicon.codicon-screen-normal') as HTMLElement | null;
     if (resetIcon) {
@@ -183,7 +184,7 @@ function patchHeaderTools(headerTools: HTMLElement): void {
     }
 
     // 2) Add Run button as first header tool, when something runs the diagram.
-    if (offersRun() && !headerTools.querySelector('i.codicon.codicon-play.cal-run-workflow')) {
+    if (offered.run && !headerTools.querySelector('i.codicon.codicon-play.cal-run-workflow')) {
         const runIcon = createHeaderIcon('play');
         runIcon.classList.add('cal-run-workflow');
         runIcon.title = 'Run workflow';
@@ -210,7 +211,7 @@ function patchHeaderTools(headerTools: HTMLElement): void {
     }
 
     // 3) Add Stop button to cancel an active workflow run, under the same condition.
-    if (offersRun() && !headerTools.querySelector('i.codicon.codicon-debug-stop.cal-stop-workflow')) {
+    if (offered.stop && !headerTools.querySelector('i.codicon.codicon-debug-stop.cal-stop-workflow')) {
         const stopIcon = createHeaderIcon('debug-stop');
         stopIcon.classList.add('cal-stop-workflow');
         stopIcon.title = 'Stop workflow run';
@@ -225,8 +226,8 @@ function patchHeaderTools(headerTools: HTMLElement): void {
         headerTools.insertBefore(stopIcon, headerTools.firstChild);
     }
 
-    // 4) Add queue visibility toggle icon.
-    if (!headerTools.querySelector('i.cal-toggle-queues')) {
+    // 4) Add queue visibility toggle icon: what a run puts on the edges, so only where something runs.
+    if (offered.edgeToggle && !headerTools.querySelector('i.cal-toggle-queues')) {
         const queueIcon = createHeaderIcon('eye');
         queueIcon.classList.add('cal-toggle-queues');
 

@@ -173,7 +173,7 @@ describe('createSidecarDiagramProfile', () => {
         expect(typeof runs.runDriver).toBe('function');
         expect(runs.chat?.tools?.map(t => t.name)).toContain('resume_failed_run');
 
-        const none = createSidecarDiagramProfile(baseInput({ runDriver: false, cliResumeArgs: resume }));
+        const none = createSidecarDiagramProfile(baseInput({ cliRuns: false, cliResumeArgs: resume }));
         expect(none.runDriver).toBeUndefined();
         expect((none.clientBehavior as any)?.resumeAtStep).toBeUndefined();
         expect(none.chat?.tools?.map(t => t.name)).not.toContain('resume_failed_run');
