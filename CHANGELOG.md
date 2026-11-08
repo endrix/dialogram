@@ -48,6 +48,20 @@ platform API version.
 
 ### Changed
 
+- **One layout snapshot for every handler.** The six handlers that lay nodes
+  out or route edges each carried their own copy of "walk the model, key the
+  nodes and the routes, save": eight `collectNodePositions`, eight
+  `collectEdgeRoutes`, five signature helpers, four snapshot/restore sets,
+  about 1,400 lines, drifted. `diagram-server/src/server/layout-snapshot.ts`
+  holds them once (`collectNodePositions`, `collectEdgeRoutes`,
+  `movableNodeIdsIn`, `snapshot*ById`, `restoreUnselectedLayout`,
+  `persistLayout`), and `persisted-edge-routes.ts` exports the route-key and
+  anchor helpers it always had. Every handler keys a saved route the same way
+  (endpoint signature, AST path where it repeats; four keyed by path alone,
+  which the loader read through its fallback). Reset Routes and the reroute,
+  which noted their save under a model-state key nothing read, now leave the
+  layout meta alone on purpose: lowering "has persisted edge routes" would arm
+  the bootstrap reroute that redraws what was just cleared.
 - **A sidecar profile names what is its own; the toolkit derives the rest.**
   `SidecarProfileInput` no longer requires the command ids, the operation
   kinds, the GLSP client identity, the CLI and sidecar setting keys, the

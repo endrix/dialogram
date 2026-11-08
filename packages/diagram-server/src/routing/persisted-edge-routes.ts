@@ -17,9 +17,10 @@ import { GEdge, GModelElement, GModelIndex, GModelRoot, GPort } from '@eclipse-g
 import { WorkflowDiagramConstants, WorkflowDiagramMetadata, portAnchor } from '@dialogram/shared';
 import { cleanLegacyFanoutPoints } from '../server/gmodel-convert';
 
-type Point = { x: number; y: number };
+export type Point = { x: number; y: number };
 
-function absolutePosition(element: GModelElement | undefined): Point {
+/** An element's absolute position: its own offset and every ancestor's. */
+export function absolutePosition(element: GModelElement | undefined): Point {
     let x = 0;
     let y = 0;
     let current: any = element;
@@ -34,6 +35,7 @@ function absolutePosition(element: GModelElement | undefined): Point {
     return { x, y };
 }
 
+
 /**
  * The point on a port's border where an edge attaches, in absolute diagram coordinates:
  * the right edge for outputs, the left edge for inputs, vertically centred.
@@ -41,7 +43,7 @@ function absolutePosition(element: GModelElement | undefined): Point {
  * Returns `undefined` when the id does not resolve to a port, which leaves the persisted route
  * untouched — only port-to-port edges (all Workflow edges are) can be re-snapped meaningfully.
  */
-function portAnchorAbsolute(index: GModelIndex, portId: string | undefined): Point | undefined {
+export function portAnchorAbsolute(index: GModelIndex, portId: string | undefined): Point | undefined {
     if (typeof portId !== 'string' || portId === '') {
         return undefined;
     }
@@ -123,7 +125,8 @@ export function normalizePersistedRouteToFullPolyline(
     return snapRouteEndpoints(persisted, source, target);
 }
 
-function edgeSignatureFromArgs(args: Record<string, unknown> | undefined): string | undefined {
+/** An edge by its two ends: `from|outPort|to|inPort`, a boundary end spelled `boundary`. */
+export function edgeSignatureFromArgs(args: Record<string, unknown> | undefined): string | undefined {
     if (!args) {
         return undefined;
     }
@@ -143,7 +146,8 @@ function edgeSignatureFromArgs(args: Record<string, unknown> | undefined): strin
     return `${fromEntity}|${outPort}|${toEntity}|${inPort}`;
 }
 
-function buildEdgeSignatureCounts(root: GModelRoot): Map<string, number> {
+/** How many edges of `root` share each signature; a repeated one needs its AST path to be a key. */
+export function buildEdgeSignatureCounts(root: GModelRoot): Map<string, number> {
     const counts = new Map<string, number>();
     const visit = (element: any): void => {
         if (!element) {
@@ -166,7 +170,8 @@ function buildEdgeSignatureCounts(root: GModelRoot): Map<string, number> {
     return counts;
 }
 
-function edgeRouteKeyFor(
+/** The key a layout file stores an edge's route under: its signature, plus its AST path where the signature repeats, else the path alone. */
+export function edgeRouteKeyFor(
     args: Record<string, unknown> | undefined,
     signatureCounts: Map<string, number>
 ): string | undefined {
