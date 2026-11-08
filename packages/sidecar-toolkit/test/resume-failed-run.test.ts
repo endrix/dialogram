@@ -18,11 +18,9 @@ import { resetRegisteredCommands } from './vscode-mock';
  * as the next test's first run, which then did not fail.
  */
 const spawns: string[][] = [];
-let openChildren = 0;
 vi.mock('../src/process-control.js', () => ({
     spawnWorkflowProcess: (invocation: { args: string[] }) => {
         spawns.push(invocation.args);
-        openChildren++;
         const child: any = new EventEmitter();
         child.stdout = new EventEmitter();
         child.stderr = new EventEmitter();
@@ -44,10 +42,7 @@ vi.mock('../src/process-control.js', () => ({
                 steps: [1, 2, 3].map(step => ({ step, actorInstanceName: 'a', journalSeq: step }))
             }));
         }
-        setTimeout(() => {
-            child.emit('close', fails ? 1 : 0, null);
-            openChildren--;
-        }, 0);
+        setTimeout(() => child.emit('close', fails ? 1 : 0, null), 0);
         return child;
     },
     requestWorkflowStop: () => true
@@ -92,7 +87,6 @@ const originals: any = {};
 beforeEach(() => {
     resetRegisteredCommands();
     spawns.length = 0;
-    openChildren = 0;
     asked = [];
     originals.info = (vscode.window as any).showInformationMessage;
     originals.error = (vscode.window as any).showErrorMessage;
@@ -105,28 +99,33 @@ beforeEach(() => {
 afterEach(() => {
     (vscode.window as any).showInformationMessage = originals.info;
     (vscode.window as any).showErrorMessage = originals.error;
+    for (const dir of tempDirs.splice(0)) {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
 });
+
+const tempDirs: string[] = [];
 
 async function failRun(): Promise<string> {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'resume-failed-'));
+    tempDirs.push(dir);
     const file = path.join(dir, 'top.py');
     fs.writeFileSync(file, '# top\n');
     await vscode.commands.executeCommand(RUN_CMD, { sourceUri: `file://${file}`, workflowName: 'top' });
     return file;
 }
 
-const settle = () => new Promise(resolve => setTimeout(resolve, 30));
-
 /**
  * The resume starts its run without awaiting it (a run can outlast a tool
- * call), so a test that expects the resumed run waits for it to be spawned and
- * to end, however long a loaded machine takes: a fixed pause let it start in
- * the next test.
+ * call), so a test that expects the resumed run waits for the run's own last
+ * word, "Workflow run finished.", said after the diagram refresh and after the
+ * failed run is forgotten. A fixed pause let the run end in the next test; the
+ * child's `close` is not the end either, the driver still has work after it.
+ * Under the default 5 s test timeout, so a slow machine fails here, by name.
  */
 async function resumedRun(): Promise<void> {
-    await vi.waitFor(() => expect(spawns).toHaveLength(2), { timeout: 5000 });
-    await vi.waitFor(() => expect(openChildren).toBe(0), { timeout: 5000 });
-    await settle();
+    await vi.waitFor(() => expect(asked).toContain('Workflow run finished.'), { timeout: 4000 });
+    await new Promise(resolve => setTimeout(resolve, 0));
 }
 
 describe('resuming a failed run when the agent proposes it', () => {
@@ -152,7 +151,6 @@ describe('resuming a failed run when the agent proposes it', () => {
         answer = 'Not now';
 
         const result = await vscode.commands.executeCommand<string>(resumeFailedRunCommandId(RUN_CMD), { file });
-        await settle();
 
         expect(result).toContain('chose not to resume');
         expect(spawns).toHaveLength(1);
