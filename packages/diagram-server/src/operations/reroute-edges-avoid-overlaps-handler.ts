@@ -12,13 +12,11 @@ import {
 } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
-import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
-import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
-import { WorkflowDiagramConstants, portAnchor } from '@dialogram/shared';
+import { portAnchor } from '@dialogram/shared';
 import { GModelSerializer } from '@eclipse-glsp/server';
 import { routeOrthogonal, type RouterConnector, type RouterObstacle } from '../routing/libavoid-router';
-import { layoutTargetOf } from '../server/layout-target';
+import { persistLayout } from '../server/layout-snapshot';
 
 /** Every segment axis-aligned? A diagonal means the polyline is not a valid route. */
 export function isOrthogonalPolyline(points: readonly { x: number; y: number }[]): boolean {
@@ -844,94 +842,6 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
     // Persistence helpers
     // ═══════════════════════════════════════════════════════════════════
 
-    private collectNodePositions(root: GGraph): Map<string, { x: number; y: number }> {
-        const result = new Map<string, { x: number; y: number }>();
-        const visit = (element: any, pax: number, pay: number): void => {
-            if (!element) { return; }
-            const rx = element.position?.x ?? 0;
-            const ry = element.position?.y ?? 0;
-            const ax = pax + rx;
-            const ay = pay + ry;
-            const type = element.type as string | undefined;
-            if (typeof type === 'string' && type.startsWith('node:')) {
-                const args = element.args as Record<string, unknown> | undefined;
-                const key = (args?.[WorkflowDiagramMetadata.AST_PATH] ??
-                    args?.[WorkflowDiagramMetadata.ENTITY_NAME] ??
-                    args?.[WorkflowDiagramMetadata.PORT_NAME]) as unknown;
-                if (typeof key === 'string' && key.trim() !== '' && element.position) {
-                    result.set(key, { x: ax, y: ay });
-                }
-            }
-            const ch = element.children as any[] | undefined;
-            if (Array.isArray(ch)) { for (const c of ch) { visit(c, ax, ay); } }
-        };
-        visit(root, 0, 0);
-        return result;
-    }
-
-    private collectEdgeRoutes(root: GGraph): Map<string, { x: number; y: number }[]> {
-        const result = new Map<string, { x: number; y: number }[]>();
-        const sigCounts = this.buildEdgeSignatureCounts(root);
-        const visit = (element: any): void => {
-            if (!element) { return; }
-            if (element instanceof GEdge) {
-                const args = element.args as Record<string, unknown> | undefined;
-                const key = this.edgeRouteKeyFor(args, sigCounts);
-                const rps = (element as any).routingPoints as { x: number; y: number }[] | undefined;
-                if (typeof key === 'string' && Array.isArray(rps) && rps.length >= 2) {
-                    result.set(key, rps);
-                }
-            }
-            const ch = element.children as any[] | undefined;
-            if (Array.isArray(ch)) { for (const c of ch) { visit(c); } }
-        };
-        visit(root);
-        return result;
-    }
-
-    private edgeSignatureFromArgs(args: Record<string, unknown> | undefined): string | undefined {
-        if (!args) { return undefined; }
-        const norm = (v: unknown): string =>
-            (typeof v === 'string' && v.trim() !== '') ? v.trim() : 'boundary';
-        const from = norm(args['wf:from']);
-        const to = norm(args['wf:to']);
-        const out = typeof args['wf:outPort'] === 'string' ? args['wf:outPort'] as string : undefined;
-        const inp = typeof args['wf:inPort'] === 'string' ? args['wf:inPort'] as string : undefined;
-        if (!out || !inp) { return undefined; }
-        return `${from}|${out}|${to}|${inp}`;
-    }
-
-    private buildEdgeSignatureCounts(root: GGraph): Map<string, number> {
-        const counts = new Map<string, number>();
-        const visit = (el: any): void => {
-            if (!el) { return; }
-            if (el instanceof GEdge) {
-                const sig = this.edgeSignatureFromArgs(el.args as Record<string, unknown> | undefined);
-                if (sig) { counts.set(sig, (counts.get(sig) ?? 0) + 1); }
-            }
-            const ch = el.children as any[] | undefined;
-            if (Array.isArray(ch)) { for (const c of ch) { visit(c); } }
-        };
-        visit(root);
-        return counts;
-    }
-
-    private edgeRouteKeyFor(
-        args: Record<string, unknown> | undefined,
-        sigCounts: Map<string, number>
-    ): string | undefined {
-        const sig = this.edgeSignatureFromArgs(args);
-        const path = args?.[WorkflowDiagramMetadata.AST_PATH];
-        if (sig) {
-            const cnt = sigCounts.get(sig) ?? 0;
-            if (cnt > 1) {
-                return (typeof path === 'string' && path.trim() !== '') ? `${sig}|${path}` : undefined;
-            }
-            return sig;
-        }
-        return (typeof path === 'string' && path.trim() !== '') ? path as string : undefined;
-    }
-
     // ═══════════════════════════════════════════════════════════════════
     // Main execution
     // ═══════════════════════════════════════════════════════════════════
@@ -1139,7 +1049,7 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
             if (this.debugReroute >= 1) {
                 console.info('[cal-reroute] slide — ' + slidEdgeIds.size + ' edges kept their routes');
             }
-            await this.persistRoutes(root, operation);
+            await this.persistRoutes(operation);
             this.logPerf(operation, startedAt, slidEdgeIds.size, 0, 'slide');
             return;
         }
@@ -1264,7 +1174,7 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
             });
         }
 
-        await this.persistRoutes(root, operation);
+        await this.persistRoutes(operation);
         this.logPerf(operation, startedAt, slidEdgeIds.size, routed, usedLibavoid ? 'libavoid' : 'manhattan');
     }
 
@@ -1276,28 +1186,11 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
     }
 
     /** Persist the layout, positions and routes; not for a preview (a drag). */
-    private async persistRoutes(root: GGraph, operation: WorkflowRerouteEdgesAvoidOverlapsOperation): Promise<void> {
+    private async persistRoutes(operation: WorkflowRerouteEdgesAvoidOverlapsOperation): Promise<void> {
         if (operation.preview) { return; }
-        const dm = this.modelState.get(WORKFLOW_NETWORK_MODEL_KEY) as WorkflowDiagramModel | undefined;
-        if (!dm) { return; }
-
-        const { filePath: workflowFilePath, networkId } = layoutTargetOf(dm as any);
-
-        const positions = this.collectNodePositions(root);
-        const routes = this.collectEdgeRoutes(root);
-        await this.layoutPersistence.saveLayoutImmediate(workflowFilePath, networkId, positions, routes);
-
-        const layoutMeta = this.modelState.get('workflow.layoutPersistence') as
-            | {
-                workflowFilePath: string; networkId: string; hasPersistedLayout: boolean;
-                hasPersistedEdgeRoutes: boolean; didInitialLayout: boolean;
-                hasClientBounds: boolean; allowInitialLayoutPersistence: boolean;
-            }
-            | undefined;
-        if (layoutMeta) {
-            layoutMeta.hasPersistedEdgeRoutes = routes.size > 0;
-            this.modelState.set('workflow.layoutPersistence', layoutMeta);
-        }
+        // The layout meta is left alone: a reroute that routed nothing must not
+        // lower "has persisted edge routes" and arm the bootstrap reroute.
+        await persistLayout(this.modelState, this.layoutPersistence, { noteInMeta: false });
     }
 
     private routingSignature(points: { x: number; y: number }[] | undefined): string {

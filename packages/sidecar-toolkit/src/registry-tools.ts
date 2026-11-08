@@ -17,7 +17,7 @@
  * sidecar → reversible workspace edit (free undo/redo).
  */
 
-import type { SidecarOpResult } from './sidecar-graph-export.js';
+import { DEFAULT_EXPORT_OP, type SidecarOpResult } from './sidecar-graph-export.js';
 import type { InProcessChatTool } from '@dialogram/shared';
 import { summarizeValidation } from './validation-summary.js';
 
@@ -34,7 +34,7 @@ export type RegistrySidecarInvoke = (
 export interface RegistryToolsConfig {
   /** Sidecar transport seam (the profile binds it to `invokeSidecarOp` with a resolved command). */
   invoke: RegistrySidecarInvoke;
-  /** Graph-export op name (without prefix); differs per runtime. Defaults to `exportWorkflowGraph`. */
+  /** Graph-export op name (without prefix). Default `exportGraph`, which every sidecar answers to. */
   exportOp?: string;
   /** Arg key used to scope ops to a sub-graph (today `'workflow'`). */
   scopeArgKey: string;
@@ -59,7 +59,7 @@ function renderResult(result: SidecarOpResult): string {
 }
 
 export function createRegistryChatTools(cfg: RegistryToolsConfig): RegistryChatTool[] {
-  const exportOp = cfg.exportOp ?? 'exportWorkflowGraph';
+  const exportOp = cfg.exportOp ?? DEFAULT_EXPORT_OP;
 
   /** Map the exposed `network` arg onto the runtime's scope key; pass the rest through. */
   const scope = (args: Record<string, unknown>): Record<string, unknown> => {

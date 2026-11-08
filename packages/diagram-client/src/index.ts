@@ -21,11 +21,14 @@
  * `@eclipse-glsp/sprotty` directly — those extension points are GLSP's, and the
  * library must resolve to the SAME GLSP realm the consumer bundles.
  *
- * The stock starter (`WorkflowDiagramStarter` in `diagram-client.ts`) is NOT
- * exported: that module self-instantiates on import (it IS the shipped stock
- * webview entry), so importing it would boot the stock app. A custom-view
- * consumer brings its own `class extends GLSPStarter` and wires
- * `installDiagramWebviewChannel` + `createDiagramContainer` in it — see README.
+ * The stock start-up is NOT exported here. `startStockDiagram` lives in
+ * `./stock-starter` (imported by path, `@dialogram/diagram-client/stock-starter`)
+ * because it pulls in GLSP's VS Code webview integration, which only a bundle
+ * needs; the shipped entry, `diagram-client.ts`, is that call with nothing
+ * added and self-starts on import. A product whose bundle is the stock diagram
+ * plus modules of its own calls `startStockDiagram({ features })`; one that
+ * composes a diagram of its own brings a `class extends GLSPStarter` and wires
+ * `installDiagramWebviewChannel` + `createDiagramContainer` in it — see README §4.
  */
 
 // ── Stock model + view classes (reuse/extend the stock elements) ──────────────

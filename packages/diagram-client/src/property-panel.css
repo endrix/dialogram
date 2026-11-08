@@ -47,64 +47,6 @@
     container-name: pp-panel;
 }
 
-/* ============================================
-   Property Panel Tabs
-   ============================================ */
-
-.property-tabs-header {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    display: flex;
-    flex-direction: row;
-    overflow-x: auto;
-    border-bottom: 1px solid var(--vscode-panel-border);
-    background: var(--vscode-editorGroupHeader-tabsBackground, #2d2d2d);
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-    flex-shrink: 0;
-}
-
-.property-tabs-header::-webkit-scrollbar {
-    display: none;
-}
-
-.property-tab-btn {
-    flex: 0 0 auto;
-    padding: 8px 12px;
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid transparent;
-    color: var(--vscode-tab-inactiveForeground, #8b8b8b);
-    cursor: pointer;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-    text-transform: uppercase;
-    transition: color 0.15s ease, border-color 0.15s ease;
-    outline: none;
-}
-
-.property-tab-btn:hover {
-    color: var(--vscode-tab-hoverForeground, #cccccc);
-    background: var(--vscode-list-hoverBackground, rgba(90, 93, 94, 0.31));
-}
-
-.property-tab-btn.active {
-    color: var(--vscode-tab-activeForeground, #ffffff);
-    border-bottom: 1px solid var(--vscode-focusBorder, #007fd4);
-}
-
-.property-tab-content {
-    display: none;
-    flex-direction: column;
-    height: 100%;
-}
-
-.property-tab-content.active {
-    display: flex;
-}
-
 .property-panel.collapsed {
     transform: translateX(-100%);
 }
@@ -586,24 +528,6 @@
     background: transparent;
     border-bottom: 1px solid var(--pp-border);
     letter-spacing: 0.6px;
-}
-
-/* Tabs: minimal, accent underline. */
-.property-tabs-header {
-    background: transparent;
-    border-bottom: 1px solid var(--pp-border);
-}
-.property-tab-btn {
-    color: var(--pp-muted);
-    border-bottom-color: transparent;
-}
-.property-tab-btn:hover {
-    color: var(--vscode-foreground);
-    background: transparent;
-}
-.property-tab-btn.active {
-    color: var(--vscode-foreground);
-    border-bottom-color: var(--pp-accent);
 }
 
 /* Sections: plain header (no fill), hairline separators between sections. */

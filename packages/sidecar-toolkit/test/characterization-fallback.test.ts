@@ -195,11 +195,11 @@ describe('characterization (F6): wfpy CLI-failure falls back to the static sidec
         expect(root).toBeDefined();
         expect(collectIds(root)).toEqual(expect.arrayContaining(['n1', 'n2', 'e1']));
 
-        // PIN: the sidecar log shows the wfpy export op (exportWorkflowGraph, not
-        // exportNetworkGraph -- that op is calpy-only).
+        // PIN: the sidecar log shows the one export op every sidecar answers to
+        // (`exportGraph`; the product may name another through `exportOp`).
         const sidecarCalls = readLogLines(sidecarLog) as Array<{ op: string }>;
         expect(sidecarCalls).toHaveLength(1);
-        expect(sidecarCalls[0].op).toBe('wfpy.exportWorkflowGraph');
+        expect(sidecarCalls[0].op).toBe('wfpy.exportGraph');
 
         // PIN: the merged `runtime_plan_failed` diagnostic appears on the workflow file, carrying
         // the CLI failure message forward so the graph isn't a deceptively-clean view of a broken

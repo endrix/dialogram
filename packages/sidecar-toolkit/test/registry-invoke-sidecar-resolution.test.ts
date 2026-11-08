@@ -19,7 +19,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // the resolved command handed to it WITHOUT spawning a process.
 const graphExport = vi.hoisted(() => ({
     invokeSidecarOp: vi.fn(),
-    exportWorkflowGraph: vi.fn()
+    DEFAULT_EXPORT_OP: 'exportGraph'
 }));
 vi.mock('../src/sidecar-graph-export.js', () => graphExport);
 

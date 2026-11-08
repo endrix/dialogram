@@ -32,7 +32,7 @@ import { forwardExecutionOverlayEvents, forwardExecutionOverlayStates, type Exec
 import { registerStatusSource } from './status-source';
 import { readRequestedNetworkName, resolveDiagramOpenTarget, type DiagramOpenTargetArg } from './open-diagram-target';
 import { matchesSourceExtension, sourceFileNoun } from './source-extensions';
-import { normalizeSourceUriKey } from './uri-keys';
+import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
 import { executeViewerCommand, executeViewerOpen, executeViewerReveal } from './viewer-actions';
 import { decideDiagramOpen } from './diagram-open-decision';
 import { readMcpServerUrl } from './mcp-server-url';

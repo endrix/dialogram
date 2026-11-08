@@ -23,6 +23,7 @@
  * node family's colour and its badges.
  */
 import { inject, injectable, multiInject, optional } from 'inversify';
+import { findNodeIdByGraphId } from './producer-ids';
 import { EditorContextService, TYPES, type IActionDispatcher, type MouseListener } from '@eclipse-glsp/client';
 import { RequestModelAction } from '@eclipse-glsp/sprotty';
 import { CenterAction, SelectAction } from '@eclipse-glsp/protocol';
@@ -546,23 +547,6 @@ export function trailOfRoot(root: unknown): Array<{ workflowName: string; workfl
 }
 
 /** The id of the node the producer calls `graphId` (`wf:graphNodeId`, or the id itself), in a model root. */
-export function findNodeIdByGraphId(root: unknown, graphId: string): string | undefined {
-    const stack: any[] = [root];
-    while (stack.length > 0) {
-        const element = stack.pop();
-        if (!element) {
-            continue;
-        }
-        if (element.args?.[WorkflowDiagramMetadata.GRAPH_NODE_ID] === graphId || (element.id === graphId && element.type?.startsWith?.('node'))) {
-            return element.id;
-        }
-        for (const child of element.children ?? []) {
-            stack.push(child);
-        }
-    }
-    return undefined;
-}
-
 /** The id of the node whose entity (instance) name is `name`, in a model root. */
 export function findNodeIdByEntityName(root: unknown, name: string): string | undefined {
     const stack: any[] = [root];

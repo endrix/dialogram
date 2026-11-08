@@ -11,9 +11,9 @@
  * needs no `@dialogram/extension-core` dependency; the shell annotates the
  * result as `DiagramProfile` at the assignment site.
  */
-import type { DiagramCommandIds, EntityPaletteItemSpec, NodeFamilySpec, ProductClientBehavior } from '@dialogram/shared';
+import type { DiagramClientAssets, DiagramCommandIds, EntityPaletteItemSpec, NodeFamilySpec, ProductClientBehavior } from '@dialogram/shared';
 import * as vscode from 'vscode';
-import { invokeSidecarOp } from './sidecar-graph-export.js';
+import { DEFAULT_EXPORT_OP, invokeSidecarOp } from './sidecar-graph-export.js';
 import { createSourceReferenceContext } from './chat-source-reference.js';
 import { createRegistryChatTools, type RegistryChatTool } from './registry-tools.js';
 import { RESUME_TOOL } from './run-failure.js';
@@ -108,6 +108,14 @@ export interface SidecarProfileInput {
      * onto `DiagramProfile.clientStylesheets`.
      */
     clientStylesheets?: string[];
+    /**
+     * The product's own webview bundle, absolute paths: a script that calls
+     * `startStockDiagram` from `@dialogram/diagram-client/stock-starter` with
+     * the product's feature modules, its stylesheet and the directories they
+     * load from. Absent, the platform serves its stock bundle. Data only;
+     * threaded straight onto `DiagramProfile.clientAssets`.
+     */
+    clientAssets?: DiagramClientAssets;
 
     /**
      * A diagram that is a projection of a file drawn by the CLI, with nothing to
@@ -446,6 +454,7 @@ function sidecarRuntimeConfig(input: ResolvedSidecarProfileInput): SidecarRuntim
         },
         acceptedOperationPrefixes: input.acceptedOperationPrefixes,
         graphAcquisition: input.graphAcquisition,
+        exportOp: input.exportOp,
         cliGraphArgs: input.cliGraphArgs,
         cliHierarchyArgs: input.cliHierarchyArgs,
         graphExportFailureLabel: input.graphExportFailureLabel,
@@ -613,7 +622,7 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
             // export would have given it, from the CLI plan instead.
             ? {
                 graphContextProvider: async (file: string): Promise<string | undefined> => {
-                    const result = await invoke(file, input.exportOp ?? 'exportGraph', {});
+                    const result = await invoke(file, input.exportOp ?? DEFAULT_EXPORT_OP, {});
                     const graph = result.ok ? result.response?.diagnostic?.graph : undefined;
                     return graph && typeof graph === 'object' ? JSON.stringify(graph) : undefined;
                 }
@@ -724,6 +733,7 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
             ? { ...input.clientBehavior, resumeAtStep: true }
             : input.clientBehavior,
         clientStylesheets: input.clientStylesheets,
+        clientAssets: input.clientAssets,
         // Read-only, the server registers no writing operation handler at all
         // (the platform's own guard on `'read-only'`), so no create-node flow
         // and no capability probe can ever run.

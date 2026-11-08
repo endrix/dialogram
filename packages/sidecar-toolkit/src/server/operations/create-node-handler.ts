@@ -1,4 +1,5 @@
 import { CreateNodeOperation, TriggerNodeCreationAction } from '@eclipse-glsp/protocol';
+import { collectPythonFilesUnderRoots, findPackageRootForFile } from '../source-files';
 import { OperationHandler, MaybePromise, ModelState, Command } from '@eclipse-glsp/server';
 import { inject, injectable, optional } from 'inversify';
 import { promises as fs } from 'node:fs';
@@ -102,79 +103,6 @@ function discoverWorkflowTypeNamesInSource(
     return names;
 }
 
-async function fileExists(pathValue: string): Promise<boolean> {
-    try {
-        await fs.access(pathValue);
-        return true;
-    } catch {
-        return false;
-    }
-}
-
-async function findPackageRootForFile(filePath: string): Promise<string | undefined> {
-    let current = path.dirname(filePath);
-    for (;;) {
-        const marker = path.join(current, '__init__.py');
-        if (!(await fileExists(marker))) {
-            break;
-        }
-        const parent = path.dirname(current);
-        if (parent === current) {
-            return undefined;
-        }
-        current = parent;
-    }
-    return current;
-}
-
-async function collectPythonFilesUnderRoots(scanRoots: string[], currentFilePath: string): Promise<string[]> {
-    const files: string[] = [];
-    const seenFiles = new Set<string>();
-    const seenDirs = new Set<string>();
-    const normalizedCurrentPath = path.resolve(currentFilePath);
-
-    const visit = async (dirPath: string): Promise<void> => {
-        let entries: Array<{ name: string; isDirectory(): boolean; isFile(): boolean }>;
-        try {
-            entries = await fs.readdir(dirPath, { withFileTypes: true }) as Array<{ name: string; isDirectory(): boolean; isFile(): boolean }>;
-        } catch {
-            return;
-        }
-
-        for (const entry of entries) {
-            const entryPath = path.join(dirPath, entry.name);
-            if (entry.isDirectory()) {
-                if (EXCLUDED_SCAN_DIRS.has(entry.name)) {
-                    continue;
-                }
-                await visit(entryPath);
-                continue;
-            }
-            if (!entry.isFile() || !entry.name.endsWith('.py')) {
-                continue;
-            }
-            const normalizedPath = path.resolve(entryPath);
-            if (normalizedPath === normalizedCurrentPath || seenFiles.has(normalizedPath)) {
-                continue;
-            }
-            seenFiles.add(normalizedPath);
-            files.push(normalizedPath);
-        }
-    };
-
-    for (const root of scanRoots) {
-        const normalizedRoot = path.resolve(root);
-        if (seenDirs.has(normalizedRoot)) {
-            continue;
-        }
-        seenDirs.add(normalizedRoot);
-        await visit(normalizedRoot);
-    }
-
-    files.sort((left, right) => left.localeCompare(right));
-    return files;
-}
-
 @injectable()
 export class CreateNodeOperationHandler extends OperationHandler {
     private static readonly projectTypeCache = new Map<string, ProjectTypeCacheEntry>();
@@ -220,7 +148,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
 
     createCommand(operation: CreateNodeOperation): MaybePromise<Command | undefined> {
         const sourceUri = this.modelState.root.args?.['sourceUri'] as string | undefined;
-        if (!sourceUri || !sourceUri.endsWith('.py')) {
+        if (!sourceUri) {
             return undefined;
         }
         return this.createPythonCommand(operation, sourceUri);
@@ -1105,7 +1033,8 @@ export class CreateNodeOperationHandler extends OperationHandler {
             }
         }
 
-        return collectPythonFilesUnderRoots(scanRoots, currentFilePath);
+        const files = await collectPythonFilesUnderRoots(scanRoots, currentFilePath, { excludedDirs: EXCLUDED_SCAN_DIRS, skipDotDirs: false });
+        return files.sort((left, right) => left.localeCompare(right));
     }
 
     private extractDiagnosticStringArray(result: SidecarInvocationResult, field: 'types' | 'names', action: string): string[] | undefined {

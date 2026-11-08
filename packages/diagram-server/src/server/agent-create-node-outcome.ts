@@ -5,7 +5,7 @@ import { injectable } from 'inversify';
  * the operation handler (which actually rewrites the source) back to the MCP `create-nodes` tool
  * handler (which must report an honest result to the agent).
  *
- * Why this exists: in dialogram a create rewrites the `.py` source through a reversible workspace
+ * Why this exists: in dialogram a create rewrites the source file through a reversible workspace
  * edit and the GModel is only re-sourced on a LATER reload cycle — never synchronously within the
  * operation dispatch. The stock GLSP-MCP `create-nodes` handler infers success from a
  * `modelState.index` diff taken immediately after dispatch, so in dialogram that diff is ALWAYS
