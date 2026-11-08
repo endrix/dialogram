@@ -9,13 +9,11 @@
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { URI } from 'vscode-uri';
-import { WorkflowDiagramMetadata, type WorkflowRelationshipInfo, type WorkflowCallerReference } from '@dialogram/shared';
-import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
+import { unqualifiedName, WorkflowDiagramMetadata, type WorkflowRelationshipInfo, type WorkflowCallerReference } from '@dialogram/shared';
 import { countParenDelta, escapeRegExp, stripPythonCommentsAndStrings } from './python-text';
-import { collectPythonFilesUnderRoots as collectSourceFiles, fileExists, findPackageRootForFile } from './source-files';
+import { collectPythonFilesUnderRoots, fileExists, findPackageRootForFile } from './source-files';
 
 export type { WorkflowRelationshipInfo, WorkflowCallerReference };
-export { countParenDelta, escapeRegExp, fileExists, findPackageRootForFile, normalizeSourceUriKey, stripPythonCommentsAndStrings };
 
 /**
  * Directories a caller-reference scan never descends into: they never hold
@@ -29,17 +27,18 @@ const CALLER_SCAN_EXCLUDED_DIRS: ReadonlySet<string> = new Set([
 ]);
 
 /** The `.py` files a caller-reference scan reads, bounded by the two ceilings. */
-export function collectPythonFilesUnderRoots(
+export function callerScanSourceFiles(
     scanRoots: string[],
     excludeFilePath: string,
     maxFiles: number = MAX_SOURCE_FILES_PER_SCAN,
     maxDirs: number = MAX_DIRS_PER_SCAN
 ): Promise<string[]> {
-    return collectSourceFiles(scanRoots, excludeFilePath, {
+    return collectPythonFilesUnderRoots(scanRoots, excludeFilePath, {
         excludedDirs: CALLER_SCAN_EXCLUDED_DIRS,
         maxFiles,
         maxDirs,
-        scanLabel: 'caller-reference scan'
+        scanLabel: 'caller-reference scan',
+        ceilingHint: 'cross-file "Used By" references may be incomplete for this project'
     });
 }
 
@@ -767,7 +766,5 @@ export function normalizeWorkflowReferenceName(value: string | undefined): strin
     if (trimmed === '') {
         return undefined;
     }
-    const afterDots = trimmed.split('.').pop() ?? trimmed;
-    const parts = afterDots.split('__');
-    return parts[parts.length - 1]?.trim() || undefined;
+    return unqualifiedName(trimmed).trim() || undefined;
 }

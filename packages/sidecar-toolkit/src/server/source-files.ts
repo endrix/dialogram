@@ -37,10 +37,10 @@ export async function findPackageRootForFile(filePath: string): Promise<string |
     return current;
 }
 
-/** `env` with `packageRoot` first on `PYTHONPATH`; `env` itself when there is no root. */
+/** A copy of `env` with `packageRoot` first on `PYTHONPATH`; a plain copy when there is no root. */
 export function withPythonPackageRoot(env: NodeJS.ProcessEnv, packageRoot: string | undefined): NodeJS.ProcessEnv {
     if (!packageRoot) {
-        return env;
+        return { ...env };
     }
     const existing = env.PYTHONPATH;
     return {
@@ -60,6 +60,8 @@ export interface CollectSourceFilesOptions {
     maxDirs?: number;
     /** What the ceiling warning calls the scan, e.g. `caller-reference scan`. */
     scanLabel?: string;
+    /** What the ceiling warning says follows from stopping early. */
+    ceilingHint?: string;
 }
 
 /**
@@ -78,6 +80,7 @@ export async function collectPythonFilesUnderRoots(
     const maxFiles = options.maxFiles ?? Infinity;
     const maxDirs = options.maxDirs ?? Infinity;
     const label = options.scanLabel ?? 'source scan';
+    const hint = options.ceilingHint ?? 'the files past it were not read';
     const targetPath = path.resolve(excludeFilePath);
     let ceilingHit = false;
     let dirsVisited = 0;
@@ -90,10 +93,7 @@ export async function collectPythonFilesUnderRoots(
         if (dirsVisited > maxDirs) {
             ceilingHit = true;
             // eslint-disable-next-line no-console
-            console.warn(
-                `[dialogram] ${label} hit the ${maxDirs}-directory ceiling under `
-                + `${root}; cross-file "Used By" references may be incomplete for this project.`
-            );
+            console.warn(`[dialogram] ${label} hit the ${maxDirs}-directory ceiling under ${root}; ${hint}.`);
             return;
         }
         let entries: Array<{ name: string; isDirectory(): boolean; isFile(): boolean }>;
@@ -126,10 +126,7 @@ export async function collectPythonFilesUnderRoots(
             if (files.length >= maxFiles) {
                 ceilingHit = true;
                 // eslint-disable-next-line no-console
-                console.warn(
-                    `[dialogram] ${label} hit the ${maxFiles}-file ceiling under `
-                    + `${root}; cross-file "Used By" references may be incomplete for this project.`
-                );
+                console.warn(`[dialogram] ${label} hit the ${maxFiles}-file ceiling under ${root}; ${hint}.`);
                 return;
             }
         }

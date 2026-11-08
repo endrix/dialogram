@@ -8,12 +8,7 @@
  * instead of being duplicated across the model-source seam.
  */
 
-
-/**
- * Normalize a source URI to a canonical key (absolute, scheme-normalized, no query/fragment).
- * Small pure helper kept local to this module so it has no dependency on the language-specific
- * source-analysis module (which now lives in the language toolkit).
- */
+// The source-URI key, shared with the host and the toolkit (see `uri-keys.ts`).
 import { normalizeSourceUriKey } from './uri-keys';
 export { normalizeSourceUriKey };
 

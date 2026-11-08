@@ -31,20 +31,19 @@ import {
     parseViewArg
 } from '@dialogram/diagram-server/server/graph-load-request-options';
 import {
-    findPackageRootForFile,
     pickDefaultWorkflowName,
     resolveWorkflowDefinitionRange,
     analyzeWorkflowRelationships,
-    collectPythonFilesUnderRoots,
+    callerScanSourceFiles,
     discoverCrossFileWorkflowCallers,
     buildViewerOverlayAstPathCandidates,
     buildViewerOverlaySignatureCandidates,
     buildViewerOverlayNodeIdentityCandidates,
     resolveViewerOverlayActiveEntityName,
-    normalizeWorkflowReferenceName,
-    normalizeSourceUriKey
+    normalizeWorkflowReferenceName
 } from './source-analysis';
-import { withPythonPackageRoot } from './source-files';
+import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
+import { findPackageRootForFile, withPythonPackageRoot } from './source-files';
 import { graphPayloadToDoc } from './graph-payload-to-doc';
 import {
     type SidecarRuntimeConfig,
@@ -100,7 +99,7 @@ export class SidecarModelSource implements DiagramModelSource {
         analyzeWorkflowRelationships,
         collectSourceFilesUnderRoots: this.cfg.navigation === 'none'
             ? async () => []
-            : collectPythonFilesUnderRoots,
+            : callerScanSourceFiles,
         discoverCrossFileWorkflowCallers: this.cfg.navigation === 'none'
             ? async () => []
             : discoverCrossFileWorkflowCallers,
