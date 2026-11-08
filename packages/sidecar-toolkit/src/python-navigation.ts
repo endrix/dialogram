@@ -5,7 +5,8 @@
  *
  * {@link createPythonNavigationProvider} implements the neutral
  * {@link DiagramNavigationProvider} seam; the profile assembler supplies it as
- * `DiagramProfile.navigation` unless the product opts out.
+ * `DiagramProfile.navigation` when the product names `navigation: 'python'`
+ * (the default is none).
  */
 import * as vscode from 'vscode';
 import * as path from 'node:path';
@@ -14,7 +15,8 @@ import type { DiagramNavigationProvider, DiagramNavigationTarget } from '@dialog
 import { extractDecoratedDefinitionNames } from './python-diagram-definitions.js';
 import { candidateModuleFiles, findImportingModules } from './python-import-resolution.js';
 import { pickBestWorkspaceSymbol } from './python-symbol-ranking.js';
-import { normalizeSourceUriKey } from './uri-keys.js';
+import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
+import { escapeRegExp } from './server/python-text.js';
 
 type SerializedPosition = { line: number; character: number };
 type SerializedRange = { start: SerializedPosition; end: SerializedPosition };
@@ -351,7 +353,7 @@ function findPythonCallableOnLine(lineText: string, preferredName?: string): Pyt
     }
 
     if (preferredName && preferredName.trim() !== '') {
-        const escapedPreferred = escapedRegexSymbol(preferredName.trim());
+        const escapedPreferred = escapeRegExp(preferredName.trim());
         const preferredRegex = new RegExp(`\\b${escapedPreferred}\\b`);
         const preferredMatch = preferredRegex.exec(lineText);
         if (preferredMatch && typeof preferredMatch.index === 'number') {
@@ -373,10 +375,6 @@ function findPythonCallableOnLine(lineText: string, preferredName?: string): Pyt
     }
 
     return undefined;
-}
-
-function escapedRegexSymbol(symbol: string): string {
-    return symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 async function resolveSourcePositionForDefinition(
@@ -529,7 +527,7 @@ async function definitionTargetMatchesSymbolHint(
     }
 
     const symbol = symbolHint.trim();
-    const escaped = escapedRegexSymbol(symbol);
+    const escaped = escapeRegExp(symbol);
     const declarationPattern = new RegExp(`^\\s*(?:def|class)\\s+${escaped}\\b`);
 
     try {

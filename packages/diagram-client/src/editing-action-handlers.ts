@@ -6,7 +6,7 @@ import { clientBehavior, commandId, settingsNamespace } from './profile';
 import { rerunActorFor, WorkflowNavigationUi } from './navigation-ui';
 import { NETWORK_NAME_ARG, OPEN_DIAGRAM_ARG } from './network-navigation-target';
 import { FocusAfterLoadService } from './focus-after-load';
-import { EXECUTION_OVERLAY_ACTION_KIND, type ExecutionOverlayActionPayload } from '@dialogram/shared';
+import { EXECUTION_OVERLAY_ACTION_KIND, type ExecutionOverlayActionPayload, unqualifiedName } from '@dialogram/shared';
 import { showExecutionStates } from './execution-states';
 
 export type WorkflowAgentSkill = {
@@ -515,11 +515,6 @@ export class WorkflowEditParametersActionHandler implements IActionHandler {
     }
 }
 
-function unqualifyName(name: string): string {
-    const afterDots = name.split('.').pop() ?? name;
-    const parts = afterDots.split('__');
-    return parts.length > 0 ? parts[parts.length - 1] : afterDots;
-}
 
 function toWfStringLiteral(value: string): string {
     const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -590,7 +585,6 @@ export class WorkflowEditAnnotationsActionHandler implements IActionHandler {
             items: [
                 { id: 'tool', label: '@tool (external execution)', description: 'cmd, args, inheritStdio, ...' },
                 { id: 'viewer', label: '@viewer (open outputs in VS Code)', description: 'open, diff, openWith (viewType)' },
-                { id: 'path', label: '@path (external tool search paths)', description: 'paths=["./bin", "./tools"]' },
                 { id: 'custom', label: 'Custom annotation…', description: 'Enter any name and arguments' }
             ],
             placeHolder: 'Choose an annotation template'
@@ -725,48 +719,13 @@ export class WorkflowEditAnnotationsActionHandler implements IActionHandler {
                 if (title === undefined) return;
                 annotationText = `@viewer(\n    action="diff",\n    inputs=${inputsExpr.trim()},\n    token="last",\n    title=${toWfStringLiteral(title)}\n)`;
             }
-        } else if (template === 'path') {
-            annotationName = 'path';
-
-            const paths: string[] = [];
-
-            for (;;) {
-                const next = await VscodeUi.instance.inputBox({
-                    prompt: paths.length === 0 ? 'Add path (e.g. ./bin)' : 'Add another path (optional)'
-                });
-                if (next === undefined) return;
-                const trimmed = next.trim();
-                if (trimmed) {
-                    paths.push(trimmed);
-                }
-
-                if (paths.length === 0) {
-                    continue;
-                }
-
-                const addMore = await VscodeUi.instance.quickPick({
-                    items: [
-                        { id: 'yes', label: 'Add another path' },
-                        { id: 'no', label: 'Done' }
-                    ],
-                    placeHolder: 'Add another path?'
-                });
-                if (addMore !== 'yes') {
-                    break;
-                }
-            }
-
-            if (paths.length === 0) return;
-
-            const listExpr = `[${paths.map(p => toWfStringLiteral(p)).join(', ')}]`;
-            annotationText = `@path(\n    paths=${listExpr}\n)`;
         } else {
             const name = await VscodeUi.instance.inputBox({
                 prompt: 'Annotation name (without @)',
                 value: ''
             });
             if (name === undefined) return;
-            annotationName = unqualifyName(name.trim());
+            annotationName = unqualifiedName(name.trim());
             if (!annotationName) return;
 
             const argsRaw = await VscodeUi.instance.inputBox({

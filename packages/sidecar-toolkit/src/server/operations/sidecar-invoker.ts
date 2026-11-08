@@ -2,16 +2,11 @@ import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
 import { URI } from 'vscode-uri';
 import { SidecarRuntimeService, type CreateNodeStrings, type CreateNodeBehavior, CreateNodeVariant } from '../sidecar-runtime-config';
-import { describeChildFailure, runChildProcess } from '../../run-child-process';
 import { parseCapabilitiesDiagnostic, type SidecarEdgeRole } from '../../sidecar-capabilities';
+import { invokeSidecar, type SidecarOpResult } from '../../sidecar-transport';
 
-export interface SidecarInvocationResult {
-    ok: boolean;
-    response?: any;
-    message?: string;
-    code?: string;
-    stderr?: string;
-}
+/** What one sidecar request came back as; the transport's result. */
+export type SidecarInvocationResult = SidecarOpResult;
 
 @injectable()
 export class SidecarInvoker {
@@ -122,64 +117,20 @@ export class SidecarInvoker {
     }
 
     private async invokeSidecar(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<SidecarInvocationResult> {
+        let command: string;
         try {
-            const command = this.sidecarCommand(vscode.Uri.parse(sourceUri));
-            const input = JSON.stringify({
-                file: URI.parse(sourceUri).fsPath,
-                op: this.rewriteSidecarOperation(payload.op),
-                args: payload.args
-            }) + '\n';
-
-            // Every diagram edit comes through here, and the caller awaits it inside a
-            // workspace edit. A child that never settles used to strand the edit with no
-            // error and no way to retry — including the plain case of an unstartable
-            // command, whose 'error' event had no listener at all.
-            const result = await runChildProcess(command, [], { input });
-            const { stdout, stderr } = result;
-            const failure = describeChildFailure(command, result);
-            if (failure) {
-                return {
-                    ok: false,
-                    message: result.timedOut
-                        ? `${failure} (while handling ${payload.op})`
-                        : result.spawnError
-                          ? failure
-                          : `Sidecar exited with code ${result.code} while handling ${payload.op}.`,
-                    stderr: stderr.trim() || undefined
-                };
-            }
-            if (stdout.trim() === '') {
-                return { ok: true };
-            }
-
-            try {
-                const response = JSON.parse(stdout.trim());
-                if (response?.status === 'ok') {
-                    return { ok: true, response };
-                }
-                return {
-                    ok: false,
-                    response,
-                    message: typeof response?.message === 'string'
-                        ? response.message
-                        : `Sidecar rejected ${payload.op}.`,
-                    code: typeof response?.diagnostic?.code === 'string'
-                        ? response.diagnostic.code
-                        : undefined,
-                    stderr: stderr.trim() || undefined
-                };
-            } catch {
-                return {
-                    ok: false,
-                    message: `Sidecar returned invalid JSON while handling ${payload.op}.`,
-                    stderr: stderr.trim() || undefined
-                };
-            }
+            command = this.sidecarCommand(vscode.Uri.parse(sourceUri));
         } catch (error) {
-            return {
-                ok: false,
-                message: error instanceof Error ? error.message : `Unable to start sidecar for ${payload.op}.`
-            };
+            return { ok: false, message: error instanceof Error ? error.message : `Unable to start sidecar for ${payload.op}.` };
         }
+        // Every diagram edit comes through here, and the caller awaits it inside a
+        // workspace edit, so the transport always answers: a child that never
+        // settles, or never starts, is a message, not a stranded edit.
+        return invokeSidecar({
+            command,
+            file: URI.parse(sourceUri).fsPath,
+            op: this.rewriteSidecarOperation(payload.op),
+            args: payload.args
+        });
     }
 }

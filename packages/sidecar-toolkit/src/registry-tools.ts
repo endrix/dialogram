@@ -17,33 +17,12 @@
  * sidecar → reversible workspace edit (free undo/redo).
  */
 
-import type { SidecarOpResult } from './sidecar-graph-export.js';
+import { DEFAULT_EXPORT_OP, type SidecarOpResult } from './sidecar-graph-export.js';
+import type { InProcessChatTool } from '@dialogram/shared';
 import { summarizeValidation } from './validation-summary.js';
 
-/**
- * Structural twin of the platform's `InProcessChatTool` (kept local so the
- * toolkit needs no `@dialogram/extension-core` dependency). `handler` receives
- * the session's absolute file path and the tool args and returns text.
- */
-export interface RegistryChatTool {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  handler(file: string, args: Record<string, unknown>): Promise<string>;
-  /**
-   * When `true`, this tool WRITES source (via the sidecar) and MUST NOT be bridged onto
-   * the read-only GLSP-MCP surface — the platform adapter's handlers inherit
-   * `readOnlyHint = true`, so an auto-approving MCP client could otherwise mutate files
-   * unconfirmed. Locked design (approach B): mutation-capable tools ride the GLSP-MCP
-   * BUILT-IN operation tools only; the bridge filters on this explicit marker (not a name
-   * match — see `bridgeableChatTools`).
-   *
-   * No assembled registry tool sets this (type creation is a reversible GLSP operation tool).
-   * The marker + filter are KEPT as a DEFENSIVE guardrail so any future source-writing chat
-   * tool is still excluded from the read-only bridge.
-   */
-  mutates?: boolean;
-}
+/** A registry tool is an in-process chat tool, the platform's own shape: `handler` gets the session's file and the args and returns text. */
+export type RegistryChatTool = InProcessChatTool;
 
 /** Injected sidecar transport: invoke `<prefix>.<opName>` for `file` with `args`. */
 export type RegistrySidecarInvoke = (
@@ -55,7 +34,7 @@ export type RegistrySidecarInvoke = (
 export interface RegistryToolsConfig {
   /** Sidecar transport seam (the profile binds it to `invokeSidecarOp` with a resolved command). */
   invoke: RegistrySidecarInvoke;
-  /** Graph-export op name (without prefix); differs per runtime. Defaults to `exportWorkflowGraph`. */
+  /** Graph-export op name (without prefix). Default `exportGraph`, which every sidecar answers to. */
   exportOp?: string;
   /** Arg key used to scope ops to a sub-graph (today `'workflow'`). */
   scopeArgKey: string;
@@ -80,7 +59,7 @@ function renderResult(result: SidecarOpResult): string {
 }
 
 export function createRegistryChatTools(cfg: RegistryToolsConfig): RegistryChatTool[] {
-  const exportOp = cfg.exportOp ?? 'exportWorkflowGraph';
+  const exportOp = cfg.exportOp ?? DEFAULT_EXPORT_OP;
 
   /** Map the exposed `network` arg onto the runtime's scope key; pass the rest through. */
   const scope = (args: Record<string, unknown>): Record<string, unknown> => {

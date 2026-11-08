@@ -210,8 +210,8 @@ export interface SidecarRuntimeConfig {
     cliCommandSettingKey: string;
     cliCommandDefault: string;
     cliPythonModule?: string;
-    /** `'none'` turns off the Python caller scan (`discoverCrossFileWorkflowCallers`)
-     *  and the `.py` workspace walk behind it; default `'python'`. */
+    /** `'python'` turns on the Python caller scan (`discoverCrossFileWorkflowCallers`)
+     *  and the `.py` workspace walk behind it; default `'none'`. */
     navigation?: 'python' | 'none';
     /**
      * `true` publishes a graph document's own `errors` (the compiler's, at the
@@ -226,6 +226,8 @@ export interface SidecarRuntimeConfig {
     acceptedOperationPrefixes: string[];
     /** Graph acquisition strategy: 'sidecar-export' or 'cli-plan'. */
     graphAcquisition: 'sidecar-export' | 'cli-plan';
+    /** The sidecar's graph-export op (without prefix). Default `exportGraph`, which every sidecar answers to. */
+    exportOp?: string;
     /** argv builder for the 'cli-plan' path, e.g. (file) => ['plan', file, '--format', 'graph', '--best-effort']. */
     cliGraphArgs?: (file: string, requestedWorkflow?: string) => string[];
     /**
@@ -336,8 +338,11 @@ export function getGraphLoadTimeoutMs(
 }
 
 /** Resolve the CLI command from VS Code settings (falling back to the default). */
+/** The four fields the CLI command is resolved from; a run-driver config has them too. */
+export type CliCommandConfig = Pick<SidecarRuntimeConfig, 'settingsNamespace' | 'cliCommandSettingKey' | 'cliCommandDefault' | 'cliPythonModule'>;
+
 export function getCliCommand(
-    cfg: SidecarRuntimeConfig,
+    cfg: CliCommandConfig,
     vscodeModule: typeof import('vscode'),
     scopeUri?: import('vscode').Uri
 ): string {
@@ -348,7 +353,7 @@ export function getCliCommand(
 
 /** Resolve the CLI command + args-prefix (e.g. `python -m <module>` vs a bare binary). */
 export function getCliInvocation(
-    cfg: SidecarRuntimeConfig,
+    cfg: CliCommandConfig,
     vscodeModule: typeof import('vscode'),
     scopeUri?: import('vscode').Uri
 ): { cmd: string; argsPrefix: string[] } {
