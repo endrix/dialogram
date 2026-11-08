@@ -11,15 +11,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
 import { resetRegisteredCommands } from './vscode-mock';
 
-/** Each spawn: the first fails (leaving a record and a three-step trace), later ones succeed. */
+/**
+ * Each spawn: a plain run fails (leaving a record and a three-step trace), a
+ * resumed one succeeds. Decided by the arguments, not by a count: a count is
+ * shared by every test in the file, so a resumed run that started late counted
+ * as the next test's first run, which then did not fail.
+ */
 const spawns: string[][] = [];
+let openChildren = 0;
 vi.mock('../src/process-control.js', () => ({
     spawnWorkflowProcess: (invocation: { args: string[] }) => {
         spawns.push(invocation.args);
+        openChildren++;
         const child: any = new EventEmitter();
         child.stdout = new EventEmitter();
         child.stderr = new EventEmitter();
-        const fails = spawns.length === 1;
+        const fails = !invocation.args.includes('--resume-from');
         if (fails) {
             const outDir = invocation.args[invocation.args.indexOf('--out-dir') + 1];
             const runDir = path.join(outDir, 'r1');
@@ -37,7 +44,10 @@ vi.mock('../src/process-control.js', () => ({
                 steps: [1, 2, 3].map(step => ({ step, actorInstanceName: 'a', journalSeq: step }))
             }));
         }
-        setTimeout(() => child.emit('close', fails ? 1 : 0, null), 0);
+        setTimeout(() => {
+            child.emit('close', fails ? 1 : 0, null);
+            openChildren--;
+        }, 0);
         return child;
     },
     requestWorkflowStop: () => true
@@ -82,6 +92,7 @@ const originals: any = {};
 beforeEach(() => {
     resetRegisteredCommands();
     spawns.length = 0;
+    openChildren = 0;
     asked = [];
     originals.info = (vscode.window as any).showInformationMessage;
     originals.error = (vscode.window as any).showErrorMessage;
@@ -106,6 +117,18 @@ async function failRun(): Promise<string> {
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 30));
 
+/**
+ * The resume starts its run without awaiting it (a run can outlast a tool
+ * call), so a test that expects the resumed run waits for it to be spawned and
+ * to end, however long a loaded machine takes: a fixed pause let it start in
+ * the next test.
+ */
+async function resumedRun(): Promise<void> {
+    await vi.waitFor(() => expect(spawns).toHaveLength(2), { timeout: 5000 });
+    await vi.waitFor(() => expect(openChildren).toBe(0), { timeout: 5000 });
+    await settle();
+}
+
 describe('resuming a failed run when the agent proposes it', () => {
     it('asks the person, then resumes from the last completed step', async () => {
         makeDriver();
@@ -113,7 +136,7 @@ describe('resuming a failed run when the agent proposes it', () => {
         answer = 'Resume';
 
         const result = await vscode.commands.executeCommand<string>(resumeFailedRunCommandId(RUN_CMD), { file });
-        await settle();
+        await resumedRun();
 
         expect(asked.some(q => q.includes('Resume the run of top from where it failed (x (in m))'))).toBe(true);
         expect(result).toContain('resuming from where it failed');
@@ -141,7 +164,7 @@ describe('resuming a failed run when the agent proposes it', () => {
         answer = 'Resume';
 
         await vscode.commands.executeCommand(resumeFailedRunCommandId(RUN_CMD), { file: '/w/layers/nested.py' });
-        await settle();
+        await resumedRun();
 
         expect(spawns).toHaveLength(2);
     });
@@ -151,7 +174,7 @@ describe('resuming a failed run when the agent proposes it', () => {
         const file = await failRun();
         answer = 'Resume';
         await vscode.commands.executeCommand(resumeFailedRunCommandId(RUN_CMD), { file });
-        await settle(); // the resumed run succeeds
+        await resumedRun(); // the resumed run succeeds
 
         const again = await vscode.commands.executeCommand<string>(resumeFailedRunCommandId(RUN_CMD), { file });
         expect(again).toContain('no failed run to resume');
@@ -175,7 +198,7 @@ describe('asked in the chat', () => {
         const file = await failRun();
 
         const result = await vscode.commands.executeCommand<string>(resumeFailedRunCommandId(RUN_CMD), { file });
-        await settle();
+        await resumedRun();
 
         expect(confirms).toHaveLength(1);
         expect(confirms[0].sourceUri).toContain('top.py');
@@ -199,7 +222,7 @@ describe('asked in the chat', () => {
         const file = await failRun();
         answer = 'Resume';
         await vscode.commands.executeCommand(resumeFailedRunCommandId(RUN_CMD), { file });
-        await settle();
+        await resumedRun();
         expect(asked.some(q => q.startsWith("The chat's fix"))).toBe(true);
         expect(spawns).toHaveLength(2);
     });
