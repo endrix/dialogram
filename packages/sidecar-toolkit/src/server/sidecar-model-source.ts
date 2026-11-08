@@ -89,7 +89,7 @@ export class SidecarModelSource implements DiagramModelSource {
     constructor(private readonly cfg: SidecarRuntimeConfig) {}
 
     /** Language-specific source-analysis capabilities, delegating to the moved
-     *  analysis module. With `navigation: 'none'` the two that walk the
+     *  analysis module. Unless `navigation` is `'python'`, the two that walk the
      *  workspace's Python files answer empty: for a runtime whose "used by" comes
      *  from its own hierarchy export, a `.py` scan finds nothing and costs a walk. */
     readonly analysis: GraphSourceAnalysis = {
@@ -97,10 +97,10 @@ export class SidecarModelSource implements DiagramModelSource {
         pickDefaultWorkflowName,
         resolveWorkflowDefinitionRange,
         analyzeWorkflowRelationships,
-        collectSourceFilesUnderRoots: this.cfg.navigation === 'none'
+        collectSourceFilesUnderRoots: this.cfg.navigation !== 'python'
             ? async () => []
             : callerScanSourceFiles,
-        discoverCrossFileWorkflowCallers: this.cfg.navigation === 'none'
+        discoverCrossFileWorkflowCallers: this.cfg.navigation !== 'python'
             ? async () => []
             : discoverCrossFileWorkflowCallers,
         buildOverlayAstPathCandidates: buildViewerOverlayAstPathCandidates,

@@ -67,6 +67,21 @@ platform API version.
 
 ### Changed
 
+- **Breaking for a profile that relied on the defaults: the Entities palette,
+  navigation and the source MIME type are the product's.** The tool-palette
+  provider no longer hard-codes wfpy's five rows (Task, Tool, Agent, Viewer,
+  Workflow) or, behind `useAlternateEntityPalette`, calpy's two (Actor,
+  Network): Entities are the profile's `entityPaletteItems`, in its order, and
+  a profile with none shows no Entities header. `useAlternateEntityPalette`
+  and `platformEntityItems` are deprecated, accepted and ignored. The Python
+  navigation engine, and the Python caller scan behind "used by", run only
+  for `navigation: 'python'` (the default is `'none'`), and the source goes
+  to the agent as `text/plain` unless the profile names a MIME type. sv, vhdl
+  and ndf set all three already; wfpy-ide (endrix/wfpy-ide#23) and
+  streamblocks-ide (streamblocks/streamblocks-ide#9) declare them now. Ship
+  those first; the release that ships this bumps the API to 0.9, so a
+  product built for 0.8 fails the version check instead of silently losing
+  its palette.
 - **One declaration of the webview's behaviour flags, the command ids and
   the in-process chat tool.** `DiagramClientBehavior` (with
   `AcpConnectorInfo`), `DiagramCommandIds` and `InProcessChatTool` live in

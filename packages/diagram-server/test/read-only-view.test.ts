@@ -32,7 +32,11 @@ const rootArgs = (meta?: Record<string, unknown>): Record<string, unknown> | und
 
 function palette(root: unknown): any {
     const provider: any = new WorkflowToolPaletteItemProvider();
-    provider.storageOptions = { settingsNamespace: 'demo', operationPrefix: 'demo' };
+    provider.storageOptions = {
+        settingsNamespace: 'demo',
+        operationPrefix: 'demo',
+        entityPaletteItems: [{ elementTypeId: 'node:actor', label: 'Thing', description: 'x' }]
+    };
     provider.modelState = { root };
     return provider;
 }

@@ -185,18 +185,14 @@ export interface SidecarProfileInput {
      * honoured: alone it is the one extension, beside this it is ignored.
      */
     sourceExtensions?: string[];
+    /** @deprecated The platform's two Entities lists are gone; declare the rows in `entityPaletteItems`. Accepted and ignored. */
     useAlternateEntityPalette?: boolean;
     /** `false` empties the creation palette — for a diagram that is a projection
      *  of a source artifact and so has nothing to create. Default `true`. */
     supportsElementCreation?: boolean;
-    /** Extra Entities-palette entries this product contributes; plain data. */
+    /** The Entities palette: the product's rows, in its order. Plain data; the platform adds none of its own. */
     entityPaletteItems?: EntityPaletteItemSpec[];
-    /**
-     * Whether the platform's own Entities entries are offered beside
-     * `entityPaletteItems`. Default `true`. A product whose vocabulary is not
-     * the platform's (a hardware module is neither a task nor an actor) sets
-     * `false` and the palette's Entities are its own entries alone.
-     */
+    /** @deprecated The platform has no Entities entries of its own any more. Accepted and ignored. */
     platformEntityItems?: boolean;
     nodeFamilies?: NodeFamilySpec[];
     /**
@@ -249,10 +245,11 @@ export interface SidecarProfileInput {
     };
 
     /**
-     * How cross-file navigation targets are resolved. `'python'` (the default)
-     * uses the Python symbol providers and a `.py` workspace search, and scans
-     * sibling Python files for callers; `'none'` resolves nothing itself: the
-     * runtime emits absolute source locators and the platform navigates to them.
+     * How cross-file navigation targets are resolved. `'python'` uses the
+     * Python symbol providers and a `.py` workspace search, and scans sibling
+     * Python files for callers; `'none'` (the default) resolves nothing itself:
+     * the runtime emits absolute source locators and the platform navigates to
+     * them. A Python product names `'python'`.
      */
     navigation?: 'python' | 'none';
 
@@ -309,7 +306,7 @@ export interface SidecarProfileInput {
         fullName: string;
         skill?: string;
         nodeCommands?: Array<{ command: string; nodeType: string; description: string }>;
-        /** The MIME type the agent receives the source file as. Default `text/x-python`. */
+        /** The MIME type the agent receives the source file as. Default `text/plain`; a Python product names `text/x-python`. */
         sourceMimeType?: string;
         /**
          * How the session gets its source. `embed` (the default) attaches the
@@ -608,7 +605,7 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
             const context = createSourceReferenceContext({
                 invoke,
                 exportOp: input.exportOp,
-                sourceMimeType: input.chat.sourceMimeType ?? 'text/x-python'
+                sourceMimeType: input.chat.sourceMimeType ?? 'text/plain'
             });
             return {
                 sourceMaxBytes: 0,
@@ -745,9 +742,7 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
         storageOptions: {
             settingsNamespace: input.settingsNamespace,
             operationPrefix: input.sidecarOperationPrefix,
-            useAlternateEntityPalette: input.useAlternateEntityPalette,
             entityPaletteItems: input.entityPaletteItems,
-            platformEntityItems: input.platformEntityItems,
             nodeFamilies: input.nodeFamilies,
             nestedNavigation: input.clientBehavior?.nestedNavigation,
             defaultLayout: input.defaultLayout
@@ -755,7 +750,7 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
         watch: { globs: input.watchGlobs ?? sourceExtensions.map(ext => `**/*${ext}`) },
         // No provider at all for a product that resolves nothing itself: the
         // platform then navigates straight to the referenced target.
-        navigation: input.navigation === 'none' ? undefined : createPythonNavigationProvider(),
+        navigation: input.navigation === 'python' ? createPythonNavigationProvider() : undefined,
         canOpenSource,
         editBackend,
         // Sidecar-backed products ship the in-host GLSP-MCP server on; the
@@ -769,8 +764,8 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
             nodeCommands: input.chat.nodeCommands,
             // Read-only sidecar-registry tools bridged to GLSP-MCP by the platform adapter.
             tools: chatTools,
-            // What the agent receives the file as; Python unless the product says.
-            sourceMimeType: input.chat.sourceMimeType ?? 'text/x-python',
+            // What the agent receives the file as; plain text unless the product says.
+            sourceMimeType: input.chat.sourceMimeType ?? 'text/plain',
             ...sourceContextConfig,
             // The ACP connector: the setting the chat and the property panel
             // read. Without it the chat keeps its opencode default.

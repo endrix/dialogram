@@ -67,10 +67,10 @@ describe('a palette for a diagram that creates nothing', () => {
             .toEqual(['palette-entities', 'palette-ports', 'palette-connections']);
     });
 
-    it('keeps the whole palette when a profile carries no storage options at all', async () => {
+    it('keeps ports and connections when a profile carries no storage options at all (no rows, so no Entities)', async () => {
         const items = await providerWith(undefined).getItems();
 
         expect(items.map((category: any) => category.id))
-            .toEqual(['palette-entities', 'palette-ports', 'palette-connections']);
+            .toEqual(['palette-ports', 'palette-connections']);
     });
 });

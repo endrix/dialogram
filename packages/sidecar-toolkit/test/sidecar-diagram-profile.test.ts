@@ -125,11 +125,13 @@ describe('createSidecarDiagramProfile', () => {
         expect(createSidecarDiagramProfile(baseInput({ sourceExtensions: [' ', ''] })).sourceExtensions).toEqual(['.py']);
     });
 
-    it('drops the Python navigation provider, and carries the palette and MIME choices, when the product asks', () => {
-        const python = createSidecarDiagramProfile(baseInput());
+    it('builds the Python navigation provider only for a product that names it, and carries the palette and MIME choices', () => {
+        const bare = createSidecarDiagramProfile(baseInput());
+        expect(bare.navigation).toBeUndefined();
+        expect(bare.chat?.sourceMimeType).toBe('text/plain');
+        const python = createSidecarDiagramProfile(baseInput({ navigation: 'python', chat: { name: 'wf', fullName: 'WF', sourceMimeType: 'text/x-python' } }));
         expect(python.navigation).toBeDefined();
         expect(python.chat?.sourceMimeType).toBe('text/x-python');
-        expect(python.storageOptions?.platformEntityItems).toBeUndefined();
 
         const other = createSidecarDiagramProfile(baseInput({
             navigation: 'none',
@@ -139,7 +141,8 @@ describe('createSidecarDiagramProfile', () => {
         }));
         expect(other.navigation).toBeUndefined();
         expect(other.chat?.sourceMimeType).toBe('text/x-systemverilog');
-        expect(other.storageOptions?.platformEntityItems).toBe(false);
+        // The deprecated flag is accepted and no longer reaches the server.
+        expect(other.storageOptions?.platformEntityItems).toBeUndefined();
         expect(other.storageOptions?.entityPaletteItems?.map(i => i.label)).toEqual(['Module Instance']);
     });
 
@@ -192,15 +195,13 @@ describe('createSidecarDiagramProfile', () => {
             key: 'calpy',
             sidecarOperationPrefix: 'calpy',
             graphAcquisition: 'sidecar-export',
-            useAlternateEntityPalette: true,
             openability: { probeOp: 'exportNetworkGraph', decoratorName: 'network' }
         }));
         expect(typeof p.canOpenSource).toBe('function');
-        expect(p.storageOptions?.useAlternateEntityPalette).toBe(true);
     });
 
     it('exposes model source, server modules, edit backend, navigation and factories', () => {
-        const p = createSidecarDiagramProfile(baseInput());
+        const p = createSidecarDiagramProfile(baseInput({ navigation: 'python' }));
         expect(typeof p.modelSource).toBe('function');
         expect(Array.isArray(p.serverModules)).toBe(true);
         expect(p.editBackend).toBeDefined();

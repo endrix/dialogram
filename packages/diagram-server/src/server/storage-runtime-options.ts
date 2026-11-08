@@ -12,28 +12,14 @@ export interface StorageRuntimeOptions {
     settingsNamespace: string;
     /** Operation-prefix identifier surfaced to the client on the graph model root args. */
     operationPrefix: string;
-    /**
-     * Selects the alternate entity-palette layout (a reduced entity vocabulary) instead of the
-     * default one. Supplied by the consuming extension; core hardcodes no product discriminator.
-     */
+    /** @deprecated The platform's two Entities lists are gone; declare the rows in `entityPaletteItems`. Accepted and ignored. */
     useAlternateEntityPalette?: boolean;
     /**
-     * Extra entries for the Entities palette, contributed by the product.
-     *
-     * Plain data on purpose. The two lists above are the platform's own, and a
-     * product cannot add to them without editing that file — which is how a
-     * neutral platform ends up learning every product's vocabulary. A profile
-     * describes an entry instead, and the platform builds it.
+     * The Entities palette: the product's rows, in its order. Plain data; the
+     * platform builds each item and adds none of its own.
      */
     entityPaletteItems?: EntityPaletteItemSpec[];
-    /**
-     * Whether the platform's own Entities entries (either of the two lists
-     * above) are offered. Default `true`. `false` leaves the Entities category
-     * to {@link entityPaletteItems} alone: a product whose nodes are none of
-     * the platform's kinds would otherwise offer entries that mean nothing in
-     * it, and the platform naming that product's kinds instead is the thing a
-     * neutral platform does not do.
-     */
+    /** @deprecated The platform has no Entities entries of its own any more. Accepted and ignored. */
     platformEntityItems?: boolean;
     /**
      * The node families the product recognises — see `NodeFamilySpec`.
