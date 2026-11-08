@@ -1,0 +1,4 @@
+/* The product's own rule: it must come after GLSP's and the stock diagram's. */
+.stock-starter-consumer-marker {
+    color: inherit;
+}

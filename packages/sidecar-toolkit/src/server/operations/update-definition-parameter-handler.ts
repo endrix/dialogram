@@ -1,4 +1,5 @@
 import { Action, Command, ModelState, OperationHandler } from '@eclipse-glsp/server';
+import { normalizeWorkflowReferenceName } from '../source-analysis';
 import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
@@ -58,7 +59,7 @@ export class UpdateDefinitionParameterOperationHandler extends OperationHandler 
         const entityType = ((args[WorkflowDiagramMetadata.NETWORK_FACTORY_NAME] as string | undefined)
             ?? (args[WorkflowDiagramMetadata.ENTITY_TYPE] as string | undefined)
             ?? '');
-        const defName = unqualifyName(entityType);
+        const defName = normalizeWorkflowReferenceName(entityType) ?? '';
         if (!defName) {
             void vscode.window.showErrorMessage('Cannot determine which definition to update.');
             return undefined;
@@ -102,10 +103,4 @@ export class UpdateDefinitionParameterOperationHandler extends OperationHandler 
     private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {
         return this.sidecar.sendSidecarOp(sourceUri, payload);
     }
-}
-
-function unqualifyName(name: string): string {
-    const afterDots = name.split('.').pop() ?? name;
-    const parts = afterDots.split('__');
-    return parts.length > 0 ? (parts[parts.length - 1] ?? '') : afterDots;
 }

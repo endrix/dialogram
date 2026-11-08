@@ -179,9 +179,10 @@ describe('createSidecarDiagramProfile', () => {
         ).toBe(false);
     });
 
-    it('threads the sidecar operation prefix onto the chat carry-over', () => {
+    it('threads the sidecar operation prefix onto the storage options, and no longer onto the chat (nothing read it there)', () => {
         const p = createSidecarDiagramProfile(baseInput({ sidecarOperationPrefix: 'calpy' }));
-        expect(p.chat?.operationPrefix).toBe('calpy');
+        expect(p.storageOptions?.operationPrefix).toBe('calpy');
+        expect(p.chat?.operationPrefix).toBeUndefined();
     });
 
     it('omits the openability check when the input requests none (always openable)', () => {

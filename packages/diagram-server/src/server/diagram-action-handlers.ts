@@ -46,7 +46,6 @@ import {
     type WorkflowDiagramModel,
     WorkflowDiagramConstants,
     WorkflowDiagramTypes,
-    WORKFLOW_NETWORK_MODEL_KEY,
     WORKFLOW_LAYOUT_PERSISTENCE_KEY,
     portSide
 } from '@dialogram/shared';
@@ -59,7 +58,16 @@ import {
 import { clearAllEdgeRoutingPoints } from '../routing/clear-edge-routes';
 import { releaseBoundaryNodeConstraints, restoreNodeLayoutOptions, runBoundaryFlowLayout } from '../operations/boundary-flow-layout';
 import { perfNow } from './graph-load-perf';
-import { layoutTargetOf } from './layout-target';
+import {
+    isMovableNode,
+    type LayoutPersistenceMeta,
+    nodeLayoutKeyOf,
+    persistLayout,
+    restoreUnselectedLayout,
+    movableNodeIdsIn,
+    snapshotEdgeRoutesById,
+    snapshotNodePositionsById
+} from './layout-snapshot';
 
 /**
  * Custom ModelSubmissionHandler - minimal logging version.
@@ -89,18 +97,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
         // 1) Optional automatic layout on first open when no persisted layout exists.
         // We do this even though layoutKind is MANUAL, but only once per session
         // and we persist the result immediately so further edits won't trigger layout.
-        const layoutMeta = modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as
-            | {
-                  workflowFilePath: string;
-                  networkId: string;
-                  hasPersistedLayout: boolean;
-                                    hasPersistedEdgeRoutes: boolean;
-                  didInitialLayout: boolean;
-                                    hasClientBounds: boolean;
-                  allowInitialLayoutPersistence: boolean;
-                  unpositionedNodeCount?: number;
-              }
-            | undefined;
+        const layoutMeta = modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as LayoutPersistenceMeta | undefined;
 
         if (
             layoutEngine &&
@@ -122,7 +119,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
                 // run the exact same boundary-flow routine (pin one-sided task nodes to outer
                 // layers + clear stale edge routes + ELK), so the fresh-open render matches
                 // what manual layout produces instead of diverging (plain ELK looked worse).
-                await this.runBoundaryFlowAndPersist(layoutMeta, modelState, layoutEngine);
+                await this.runBoundaryFlowAndPersist(modelState, layoutEngine);
                 // Always-on breadcrumb: initial ELK layout is the dominant post-load server cost on a
                 // fresh open, and it runs here (in the client-bounds round-trip), not in the load path.
                 // eslint-disable-next-line no-console
@@ -191,7 +188,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             }
             console.log('[WorkflowModelSubmissionHandler] Auto-layout after agent structural edit for:', layoutMeta.networkId);
             try {
-                await this.runBoundaryFlowAndPersist(layoutMeta, modelState, layoutEngine);
+                await this.runBoundaryFlowAndPersist(modelState, layoutEngine);
                 console.log('[WorkflowModelSubmissionHandler] Agent auto-layout completed');
             } catch (error) {
                 console.error('[WorkflowModelSubmissionHandler] Agent auto-layout failed:', error);
@@ -370,25 +367,10 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
      * and the agent-structural-edit auto-layout (branch 1c) so both produce identical geometry
      * and persistence — no divergence between them.
      */
-    private async runBoundaryFlowAndPersist(
-        layoutMeta: {
-            workflowFilePath: string;
-            networkId: string;
-            hasPersistedLayout: boolean;
-            hasPersistedEdgeRoutes: boolean;
-            [key: string]: unknown;
-        },
-        modelState: ModelState,
-        layoutEngine: LayoutEngine
-    ): Promise<void> {
+    private async runBoundaryFlowAndPersist(modelState: ModelState, layoutEngine: LayoutEngine): Promise<void> {
         await runBoundaryFlowLayout(modelState.root, layoutEngine);
-        const positions = this.collectNodePositions(modelState.root);
-        const routes = this.collectEdgeRoutes(modelState.root);
-        await this.layoutPersistence.saveLayoutImmediate(layoutMeta.workflowFilePath, layoutMeta.networkId, positions, routes);
         // From now on, treat it as persisted.
-        layoutMeta.hasPersistedLayout = true;
-        layoutMeta.hasPersistedEdgeRoutes = routes.size > 0;
-        modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
+        await persistLayout(modelState, this.layoutPersistence, { layoutPerformed: true });
     }
 
     /**
@@ -425,13 +407,9 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
         const newNodes: Array<{ key: string; element: any; width: number; height: number }> = [];
         const collect = (element: any): void => {
             if (!element) { return; }
-            const type = element.type as string | undefined;
-            if (typeof type === 'string' && type.startsWith('node:')) {
-                const args = element.args as Record<string, unknown> | undefined;
-                const key = (args?.[WorkflowDiagramMetadata.AST_PATH] ??
-                    args?.[WorkflowDiagramMetadata.ENTITY_NAME] ??
-                    args?.[WorkflowDiagramMetadata.PORT_NAME]) as unknown;
-                if (typeof key === 'string' && key.trim() !== '' && !existingPositions.has(key)) {
+            if (isMovableNode(element)) {
+                const key = nodeLayoutKeyOf(element);
+                if (key !== undefined && !existingPositions.has(key)) {
                     const size = (element as any).size as { width: number; height: number } | undefined;
                     newNodes.push({
                         key,
@@ -481,138 +459,6 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
         // Persist merged positions (edge routes are preserved automatically by saveLayoutImmediate).
         await this.layoutPersistence.saveLayoutImmediate(workflowFilePath, networkId, merged, undefined);
         console.log(`[WorkflowModelSubmissionHandler] Placed ${newNodes.length} new node(s) below existing graph at y=${startY}.`);
-    }
-
-    private collectNodePositions(root: GModelRoot): Map<string, { x: number; y: number }> {
-        const result = new Map<string, { x: number; y: number }>();
-        // Accumulate absolute positions by tracking parent offsets
-        const visit = (element: any, parentAbsX: number, parentAbsY: number): void => {
-            if (!element) {
-                return;
-            }
-            // Compute this element's absolute position
-            const relX = element.position?.x ?? 0;
-            const relY = element.position?.y ?? 0;
-            const absX = parentAbsX + relX;
-            const absY = parentAbsY + relY;
-
-            const type = element.type as string | undefined;
-            if (typeof type === 'string' && type.startsWith('node:')) {
-                const args = element.args as Record<string, unknown> | undefined;
-                const key = (args?.[WorkflowDiagramMetadata.AST_PATH] ??
-                    args?.[WorkflowDiagramMetadata.ENTITY_NAME] ??
-                    args?.[WorkflowDiagramMetadata.PORT_NAME]) as unknown;
-                if (typeof key === 'string' && key.trim() !== '' && element.position) {
-                    result.set(key, { x: absX, y: absY });
-                }
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child, absX, absY);
-                }
-            }
-        };
-        visit(root, 0, 0);
-        return result;
-    }
-
-    private collectEdgeRoutes(root: GModelRoot): Map<string, { x: number; y: number }[]> {
-        const result = new Map<string, { x: number; y: number }[]>();
-        const signatureCounts = this.buildEdgeSignatureCounts(root);
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-            if (element instanceof GEdge) {
-                const args = element.args as Record<string, unknown> | undefined;
-                const key = this.edgeRouteKeyFor(args, signatureCounts);
-                const routingPoints = (element as any).routingPoints as { x: number; y: number }[] | undefined;
-                if (typeof key === 'string' && Array.isArray(routingPoints) && routingPoints.length > 0) {
-                    result.set(key, routingPoints);
-                }
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
-        return result;
-    }
-
-    private edgeSignatureFromArgs(args: Record<string, unknown> | undefined): string | undefined {
-        if (!args) {
-            return undefined;
-        }
-
-        const normalizeEndpoint = (value: unknown): string => {
-            if (typeof value === 'string' && value.trim() !== '') {
-                return value.trim();
-            }
-            return 'boundary';
-        };
-
-        const fromEntity = normalizeEndpoint(args['wf:from']);
-        const toEntity = normalizeEndpoint(args['wf:to']);
-        const outPort = typeof args['wf:outPort'] === 'string' ? (args['wf:outPort'] as string) : undefined;
-        const inPort = typeof args['wf:inPort'] === 'string' ? (args['wf:inPort'] as string) : undefined;
-
-        if (!outPort || !inPort) {
-            return undefined;
-        }
-
-        return `${fromEntity}|${outPort}|${toEntity}|${inPort}`;
-    }
-
-    private buildEdgeSignatureCounts(root: GModelRoot): Map<string, number> {
-        const counts = new Map<string, number>();
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-            if (element instanceof GEdge) {
-                const signature = this.edgeSignatureFromArgs(element.args as Record<string, unknown> | undefined);
-                if (signature) {
-                    counts.set(signature, (counts.get(signature) ?? 0) + 1);
-                }
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
-        return counts;
-    }
-
-    private edgeRouteKeyFor(
-        args: Record<string, unknown> | undefined,
-        signatureCounts: Map<string, number>
-    ): string | undefined {
-        const signature = this.edgeSignatureFromArgs(args);
-        const astPath = args?.[WorkflowDiagramMetadata.AST_PATH];
-
-        if (signature) {
-            const count = signatureCounts.get(signature) ?? 0;
-            if (count > 1) {
-                if (typeof astPath === 'string' && astPath.trim() !== '') {
-                    return `${signature}|${astPath}`;
-                }
-                return undefined;
-            }
-            return signature;
-        }
-
-        if (typeof astPath === 'string' && astPath.trim() !== '') {
-            return astPath;
-        }
-
-        return undefined;
     }
 }
 
@@ -862,20 +708,7 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
             };
             await this.applyBounds(model, action, passResult);
 
-            const layoutMeta = this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as
-                | {
-                      workflowFilePath: string;
-                      networkId: string;
-                      hasPersistedLayout: boolean;
-                      hasPersistedEdgeRoutes: boolean;
-                      didInitialLayout: boolean;
-                      hasClientBounds: boolean;
-                      allowInitialLayoutPersistence: boolean;
-                      unpositionedNodeCount?: number;
-                      sizeMeasurePassCount?: number;
-                      lastClientNodeSizes?: Record<string, { width: number; height: number }>;
-                  }
-                | undefined;
+            const layoutMeta = this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as LayoutPersistenceMeta | undefined;
 
             // Node sizes are SERVER-AUTHORITATIVE on every path.
             //
@@ -980,16 +813,7 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
     protected async applyBounds(root: GModelRoot, action: ComputedBoundsAction, passResult?: BoundsPassResult): Promise<void> {
         const index = this.modelState.index;
 
-        const layoutMeta = this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as
-            | {
-                  workflowFilePath?: string;
-                  networkId?: string;
-                  hasPersistedLayout?: boolean;
-                  hasClientBounds?: boolean;
-                  hasPersistedEdgeRoutes: boolean;
-                  rerouteEdgeIds?: string[];
-              }
-            | undefined;
+        const layoutMeta = this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as LayoutPersistenceMeta | undefined;
 
         const hasPersistedLayout = layoutMeta?.hasPersistedLayout === true;
 
@@ -1325,59 +1149,6 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
         return rerouteSet;
     }
 
-    private snapshotNodePositionsById(root: any): Map<string, { x: number; y: number } | undefined> {
-        const result = new Map<string, { x: number; y: number } | undefined>();
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-            const type = element?.type as string | undefined;
-            const isNode = typeof type === 'string' && type.startsWith('node:');
-            if (isNode) {
-                const id = String((element as any).id);
-                const pos = (element as any).position as { x?: number; y?: number } | undefined;
-                result.set(id, pos ? { x: pos.x ?? 0, y: pos.y ?? 0 } : undefined);
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
-        return result;
-    }
-
-    private snapshotEdgeRoutesById(root: any): Map<string, { x: number; y: number }[] | undefined> {
-        const result = new Map<string, { x: number; y: number }[] | undefined>();
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-            if (element instanceof GEdge) {
-                const id = String((element as any).id);
-                const routingPoints = (element as any).routingPoints as { x: number; y: number }[] | undefined;
-                if (Array.isArray(routingPoints)) {
-                    result.set(
-                        id,
-                        routingPoints.map(p => ({ x: p.x, y: p.y }))
-                    );
-                } else {
-                    result.set(id, undefined);
-                }
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
-        return result;
-    }
-
     private applyInteractiveRoutingOptions(root: any): { restore: () => void } {
         const prevRootLayoutOptions = (root as any).layoutOptions ? { ...(root as any).layoutOptions } : undefined;
         (root as any).layoutOptions = {
@@ -1524,141 +1295,6 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
         };
         visit(root);
     }
-
-    private collectNodePositions(root: GModelRoot): Map<string, { x: number; y: number }> {
-        const result = new Map<string, { x: number; y: number }>();
-        const visit = (element: any, parentAbsX: number, parentAbsY: number): void => {
-            if (!element) {
-                return;
-            }
-            const relX = element.position?.x ?? 0;
-            const relY = element.position?.y ?? 0;
-            const absX = parentAbsX + relX;
-            const absY = parentAbsY + relY;
-
-            const type = element.type as string | undefined;
-            if (typeof type === 'string' && type.startsWith('node:')) {
-                const args = element.args as Record<string, unknown> | undefined;
-                const key = (args?.[WorkflowDiagramMetadata.AST_PATH] ??
-                    args?.[WorkflowDiagramMetadata.ENTITY_NAME] ??
-                    args?.[WorkflowDiagramMetadata.PORT_NAME]) as unknown;
-                if (typeof key === 'string' && key.trim() !== '' && element.position) {
-                    result.set(key, { x: absX, y: absY });
-                }
-            }
-
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child, absX, absY);
-                }
-            }
-        };
-        visit(root, 0, 0);
-        return result;
-    }
-
-    private collectEdgeRoutes(root: GModelRoot, allowedEdgeIds?: Set<string>): Map<string, { x: number; y: number }[]> {
-        const result = new Map<string, { x: number; y: number }[]>();
-        const signatureCounts = this.buildEdgeSignatureCounts(root);
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-            if (element instanceof GEdge) {
-                // Optionally filter by edge ids (e.g., only persist rerouted edges).
-                const id = String((element as any).id);
-                if (!allowedEdgeIds || allowedEdgeIds.has(id)) {
-                    const args = element.args as Record<string, unknown> | undefined;
-                    const key = this.edgeRouteKeyFor(args, signatureCounts);
-                    const routingPoints = (element as any).routingPoints as { x: number; y: number }[] | undefined;
-                    if (typeof key === 'string' && Array.isArray(routingPoints) && routingPoints.length > 0) {
-                        result.set(key, routingPoints);
-                    }
-                }
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
-        return result;
-    }
-
-    private edgeSignatureFromArgs(args: Record<string, unknown> | undefined): string | undefined {
-        if (!args) {
-            return undefined;
-        }
-
-        const normalizeEndpoint = (value: unknown): string => {
-            if (typeof value === 'string' && value.trim() !== '') {
-                return value.trim();
-            }
-            return 'boundary';
-        };
-
-        const fromEntity = normalizeEndpoint(args['wf:from']);
-        const toEntity = normalizeEndpoint(args['wf:to']);
-        const outPort = typeof args['wf:outPort'] === 'string' ? (args['wf:outPort'] as string) : undefined;
-        const inPort = typeof args['wf:inPort'] === 'string' ? (args['wf:inPort'] as string) : undefined;
-
-        if (!outPort || !inPort) {
-            return undefined;
-        }
-
-        return `${fromEntity}|${outPort}|${toEntity}|${inPort}`;
-    }
-
-    private buildEdgeSignatureCounts(root: GModelRoot): Map<string, number> {
-        const counts = new Map<string, number>();
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-            if (element instanceof GEdge) {
-                const signature = this.edgeSignatureFromArgs(element.args as Record<string, unknown> | undefined);
-                if (signature) {
-                    counts.set(signature, (counts.get(signature) ?? 0) + 1);
-                }
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
-        return counts;
-    }
-
-    private edgeRouteKeyFor(
-        args: Record<string, unknown> | undefined,
-        signatureCounts: Map<string, number>
-    ): string | undefined {
-        const signature = this.edgeSignatureFromArgs(args);
-        const astPath = args?.[WorkflowDiagramMetadata.AST_PATH];
-
-        if (signature) {
-            const count = signatureCounts.get(signature) ?? 0;
-            if (count > 1) {
-                if (typeof astPath === 'string' && astPath.trim() !== '') {
-                    return `${signature}|${astPath}`;
-                }
-                return undefined;
-            }
-            return signature;
-        }
-
-        if (typeof astPath === 'string' && astPath.trim() !== '') {
-            return astPath;
-        }
-
-        return undefined;
-    }
 }
 
 /**
@@ -1698,11 +1334,11 @@ export class WorkflowLayoutOperationHandler extends OperationHandler {
         // GLSP's ELK layout engine currently computes layout for the full diagram.
         // For selection-only layout, we snapshot the current positions/routes, run
         // layout, then restore everything that was not selected.
-        const selectedMovableNodeIds = this.getSelectedMovableNodeIds(operation);
+        const selectedMovableNodeIds = movableNodeIdsIn(this.modelState.index, operation.elementIds);
         const hasSelection = selectedMovableNodeIds.size > 0;
 
-        const preNodePositionsById = hasSelection ? this.snapshotNodePositionsById(this.modelState.root) : undefined;
-        const preEdgeRoutesById = hasSelection ? this.snapshotEdgeRoutesById(this.modelState.root) : undefined;
+        const preNodePositionsById = hasSelection ? snapshotNodePositionsById(this.modelState.root) : undefined;
+        const preEdgeRoutesById = hasSelection ? snapshotEdgeRoutesById(this.modelState.root) : undefined;
 
         // When a user triggers a manual auto-layout, we want ELK to fully recompute edge routing.
         // Existing routing points (from previous ELK runs or manual routing) can otherwise
@@ -1726,324 +1362,12 @@ export class WorkflowLayoutOperationHandler extends OperationHandler {
         }
 
         if (hasSelection && preNodePositionsById && preEdgeRoutesById) {
-            this.restoreUnselectedLayout(this.modelState.root, selectedMovableNodeIds, preNodePositionsById, preEdgeRoutesById);
+            restoreUnselectedLayout(this.modelState.index, this.modelState.root, selectedMovableNodeIds, preNodePositionsById, preEdgeRoutesById);
         }
 
-        const diagramModel = this.modelState.get(WORKFLOW_NETWORK_MODEL_KEY) as WorkflowDiagramModel | undefined;
-        if (!diagramModel) {
-            return;
-        }
-
-        const { filePath: workflowFilePath, networkId } = layoutTargetOf(diagramModel as any);
-        const positions = this.collectNodePositions(this.modelState.root);
-        const routes = this.collectEdgeRoutes(this.modelState.root);
-        await this.layoutPersistence.saveLayoutImmediate(workflowFilePath, networkId, positions, routes);
-
-        const layoutMeta = this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as
-            | {
-                  workflowFilePath: string;
-                  networkId: string;
-                  hasPersistedLayout: boolean;
-                  hasPersistedEdgeRoutes: boolean;
-                  didInitialLayout: boolean;
-                  hasClientBounds: boolean;
-                  allowInitialLayoutPersistence: boolean;
-                  unpositionedNodeCount?: number;
-              }
-            | undefined;
-        if (layoutMeta) {
-            layoutMeta.hasPersistedLayout = true;
-            layoutMeta.hasPersistedEdgeRoutes = routes.size > 0;
-            this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
-        }
+        await persistLayout(this.modelState, this.layoutPersistence, { layoutPerformed: true });
     }
 
     // clearAllEdgeRoutingPoints extracted to src/glsp/routing/clear-edge-routes.ts
-
-    private isMovableNode(element: any): boolean {
-        const type = element?.type as string | undefined;
-        return typeof type === 'string' && type.startsWith('node:');
-    }
-
-    private getMovableNodeIdForElementId(elementId: string): string | undefined {
-        let current: any = this.modelState.index.find(elementId);
-        while (current) {
-            if (this.isMovableNode(current)) {
-                return String((current as any).id);
-            }
-            current = (current as any).parent;
-        }
-        return undefined;
-    }
-
-    private getSelectedMovableNodeIds(operation: LayoutOperation): Set<string> {
-        const result = new Set<string>();
-        const elementIds = Array.isArray(operation.elementIds) ? operation.elementIds : [];
-
-        for (const id of elementIds) {
-            const movable = this.getMovableNodeIdForElementId(id);
-            if (movable) {
-                result.add(movable);
-            }
-
-            const element: any = this.modelState.index.find(id);
-            const type = element?.type as string | undefined;
-            const isEdge = element instanceof GEdge || (typeof type === 'string' && type.startsWith('edge:'));
-            if (isEdge) {
-                const sourceId = (element as any).sourceId as string | undefined;
-                const targetId = (element as any).targetId as string | undefined;
-                if (typeof sourceId === 'string') {
-                    const sourceMovable = this.getMovableNodeIdForElementId(sourceId);
-                    if (sourceMovable) {
-                        result.add(sourceMovable);
-                    }
-                }
-                if (typeof targetId === 'string') {
-                    const targetMovable = this.getMovableNodeIdForElementId(targetId);
-                    if (targetMovable) {
-                        result.add(targetMovable);
-                    }
-                }
-            }
-        }
-
-        return result;
-    }
-
-    private snapshotNodePositionsById(root: any): Map<string, { x: number; y: number } | undefined> {
-        const result = new Map<string, { x: number; y: number } | undefined>();
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-            if (this.isMovableNode(element)) {
-                const id = String((element as any).id);
-                const pos = (element as any).position as { x?: number; y?: number } | undefined;
-                if (pos) {
-                    result.set(id, { x: pos.x ?? 0, y: pos.y ?? 0 });
-                } else {
-                    result.set(id, undefined);
-                }
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
-        return result;
-    }
-
-    private snapshotEdgeRoutesById(root: any): Map<string, { x: number; y: number }[] | undefined> {
-        const result = new Map<string, { x: number; y: number }[] | undefined>();
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-            if (element instanceof GEdge) {
-                const id = String((element as any).id);
-                const routingPoints = (element as any).routingPoints as { x: number; y: number }[] | undefined;
-                if (Array.isArray(routingPoints)) {
-                    result.set(
-                        id,
-                        routingPoints.map(p => ({ x: p.x, y: p.y }))
-                    );
-                } else {
-                    result.set(id, undefined);
-                }
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
-        return result;
-    }
-
-    private restoreUnselectedLayout(
-        root: any,
-        selectedMovableNodeIds: Set<string>,
-        preNodePositionsById: Map<string, { x: number; y: number } | undefined>,
-        preEdgeRoutesById: Map<string, { x: number; y: number }[] | undefined>
-    ): void {
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-
-            if (this.isMovableNode(element)) {
-                const id = String((element as any).id);
-                if (!selectedMovableNodeIds.has(id)) {
-                    const prev = preNodePositionsById.get(id);
-                    (element as any).position = prev ? { x: prev.x, y: prev.y } : undefined;
-                }
-            }
-
-            if (element instanceof GEdge) {
-                const id = String((element as any).id);
-                const sourceId = (element as any).sourceId as string | undefined;
-                const targetId = (element as any).targetId as string | undefined;
-
-                const sourceMovable = typeof sourceId === 'string' ? this.getMovableNodeIdForElementId(sourceId) : undefined;
-                const targetMovable = typeof targetId === 'string' ? this.getMovableNodeIdForElementId(targetId) : undefined;
-
-                const sourceSelected = sourceMovable ? selectedMovableNodeIds.has(sourceMovable) : false;
-                const targetSelected = targetMovable ? selectedMovableNodeIds.has(targetMovable) : false;
-
-                // Keep new routes for edges incident to moved (selected) nodes.
-                // Restore routes for edges that only connect non-selected nodes.
-                if (!sourceSelected && !targetSelected) {
-                    const prevRoute = preEdgeRoutesById.get(id);
-                    // Preserve empty arrays; see restoreUntargetedEdgeRoutes().
-                    (element as any).routingPoints = prevRoute !== undefined ? prevRoute.map(p => ({ x: p.x, y: p.y })) : undefined;
-                }
-            }
-
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
-    }
-
-    private collectNodePositions(root: GModelRoot): Map<string, { x: number; y: number }> {
-        const result = new Map<string, { x: number; y: number }>();
-        // Accumulate absolute positions by tracking parent offsets
-        const visit = (element: any, parentAbsX: number, parentAbsY: number): void => {
-            if (!element) {
-                return;
-            }
-            // Compute this element's absolute position
-            const relX = element.position?.x ?? 0;
-            const relY = element.position?.y ?? 0;
-            const absX = parentAbsX + relX;
-            const absY = parentAbsY + relY;
-
-            const type = element.type as string | undefined;
-            if (typeof type === 'string' && type.startsWith('node:')) {
-                const args = element.args as Record<string, unknown> | undefined;
-                const key = (args?.[WorkflowDiagramMetadata.AST_PATH] ??
-                    args?.[WorkflowDiagramMetadata.ENTITY_NAME] ??
-                    args?.[WorkflowDiagramMetadata.PORT_NAME]) as unknown;
-                if (typeof key === 'string' && key.trim() !== '' && element.position) {
-                    result.set(key, { x: absX, y: absY });
-                }
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child, absX, absY);
-                }
-            }
-        };
-        visit(root, 0, 0);
-        return result;
-    }
-
-    private collectEdgeRoutes(root: GModelRoot): Map<string, { x: number; y: number }[]> {
-        const result = new Map<string, { x: number; y: number }[]>();
-        const signatureCounts = this.buildEdgeSignatureCounts(root);
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-            if (element instanceof GEdge) {
-                const args = element.args as Record<string, unknown> | undefined;
-                const key = this.edgeRouteKeyFor(args, signatureCounts);
-                const routingPoints = (element as any).routingPoints as { x: number; y: number }[] | undefined;
-                if (typeof key === 'string' && Array.isArray(routingPoints) && routingPoints.length > 0) {
-                    result.set(key, routingPoints);
-                }
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
-        return result;
-    }
-
-    private edgeSignatureFromArgs(args: Record<string, unknown> | undefined): string | undefined {
-        if (!args) {
-            return undefined;
-        }
-
-        const normalizeEndpoint = (value: unknown): string => {
-            if (typeof value === 'string' && value.trim() !== '') {
-                return value.trim();
-            }
-            return 'boundary';
-        };
-
-        const fromEntity = normalizeEndpoint(args['wf:from']);
-        const toEntity = normalizeEndpoint(args['wf:to']);
-        const outPort = typeof args['wf:outPort'] === 'string' ? (args['wf:outPort'] as string) : undefined;
-        const inPort = typeof args['wf:inPort'] === 'string' ? (args['wf:inPort'] as string) : undefined;
-
-        if (!outPort || !inPort) {
-            return undefined;
-        }
-
-        return `${fromEntity}|${outPort}|${toEntity}|${inPort}`;
-    }
-
-    private buildEdgeSignatureCounts(root: GModelRoot): Map<string, number> {
-        const counts = new Map<string, number>();
-        const visit = (element: any): void => {
-            if (!element) {
-                return;
-            }
-            if (element instanceof GEdge) {
-                const signature = this.edgeSignatureFromArgs(element.args as Record<string, unknown> | undefined);
-                if (signature) {
-                    counts.set(signature, (counts.get(signature) ?? 0) + 1);
-                }
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
-        return counts;
-    }
-
-    private edgeRouteKeyFor(
-        args: Record<string, unknown> | undefined,
-        signatureCounts: Map<string, number>
-    ): string | undefined {
-        const signature = this.edgeSignatureFromArgs(args);
-        const astPath = args?.[WorkflowDiagramMetadata.AST_PATH];
-
-        if (signature) {
-            const count = signatureCounts.get(signature) ?? 0;
-            if (count > 1) {
-                if (typeof astPath === 'string' && astPath.trim() !== '') {
-                    return `${signature}|${astPath}`;
-                }
-                return undefined;
-            }
-            return signature;
-        }
-
-        if (typeof astPath === 'string' && astPath.trim() !== '') {
-            return astPath;
-        }
-
-        return undefined;
-    }
 }
 

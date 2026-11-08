@@ -90,7 +90,7 @@ describe('createWorkflowServerModules — MCP opt-in (T1)', () => {
         expect(container.getAll(GLSPServerListener)).toContain(launcher);
     });
 
-    it('binds the 15 diagram-scope tool constructors (16 built-ins minus undo/redo, plus create-task-type) when enabled', () => {
+    it('binds the 14 diagram-scope tool constructors (16 built-ins minus undo/redo; a product\'s own tool comes with its operation module) when enabled', () => {
         const serverModules = createWorkflowServerModules({
             modelSourceFactory: () => NEUTRAL_SOURCE,
             mcp: { enabled: true }
@@ -104,13 +104,14 @@ describe('createWorkflowServerModules — MCP opt-in (T1)', () => {
         // (`toConstantValue(bindings)`), so the registry initializer reads it via `.get`.
         const session = loadSessionContainer(serverModules);
         const toolConstructors = session.get<Array<new () => { name: string }>>(McpDiagramToolHandlerConstructor);
-        // The stock 16 built-ins minus the two we drop (`undo` / `redo`, the host owns undo),
-        // plus our custom `create-task-type` operation tool.
-        expect(toolConstructors).toHaveLength(15);
+        // The stock 16 built-ins minus the two we drop (`undo` / `redo`, the host owns undo).
+        // A product's own operation tool (the toolkit's `create-task-type`) is brought by its
+        // operation module, which this bare server module has none of.
+        expect(toolConstructors).toHaveLength(14);
         const names = toolConstructors.map(ctor => new ctor().name);
         expect(names).not.toContain('undo');
         expect(names).not.toContain('redo');
-        expect(names).toContain('create-task-type');
+        expect(names).not.toContain('create-task-type');
     });
 
     it('bridges supplied platform tools alongside the built-ins (T2 wiring)', () => {
@@ -127,8 +128,8 @@ describe('createWorkflowServerModules — MCP opt-in (T1)', () => {
 
         const session = loadSessionContainer(serverModules);
         const toolConstructors = session.get<Array<new () => { name: string }>>(McpDiagramToolHandlerConstructor);
-        // 14 built-ins (undo/redo dropped) + create-task-type + 1 bridged platform tool.
-        expect(toolConstructors).toHaveLength(16);
+        // 14 built-ins (undo/redo dropped) + 1 bridged platform tool.
+        expect(toolConstructors).toHaveLength(15);
         const names = toolConstructors.map(ctor => new ctor().name);
         expect(names).toContain('echo-registry');
     });

@@ -1524,46 +1524,6 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
     }
 
     /**
-     * Remove all agent context metadata from GNodes so it can be cleanly re-applied
-     * without leftover data from a previous cycle.
-     *
-     * Note: execution-glow state (`IS_EXECUTING`, `cal-node-active` CSS) is NOT cleared
-     * here.  It is cleared synchronously inside `applyViewerOverlayToEdges()` right before
-     * the new overlay is applied.  This avoids a race condition where a stale
-     * `ComputedBoundsAction` arriving between the `await` gap (clear ↔ overlay read)
-     * could submit the model without the active-glow CSS class, causing the glow to
-     * flicker/disappear.
-     */
-    private clearAgentContextMetadata(root: GModelRoot): void {
-        const agentKeys: string[] = [
-            WorkflowDiagramMetadata.AGENT_CHAT_HISTORY,
-            WorkflowDiagramMetadata.AGENT_FIRE_COUNT,
-            WorkflowDiagramMetadata.AGENT_CONTEXT_BUDGET,
-            WorkflowDiagramMetadata.AGENT_TRUNCATION_STRATEGY,
-            WorkflowDiagramMetadata.AGENT_MODEL,
-            WorkflowDiagramMetadata.AGENT_STATEFUL,
-            WorkflowDiagramMetadata.AGENT_SKILL_STATUS,
-        ];
-        const visit = (element: any): void => {
-            if (element instanceof GNode) {
-                const args = element.args as Record<string, unknown> | undefined;
-                if (args) {
-                    for (const key of agentKeys) {
-                        delete args[key];
-                    }
-                }
-            }
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-        visit(root);
-    }
-
-    /**
      * Tracks the in-flight deferred agent-enrichment discovery so tests can await it. Not used for
      * correctness in production (fire-and-forget); convergence relies on the warm cache, not this
      * handle. Mirrors {@link deferredCallerDiscovery}.
@@ -1935,7 +1895,6 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             const byInstanceName = new Map<string, {
                 fireCount: number;
                 model?: string;
-                stateful: boolean;
                 contextBudget: number;
                 truncationStrategy: string;
                 chatHistory: Array<{ role: string; content: string }>;
@@ -1943,7 +1902,6 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             const byEntityName = new Map<string, {
                 fireCount: number;
                 model?: string;
-                stateful: boolean;
                 contextBudget: number;
                 truncationStrategy: string;
                 chatHistory: Array<{ role: string; content: string }>;
@@ -1985,7 +1943,6 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                         if (entry.model) {
                             (element.args as any)[WorkflowDiagramMetadata.AGENT_MODEL] = entry.model;
                         }
-                        (element.args as any)[WorkflowDiagramMetadata.AGENT_STATEFUL] = entry.stateful;
                     }
                 }
                 const children = element.children as any[] | undefined;
@@ -2017,7 +1974,6 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             entityName: string;
             fireCount: number;
             model?: string;
-            stateful: boolean;
             contextBudget: number;
             truncationStrategy: string;
             chatHistory: Array<{ role: string; content: string }>;
@@ -2045,7 +2001,6 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 entityName: string;
                 fireCount: number;
                 model?: string;
-                stateful: boolean;
                 contextBudget: number;
                 truncationStrategy: string;
                 chatHistory: Array<{ role: string; content: string }>;

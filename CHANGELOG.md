@@ -8,6 +8,18 @@ platform API version.
 
 ### Removed
 
+- **The `@path` annotation editor and its wizard template.** No producer has
+  a `@path` decorator: wfpy sets a workflow's tool search paths with
+  `@config(path=[...])`. The property panel's editor never rendered, and the
+  wizard's "external tool search paths" template wrote `@path(...)`, which the
+  Python source cannot import. A `path` annotation a project defines itself
+  still opens in the generic editor.
+- **Agent and tool keys nothing reads**: `wf:toolSpec` on tool nodes (the
+  external-actor flag stays), `cal:agentStateful` and its constant
+  `WorkflowDiagramMetadata.AGENT_STATEFUL` (a removal from the shared API, for
+  the next minor version), the never-called agent-metadata reset in the model
+  storage, and the property panel's unused tab builder with its stylesheet
+  rules, and its inline-Markdown renderer with the helper only it called.
 - **Element types the model never emits**, with their client classes and
   views, server mappings, shape hints and layout branches: `node:proxy`, the
   two collapsed nodes, the if-branch, if-join, foreach-join and inline-if
@@ -30,6 +42,13 @@ platform API version.
 
 ### Added
 
+- **A product's own webview bundle starts the stock diagram.**
+  `startStockDiagram({ features })` (`@dialogram/diagram-client/stock-starter`)
+  is what the stock bundle runs, with the product's feature modules loaded
+  after the stock views and feature UI; the stock entry is now that call with nothing added,
+  and its bundle's stylesheet is byte-identical. A sidecar product names its
+  bundle with `clientAssets` on the `createSidecarDiagramProfile` input, as a
+  hand-assembled profile already could.
 - **Selection trace** (`clientBehavior.selectionTrace`, opt-in): selecting a
   node draws every path through it, what leads to it in green and what it
   leads to in blue, and fades the rest; after mlir-viewer's trace highlighter.
@@ -63,6 +82,101 @@ platform API version.
   those first; the release that ships this bumps the API to 0.9, so a
   product built for 0.8 fails the version check instead of silently losing
   its palette.
+- **One declaration of the webview's behaviour flags, the command ids and
+  the in-process chat tool.** `DiagramClientBehavior` (with
+  `AcpConnectorInfo`), `DiagramCommandIds` and `InProcessChatTool` live in
+  `@dialogram/shared`; the API re-exports them, the toolkit's
+  `SidecarClientBehavior`, `SidecarProfileCommandIds` and `RegistryChatTool`
+  are the shared types (the product-facing behaviour is
+  `ProductClientBehavior`, the shared type minus the four fields the platform
+  derives), and the webview reads them instead of its own copy. The test that
+  kept two hand-written twins in step is gone with the second twin.
+  `scriptInterpreterCommands` is deprecated: nothing reads it.
+- **One sidecar transport.** Six places each spawned the sidecar, wrote the
+  request and parsed the answer with their own wording and deadlines: the
+  invoker behind every diagram edit, the chat's `invokeSidecarOp` and
+  `exportWorkflowGraph`, the model source's graph export, the openability
+  probe and the raw `sidecar.send` command. `sidecar-transport.ts`
+  (`invokeSidecar`) is the one: every request runs from the file's Python
+  package root with it on `PYTHONPATH` (before, the chat's requests did and
+  the diagram's own edits did not), the answer is the whole output when it is
+  one JSON document and its last line when the sidecar logs above it, and a
+  process failure is reported as the child-process module describes it, with
+  the op and the sidecar's stderr. `exportWorkflowGraph` is gone: the export
+  is an op like the others. The graph-export op has one
+  default, `exportGraph`, which every sidecar answers to (the model source
+  used to pick `exportNetworkGraph` or `exportWorkflowGraph` by acquisition
+  strategy and ignore the product's `exportOp`; it now sends the product's,
+  and `SidecarRuntimeConfig` carries it).
+- **An operation module brings the MCP tools of its operations.**
+  `DiagramOperationModule.configureMcpTools` (add-only) is the seam; the
+  diagram MCP module binds what the profile's modules offer instead of naming
+  `create-task-type` itself, and that tool now lives in the sidecar toolkit
+  beside the handler that serves it, so every sidecar product still offers it
+  and a library-mode consumer without the handler no longer advertises a tool
+  it cannot run. A read-only diagram offers no mutating tool at all
+  (create-nodes, create-edges, modify, delete, save): nothing handles them
+  there. The chat's fallback "skill", wfpy's own tool list and nouns sent to
+  the agent of any product whose profile named no skill, is gone: such a
+  profile gets the framing alone. The diagram-tool hint names the platform's
+  tools and "whatever further diagram tools are listed", no product's.
+- **One entity-node renderer.** The actor, external-actor and network views
+  drew the same body (the sized rect, the run ring, the family's icon or
+  image, the children, the type footer) three times over; `renderEntityNode`
+  draws it once and each view names only its root classes. The three view
+  classes keep their names (a product extends `ExternalActorNodeView`).
+  `findNodeIdByGraphId`, the lookup of a diagram element by a producer's id,
+  is one function (`producer-ids.ts`) for the outline, the property panel
+  and the headless renderer, with one rule where the three differed: the
+  producer id wins (a diagram id is a label, which another node's producer id
+  may equal), a direct hit must be a node, the first in document order. The
+  renderer's layout table is the Layout menu's own, so its Untangled now
+  pins the declared port order as the editor's does.
+- **One copy of each toolkit helper.** `server/source-files.ts` holds
+  `fileExists`, `findPackageRootForFile`, `withPythonPackageRoot` and
+  `collectPythonFilesUnderRoots` (the analysis, the create-node handler, the
+  graph export and the run driver had their own); `server/python-text.ts` is
+  the home of `countParenDelta`, `escapeRegExp` and
+  `stripPythonCommentsAndStrings`; `normalizeWorkflowReferenceName` replaces
+  the two `unqualifyName`; the run driver resolves the CLI command through
+  `getCliInvocation` like the server (a blank setting now means the default,
+  as it does everywhere else). `normalizeSourceUriKey` is one function, in
+  `@dialogram/diagram-server/server/uri-keys`, for the host, the server and
+  the toolkit; the webview keeps one copy of its own, browser-bound. The
+  parity test that kept two copies aligned is gone with the second copy.
+- **One layout snapshot for every handler.** The six handlers that lay nodes
+  out or route edges each carried their own copy of "walk the model, key the
+  nodes and the routes, save": eight `collectNodePositions`, eight
+  `collectEdgeRoutes`, five signature helpers, four snapshot/restore sets,
+  about 1,400 lines, drifted. `diagram-server/src/server/layout-snapshot.ts`
+  holds them once (`collectNodePositions`, `collectEdgeRoutes`,
+  `movableNodeIdsIn`, `snapshot*ById`, `restoreUnselectedLayout`,
+  `persistLayout`), and `persisted-edge-routes.ts` exports the route-key and
+  anchor helpers it always had. Every handler keys a saved route the same way
+  (endpoint signature, AST path where it repeats; four keyed by path alone,
+  which the loader read through its fallback). Reset Routes and the reroute,
+  which noted their save under a model-state key nothing read, now leave the
+  layout meta alone on purpose: lowering "has persisted edge routes" would arm
+  the bootstrap reroute that redraws what was just cleared.
+- **A sidecar profile names what is its own; the toolkit derives the rest.**
+  `SidecarProfileInput` no longer requires the command ids, the operation
+  kinds, the GLSP client identity, the CLI and sidecar setting keys, the
+  eight run-driver setting keys, the undo suffix or the scope argument: each
+  is derived as every product spelled it by hand (`<glspClientName>.glsp.<command>`,
+  `<prefix>.sidecar.edit`, `<prefix>.createEntityPort`, `glsp.<name>`,
+  `cliCommand`, `sidecarCommand`, `runOutputDir` and the agent-tool keys,
+  ` (<key>)`, `workflow`), and a value the product gives wins
+  (`resolveSidecarProfileInput`, `resolveSidecarCommandIds`). A product's
+  profile can lose about half its lines; one that keeps them all is unchanged.
+- **Three command ids and three chat fields are deprecated**, accepted and
+  ignored: `createAgentToolPolicyFile`, `chatAddViewerEditor` and
+  `chatAddViewerTask` (nothing registers them), `chat.name` and
+  `chat.operationPrefix` (nothing reads them), and the toolkit input's
+  `mcpEnabledSetting` (the rollback lever is `dialogram.chat.useGlspMcp`).
+- **The chat offers no node-creation slash command the profile did not name.**
+  The built-in `/create-task`, `/create-agent`, `/create-viewer` and
+  `/create-workflow` fallback is gone; every sidecar product names its own
+  `chat.nodeCommands` already.
 - **After a drop, the routes an edge cannot keep are drawn by libavoid, with
   the edges on one port as one shared path.** The layout draws the edges into
   a port as a trunk; the built-in router gives every edge its own channel and
@@ -105,6 +219,26 @@ platform API version.
 
 ### Fixed
 
+- **The palette creates nodes, and the property panel adds entity ports, in
+  every product's diagram.** Both handlers accepted only a `.py` source, so a
+  Verilog, VHDL or NDF diagram answered a palette drop with nothing. Like every
+  other handler that writes to the source, they now ask only that the model
+  has one.
+- **Copy then paste re-creates the copied elements.** Copy wrote the entity's
+  name as `entityName` with its source text, while paste looked for `name` and
+  `typeName`, so a copied node pasted as nothing; cut and duplicate already
+  wrote the paste shape. One payload now lives in `@dialogram/shared`
+  (`DiagramClipboardPayload`, `parseClipboardPayload`,
+  `clipboardDataFromPayload`), written by copy, cut and duplicate and read by
+  paste and the webview's post-paste selection. The server's
+  `clipboard/py-clipboard` module is gone; its builder is
+  `buildClipboardPayload` in `clipboard/clipboard`.
+- **A pasted or duplicated connection joins the pasted copies**, not the
+  entities it was copied from, which used to get a second wire while the copy
+  stayed unwired. The pasted name follows one rule, `nextFreeName` in
+  `@dialogram/shared` (`add`, then `add2`, `add3`), on the sidecar side and in
+  the webview, which predicted `add1` and so never selected the pasted node.
+  A paste with nothing to paste says so instead of doing nothing.
 - A layout change still on its 500 ms debounce timer when the window closes
   is written out: the host flushes every diagram's pending layout saves on
   deactivation.

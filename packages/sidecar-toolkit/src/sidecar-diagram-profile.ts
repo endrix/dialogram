@@ -11,9 +11,9 @@
  * needs no `@dialogram/extension-core` dependency; the shell annotates the
  * result as `DiagramProfile` at the assignment site.
  */
-import type { EntityPaletteItemSpec, NodeFamilySpec } from '@dialogram/shared';
+import type { DiagramClientAssets, DiagramCommandIds, EntityPaletteItemSpec, NodeFamilySpec, ProductClientBehavior } from '@dialogram/shared';
 import * as vscode from 'vscode';
-import { invokeSidecarOp } from './sidecar-graph-export.js';
+import { DEFAULT_EXPORT_OP, invokeSidecarOp } from './sidecar-graph-export.js';
 import { createSourceReferenceContext } from './chat-source-reference.js';
 import { createRegistryChatTools, type RegistryChatTool } from './registry-tools.js';
 import { RESUME_TOOL } from './run-failure.js';
@@ -54,70 +54,19 @@ import {
  */
 const AGENT_TOOL_OVERRIDES_STATE_KEY = 'workflow.agentToolEntityOverrides';
 
-/**
- * Neutral, behavior-named client capability flags the shell supplies and the
- * platform forwards into the diagram webview. Structural twin of the platform's
- * `DiagramClientBehavior`; kept local so the toolkit needs no extension-core dep.
- */
-export interface SidecarClientBehavior {
-    paletteIcons?: Record<string, { dark: string; light?: string }>;
-    nodeFamilies?: NodeFamilySpec[];
-    graphSourceNavigation?: boolean;
-    networkPropertySections?: boolean;
-    networkNavigationLabels?: boolean;
-    noneSentinel?: string;
-    scriptInterpreterCommands?: string[];
-    /** Where a nested workflow defined in another file opens: `in-place` shows it in
-     *  this editor, as a view of the editor's root (one editor per hierarchy);
-     *  `new-editor` (the default) opens the file in its own editor. */
-    nestedNavigation?: 'in-place' | 'new-editor';
-    /** Whether a double-click on a node that is not a network instance opens the
-     *  source it references in the text editor. Off (the default), such a node
-     *  does nothing on double-click. For a product whose leaves have a body of
-     *  their own that no diagram shows yet: an HDL module or entity of processes
-     *  and assignments lands at its definition. */
-    doubleClickOpensSource?: boolean;
-    /** Whether anything is written on a wire: the carried label (a width, a
-     *  payload type), the queue badge and last-token button of a run, the
-     *  index labels of a list connection. Default true. Off, an edge is its
-     *  line, and the tooltip on hover still says what it carries. 'once': as
-     *  true, but of the edges that leave or reach one port together with the
-     *  same carried label, only the first writes it; the others say it in
-     *  their tooltip (a node with many edges of one type, all on one trunk). */
-    edgeCaptions?: boolean | 'once';
-    /** Whether selecting an element draws its path (upstream and downstream, the rest faded), across group frames. Off by default. */
-    selectionTrace?: boolean;
-    /** Property-panel sections the product does without (`ports`, `annotations`, `parameters`, `entityType`), each `false` to hide it. */
-    propertySections?: { ports?: boolean; annotations?: boolean; parameters?: boolean; entityType?: boolean };
-    /** What the hierarchy outline panel is called; "Hierarchy" by default. */
-    outlineTitle?: string;
-}
+/** The webview behaviour flags a product sets; the platform's `DiagramClientBehavior` minus what it derives itself. */
+export type SidecarClientBehavior = ProductClientBehavior;
 
-/** The consumer-owned command ids a sidecar diagram profile carries. */
-export interface SidecarProfileCommandIds {
-    openDiagram: string;
-    openDiagramSplit: string;
-    layoutDiagram: string;
-    refreshDiagramModel: string;
-    renameEntityByName: string;
-    undo: string;
-    redo: string;
-    fitToScreen: string;
-    center: string;
-    exportSvg: string;
-    toggleGrid: string;
-    setQueueTraceVisible: string;
-    stopWorkflow: string;
-    runWorkflow: string;
-    layoutDiagramIfNeeded: string;
-    setAgentToolConfig: string;
-    getAgentToolConfig: string;
-    createAgentToolPolicyFile: string;
-    chatAddViewerEditor: string;
-    chatAddViewerTask: string;
+/**
+ * The command ids a sidecar diagram profile carries. A product may name any of
+ * them; the ones it leaves out are derived (see {@link resolveSidecarProfileInput}):
+ * `<glspClientName>.glsp.<field>` for the diagram commands, and
+ * `<sidecarOperationPrefix>.sidecar.edit` / `.send` for the two raw sidecar
+ * commands. The derived id is what every product spelled by hand before.
+ */
+export interface SidecarProfileCommandIds extends DiagramCommandIds {
     sidecarEdit: string;
     sidecarSend: string;
-    createNewContainer: string;
 }
 
 /**
@@ -142,10 +91,14 @@ export interface SidecarProfileInput {
     displayName: string;
     settingsNamespace: string;
     customEditorViewType: string;
-    glspClientId: string;
-    glspClientName: string;
-    commands: SidecarProfileCommandIds;
-    operationKinds: { createEntityPort: string; deleteEntityPort: string };
+    /** Default `glsp.<glspClientName>`. */
+    glspClientId?: string;
+    /** The first segment of the derived command ids. Default `key`. */
+    glspClientName?: string;
+    /** Command ids the product spells itself; the rest are derived (see {@link SidecarProfileCommandIds}). */
+    commands?: Partial<SidecarProfileCommandIds>;
+    /** Default `<sidecarOperationPrefix>.createEntityPort` / `.deleteEntityPort`. */
+    operationKinds?: { createEntityPort: string; deleteEntityPort: string };
     /** Neutral behavior flags forwarded into the diagram webview. */
     clientBehavior?: SidecarClientBehavior;
     /**
@@ -155,6 +108,14 @@ export interface SidecarProfileInput {
      * onto `DiagramProfile.clientStylesheets`.
      */
     clientStylesheets?: string[];
+    /**
+     * The product's own webview bundle, absolute paths: a script that calls
+     * `startStockDiagram` from `@dialogram/diagram-client/stock-starter` with
+     * the product's feature modules, its stylesheet and the directories they
+     * load from. Absent, the platform serves its stock bundle. Data only;
+     * threaded straight onto `DiagramProfile.clientAssets`.
+     */
+    clientAssets?: DiagramClientAssets;
 
     /**
      * A diagram that is a projection of a file drawn by the CLI, with nothing to
@@ -178,14 +139,17 @@ export interface SidecarProfileInput {
 
     // Sidecar/CLI transport.
     sidecarOperationPrefix: string;
-    /** The setting and default naming the sidecar command. Required unless
-     *  `readOnly` (assembly throws without them otherwise). */
+    /** The setting and default naming the sidecar command. The default is
+     *  required unless `readOnly` (assembly throws without it otherwise); the
+     *  setting key defaults to `sidecarCommand` when the default is given. */
     sidecarCommandSettingKey?: string;
     sidecarCommandDefault?: string;
-    cliCommandSettingKey: string;
+    /** The setting naming the CLI command, under `settingsNamespace`. Default `cliCommand`. */
+    cliCommandSettingKey?: string;
     cliCommandDefault: string;
     cliPythonModule?: string;
-    acceptedOperationPrefixes: string[];
+    /** Default `[sidecarOperationPrefix]`. */
+    acceptedOperationPrefixes?: string[];
     graphAcquisition: 'sidecar-export' | 'cli-plan';
     cliGraphArgs?: (file: string, requestedWorkflow?: string) => string[];
     /**
@@ -204,7 +168,8 @@ export interface SidecarProfileInput {
     cliResumeArgs?: (runDir: string, step: number) => string[];
 
     // User-visible strings / behavior.
-    undoLabelSuffix: string;
+    /** Appended to every undo label. Default ` (<key>)`. */
+    undoLabelSuffix?: string;
     createNodeStrings: CreateNodeStrings;
     createNodeBehavior: CreateNodeBehavior;
     createNodeVariants?: CreateNodeVariant[];
@@ -239,8 +204,10 @@ export interface SidecarProfileInput {
 
     // Chat edit backend.
     exportOp?: string;
-    mcpEnabledSetting: { section: string; key: string; default: boolean };
-    scopeArgKey: string;
+    /** @deprecated Nothing reads it (the MCP rollback lever is the platform's `dialogram.chat.useGlspMcp`); accepted and ignored. */
+    mcpEnabledSetting?: { section: string; key: string; default: boolean };
+    /** The op argument that scopes an edit to a sub-graph. Default `workflow`, the sidecar protocol's name for it. */
+    scopeArgKey?: string;
 
     /**
      * The Java ELK server the product ships, for large graphs: its fat jar,
@@ -303,15 +270,18 @@ export interface SidecarProfileInput {
      */
     statusSource?: SidecarStatusSourceInput;
 
-    // Run driver.
-    runOutputDirSettingKey: string;
-    liveExecutionGlowSettingKey: string;
-    agentToolsSettingKey: string;
-    agentToolAuthSettingKey: string;
-    agentToolPolicySettingKey: string;
-    agentToolTimeoutMsSettingKey: string;
-    agentToolRegistrySettingKey: string;
-    agentMcpBridgeCmdSettingKey: string;
+    // Run driver. The settings it reads under `settingsNamespace`; each
+    // defaults to the key every product declares: `runOutputDir`,
+    // `liveExecutionGlow`, `agentTools`, `agentToolAuth`, `agentToolPolicy`,
+    // `agentToolTimeoutMs`, `agentToolRegistry`, `agentMcpBridgeCmd`.
+    runOutputDirSettingKey?: string;
+    liveExecutionGlowSettingKey?: string;
+    agentToolsSettingKey?: string;
+    agentToolAuthSettingKey?: string;
+    agentToolPolicySettingKey?: string;
+    agentToolTimeoutMsSettingKey?: string;
+    agentToolRegistrySettingKey?: string;
+    agentMcpBridgeCmdSettingKey?: string;
     /** The setting naming the ACP connector (`<namespace>.<key>`, e.g.
      *  `acp.connector`): the one the chat talks to, offered by the property
      *  panel, and, with `runAcpFlags` on, the run's default (`--acp-connector`).
@@ -331,7 +301,8 @@ export interface SidecarProfileInput {
 
     // Chat carry-overs.
     chat: {
-        name: string;
+        /** @deprecated Nothing reads it; accepted and ignored. */
+        name?: string;
         fullName: string;
         skill?: string;
         nodeCommands?: Array<{ command: string; nodeType: string; description: string }>;
@@ -353,6 +324,97 @@ export interface SidecarProfileInput {
     watchGlobs?: string[];
 }
 
+/** The fields {@link resolveSidecarProfileInput} fills in when the product leaves them out. */
+type DerivedSidecarProfileFields =
+    | 'glspClientId' | 'glspClientName' | 'operationKinds' | 'cliCommandSettingKey' | 'acceptedOperationPrefixes'
+    | 'undoLabelSuffix' | 'scopeArgKey'
+    | 'runOutputDirSettingKey' | 'liveExecutionGlowSettingKey' | 'agentToolsSettingKey' | 'agentToolAuthSettingKey'
+    | 'agentToolPolicySettingKey' | 'agentToolTimeoutMsSettingKey' | 'agentToolRegistrySettingKey' | 'agentMcpBridgeCmdSettingKey';
+
+/** A {@link SidecarProfileInput} with every derivable field filled in. */
+export type ResolvedSidecarProfileInput =
+    Omit<SidecarProfileInput, DerivedSidecarProfileFields | 'commands'>
+    & Required<Pick<SidecarProfileInput, DerivedSidecarProfileFields>>
+    & { commands: SidecarProfileCommandIds };
+
+/** The command ids `input` leaves out, derived as every product spelled them by hand. */
+export function resolveSidecarCommandIds(
+    input: Pick<SidecarProfileInput, 'key' | 'glspClientName' | 'sidecarOperationPrefix' | 'commands'>
+): SidecarProfileCommandIds {
+    const client = nonBlank(input.glspClientName) ?? input.key;
+    const glsp = (field: string): string => `${client}.glsp.${field}`;
+    const given: Partial<Record<keyof SidecarProfileCommandIds, string>> = input.commands ?? {};
+    const derived: SidecarProfileCommandIds = {
+        openDiagram: glsp('openDiagram'),
+        openDiagramSplit: glsp('openDiagramSplit'),
+        layoutDiagram: glsp('layoutDiagram'),
+        refreshDiagramModel: glsp('refreshDiagramModel'),
+        renameEntityByName: glsp('renameEntityByName'),
+        undo: glsp('undo'),
+        redo: glsp('redo'),
+        fitToScreen: glsp('fitToScreen'),
+        center: glsp('center'),
+        exportSvg: glsp('exportSvg'),
+        toggleGrid: glsp('toggleGrid'),
+        setQueueTraceVisible: glsp('setQueueTraceVisible'),
+        stopWorkflow: glsp('stopWorkflow'),
+        runWorkflow: glsp('runWorkflow'),
+        layoutDiagramIfNeeded: glsp('layoutDiagramIfNeeded'),
+        setAgentToolConfig: glsp('setAgentToolConfig'),
+        getAgentToolConfig: glsp('getAgentToolConfig'),
+        sidecarEdit: `${input.sidecarOperationPrefix}.sidecar.edit`,
+        sidecarSend: `${input.sidecarOperationPrefix}.sidecar.send`,
+        createNewContainer: glsp('createNewContainer')
+    };
+    // Only the ids the platform registers come through: a deprecated id a
+    // product still spells, or a key it made up, stays out of the profile.
+    const resolved: Record<string, string> = {};
+    for (const [field, derivedId] of Object.entries(derived)) {
+        resolved[field] = nonBlank(given[field as keyof SidecarProfileCommandIds]) ?? derivedId;
+    }
+    return resolved as unknown as SidecarProfileCommandIds;
+}
+
+/** `value` when it says something; `undefined` for an absent or blank one, so a default applies. */
+function nonBlank(value: string | undefined): string | undefined {
+    return value !== undefined && value.trim() !== '' ? value : undefined;
+}
+
+/**
+ * `input` with every field a product may leave out filled in: the command
+ * ids, the operation kinds, the GLSP client identity, the setting keys and
+ * the undo suffix, each as the products spelled them by hand. A value the
+ * product gives wins.
+ */
+export function resolveSidecarProfileInput(input: SidecarProfileInput): ResolvedSidecarProfileInput {
+    const glspClientName = nonBlank(input.glspClientName) ?? input.key;
+    const prefix = input.sidecarOperationPrefix;
+    return {
+        ...input,
+        glspClientName,
+        glspClientId: nonBlank(input.glspClientId) ?? `glsp.${glspClientName}`,
+        commands: resolveSidecarCommandIds(input),
+        operationKinds: input.operationKinds ?? {
+            createEntityPort: `${prefix}.createEntityPort`,
+            deleteEntityPort: `${prefix}.deleteEntityPort`
+        },
+        sidecarCommandSettingKey: nonBlank(input.sidecarCommandSettingKey)
+            ?? (input.sidecarCommandDefault !== undefined ? 'sidecarCommand' : undefined),
+        cliCommandSettingKey: nonBlank(input.cliCommandSettingKey) ?? 'cliCommand',
+        acceptedOperationPrefixes: input.acceptedOperationPrefixes ?? [prefix],
+        undoLabelSuffix: nonBlank(input.undoLabelSuffix) ?? ` (${input.key})`,
+        scopeArgKey: nonBlank(input.scopeArgKey) ?? 'workflow',
+        runOutputDirSettingKey: nonBlank(input.runOutputDirSettingKey) ?? 'runOutputDir',
+        liveExecutionGlowSettingKey: nonBlank(input.liveExecutionGlowSettingKey) ?? 'liveExecutionGlow',
+        agentToolsSettingKey: nonBlank(input.agentToolsSettingKey) ?? 'agentTools',
+        agentToolAuthSettingKey: nonBlank(input.agentToolAuthSettingKey) ?? 'agentToolAuth',
+        agentToolPolicySettingKey: nonBlank(input.agentToolPolicySettingKey) ?? 'agentToolPolicy',
+        agentToolTimeoutMsSettingKey: nonBlank(input.agentToolTimeoutMsSettingKey) ?? 'agentToolTimeoutMs',
+        agentToolRegistrySettingKey: nonBlank(input.agentToolRegistrySettingKey) ?? 'agentToolRegistry',
+        agentMcpBridgeCmdSettingKey: nonBlank(input.agentMcpBridgeCmdSettingKey) ?? 'agentMcpBridgeCmd'
+    };
+}
+
 /** The product's source extensions: `sourceExtensions` when given, else the one `sourceExtension`. */
 export function sourceExtensionsOf(input: Pick<SidecarProfileInput, 'sourceExtension' | 'sourceExtensions'>): string[] {
     const many = (input.sourceExtensions ?? []).map(ext => ext.trim()).filter(ext => ext !== '');
@@ -363,7 +425,7 @@ export function sourceExtensionsOf(input: Pick<SidecarProfileInput, 'sourceExten
  * The sidecar command an editable profile must name. Checked here, where the
  * message can say which fields and why, rather than at the first spawn.
  */
-function requireSidecarCommand(input: SidecarProfileInput): { settingKey: string; commandDefault: string } {
+function requireSidecarCommand(input: ResolvedSidecarProfileInput): { settingKey: string; commandDefault: string } {
     if (input.sidecarCommandSettingKey === undefined || input.sidecarCommandDefault === undefined) {
         throw new Error(
             'createSidecarDiagramProfile: sidecarCommandSettingKey and sidecarCommandDefault are required unless readOnly is true.'
@@ -373,7 +435,7 @@ function requireSidecarCommand(input: SidecarProfileInput): { settingKey: string
 }
 
 /** Build the neutral {@link SidecarRuntimeConfig} the toolkit model source needs. */
-function sidecarRuntimeConfig(input: SidecarProfileInput): SidecarRuntimeConfig {
+function sidecarRuntimeConfig(input: ResolvedSidecarProfileInput): SidecarRuntimeConfig {
     return {
         settingsNamespace: input.settingsNamespace,
         sidecarOperationPrefix: input.sidecarOperationPrefix,
@@ -389,6 +451,7 @@ function sidecarRuntimeConfig(input: SidecarProfileInput): SidecarRuntimeConfig 
         },
         acceptedOperationPrefixes: input.acceptedOperationPrefixes,
         graphAcquisition: input.graphAcquisition,
+        exportOp: input.exportOp,
         cliGraphArgs: input.cliGraphArgs,
         cliHierarchyArgs: input.cliHierarchyArgs,
         graphExportFailureLabel: input.graphExportFailureLabel,
@@ -430,7 +493,8 @@ export interface SidecarDialogramApi {
     createSidecarDiagramProfile(input: SidecarProfileInput): ReturnType<typeof createSidecarDiagramProfile>;
 }
 
-export function createSidecarDiagramProfile(input: SidecarProfileInput) {
+export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
+    const input = resolveSidecarProfileInput(givenInput);
     // A read-only profile has no sidecar, so the sidecar fields may be absent
     // and nothing may need one; an editable profile must name its sidecar.
     // Both are checked here, where the message can say which field and why,
@@ -486,7 +550,6 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             sidecarCommandDefault: sidecarCommand.commandDefault,
             sidecarOperationPrefix: input.sidecarOperationPrefix,
             exportOp: input.exportOp,
-            mcpEnabledSetting: input.mcpEnabledSetting,
             scopeArgKey: input.scopeArgKey
         })
         : undefined;
@@ -556,7 +619,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             // export would have given it, from the CLI plan instead.
             ? {
                 graphContextProvider: async (file: string): Promise<string | undefined> => {
-                    const result = await invoke(file, input.exportOp ?? 'exportGraph', {});
+                    const result = await invoke(file, input.exportOp ?? DEFAULT_EXPORT_OP, {});
                     const graph = result.ok ? result.response?.diagnostic?.graph : undefined;
                     return graph && typeof graph === 'object' ? JSON.stringify(graph) : undefined;
                 }
@@ -667,6 +730,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             ? { ...input.clientBehavior, resumeAtStep: true }
             : input.clientBehavior,
         clientStylesheets: input.clientStylesheets,
+        clientAssets: input.clientAssets,
         // Read-only, the server registers no writing operation handler at all
         // (the platform's own guard on `'read-only'`), so no create-node flow
         // and no capability probe can ever run.
@@ -695,9 +759,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         mcp: { enabled: true },
         elkServer: input.elkServer,
         chat: {
-            name: input.chat.name,
             fullName: input.chat.fullName,
-            operationPrefix: input.sidecarOperationPrefix,
             skill: input.chat.skill,
             nodeCommands: input.chat.nodeCommands,
             // Read-only sidecar-registry tools bridged to GLSP-MCP by the platform adapter.
