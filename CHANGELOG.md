@@ -48,19 +48,21 @@ platform API version.
 
 ### Changed
 
-- **The Entities palette is the product's.** The tool-palette provider no
-  longer hard-codes wfpy's five rows (Task, Tool, Agent, Viewer, Workflow) or,
-  behind `useAlternateEntityPalette`, calpy's two (Actor, Network): Entities
-  are the profile's `entityPaletteItems`, in its order. `useAlternateEntityPalette`
-  and `platformEntityItems` are deprecated, accepted and ignored. The port
-  entries say "Create an input port" without "workflow". A product that
-  declared no rows offers an empty Entities category. wfpy-ide (endrix/wfpy-ide#23)
-  and streamblocks-ide (streamblocks/streamblocks-ide#9) now declare their
-  rows; ship them before this.
-- **Navigation defaults to `'none'`.** The Python navigation engine, and the
-  Python caller scan behind "used by", run only for a profile that names
-  `navigation: 'python'`. sv, vhdl and ndf set `'none'` already; wfpy-ide#23
-  and streamblocks-ide#9 name `'python'`.
+- **Breaking for a profile that relied on the defaults: the Entities palette,
+  navigation and the source MIME type are the product's.** The tool-palette
+  provider no longer hard-codes wfpy's five rows (Task, Tool, Agent, Viewer,
+  Workflow) or, behind `useAlternateEntityPalette`, calpy's two (Actor,
+  Network): Entities are the profile's `entityPaletteItems`, in its order, and
+  a profile with none shows no Entities header. `useAlternateEntityPalette`
+  and `platformEntityItems` are deprecated, accepted and ignored. The Python
+  navigation engine, and the Python caller scan behind "used by", run only
+  for `navigation: 'python'` (the default is `'none'`), and the source goes
+  to the agent as `text/plain` unless the profile names a MIME type. sv, vhdl
+  and ndf set all three already; wfpy-ide (endrix/wfpy-ide#23) and
+  streamblocks-ide (streamblocks/streamblocks-ide#9) declare them now. Ship
+  those first; the release that ships this bumps the API to 0.9, so a
+  product built for 0.8 fails the version check instead of silently losing
+  its palette.
 - **After a drop, the routes an edge cannot keep are drawn by libavoid, with
   the edges on one port as one shared path.** The layout draws the edges into
   a port as a trunk; the built-in router gives every edge its own channel and

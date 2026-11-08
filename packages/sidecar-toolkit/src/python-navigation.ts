@@ -5,7 +5,8 @@
  *
  * {@link createPythonNavigationProvider} implements the neutral
  * {@link DiagramNavigationProvider} seam; the profile assembler supplies it as
- * `DiagramProfile.navigation` unless the product opts out.
+ * `DiagramProfile.navigation` when the product names `navigation: 'python'`
+ * (the default is none).
  */
 import * as vscode from 'vscode';
 import * as path from 'node:path';

@@ -126,8 +126,10 @@ describe('createSidecarDiagramProfile', () => {
     });
 
     it('builds the Python navigation provider only for a product that names it, and carries the palette and MIME choices', () => {
-        expect(createSidecarDiagramProfile(baseInput()).navigation).toBeUndefined();
-        const python = createSidecarDiagramProfile(baseInput({ navigation: 'python' }));
+        const bare = createSidecarDiagramProfile(baseInput());
+        expect(bare.navigation).toBeUndefined();
+        expect(bare.chat?.sourceMimeType).toBe('text/plain');
+        const python = createSidecarDiagramProfile(baseInput({ navigation: 'python', chat: { name: 'wf', fullName: 'WF', sourceMimeType: 'text/x-python' } }));
         expect(python.navigation).toBeDefined();
         expect(python.chat?.sourceMimeType).toBe('text/x-python');
 

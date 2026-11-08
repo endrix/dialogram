@@ -81,19 +81,22 @@ export class WorkflowToolPaletteItemProvider extends ToolPaletteItemProvider {
             ));
         }
         
-        items.push({
-            id: 'palette-entities',
-            label: 'Entities',
-            sortString: 'A',
-            actions: [],
-            children: entityItems,
-            icon: 'symbol-class'
-        });
+        // A product that declares no rows offers no Entities header with nothing under it.
+        if (entityItems.length > 0) {
+            items.push({
+                id: 'palette-entities',
+                label: 'Entities',
+                sortString: 'A',
+                actions: [],
+                children: entityItems,
+                icon: 'symbol-class'
+            });
+        }
         
         // Create Ports category
         const portItems: PaletteItem[] = [
-            this.createNodeItem(WorkflowDiagramTypes.NODE_BOUNDARY_INPUT, 'Input Port', 'Create an input port', 'arrow-circle-down'),
-            this.createNodeItem(WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT, 'Output Port', 'Create an output port', 'arrow-circle-up')
+            this.createNodeItem(WorkflowDiagramTypes.NODE_BOUNDARY_INPUT, 'Input Port', 'Create a workflow input port', 'arrow-circle-down'),
+            this.createNodeItem(WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT, 'Output Port', 'Create a workflow output port', 'arrow-circle-up')
         ];
         
         items.push({

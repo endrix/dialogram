@@ -335,7 +335,7 @@ export interface SidecarProfileInput {
         fullName: string;
         skill?: string;
         nodeCommands?: Array<{ command: string; nodeType: string; description: string }>;
-        /** The MIME type the agent receives the source file as. Default `text/x-python`. */
+        /** The MIME type the agent receives the source file as. Default `text/plain`; a Python product names `text/x-python`. */
         sourceMimeType?: string;
         /**
          * How the session gets its source. `embed` (the default) attaches the
@@ -542,7 +542,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             const context = createSourceReferenceContext({
                 invoke,
                 exportOp: input.exportOp,
-                sourceMimeType: input.chat.sourceMimeType ?? 'text/x-python'
+                sourceMimeType: input.chat.sourceMimeType ?? 'text/plain'
             });
             return {
                 sourceMaxBytes: 0,
@@ -702,8 +702,8 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             nodeCommands: input.chat.nodeCommands,
             // Read-only sidecar-registry tools bridged to GLSP-MCP by the platform adapter.
             tools: chatTools,
-            // What the agent receives the file as; Python unless the product says.
-            sourceMimeType: input.chat.sourceMimeType ?? 'text/x-python',
+            // What the agent receives the file as; plain text unless the product says.
+            sourceMimeType: input.chat.sourceMimeType ?? 'text/plain',
             ...sourceContextConfig,
             // The ACP connector: the setting the chat and the property panel
             // read. Without it the chat keeps its opencode default.
