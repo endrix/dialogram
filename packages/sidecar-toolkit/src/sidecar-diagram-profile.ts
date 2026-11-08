@@ -220,18 +220,14 @@ export interface SidecarProfileInput {
      * honoured: alone it is the one extension, beside this it is ignored.
      */
     sourceExtensions?: string[];
+    /** @deprecated The platform's two Entities lists are gone; declare the rows in `entityPaletteItems`. Accepted and ignored. */
     useAlternateEntityPalette?: boolean;
     /** `false` empties the creation palette — for a diagram that is a projection
      *  of a source artifact and so has nothing to create. Default `true`. */
     supportsElementCreation?: boolean;
-    /** Extra Entities-palette entries this product contributes; plain data. */
+    /** The Entities palette: the product's rows, in its order. Plain data; the platform adds none of its own. */
     entityPaletteItems?: EntityPaletteItemSpec[];
-    /**
-     * Whether the platform's own Entities entries are offered beside
-     * `entityPaletteItems`. Default `true`. A product whose vocabulary is not
-     * the platform's (a hardware module is neither a task nor an actor) sets
-     * `false` and the palette's Entities are its own entries alone.
-     */
+    /** @deprecated The platform has no Entities entries of its own any more. Accepted and ignored. */
     platformEntityItems?: boolean;
     nodeFamilies?: NodeFamilySpec[];
     /**
@@ -282,10 +278,11 @@ export interface SidecarProfileInput {
     };
 
     /**
-     * How cross-file navigation targets are resolved. `'python'` (the default)
-     * uses the Python symbol providers and a `.py` workspace search, and scans
-     * sibling Python files for callers; `'none'` resolves nothing itself: the
-     * runtime emits absolute source locators and the platform navigates to them.
+     * How cross-file navigation targets are resolved. `'python'` uses the
+     * Python symbol providers and a `.py` workspace search, and scans sibling
+     * Python files for callers; `'none'` (the default) resolves nothing itself:
+     * the runtime emits absolute source locators and the platform navigates to
+     * them. A Python product names `'python'`.
      */
     navigation?: 'python' | 'none';
 
@@ -681,9 +678,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         storageOptions: {
             settingsNamespace: input.settingsNamespace,
             operationPrefix: input.sidecarOperationPrefix,
-            useAlternateEntityPalette: input.useAlternateEntityPalette,
             entityPaletteItems: input.entityPaletteItems,
-            platformEntityItems: input.platformEntityItems,
             nodeFamilies: input.nodeFamilies,
             nestedNavigation: input.clientBehavior?.nestedNavigation,
             defaultLayout: input.defaultLayout
@@ -691,7 +686,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
         watch: { globs: input.watchGlobs ?? sourceExtensions.map(ext => `**/*${ext}`) },
         // No provider at all for a product that resolves nothing itself: the
         // platform then navigates straight to the referenced target.
-        navigation: input.navigation === 'none' ? undefined : createPythonNavigationProvider(),
+        navigation: input.navigation === 'python' ? createPythonNavigationProvider() : undefined,
         canOpenSource,
         editBackend,
         // Sidecar-backed products ship the in-host GLSP-MCP server on; the

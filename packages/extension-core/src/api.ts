@@ -94,12 +94,12 @@ export interface DiagramOperationKinds {
 export interface DiagramStorageOptions {
   settingsNamespace: string;
   operationPrefix: string;
+  /** @deprecated The platform's two Entities lists are gone; declare the rows in `entityPaletteItems`. Accepted and ignored. */
   useAlternateEntityPalette?: boolean;
-  /** Extra Entities-palette entries this product contributes. Plain data; the
-   *  platform builds the actual palette item. */
+  /** The Entities palette: the product's rows, in its order. Plain data; the
+   *  platform builds each item and adds none of its own. */
   entityPaletteItems?: EntityPaletteItemSpec[];
-  /** Whether the platform's own Entities entries are offered beside them.
-   *  Default `true`; `false` leaves the Entities category to the product's. */
+  /** @deprecated The platform has no Entities entries of its own any more. Accepted and ignored. */
   platformEntityItems?: boolean;
   nodeFamilies?: NodeFamilySpec[];
   /** How nested workflows are navigated; in place, a nested view's layout is

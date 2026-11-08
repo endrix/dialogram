@@ -35,8 +35,13 @@ describe('navigation: none', () => {
         await expect(source.analysis.collectSourceFilesUnderRoots(['/x'], '/x/a.sv')).resolves.toEqual([]);
     });
 
-    it('leaves the Python scan in place by default', () => {
+    it('answers empty by default too: the Python scan is for a product that names it', async () => {
         const source = new SidecarModelSource(BASE);
+        await expect(source.analysis.discoverCrossFileWorkflowCallers('/x/a.py', 'top', ['/x/b.py'])).resolves.toEqual([]);
+    });
+
+    it('runs the Python scan when the product names it', () => {
+        const source = new SidecarModelSource({ ...BASE, navigation: 'python' });
         expect(source.analysis.discoverCrossFileWorkflowCallers.name).toBe('discoverCrossFileWorkflowCallers');
     });
 });

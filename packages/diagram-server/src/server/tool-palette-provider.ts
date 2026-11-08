@@ -64,30 +64,13 @@ export class WorkflowToolPaletteItemProvider extends ToolPaletteItemProvider {
         // navigating to an editable one. The client hides them while a
         // read-only view is shown (read-only-view.ts).
 
-        const useAlternateEntityPalette = this.storageOptions?.useAlternateEntityPalette ?? false;
-        const platformEntityItems = this.storageOptions?.platformEntityItems ?? true;
         const items: PaletteItem[] = [];
 
-        // Create Entities category: the platform's own entries unless the
-        // product's nodes are none of these kinds, then the product's alone.
-        const entityItems: PaletteItem[] = !platformEntityItems
-            ? []
-            : useAlternateEntityPalette
-            ? [
-                this.createNodeItem(WorkflowDiagramTypes.NODE_TASK, 'Actor', 'Create an Actor instance', 'symbol-class'),
-                this.createNodeItem(WorkflowDiagramTypes.NODE_WORKFLOW, 'Network', 'Create a Network instance', 'symbol-namespace')
-            ]
-            : [
-                this.createNodeItem(WorkflowDiagramTypes.NODE_TASK, 'Task', 'Create a Task instance', 'symbol-class'),
-                this.createNodeItem(WorkflowDiagramTypes.NODE_EXTERNAL_TASK, 'Tool', 'Create a Tool instance intended for external execution (@tool)', 'link-external'),
-                this.createNodeItem(WorkflowDiagramTypes.NODE_EXTERNAL_TASK, 'Agent', 'Create or instantiate an external task annotated with @agent (Copilot/API-backed)', 'wf-agent-icon', { agentTask: true }),
-                this.createNodeItem(WorkflowDiagramTypes.NODE_VIEWER_TASK, 'Viewer', 'Create or instantiate an external task annotated with @viewer (opens last-token files)', 'open-preview', { viewerTask: true }),
-                this.createNodeItem(WorkflowDiagramTypes.NODE_WORKFLOW, 'Workflow', 'Create a Workflow instance', 'symbol-namespace')
-            ];
-
-        // Anything the product contributes, after the platform's own. A product
-        // cannot extend the lists above without editing this file, and a
-        // platform that has to learn every product's vocabulary is not neutral.
+        // Create Entities category: what the product declares, in its order.
+        // The platform names no kind of its own: a task, an actor, a module are
+        // each some product's word, and a platform that knew them would have to
+        // learn every product's vocabulary.
+        const entityItems: PaletteItem[] = [];
         for (const spec of this.storageOptions?.entityPaletteItems ?? []) {
             entityItems.push(this.createNodeItem(
                 spec.elementTypeId,
@@ -109,8 +92,8 @@ export class WorkflowToolPaletteItemProvider extends ToolPaletteItemProvider {
         
         // Create Ports category
         const portItems: PaletteItem[] = [
-            this.createNodeItem(WorkflowDiagramTypes.NODE_BOUNDARY_INPUT, 'Input Port', 'Create a workflow input port', 'arrow-circle-down'),
-            this.createNodeItem(WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT, 'Output Port', 'Create a workflow output port', 'arrow-circle-up')
+            this.createNodeItem(WorkflowDiagramTypes.NODE_BOUNDARY_INPUT, 'Input Port', 'Create an input port', 'arrow-circle-down'),
+            this.createNodeItem(WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT, 'Output Port', 'Create an output port', 'arrow-circle-up')
         ];
         
         items.push({

@@ -58,30 +58,32 @@ describe('entity palette contributions', () => {
         expect(items.map((i: any) => i.id)).toEqual(['palette-entities', 'palette-ports', 'palette-connections']);
     });
 
-    it('keeps the platform’s own entries', async () => {
+    it('names no kind of its own: the Entities are the product\'s, in its order', async () => {
         const entities = await entitiesOf(providerWith({
             settingsNamespace: 'wfpy',
             operationPrefix: 'wfpy',
-            entityPaletteItems: [{
-                elementTypeId: 'node:task', label: 'Extra', description: 'x'
-            }]
+            entityPaletteItems: [
+                { elementTypeId: 'node:actor', label: 'Task', description: 'x', icon: 'symbol-class' },
+                { elementTypeId: 'node:network', label: 'Workflow', description: 'y' }
+            ]
         }));
-        const labels = entities.map((i: any) => i.label);
-
-        expect(labels).toContain('Task');
-        expect(labels).toContain('Workflow');
-        expect(labels).toContain('Extra');
+        expect(entities.map((i: any) => [i.id, i.label, i.icon, i.actions[0].elementTypeId])).toEqual([
+            ['palette-item-0', 'Task', 'symbol-class', 'node:actor'],
+            ['palette-item-1', 'Workflow', undefined, 'node:network']
+        ]);
     });
 
-    it('contributes nothing when a profile says nothing', async () => {
+    it('offers an empty Entities category when a profile declares no rows, and ignores the retired flags', async () => {
         // The control: without this the first assertion could pass on a palette
         // that always contained the entry.
-        const entities = await entitiesOf(providerWith({
-            settingsNamespace: 'wfpy',
-            operationPrefix: 'wfpy'
-        }));
-
-        expect(entities.map((i: any) => i.label)).not.toContain('StreamBlocks');
-        expect(entities.length).toBeGreaterThan(0);
+        for (const options of [
+            { settingsNamespace: 'wfpy', operationPrefix: 'wfpy' },
+            { settingsNamespace: 'calpy', operationPrefix: 'calpy', useAlternateEntityPalette: true },
+            { settingsNamespace: 'x', operationPrefix: 'x', platformEntityItems: true }
+        ]) {
+            const items = await providerWith(options).getItems();
+            expect(items.map((i: any) => i.id)).toEqual(['palette-entities', 'palette-ports', 'palette-connections']);
+            expect(await entitiesOf(providerWith(options))).toEqual([]);
+        }
     });
 });

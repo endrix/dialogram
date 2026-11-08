@@ -210,8 +210,8 @@ export interface SidecarRuntimeConfig {
     cliCommandSettingKey: string;
     cliCommandDefault: string;
     cliPythonModule?: string;
-    /** `'none'` turns off the Python caller scan (`discoverCrossFileWorkflowCallers`)
-     *  and the `.py` workspace walk behind it; default `'python'`. */
+    /** `'python'` turns on the Python caller scan (`discoverCrossFileWorkflowCallers`)
+     *  and the `.py` workspace walk behind it; default `'none'`. */
     navigation?: 'python' | 'none';
     /**
      * `true` publishes a graph document's own `errors` (the compiler's, at the
