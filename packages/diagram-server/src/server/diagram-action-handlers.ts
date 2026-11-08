@@ -59,8 +59,9 @@ import { clearAllEdgeRoutingPoints } from '../routing/clear-edge-routes';
 import { releaseBoundaryNodeConstraints, restoreNodeLayoutOptions, runBoundaryFlowLayout } from '../operations/boundary-flow-layout';
 import { perfNow } from './graph-load-perf';
 import {
-    collectEdgeRoutes,
-    collectNodePositions,
+    isMovableNode,
+    type LayoutPersistenceMeta,
+    nodeLayoutKeyOf,
     persistLayout,
     restoreUnselectedLayout,
     movableNodeIdsIn,
@@ -96,18 +97,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
         // 1) Optional automatic layout on first open when no persisted layout exists.
         // We do this even though layoutKind is MANUAL, but only once per session
         // and we persist the result immediately so further edits won't trigger layout.
-        const layoutMeta = modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as
-            | {
-                  workflowFilePath: string;
-                  networkId: string;
-                  hasPersistedLayout: boolean;
-                                    hasPersistedEdgeRoutes: boolean;
-                  didInitialLayout: boolean;
-                                    hasClientBounds: boolean;
-                  allowInitialLayoutPersistence: boolean;
-                  unpositionedNodeCount?: number;
-              }
-            | undefined;
+        const layoutMeta = modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as LayoutPersistenceMeta | undefined;
 
         if (
             layoutEngine &&
@@ -129,7 +119,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
                 // run the exact same boundary-flow routine (pin one-sided task nodes to outer
                 // layers + clear stale edge routes + ELK), so the fresh-open render matches
                 // what manual layout produces instead of diverging (plain ELK looked worse).
-                await this.runBoundaryFlowAndPersist(layoutMeta, modelState, layoutEngine);
+                await this.runBoundaryFlowAndPersist(modelState, layoutEngine);
                 // Always-on breadcrumb: initial ELK layout is the dominant post-load server cost on a
                 // fresh open, and it runs here (in the client-bounds round-trip), not in the load path.
                 // eslint-disable-next-line no-console
@@ -198,7 +188,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             }
             console.log('[WorkflowModelSubmissionHandler] Auto-layout after agent structural edit for:', layoutMeta.networkId);
             try {
-                await this.runBoundaryFlowAndPersist(layoutMeta, modelState, layoutEngine);
+                await this.runBoundaryFlowAndPersist(modelState, layoutEngine);
                 console.log('[WorkflowModelSubmissionHandler] Agent auto-layout completed');
             } catch (error) {
                 console.error('[WorkflowModelSubmissionHandler] Agent auto-layout failed:', error);
@@ -377,25 +367,10 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
      * and the agent-structural-edit auto-layout (branch 1c) so both produce identical geometry
      * and persistence — no divergence between them.
      */
-    private async runBoundaryFlowAndPersist(
-        layoutMeta: {
-            workflowFilePath: string;
-            networkId: string;
-            hasPersistedLayout: boolean;
-            hasPersistedEdgeRoutes: boolean;
-            [key: string]: unknown;
-        },
-        modelState: ModelState,
-        layoutEngine: LayoutEngine
-    ): Promise<void> {
+    private async runBoundaryFlowAndPersist(modelState: ModelState, layoutEngine: LayoutEngine): Promise<void> {
         await runBoundaryFlowLayout(modelState.root, layoutEngine);
-        const positions = collectNodePositions(modelState.root);
-        const routes = collectEdgeRoutes(modelState.root);
-        await this.layoutPersistence.saveLayoutImmediate(layoutMeta.workflowFilePath, layoutMeta.networkId, positions, routes);
         // From now on, treat it as persisted.
-        layoutMeta.hasPersistedLayout = true;
-        layoutMeta.hasPersistedEdgeRoutes = routes.size > 0;
-        modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
+        await persistLayout(modelState, this.layoutPersistence, { layoutPerformed: true });
     }
 
     /**
@@ -432,13 +407,9 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
         const newNodes: Array<{ key: string; element: any; width: number; height: number }> = [];
         const collect = (element: any): void => {
             if (!element) { return; }
-            const type = element.type as string | undefined;
-            if (typeof type === 'string' && type.startsWith('node:')) {
-                const args = element.args as Record<string, unknown> | undefined;
-                const key = (args?.[WorkflowDiagramMetadata.AST_PATH] ??
-                    args?.[WorkflowDiagramMetadata.ENTITY_NAME] ??
-                    args?.[WorkflowDiagramMetadata.PORT_NAME]) as unknown;
-                if (typeof key === 'string' && key.trim() !== '' && !existingPositions.has(key)) {
+            if (isMovableNode(element)) {
+                const key = nodeLayoutKeyOf(element);
+                if (key !== undefined && !existingPositions.has(key)) {
                     const size = (element as any).size as { width: number; height: number } | undefined;
                     newNodes.push({
                         key,
@@ -737,20 +708,7 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
             };
             await this.applyBounds(model, action, passResult);
 
-            const layoutMeta = this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as
-                | {
-                      workflowFilePath: string;
-                      networkId: string;
-                      hasPersistedLayout: boolean;
-                      hasPersistedEdgeRoutes: boolean;
-                      didInitialLayout: boolean;
-                      hasClientBounds: boolean;
-                      allowInitialLayoutPersistence: boolean;
-                      unpositionedNodeCount?: number;
-                      sizeMeasurePassCount?: number;
-                      lastClientNodeSizes?: Record<string, { width: number; height: number }>;
-                  }
-                | undefined;
+            const layoutMeta = this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as LayoutPersistenceMeta | undefined;
 
             // Node sizes are SERVER-AUTHORITATIVE on every path.
             //
@@ -855,16 +813,7 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
     protected async applyBounds(root: GModelRoot, action: ComputedBoundsAction, passResult?: BoundsPassResult): Promise<void> {
         const index = this.modelState.index;
 
-        const layoutMeta = this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as
-            | {
-                  workflowFilePath?: string;
-                  networkId?: string;
-                  hasPersistedLayout?: boolean;
-                  hasClientBounds?: boolean;
-                  hasPersistedEdgeRoutes: boolean;
-                  rerouteEdgeIds?: string[];
-              }
-            | undefined;
+        const layoutMeta = this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as LayoutPersistenceMeta | undefined;
 
         const hasPersistedLayout = layoutMeta?.hasPersistedLayout === true;
 

@@ -12,9 +12,9 @@ import {
 import { inject, injectable } from 'inversify';
 
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
+import { WorkflowDiagramConstants, portSide } from '@dialogram/shared';
 import { GModelSerializer } from '@eclipse-glsp/server';
 import { persistLayout } from '../server/layout-snapshot';
-import { portAnchorAbsolute } from '../routing/persisted-edge-routes';
 
 @injectable()
 export class WorkflowChangeRoutingPointsOperationHandler extends OperationHandler {
@@ -101,9 +101,67 @@ export class WorkflowChangeRoutingPointsOperationHandler extends OperationHandle
         return Math.sqrt(dx * dx + dy * dy);
     }
 
+    private absolutePosition(element: any): { x: number; y: number } {
+        let x = 0;
+        let y = 0;
+        let cur: any = element;
+        while (cur) {
+            const p = cur.position as { x?: number; y?: number } | undefined;
+            if (p) {
+                x += p.x ?? 0;
+                y += p.y ?? 0;
+            }
+            cur = cur.parent;
+        }
+        return { x, y };
+    }
+
+    private portAnchorAbsolute(portId: string): { x: number; y: number } | undefined {
+        const port: any = this.modelState.index.find(portId);
+        if (!port) {
+            return undefined;
+        }
+        // Find containing node (ports are typically children of nodes).
+        let node: any = port;
+        while (node && !(node as any).type?.startsWith?.('node:')) {
+            node = node.parent;
+        }
+        if (!node) {
+            return undefined;
+        }
+
+        const nodeAbs = this.absolutePosition(node);
+        const portRel = (port.position as { x?: number; y?: number } | undefined) ?? { x: 0, y: 0 };
+        const fallbackPortWidth = WorkflowDiagramConstants.PORT_WIDTH_PX;
+        const fallbackPortHeight = WorkflowDiagramConstants.PORT_HEIGHT_PX;
+        const w = (port.size?.width && port.size.width > 0) ? port.size.width : fallbackPortWidth;
+        const h = (port.size?.height && port.size.height > 0) ? port.size.height : fallbackPortHeight;
+
+        const side = portSide({
+            absolute: nodeAbs,
+            direction: (port as any).args?.['cal:portDirection'] as string | undefined,
+            side: (port as any).args?.['cal:portSide'] as string | undefined,
+            type: port.type as string | undefined
+        });
+
+        const absPortX = nodeAbs.x + (portRel.x ?? 0);
+        const absPortY = nodeAbs.y + (portRel.y ?? 0);
+        const cx = absPortX + w / 2;
+        const cy = absPortY + h / 2;
+
+        switch (side) {
+            case 'WEST':
+                return { x: absPortX, y: cy };
+            case 'EAST':
+                return { x: absPortX + w, y: cy };
+            default:
+                return { x: cx, y: cy };
+        }
+    }
+
     private normalizeToFullPolyline(edge: any, maybeIntermediate: { x: number; y: number }[]): { x: number; y: number }[] {
-        const src = portAnchorAbsolute(this.modelState.index, edge?.sourceId);
-        const tgt = portAnchorAbsolute(this.modelState.index, edge?.targetId);
+        const src = typeof edge?.sourceId === 'string' ? this.portAnchorAbsolute(edge.sourceId) : undefined;
+        const tgt = typeof edge?.targetId === 'string' ? this.portAnchorAbsolute(edge.targetId) : undefined;
         if (!src || !tgt) {
             return maybeIntermediate;
         }

@@ -1049,7 +1049,7 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
             if (this.debugReroute >= 1) {
                 console.info('[cal-reroute] slide — ' + slidEdgeIds.size + ' edges kept their routes');
             }
-            await this.persistRoutes(root, operation);
+            await this.persistRoutes(operation);
             this.logPerf(operation, startedAt, slidEdgeIds.size, 0, 'slide');
             return;
         }
@@ -1174,7 +1174,7 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
             });
         }
 
-        await this.persistRoutes(root, operation);
+        await this.persistRoutes(operation);
         this.logPerf(operation, startedAt, slidEdgeIds.size, routed, usedLibavoid ? 'libavoid' : 'manhattan');
     }
 
@@ -1186,9 +1186,11 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
     }
 
     /** Persist the layout, positions and routes; not for a preview (a drag). */
-    private async persistRoutes(root: GGraph, operation: WorkflowRerouteEdgesAvoidOverlapsOperation): Promise<void> {
+    private async persistRoutes(operation: WorkflowRerouteEdgesAvoidOverlapsOperation): Promise<void> {
         if (operation.preview) { return; }
-        await persistLayout(this.modelState, this.layoutPersistence);
+        // The layout meta is left alone: a reroute that routed nothing must not
+        // lower "has persisted edge routes" and arm the bootstrap reroute.
+        await persistLayout(this.modelState, this.layoutPersistence, { noteInMeta: false });
     }
 
     private routingSignature(points: { x: number; y: number }[] | undefined): string {

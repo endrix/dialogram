@@ -110,7 +110,9 @@ export class WorkflowResetEdgeRoutesOperationHandler extends OperationHandler {
 
         visit(root);
 
-        // Persist the updated routing points; the node positions already on disk stand.
-        await persistLayout(this.modelState, this.layoutPersistence, { keepPersistedPositions: true });
+        // Persist the cleared routes; the node positions already on disk stand. The
+        // layout meta is left alone: noting "no persisted routes" would arm the
+        // bootstrap reroute, which would redraw what was just reset.
+        await persistLayout(this.modelState, this.layoutPersistence, { keepPersistedPositions: true, noteInMeta: false });
     }
 }

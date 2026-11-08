@@ -68,11 +68,12 @@ describe('collectNodePositions', () => {
 });
 
 describe('collectEdgeRoutes', () => {
-    it('keys a route by the edge signature the reader looks up, and needs two points', () => {
+    it('keys a route by the edge signature the reader looks up, and keeps a lone bend', () => {
         const { root } = diagram();
         const routes = collectEdgeRoutes(root);
-        expect(Array.from(routes.keys())).toEqual(['a|out|b|in']);
+        expect(Array.from(routes.keys())).toEqual(['a|out|b|in', 'main.e2']);
         expect(routes.get('a|out|b|in')).toEqual([{ x: 58, y: 29 }, { x: 200, y: 29 }]);
+        expect(routes.get('main.e2')).toEqual([{ x: 1, y: 1 }]);
     });
 });
 
@@ -125,7 +126,7 @@ describe('persistLayout', () => {
         expect(persistence.loadLayout).not.toHaveBeenCalled();
         const [, , positions, routes] = persistence.saveLayoutImmediate.mock.calls[0];
         expect(positions.get('main.a')).toEqual({ x: 10, y: 20 });
-        expect(routes.size).toBe(1);
+        expect(routes.size).toBe(2);
         expect(meta).toEqual({ hasPersistedLayout: true, hasPersistedEdgeRoutes: true });
     });
 
@@ -139,6 +140,17 @@ describe('persistLayout', () => {
 
         const [, , positions] = persistence.saveLayoutImmediate.mock.calls[0];
         expect(positions).toBe(onDisk);
+        expect(meta).toEqual({ hasPersistedLayout: true, hasPersistedEdgeRoutes: true });
+    });
+
+    it('leaves the layout meta alone when asked, as Reset Routes and the reroute do', async () => {
+        const { root } = diagram();
+        const meta = { hasPersistedLayout: true, hasPersistedEdgeRoutes: true };
+        const persistence = { loadLayout: vi.fn(), saveLayoutImmediate: vi.fn(async () => undefined) } as any;
+
+        await persistLayout(modelStateFor(root, meta), persistence, { noteInMeta: false });
+
+        expect(persistence.saveLayoutImmediate).toHaveBeenCalledOnce();
         expect(meta).toEqual({ hasPersistedLayout: true, hasPersistedEdgeRoutes: true });
     });
 

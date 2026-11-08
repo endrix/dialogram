@@ -10,11 +10,11 @@
 import { GEdge, GModelIndex, GModelRoot, ModelState } from '@eclipse-glsp/server';
 import { WorkflowDiagramMetadata, WORKFLOW_LAYOUT_PERSISTENCE_KEY, WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
-import { buildEdgeSignatureCounts, edgeRouteKeyFor } from '../routing/persisted-edge-routes';
+import { buildEdgeSignatureCounts, edgeRouteKeyFor, type Point } from '../routing/persisted-edge-routes';
 import type { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { layoutTargetOf } from './layout-target';
 
-export type Point = { x: number; y: number };
+export type { Point };
 
 /** What the model state keeps about the diagram's layout file. */
 export interface LayoutPersistenceMeta {
@@ -26,7 +26,22 @@ export interface LayoutPersistenceMeta {
     hasClientBounds: boolean;
     allowInitialLayoutPersistence: boolean;
     unpositionedNodeCount?: number;
+    sizeMeasurePassCount?: number;
+    lastClientNodeSizes?: Record<string, { width: number; height: number }>;
+    rerouteEdgeIds?: string[];
     [key: string]: unknown;
+}
+
+/**
+ * The key the layout file stores a node's position under: its AST path, else
+ * its entity name, else its port name; `undefined` for a node with none.
+ */
+export function nodeLayoutKeyOf(element: any): string | undefined {
+    const args = element?.args as Record<string, unknown> | undefined;
+    const key = (args?.[WorkflowDiagramMetadata.AST_PATH]
+        ?? args?.[WorkflowDiagramMetadata.ENTITY_NAME]
+        ?? args?.[WorkflowDiagramMetadata.PORT_NAME]) as unknown;
+    return typeof key === 'string' && key.trim() !== '' ? key : undefined;
 }
 
 /** A node the layout may move: any `node:*` element. */
@@ -161,11 +176,8 @@ export function collectNodePositions(root: GModelRoot): Map<string, Point> {
         const absX = parentAbsX + (element.position?.x ?? 0);
         const absY = parentAbsY + (element.position?.y ?? 0);
         if (isMovableNode(element)) {
-            const args = element.args as Record<string, unknown> | undefined;
-            const key = (args?.[WorkflowDiagramMetadata.AST_PATH]
-                ?? args?.[WorkflowDiagramMetadata.ENTITY_NAME]
-                ?? args?.[WorkflowDiagramMetadata.PORT_NAME]) as unknown;
-            if (typeof key === 'string' && key.trim() !== '' && element.position) {
+            const key = nodeLayoutKeyOf(element);
+            if (key !== undefined && element.position) {
                 result.set(key, { x: absX, y: absY });
             }
         }
@@ -183,7 +195,8 @@ export function collectNodePositions(root: GModelRoot): Map<string, Point> {
 /**
  * Every routed edge's polyline, keyed as `applyPersistedEdgeRoutes` looks it
  * up: by endpoint signature, with the AST path added where the signature
- * repeats. A route needs two points to be one.
+ * repeats. Any routing points count: the loader rebuilds a lone bend into a
+ * full polyline between the ports.
  */
 export function collectEdgeRoutes(root: GModelRoot): Map<string, Point[]> {
     const result = new Map<string, Point[]>();
@@ -192,7 +205,7 @@ export function collectEdgeRoutes(root: GModelRoot): Map<string, Point[]> {
         if (element instanceof GEdge) {
             const key = edgeRouteKeyFor(element.args as Record<string, unknown> | undefined, signatureCounts);
             const routingPoints = (element as any).routingPoints as Point[] | undefined;
-            if (typeof key === 'string' && Array.isArray(routingPoints) && routingPoints.length >= 2) {
+            if (typeof key === 'string' && Array.isArray(routingPoints) && routingPoints.length > 0) {
                 result.set(key, routingPoints);
             }
         }
@@ -205,11 +218,14 @@ export function collectEdgeRoutes(root: GModelRoot): Map<string, Point[]> {
  * model state. `layoutPerformed`: the whole layout is now persisted, not only
  * the routes. `keepPersistedPositions`: a route-only change, so the positions
  * already on disk, under their stable keys, stand where there are any.
+ * `noteInMeta: false`: save without touching the model state's layout meta.
+ * Reset Routes and the reroute save that way: lowering "has persisted edge
+ * routes" would arm the bootstrap reroute that redraws what was just cleared.
  */
 export async function persistLayout(
     modelState: ModelState,
     layoutPersistence: LayoutPersistenceService,
-    options: { layoutPerformed?: boolean; keepPersistedPositions?: boolean } = {}
+    options: { layoutPerformed?: boolean; keepPersistedPositions?: boolean; noteInMeta?: boolean } = {}
 ): Promise<void> {
     const diagramModel = modelState.get(WORKFLOW_NETWORK_MODEL_KEY) as WorkflowDiagramModel | undefined;
     if (!diagramModel) {
@@ -221,6 +237,9 @@ export async function persistLayout(
     const routes = collectEdgeRoutes(modelState.root);
     await layoutPersistence.saveLayoutImmediate(workflowFilePath, networkId, positions, routes);
 
+    if (options.noteInMeta === false) {
+        return;
+    }
     const layoutMeta = modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as LayoutPersistenceMeta | undefined;
     if (layoutMeta) {
         if (options.layoutPerformed) {

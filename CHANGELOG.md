@@ -56,7 +56,12 @@ platform API version.
   holds them once (`collectNodePositions`, `collectEdgeRoutes`,
   `movableNodeIdsIn`, `snapshot*ById`, `restoreUnselectedLayout`,
   `persistLayout`), and `persisted-edge-routes.ts` exports the route-key and
-  anchor helpers it always had.
+  anchor helpers it always had. Every handler keys a saved route the same way
+  (endpoint signature, AST path where it repeats; four keyed by path alone,
+  which the loader read through its fallback). Reset Routes and the reroute,
+  which noted their save under a model-state key nothing read, now leave the
+  layout meta alone on purpose: lowering "has persisted edge routes" would arm
+  the bootstrap reroute that redraws what was just cleared.
 - **After a drop, the routes an edge cannot keep are drawn by libavoid, with
   the edges on one port as one shared path.** The layout draws the edges into
   a port as a trunk; the built-in router gives every edge its own channel and
@@ -99,12 +104,6 @@ platform API version.
 
 ### Fixed
 
-- **Reset Routes and the reroute note their save where the rest of the server
-  reads it.** Both wrote "has persisted edge routes" under a model-state key
-  nothing else used, so after them the flag stayed what the last layout left.
-  Every handler also keys a saved route the same way now (endpoint signature,
-  AST path where it repeats); four keyed by path alone, which the loader's
-  fallback read but the other writers overwrote.
 - A layout change still on its 500 ms debounce timer when the window closes
   is written out: the host flushes every diagram's pending layout saves on
   deactivation.
