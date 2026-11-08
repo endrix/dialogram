@@ -17,8 +17,7 @@
  * sidecar → reversible workspace edit (free undo/redo).
  */
 
-import type { SidecarOpResult } from './sidecar-graph-export.js';
-import { DEFAULT_EXPORT_OP } from './chat-edit-backend.js';
+import { DEFAULT_EXPORT_OP, type SidecarOpResult } from './sidecar-graph-export.js';
 import { summarizeValidation } from './validation-summary.js';
 
 /**

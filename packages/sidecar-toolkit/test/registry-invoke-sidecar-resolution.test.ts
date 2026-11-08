@@ -18,7 +18,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mirror chat-edit-backend.test.ts: replace the sidecar transport so we observe
 // the resolved command handed to it WITHOUT spawning a process.
 const graphExport = vi.hoisted(() => ({
-    invokeSidecarOp: vi.fn()
+    invokeSidecarOp: vi.fn(),
+    DEFAULT_EXPORT_OP: 'exportGraph'
 }));
 vi.mock('../src/sidecar-graph-export.js', () => graphExport);
 

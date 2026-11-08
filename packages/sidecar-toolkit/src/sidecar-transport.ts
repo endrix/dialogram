@@ -11,12 +11,20 @@ import * as path from 'node:path';
 import { describeChildFailure, runChildProcess } from './run-child-process.js';
 import { findPackageRootForFile, withPythonPackageRoot } from './server/source-files.js';
 
+/** The graph-export op every sidecar answers to (contract v2), when the product names no other. */
+export const DEFAULT_EXPORT_OP = 'exportGraph';
+
+/** How a request failed: the process, or the answer. */
+export type SidecarFailure = 'start' | 'timeout' | 'exit' | 'rejected' | 'invalid-json';
+
 export interface SidecarOpResult {
     ok: boolean;
     /** The parsed answer, when the sidecar gave one. */
     response?: any;
-    /** Why `ok` is false, for a person. */
+    /** Why `ok` is false, for a person. A process failure starts with the command and carries its stderr. */
     message?: string;
+    /** How it failed, when it did. */
+    failure?: SidecarFailure;
     /** The sidecar's `diagnostic.code`, when it rejected the request with one. */
     code?: string;
     /** What the sidecar wrote to stderr, when it failed. */
@@ -35,61 +43,73 @@ export interface SidecarRequest {
     args: Record<string, unknown>;
     /** The deadline; the child-process default when absent. */
     timeoutMs?: number;
-    /**
-     * Run from the file's Python package root with it first on `PYTHONPATH`, so
-     * a sidecar that imports the file resolves its intra-package imports. For
-     * the requests that import the file (graph export, edits through the chat);
-     * the diagram's own edits never asked for it and still do not.
-     */
-    pythonPackageRoot?: boolean;
 }
 
-/** The last non-empty line of `stdout`: a sidecar may log above its answer. */
-function lastLine(stdout: string): string | undefined {
-    return stdout.split(/\r?\n/).map(line => line.trim()).filter(line => line !== '').at(-1);
+/**
+ * The answer in `stdout`: the whole of it when it is one JSON document (a
+ * sidecar may pretty-print), else its last non-empty line (a sidecar may log
+ * above its answer); `undefined` for no output, `null` for output that is
+ * neither.
+ */
+function parseAnswer(stdout: string): unknown {
+    const whole = stdout.trim();
+    if (whole === '') {
+        return undefined;
+    }
+    try {
+        return JSON.parse(whole);
+    } catch {
+        // fall through to the last line
+    }
+    const last = whole.split(/\r?\n/).map(line => line.trim()).filter(line => line !== '').at(-1) ?? '';
+    try {
+        return JSON.parse(last);
+    } catch {
+        return null;
+    }
 }
 
-/** Send one request to a sidecar and read its answer. Never throws. */
+/**
+ * Send one request to a sidecar and read its answer. Never throws. The sidecar
+ * runs from the file's Python package root with that root first on
+ * `PYTHONPATH`, so a sidecar that imports the file resolves its intra-package
+ * imports, whichever path asked.
+ */
 export async function invokeSidecar(request: SidecarRequest): Promise<SidecarOpResult> {
     const { command, op } = request;
     try {
-        const packageRoot = request.pythonPackageRoot ? await findPackageRootForFile(request.file) : undefined;
+        const packageRoot = await findPackageRootForFile(request.file);
         const result = await runChildProcess(command, [], {
             input: JSON.stringify({ file: request.file, op, args: request.args }) + '\n',
-            ...(request.timeoutMs !== undefined ? { timeoutMs: request.timeoutMs } : {}),
-            ...(request.pythonPackageRoot
-                ? { cwd: packageRoot ?? path.dirname(request.file), env: withPythonPackageRoot(process.env, packageRoot) }
-                : {})
+            cwd: packageRoot ?? path.dirname(request.file),
+            env: withPythonPackageRoot(process.env, packageRoot),
+            ...(request.timeoutMs !== undefined ? { timeoutMs: request.timeoutMs } : {})
         });
         const stderr = result.stderr.trim() || undefined;
         const failure = describeChildFailure(command, result);
         if (failure) {
+            // `describeChildFailure` names the command and, for an exit, carries stderr.
             return {
                 ok: false,
-                message: result.timedOut
-                    ? `${failure} (while handling ${op})`
-                    : result.spawnError
-                        ? failure
-                        : `Sidecar exited with code ${result.code} while handling ${op}.`,
+                failure: result.spawnError ? 'start' : result.timedOut ? 'timeout' : 'exit',
+                message: `${failure} (while handling ${op})`,
                 stderr,
                 timedOut: result.timedOut === true
             };
         }
-        const answer = lastLine(result.stdout);
-        if (answer === undefined) {
+        const response: any = parseAnswer(result.stdout);
+        if (response === undefined) {
             return { ok: true };
         }
-        let response: any;
-        try {
-            response = JSON.parse(answer);
-        } catch {
-            return { ok: false, message: `Sidecar returned invalid JSON while handling ${op}.`, stderr };
+        if (response === null) {
+            return { ok: false, failure: 'invalid-json', message: `Sidecar returned invalid JSON while handling ${op}.`, stderr };
         }
         if (response?.status === 'ok') {
             return { ok: true, response };
         }
         return {
             ok: false,
+            failure: 'rejected',
             response,
             message: typeof response?.message === 'string' && response.message.trim() !== ''
                 ? response.message
@@ -98,6 +118,6 @@ export async function invokeSidecar(request: SidecarRequest): Promise<SidecarOpR
             stderr
         };
     } catch (error) {
-        return { ok: false, message: error instanceof Error ? error.message : `Unable to start sidecar for ${op}.` };
+        return { ok: false, failure: 'start', message: error instanceof Error ? error.message : `Unable to start sidecar for ${op}.` };
     }
 }

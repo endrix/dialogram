@@ -1,13 +1,13 @@
 /**
- * Sidecar requests for a source file by path, with the file's Python package
- * on `PYTHONPATH`: what the chat's edit backend, the registry tools, the
- * openability probe and the capability query send through. The diagram's own
+ * Sidecar requests for a source file by path: what the chat's edit backend,
+ * the registry tools and the capability query send through. The diagram's own
  * edits go through `SidecarInvoker`, which resolves the command from the
  * model's source URI and sends through the same transport.
  */
 import { invokeSidecar, type SidecarOpResult } from './sidecar-transport.js';
 
 export type { SidecarOpResult };
+export { DEFAULT_EXPORT_OP } from './sidecar-transport.js';
 
 /**
  * Send `<prefix>.<opName>` for `filePath`. The sidecar validates the request
@@ -25,7 +25,6 @@ export async function invokeSidecarOp(
     file: filePath,
     op: `${options.sidecarOperationPrefix}.${opName}`,
     args,
-    timeoutMs: options.timeoutMs,
-    pythonPackageRoot: true
+    timeoutMs: options.timeoutMs
   });
 }

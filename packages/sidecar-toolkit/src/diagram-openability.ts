@@ -81,35 +81,22 @@ async function probeDiagramOpenability(
         .get<string>(cfg.sidecarCommandSettingKey, cfg.sidecarCommandDefault)
         ?? cfg.sidecarCommandDefault;
 
-    try {
-        // Graph-export op is config-driven (see docs/sidecar-contract-v2.md): the
-        // sidecar is asked to export the graph and the response status decides
-        // whether the source can render as a diagram.
-        const payload = {
-            file: targetUri.fsPath,
-            op: `${cfg.sidecarOperationPrefix}.${cfg.probeOp}`,
-            args: requestedName && requestedName.trim() !== ''
-                ? { network: requestedName.trim() }
-                : {}
-        };
-
-        const result = await invokeSidecar({
-            command: sidecarCommand,
-            file: payload.file,
-            op: payload.op,
-            args: payload.args,
-            timeoutMs: OPENABILITY_PROBE_TIMEOUT_MS
-        });
-        if (result.ok) {
-            return true;
-        }
-        if (result.response?.status === 'error') {
-            return false;
-        }
-    } catch {
-        return undefined;
+    // The graph-export op is the probe (see docs/sidecar-contract-v2.md): a
+    // sidecar that exports the graph says the source draws; one that refuses
+    // says it does not; one that answers nothing leaves the question open.
+    const result = await invokeSidecar({
+        command: sidecarCommand,
+        file: targetUri.fsPath,
+        op: `${cfg.sidecarOperationPrefix}.${cfg.probeOp}`,
+        args: requestedName && requestedName.trim() !== '' ? { network: requestedName.trim() } : {},
+        timeoutMs: OPENABILITY_PROBE_TIMEOUT_MS
+    });
+    if (result.ok && result.response) {
+        return true;
     }
-
+    if (result.response?.status === 'error') {
+        return false;
+    }
     return undefined;
 }
 

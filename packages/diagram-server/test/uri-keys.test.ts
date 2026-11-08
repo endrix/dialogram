@@ -9,6 +9,7 @@ describe('normalizeSourceUriKey', () => {
     it('re-spells a file URI from its normalized path and strips query and fragment elsewhere', () => {
         expect(normalizeSourceUriKey('file:///tmp/workspace/model.py')).toBe('file:///tmp/workspace/model.py');
         expect(normalizeSourceUriKey('file:///tmp/workspace/sub/../model.py')).toBe('file:///tmp/workspace/model.py');
+        expect(normalizeSourceUriKey('file:///tmp/workspace/pkg/')).toBe('file:///tmp/workspace/pkg');
         expect(normalizeSourceUriKey(' file:///tmp/work%20space/a%20b.py ')).toBe('file:///tmp/work%20space/a%20b.py');
         expect(normalizeSourceUriKey('https://example.test/path?query=1#frag')).toBe('https://example.test/path');
         expect(normalizeSourceUriKey('vscode-notebook-cell:/tmp/nb.ipynb#ch0000000')).toBe('vscode-notebook-cell:/tmp/nb.ipynb');

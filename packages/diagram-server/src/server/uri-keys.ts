@@ -1,7 +1,8 @@
 /**
  * The one key a source URI is known by across the host, the server and the
- * toolkit: trimmed, a `file:` URI re-spelled from its normalized path, any
- * other URI without query and fragment. A URI emitted in one shape and looked
+ * toolkit: trimmed, a `file:` URI re-spelled from its resolved path (so a
+ * trailing slash or a `.` segment does not make a second key), any other URI
+ * without query and fragment. A URI emitted in one shape and looked
  * up in another (pending navigation, layout targets, the execution-overlay
  * buffer) then still meets itself.
  */
@@ -16,7 +17,7 @@ export function normalizeSourceUriKey(value: string): string {
     try {
         const uri = URI.parse(trimmed);
         if (uri.scheme === 'file') {
-            return URI.file(path.normalize(uri.fsPath)).toString();
+            return URI.file(path.resolve(uri.fsPath)).toString();
         }
         return uri.with({ query: '', fragment: '' }).toString();
     } catch {

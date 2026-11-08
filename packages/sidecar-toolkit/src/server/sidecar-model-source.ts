@@ -31,19 +31,19 @@ import {
     parseViewArg
 } from '@dialogram/diagram-server/server/graph-load-request-options';
 import {
-    findPackageRootForFile,
     pickDefaultWorkflowName,
     resolveWorkflowDefinitionRange,
     analyzeWorkflowRelationships,
-    collectPythonFilesUnderRoots,
+    callerScanSourceFiles,
     discoverCrossFileWorkflowCallers,
     buildViewerOverlayAstPathCandidates,
     buildViewerOverlaySignatureCandidates,
     buildViewerOverlayNodeIdentityCandidates,
     resolveViewerOverlayActiveEntityName,
-    normalizeWorkflowReferenceName,
-    normalizeSourceUriKey
+    normalizeWorkflowReferenceName
 } from './source-analysis';
+import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
+import { findPackageRootForFile } from './source-files';
 import { graphPayloadToDoc } from './graph-payload-to-doc';
 import {
     type SidecarRuntimeConfig,
@@ -52,8 +52,7 @@ import {
     getGraphLoadTimeoutMs,
     graphLoadTimeoutHint
 } from './sidecar-runtime-config';
-import { invokeSidecar } from '../sidecar-transport';
-import { DEFAULT_EXPORT_OP } from '../chat-edit-backend';
+import { DEFAULT_EXPORT_OP, invokeSidecar } from '../sidecar-transport';
 
 /**
  * `GraphDocument` plus the request options `finishLoadFromDoc` must continue with. Usually
@@ -100,7 +99,7 @@ export class SidecarModelSource implements DiagramModelSource {
         analyzeWorkflowRelationships,
         collectSourceFilesUnderRoots: this.cfg.navigation === 'none'
             ? async () => []
-            : collectPythonFilesUnderRoots,
+            : callerScanSourceFiles,
         discoverCrossFileWorkflowCallers: this.cfg.navigation === 'none'
             ? async () => []
             : discoverCrossFileWorkflowCallers,
@@ -387,11 +386,13 @@ export class SidecarModelSource implements DiagramModelSource {
                 // module does at import time can hang the child — and this load is what the
                 // "model loading" notification is waiting on, so a child that never exits is a
                 // notification that never leaves and a diagram that never opens.
-                timeoutMs: getGraphLoadTimeoutMs(this.cfg, vscode, vscode.Uri.file(filePath)),
-                pythonPackageRoot: true
+                timeoutMs: getGraphLoadTimeoutMs(this.cfg, vscode, vscode.Uri.file(filePath))
             });
             if (!result.ok) {
-                const error = `${sidecarCmd}: ${result.message ?? 'sidecar returned non-ok status'}`;
+                // A process failure already names the command; a refused or garbled answer does not.
+                const error = result.failure === 'rejected' || result.failure === 'invalid-json'
+                    ? `${sidecarCmd}: ${result.message ?? 'sidecar returned non-ok status'}`
+                    : result.message ?? `${sidecarCmd}: the graph export failed`;
                 return { error: result.timedOut ? `${error} ${graphLoadTimeoutHint(this.cfg)}` : error };
             }
             const response = result.response;

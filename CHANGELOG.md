@@ -53,9 +53,13 @@ platform API version.
   invoker behind every diagram edit, the chat's `invokeSidecarOp` and
   `exportWorkflowGraph`, the model source's graph export, the openability
   probe and the raw `sidecar.send` command. `sidecar-transport.ts`
-  (`invokeSidecar`) is the one; the answer is the last line the sidecar
-  prints, so one that logs above it is still read. `exportWorkflowGraph` is
-  gone: the export is an op like the others. The graph-export op has one
+  (`invokeSidecar`) is the one: every request runs from the file's Python
+  package root with it on `PYTHONPATH` (before, the chat's requests did and
+  the diagram's own edits did not), the answer is the whole output when it is
+  one JSON document and its last line when the sidecar logs above it, and a
+  process failure is reported as the child-process module describes it, with
+  the op and the sidecar's stderr. `exportWorkflowGraph` is gone: the export
+  is an op like the others. The graph-export op has one
   default, `exportGraph`, which every sidecar answers to (the model source
   used to pick `exportNetworkGraph` or `exportWorkflowGraph` by acquisition
   strategy and ignore the product's `exportOp`; it now sends the product's,

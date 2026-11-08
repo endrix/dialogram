@@ -8,7 +8,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const graphExport = vi.hoisted(() => ({
-    invokeSidecarOp: vi.fn()
+    invokeSidecarOp: vi.fn(),
+    DEFAULT_EXPORT_OP: 'exportGraph'
 }));
 const capabilities = vi.hoisted(() => ({
     getSidecarCapabilities: vi.fn(),

@@ -609,6 +609,9 @@ export class CliRunDriver {
         // product's namespace, its default when blank, `-m <module>` when the command
         // is a Python interpreter. The module form is for a Python source only.
         const { cmd, argsPrefix } = getCliInvocation(this.config, vscode, forUri);
+        if (cmd.trim() === '') {
+            return undefined;
+        }
         return { cmd, argsPrefix: isPython ? argsPrefix : [], cwd: startDir };
     }
 
@@ -877,7 +880,7 @@ export class CliRunDriver {
         const cli = await this.resolveCliInvocation(sourceUri, isPython);
         if (!cli) {
             const cliLabel = `${this.config.settingsNamespace}.${this.config.cliCommandSettingKey}`;
-            const message = `Cannot locate CLI command from ${cliLabel} (no workspace folder found).`;
+            const message = `Cannot run: ${cliLabel} names no command, or no workspace folder, package.json or .git was found above the file.`;
             vscode.window.showErrorMessage(message);
             return { error: message };
         }

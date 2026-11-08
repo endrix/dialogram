@@ -13,7 +13,7 @@
  */
 import type { EntityPaletteItemSpec, NodeFamilySpec } from '@dialogram/shared';
 import * as vscode from 'vscode';
-import { invokeSidecarOp } from './sidecar-graph-export.js';
+import { DEFAULT_EXPORT_OP, invokeSidecarOp } from './sidecar-graph-export.js';
 import { createSourceReferenceContext } from './chat-source-reference.js';
 import { createRegistryChatTools, type RegistryChatTool } from './registry-tools.js';
 import { RESUME_TOOL } from './run-failure.js';
@@ -560,7 +560,7 @@ export function createSidecarDiagramProfile(input: SidecarProfileInput) {
             // export would have given it, from the CLI plan instead.
             ? {
                 graphContextProvider: async (file: string): Promise<string | undefined> => {
-                    const result = await invoke(file, input.exportOp ?? 'exportGraph', {});
+                    const result = await invoke(file, input.exportOp ?? DEFAULT_EXPORT_OP, {});
                     const graph = result.ok ? result.response?.diagnostic?.graph : undefined;
                     return graph && typeof graph === 'object' ? JSON.stringify(graph) : undefined;
                 }

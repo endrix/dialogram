@@ -14,7 +14,7 @@
 import * as vscode from 'vscode';
 import { URI } from 'vscode-uri';
 import type { BackendCapabilities, DiagramEditBackend, EditResult } from '@dialogram/shared';
-import { invokeSidecarOp } from './sidecar-graph-export.js';
+import { DEFAULT_EXPORT_OP, invokeSidecarOp } from './sidecar-graph-export.js';
 import { getSidecarCapabilities, sidecarSupportsOp } from './sidecar-capabilities.js';
 
 export interface SidecarEditBackendConfig {
@@ -29,9 +29,6 @@ export interface SidecarEditBackendConfig {
     /** Arg key used to scope ops to a sub-graph (today `'workflow'`). */
     scopeArgKey: string;
 }
-
-/** The graph-export op every sidecar answers to (contract v2), when the product names no other. */
-export const DEFAULT_EXPORT_OP = 'exportGraph';
 
 /** Marker code the sidecar returns when the source changed underneath an edit. */
 const CONCURRENT_MODIFICATION_CODE = 'concurrent_source_modification';

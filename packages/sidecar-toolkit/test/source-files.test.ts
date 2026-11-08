@@ -47,7 +47,8 @@ describe('withPythonPackageRoot', () => {
         const env = { PYTHONPATH: '/already' } as NodeJS.ProcessEnv;
         expect(withPythonPackageRoot(env, '/pkg').PYTHONPATH).toBe(`/pkg${path.delimiter}/already`);
         expect(withPythonPackageRoot({} as NodeJS.ProcessEnv, '/pkg').PYTHONPATH).toBe('/pkg');
-        expect(withPythonPackageRoot(env, undefined)).toBe(env);
+        expect(withPythonPackageRoot(env, undefined)).toEqual(env);
+        expect(withPythonPackageRoot(env, undefined)).not.toBe(env);
     });
 });
 

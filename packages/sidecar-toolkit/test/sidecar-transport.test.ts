@@ -32,10 +32,14 @@ describe('invokeSidecar', () => {
         expect(command).toBe('x-sidecar');
         expect(args).toEqual([]);
         expect(options.input).toBe(JSON.stringify({ file: '/ws/flow.py', op: 'x.createNode', args: { name: 'n' } }) + '\n');
-        expect(options.cwd).toBeUndefined();
+        // From the file's package root (its directory, outside any package), first on PYTHONPATH.
+        expect(options.cwd).toBe('/ws');
+        expect(String(options.env.PYTHONPATH).startsWith('/ws')).toBe(true);
     });
 
-    it('reads the last line, so a sidecar may log above its answer', async () => {
+    it('reads a pretty-printed answer whole, and the last line when a sidecar logs above its answer', async () => {
+        answers('{\n  "status": "ok",\n  "diagnostic": {}\n}\n');
+        expect((await invokeSidecar(REQUEST)).response).toEqual({ status: 'ok', diagnostic: {} });
         answers('loading plugins...\n{"status":"ok"}\n');
         expect((await invokeSidecar(REQUEST)).ok).toBe(true);
     });
@@ -44,25 +48,26 @@ describe('invokeSidecar', () => {
         answers('');
         expect(await invokeSidecar(REQUEST)).toEqual({ ok: true });
         answers('{"status":"error","message":"name taken","diagnostic":{"code":"name_exists"}}');
-        expect(await invokeSidecar(REQUEST)).toMatchObject({ ok: false, message: 'name taken', code: 'name_exists' });
+        expect(await invokeSidecar(REQUEST)).toMatchObject({ ok: false, failure: 'rejected', message: 'name taken', code: 'name_exists' });
         answers('{"status":"error"}');
         expect((await invokeSidecar(REQUEST)).message).toBe('Sidecar rejected x.createNode.');
         answers('not json');
-        expect((await invokeSidecar(REQUEST)).message).toBe('Sidecar returned invalid JSON while handling x.createNode.');
+        expect(await invokeSidecar(REQUEST)).toMatchObject({ failure: 'invalid-json', message: 'Sidecar returned invalid JSON while handling x.createNode.' });
     });
 
-    it('describes a child that failed, with its stderr, and says when it timed out', async () => {
-        answers('', { code: 2, stderr: 'boom\n', failure: 'x-sidecar exited with 2' });
+    it('describes a child that failed as the child-process module does, with the op, and says when it timed out', async () => {
+        answers('', { code: 2, stderr: 'Traceback: boom\n', failure: 'x-sidecar: Traceback: boom' });
         expect(await invokeSidecar(REQUEST)).toEqual({
             ok: false,
-            message: 'Sidecar exited with code 2 while handling x.createNode.',
-            stderr: 'boom',
+            failure: 'exit',
+            message: 'x-sidecar: Traceback: boom (while handling x.createNode)',
+            stderr: 'Traceback: boom',
             timedOut: false
         });
-        answers('', { code: null, timedOut: true, failure: 'x-sidecar timed out after 60s' });
-        expect(await invokeSidecar(REQUEST)).toMatchObject({ ok: false, message: 'x-sidecar timed out after 60s (while handling x.createNode)', timedOut: true });
-        answers('', { code: null, spawnError: new Error('ENOENT'), failure: 'x-sidecar: not found' });
-        expect((await invokeSidecar(REQUEST)).message).toBe('x-sidecar: not found');
+        answers('', { code: null, timedOut: true, failure: 'x-sidecar: no response after 60s' });
+        expect(await invokeSidecar(REQUEST)).toMatchObject({ ok: false, failure: 'timeout', message: 'x-sidecar: no response after 60s (while handling x.createNode)', timedOut: true });
+        answers('', { code: null, spawnError: new Error('ENOENT'), failure: 'x-sidecar: failed to start: ENOENT' });
+        expect(await invokeSidecar(REQUEST)).toMatchObject({ failure: 'start', message: 'x-sidecar: failed to start: ENOENT (while handling x.createNode)' });
     });
 
     it('passes the deadline through, and never throws', async () => {
@@ -70,6 +75,6 @@ describe('invokeSidecar', () => {
         await invokeSidecar({ ...REQUEST, timeoutMs: 20_000 });
         expect(child.runChildProcess.mock.calls[0][2].timeoutMs).toBe(20_000);
         child.runChildProcess.mockRejectedValue(new Error('spawn exploded'));
-        expect(await invokeSidecar(REQUEST)).toEqual({ ok: false, message: 'spawn exploded' });
+        expect(await invokeSidecar(REQUEST)).toEqual({ ok: false, failure: 'start', message: 'spawn exploded' });
     });
 });
