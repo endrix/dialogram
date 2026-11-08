@@ -3,7 +3,7 @@ import { OperationHandler, ModelState, type Command, type MaybePromise } from '@
 import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
-import { buildPyClipboardPayload, pyClipboardDataFromPayload } from '@dialogram/diagram-server/clipboard/py-clipboard';
+import { buildClipboardPayload, clipboardDataFromPayload } from '@dialogram/diagram-server/clipboard/clipboard';
 import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { WorkflowDiagramTypeGuards } from '@dialogram/shared';
@@ -44,11 +44,11 @@ export class CutOperationHandler extends OperationHandler {
             uri: vscodeUri,
             computeEdits: async () => {
                 const beforeText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
-                const payload = await buildPyClipboardPayload(this.modelState, sourceUri, elementIds);
+                const payload = await buildClipboardPayload(this.modelState, sourceUri, elementIds);
                 if (payload.items.length === 0) {
                     return undefined;
                 }
-                await vscode.env.clipboard.writeText(JSON.stringify(pyClipboardDataFromPayload(payload)));
+                await vscode.env.clipboard.writeText(JSON.stringify(clipboardDataFromPayload(payload)));
                 for (const item of payload.items) {
                     if (item.kind === 'entity') {
                         await this.sendSidecarOp(sourceUri, {

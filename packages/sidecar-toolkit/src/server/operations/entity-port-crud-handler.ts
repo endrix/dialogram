@@ -49,7 +49,7 @@ class EntityPortCrudHandlerBase extends OperationHandler {
 
     createCommand(action: Action): Command | undefined {
         const sourceUri = this.modelState.sourceUri;
-        if (!sourceUri || !sourceUri.endsWith('.py')) {
+        if (!sourceUri || !this.sidecar.handlesSource(sourceUri)) {
             return undefined;
         }
         const createKind = this.sidecar.operationKindCreateEntityPort();

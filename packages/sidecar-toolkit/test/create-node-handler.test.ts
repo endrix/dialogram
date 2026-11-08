@@ -66,6 +66,7 @@ function calpySidecar() {
         settingsNamespace: () => 'calLang',
         sidecarOp: (opName: string) => `calpy.${opName}`,
         undoLabelSuffix: () => ' (wfpy)',
+        handlesSource: () => true,
         createNodeStrings: () => CALPY_CREATE_NODE_STRINGS,
         createNodeBehavior: () => CALPY_CREATE_NODE_BEHAVIOR,
         // This product contributes no variant entries.
@@ -78,6 +79,7 @@ function wfpySidecar() {
         settingsNamespace: () => 'wfLang',
         sidecarOp: (opName: string) => `wfpy.${opName}`,
         undoLabelSuffix: () => ' (wfpy)',
+        handlesSource: () => true,
         createNodeStrings: () => WFPY_CREATE_NODE_STRINGS,
         createNodeBehavior: () => WFPY_CREATE_NODE_BEHAVIOR,
         createNodeVariants: () => []
@@ -873,6 +875,7 @@ describe('workflow create node handler', () => {
                 settingsNamespace: () => 'anyLang',
                 sidecarOp: (opName: string) => `any.${opName}`,
                 undoLabelSuffix: () => ' (any)',
+                handlesSource: () => true,
                 createNodeStrings: () => ({
                     newTypeNamePrompt: () => 'New gizmo name',
                     typeLabel: () => 'gizmo',

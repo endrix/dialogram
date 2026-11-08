@@ -1,6 +1,5 @@
 import { injectable } from 'inversify';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
-import { tryParseWorkflowClipboardPayload } from './clipboard-payload';
+import { parseClipboardPayload, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 
 export type PendingSelection = {
     entityNames: string[];
@@ -103,7 +102,7 @@ export class PostEditSelectionService {
     // Called before dispatching PasteOperation.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     prepareForPaste(clipboardData: Record<string, string>, modelRoot: any): void {
-        const payload = tryParseWorkflowClipboardPayload(clipboardData);
+        const payload = parseClipboardPayload(clipboardData);
         if (!payload) {
             this.pending = undefined;
             return;
@@ -116,7 +115,7 @@ export class PostEditSelectionService {
 
         for (const item of payload.items ?? []) {
             if (item.kind === 'entity') {
-                const newName = generateUnique(item.entityName, usedEntities);
+                const newName = generateUnique(item.name, usedEntities);
                 entityNames.push(newName);
             }
             if (item.kind === 'boundaryPort') {

@@ -6,7 +6,7 @@ import { readAuthoritativeSourceText } from './authoritative-source-text';
 import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
-import { buildPyClipboardPayload } from '@dialogram/diagram-server/clipboard/py-clipboard';
+import { buildClipboardPayload } from '@dialogram/diagram-server/clipboard/clipboard';
 import { SidecarInvoker } from './sidecar-invoker';
 
 const WORKFLOW_DUPLICATE_OPERATION_KIND = 'dialogram.duplicate' as const;
@@ -42,7 +42,7 @@ export class DuplicateOperationHandler extends OperationHandler {
             uri: vscodeUri,
             computeEdits: async () => {
                 const beforeText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
-                const payload = await buildPyClipboardPayload(this.modelState, sourceUri, operation.elementIds ?? []);
+                const payload = await buildClipboardPayload(this.modelState, sourceUri, operation.elementIds ?? []);
                 if (payload.items.length === 0) return undefined;
                 const workflowName = this.modelState.root.args?.['wf:workflowName'] as string | undefined;
                 const takenResp = await this.sendSidecarList(sourceUri, {

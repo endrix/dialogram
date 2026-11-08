@@ -6,7 +6,7 @@ import { readAuthoritativeSourceText } from './authoritative-source-text';
 import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
-import { parsePyClipboardPayload } from '@dialogram/diagram-server/clipboard/py-clipboard';
+import { parseClipboardPayload } from '@dialogram/diagram-server/clipboard/clipboard';
 import { SidecarInvoker } from './sidecar-invoker';
 
 @injectable()
@@ -42,9 +42,9 @@ export class PasteOperationHandler extends OperationHandler {
         command: ReversibleWorkspaceEditCommand,
         sourceUri: string,
     ): Promise<vscode.TextEdit[] | undefined> {
-        const payload = parsePyClipboardPayload(operation.clipboardData as any);
+        const payload = parseClipboardPayload(operation.clipboardData as Record<string, string> | undefined);
         if (!payload) {
-            void vscode.window.showWarningMessage('Clipboard does not contain Python diagram data.');
+            void vscode.window.showWarningMessage('The clipboard holds no diagram elements.');
             return undefined;
         }
         const workflowName = this.modelState.root.args?.['wf:workflowName'] as string | undefined;
