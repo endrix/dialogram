@@ -405,8 +405,8 @@ export class ChatRuntime {
       "addressing still works: element IDs must come from query-elements or diagram-model — " +
       "IDs embedded in diagram-svg / diagram-png output carry a '<clientId>_' prefix and are " +
       "NOT valid tool arguments. For ALL graph changes (adding nodes, connections, deletions, and " +
-      "scaffolding a brand-new task type) use create-nodes / create-edges / modify-* / " +
-      "delete-elements / create-task-type — do NOT edit the source " +
+      "scaffolding a new node type where the product offers a tool for it) use create-nodes / " +
+      "create-edges / modify-* / delete-elements / the product's scaffold tool — do NOT edit the source " +
       "file directly for changes these tools can express: tool edits go through the " +
       "editor's undo stack, direct file edits do not. " +
       "Diagram edits are undoable by the user via the editor's undo — do not attempt " +

@@ -25,7 +25,7 @@ import {
 } from '@eclipse-glsp/server-mcp';
 import type { InstanceMultiBinding } from '@eclipse-glsp/server';
 import { makePlatformToolHandlerClass, type PlatformMcpTool } from './mcp-platform-tool-adapter';
-import { CreateTaskTypeMcpToolHandler } from './create-task-type-mcp-tool-handler';
+import { isDiagramOperationModule } from './operation-modules';
 import { AgentDispatchCreateNodesMcpToolHandler } from './create-nodes-mcp-tool-handler';
 import { AgentDispatchCreateEdgesMcpToolHandler } from './create-edges-mcp-tool-handler';
 
@@ -64,6 +64,8 @@ export interface McpServerModuleOptions {
 export interface DiagramMcpModuleOptions {
     /** Read-only platform chat tools bridged into diagram-scope MCP tools. */
     tools?: readonly PlatformMcpTool[];
+    /** The profile's operation modules; each may bring the MCP tools of its operations. */
+    operationModules?: readonly unknown[];
 }
 
 /**
@@ -73,10 +75,12 @@ export interface DiagramMcpModuleOptions {
  */
 export class DiagramMcpModule extends DefaultMcpDiagramModule {
     protected readonly platformTools: readonly PlatformMcpTool[];
+    protected readonly operationModules: readonly unknown[];
 
     constructor(options?: DiagramMcpModuleOptions) {
         super();
         this.platformTools = options?.tools ?? [];
+        this.operationModules = options?.operationModules ?? [];
     }
 
     protected override configureToolHandlers(
@@ -86,7 +90,7 @@ export class DiagramMcpModule extends DefaultMcpDiagramModule {
         // Drop the built-in undo/redo tools: the host owns undo, not the GLSP command stack.
         //
         // The built-in `UndoMcpToolHandler` / `RedoMcpToolHandler` read the per-GLSP-session
-        // `CommandStack`. In dialogram the source `.py` file is the single source of truth: every
+        // `CommandStack`. In dialogram the source file is the single source of truth: every
         // diagram mutation is applied as a reversible VS Code workspace edit and the model is
         // continuously reloaded from source, which resets that command stack. The DURABLE,
         // user-facing undo is therefore the VS Code document undo stack (survives reloads),
@@ -110,10 +114,15 @@ export class DiagramMcpModule extends DefaultMcpDiagramModule {
         // never uses this handler, so its behaviour is unchanged.
         binding.remove(CreateEdgesMcpToolHandler);
         binding.add(AgentDispatchCreateEdgesMcpToolHandler);
-        // Custom operation tool: scaffold a task type. It rides the built-in operation-tool path
-        // (dispatches a reversible GLSP operation), so mutation flows through our undoable workspace
-        // edits — the one sanctioned way to expose a mutating tool on the GLSP-MCP surface.
-        binding.add(CreateTaskTypeMcpToolHandler);
+        // The tools of the product's own operations (a type scaffold, say). Each rides the
+        // built-in operation-tool path: it dispatches a reversible GLSP operation, so the
+        // mutation flows through the undoable workspace edits, the one sanctioned way to
+        // expose a mutating tool on the GLSP-MCP surface.
+        for (const module of this.operationModules) {
+            if (isDiagramOperationModule(module)) {
+                module.configureMcpTools?.(binding);
+            }
+        }
         // Read-only bridge only: mutation-capable tools are excluded (see bridgeableChatTools).
         for (const tool of bridgeableChatTools(this.platformTools)) {
             binding.add(makePlatformToolHandlerClass(tool));

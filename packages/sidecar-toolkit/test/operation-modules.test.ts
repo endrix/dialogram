@@ -187,3 +187,12 @@ describe('createSidecarOperationModules — entity-port CRUD-collapse routing', 
         });
     }
 });
+
+describe('createSidecarOperationModules — the MCP tool of its own operation', () => {
+    it('brings the create-task-type tool with the handler that serves it', () => {
+        const [module] = createSidecarOperationModules(WFPY_CFG);
+        const added: unknown[] = [];
+        module.configureMcpTools?.({ add: (ctor: unknown) => added.push(ctor) } as any);
+        expect(added.map(ctor => (new (ctor as new () => { name?: string })()).name)).toEqual(['create-task-type']);
+    });
+});

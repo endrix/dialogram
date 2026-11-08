@@ -27,10 +27,15 @@ function resolveToolHandlerCtors(module: DiagramMcpModule): Array<new () => unkn
 }
 
 describe('create-task-type GLSP-MCP operation tool', () => {
-    it('is registered on the diagram MCP module as a create-task-type tool handler', () => {
-        const ctors = resolveToolHandlerCtors(new DiagramMcpModule());
-        const names = ctors.map((c) => (new (c as new () => { name?: string })()).name);
-        expect(names).toContain(CreateTaskTypeMcpToolHandler.NAME);
+    it('is registered on the diagram MCP module by the operation module that handles it, not by the platform', () => {
+        const names = (module: DiagramMcpModule) => resolveToolHandlerCtors(module).map((c) => (new (c as new () => { name?: string })()).name);
+        expect(names(new DiagramMcpModule())).not.toContain(CreateTaskTypeMcpToolHandler.NAME);
+        const scaffoldModule = {
+            __diagramOperationModule: true,
+            configure: () => undefined,
+            configureMcpTools: (binding: { add(ctor: unknown): void }) => binding.add(CreateTaskTypeMcpToolHandler)
+        };
+        expect(names(new DiagramMcpModule({ operationModules: [scaffoldModule] }))).toContain(CreateTaskTypeMcpToolHandler.NAME);
         expect(CreateTaskTypeMcpToolHandler.NAME).toBe('create-task-type');
     });
 

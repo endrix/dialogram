@@ -48,6 +48,16 @@ platform API version.
 
 ### Changed
 
+- **An operation module brings the MCP tools of its operations.**
+  `DiagramOperationModule.configureMcpTools` is the seam; the diagram MCP
+  module binds what the profile's modules offer instead of naming
+  `create-task-type` itself. The sidecar toolkit's module brings that tool
+  with the handler that serves it, so every sidecar product still offers it
+  and a library-mode consumer without the handler no longer advertises a tool
+  it cannot run. The chat's fallback "skill", wfpy's own tool list and nouns
+  sent to the agent of any product whose profile named no skill, is gone:
+  such a profile gets the framing alone. The diagram-tool hint speaks of
+  "a new node type where the product offers a tool for it".
 - **After a drop, the routes an edge cannot keep are drawn by libavoid, with
   the edges on one port as one shared path.** The layout draws the edges into
   a port as a trunk; the built-in router gives every edge its own channel and
