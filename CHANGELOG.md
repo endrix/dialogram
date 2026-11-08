@@ -109,6 +109,26 @@ platform API version.
 
 ### Fixed
 
+- **The palette creates nodes, and the property panel adds entity ports, in
+  every product's diagram.** Both handlers accepted only a `.py` source, so a
+  Verilog, VHDL or NDF diagram answered a palette drop with nothing. Like every
+  other handler that writes to the source, they now ask only that the model
+  has one.
+- **Copy then paste re-creates the copied elements.** Copy wrote the entity's
+  name as `entityName` with its source text, while paste looked for `name` and
+  `typeName`, so a copied node pasted as nothing; cut and duplicate already
+  wrote the paste shape. One payload now lives in `@dialogram/shared`
+  (`DiagramClipboardPayload`, `parseClipboardPayload`,
+  `clipboardDataFromPayload`), written by copy, cut and duplicate and read by
+  paste and the webview's post-paste selection. The server's
+  `clipboard/py-clipboard` module is gone; its builder is
+  `buildClipboardPayload` in `clipboard/clipboard`.
+- **A pasted or duplicated connection joins the pasted copies**, not the
+  entities it was copied from, which used to get a second wire while the copy
+  stayed unwired. The pasted name follows one rule, `nextFreeName` in
+  `@dialogram/shared` (`add`, then `add2`, `add3`), on the sidecar side and in
+  the webview, which predicted `add1` and so never selected the pasted node.
+  A paste with nothing to paste says so instead of doing nothing.
 - A layout change still on its 500 ms debounce timer when the window closes
   is written out: the host flushes every diagram's pending layout saves on
   deactivation.
