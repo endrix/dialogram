@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { SidecarModelSource } from '../src/server/sidecar-model-source';
-import { collectPythonFilesUnderRoots, discoverCrossFileWorkflowCallers } from '../src/server/source-analysis';
+import { callerScanSourceFiles, discoverCrossFileWorkflowCallers } from '../src/server/source-analysis';
 import type { SidecarRuntimeConfig } from '../src/server/sidecar-runtime-config';
 
 const BASE: SidecarRuntimeConfig = {
@@ -45,6 +45,6 @@ describe('navigation: none', () => {
     it('runs the Python scan and walk when the product names it', () => {
         const source = new SidecarModelSource({ ...BASE, navigation: 'python' });
         expect(source.analysis.discoverCrossFileWorkflowCallers).toBe(discoverCrossFileWorkflowCallers);
-        expect(source.analysis.collectSourceFilesUnderRoots).toBe(collectPythonFilesUnderRoots);
+        expect(source.analysis.collectSourceFilesUnderRoots).toBe(callerScanSourceFiles);
     });
 });
