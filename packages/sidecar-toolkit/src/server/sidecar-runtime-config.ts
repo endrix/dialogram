@@ -226,6 +226,8 @@ export interface SidecarRuntimeConfig {
     acceptedOperationPrefixes: string[];
     /** Graph acquisition strategy: 'sidecar-export' or 'cli-plan'. */
     graphAcquisition: 'sidecar-export' | 'cli-plan';
+    /** The sidecar's graph-export op (without prefix). Default `exportGraph`, which every sidecar answers to. */
+    exportOp?: string;
     /** argv builder for the 'cli-plan' path, e.g. (file) => ['plan', file, '--format', 'graph', '--best-effort']. */
     cliGraphArgs?: (file: string, requestedWorkflow?: string) => string[];
     /**

@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import * as vscode from 'vscode';
 import type { DiagramOpenabilityCheck } from '@dialogram/shared';
 import { hasRequestedDecoratedDefinition } from './python-diagram-definitions.js';
-import { runChildProcess } from './run-child-process.js';
+import { invokeSidecar } from './sidecar-transport.js';
 
 /**
  * Deadline for the openability probe.
@@ -93,30 +93,18 @@ async function probeDiagramOpenability(
                 : {}
         };
 
-        const result = await runChildProcess(sidecarCommand, [], {
-            input: `${JSON.stringify(payload)}\n`,
+        const result = await invokeSidecar({
+            command: sidecarCommand,
+            file: payload.file,
+            op: payload.op,
+            args: payload.args,
             timeoutMs: OPENABILITY_PROBE_TIMEOUT_MS
         });
-
-        const trimmedStdout = result.stdout.trim();
-        if (result.code !== 0 || trimmedStdout === '') {
-            return undefined;
+        if (result.ok) {
+            return true;
         }
-
-        try {
-            const candidateLine = trimmedStdout.split(/\r?\n/).map(line => line.trim()).filter(line => line !== '').at(-1);
-            if (!candidateLine) {
-                return undefined;
-            }
-            const response = JSON.parse(candidateLine) as { status?: string };
-            if (response.status === 'ok') {
-                return true;
-            }
-            if (response.status === 'error') {
-                return false;
-            }
-        } catch {
-            return undefined;
+        if (result.response?.status === 'error') {
+            return false;
         }
     } catch {
         return undefined;

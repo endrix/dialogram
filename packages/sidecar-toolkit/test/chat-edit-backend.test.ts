@@ -1,15 +1,14 @@
 /**
  * `createSidecarEditBackend` maps the neutral {@link DiagramEditBackend} seam
  * onto the toolkit's sidecar building blocks (invokeSidecarOp /
- * exportWorkflowGraph / getSidecarCapabilities / sidecarSupportsOp) 1:1, with
+ * getSidecarCapabilities / sidecarSupportsOp) 1:1, with
  * the right options and MCP env. The underlying sidecar functions are mocked so
  * the delegation is asserted without spawning a process.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const graphExport = vi.hoisted(() => ({
-    invokeSidecarOp: vi.fn(),
-    exportWorkflowGraph: vi.fn()
+    invokeSidecarOp: vi.fn()
 }));
 const capabilities = vi.hoisted(() => ({
     getSidecarCapabilities: vi.fn(),
@@ -39,35 +38,41 @@ beforeEach(() => {
 });
 
 describe('createSidecarEditBackend', () => {
-    it('exportGraph delegates to exportWorkflowGraph and stringifies the graph', async () => {
-        graphExport.exportWorkflowGraph.mockResolvedValue({ nodes: [{ id: 'a' }] });
+    it('exportGraph sends the product\'s export op and stringifies diagnostic.graph', async () => {
+        graphExport.invokeSidecarOp.mockResolvedValue({ ok: true, response: { status: 'ok', diagnostic: { graph: { nodes: [{ id: 'a' }] } } } });
         const backend = createSidecarEditBackend(CFG);
 
         const result = await backend.exportGraph(FILE_URI);
 
-        expect(graphExport.exportWorkflowGraph).toHaveBeenCalledWith(FILE_PATH, {
-            sidecarCommand: 'wfpy-sidecar',
-            sidecarOperationPrefix: 'wfpy',
-            exportOp: 'exportWorkflowGraph',
-            networkName: undefined
-        });
+        expect(graphExport.invokeSidecarOp).toHaveBeenCalledWith(
+            FILE_PATH,
+            { sidecarCommand: 'wfpy-sidecar', sidecarOperationPrefix: 'wfpy' },
+            'exportWorkflowGraph',
+            {}
+        );
         expect(result).toBe(JSON.stringify({ nodes: [{ id: 'a' }] }));
     });
 
+    it('exportGraph sends exportGraph, the op every sidecar answers to, when the product names none', async () => {
+        graphExport.invokeSidecarOp.mockResolvedValue({ ok: true, response: { status: 'ok', diagnostic: { graph: {} } } });
+        const backend = createSidecarEditBackend({ ...CFG, exportOp: undefined });
+        await backend.exportGraph(FILE_URI);
+        expect(graphExport.invokeSidecarOp.mock.calls[0][2]).toBe('exportGraph');
+    });
+
     it('exportGraph returns undefined when the sidecar yields no graph', async () => {
-        graphExport.exportWorkflowGraph.mockResolvedValue(undefined);
+        graphExport.invokeSidecarOp.mockResolvedValue({ ok: false, message: 'no' });
         const backend = createSidecarEditBackend(CFG);
+        await expect(backend.exportGraph(FILE_URI)).resolves.toBeUndefined();
+        graphExport.invokeSidecarOp.mockResolvedValue({ ok: true, response: { status: 'ok', diagnostic: {} } });
         await expect(backend.exportGraph(FILE_URI)).resolves.toBeUndefined();
     });
 
-    it('exportGraph forwards a networkName', async () => {
-        graphExport.exportWorkflowGraph.mockResolvedValue({ nodes: [] });
+    it('exportGraph forwards a networkName as the network arg', async () => {
+        graphExport.invokeSidecarOp.mockResolvedValue({ ok: true, response: { status: 'ok', diagnostic: { graph: { nodes: [] } } } });
         const backend = createSidecarEditBackend(CFG);
         await backend.exportGraph(FILE_URI, { networkName: 'sub' });
-        expect(graphExport.exportWorkflowGraph).toHaveBeenCalledWith(
-            FILE_PATH,
-            expect.objectContaining({ networkName: 'sub' })
-        );
+        expect(graphExport.invokeSidecarOp.mock.calls[0][3]).toEqual({ network: 'sub' });
     });
 
     it('listCapabilities delegates and re-shapes into the neutral BackendCapabilities', async () => {

@@ -392,6 +392,7 @@ function sidecarRuntimeConfig(input: SidecarProfileInput): SidecarRuntimeConfig 
         },
         acceptedOperationPrefixes: input.acceptedOperationPrefixes,
         graphAcquisition: input.graphAcquisition,
+        exportOp: input.exportOp,
         cliGraphArgs: input.cliGraphArgs,
         cliHierarchyArgs: input.cliHierarchyArgs,
         graphExportFailureLabel: input.graphExportFailureLabel,

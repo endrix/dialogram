@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { describeChildFailure, runChildProcess } from './run-child-process.js';
+import { invokeSidecar } from './sidecar-transport.js';
 
 /**
  * Config for the raw sidecar edit/send commands. Product values (command ids,
@@ -77,33 +77,15 @@ export function registerSidecarCommands(
             const cmd = vscode.workspace
                 .getConfiguration(config.settingsNamespace)
                 .get<string>(config.sidecarCommandSettingKey, config.sidecarCommandDefault);
-            try {
-                // This command is awaited by whoever invoked it, so it must always answer:
-                // before, an unstartable command raised an unhandled 'error' event and left
-                // the caller's promise pending for the life of the window.
-                const result = await runChildProcess(cmd, [], { input: JSON.stringify(payload) + '\n' });
-                const failure = describeChildFailure(cmd, result);
-                if (failure) {
-                    return {
-                        ok: false,
-                        message: result.spawnError || result.timedOut
-                            ? failure
-                            : result.stderr || `${config.opNamespace}-sidecar exited with ${result.code}`
-                    };
-                }
-                if (result.stdout.trim() !== '') {
-                    try {
-                        const resp = JSON.parse(result.stdout.trim());
-                        return { ok: resp.status === 'ok', message: resp.message };
-                    } catch {
-                        return { ok: false, message: 'Invalid sidecar response' };
-                    }
-                }
-                return { ok: true };
-            } catch (err) {
-                const msg = err instanceof Error ? err.message : String(err);
-                return { ok: false, message: msg };
-            }
+            // Awaited by whoever invoked it, so it always answers: the transport turns a
+            // command that cannot start into a message, not a pending promise.
+            const result = await invokeSidecar({
+                command: cmd,
+                file: String(payload?.file ?? ''),
+                op: String(payload?.op ?? ''),
+                args: (payload?.args && typeof payload.args === 'object' ? payload.args : {}) as Record<string, unknown>
+            });
+            return { ok: result.ok, message: result.message ?? result.response?.message };
         })
     );
 }

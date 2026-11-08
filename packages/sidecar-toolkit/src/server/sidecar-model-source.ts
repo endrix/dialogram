@@ -44,7 +44,6 @@ import {
     normalizeWorkflowReferenceName,
     normalizeSourceUriKey
 } from './source-analysis';
-import { withPythonPackageRoot } from './source-files';
 import { graphPayloadToDoc } from './graph-payload-to-doc';
 import {
     type SidecarRuntimeConfig,
@@ -53,7 +52,8 @@ import {
     getGraphLoadTimeoutMs,
     graphLoadTimeoutHint
 } from './sidecar-runtime-config';
-import { describeChildFailure, runChildProcess } from '../run-child-process';
+import { invokeSidecar } from '../sidecar-transport';
+import { DEFAULT_EXPORT_OP } from '../chat-edit-backend';
 
 /**
  * `GraphDocument` plus the request options `finishLoadFromDoc` must continue with. Usually
@@ -377,42 +377,26 @@ export class SidecarModelSource implements DiagramModelSource {
             if (view) {
                 requestArgs.view = view;
             }
-            // The graph-export op name differs per acquisition strategy: the sidecar-export runtime
-            // dispatches `exportNetworkGraph`; others dispatch `exportWorkflowGraph`.
-            const exportOp = this.cfg.graphAcquisition === 'sidecar-export'
-                ? 'exportNetworkGraph'
-                : 'exportWorkflowGraph';
-            const requestPayload = {
+            // The product's graph-export op, else the one every sidecar answers to.
+            const result = await invokeSidecar({
+                command: sidecarCmd,
                 file: filePath,
-                op: sidecarOp(this.cfg, exportOp),
-                args: requestArgs
-            };
-            const packageRoot = await findPackageRootForFile(filePath);
-            const sidecarEnv = withPythonPackageRoot(process.env, packageRoot);
-            // Bounded on purpose. Acquisition imports the user's module, so anything that
-            // module does at import time can hang the child — and this load is what the
-            // "model loading" notification is waiting on, so a child that never exits is a
-            // notification that never leaves and a diagram that never opens.
-            const result = await runChildProcess(sidecarCmd, [], {
-                cwd: packageRoot ?? path.dirname(filePath),
-                env: sidecarEnv,
-                input: JSON.stringify(requestPayload) + '\n',
-                timeoutMs: getGraphLoadTimeoutMs(this.cfg, vscode, vscode.Uri.file(filePath))
+                op: sidecarOp(this.cfg, this.cfg.exportOp ?? DEFAULT_EXPORT_OP),
+                args: requestArgs,
+                // Bounded on purpose. Acquisition imports the user's module, so anything that
+                // module does at import time can hang the child — and this load is what the
+                // "model loading" notification is waiting on, so a child that never exits is a
+                // notification that never leaves and a diagram that never opens.
+                timeoutMs: getGraphLoadTimeoutMs(this.cfg, vscode, vscode.Uri.file(filePath)),
+                pythonPackageRoot: true
             });
-            const { stdout } = result;
-            const failure = describeChildFailure(sidecarCmd, result);
-            if (failure || stdout.trim() === '') {
-                const error = failure ?? `${sidecarCmd}: the graph export produced no output`;
-                return {
-                    error: result.timedOut ? `${error} ${graphLoadTimeoutHint(this.cfg)}` : error
-                };
+            if (!result.ok) {
+                const error = `${sidecarCmd}: ${result.message ?? 'sidecar returned non-ok status'}`;
+                return { error: result.timedOut ? `${error} ${graphLoadTimeoutHint(this.cfg)}` : error };
             }
-            const response = JSON.parse(stdout);
-            if (response?.status !== 'ok') {
-                const msg = typeof response?.message === 'string' && response.message.trim() !== ''
-                    ? response.message.trim()
-                    : 'sidecar returned non-ok status';
-                return { error: `${sidecarCmd}: ${msg}` };
+            const response = result.response;
+            if (!response) {
+                return { error: `${sidecarCmd}: the graph export produced no output` };
             }
             const graph = response?.diagnostic?.graph;
             if (!graph || typeof graph !== 'object') {

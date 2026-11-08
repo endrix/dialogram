@@ -48,6 +48,18 @@ platform API version.
 
 ### Changed
 
+- **One sidecar transport.** Six places each spawned the sidecar, wrote the
+  request and parsed the answer with their own wording and deadlines: the
+  invoker behind every diagram edit, the chat's `invokeSidecarOp` and
+  `exportWorkflowGraph`, the model source's graph export, the openability
+  probe and the raw `sidecar.send` command. `sidecar-transport.ts`
+  (`invokeSidecar`) is the one; the answer is the last line the sidecar
+  prints, so one that logs above it is still read. `exportWorkflowGraph` is
+  gone: the export is an op like the others. The graph-export op has one
+  default, `exportGraph`, which every sidecar answers to (the model source
+  used to pick `exportNetworkGraph` or `exportWorkflowGraph` by acquisition
+  strategy and ignore the product's `exportOp`; it now sends the product's,
+  and `SidecarRuntimeConfig` carries it).
 - **One copy of each toolkit helper.** `server/source-files.ts` holds
   `fileExists`, `findPackageRootForFile`, `withPythonPackageRoot` and
   `collectPythonFilesUnderRoots` (the analysis, the create-node handler, the

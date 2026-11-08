@@ -14,7 +14,7 @@
 import * as vscode from 'vscode';
 import { URI } from 'vscode-uri';
 import type { BackendCapabilities, DiagramEditBackend, EditResult } from '@dialogram/shared';
-import { exportWorkflowGraph, invokeSidecarOp } from './sidecar-graph-export.js';
+import { invokeSidecarOp } from './sidecar-graph-export.js';
 import { getSidecarCapabilities, sidecarSupportsOp } from './sidecar-capabilities.js';
 
 export interface SidecarEditBackendConfig {
@@ -22,13 +22,16 @@ export interface SidecarEditBackendConfig {
     sidecarCommandSettingKey: string;
     sidecarCommandDefault: string;
     sidecarOperationPrefix: string;
-    /** Graph-export op name (without prefix); differs per runtime. */
+    /** Graph-export op name (without prefix). Default `exportGraph`, which every sidecar answers to. */
     exportOp?: string;
     /** Kill-switch setting for the MCP tool server. */
     mcpEnabledSetting: { section: string; key: string; default: boolean };
     /** Arg key used to scope ops to a sub-graph (today `'workflow'`). */
     scopeArgKey: string;
 }
+
+/** The graph-export op every sidecar answers to (contract v2), when the product names no other. */
+export const DEFAULT_EXPORT_OP = 'exportGraph';
 
 /** Marker code the sidecar returns when the source changed underneath an edit. */
 const CONCURRENT_MODIFICATION_CODE = 'concurrent_source_modification';
@@ -63,13 +66,15 @@ export function createSidecarEditBackend(cfg: SidecarEditBackendConfig): Diagram
 
     return {
         async exportGraph(uri, opts) {
-            const graph = await exportWorkflowGraph(toFsPath(uri), {
-                sidecarCommand: resolveSidecarCommand(uri),
-                sidecarOperationPrefix: cfg.sidecarOperationPrefix,
-                exportOp: cfg.exportOp,
-                networkName: opts?.networkName
-            });
-            return graph ? JSON.stringify(graph) : undefined;
+            const networkName = opts?.networkName?.trim();
+            const result = await invokeSidecarOp(
+                toFsPath(uri),
+                invokeOptions(uri),
+                cfg.exportOp ?? DEFAULT_EXPORT_OP,
+                networkName ? { network: networkName } : {}
+            );
+            const graph = result.ok ? result.response?.diagnostic?.graph : undefined;
+            return graph && typeof graph === 'object' ? JSON.stringify(graph) : undefined;
         },
 
         async listCapabilities(uri): Promise<BackendCapabilities | undefined> {
