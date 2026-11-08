@@ -31,19 +31,19 @@ import {
     parseViewArg
 } from '@dialogram/diagram-server/server/graph-load-request-options';
 import {
-    findPackageRootForFile,
     pickDefaultWorkflowName,
     resolveWorkflowDefinitionRange,
     analyzeWorkflowRelationships,
-    collectPythonFilesUnderRoots,
+    callerScanSourceFiles,
     discoverCrossFileWorkflowCallers,
     buildViewerOverlayAstPathCandidates,
     buildViewerOverlaySignatureCandidates,
     buildViewerOverlayNodeIdentityCandidates,
     resolveViewerOverlayActiveEntityName,
-    normalizeWorkflowReferenceName,
-    normalizeSourceUriKey
+    normalizeWorkflowReferenceName
 } from './source-analysis';
+import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
+import { findPackageRootForFile, withPythonPackageRoot } from './source-files';
 import { graphPayloadToDoc } from './graph-payload-to-doc';
 import {
     type SidecarRuntimeConfig,
@@ -99,7 +99,7 @@ export class SidecarModelSource implements DiagramModelSource {
         analyzeWorkflowRelationships,
         collectSourceFilesUnderRoots: this.cfg.navigation === 'none'
             ? async () => []
-            : collectPythonFilesUnderRoots,
+            : callerScanSourceFiles,
         discoverCrossFileWorkflowCallers: this.cfg.navigation === 'none'
             ? async () => []
             : discoverCrossFileWorkflowCallers,
@@ -386,13 +386,8 @@ export class SidecarModelSource implements DiagramModelSource {
                 op: sidecarOp(this.cfg, exportOp),
                 args: requestArgs
             };
-            const sidecarEnv: NodeJS.ProcessEnv = { ...process.env };
             const packageRoot = await findPackageRootForFile(filePath);
-            if (packageRoot) {
-                sidecarEnv.PYTHONPATH = sidecarEnv.PYTHONPATH && sidecarEnv.PYTHONPATH.trim() !== ''
-                    ? `${packageRoot}${path.delimiter}${sidecarEnv.PYTHONPATH}`
-                    : packageRoot;
-            }
+            const sidecarEnv = withPythonPackageRoot(process.env, packageRoot);
             // Bounded on purpose. Acquisition imports the user's module, so anything that
             // module does at import time can hang the child — and this load is what the
             // "model loading" notification is waiting on, so a child that never exits is a

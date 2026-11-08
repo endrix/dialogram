@@ -1,4 +1,5 @@
 import { EditorContextService, Ranked } from '@eclipse-glsp/client';
+import { normalizeSourceUriKey } from './source-uri-key';
 import {
     Action,
     Args,
@@ -21,20 +22,6 @@ import {
     RUN_ID_ARG
 } from './network-navigation-target';
 
-function normalizeSourceUriKey(sourceUri: string): string {
-    const trimmed = sourceUri.trim();
-    if (trimmed === '') {
-        return trimmed;
-    }
-    try {
-        const parsed = new URL(trimmed);
-        parsed.hash = '';
-        parsed.search = '';
-        return parsed.toString();
-    } catch {
-        return trimmed;
-    }
-}
 
 function displayNameFromQualifiedName(qualifiedName: string): string {
     // Normalize both legacy and dot-qualified references:

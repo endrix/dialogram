@@ -1,4 +1,5 @@
 import { TYPES, type IActionDispatcher, EditorContextService } from '@eclipse-glsp/client';
+import { normalizeSourceUriKey } from './source-uri-key';
 import { NavigateToExternalTargetAction, RequestModelAction } from '@eclipse-glsp/sprotty';
 import { inject, injectable } from 'inversify';
 import { VscodeUi } from './vscode-ui';
@@ -122,20 +123,6 @@ type RenderMeta = {
 
 const QUEUE_TRACE_VISIBLE_STORAGE_KEY = queueTraceVisibleStorageKey();
 
-function normalizeSourceUriKey(sourceUri: string): string {
-    const trimmed = sourceUri.trim();
-    if (trimmed === '') {
-        return trimmed;
-    }
-    try {
-        const parsed = new URL(trimmed);
-        parsed.hash = '';
-        parsed.search = '';
-        return parsed.toString();
-    } catch {
-        return trimmed;
-    }
-}
 
 function isQueueTraceVisible(): boolean {
     try {

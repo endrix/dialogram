@@ -7,9 +7,9 @@
  * agent understands the workflow structure without searching the project.
  */
 
-import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { describeChildFailure, runChildProcess } from './run-child-process.js';
+import { findPackageRootForFile, withPythonPackageRoot } from './server/source-files.js';
 
 export interface WorkflowGraphExportOptions {
   /** Sidecar executable (the configured sidecar command). */
@@ -25,33 +25,6 @@ export interface WorkflowGraphExportOptions {
   exportOp?: string;
 }
 
-async function fileExists(p: string): Promise<boolean> {
-  try {
-    await fs.access(p);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Walk up past `__init__.py` files to find the importable package root, so the
- * sidecar can resolve intra-package imports (matches the diagram server).
- */
-async function findPackageRootForFile(filePath: string): Promise<string | undefined> {
-  let current = path.dirname(filePath);
-  for (;;) {
-    if (!(await fileExists(path.join(current, '__init__.py')))) {
-      break;
-    }
-    const parent = path.dirname(current);
-    if (parent === current) {
-      return undefined;
-    }
-    current = parent;
-  }
-  return current;
-}
 
 export interface SidecarOpResult {
   ok: boolean;
@@ -72,13 +45,7 @@ export async function invokeSidecarOp(
 ): Promise<SidecarOpResult> {
   try {
     const packageRoot = await findPackageRootForFile(filePath);
-    const env: NodeJS.ProcessEnv = { ...process.env };
-    if (packageRoot) {
-      env.PYTHONPATH =
-        env.PYTHONPATH && env.PYTHONPATH.trim() !== ''
-          ? `${packageRoot}${path.delimiter}${env.PYTHONPATH}`
-          : packageRoot;
-    }
+    const env = withPythonPackageRoot(process.env, packageRoot);
 
     const payload = {
       file: filePath,
@@ -129,13 +96,7 @@ export async function exportWorkflowGraph(
 ): Promise<Record<string, unknown> | undefined> {
   try {
     const packageRoot = await findPackageRootForFile(filePath);
-    const env: NodeJS.ProcessEnv = { ...process.env };
-    if (packageRoot) {
-      env.PYTHONPATH =
-        env.PYTHONPATH && env.PYTHONPATH.trim() !== ''
-          ? `${packageRoot}${path.delimiter}${env.PYTHONPATH}`
-          : packageRoot;
-    }
+    const env = withPythonPackageRoot(process.env, packageRoot);
 
     const payload = {
       file: filePath,

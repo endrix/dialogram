@@ -14,7 +14,7 @@ import { RequestModelAction } from '@eclipse-glsp/protocol';
 import { WorkflowSourceModelStorage } from '@dialogram/diagram-server/server/diagram-glsp-module';
 import { SidecarModelSource } from '../src/server/sidecar-model-source';
 import { type SidecarRuntimeConfig } from '../src/server/sidecar-runtime-config';
-import { collectPythonFilesUnderRoots, MAX_SOURCE_FILES_PER_SCAN } from '../src/server/source-analysis';
+import { callerScanSourceFiles, MAX_SOURCE_FILES_PER_SCAN } from '../src/server/source-analysis';
 import { NEUTRAL_CREATE_NODE_CONFIG } from './fixtures/create-node-config';
 
 function testCfg(overrides: Partial<SidecarRuntimeConfig> = {}): SidecarRuntimeConfig {
@@ -259,7 +259,7 @@ describe('bounded caller-reference source walk', () => {
         await writeFile(path.join(root, '.git', 'hook.py'), '# hidden\n');
         await writeFile(path.join(root, '.venv', 'lib', 'x.py'), '# hidden venv\n');
 
-        const files = await collectPythonFilesUnderRoots([root], target);
+        const files = await callerScanSourceFiles([root], target);
 
         expect(files.sort()).toEqual([path.resolve(realA), path.resolve(realB)].sort());
         expect(files).not.toContain(path.resolve(target));
@@ -275,7 +275,7 @@ describe('bounded caller-reference source walk', () => {
         }
         const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-        const files = await collectPythonFilesUnderRoots([root], target, 3);
+        const files = await callerScanSourceFiles([root], target, 3);
 
         expect(files).toHaveLength(3);
         expect(warnSpy).toHaveBeenCalledTimes(1);

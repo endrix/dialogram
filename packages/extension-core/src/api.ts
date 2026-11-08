@@ -72,9 +72,12 @@ export interface DiagramCommandIds {
   layoutDiagramIfNeeded: string;
   setAgentToolConfig: string;
   getAgentToolConfig: string;
-  createAgentToolPolicyFile: string;
-  chatAddViewerEditor: string;
-  chatAddViewerTask: string;
+  /** @deprecated Nothing registers or runs it; accepted and ignored. */
+  createAgentToolPolicyFile?: string;
+  /** @deprecated Nothing registers or runs it; accepted and ignored. */
+  chatAddViewerEditor?: string;
+  /** @deprecated Nothing registers or runs it; accepted and ignored. */
+  chatAddViewerTask?: string;
   createNewContainer: string;
 }
 
@@ -112,11 +115,11 @@ export interface DiagramStorageOptions {
 }
 
 /**
- * Chat carry-over: everything the diagram chat backend + intent resolver need
- * that is not already on the profile root. `operationPrefix` is the internal
- * namespace the chat's operation dispatcher routes under; `nodeCommands` are the
- * runtime's node-creation slash commands; `skill` is the domain primer injected
- * into each session's context.
+ * Chat carry-over: everything the diagram chat backend needs that is not
+ * already on the profile root. `nodeCommands` are the runtime's node-creation
+ * slash commands (none when absent); `skill` is the domain primer injected into
+ * each session's context. The operation prefix the edits route under is the
+ * storage options', not this block's.
  *
  * REALM NOTE: the function-valued fields (graph/turn/selection context, tool
  * handlers, slash-command handlers) follow the {@link DiagramProfile.serverDiagramModule}
@@ -126,11 +129,14 @@ export interface DiagramStorageOptions {
  * profiles assembled inside the platform bundle) never populates them.
  */
 export interface DiagramChatConfig {
-  name: string;
+  /** @deprecated Nothing reads it; accepted and ignored. */
+  name?: string;
   fullName: string;
-  /** Internal op-dispatcher namespace shared by the chat backend and intent resolver. */
-  operationPrefix: string;
+  /** @deprecated Nothing reads it (the storage options carry their own prefix); accepted and ignored. */
+  operationPrefix?: string;
   skill?: string;
+  /** The slash commands that create a node, one per node type the product has.
+   *  Absent: the chat offers none. */
   nodeCommands?: Array<{
     command: string;
     nodeType: string;
