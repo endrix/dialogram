@@ -99,8 +99,11 @@ it no longer has.
   the nodes stacked under it move down with its bottom edge, each keeping
   its gap, and inside a group the group grows and makes the same room among
   its own siblings (`make-room.ts`). Undo, redo, and closing a bundle opened
-  in the same session move exactly those nodes back; a bundle opened before
-  closes leaving the room it had.
+  in the same editor session move exactly those nodes back, provided every
+  one is still where the opening left it and none would land on another
+  node; otherwise, and for a bundle opened before, the close leaves the
+  room it had. Groups are fitted to their members again after either, and
+  a toggle into the state the bundle is already in does nothing.
 
 - **What a double-click on a node opens is a contribution point:
   `NodeOpener`** (exported). An opener answers before the platform's own
