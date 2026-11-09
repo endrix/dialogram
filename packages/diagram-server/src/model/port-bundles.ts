@@ -20,6 +20,7 @@
  */
 import { normalizePortSide, type PortSide } from '@dialogram/shared';
 import type { PyGraphDocument, PyGraphEdge, PyGraphNode, PyGraphPort } from './graph-gmodel-source';
+import { stableNodeId, stableNodeIds, type StableNodeIds } from './stable-ids';
 
 /** Which bundles the reader has opened, by node layout key and bundle name. */
 export interface PortBusState {
@@ -47,10 +48,6 @@ export interface PortBus {
     members: number;
 }
 
-/** The layout key a node's position and open bundles are stored under. */
-export function nodeLayoutKey(node: PyGraphNode): string {
-    return node.label ? node.label : node.id;
-}
 
 export function portSideOf(port: PyGraphPort): PortSide {
     return normalizePortSide(port.side) ?? (port.direction === 'in' ? 'WEST' : 'EAST');
@@ -71,7 +68,11 @@ interface MemberInfo {
  * open ones as a header port with their members under it, and the edges
  * between buses merged. A document without bundles comes back unchanged.
  */
-export function bundlePorts(doc: PyGraphDocument, state: PortBusState = ALL_BUSES_COLLAPSED): PyGraphDocument {
+export function bundlePorts(
+    doc: PyGraphDocument,
+    state: PortBusState = ALL_BUSES_COLLAPSED,
+    nodeIds: StableNodeIds = stableNodeIds(doc.graph.nodes)
+): PyGraphDocument {
     const memberOf = new Map<string, MemberInfo>();
     let anyBus = false;
 
@@ -103,7 +104,8 @@ export function bundlePorts(doc: PyGraphDocument, state: PortBusState = ALL_BUSE
             }
         }
 
-        const nodeKey = nodeLayoutKey(node);
+        // The key a node's open bundles are saved under: its model id.
+        const nodeKey = stableNodeId(nodeIds, node);
         const ports: PyGraphPort[] = [];
         const emitted = new Set<string>();
         for (const port of node.ports) {

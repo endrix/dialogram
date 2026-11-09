@@ -19,7 +19,7 @@ import {
 } from './editing-action-handlers';
 import { VscodeUi } from './vscode-ui';
 import { ppField, ppNumberField, ppReadonlyRow } from './property-fields';
-import { type PropertyElement, readNumberArg } from './property-model';
+import { type PropertyElement, readNumberArg, readStringArg } from './property-model';
 import { PropertyPanelChrome } from './property-panel-chrome';
 import { clientBehavior, operationKind } from './profile';
 import { classifyLink, decodeURIComponentSafe, openTargetOf, referenceAction, type PanelLink } from './open-target';
@@ -1758,9 +1758,17 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         const sourceId = edge.sourceId || 'unknown';
         const targetId = edge.targetId || 'unknown';
         
-        // Parse source and target info (simple heuristic for now)
-        // Port IDs are typically: nodeId_port_portName
+        // The end's node and port as the reader knows them: the node's name
+        // and the port's, from the model. A port id is `<node id>_port_<name>`,
+        // and a node id is not always its name (two nodes sharing one take
+        // the producer's ids), so the id is only the fallback.
         const parsePortId = (id: string) => {
+            const port = this.lastRoot?.index?.getById?.(id) as PropertyElement | undefined;
+            const portName = readStringArg(port?.args, WorkflowDiagramMetadata.PORT_NAME);
+            const nodeName = readStringArg(port?.parent?.args, WorkflowDiagramMetadata.ENTITY_NAME);
+            if (portName && nodeName) {
+                return { node: nodeName, port: portName };
+            }
             const parts = id.split('_port_');
             if (parts.length >= 2) {
                 return { node: parts[0], port: parts[1] };

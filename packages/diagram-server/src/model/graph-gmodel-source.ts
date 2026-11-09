@@ -6,6 +6,7 @@ import { findFeedbackEdges } from './feedback-edges';
 import { groupLayoutOptions, splitEdgesAtGroups } from './group-edges';
 import { URI } from 'vscode-uri';
 import { bundlePorts, type PortBus, type PortBusState } from './port-bundles';
+import { stableNodeId as stableNodeIdOf, stableNodeIds } from './stable-ids';
 
 export type PyGraphPort = {
     id: string;
@@ -223,7 +224,10 @@ export class GraphGModelSource {
      * it every bundle is drawn closed, as a diagram first opens.
      */
     transform(doc: PyGraphDocument, options?: { portBuses?: PortBusState }): { graph: GGraph } {
-        doc = bundlePorts(resolveSourceFiles(doc), options?.portBuses);
+        doc = resolveSourceFiles(doc);
+        // Bundling adds ports, never nodes or labels: the ids hold for both.
+        const stableIds = stableNodeIds(doc.graph.nodes);
+        doc = bundlePorts(doc, options?.portBuses, stableIds);
         const children: GModelElement[] = [];
         const nodeMap = new Map<string, GNode>();
         const portIdMap = new Map<string, string>();
@@ -254,7 +258,7 @@ export class GraphGModelSource {
                     };
                 }
             }
-            const stableNodeId = node.label ? node.label : node.id;
+            const stableNodeId = stableNodeIdOf(stableIds, node);
             if (node.kind === 'wf-input' || node.kind === 'wf-output') {
                 const boundaryNode = this.createBoundaryNode(node, stableNodeId);
                 children.push(boundaryNode);
