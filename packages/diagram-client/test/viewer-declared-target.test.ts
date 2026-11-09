@@ -15,6 +15,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ViewerMouseListener } from '../src/viewer-mouse-listener';
+import { ViewerNodeOpener } from '../src/viewer-node-opener';
 import { WorkflowDiagramTypes, WorkflowDiagramMetadata } from '@dialogram/shared';
 
 const SOURCE_URI = 'file:///w/flow.py';
@@ -44,6 +45,8 @@ function nodeWith(args: AnnotationArg[], inputPorts: string[] = []) {
 
 function doubleClick(node: unknown, sourceUri: string | undefined = SOURCE_URI): any[] {
     const listener: any = new ViewerMouseListener();
+    // What the stock feature module binds.
+    listener.contributedOpeners = [new ViewerNodeOpener()];
     listener.editorContext = { sourceUri };
     return listener.doubleClick(node, {} as MouseEvent);
 }

@@ -87,6 +87,11 @@
         "to": "ViewportPreservingSetModelCommand"
     },
     {
+        "id": "Symbol(dialogram.NodeOpener)",
+        "op": "bind",
+        "to": "const:ViewerNodeOpener"
+    },
+    {
         "id": "Symbol(stub.ICopyPasteHandler)",
         "op": "bind",
         "scope": "singleton",

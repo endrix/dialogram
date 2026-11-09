@@ -272,6 +272,15 @@ bundle is an example of all three: its `src/webview/agent-ui/` holds the
 `@tool` and `@agent` editors, the agent sections (Basic Info's Skill row,
 Agent Tools, the live Agent Context) and the `@tool` and `@viewer` templates.
 
+**Node openers.** A double-click on a node opens its definition, unless the
+network navigation opens something for it. To open something else for some
+of your nodes, bind a `NodeOpener` with an `id`: its `open(node, { sourceUri })`
+returns the actions to run, or `undefined` to leave the node to the platform.
+Openers are asked in the order their ids were first bound, and the first
+that answers wins; a later binding for an id replaces the earlier one. The
+stock bundle binds wfpy's `@viewer` opener (id `viewer`) until wfpy-ide binds
+its own.
+
 **A diagram of your own.** When you compose the container yourself:
 
 ```ts
