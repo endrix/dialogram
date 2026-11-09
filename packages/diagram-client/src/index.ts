@@ -79,6 +79,11 @@ export {
 } from './node-section';
 export { createPropertySection } from './property-section';
 export {
+    AnnotationTemplate,
+    CUSTOM_ANNOTATION_ENTRY,
+    type AnnotationTemplateContext
+} from './annotation-template';
+export {
     type PropertyElement,
     type PropertyArgs,
     readStringArg,

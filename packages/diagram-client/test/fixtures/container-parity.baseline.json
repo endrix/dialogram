@@ -107,6 +107,16 @@
         "to": "const:AgentAnnotationEditor"
     },
     {
+        "id": "Symbol(dialogram.AnnotationTemplate)",
+        "op": "bind",
+        "to": "const:ToolAnnotationTemplate"
+    },
+    {
+        "id": "Symbol(dialogram.AnnotationTemplate)",
+        "op": "bind",
+        "to": "const:ViewerAnnotationTemplate"
+    },
+    {
         "id": "Symbol(dialogram.NodeSectionContribution)",
         "op": "bind",
         "to": "const:AgentNodeSections"
