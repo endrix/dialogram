@@ -14,7 +14,7 @@ import { ChangeBoundsTool, TYPES, bindAsService, configureActionHandler } from '
 import { MoveAction } from '@eclipse-glsp/sprotty';
 import { PropertyPanel } from './property-panel';
 import { AnnotationEditor } from './annotation-editor';
-import { stockAnnotationEditors } from './annotation-editors';
+import { stockAnnotationEditors } from './agent-ui';
 import { ChatPanel } from './chat-panel-integrated';
 import { clientBehavior } from './profile';
 import { WorkflowNavigationUi } from './navigation-ui';

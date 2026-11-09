@@ -25,13 +25,13 @@ vi.mock('../src/libavoid-loader', async (original) => ({
 const UPDATE = 'dialogram.updateDefinitionAnnotation';
 
 /** An editor for `@probe(level=..., ...)`: one input for `level`, and a GUI-only `expanded` it keeps in the map. */
-function probeEditor(seen: AnnotationEditorContext[] = [], name = 'probe'): AnnotationEditor {
+function probeEditor(seen: AnnotationEditorContext[] = [], name = 'probe', label = `Add @${name}`): AnnotationEditor {
     return {
         annotationName: name,
         reservedArgs: ['level', 'expanded'],
         guiOnlyArgs: ['expanded'],
         mergeArgUpdates: true,
-        quickAdd: { label: 'Add @probe', title: 'Add a probe', annotationText: '@probe(level=1)' },
+        quickAdd: { label, title: 'Add a probe', annotationText: '@probe(level=1)' },
         formatAnnotation: (_args, pairs) =>
             `@probe(${pairs.filter(([k]) => k !== 'expanded').map(([k, v]) => `${k}=${v}`).join(', ')})`,
         render(context) {
@@ -124,13 +124,26 @@ describe('a contributed annotation editor', () => {
         });
     });
 
-    it('is the only editor of its annotation when a second one names it too', () => {
+    it('is replaced by a later editor of the same annotation, which keeps its place', () => {
         const first: AnnotationEditorContext[] = [];
         const second: AnnotationEditorContext[] = [];
-        const panel = panelWith([probeEditor(first), probeEditor(second)]);
+        const panel = panelWith([probeEditor(first), probeEditor([], 'other'), probeEditor(second, 'probe', 'Add @probe again')]);
         panel.show(taskNode('probed', [PROBE]));
-        expect([first.length, second.length]).toEqual([1, 0]);
+        expect([first.length, second.length]).toEqual([0, 1]);
         expect(card('probe').querySelectorAll('input.probe-level')).toHaveLength(1);
+        expect(headerButtons()).toEqual(['Add @probe again', 'Add @other', 'Wizard…']);
+    });
+
+    it('leaves its GUI-only arguments out of the text and the updates, whether or not it merges', async () => {
+        const plain = { ...probeEditor(), mergeArgUpdates: false, formatAnnotation: undefined };
+        const panel = panelWith([plain]);
+        panel.show(taskNode('probed', [PROBE]));
+        button(card('probe'), 'Save').click();
+        await tick();
+        expect(panel.last(UPDATE)).toEqual({
+            kind: UPDATE, isOperation: true, elementId: 'node:scope:root:probed', action: 'upsert',
+            annotationName: 'probe', annotationText: '@probe(\n    level=1,\n    note="x"\n)'
+        });
     });
 });
 
@@ -175,6 +188,16 @@ describe('the editors the panel is given', () => {
             bind(AnnotationEditor).toConstantValue(probeEditor());
         });
         expect(names(stockContainer(product).get(PropertyPanel))).toEqual(['tool', 'agent', 'probe']);
+    });
+
+    it('take a product’s editor in place of the stock one for its annotation', () => {
+        const mine = probeEditor([], 'agent');
+        const product = new ContainerModule(bind => {
+            bind(AnnotationEditor).toConstantValue(mine);
+        });
+        const editors = (stockContainer(product).get(PropertyPanel) as any).annotationEditors();
+        expect(editors.map((e: AnnotationEditor) => e.annotationName)).toEqual(['tool', 'agent']);
+        expect(editors[1]).toBe(mine);
     });
 
     it('are none when nothing is bound', () => {

@@ -205,9 +205,11 @@ export const myFeaturesModule = new ContainerModule(bind => {
 
 Without `formatAnnotation`, Save writes `@name(key=value, ...)`. With
 `mergeArgUpdates`, Save also sends the arguments, so the server keeps the
-ones the card does not show. `quickAdd` puts an "add from template" button in
-the Annotations header. The first editor bound for a name is the one used;
-the stock bundle binds the `@tool` and `@agent` editors.
+ones the card does not show. `guiOnlyArgs` are keys your editor keeps in
+`args` for its own state; Save writes them nowhere. `quickAdd` puts an "add
+from template" button in the Annotations header. There is one editor per
+name: a later binding replaces an earlier one, so your module can replace one
+of the stock editors (`@tool`, `@agent`).
 
 **A diagram of your own.** When you compose the container yourself:
 

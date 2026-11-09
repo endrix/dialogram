@@ -1,5 +1,6 @@
 /**
- * The annotation editors the stock client ships: `@tool` and `@agent`.
+ * The agent workflow UI the stock client ships: the `@tool` and `@agent`
+ * annotation editors.
  */
 import type { AnnotationEditor } from '../annotation-editor';
 import { AgentAnnotationEditor } from './agent-editor';

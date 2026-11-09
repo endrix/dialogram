@@ -8,7 +8,7 @@
  * a rendered reply is not exercised here.
  */
 import { PropertyPanel } from '../../src/property-panel';
-import { stockAnnotationEditors } from '../../src/annotation-editors';
+import { stockAnnotationEditors } from '../../src/agent-ui';
 import { WorkflowShowAgentSkillsActionHandler, WorkflowShowClaudeAgentsActionHandler } from '../../src/editing-action-handlers';
 import { ui } from './harness';
 

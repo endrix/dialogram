@@ -35,7 +35,7 @@ import { clientBehavior, commandId, operationKind, offersRun } from './profile';
 import { classifyLink, decodeURIComponentSafe, openTargetOf, referenceAction, type PanelLink } from './open-target';
 import { producerFields, type ProducerField } from './producer-fields';
 import { AnnotationEditor } from './annotation-editor';
-import { describeSkillStatus } from './annotation-editors/agent-editor';
+import { describeSkillStatus } from './agent-ui/agent-editor';
 
 /**
  * IGModelRootListener interface — fire on every model root change
@@ -158,11 +158,20 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     private lastRenderedNodeId: string | undefined;
     private lastRenderedAgentHistoryJson: string | undefined;
 
+    /**
+     * One editor per annotation name, in the order the names were first bound.
+     * A later binding for a name replaces the earlier one, so a product's
+     * module, loaded after the stock one, can replace a stock editor.
+     */
     protected annotationEditors(): readonly AnnotationEditor[] {
-        return this.contributedAnnotationEditors ?? [];
+        const byName = new Map<string, AnnotationEditor>();
+        for (const editor of this.contributedAnnotationEditors ?? []) {
+            byName.set(editor.annotationName, editor);
+        }
+        return [...byName.values()];
     }
 
-    /** The editor for an annotation name: the first one bound for it. */
+    /** The editor for an annotation name, if one is bound. */
     protected annotationEditorFor(name: string): AnnotationEditor | undefined {
         return this.annotationEditors().find(editor => editor.annotationName === name);
     }
@@ -1269,9 +1278,12 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                     saveBtn.title = 'Save changes to the referenced definition';
                     saveBtn.textContent = 'Save';
                     saveBtn.addEventListener('click', () => {
+                        // An editor's GUI-only arguments are its own state, not
+                        // parameters: neither the text nor the updates carry them.
+                        const guiOnlyKeys = new Set(editor?.guiOnlyArgs ?? []);
                         const pairs = Array.from(argsMap.entries())
                             .map(([k, v]) => [String(k ?? '').trim(), String(v ?? '').trim()] as const)
-                            .filter(([k, v]) => k !== '' && v !== '');
+                            .filter(([k, v]) => k !== '' && v !== '' && !guiOnlyKeys.has(k));
 
                         const text = editor?.formatAnnotation
                             ? editor.formatAnnotation(argsMap, pairs)
@@ -1285,12 +1297,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                         // server keeps the args the card doesn't manage (outputValidators,
                         // mcpServers inline dicts, etc.) as the source has them.
                         if (editor?.mergeArgUpdates) {
-                            const guiOnlyKeys = new Set(editor.guiOnlyArgs ?? []);
-                            const mergeUpdates: Record<string, string> = {};
-                            for (const [k, v] of pairs) {
-                                if (guiOnlyKeys.has(k)) continue;
-                                mergeUpdates[k] = v;
-                            }
+                            const mergeUpdates: Record<string, string> = Object.fromEntries(pairs);
                             void this.actionDispatcher.dispatch(
                                 WorkflowUpdateDefinitionAnnotationOperation.create({
                                     isOperation: true,

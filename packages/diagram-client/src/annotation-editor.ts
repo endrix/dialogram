@@ -10,9 +10,11 @@
  *
  *     bind(AnnotationEditor).toConstantValue(myEditor);
  *
- * and passes the module to `startStockDiagram({ features })`. Editors bound
- * earlier come first, in the card and in the section header's quick-add
- * buttons.
+ * and passes the module to `startStockDiagram({ features })`. There is one
+ * editor per annotation name: a later binding for a name replaces the earlier
+ * one, so a product's module, which loads after the stock one, can replace a
+ * stock editor. The section header's quick-add buttons follow the order in
+ * which the names were first bound.
  */
 import type { IActionDispatcher } from '@eclipse-glsp/client';
 import type { PropertyElement } from './property-model';
@@ -31,8 +33,9 @@ export interface AnnotationEditor {
 
     /**
      * Arguments the editor keeps in the card's map for its own state that are
-     * not parameters of the annotation. Save leaves them out of `argUpdates`;
-     * `formatAnnotation` decides whether the text carries them.
+     * not parameters of the annotation. Save leaves them out of the text and
+     * of `argUpdates`: `formatAnnotation` gets them in `args` but not in
+     * `pairs`.
      */
     readonly guiOnlyArgs?: readonly string[];
 
@@ -53,8 +56,9 @@ export interface AnnotationEditor {
 
     /**
      * The annotation text Save writes. `args` is the card's map as edited;
-     * `pairs` is its trimmed, non-empty entries in map order. Without it,
-     * Save writes `@name(key=value, ...)` from `pairs`.
+     * `pairs` is its trimmed, non-empty entries in map order, without the
+     * GUI-only ones. Without it, Save writes `@name(key=value, ...)` from
+     * `pairs`.
      */
     formatAnnotation?(args: ReadonlyMap<string, string>, pairs: ReadonlyArray<readonly [string, string]>): string;
 
