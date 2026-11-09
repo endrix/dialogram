@@ -74,7 +74,6 @@ function stubOverlaySideChannels(storage: Record<string, unknown>): void {
     storage.applyViewerOverlayToEdges = async () => undefined;
     storage.applyAgentContextToNodes = async () => undefined;
     storage.attachWorkflowRunHistory = async () => undefined;
-    storage.applyAgentEnrichment = async () => undefined;
 }
 
 /** Minimal doc for `finishLoadFromDoc` — one workflow node, no edges. */

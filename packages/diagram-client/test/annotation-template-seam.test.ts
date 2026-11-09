@@ -9,12 +9,11 @@ import { Container, ContainerModule } from 'inversify';
 import { ChangeBoundsTool, EditorContextService, TYPES } from '@eclipse-glsp/client';
 import { AnnotationTemplate, type AnnotationTemplateContext } from '../src/annotation-template';
 import { WorkflowEditAnnotationsActionHandler } from '../src/editing-action-handlers';
-import { agentUiModule, agentUiTemplates } from '../src/agent-ui';
 import { workflowFeaturesModule } from '../src/stock-features.module';
-import { ui, installPage, taskNode } from './agent-ui/harness';
-import { resetAgentUi, rootOf } from './agent-ui/panel';
+import { ui, installPage, taskNode } from './panel-harness/harness';
+import { resetPanel, rootOf } from './panel-harness/panel';
 
-vi.mock('../src/vscode-ui', async () => (await import('./agent-ui/harness')).vscodeUiModule());
+vi.mock('../src/vscode-ui', async () => (await import('./panel-harness/harness')).vscodeUiModule());
 // The stock module starts loading the edge router's WASM; nothing here routes.
 vi.mock('../src/libavoid-loader', async (original) => ({
     ...(await original<typeof import('../src/libavoid-loader')>()),
@@ -57,7 +56,7 @@ async function wizard(templates: AnnotationTemplate[] | undefined, answers: unkn
 }
 
 beforeEach(() => {
-    resetAgentUi();
+    resetPanel();
     installPage();
 });
 
@@ -80,7 +79,7 @@ describe('an annotation template', () => {
 
     it('sends nothing when the person cancels it, or it composes nothing', async () => {
         expect((await wizard([probe('retry', undefined)], ['upsert', 'retry'])).sent).toEqual([]);
-        resetAgentUi();
+        resetPanel();
         expect((await wizard([probe('retry', '  ')], ['upsert', 'retry'])).sent).toEqual([]);
     });
 
@@ -114,26 +113,6 @@ describe('the wizard without templates', () => {
     });
 });
 
-describe('the stock templates', () => {
-    it('escape a newline, a tab and a quote in a string they write', async () => {
-        const viewer = await wizard(agentUiTemplates(), ['upsert', 'viewer', 'diff', '["a", "b"]', 'Before\nafter\t"x"']);
-        expect(viewer.sent[0].annotationText).toBe('@viewer(\n    action="diff",\n    inputs=["a", "b"],\n    token="last",\n    title="Before\\nafter\\t\\"x\\""\n)');
-        resetAgentUi();
-        const tool = await wizard(agentUiTemplates(), ['upsert', 'tool', 'my\ttool', '[]', 'true']);
-        expect(tool.sent[0].annotationText).toBe('@tool(\n    cmd="my\\ttool",\n    args=[],\n    inheritStdio=true\n)');
-    });
-
-    it('offer a @tool’s command as it reads, so writing it back changes nothing', async () => {
-        const literal = '"my\\ttool \\"x\\""'; // the source text: "my\ttool \"x\""
-        const { sent } = await wizard(agentUiTemplates(),
-            ['upsert', 'tool', 'my\ttool "x"', '[]', 'true'],
-            [{ name: 'tool', arguments: [{ name: 'cmd', value: literal }, { name: 'args', value: '[]' }] }]);
-        const cmdAsk = ui.calls.find(c => c.method === 'inputBox' && String((c.args[0] as any).prompt).startsWith('tool.cmd'));
-        expect((cmdAsk!.args[0] as any).value).toBe('my\ttool "x"');
-        expect(sent[0].annotationText).toBe(`@tool(\n    cmd=${literal},\n    args=[],\n    inheritStdio=true\n)`);
-    });
-});
-
 describe('the templates the wizard is given', () => {
     const dispatcher = { dispatch: async () => undefined, dispatchAll: async () => undefined };
 
@@ -157,12 +136,15 @@ describe('the templates the wizard is given', () => {
         expect(names(container(product).resolve(WorkflowEditAnnotationsActionHandler))).toEqual(['retry']);
     });
 
-    it('are the agent UI’s @tool and @viewer when a bundle loads it, then another module’s', () => {
-        const product = new ContainerModule(bind => {
+    it('are those every module binds, in the order they were bound', () => {
+        const first = new ContainerModule(bind => {
+            bind(AnnotationTemplate).toConstantValue(probe('tool', '@tool'));
+            bind(AnnotationTemplate).toConstantValue(probe('viewer', '@viewer'));
+        });
+        const second = new ContainerModule(bind => {
             bind(AnnotationTemplate).toConstantValue(probe('retry', '@retry'));
         });
-        expect(names(container(agentUiModule).resolve(WorkflowEditAnnotationsActionHandler))).toEqual(['tool', 'viewer']);
-        expect(names(container(agentUiModule, product).resolve(WorkflowEditAnnotationsActionHandler))).toEqual(['tool', 'viewer', 'retry']);
+        expect(names(container(first, second).resolve(WorkflowEditAnnotationsActionHandler))).toEqual(['tool', 'viewer', 'retry']);
     });
 
     it('are none when nothing is bound', () => {

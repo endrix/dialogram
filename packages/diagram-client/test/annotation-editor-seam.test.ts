@@ -12,11 +12,10 @@ import { ChangeBoundsTool, TYPES } from '@eclipse-glsp/client';
 import { AnnotationEditor, type AnnotationEditorContext } from '../src/annotation-editor';
 import { PropertyPanel } from '../src/property-panel';
 import { workflowFeaturesModule } from '../src/stock-features.module';
-import { agentUiModule } from '../src/agent-ui';
-import { installPage, taskNode } from './agent-ui/harness';
-import { TestPanel, button, card, resetAgentUi, rootOf, section, tick } from './agent-ui/panel';
+import { installPage, taskNode } from './panel-harness/harness';
+import { TestPanel, button, card, resetPanel, rootOf, section, tick } from './panel-harness/panel';
 
-vi.mock('../src/vscode-ui', async () => (await import('./agent-ui/harness')).vscodeUiModule());
+vi.mock('../src/vscode-ui', async () => (await import('./panel-harness/harness')).vscodeUiModule());
 // The stock module starts loading the edge router's WASM; nothing here routes.
 vi.mock('../src/libavoid-loader', async (original) => ({
     ...(await original<typeof import('../src/libavoid-loader')>()),
@@ -62,7 +61,7 @@ const headerButtons = () =>
     [...section('Annotations')!.querySelectorAll('.section-actions button')].map(b => b.textContent);
 
 beforeEach(() => {
-    resetAgentUi();
+    resetPanel();
     installPage();
 });
 
@@ -188,20 +187,27 @@ describe('the editors the panel is given', () => {
         expect(names(stockContainer(product).get(PropertyPanel))).toEqual(['probe']);
     });
 
-    it('are the agent UI’s @tool and @agent when a bundle loads it, then another module’s', () => {
-        const product = new ContainerModule(bind => {
+    it('are those every module binds, in the order they were bound', () => {
+        const first = new ContainerModule(bind => {
+            bind(AnnotationEditor).toConstantValue(probeEditor([], 'tool'));
+            bind(AnnotationEditor).toConstantValue(probeEditor([], 'agent'));
+        });
+        const second = new ContainerModule(bind => {
             bind(AnnotationEditor).toConstantValue(probeEditor());
         });
-        expect(names(stockContainer(agentUiModule).get(PropertyPanel))).toEqual(['tool', 'agent']);
-        expect(names(stockContainer(agentUiModule, product).get(PropertyPanel))).toEqual(['tool', 'agent', 'probe']);
+        expect(names(stockContainer(first, second).get(PropertyPanel))).toEqual(['tool', 'agent', 'probe']);
     });
 
     it('take a later module’s editor in place of an earlier one’s for its annotation', () => {
         const mine = probeEditor([], 'agent');
-        const product = new ContainerModule(bind => {
+        const first = new ContainerModule(bind => {
+            bind(AnnotationEditor).toConstantValue(probeEditor([], 'tool'));
+            bind(AnnotationEditor).toConstantValue(probeEditor([], 'agent'));
+        });
+        const second = new ContainerModule(bind => {
             bind(AnnotationEditor).toConstantValue(mine);
         });
-        const editors = (stockContainer(agentUiModule, product).get(PropertyPanel) as any).annotationEditors();
+        const editors = (stockContainer(first, second).get(PropertyPanel) as any).annotationEditors();
         expect(editors.map((e: AnnotationEditor) => e.annotationName)).toEqual(['tool', 'agent']);
         expect(editors[1]).toBe(mine);
     });

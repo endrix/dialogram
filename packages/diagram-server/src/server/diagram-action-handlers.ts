@@ -501,8 +501,7 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
             requestId.startsWith('refresh-live-overlay-') ||
             requestId.startsWith('refresh-queue-visibility-') ||
             requestId.startsWith('refresh-agent-ctx-') ||
-            requestId.startsWith('refresh-caller-refs-') ||
-            requestId.startsWith('refresh-agent-enrichment-');
+            requestId.startsWith('refresh-caller-refs-');
         const isAgentCtxOnly = Boolean(action.options?.agentContextOnly);
         this.startingSilently = isPolling;
         if (isPolling) {
