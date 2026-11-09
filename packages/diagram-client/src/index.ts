@@ -107,6 +107,14 @@ export {
 // client behaviour and command ids, and the text helpers the panel renders
 // with. Their contracts are the modules' own docs.
 export { VscodeUi, type VscodeQuickPickItem, type ViewerEditorSetting } from './vscode-ui';
-export { clientBehavior, commandId, offersRun, settingsNamespace } from './profile';
+export {
+    clientBehavior,
+    commandId,
+    operationKind,
+    offersRun,
+    settingsNamespace,
+    type DiagramCommandKey,
+    type DiagramOperationKey
+} from './profile';
 export { renderMarkdownSafe, renderDocumentMarkdownSafe, looksLikeMarkdown } from './markdown';
 export { isBlock, looksLikeDiff, parseEmbedded, formatAgentOutputs } from './agent-outputs';

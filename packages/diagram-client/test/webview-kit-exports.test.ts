@@ -11,11 +11,10 @@ describe('the package, for a product’s webview code', () => {
         for (const name of [
             'AnnotationEditor', 'NodeSectionContribution', 'AnnotationTemplate', 'CUSTOM_ANNOTATION_ENTRY',
             'createPropertySection', 'escapeHtml', 'shortenPath', 'renderInto',
-            'VscodeUi', 'clientBehavior', 'commandId', 'offersRun', 'settingsNamespace',
+            'VscodeUi', 'clientBehavior', 'commandId', 'operationKind', 'offersRun', 'settingsNamespace',
             'renderMarkdownSafe', 'renderDocumentMarkdownSafe', 'looksLikeMarkdown',
             'isBlock', 'looksLikeDiff', 'parseEmbedded', 'formatAgentOutputs'
         ]) {
-            expect(client, name).toHaveProperty(name);
             expect((client as Record<string, unknown>)[name], name).toBeDefined();
         }
     });

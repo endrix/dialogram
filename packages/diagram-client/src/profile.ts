@@ -10,8 +10,8 @@ type DiagramIdentifier = {
 };
 
 /** The commands the webview itself runs; the rest the host registers for its own menus. */
-type DiagramCommandKey = 'fitToScreen' | 'runWorkflow' | 'stopWorkflow' | 'setQueueTraceVisible' | 'setAgentToolConfig' | 'getAgentToolConfig';
-type DiagramOperationKey = keyof Required<DiagramOperationKinds>;
+export type DiagramCommandKey = 'fitToScreen' | 'runWorkflow' | 'stopWorkflow' | 'setQueueTraceVisible' | 'setAgentToolConfig' | 'getAgentToolConfig';
+export type DiagramOperationKey = keyof Required<DiagramOperationKinds>;
 
 const DEFAULT_COMMAND_IDS: Record<DiagramCommandKey, string> = {
     fitToScreen: 'dialogram.glsp.fitToScreen',
