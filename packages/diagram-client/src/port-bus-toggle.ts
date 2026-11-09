@@ -1,14 +1,14 @@
 /**
- * The toggle in front of a bus port's name: a press opens the bundle, or
- * closes it. The server keeps which bundles are open, in the layout file, and
- * sends the model back with the bundle's members drawn under its header.
+ * The toggle inside a bus port's dot: a press opens the bundle, or closes it.
+ * The server keeps which bundles are open, in the layout file, and sends the
+ * model back with the bundle's members drawn under its header.
  */
 import { Ranked } from '@eclipse-glsp/client';
 import { Action, GModelElement, MouseListener } from '@eclipse-glsp/sprotty';
 import { injectable } from 'inversify';
 import { TogglePortBusOperation } from '@dialogram/shared';
 
-/** The attribute the label view puts on the toggle: the bus port's id. */
+/** The attribute the port view puts on a bus port's dot: the port's id. */
 export const PORT_BUS_TOGGLE_ATTR = 'data-port-bus-toggle';
 
 /** The bus port whose toggle the event landed on, if it landed on one. */

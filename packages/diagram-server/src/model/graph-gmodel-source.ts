@@ -1111,7 +1111,7 @@ export class GraphGModelSource {
             return text + WorkflowDiagramConstants.PORT_BUS_LABEL_INSET_PX;
         }
         return port.busMember
-            ? text + WorkflowDiagramConstants.PORT_BUS_TOGGLE_PX + WorkflowDiagramConstants.PORT_BUS_TOGGLE_GAP_PX
+            ? text + WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX
             : text;
     }
 

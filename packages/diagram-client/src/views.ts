@@ -965,16 +965,18 @@ export class BoundaryOutputNodeView extends ShapeView {
  * A port's dot: a circle across the port's box, its outer edge on the port's
  * anchor. A bus port's is larger, with its toggle inside, `+` while the
  * bundle is closed and `−` while it is open, drawn as lines so it needs no
- * font; pressing it opens or closes the bundle (port-bus-toggle.ts).
+ * font; pressing it opens or closes the bundle (port-bus-toggle.ts). Larger,
+ * it keeps its outer edge on the anchor and reaches further into the node.
  */
 function portDot(port: any, width: number, height: number, shapeClasses: Record<string, boolean>): VNode {
-    const cx = width / 2;
     const cy = height / 2;
     const group = port?.args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP] as string | undefined;
     if (typeof group !== 'string') {
-        return svg('circle', { class: shapeClasses, attrs: { cx, cy, r: Math.max(width, height) / 2 } });
+        return svg('circle', { class: shapeClasses, attrs: { cx: width / 2, cy, r: Math.max(width, height) / 2 } });
     }
     const r = WorkflowDiagramConstants.PORT_BUS_DOT_RADIUS_PX;
+    const east = portSideOf(port, port?.args?.[WorkflowDiagramMetadata.PORT_DIRECTION] === 'output') === 'EAST';
+    const cx = east ? width - r : r;
     const arm = r - 2.5;
     const expanded = port?.args?.[WorkflowDiagramMetadata.PORT_BUS_EXPANDED] === true;
     const members = port?.args?.[WorkflowDiagramMetadata.PORT_BUS_MEMBERS];
@@ -1059,8 +1061,8 @@ export class WorkflowInputPortView extends ShapeView {
                 'data-cal-port-direction': 'input'
             }
         },
-            // The label after the hit area: a bus port's toggle sits in the
-            // label, inside the hit area's reach, and must be on top of it.
+            // The hit area under everything else: a bus port's dot carries its
+            // toggle and must take the press.
             ...children,
             ...context.renderChildren(port)
         );
@@ -1131,8 +1133,7 @@ export class WorkflowOutputPortView extends ShapeView {
                 'data-cal-port-direction': 'output'
             }
         },
-            // The label after the hit area, as for an input: a bus port's
-            // toggle must be on top of it.
+            // The hit area under everything else, as for an input.
             ...children,
             ...context.renderChildren(port)
         );
@@ -2120,22 +2121,31 @@ export class WorkflowLabelView implements IView {
             // the bundle's, one step in. The server sized the box for it.
             const busGroup = parentPort?.args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP] as string | undefined;
             const busMemberOf = parentPort?.args?.[WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF] as string | undefined;
-            const toggleW = WorkflowDiagramConstants.PORT_BUS_TOGGLE_PX;
             const slot = busGroup
                 ? WorkflowDiagramConstants.PORT_BUS_LABEL_INSET_PX
-                : busMemberOf ? toggleW + WorkflowDiagramConstants.PORT_BUS_TOGGLE_GAP_PX : 0;
+                : busMemberOf ? WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX : 0;
             const estimate = estimateLabelSizeFallback(label.text || '');
             const labelW = labelWRaw > 0 ? labelWRaw : estimate.width + slot;
             const labelH = labelHRaw > 0 ? labelHRaw : estimate.height;
             const textX = isOutput ? labelW - slot : slot;
             const textY = Math.round(labelH / 2);
-            const slotX = isOutput ? labelW - toggleW : 0;
+            // The slot is drawn, not only left: the client measures a label by
+            // what it draws, and a slot with nothing in it would be measured
+            // away. A member's rail; for a bus, an empty box the size of the inset.
             const slotChildren: VNode[] = [];
-            if (busMemberOf) {
-                slotChildren.push(svg('line', {
-                    class: { 'port-bus-rail': true },
-                    attrs: { x1: slotX + toggleW / 2, y1: 0, x2: slotX + toggleW / 2, y2: labelH }
+            if (slot > 0) {
+                const slotX = isOutput ? labelW - slot : 0;
+                slotChildren.push(svg('rect', {
+                    class: { 'port-label-slot': true },
+                    attrs: { x: slotX, y: 0, width: slot, height: labelH, fill: 'none', stroke: 'none' }
                 }));
+                if (busMemberOf) {
+                    const railX = isOutput ? labelW - 4.5 : 4.5;
+                    slotChildren.push(svg('line', {
+                        class: { 'port-bus-rail': true },
+                        attrs: { x1: railX, y1: 0, x2: railX, y2: labelH }
+                    }));
+                }
             }
 
             return svg('g', {},
