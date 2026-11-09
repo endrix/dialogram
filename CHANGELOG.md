@@ -362,8 +362,11 @@ it no longer has.
   same expression on two ports (`{tid, tpl}` into two RAMs,
   `mul_result[63:0]` four times) gave two nodes one id, and the client
   refused the whole model, drawing nothing (`tlu`, `sparc_exu_div` and
-  `eth_miim` in sparc64soc). A label is a node's id only where it names that
-  node alone; the others take the producer's id (`model/stable-ids.ts`).
+  `eth_miim` in sparc64soc). The first node to carry a label keeps it as its
+  id, in the document's order, and later ones take the producer's id, so a
+  named node's saved position survives a duplicate added later
+  (`model/stable-ids.ts`). An edge's From and To show the nodes' names, not
+  their ids.
 
 - **The selection trace follows a model rebuilt under the same selection.**
   Its classes were worked out once, on the model the selection was made on,

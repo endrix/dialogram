@@ -20,7 +20,7 @@
  */
 import { normalizePortSide, type PortSide } from '@dialogram/shared';
 import type { PyGraphDocument, PyGraphEdge, PyGraphNode, PyGraphPort } from './graph-gmodel-source';
-import { stableNodeIds } from './stable-ids';
+import { stableNodeId, stableNodeIds, type StableNodeIds } from './stable-ids';
 
 /** Which bundles the reader has opened, by node layout key and bundle name. */
 export interface PortBusState {
@@ -68,11 +68,13 @@ interface MemberInfo {
  * open ones as a header port with their members under it, and the edges
  * between buses merged. A document without bundles comes back unchanged.
  */
-export function bundlePorts(doc: PyGraphDocument, state: PortBusState = ALL_BUSES_COLLAPSED): PyGraphDocument {
+export function bundlePorts(
+    doc: PyGraphDocument,
+    state: PortBusState = ALL_BUSES_COLLAPSED,
+    nodeIds: StableNodeIds = stableNodeIds(doc.graph.nodes)
+): PyGraphDocument {
     const memberOf = new Map<string, MemberInfo>();
     let anyBus = false;
-    // The key a node's open bundles are saved under: its model id.
-    const nodeKeys = stableNodeIds(doc.graph.nodes);
 
     const nodes = doc.graph.nodes.map(node => {
         if (isBoundaryNode(node) || !node.ports.some(p => p.group)) {
@@ -102,7 +104,8 @@ export function bundlePorts(doc: PyGraphDocument, state: PortBusState = ALL_BUSE
             }
         }
 
-        const nodeKey = nodeKeys.get(node.id) ?? node.id;
+        // The key a node's open bundles are saved under: its model id.
+        const nodeKey = stableNodeId(nodeIds, node);
         const ports: PyGraphPort[] = [];
         const emitted = new Set<string>();
         for (const port of node.ports) {
