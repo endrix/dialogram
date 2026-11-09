@@ -68,8 +68,9 @@ version check rather than run against what it no longer has.
   definition navigation, or leaves the node to it; one per `id`, the last
   binding winning. The `@viewer` half of the double-click listener (open,
   diff, open with an editor or run a command on a task's last tokens, or a
-  path it declares) is the `viewer` opener (`viewer-node-opener.ts`), which
-  the stock module binds until wfpy-ide binds its own.
+  path it declares) became the `viewer` opener (#140) and then wfpy-ide's
+  code, in its own bundle (endrix/wfpy-ide#29); the stock bundle binds no
+  opener.
 
 - **What a product's webview code needs, from the package.**
   `@dialogram/diagram-client` exports `VscodeUi` (the host's quick picks,

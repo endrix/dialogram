@@ -278,8 +278,7 @@ of your nodes, bind a `NodeOpener` with an `id`: its `open(node, { sourceUri })`
 returns the actions to run, or `undefined` to leave the node to the platform.
 Openers are asked in the order their ids were first bound, and the first
 that answers wins; a later binding for an id replaces the earlier one. The
-stock bundle binds wfpy's `@viewer` opener (id `viewer`) until wfpy-ide binds
-its own.
+stock bundle binds none; wfpy-ide's binds its `@viewer` opener.
 
 **A diagram of your own.** When you compose the container yourself:
 

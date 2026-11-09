@@ -11,7 +11,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { ViewerMouseListener } from '../src/viewer-mouse-listener';
-import { ViewerNodeOpener } from '../src/viewer-node-opener';
 
 const node = (type: string, extra: Record<string, unknown>): any => ({
     id: 'clause',
@@ -26,8 +25,6 @@ const node = (type: string, extra: Record<string, unknown>): any => ({
 
 const viewerAnswer = (element: unknown): unknown[] => {
     const listener: any = new ViewerMouseListener();
-    // What the stock feature module binds.
-    listener.contributedOpeners = [new ViewerNodeOpener()];
     listener.editorContext = { sourceUri: 'file:///w/spec/pipeline.md' };
     return listener.doubleClick(element, {} as MouseEvent);
 };
