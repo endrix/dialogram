@@ -72,6 +72,16 @@ it no longer has.
 
 ### Added
 
+- **A wire that is some bits of a port says which.** A producer can say
+  that an edge is some bits of the port at one end (`meta.fromSlice`,
+  `meta.toSlice`: `7:4`, `3`), as hdl-sidecar does for each operand of a
+  concatenation it now wires straight to an instance's port instead of
+  through a join or split node. The bits are written at that end as an
+  index is (`[7:4]`), and always, whatever the product's edge captions:
+  nothing else on the drawing tells those wires apart. Where several such
+  wires meet one port end, their labels go one after another along the
+  wire, highest bits first, as the concatenation reads.
+
 - **A node holding a graph of its own opens in place.** A producer can give
   a node the graph it is made of (`meta.inner`: `nodes`, and `edges` between
   their pins and the node's own ports; an HDL process and the gates and

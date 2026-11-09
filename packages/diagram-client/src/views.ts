@@ -427,6 +427,39 @@ export class GroupNodeView extends ShapeView {
     }
 }
 
+/** Roughly how wide an index label (`[7:4]`) is drawn. */
+const INDEX_LABEL_CHAR_PX = 6;
+const INDEX_LABEL_GAP_PX = 6;
+
+/**
+ * How much further along its wire an edge's index label at one end goes:
+ * the widths of the labels of the edges before it at the same port end, the
+ * one with the highest bits first (a concatenation reads from its top bits).
+ */
+export function indexLabelShift(edge: unknown, end: 'from' | 'to'): number {
+    const key = end === 'from' ? WorkflowDiagramMetadata.EDGE_FROM_INDEX : WorkflowDiagramMetadata.EDGE_TO_INDEX;
+    const own = (edge as any)?.args?.[key];
+    if (typeof own !== 'string') {
+        return 0;
+    }
+    const port: any = end === 'from' ? (edge as any)?.source : (edge as any)?.target;
+    const attached: unknown = end === 'from' ? port?.outgoingEdges : port?.incomingEdges;
+    const siblings = attached ? [...(attached as Iterable<any>)].filter(e => typeof e?.args?.[key] === 'string') : [];
+    if (siblings.length < 2) {
+        return 0;
+    }
+    const top = (text: string): number => Number.parseInt(text, 10) || 0;
+    siblings.sort((a, b) => top(b.args[key]) - top(a.args[key]) || String(a.id).localeCompare(String(b.id)));
+    let shift = 0;
+    for (const sibling of siblings) {
+        if (sibling === edge || sibling.id === (edge as any).id) {
+            break;
+        }
+        shift += (String(sibling.args[key]).length + 2) * INDEX_LABEL_CHAR_PX + INDEX_LABEL_GAP_PX;
+    }
+    return shift;
+}
+
 /** A band `width` wide and `height` tall with its top corners rounded and its bottom square. */
 function roundedTopPath(width: number, height: number, radius: number): string {
     const r = Math.max(0, Math.min(radius, width / 2, height));
@@ -1580,6 +1613,9 @@ export class WorkflowEdgeView extends PolylineEdgeView {
 
         const fromIndex = (edgeArgs?.[WorkflowDiagramMetadata.EDGE_FROM_INDEX] as string | undefined) ?? undefined;
         const toIndex = (edgeArgs?.[WorkflowDiagramMetadata.EDGE_TO_INDEX] as string | undefined) ?? undefined;
+        // The bits of a port the wire is: written whatever the captions, since
+        // nothing else on the drawing says which wire is which bits.
+        const indexCaptions = captions || edgeArgs?.[WorkflowDiagramMetadata.EDGE_SLICE] === true;
 
         const isConditional = !!structureBranch;
         const isForeach = !!structureForeach;
@@ -1593,11 +1629,13 @@ export class WorkflowEdgeView extends PolylineEdgeView {
         const fromIndexLabel = fromIndex ? `[${fromIndex}]` : undefined;
         const toIndexLabel = toIndex ? `[${toIndex}]` : undefined;
 
+        // Wires meeting one port end often share their last stretch: their
+        // labels go one after another along it, highest bits nearest the port.
         const fromIndexPos = (fromIndexLabel && startSeg && startNext)
-            ? this.offsetPointAlongSegment(startSeg, startNext, 12, -10)
+            ? this.offsetPointAlongSegment(startSeg, startNext, 12 + indexLabelShift(edge, 'from'), -10)
             : undefined;
         const toIndexPos = (toIndexLabel && endSeg && endPrev)
-            ? this.offsetPointAlongSegment(endSeg, endPrev, 18, -10)
+            ? this.offsetPointAlongSegment(endSeg, endPrev, 18 + indexLabelShift(edge, 'to'), -10)
             : undefined;
 
         return svg('g', {
@@ -1638,7 +1676,7 @@ export class WorkflowEdgeView extends PolylineEdgeView {
                 )
                 : []),
             // Endpoint index labels for list/entity indexing (e.g. bf[0].In)
-            ...(captions && fromIndexLabel && fromIndexPos
+            ...(indexCaptions && fromIndexLabel && fromIndexPos
                 ? [svg('text', {
                     class: { 'cal-edge-index-label': true, 'from-index': true },
                     attrs: {
@@ -1649,7 +1687,7 @@ export class WorkflowEdgeView extends PolylineEdgeView {
                     }
                 }, svg('tspan', {}, fromIndexLabel))]
                 : []),
-            ...(captions && toIndexLabel && toIndexPos
+            ...(indexCaptions && toIndexLabel && toIndexPos
                 ? [svg('text', {
                     class: { 'cal-edge-index-label': true, 'to-index': true },
                     attrs: {
