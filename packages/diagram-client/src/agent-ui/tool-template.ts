@@ -4,7 +4,7 @@
  */
 import type { AnnotationTemplate, AnnotationTemplateContext } from '../annotation-template';
 import { VscodeUi } from '../vscode-ui';
-import { toWfStringLiteral } from './literals';
+import { stripQuotesIfStringLiteral, toWfStringLiteral } from './literals';
 
 export class ToolAnnotationTemplate implements AnnotationTemplate {
     readonly annotationName = 'tool';
@@ -18,7 +18,7 @@ export class ToolAnnotationTemplate implements AnnotationTemplate {
 
         const cmdRaw = await VscodeUi.instance.inputBox({
             prompt: 'tool.cmd (program to run)',
-            value: existingArgs.get('cmd')?.replace(/^"|"$/g, '') ?? 'bash'
+            value: existingArgs.has('cmd') ? stripQuotesIfStringLiteral(existingArgs.get('cmd')!) : 'bash'
         });
         if (cmdRaw === undefined) return;
 

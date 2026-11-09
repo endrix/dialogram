@@ -1,5 +1,6 @@
 import { inject, injectable, multiInject, optional } from 'inversify';
 import { AnnotationTemplate, CUSTOM_ANNOTATION_ENTRY } from './annotation-template';
+import { lastPerKey } from './contributions';
 import { EditorContextService, IActionDispatcher, TYPES } from '@eclipse-glsp/client';
 import { Action as GlspAction, ApplyLabelEditOperation, ICommand, IActionHandler, NavigateToExternalTargetAction, RequestModelAction } from '@eclipse-glsp/sprotty';
 import { VscodeUi, type VscodeQuickPickItem } from './vscode-ui';
@@ -531,17 +532,13 @@ export class WorkflowEditAnnotationsActionHandler implements IActionHandler {
 
     /**
      * One template per annotation name, in the order the names were first
-     * bound; a later binding replaces the earlier one. A template named like
-     * the wizard's own "Custom annotation…" entry is ignored.
+     * bound; a later binding replaces the earlier one. A template without a
+     * name, or named like the wizard's own "Custom annotation…" entry, is
+     * ignored.
      */
     protected annotationTemplates(): readonly AnnotationTemplate[] {
-        const byName = new Map<string, AnnotationTemplate>();
-        for (const template of this.contributedTemplates ?? []) {
-            if (template.annotationName !== CUSTOM_ANNOTATION_ENTRY) {
-                byName.set(template.annotationName, template);
-            }
-        }
-        return [...byName.values()];
+        return lastPerKey(this.contributedTemplates, template => template.annotationName.trim())
+            .filter(template => template.annotationName.trim() !== CUSTOM_ANNOTATION_ENTRY);
     }
 
     handle(action: GlspAction): ICommand | GlspAction | void {
@@ -622,7 +619,7 @@ export class WorkflowEditAnnotationsActionHandler implements IActionHandler {
                 elementId: action.elementId,
                 existing: defAnnotations.find(a => a.name === chosen.annotationName)
             });
-            if (composed === undefined) return;
+            if (!composed?.trim()) return;
             annotationText = composed;
         } else {
             const name = await VscodeUi.instance.inputBox({

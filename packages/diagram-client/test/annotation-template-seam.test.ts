@@ -78,9 +78,15 @@ describe('an annotation template', () => {
         }]);
     });
 
-    it('sends nothing when the person cancels it', async () => {
-        const { sent } = await wizard([probe('retry', undefined)], ['upsert', 'retry']);
-        expect(sent).toEqual([]);
+    it('sends nothing when the person cancels it, or it composes nothing', async () => {
+        expect((await wizard([probe('retry', undefined)], ['upsert', 'retry'])).sent).toEqual([]);
+        resetAgentUi();
+        expect((await wizard([probe('retry', '  ')], ['upsert', 'retry'])).sent).toEqual([]);
+    });
+
+    it('is not offered without a name', async () => {
+        const { menu } = await wizard([probe('', '@'), probe(' ', '@')], ['upsert', 'custom', 'x', '']);
+        expect(menu).toEqual(['custom']);
     });
 
     it('is replaced by a later template of the same annotation, which keeps its place', async () => {
@@ -115,6 +121,16 @@ describe('the stock templates', () => {
         resetAgentUi();
         const tool = await wizard(stockAnnotationTemplates(), ['upsert', 'tool', 'my\ttool', '[]', 'true']);
         expect(tool.sent[0].annotationText).toBe('@tool(\n    cmd="my\\ttool",\n    args=[],\n    inheritStdio=true\n)');
+    });
+
+    it('offer a @tool’s command as it reads, so writing it back changes nothing', async () => {
+        const literal = '"my\\ttool \\"x\\""'; // the source text: "my\ttool \"x\""
+        const { sent } = await wizard(stockAnnotationTemplates(),
+            ['upsert', 'tool', 'my\ttool "x"', '[]', 'true'],
+            [{ name: 'tool', arguments: [{ name: 'cmd', value: literal }, { name: 'args', value: '[]' }] }]);
+        const cmdAsk = ui.calls.find(c => c.method === 'inputBox' && String((c.args[0] as any).prompt).startsWith('tool.cmd'));
+        expect((cmdAsk!.args[0] as any).value).toBe('my\ttool "x"');
+        expect(sent[0].annotationText).toBe(`@tool(\n    cmd=${literal},\n    args=[],\n    inheritStdio=true\n)`);
     });
 });
 

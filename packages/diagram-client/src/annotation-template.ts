@@ -12,7 +12,8 @@
  * template per annotation name: a later binding for a name replaces the
  * earlier one, so a product's module, which loads after the stock one, can
  * replace a stock template. The wizard lists them in the order the names were
- * first bound, before its own "Custom annotation…" entry.
+ * first bound, before its own "Custom annotation…" entry; a template without a
+ * name is ignored.
  */
 
 export const AnnotationTemplate = Symbol.for('dialogram.AnnotationTemplate');
@@ -27,8 +28,9 @@ export interface AnnotationTemplate {
     readonly label: string;
     readonly description?: string;
     /**
-     * Ask for the template's arguments and compose the annotation's text, or
-     * resolve to `undefined` when the person cancels.
+     * Ask for the template's arguments and compose the annotation's text,
+     * `@name(...)` for this template's name, or resolve to `undefined` (or an
+     * empty text) when the person cancels.
      */
     compose(context: AnnotationTemplateContext): Promise<string | undefined>;
 }
