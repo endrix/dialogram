@@ -47,3 +47,19 @@ describe('the stock diagram, with what a product adds', () => {
         }
     });
 });
+
+describe('the agent workflow UI as a module of its own', () => {
+    it('binds what the stock feature module binds for it, in the same order', async () => {
+        const { agentUiModule } = await import('../src/agent-ui');
+        const { recordModuleRegistrations } = await import('./container-registration-recorder');
+        const agentUi = recordModuleRegistrations([agentUiModule]);
+        const stock = recordModuleRegistrations([workflowFeaturesModule]);
+        const agentKinds = new Set(agentUi.map(e => e.id));
+        expect([...agentKinds].sort()).toEqual([
+            'Symbol(dialogram.AnnotationEditor)',
+            'Symbol(dialogram.AnnotationTemplate)',
+            'Symbol(dialogram.NodeSectionContribution)'
+        ]);
+        expect(stock.filter(e => agentKinds.has(e.id))).toEqual(agentUi);
+    });
+});
