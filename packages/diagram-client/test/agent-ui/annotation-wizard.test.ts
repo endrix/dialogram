@@ -6,7 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkflowEditAnnotationsActionHandler } from '../../src/editing-action-handlers';
-import { stockAnnotationTemplates } from '../../src/agent-ui';
+import { agentUiTemplates } from '../../src/agent-ui';
 import { ui, installPage, taskNode, BASH_TOOL } from './harness';
 import { resetAgentUi, rootOf } from './panel';
 
@@ -17,7 +17,7 @@ class TestWizard extends WorkflowEditAnnotationsActionHandler {
     constructor(node: any) {
         super();
         // What `agentUiModule` binds.
-        (this as any).contributedTemplates = stockAnnotationTemplates();
+        (this as any).contributedTemplates = agentUiTemplates();
         (this as any).editorContext = { modelRoot: rootOf(node) };
         (this as any).actionDispatcher = { dispatch: async (a: unknown) => { this.dispatched.push(a); } };
     }

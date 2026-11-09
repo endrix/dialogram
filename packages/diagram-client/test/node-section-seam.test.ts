@@ -197,8 +197,14 @@ describe('the node sections the panel is given', () => {
     const kinds = (panel: PropertyPanel) =>
         (panel as any).nodeSections().map((s: NodeSectionContribution) => s.constructor?.name === 'Object' ? 'product' : s.constructor?.name);
 
-    it('are none in the stock diagram', () => {
+    it('are none in the stock diagram, and only a product’s, installed once, when it binds one', () => {
+        const calls: Call[] = [];
+        const product = new ContainerModule(bind => {
+            bind(NodeSectionContribution).toConstantValue(probe(calls));
+        });
         expect(kinds(stockContainer().get(PropertyPanel))).toEqual([]);
+        expect(kinds(stockContainer(product).get(PropertyPanel))).toEqual(['product']);
+        expect(calls).toEqual([['install']]);
     });
 
     it('are the agent UI’s sections when a bundle loads it, then another module’s, each installed once after injection', () => {

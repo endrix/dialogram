@@ -12,7 +12,7 @@ import { composeDiagramModules, stockDiagramOptions } from '../src/container';
 import { diagramBaseModule } from '../src/base.module';
 import { workflowViewsModule } from '../src/stock-views.module';
 import { workflowFeaturesModule } from '../src/stock-features.module';
-import { agentUiModule, stockAnnotationEditors, stockAnnotationTemplates, stockNodeSections } from '../src/agent-ui';
+import { agentUiModule, agentUiEditors, agentUiTemplates, agentUiNodeSections } from '../src/agent-ui';
 import { recordModuleRegistrations, sortEntries } from './container-registration-recorder';
 
 describe('the stock diagram, with what a product adds', () => {
@@ -51,8 +51,10 @@ describe('the stock diagram, with what a product adds', () => {
 });
 
 describe('the agent workflow UI as a module of its own', () => {
-    it('binds the @tool and @agent editors, the agent sections and the @tool and @viewer templates', () => {
+    it('binds the @tool and @agent editors, the agent sections, the @tool and @viewer templates and the discovery answers’ handlers', () => {
         expect(recordModuleRegistrations([agentUiModule])).toEqual(sortEntries([
+            { op: 'actionHandler', kind: 'dialogram.showAgentSkills', handler: 'WorkflowShowAgentSkillsActionHandler' },
+            { op: 'actionHandler', kind: 'dialogram.showClaudeAgents', handler: 'WorkflowShowClaudeAgentsActionHandler' },
             { op: 'bind', id: 'Symbol(dialogram.AnnotationEditor)', to: 'const:ToolAnnotationEditor' },
             { op: 'bind', id: 'Symbol(dialogram.AnnotationEditor)', to: 'const:AgentAnnotationEditor' },
             { op: 'bind', id: 'Symbol(dialogram.NodeSectionContribution)', to: 'const:AgentNodeSections' },
@@ -62,8 +64,8 @@ describe('the agent workflow UI as a module of its own', () => {
     });
 
     it('binds the editors and templates in the order the panel and the wizard show them', () => {
-        expect(stockAnnotationEditors().map(e => e.annotationName)).toEqual(['tool', 'agent']);
-        expect(stockNodeSections().map(s => s.id)).toEqual(['agent']);
-        expect(stockAnnotationTemplates().map(t => t.annotationName)).toEqual(['tool', 'viewer']);
+        expect(agentUiEditors().map(e => e.annotationName)).toEqual(['tool', 'agent']);
+        expect(agentUiNodeSections().map(s => s.id)).toEqual(['agent']);
+        expect(agentUiTemplates().map(t => t.annotationName)).toEqual(['tool', 'viewer']);
     });
 });

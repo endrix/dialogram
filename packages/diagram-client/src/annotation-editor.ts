@@ -12,8 +12,8 @@
  *
  * and passes the module to `startStockDiagram({ features })`. There is one
  * editor per annotation name: a later binding for a name replaces the earlier
- * one, so a product's module, which loads after the stock one, can replace a
- * stock editor. The section header's quick-add buttons follow the order in
+ * one, so a module that loads later can replace an editor an earlier one
+ * bound (the stock diagram binds none). The section header's quick-add buttons follow the order in
  * which the names were first bound.
  */
 import type { IActionDispatcher } from '@eclipse-glsp/client';

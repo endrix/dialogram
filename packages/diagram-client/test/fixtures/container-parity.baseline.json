@@ -40,16 +40,6 @@
         "op": "actionHandler"
     },
     {
-        "handler": "WorkflowShowAgentSkillsActionHandler",
-        "kind": "dialogram.showAgentSkills",
-        "op": "actionHandler"
-    },
-    {
-        "handler": "WorkflowShowClaudeAgentsActionHandler",
-        "kind": "dialogram.showClaudeAgents",
-        "op": "actionHandler"
-    },
-    {
         "id": "ChangeBoundsTool",
         "op": "rebind",
         "scope": "singleton",

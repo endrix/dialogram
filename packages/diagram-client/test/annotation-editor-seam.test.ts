@@ -180,8 +180,12 @@ describe('the editors the panel is given', () => {
 
     const names = (panel: PropertyPanel) => (panel as any).annotationEditors().map((e: AnnotationEditor) => e.annotationName);
 
-    it('are none in the stock diagram', () => {
+    it('are none in the stock diagram, and only a product’s when it binds one', () => {
+        const product = new ContainerModule(bind => {
+            bind(AnnotationEditor).toConstantValue(probeEditor());
+        });
         expect(names(stockContainer().get(PropertyPanel))).toEqual([]);
+        expect(names(stockContainer(product).get(PropertyPanel))).toEqual(['probe']);
     });
 
     it('are the agent UI’s @tool and @agent when a bundle loads it, then another module’s', () => {
