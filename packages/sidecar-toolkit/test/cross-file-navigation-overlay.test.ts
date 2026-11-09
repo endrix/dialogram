@@ -285,7 +285,6 @@ def child():
         storage.applyViewerOverlayToEdges = async () => undefined;
         storage.applyAgentContextToNodes = async () => undefined;
         storage.attachWorkflowRunHistory = async () => undefined;
-        storage.applyAgentEnrichment = async () => undefined;
         storage.getWorkflowCallerReferences = async () => [];
 
         await storage.finishLoadFromDoc(

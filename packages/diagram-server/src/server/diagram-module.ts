@@ -47,8 +47,6 @@ import { WorkflowLabelEditValidator } from './label-edit-validator';
 import { WorkflowRequestCheckEdgeActionHandler } from './request-check-edge-action-handler';
 import { WorkflowRequestClipboardDataActionHandler } from './request-clipboard-data-action-handler';
 import { WorkflowChangeBoundsOperationHandler } from '../operations/change-bounds-handler';
-import { WorkflowRequestAgentSkillsOperationHandler } from '../operations/request-agent-skills-handler';
-import { WorkflowRequestClaudeAgentsOperationHandler } from '../operations/request-claude-agents-handler';
 import { WorkflowResetEdgeRoutesOperationHandler } from '../operations/reset-edge-routes-handler';
 import { WorkflowRerouteEdgesAvoidOverlapsOperationHandler } from '../operations/reroute-edges-avoid-overlaps-handler';
 import { WorkflowLayoutBoundaryFlowOperationHandler } from '../operations/layout-boundary-flow-handler';
@@ -156,10 +154,6 @@ export class WorkflowDiagramModule extends GModelDiagramModule {
 
         // Manual bendpoints / edge routing edits
         binding.add(WorkflowChangeRoutingPointsOperationHandler);
-
-        // Discovery handlers (no source edits)
-        binding.add(WorkflowRequestAgentSkillsOperationHandler);
-        binding.add(WorkflowRequestClaudeAgentsOperationHandler);
 
         // Routing utilities
         binding.add(WorkflowLayoutBoundaryFlowOperationHandler);

@@ -122,7 +122,6 @@ function stubOverlaySideChannels(storage: Record<string, unknown>): void {
     storage.applyViewerOverlayToEdges = async () => undefined;
     storage.applyAgentContextToNodes = async () => undefined;
     storage.attachWorkflowRunHistory = async () => undefined;
-    storage.applyAgentEnrichment = async () => undefined;
     storage.getWorkflowCallerReferences = async () => [];
 }
 

@@ -7,11 +7,27 @@ platform API version.
 ## [Unreleased]
 
 **Release:** this release must bump `DIALOGRAM_API_VERSION` to 0.9 and ship
-with products built against it: its API removals (#127, #129) and the stock
-bundle's dropping the agent workflow UI (below) need a product still at 0.8
-to fail its version check rather than run against what it no longer has.
+with products built against it: its API removals (#127, #129), the stock
+bundle's dropping the agent workflow UI (#137) and the server's no longer
+answering agent discovery (#139) need a product still at 0.8 to fail its
+version check rather than run against what it no longer has.
 
 ### Removed
+
+- **Agent discovery and enrichment in the platform.** The server no longer
+  scans `.wf/skills`, `.claude/skills`, `~/.claude/skills` and the
+  `.claude/agents` directories when any product's diagram loads, no longer
+  puts the skills and agent presets it found on the model's root
+  (`wf:agentSkillsSnapshot`, `wf:claudeAgentsSnapshot`) or a skill status on
+  `@agent` nodes, and no longer rebuilds the model a second time when that
+  scan finds something. Its discovery requests and answers are gone with it
+  (`dialogram.requestAgentSkills` / `requestClaudeAgents`,
+  `dialogram.showAgentSkills` / `showClaudeAgents`, their handlers and the
+  client's caches), as is the agent workflow UI's copy in the client
+  (`agent-ui/`, `agentUiModule`, both unreleased). wfpy-ide asks its own
+  host for skills and presets (endrix/wfpy-ide#26, #27). The
+  `cal:agentSkillStatus` metadata key stays for now: wfpy-ide's Skill row
+  still writes it.
 
 - **The `@path` annotation editor and its wizard template.** No producer has
   a `@path` decorator: wfpy sets a workflow's tool search paths with
@@ -67,13 +83,8 @@ to fail its version check rather than run against what it no longer has.
   passed to `startStockDiagram({ features })`; each keeps one contribution
   per name or id, the last binding winning, so a product can replace a
   stock one. wfpy's `@tool`/`@agent` editors, agent sections and
-  `@tool`/`@viewer` templates moved onto them (`src/agent-ui/`, #133–#135)
-  and are bound together by `agentUiModule`, imported by path as
-  `@dialogram/diagram-client/agent-ui/index` (#136). The stock bundle still
-  binds them; a product's bundle that loads `agentUiModule` too draws
-  everything once. On the way: a node's discovered skills are no longer
-  replaced by the model's older snapshot when discovery answers, and the
-  wizard escapes a newline or tab in what it quotes.
+  `@tool`/`@viewer` templates moved onto them (#133–#135), then into
+  wfpy-ide's own webview bundle (#136, #137, endrix/wfpy-ide#24, #27).
 
 - **A product whose CLI has no `run` says so: `cliRuns: false`.** The
   toolkit then registers no run driver and the chat offers no resume. The
@@ -116,8 +127,8 @@ to fail its version check rather than run against what it no longer has.
   Agent Context), the wizard's `@tool` and `@viewer` templates and the
   handlers of the server's skill and agent-preset answers were wfpy's, yet
   every stock-bundle product showed the editors, the header's "Add @tool" and
-  "Add @agent" and the templates. They are `agentUiModule`, which wfpy-ide's
-  own webview bundle loads (endrix/wfpy-ide#24, merged). sv, vhdl, ndf and
+  "Add @agent" and the templates. They are wfpy-ide's code now, in its own
+  webview bundle (endrix/wfpy-ide#24, #27). sv, vhdl, ndf and
   calpy get the plain annotation card and only the wizard's "Custom
   annotation…"; none of them has `@agent` nodes, so Agent Tools, the Skill
   row and Agent Context never appeared for them. The stock bundle is 141 KB

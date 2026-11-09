@@ -14,11 +14,10 @@ import { NodeSectionContribution, type NodeSectionHost } from '../src/node-secti
 import { createPropertySection } from '../src/property-section';
 import { PropertyPanel } from '../src/property-panel';
 import { workflowFeaturesModule } from '../src/stock-features.module';
-import { agentUiModule } from '../src/agent-ui';
-import { installPage, taskNode, ANALYST_AGENT } from './agent-ui/harness';
-import { TestPanel, resetAgentUi, rootOf, section } from './agent-ui/panel';
+import { installPage, taskNode } from './panel-harness/harness';
+import { TestPanel, resetPanel, rootOf, section } from './panel-harness/panel';
 
-vi.mock('../src/vscode-ui', async () => (await import('./agent-ui/harness')).vscodeUiModule());
+vi.mock('../src/vscode-ui', async () => (await import('./panel-harness/harness')).vscodeUiModule());
 // The stock module starts loading the edge router's WASM; nothing here routes.
 vi.mock('../src/libavoid-loader', async (original) => ({
     ...(await original<typeof import('../src/libavoid-loader')>()),
@@ -69,7 +68,7 @@ const sectionTitles = () =>
 const infoKeys = () => [...section('Basic Info')!.querySelectorAll('.pp-akey')].map(k => k.textContent!.trim());
 
 beforeEach(() => {
-    resetAgentUi();
+    resetPanel();
     installPage();
 });
 
@@ -169,16 +168,22 @@ describe('a node section contribution', () => {
     });
 });
 
-describe('an agent node without the agent sections', () => {
-    it('has no Skill row, no Agent Tools and no Agent Context', () => {
-        const node = taskNode('bare', [ANALYST_AGENT], {
-            'wf:agentSpec': { skill: 'turnus-reader' },
-            [WorkflowDiagramMetadata.AGENT_CHAT_HISTORY]: JSON.stringify([{ role: 'user', content: 'hi' }])
-        });
-        panelWith(undefined).show(node);
-        expect(infoKeys()).toEqual(['Name', 'Type']);
-        expect(sectionTitles()).not.toContain('Agent Tools');
-        expect(sectionTitles().some(t => t.startsWith('Agent Context'))).toBe(false);
+describe('a redraw a contribution asks for', () => {
+    it('tells the annotation editors not to ask for discovery again', () => {
+        const asked: boolean[] = [];
+        const editor = {
+            annotationName: 'probe',
+            reservedArgs: [],
+            render: (context: { requestDiscovery: boolean }) => { asked.push(context.requestDiscovery); }
+        };
+        const contribution = probe();
+        const panel = panelWith([contribution]);
+        (panel as any).contributedAnnotationEditors = [editor];
+        (panel as any).installNodeSections();
+        const node = taskNode('asking', [{ name: 'probe', arguments: [] }]);
+        panel.show(node);
+        contribution.host!.redrawIfShowing(node.id);
+        expect(asked).toEqual([true, false]);
     });
 });
 
@@ -207,25 +212,29 @@ describe('the node sections the panel is given', () => {
         expect(calls).toEqual([['install']]);
     });
 
-    it('are the agent UI’s sections when a bundle loads it, then another module’s, each installed once after injection', () => {
-        const calls: Call[] = [];
-        const product = new ContainerModule(bind => {
-            bind(NodeSectionContribution).toConstantValue(probe(calls));
-        });
-        const panel = stockContainer(agentUiModule, product).get(PropertyPanel);
-        expect(kinds(panel)).toEqual(['AgentNodeSections', 'product']);
-        expect(calls).toEqual([['install']]);
+    it('are those every module binds, in the order they were bound, each installed once after injection', () => {
+        const first: Call[] = [];
+        const second: Call[] = [];
+        const one = probe(first, 'one');
+        const two = probe(second, 'two');
+        const panel = stockContainer(
+            new ContainerModule(bind => { bind(NodeSectionContribution).toConstantValue(one); }),
+            new ContainerModule(bind => { bind(NodeSectionContribution).toConstantValue(two); })
+        ).get(PropertyPanel);
+        expect((panel as any).nodeSections()).toEqual([one, two]);
+        expect([first, second]).toEqual([[['install']], [['install']]]);
     });
 
-    it('take a later module’s agent sections in place of the agent UI’s', () => {
+    it('take a later module’s contribution in place of an earlier one’s of the same id', () => {
+        const earlier: Call[] = [];
         const calls: Call[] = [];
         const mine = probe(calls, 'mine', 'agent');
-        const product = new ContainerModule(bind => {
-            bind(NodeSectionContribution).toConstantValue(mine);
-        });
-        const panel = stockContainer(agentUiModule, product).get(PropertyPanel);
+        const panel = stockContainer(
+            new ContainerModule(bind => { bind(NodeSectionContribution).toConstantValue(probe(earlier, 'theirs', 'agent')); }),
+            new ContainerModule(bind => { bind(NodeSectionContribution).toConstantValue(mine); })
+        ).get(PropertyPanel);
         expect((panel as any).nodeSections()).toEqual([mine]);
-        expect(calls).toEqual([['install']]);
+        expect([earlier, calls]).toEqual([[], [['install']]]);
     });
 
     it('are none when nothing is bound', () => {

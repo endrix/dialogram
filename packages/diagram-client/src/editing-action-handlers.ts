@@ -11,30 +11,6 @@ import { FocusAfterLoadService } from './focus-after-load';
 import { EXECUTION_OVERLAY_ACTION_KIND, type ExecutionOverlayActionPayload, unqualifiedName } from '@dialogram/shared';
 import { showExecutionStates } from './execution-states';
 
-export type WorkflowAgentSkill = {
-    name: string;
-    description?: string;
-    root: string;
-    skillDir: string;
-    skillMdPath: string;
-    hasSkillMd: boolean;
-    hooks: string[];
-    declaredHooks?: {
-        pre?: string;
-        post?: string;
-    };
-    missingDeclaredHooks?: string[];
-    warnings?: string[];
-};
-
-export type WorkflowClaudeAgentProfile = {
-    name: string;
-    description?: string;
-    path: string;
-    ignoredFields?: string[];
-    warnings?: string[];
-};
-
 export namespace WorkflowPromptLabelEditAction {
     export const KIND = 'dialogram.promptLabelEdit';
 
@@ -252,63 +228,6 @@ export namespace WorkflowUpdateEdgeCapacityOperation {
 
     export function create(options: Omit<Operation, 'kind'>): Operation {
         return { kind: KIND, ...options };
-    }
-}
-
-export namespace WorkflowRequestAgentSkillsOperation {
-    export const KIND = 'dialogram.requestAgentSkills';
-
-    export type RootsMode = 'all' | 'project';
-
-    export interface Operation extends GlspAction {
-        kind: typeof KIND;
-        elementId: string;
-        rootsMode?: RootsMode;
-    }
-
-    export function create(options: Omit<Operation, 'kind'>): Operation {
-        return { kind: KIND, ...options };
-    }
-}
-
-export namespace WorkflowShowAgentSkillsAction {
-    export const KIND = 'dialogram.showAgentSkills';
-
-    export interface Action extends GlspAction {
-        kind: typeof KIND;
-        elementId: string;
-        skills: WorkflowAgentSkill[];
-    }
-
-    export function is(action: unknown): action is Action {
-        return !!action && typeof action === 'object' && (action as any).kind === KIND;
-    }
-}
-
-export namespace WorkflowRequestClaudeAgentsOperation {
-    export const KIND = 'dialogram.requestClaudeAgents';
-
-    export interface Operation extends GlspAction {
-        kind: typeof KIND;
-        elementId: string;
-    }
-
-    export function create(options: Omit<Operation, 'kind'>): Operation {
-        return { kind: KIND, ...options };
-    }
-}
-
-export namespace WorkflowShowClaudeAgentsAction {
-    export const KIND = 'dialogram.showClaudeAgents';
-
-    export interface Action extends GlspAction {
-        kind: typeof KIND;
-        elementId: string;
-        agents: WorkflowClaudeAgentProfile[];
-    }
-
-    export function is(action: unknown): action is Action {
-        return !!action && typeof action === 'object' && (action as any).kind === KIND;
     }
 }
 
@@ -656,73 +575,12 @@ export class WorkflowEditAnnotationsActionHandler implements IActionHandler {
     }
 }
 
-@injectable()
-export class WorkflowShowAgentSkillsActionHandler implements IActionHandler {
-    private static readonly skillsByElementId = new Map<string, WorkflowAgentSkill[]>();
-
-    static getSkillsForElement(elementId: string): WorkflowAgentSkill[] {
-        return this.skillsByElementId.get(elementId) ?? [];
-    }
-
-    /** Skills from the model's snapshot, for a node discovery has not answered for yet. */
-    static seed(elementId: string, skills: WorkflowAgentSkill[]): void {
-        if (!this.skillsByElementId.has(elementId)) {
-            this.skillsByElementId.set(elementId, skills);
-        }
-    }
-
-    handle(action: GlspAction): ICommand | GlspAction | void {
-        if (!WorkflowShowAgentSkillsAction.is(action)) {
-            return;
-        }
-        const elementId = String(action.elementId ?? '').trim();
-        if (!elementId) {
-            return;
-        }
-        const skills = Array.isArray(action.skills) ? action.skills : [];
-        WorkflowShowAgentSkillsActionHandler.skillsByElementId.set(elementId, skills);
-        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-            window.dispatchEvent(new CustomEvent('dialogram.agentSkills.updated', {
-                detail: { elementId, count: skills.length }
-            }));
-        }
-    }
-}
-
-@injectable()
-export class WorkflowShowClaudeAgentsActionHandler implements IActionHandler {
-    private static readonly agentsByElementId = new Map<string, WorkflowClaudeAgentProfile[]>();
-
-    static getAgentsForElement(elementId: string): WorkflowClaudeAgentProfile[] {
-        return this.agentsByElementId.get(elementId) ?? [];
-    }
-
-    /** Agent presets from the model's snapshot, for a node discovery has not answered for yet. */
-    static seed(elementId: string, agents: WorkflowClaudeAgentProfile[]): void {
-        if (!this.agentsByElementId.has(elementId)) {
-            this.agentsByElementId.set(elementId, agents);
-        }
-    }
-
-    handle(action: GlspAction): ICommand | GlspAction | void {
-        if (!WorkflowShowClaudeAgentsAction.is(action)) {
-            return;
-        }
-        const elementId = String(action.elementId ?? '').trim();
-        if (!elementId) {
-            return;
-        }
-        const agents = Array.isArray(action.agents) ? action.agents : [];
-        WorkflowShowClaudeAgentsActionHandler.agentsByElementId.set(elementId, agents);
-    }
-}
-
 // ── Live run agent stream (read-only observation of a running workflow) ──────
 // A run streams agent message deltas over SSE; the host forwards them to the
 // diagram client as batched events under the neutral EXECUTION_OVERLAY_ACTION_KIND
 // (the execution-overlay seam's opaque events channel). This handler folds the
 // events into per-instance live state and notifies the read-only UI via a window
-// event (same decoupling pattern as WorkflowShowAgentSkillsAction).
+// event.
 export interface RunStreamEvent {
     seq?: number;
     type?: string;

@@ -267,12 +267,10 @@ There is one template per annotation name, and a later binding replaces an
 earlier one. The wizard lists them before its own "Custom annotation…" entry
 (`custom`), which a template cannot replace.
 
-**The agent workflow UI.** The stock bundle binds no editors, sections or
-templates. wfpy's are `agentUiModule`, imported by path as
-`@dialogram/diagram-client/agent-ui/index`: the `@tool` and `@agent`
-editors, the agent sections (id `agent`: Basic Info's Skill row, Agent Tools
-and the live Agent Context) and the `@tool` and `@viewer` templates. A bundle
-that wants them passes it in `features`, as wfpy-ide's does.
+The stock bundle binds no editors, sections or templates. wfpy-ide's own
+bundle is an example of all three: its `src/webview/agent-ui/` holds the
+`@tool` and `@agent` editors, the agent sections (Basic Info's Skill row,
+Agent Tools, the live Agent Context) and the `@tool` and `@viewer` templates.
 
 **A diagram of your own.** When you compose the container yourself:
 

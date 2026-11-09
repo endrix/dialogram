@@ -69,8 +69,7 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     bind(TYPES.ISelectionListener).toService(PropertyPanel);
     bind(TYPES.IGModelRootListener).toService(PropertyPanel);
     // No annotation editors, node sections or wizard templates of its own: a
-    // product binds those in its feature module. The agent workflow UI is
-    // `agentUiModule` (agent-ui/), which a product's own bundle loads.
+    // product binds those in its own bundle's feature module.
 
     // The hierarchy outline, fed by the root model's `wf:hierarchy`. Shown only
     // when the product navigates nested workflows in place and the model

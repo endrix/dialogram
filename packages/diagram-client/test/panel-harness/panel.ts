@@ -1,43 +1,28 @@
 /**
  * The shipped property panel with its window wiring skipped, its dispatcher a
- * recorder, and the stock annotation editors and node sections injected.
- * Shared by the agent-UI characterization tests.
+ * recorder, and no contributions unless a test gives it some.
  *
  * `initialize` is skipped whole: the window chrome (it needs the editor's
- * page) and the document's link listener. So link handling in a rendered
- * reply is not exercised here. The node sections' one-time setup (the
- * discovered-skills listener), which the container runs after injection,
- * runs on demand: see `listenForDiscovery`.
+ * page) and the document's link listener. The node sections' one-time setup,
+ * which the container runs after injection, runs on demand.
  */
 import { PropertyPanel } from '../../src/property-panel';
-import { agentUiEditors, agentUiNodeSections } from '../../src/agent-ui';
-import { WorkflowShowAgentSkillsActionHandler, WorkflowShowClaudeAgentsActionHandler } from '../../src/editing-action-handlers';
 import { ui } from './harness';
 
-/**
- * A clean slate for each test: the recorders, and the static per-element
- * caches of discovered skills and presets, so a test never sees what an
- * earlier one discovered for the same node.
- */
-export function resetAgentUi(): void {
+/** A clean slate for each test. */
+export function resetPanel(): void {
     ui.reset();
-    (WorkflowShowAgentSkillsActionHandler as any).skillsByElementId.clear();
-    (WorkflowShowClaudeAgentsActionHandler as any).agentsByElementId.clear();
 }
 
 export class TestPanel extends PropertyPanel {
     readonly dispatched: any[] = [];
-    private readonly windowListeners: Array<[string, EventListenerOrEventListenerObject]> = [];
 
     protected override initialize(): void {
-        // Skipped whole; see the class comment.
+        // Skipped whole; see the file comment.
     }
 
     constructor() {
         super();
-        // What `agentUiModule` binds.
-        (this as any).contributedAnnotationEditors = agentUiEditors();
-        (this as any).contributedNodeSections = agentUiNodeSections();
         (this as any).actionDispatcher = {
             dispatch: async (action: unknown) => { this.dispatched.push(action); },
             dispatchAll: async (actions: unknown[]) => { this.dispatched.push(...actions); }
@@ -48,30 +33,6 @@ export class TestPanel extends PropertyPanel {
     show(node: any, root?: any): void {
         (this as any).lastRoot = root ?? rootOf(node);
         this.updateContent(node);
-    }
-
-    /**
-     * The re-render when discovered skills arrive (the shipped `initialize`
-     * installs it). Removed again by `dispose`, so a later test's panel is the
-     * only one drawing into the page.
-     */
-    listenForDiscovery(): void {
-        const add = window.addEventListener.bind(window);
-        (window as any).addEventListener = (type: string, listener: EventListenerOrEventListenerObject, options?: unknown) => {
-            this.windowListeners.push([type, listener]);
-            add(type, listener, options as never);
-        };
-        try {
-            this.installNodeSections();
-        } finally {
-            (window as any).addEventListener = add;
-        }
-    }
-
-    dispose(): void {
-        for (const [type, listener] of this.windowListeners.splice(0)) {
-            window.removeEventListener(type, listener);
-        }
     }
 
     /** The last operation of a kind the panel dispatched. */
