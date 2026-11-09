@@ -53,7 +53,10 @@ export function portSideOf(port: PyGraphPort): PortSide {
     return normalizePortSide(port.side) ?? (port.direction === 'in' ? 'WEST' : 'EAST');
 }
 
-/** Nodes that are the diagram's own boundary: one port each, never bundled here. */
+/**
+ * Nodes that are the diagram's own boundary: one port each, so a bundle of them
+ * is drawn as one node (`bundleBoundaries`), never as a bus port on one.
+ */
 function isBoundaryNode(node: PyGraphNode): boolean {
     return node.kind === 'wf-input' || node.kind === 'wf-output';
 }
@@ -175,8 +178,9 @@ export function boundaryMargin(node: Pick<PyGraphNode, 'kind' | 'meta'>): PortSi
  * after the bundle, in their margin, in place of the first of them; open,
  * that node stays as the bundle's header and its members are drawn after it.
  * Members are grouped by bundle and margin, so a `ready` output the producer
- * placed beside its inputs is in their bus. The bus node is an input when
- * most of its members are, and its edges run the way its arrow points.
+ * placed beside its inputs is in their bus, and by scope, so two units shown
+ * in place each have their own. The bus node is an input when most of its
+ * members are, and its edges run the way its arrow points.
  */
 function bundleBoundaries(
     nodes: PyGraphNode[],
@@ -186,7 +190,7 @@ function bundleBoundaries(
 ): PyGraphNode[] {
     const keyOf = (node: PyGraphNode): string | undefined => {
         const group = isBoundaryNode(node) ? node.ports[0]?.group : undefined;
-        return group ? `${group}\u0000${boundaryMargin(node)}` : undefined;
+        return group ? `${group}\u0000${boundaryMargin(node)}\u0000${node.scope ?? ''}` : undefined;
     };
     const keys = nodes.map(keyOf);
     const byKey = new Map<string, PyGraphNode[]>();
@@ -202,6 +206,13 @@ function bundleBoundaries(
     if (buses.length === 0) {
         return nodes;
     }
+    // A bus is named by its bundle and margin, and by its scope only where
+    // two scopes have the bundle in that margin.
+    const scopesOf = new Map<string, Set<string>>();
+    for (const [, members] of buses) {
+        const name = `${members[0].ports[0].group}\u0000${boundaryMargin(members[0])}`;
+        scopesOf.set(name, (scopesOf.get(name) ?? new Set<string>()).add(members[0].scope ?? ''));
+    }
     const busOf = new Map<string, { bus: PyGraphNode; members: PyGraphNode[]; expanded: boolean }>();
     for (const [key, members] of buses) {
         const group = members[0].ports[0].group!;
@@ -209,7 +220,10 @@ function bundleBoundaries(
         const inputs = members.filter(m => m.kind === 'wf-input').length;
         const kind = inputs * 2 >= members.length ? 'wf-input' : 'wf-output';
         const defaultMargin: PortSide = kind === 'wf-input' ? 'WEST' : 'EAST';
-        const id = `bus:wf:${margin.toLowerCase()}:${group}`;
+        const scope = members[0].scope;
+        const id = (scopesOf.get(`${group}\u0000${margin}`)?.size ?? 0) > 1
+            ? `bus:wf:${scope ?? ''}:${margin.toLowerCase()}:${group}`
+            : `bus:wf:${margin.toLowerCase()}:${group}`;
         const busId = `${id}:port`;
         // Keyed by the bus node's own id: it is no producer's node, so its
         // model id is this one.
@@ -221,7 +235,7 @@ function bundleBoundaries(
             id,
             kind,
             label: group,
-            scope: members[0].scope,
+            scope,
             ports: [{
                 id: busId,
                 name: group,

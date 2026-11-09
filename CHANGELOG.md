@@ -116,8 +116,8 @@ it no longer has.
   bundle's header, the members are drawn in the rows under it in its
   margin, and what was laid out under it moves down to make room, back
   again on undo or close. Its edges are merged and split by the same rule;
-  a wire from one member of a closed bus to another is drawn once it is
-  open. A bundle split across both margins is a bus in each; a bundle of
+  a wire from one member of a closed bus to another, of the unit's or an
+  instance's, is drawn once the bus is open, no longer as a loop on it. A bundle split across both margins is a bus in each; a bundle of
   one stays the port it is. The open state is saved under the bus node's
   id (`bus:wf:<margin>:<bundle>`). A layout saved before the bundle was
   drawn as one stays usable: the bus takes its topmost member's place

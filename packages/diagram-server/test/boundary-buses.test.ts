@@ -145,6 +145,39 @@ describe('an open bundle of the unit’s ports', () => {
     });
 });
 
+describe('a bundle the unit’s ports share with another unit shown in place', () => {
+    it('is a bus in each scope, named by it', () => {
+        const scoped = (node: PyGraphNode, scope: string): PyGraphNode => ({ ...node, id: `${node.id}@${scope}`, label: `${node.label}@${scope}`, scope });
+        const nodes = ['scope:a', 'scope:b'].flatMap(scope => [scoped(input('s_valid', 's'), scope), scoped(input('s_data', 's'), scope)]);
+        const children = new GraphGModelSource().transform({ version: '1', graph: { id: 'root', nodes, edges: [] } }).graph.children ?? [];
+        const ids = (all: any[]): string[] => all.flatMap(c => [
+            ...(String(c.type).startsWith('node:boundary') ? [c.id] : []),
+            ...ids(c.children ?? [])
+        ]);
+        expect(ids(children).sort()).toEqual(['bus:wf:scope:a:west:s', 'bus:wf:scope:b:west:s']);
+    });
+});
+
+describe('the network’s name', () => {
+    it('is the producer’s, not a bus’s', () => {
+        const first: PyGraphDocument = { version: '1', graph: { id: 'root', nodes: [input('a_x', 'a'), input('a_y', 'a')], edges: [] } };
+        expect((new GraphGModelSource().transform(first).graph as any).args['wf:workflowName']).toBe('a_x');
+    });
+});
+
+describe('an instance’s closed bundle', () => {
+    it('draws no loop for a wire from one member to another', () => {
+        const loop: PyGraphNode = {
+            id: U, kind: 'instance', label: 'u_prod', scope: 'root',
+            ports: [port('x_valid', 'in', 'x'), port('x_ready', 'out', 'x', 'west'), port('q', 'out')]
+        };
+        const children = new GraphGModelSource().transform({
+            version: '1', graph: { id: 'root', nodes: [loop], edges: [edge(`port:${U}:x_ready`, `port:${U}:x_valid`)] }
+        }).graph.children ?? [];
+        expect(edgesOf(children)).toEqual([]);
+    });
+});
+
 describe('a bundle split across both margins', () => {
     it('is a bus in each margin', () => {
         const split: PyGraphDocument = {
@@ -275,13 +308,26 @@ describe('the place of a bundle of the unit’s ports', () => {
         expect(saved.has(S_AXIS)).toBe(false);
     });
 
-    it('open, and saved before it was one, is the row above its members, who keep theirs', () => {
+    it('closed, leaves out what its members were saved at, even where it has a place of its own', () => {
+        const saved = new Map(Object.entries({ ...others, [S_AXIS]: { x: 0, y: 100 }, s_axis_tready: { x: 0, y: 100 } }));
+        const placed = withBoundaryBusPositions(graphOf(), saved);
+        expect(placed.has('s_axis_tready')).toBe(false);
+        expect(countCoincidentNodes(placed.values())).toBe(0);
+    });
+
+    it('open, with no place of its own, is left to be placed as any new node is', () => {
         const saved = new Map(Object.entries({
             ...others, s_axis_tvalid: { x: 0, y: 140 }, s_axis_tready: { x: 0, y: 100 }, s_axis_tdata: { x: 0, y: 180 }
         }));
         const placed = withBoundaryBusPositions(graphOf({ [S_AXIS]: ['s_axis'] }), saved);
-        expect(placed.get(S_AXIS)).toEqual({ x: 0, y: 100 - pitch });
+        expect(placed.has(S_AXIS)).toBe(false);
         expect(placed.get('s_axis_tready')).toEqual({ x: 0, y: 100 });
+    });
+
+    it('open, gives no row to a member added since its members were placed', () => {
+        const saved = new Map(Object.entries({ ...others, [S_AXIS]: { x: 0, y: 100 }, s_axis_tvalid: { x: 0, y: 100 + pitch } }));
+        const placed = withBoundaryBusPositions(graphOf({ [S_AXIS]: ['s_axis'] }), saved);
+        expect(placed).toBe(saved);
     });
 
     it('gives the members just opened the rows under the bus', () => {

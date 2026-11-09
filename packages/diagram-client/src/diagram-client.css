@@ -3339,7 +3339,8 @@ details[open] > summary .agent-chat-expand-arrow {
     pointer-events: none;
 }
 
-.port-bus-toggle:hover .port-shape.port-bus-dot {
+.port-bus-toggle:hover .port-shape.port-bus-dot,
+.boundary-node .port-bus-toggle:hover .port-bus-dot {
     /* The ring, not the fill: a product's fill (a role colour) stays. */
     stroke: var(--vscode-focusBorder, #007fd4);
     stroke-width: 2px;

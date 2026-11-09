@@ -229,6 +229,9 @@ export class GraphGModelSource {
         // are buses of the unit's ports, whose ids are their own and in no
         // producer's namespace, so the ids hold for both.
         const stableIds = stableNodeIds(doc.graph.nodes);
+        // The network is named by the producer's nodes: a bus bundling the
+        // unit's ports is named after the bundle.
+        const producerNodes = doc.graph.nodes;
         doc = bundlePorts(doc, options?.portBuses, stableIds);
         const children: GModelElement[] = [];
         const nodeMap = new Map<string, GNode>();
@@ -247,10 +250,12 @@ export class GraphGModelSource {
             scopeById.set(scope.id, scope);
         }
 
-        for (const node of doc.graph.nodes) {
+        for (const node of producerNodes) {
             if (!workflowName && (node.kind === 'workflow' || node.kind === 'wf-input' || node.kind === 'wf-output')) {
                 workflowName = node.label;
             }
+        }
+        for (const node of doc.graph.nodes) {
             if (!workflowDefinitionSource && node.kind === 'workflow') {
                 const workflowSource = node.meta?.['source'] as { file?: string; line?: number } | undefined;
                 if (typeof workflowSource?.line === 'number' && workflowSource.line > 0) {
@@ -1569,7 +1574,7 @@ export class GraphGModelSource {
                 'wf:portName': port?.name ?? '',
                 ...(mirrored ? { [WorkflowDiagramMetadata.BOUNDARY_SIDE]: margin } : {}),
                 ...busArgs,
-                ...(Array.isArray(node.meta?.['busMembers']) ? { 'wf:busMembers': node.meta!['busMembers'] } : {}),
+                ...(Array.isArray(node.meta?.['busMembers']) ? { [WorkflowDiagramMetadata.BOUNDARY_BUS_MEMBERS]: node.meta!['busMembers'] } : {}),
                 ...boundaryNavigation
             }
         };

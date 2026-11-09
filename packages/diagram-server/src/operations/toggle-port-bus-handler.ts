@@ -35,6 +35,7 @@ import {
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { collectEdgeRoutes, collectNodePositions, isMovableNode, movableNodeIdFor, nodeLayoutKeyOf, type Point } from '../server/layout-snapshot';
 import { makeRoom, type Box } from './make-room';
+import { boundaryBusMembersOf } from '../server/boundary-bus-positions';
 import { groupSizeAroundMembers } from '../server/group-geometry';
 import { layoutTargetOf, type LayoutTarget } from '../server/layout-target';
 import {
@@ -263,8 +264,10 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
         const oldHeights = this.heightsUpFrom(nodeId);
         // A bundle of the unit's ports opens into boundary nodes of their own:
         // the rebuild puts them in the rows under the bus (boundary-bus-positions.ts),
-        // and the column under it makes room for those rows.
-        const boundaryMembers = this.boundaryBusMembers(nodeId);
+        // and the column under it makes room for those rows. They always take
+        // those rows: the rebuild starts from the positions drawn now, and a
+        // closed bundle's members are not drawn.
+        const boundaryMembers = boundaryBusMembersOf(this.modelState.index.find(nodeId));
         const rooms = roomMade.get(this.modelState) ?? new Map<string, NodeMoves>();
         roomMade.set(this.modelState, rooms);
         if (!(await this.sourceModelStorage.rebuildFromLastDocument(current))) {
@@ -399,17 +402,6 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
             changed.push(String(group.id));
         }
         return changed;
-    }
-
-    /** The members' ids of a bundle of the unit's ports drawn as one boundary node. */
-    boundaryBusMembers(nodeId: string): string[] | undefined {
-        const node: any = this.modelState.index.find(nodeId);
-        const type = node?.type as string | undefined;
-        if (type !== WorkflowDiagramTypes.NODE_BOUNDARY_INPUT && type !== WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
-            return undefined;
-        }
-        const members = node.args?.['wf:busMembers'];
-        return Array.isArray(members) ? members.map(String) : undefined;
     }
 
     /** The heights of the node and of each group around it, by id. */

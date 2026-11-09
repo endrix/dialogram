@@ -291,6 +291,11 @@ export namespace WorkflowDiagramMetadata {
      * input bundle it belongs to). The glyph, the text and the port mirror.
      */
     export const BOUNDARY_SIDE = 'cal:boundarySide';
+    /**
+     * On a boundary node standing for a bundle of the unit's ports: its
+     * members' node ids, in order (port-bundles.ts).
+     */
+    export const BOUNDARY_BUS_MEMBERS = 'wf:busMembers';
     export const IS_ARRAY_PORT = 'cal:isArrayPort';
     export const ARRAY_SIZE = 'cal:arraySize';
     
