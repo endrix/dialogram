@@ -101,7 +101,7 @@ describe('caller-reference deferral (cold load) and warm-cache parity', () => {
         storage.injectedModelSource = new SidecarModelSource(testCfg());
         storage.storageOptions = { settingsNamespace: 'wfLang', operationPrefix: 'wfpy' };
         storage.modelState = makeModelStateStub();
-        storage.layoutPersistence = { loadLayout: async () => undefined, loadEdgeRoutes: async () => undefined };
+        storage.layoutPersistence = { loadLayout: async () => undefined, loadEdgeRoutes: async () => undefined, loadPortBuses: async () => undefined };
         stubOverlaySideChannels(storage);
         // Keep the (real) getWorkflowCallerReferences → it warms the internal cache. Feed it a
         // same-file caller via relationship info and no scan roots, so the walk is skipped but the
@@ -197,7 +197,7 @@ describe('caller-reference deferral (cold load) and warm-cache parity', () => {
         storage.injectedModelSource = new SidecarModelSource(testCfg());
         storage.storageOptions = { settingsNamespace: 'wfLang', operationPrefix: 'wfpy' };
         storage.modelState = makeModelStateStub();
-        storage.layoutPersistence = { loadLayout: async () => undefined, loadEdgeRoutes: async () => undefined };
+        storage.layoutPersistence = { loadLayout: async () => undefined, loadEdgeRoutes: async () => undefined, loadPortBuses: async () => undefined };
         stubOverlaySideChannels(storage);
         storage.getWorkflowRelationshipInfo = async () => ({ workflowNames: ['child'], entryWorkflowNames: [], callersByWorkflow: {} });
         storage.getWorkflowCallerScanRoots = async () => [];
@@ -221,7 +221,7 @@ describe('caller-reference deferral (cold load) and warm-cache parity', () => {
         storage.injectedModelSource = new SidecarModelSource(testCfg());
         storage.storageOptions = { settingsNamespace: 'wfLang', operationPrefix: 'wfpy' };
         storage.modelState = makeModelStateStub();
-        storage.layoutPersistence = { loadLayout: async () => undefined, loadEdgeRoutes: async () => undefined };
+        storage.layoutPersistence = { loadLayout: async () => undefined, loadEdgeRoutes: async () => undefined, loadPortBuses: async () => undefined };
         stubOverlaySideChannels(storage);
         storage.getWorkflowRelationshipInfo = async () => ({ workflowNames: ['child'], entryWorkflowNames: [], callersByWorkflow: {} });
 

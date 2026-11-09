@@ -39,6 +39,7 @@ import {
     StructureIfNode
 } from './model';
 import { EDGE_OPEN_ANCHOR_X_ARG, EDGE_OPEN_ANCHOR_Y_ARG } from './edge-open-mouse-listener';
+import { PORT_BUS_TOGGLE_ATTR } from './port-bus-toggle';
 import { clientBehavior } from './profile';
 import { captionIsShared, carriedTextOf } from './edge-caption-sharing';
 import { isEdgeHiddenForDrag, isIncidentEdgeInActiveDrag, routeReachesPorts } from './elk-live-drag-router';
@@ -1035,9 +1036,11 @@ export class WorkflowInputPortView extends ShapeView {
                 'data-cal-port-id': port.id,
                 'data-cal-port-direction': 'input'
             }
-        }, 
-            ...context.renderChildren(port),
-            ...children
+        },
+            // The label after the hit area: a bus port's toggle sits in the
+            // label, inside the hit area's reach, and must be on top of it.
+            ...children,
+            ...context.renderChildren(port)
         );
     }
 }
@@ -1115,9 +1118,11 @@ export class WorkflowOutputPortView extends ShapeView {
                 'data-cal-port-id': port.id,
                 'data-cal-port-direction': 'output'
             }
-        }, 
-            ...context.renderChildren(port),
-            ...children
+        },
+            // The label after the hit area, as for an input: a bus port's
+            // toggle must be on top of it.
+            ...children,
+            ...context.renderChildren(port)
         );
     }
 }
@@ -2040,6 +2045,33 @@ export class WorkflowNoArrowEdgeView extends WorkflowEdgeView {
 }
 
 /**
+ * The square in front of a bus port's name: `+` while the bundle is closed,
+ * `−` while it is open. Drawn as lines, not glyphs, so it needs no font to
+ * have them.
+ */
+function portBusToggle(port: any, group: string, x: number, centreY: number): VNode {
+    const size = WorkflowDiagramConstants.PORT_BUS_TOGGLE_PX;
+    const expanded = port?.args?.[WorkflowDiagramMetadata.PORT_BUS_EXPANDED] === true;
+    const members = port?.args?.[WorkflowDiagramMetadata.PORT_BUS_MEMBERS];
+    const y = centreY - size / 2;
+    const mid = size / 2;
+    const arm = size / 2 - 2;
+    const count = typeof members === 'number' ? `${members} ports` : 'its ports';
+    const title = expanded ? `Draw ${group} as one port` : `Show ${count} of ${group}`;
+    return svg('g', {
+        class: { 'port-bus-toggle': true, expanded },
+        attrs: { transform: `translate(${x}, ${y})`, [PORT_BUS_TOGGLE_ATTR]: String(port?.id ?? '') }
+    },
+        svg('title', {}, title),
+        svg('rect', { class: { 'port-bus-toggle-box': true }, attrs: { x: 0, y: 0, width: size, height: size, rx: 1.5, ry: 1.5 } }),
+        svg('line', { class: { 'port-bus-toggle-mark': true }, attrs: { x1: mid - arm, y1: mid, x2: mid + arm, y2: mid } }),
+        ...(expanded
+            ? []
+            : [svg('line', { class: { 'port-bus-toggle-mark': true }, attrs: { x1: mid, y1: mid - arm, x2: mid, y2: mid + arm } })])
+    );
+}
+
+/**
  * Label view - renders labels with positions computed by ELK.
  */
 @injectable()
@@ -2098,12 +2130,31 @@ export class WorkflowLabelView implements IView {
             const labelHRaw = label.size?.height ?? label.bounds?.height ?? 0;
             // On persisted-layout reopen (ELK skipped), labels may briefly have width 0
             // before client-measured bounds are sent; keep output anchoring stable.
-            const labelW = labelWRaw > 0 ? labelWRaw : estimateLabelSizeFallback(label.text || '').width;
-            const labelH = labelHRaw > 0 ? labelHRaw : estimateLabelSizeFallback(label.text || '').height;
-            const textX = isOutput ? labelW : 0;
+            // A bus, or a member of an open one, keeps a slot beside the port:
+            // the bus draws its toggle there, a member a rail, so a member's
+            // name lines up under its bundle's. The server sized the box for it.
+            const busGroup = parentPort?.args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP] as string | undefined;
+            const busMemberOf = parentPort?.args?.[WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF] as string | undefined;
+            const toggleW = WorkflowDiagramConstants.PORT_BUS_TOGGLE_PX;
+            const slot = busGroup || busMemberOf ? toggleW + WorkflowDiagramConstants.PORT_BUS_TOGGLE_GAP_PX : 0;
+            const estimate = estimateLabelSizeFallback(label.text || '');
+            const labelW = labelWRaw > 0 ? labelWRaw : estimate.width + slot;
+            const labelH = labelHRaw > 0 ? labelHRaw : estimate.height;
+            const textX = isOutput ? labelW - slot : slot;
             const textY = Math.round(labelH / 2);
+            const slotX = isOutput ? labelW - toggleW : 0;
+            const slotChildren: VNode[] = [];
+            if (busGroup) {
+                slotChildren.push(portBusToggle(parentPort, busGroup, slotX, textY));
+            } else if (busMemberOf) {
+                slotChildren.push(svg('line', {
+                    class: { 'port-bus-rail': true },
+                    attrs: { x1: slotX + toggleW / 2, y1: 0, x2: slotX + toggleW / 2, y2: labelH }
+                }));
+            }
 
             return svg('g', {},
+                ...slotChildren,
                 svg('text', {
                     class: {
                         'port-label': true,

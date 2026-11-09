@@ -9,9 +9,11 @@ import { BoundaryPortGeometry, WorkflowDiagramConstants, WorkflowDiagramMetadata
 import { GraphGModelSource, type PyGraphDocument, type PyGraphNode } from '../src/model/graph-gmodel-source';
 import { WorkflowLayoutConfigurator } from '../src/server/layout-configurator';
 
-function transform(nodes: PyGraphNode[]): any[] {
+/** The model's top-level elements; `open` draws every bundle open, its members under its header. */
+function transform(nodes: PyGraphNode[], open = false): any[] {
     const doc: PyGraphDocument = { version: '1', graph: { id: 'root', nodes, edges: [] } };
-    return new GraphGModelSource().transform(doc).graph.children ?? [];
+    const portBuses = open ? { isExpanded: () => true } : undefined;
+    return new GraphGModelSource().transform(doc, { portBuses }).graph.children ?? [];
 }
 
 const PORT_W = WorkflowDiagramConstants.PORT_WIDTH_PX;
@@ -50,6 +52,8 @@ describe('ELK is told the side the producer placed the port on', () => {
     });
 });
 
+// The members of an open bundle, each where its side puts it. The bundle's
+// header takes the first row of its side; its members follow.
 describe('port side from the producer', () => {
     const consumer: PyGraphNode = {
         id: 'node:c', kind: 'instance', label: 'c', scope: 'root',
@@ -62,27 +66,27 @@ describe('port side from the producer', () => {
     };
 
     it('puts an output with side west on the west edge, in the west rows, still an output', () => {
-        const node = transform([consumer])[0];
+        const node = transform([consumer], true)[0];
         const ready = node.children.find((c: any) => c.id === 'c_port_s_ready');
         expect(ready.type).toBe(WorkflowDiagramTypes.PORT_OUTPUT);
         expect(ready.args[WorkflowDiagramMetadata.PORT_DIRECTION]).toBe('output');
         expect(ready.args[WorkflowDiagramMetadata.PORT_SIDE]).toBe('WEST');
         expect(ready.args[WorkflowDiagramMetadata.PORT_GROUP]).toBe('s');
         expect(ready.layoutOptions['elk.port.side']).toBe('WEST');
-        expect(ready.position).toEqual({ x: -PORT_W, y: Y0 + 1 * ROW_H });
+        expect(ready.position).toEqual({ x: -PORT_W, y: Y0 + 2 * ROW_H });
         // Its label reads inward from the west edge, like its neighbours'.
         expect(ready.children[0].position.x).toBe(PORT_W + 1);
         expect(ready.children[0].cssClasses).toContain('input-port-label');
-        // The west column is valid, ready, data; the east column is q alone.
+        // The west column is the header, valid, ready, data; the east column is q alone.
         const data = node.children.find((c: any) => c.id === 'c_port_s_data');
         const q = node.children.find((c: any) => c.id === 'c_port_q');
-        expect(data.position).toEqual({ x: -PORT_W, y: Y0 + 2 * ROW_H });
+        expect(data.position).toEqual({ x: -PORT_W, y: Y0 + 3 * ROW_H });
         expect(q.position.y).toBe(Y0);
         expect(q.position.x).toBe(node.size.width);
     });
 
     it('leaves a port without a side exactly as before', () => {
-        const node = transform([consumer])[0];
+        const node = transform([consumer], true)[0];
         const valid = node.children.find((c: any) => c.id === 'c_port_s_valid');
         expect(valid.args[WorkflowDiagramMetadata.PORT_SIDE]).toBeUndefined();
         expect(valid.layoutOptions['elk.port.side']).toBe('WEST');
@@ -93,10 +97,10 @@ describe('port side from the producer', () => {
     });
 
     it('sizes the node for the fuller column', () => {
-        const [node] = transform([consumer]);
-        const threeRows = Y0 + 3 * ROW_H - WorkflowDiagramConstants.PORT_ROW_VERTICAL_GAP_PX
+        const [node] = transform([consumer], true);
+        const fourRows = Y0 + 4 * ROW_H - WorkflowDiagramConstants.PORT_ROW_VERTICAL_GAP_PX
             + WorkflowDiagramConstants.PORT_HEIGHT_PX + WorkflowDiagramConstants.PORT_AREA_PADDING_PX;
-        expect(node.size.height).toBeGreaterThanOrEqual(threeRows);
+        expect(node.size.height).toBeGreaterThanOrEqual(fourRows);
     });
 });
 

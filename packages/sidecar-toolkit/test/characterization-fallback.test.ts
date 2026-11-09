@@ -150,7 +150,8 @@ function makeWfpyStorageWithFallback(): any {
     storage.modelState = makeModelStateStub();
     storage.layoutPersistence = {
         loadLayout: async () => undefined,
-        loadEdgeRoutes: async () => undefined
+        loadEdgeRoutes: async () => undefined,
+        loadPortBuses: async () => undefined
     };
     stubOverlaySideChannels(storage);
     return storage;

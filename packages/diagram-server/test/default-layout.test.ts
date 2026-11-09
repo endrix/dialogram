@@ -40,7 +40,7 @@ async function loadedRoot(defaultLayout?: DefaultLayout): Promise<any> {
         get: (k: string) => state.get(k),
         updateRoot: (r: unknown) => { root = r; }
     };
-    storage.layoutPersistence = { loadLayout: async () => undefined, loadEdgeRoutes: async () => undefined };
+    storage.layoutPersistence = { loadLayout: async () => undefined, loadEdgeRoutes: async () => undefined, loadPortBuses: async () => undefined };
 
     const doc = {
         version: '1',

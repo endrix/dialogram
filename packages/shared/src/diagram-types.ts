@@ -110,6 +110,12 @@ export namespace WorkflowDiagramCss {
      * is the reader's choice, made in the webview.
      */
     export const EDGE_FEEDBACK = 'workflow-edge-feedback';
+    /** A bundle of ports drawn as one port, a bus (see `PORT_BUS_GROUP`). */
+    export const PORT_BUS = 'workflow-port-bus';
+    /** A port drawn under its open bundle's header row. */
+    export const PORT_BUS_MEMBER = 'workflow-port-bus-member';
+    /** The one edge that stands for every connection between two buses. */
+    export const EDGE_BUS = 'workflow-edge-bus';
     
     export const LABEL = 'workflow-label';
 }
@@ -264,6 +270,21 @@ export namespace WorkflowDiagramMetadata {
     export const PORT_SIDE = 'cal:portSide';
     /** The bundle the port belongs to (`s_axis`), a producer's fact. */
     export const PORT_GROUP = 'cal:portGroup';
+    /**
+     * On a bus port: the bundle it stands for. A bus is the platform's, never
+     * the producer's: the ports of one {@link PORT_GROUP} drawn as one row, with
+     * a toggle in front of the name that opens the bundle. Open, the row stays
+     * as the bundle's header and its members are drawn under it.
+     */
+    export const PORT_BUS_GROUP = 'cal:portBusGroup';
+    /** On a bus port: `true` when the bundle is open, its members drawn under it. */
+    export const PORT_BUS_EXPANDED = 'cal:portBusExpanded';
+    /** On a bus port: how many ports the bundle has. */
+    export const PORT_BUS_MEMBERS = 'cal:portBusMembers';
+    /** On a port: the bundle whose open header it is drawn under. */
+    export const PORT_BUS_MEMBER_OF = 'cal:portBusMemberOf';
+    /** On a bus edge: how many connections it stands for. */
+    export const EDGE_BUS_MEMBERS = 'cal:edgeBusMembers';
     /**
      * On a boundary node: `'WEST'` or `'EAST'` when the producer places it with
      * its bundle rather than by its direction (an output `ready` beside the

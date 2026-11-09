@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
 import { groupLayoutOptions, splitEdgesAtGroups } from './group-edges';
 import { URI } from 'vscode-uri';
+import { bundlePorts, type PortBus, type PortBusState } from './port-bundles';
 
 export type PyGraphPort = {
     id: string;
@@ -22,6 +23,10 @@ export type PyGraphPort = {
     group?: string;
     width?: number;
     source?: { file?: string; line?: number } | null;
+    /** The platform's, never a producer's: this port is a bundle drawn as one (`port-bundles.ts`). */
+    bus?: PortBus;
+    /** The platform's: the open bundle this port is drawn under. */
+    busMember?: string;
 };
 
 export type PyGraphNode = {
@@ -41,6 +46,8 @@ export type PyGraphEdge = {
     scope: string;
     source?: { file?: string; line?: number } | null;
     meta?: Record<string, unknown>;
+    /** The platform's: the connections this edge between two buses stands for. */
+    bus?: { members: string[] };
 };
 
 export type PyGraphScope = {
@@ -211,8 +218,12 @@ export class GraphGModelSource {
      */
     constructor(private readonly storageOptions?: StorageRuntimeOptions) {}
 
-    transform(doc: PyGraphDocument): { graph: GGraph } {
-        doc = resolveSourceFiles(doc);
+    /**
+     * @param options.portBuses which bundles the reader has opened; without
+     * it every bundle is drawn closed, as a diagram first opens.
+     */
+    transform(doc: PyGraphDocument, options?: { portBuses?: PortBusState }): { graph: GGraph } {
+        doc = bundlePorts(resolveSourceFiles(doc), options?.portBuses);
         const children: GModelElement[] = [];
         const nodeMap = new Map<string, GNode>();
         const portIdMap = new Map<string, string>();
@@ -282,11 +293,11 @@ export class GraphGModelSource {
             let maxInputLabelW = 0;
             let maxOutputLabelW = 0;
             for (const p of inputs) {
-                const w = this.estimateLabelSize(p.name, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX).width;
+                const w = this.portLabelBoxWidth(p);
                 if (w > maxInputLabelW) maxInputLabelW = w;
             }
             for (const p of outputs) {
-                const w = this.estimateLabelSize(p.name, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX).width;
+                const w = this.portLabelBoxWidth(p);
                 if (w > maxOutputLabelW) maxOutputLabelW = w;
             }
             const labelRequiredWidth = portW + labelGap + labelPad + maxInputLabelW + centreGap + maxOutputLabelW + labelPad + labelGap + portW;
@@ -611,14 +622,16 @@ export class GraphGModelSource {
                 };
             }
             const mkPort = (port: PyGraphPort, side: PortSide, idx: number): GPort => {
-                const portId = `${stableNodeId}_port_${port.name}`;
+                // A bus is not one of the node's ports, and a member may be
+                // named exactly like its bundle: the ids must not meet.
+                const portId = port.bus ? `${stableNodeId}_bus_${port.bus.key}` : `${stableNodeId}_port_${port.name}`;
                 const direction: 'input' | 'output' = port.direction === 'out' ? 'output' : 'input';
                 const east = side === 'EAST';
                 const x = east ? size.width : -portW;
                 const y = yStart + idx * portRowH;
                 const labelText = port.name;
                 const labelSize = this.estimateLabelSize(labelText, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX);
-                const labelBoxWidth = labelSize.width;
+                const labelBoxWidth = this.portLabelBoxWidth(port);
                 const gport: GPort = {
                     id: portId,
                     type: direction === 'output' ? WorkflowDiagramTypes.PORT_OUTPUT : WorkflowDiagramTypes.PORT_INPUT,
@@ -634,7 +647,15 @@ export class GraphGModelSource {
                         // the port views already read this one.
                         'wf:portRole': port.role,
                         ...(normalizePortSide(port.side) ? { [WorkflowDiagramMetadata.PORT_SIDE]: side } : {}),
-                        ...(port.group ? { [WorkflowDiagramMetadata.PORT_GROUP]: port.group } : {})
+                        ...(port.group ? { [WorkflowDiagramMetadata.PORT_GROUP]: port.group } : {}),
+                        ...(port.bus
+                            ? {
+                                [WorkflowDiagramMetadata.PORT_BUS_GROUP]: port.bus.group,
+                                [WorkflowDiagramMetadata.PORT_BUS_EXPANDED]: port.bus.expanded,
+                                [WorkflowDiagramMetadata.PORT_BUS_MEMBERS]: port.bus.members
+                            }
+                            : {}),
+                        ...(port.busMember ? { [WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF]: port.busMember } : {})
                     },
                     layoutOptions: {
                         'elk.port.side': side
@@ -646,6 +667,12 @@ export class GraphGModelSource {
                 ];
                 if (port.role === 'control') {
                     gport.cssClasses.push('cal-port-control');
+                }
+                if (port.bus) {
+                    gport.cssClasses.push(WorkflowDiagramCss.PORT_BUS);
+                }
+                if (port.busMember) {
+                    gport.cssClasses.push(WorkflowDiagramCss.PORT_BUS_MEMBER);
                 }
                 // `control` keeps its established class; every role also gets a
                 // derived one. Without this a producer whose ports carry a role
@@ -675,6 +702,13 @@ export class GraphGModelSource {
                     args: {
                         [WorkflowDiagramMetadata.PORT_ID]: portId,
                         [WorkflowDiagramMetadata.PORT_NAME]: port.name,
+                        ...(port.bus
+                            ? {
+                                [WorkflowDiagramMetadata.PORT_BUS_GROUP]: port.bus.group,
+                                [WorkflowDiagramMetadata.PORT_BUS_EXPANDED]: port.bus.expanded
+                            }
+                            : {}),
+                        ...(port.busMember ? { [WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF]: port.busMember } : {}),
                         [WorkflowDiagramMetadata.PORT_DIRECTION]: direction,
                         [WorkflowDiagramMetadata.PORT_TYPE]: port.type
                     }
@@ -922,6 +956,10 @@ export class GraphGModelSource {
             };
             // Mark edges the model source flagged (bad direction / type mismatch / cross-scope) so they
             // render red with the message on hover, mirroring the node error treatment.
+            if (edge.bus) {
+                gedge.cssClasses = [...(gedge.cssClasses ?? []), WorkflowDiagramCss.EDGE_BUS];
+                (gedge.args as Record<string, unknown>)[WorkflowDiagramMetadata.EDGE_BUS_MEMBERS] = edge.bus.members.length;
+            }
             const edgeMeta = edge.meta;
             if (edgeMeta && edgeMeta['isErrored'] === true) {
                 gedge.cssClasses = [...(gedge.cssClasses ?? []), 'cal-edge-error'];
@@ -1061,6 +1099,17 @@ export class GraphGModelSource {
             args: Object.keys(graphArgs).length > 0 ? graphArgs : undefined
         };
         return { graph };
+    }
+
+    /**
+     * The width of a port's label box: its name, and for a bus or a member of
+     * an open one the toggle's slot in front of it.
+     */
+    private portLabelBoxWidth(port: PyGraphPort): number {
+        const text = this.estimateLabelSize(port.name, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX).width;
+        return port.bus || port.busMember
+            ? text + WorkflowDiagramConstants.PORT_BUS_TOGGLE_PX + WorkflowDiagramConstants.PORT_BUS_TOGGLE_GAP_PX
+            : text;
     }
 
     private estimateLabelSize(text: string, fontSizePx: number = WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX): { width: number; height: number } {
@@ -1527,7 +1576,8 @@ export class GraphGModelSource {
     }
 
     private parseEndpoint(raw: string): { entity?: string; port?: string } | undefined {
-        const cleaned = raw.replace(/^port:/, '');
+        // A bus (`bus:<node>:<bundle>`) reads like a port of its node.
+        const cleaned = raw.replace(/^port:/, '').replace(/^bus:/, '');
         const parts = cleaned.split(':');
         if (parts.length < 2) return undefined;
         if (parts[0] === 'wf') {

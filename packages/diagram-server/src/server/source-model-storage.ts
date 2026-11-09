@@ -11,6 +11,7 @@ import {
     GModelRoot,
     GNode,
     GEdge,
+    GModelIndex,
     ModelState,
     SourceModelStorage
 } from '@eclipse-glsp/server';
@@ -34,6 +35,7 @@ import {
     type WorkflowCallerReference
 } from '@dialogram/shared';
 import { GraphGModelSource } from '../model/graph-gmodel-source';
+import { portBusStateOf } from '../model/port-bundles';
 import { tunedLayoutOptions } from '../operations/layout-tuned-handler';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
@@ -169,6 +171,12 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
     private graphDiagnostics?: import('vscode').DiagnosticCollection;
     /** Files we published diagnostics to on the previous load, cleared before the next set. */
     private lastDiagnosedFiles: string[] = [];
+    /**
+     * The document the current model was built from, with what it was built
+     * for: a change that is the reader's alone (opening a bundle) rebuilds
+     * from it rather than asking the producer for the graph again.
+     */
+    private lastDocument?: { doc: any; sourceUri: string; filePath: string; opts: Record<string, unknown> };
 
     /**
      * Short-TTL cache for {@link getWorkflowCallerReferences}. That lookup walks every source
@@ -362,7 +370,23 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         // The model source may resolve different request options than the caller passed (the
         // breadcrumb-trail retry); `finishLoadFromDoc` needs those resolved options for layout/id.
         const resolvedOptions = (doc as { resolvedOptions?: Record<string, unknown> }).resolvedOptions ?? opts;
+        this.lastDocument = { doc, sourceUri, filePath: workflowFilePath, opts: resolvedOptions };
         await this.finishLoadFromDoc(doc, sourceUri, workflowFilePath, resolvedOptions, perf);
+    }
+
+    /**
+     * Build the model again from the document it was last built from. The
+     * positions and routes are `current`'s, the ones the diagram has now,
+     * where given, and the layout file's otherwise; which bundles are open is
+     * always the file's. `false` when there is no document yet.
+     */
+    async rebuildFromLastDocument(current?: { positions: Map<string, { x: number; y: number }>; routes: Map<string, { x: number; y: number }[]> }): Promise<boolean> {
+        const last = this.lastDocument;
+        if (!last) {
+            return false;
+        }
+        await this.finishLoadFromDoc(last.doc, last.sourceUri, last.filePath, last.opts, undefined, current);
+        return true;
     }
 
     /**
@@ -429,7 +453,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         sourceUri: string,
         filePath: string,
         opts: Record<string, unknown>,
-        perf?: GraphLoadPerf
+        perf?: GraphLoadPerf,
+        current?: { positions: Map<string, { x: number; y: number }>; routes: Map<string, { x: number; y: number }[]> }
     ): Promise<void> {
         const workflowRelationshipInfo = await this.getWorkflowRelationshipInfo(filePath);
         perf?.mark('relInfo');
@@ -442,15 +467,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             : this.ensureModelSource()?.analysis?.pickDefaultWorkflowName(filePath, localWorkflowNames);
         const selectedWorkflowName = requestedWorkflowName ?? defaultWorkflowName;
 
-        // The families are the product's; without them every external node
-        // renders in the default family.
-        const graphTransform = new GraphGModelSource(this.storageOptions);
-        const diagramModel = graphTransform.transform(doc);
-        perf?.mark('transform');
         const workflowName = selectedWorkflowName
             ?? String(doc?.graph?.id ?? '').replace(/^wf:/, '');
-        (diagramModel as any).workflowName = workflowName;
-        (diagramModel as any).documentUri = sourceUri;
 
         let workflowFilePath = filePath;
         // Qualify hierarchical network IDs so each instance-path gets its own layout
@@ -491,14 +509,37 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 fallbackLayout = { ...fallbackLayout, networkId: viewKey(fallbackLayout.networkId, view) };
             }
         }
-        let loadedLayoutPositions = await this.layoutPersistence.loadLayout(workflowFilePath, networkId);
-        let edgeRoutes = await this.layoutPersistence.loadEdgeRoutes(workflowFilePath, networkId);
+        // A rebuild keeps the diagram as it is now: a move undone in memory, or
+        // one the layout file could not take, is not the file's.
+        const fromCurrent = current !== undefined && current.positions.size > 0;
+        let loadedLayoutPositions = fromCurrent
+            ? new Map(current!.positions)
+            : await this.layoutPersistence.loadLayout(workflowFilePath, networkId);
+        let edgeRoutes = fromCurrent
+            ? (current!.routes.size > 0 ? new Map(current!.routes) : undefined)
+            : await this.layoutPersistence.loadEdgeRoutes(workflowFilePath, networkId);
+        let layoutIsFallbacks = false;
         if (!loadedLayoutPositions && fallbackLayout) {
+            layoutIsFallbacks = true;
             loadedLayoutPositions = await this.layoutPersistence.loadLayout(fallbackLayout.filePath, fallbackLayout.networkId);
             edgeRoutes = await this.layoutPersistence.loadEdgeRoutes(fallbackLayout.filePath, fallbackLayout.networkId);
         }
+        // Which bundles are open is this view's once it has opened or closed
+        // one, and until then the fallback's, as the positions are.
+        let portBuses = await this.layoutPersistence.loadPortBuses(workflowFilePath, networkId);
+        if (!portBuses && fallbackLayout) {
+            portBuses = await this.layoutPersistence.loadPortBuses(fallbackLayout.filePath, fallbackLayout.networkId);
+        }
         const hasPersistedEdgeRoutes = edgeRoutes !== undefined;
         perf?.mark('layoutIO');
+
+        // The families are the product's; without them every external node
+        // renders in the default family.
+        const graphTransform = new GraphGModelSource(this.storageOptions);
+        const diagramModel = graphTransform.transform(doc, { portBuses: portBusStateOf(portBuses) });
+        perf?.mark('transform');
+        (diagramModel as any).workflowName = workflowName;
+        (diagramModel as any).documentUri = sourceUri;
 
         if (loadedLayoutPositions) {
             // Every handler saves a node's ABSOLUTE position, and a model
@@ -593,7 +634,10 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         // Advance the agent auto-layout reload generation: a marked agent structural edit becomes
         // consumable only on a submit that follows THIS reload (the one carrying the new node/edge),
         // never on the premature post-operation submit that runs on the pre-reload model.
-        this.agentEditSignal?.noteSourceReloaded();
+        // A rebuild is not a reload: the source it would confirm has not been read.
+        if (!current) {
+            this.agentEditSignal?.noteSourceReloaded();
+        }
 
         this.modelState.set(WORKFLOW_NETWORK_MODEL_KEY, diagramModel as any);
 
@@ -696,7 +740,30 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             restoreGroupGeometry(gmodelRoot as any, edgeRoutes);
         }
         if (hasPersistedLayout && edgeRoutes && edgeRoutes.size > 0) {
-            applyPersistedEdgeRoutes(gmodelRoot, edgeRoutes);
+            const unrouted = applyPersistedEdgeRoutes(gmodelRoot, edgeRoutes);
+            // A bus edge the saved routes do not cover would be drawn straight,
+            // port to port: a layout saved before buses has routes for the
+            // members only, and a toggle draws other edges than were saved.
+            // Routed once the client has measured; see the submission handler.
+            // Only edges at a bus: any other edge without a route was added
+            // since, or cleared on purpose, and is left as it was.
+            const index = new GModelIndex();
+            index.indexRoot(gmodelRoot);
+            const atBus = (id: string): boolean => {
+                const edge: any = index.find(id);
+                return [edge?.sourceId, edge?.targetId].some(end =>
+                    typeof (index.find(end) as any)?.args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP] === 'string');
+            };
+            const unroutedEdgeIds = unrouted.filter(atBus);
+            const meta = this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as Record<string, unknown> | undefined;
+            if (meta && unroutedEdgeIds.length > 0) {
+                meta['unroutedEdgeIds'] = unroutedEdgeIds;
+                // A view showing its fallback's layout routes them without
+                // saving: saving would give it a layout of its own, and it
+                // would stop following the fallback's.
+                meta['unroutedEdgesUnsaved'] = layoutIsFallbacks;
+                this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, meta);
+            }
         }
 
         await this.applyViewerOverlayToEdges(

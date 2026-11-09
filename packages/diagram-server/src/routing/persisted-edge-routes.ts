@@ -198,12 +198,15 @@ export function edgeRouteKeyFor(
 
 /**
  * Apply the persisted routes to every edge of `root` that has one, re-snapped to the current
- * port anchors.
+ * port anchors. Returns the edges between two ports that could hold a saved route and have none:
+ * added since the layout was saved, cleared on purpose, or drawn differently since (a bundle
+ * closed into a bus).
  */
-export function applyPersistedEdgeRoutes(root: GModelRoot, edgeRoutes: Map<string, Point[]>): void {
+export function applyPersistedEdgeRoutes(root: GModelRoot, edgeRoutes: Map<string, Point[]>): string[] {
     const index = new GModelIndex();
     index.indexRoot(root);
     const signatureCounts = buildEdgeSignatureCounts(root);
+    const unrouted: string[] = [];
 
     const visit = (element: any): void => {
         if (!element) {
@@ -223,6 +226,13 @@ export function applyPersistedEdgeRoutes(root: GModelRoot, edgeRoutes: Map<strin
                 const cleaned = cleanLegacyFanoutPoints(full);
                 (element as any).routingPoints = cleaned.length >= 2 ? cleaned : undefined;
             }
+            // Only an edge between two ports can be routed; one that cannot
+            // would be listed, and rerouted for nothing, on every load.
+            const routed = (element as any).routingPoints;
+            const routable = index.find(element.sourceId) instanceof GPort && index.find(element.targetId) instanceof GPort;
+            if (routable && !(Array.isArray(routed) && routed.length >= 2)) {
+                unrouted.push(String(element.id));
+            }
         }
         const children = element.children as any[] | undefined;
         if (Array.isArray(children)) {
@@ -232,4 +242,5 @@ export function applyPersistedEdgeRoutes(root: GModelRoot, edgeRoutes: Map<strin
         }
     };
     visit(root);
+    return unrouted;
 }
