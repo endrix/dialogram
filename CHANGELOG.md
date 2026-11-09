@@ -95,7 +95,10 @@ it no longer has.
   file cannot be written, the choice still holds for the session. A bus edge
   a saved layout has no route for (one saved before buses, or one a toggle
   drew) is routed once the client has measured, and saved, unless the view
-  is showing its fallback's layout.
+  is showing its fallback's layout. Opening a bundle makes its node taller:
+  the nodes stacked under it move down with its bottom edge, each keeping
+  its gap, and closing it moves them back up as far as nothing above stands
+  in the way (`make-room.ts`).
 
 - **What a double-click on a node opens is a contribution point:
   `NodeOpener`** (exported). An opener answers before the platform's own
@@ -328,6 +331,13 @@ it no longer has.
   is built for it); without it layouts stay on elkjs, as before.
 
 ### Fixed
+
+- **The selection trace follows a model rebuilt under the same selection.**
+  Its classes were worked out once, on the model the selection was made on,
+  and put back by id on every model after: elements a rebuild added (the
+  member edges of a bus just opened) were neither traced nor faded. The
+  feedback now carries the selection and works the classes out on each model
+  it is put on.
 
 - **The palette creates nodes, and the property panel adds entity ports, in
   every product's diagram.** Both handlers accepted only a `.py` source, so a

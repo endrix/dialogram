@@ -308,6 +308,22 @@ describe('the toggle', () => {
         expect(flushed).toEqual(['flush']);
     });
 
+    it('pushes the node stacked under an opened bundle’s node down by what it grew', () => {
+        const closedHeight = nodeOf(model(), 'u_prod').size.height;
+        const handler = handlerOver({ u_prod: ['out'] }, []);
+        const index = (handler as any).modelState.index;
+        const prod = index.find('u_prod');
+        const cons = index.find('u_cons');
+        prod.position = { x: 0, y: 0 };
+        cons.position = { x: 0, y: closedHeight + 50 };
+        index.find('q').position = { x: 600, y: closedHeight + 50 };
+        const grown = prod.size.height - closedHeight;
+        expect(grown).toBeGreaterThan(0);
+        expect(handler.makeRoomUnder('u_prod', closedHeight)).toEqual(['u_cons']);
+        expect(cons.position).toEqual({ x: 0, y: closedHeight + 50 + grown });
+        expect(index.find('q').position).toEqual({ x: 600, y: closedHeight + 50 });
+    });
+
     it('closing an inherited bundle closes that one alone', async () => {
         const steps: string[] = [];
         const handler = handlerOver({ u_prod: ['out'], u_cons: ['s'] }, steps);

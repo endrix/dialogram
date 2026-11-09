@@ -428,19 +428,48 @@ export function traceClasses(graph: TraceGraph, trace: Trace): Record<string, st
     return classes;
 }
 
-/** Puts a trace's classes on the model, or (`remove`) takes them off. */
+/**
+ * Puts a trace's classes on the model, or (`remove`) takes them off.
+ * `selected`: what the trace is of. Given, the classes are worked out again
+ * from each model the feedback is put on, so a model rebuilt under the same
+ * selection (a bus opened, its member edges new) is traced as it now is;
+ * `classes` are those of the model the selection was made on.
+ */
 export interface SelectionTraceFeedbackAction extends Action {
     kind: typeof SelectionTraceFeedbackAction.KIND;
     classes: Record<string, string[]>;
+    selected?: string[];
     remove?: boolean;
 }
 
 export namespace SelectionTraceFeedbackAction {
     export const KIND = 'dialogramSelectionTraceFeedback';
 
-    export function create(classes: Record<string, string[]>, remove = false): SelectionTraceFeedbackAction {
-        return { kind: KIND, classes, ...(remove ? { remove: true } : {}) };
+    export function create(classes: Record<string, string[]>, remove = false, selected?: readonly string[]): SelectionTraceFeedbackAction {
+        return { kind: KIND, classes, ...(selected ? { selected: [...selected] } : {}), ...(remove ? { remove: true } : {}) };
     }
+}
+
+/** The classes the trace of `selected` puts on `root` as it is now; empty when nothing selected is there. */
+export function traceClassesOf(root: TraceElement, selected: readonly string[]): Record<string, string[]> {
+    const graph = buildTraceGraph(root);
+    const trace = computeTrace(graph, selected);
+    return trace ? traceClasses(graph, trace) : {};
+}
+
+/** Take off every class a trace put on `root`, whichever trace it was. */
+export function removeTraceClasses(root: TraceElement): void {
+    const visit = (element: TraceElement): void => {
+        const added = tracedBy.get(element);
+        if (added && added.size > 0) {
+            element.cssClasses = (element.cssClasses ?? []).filter(cssClass => !added.has(cssClass));
+            tracedBy.delete(element);
+        }
+        for (const child of element.children ?? []) {
+            visit(child);
+        }
+    };
+    visit(root);
 }
 
 /** The classes the trace put on each element, so taking them off leaves everyone else's. */
@@ -484,7 +513,14 @@ export class SelectionTraceFeedbackCommand extends FeedbackCommand {
     }
 
     execute(context: CommandExecutionContext): GModelRoot {
-        applyTraceClasses(context.root as unknown as TraceElement, this.action.classes, this.action.remove === true);
+        const root = context.root as unknown as TraceElement;
+        if (this.action.remove === true) {
+            removeTraceClasses(root);
+        } else if (this.action.selected) {
+            applyTraceClasses(root, traceClassesOf(root, this.action.selected));
+        } else {
+            applyTraceClasses(root, this.action.classes);
+        }
         return context.root;
     }
 }
@@ -520,7 +556,7 @@ export class SelectionTraceListener implements ISelectionListener {
         if (classes && this.feedbackDispatcher) {
             this.feedback = this.feedbackDispatcher.registerFeedback(
                 this,
-                [SelectionTraceFeedbackAction.create(classes)],
+                [SelectionTraceFeedbackAction.create(classes, false, selectedElements)],
                 [SelectionTraceFeedbackAction.create(classes, true)]
             );
         }

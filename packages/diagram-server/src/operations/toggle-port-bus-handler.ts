@@ -9,8 +9,9 @@
  * them, so the model is built again, from the document it was last built from
  * (the producer is not asked for the graph again) and with the positions and
  * routes the diagram has now (not the ones last saved, which an undone move
- * or an unwritable layout file would make different), and the node's edges
- * are rerouted: its ports moved.
+ * or an unwritable layout file would make different). The node is taller or
+ * shorter for it, so the nodes stacked under it move with its bottom edge
+ * (make-room.ts), and its edges and theirs are rerouted.
  */
 import type { Operation } from '@eclipse-glsp/protocol';
 import {
@@ -29,7 +30,8 @@ import {
     WorkflowDiagramMetadata
 } from '@dialogram/shared';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
-import { collectEdgeRoutes, collectNodePositions, movableNodeIdFor, nodeLayoutKeyOf, type Point } from '../server/layout-snapshot';
+import { collectEdgeRoutes, collectNodePositions, isMovableNode, movableNodeIdFor, nodeLayoutKeyOf, type Point } from '../server/layout-snapshot';
+import { makeRoom, type Box } from './make-room';
 import { layoutTargetOf, type LayoutTarget } from '../server/layout-target';
 import {
     WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND,
@@ -201,14 +203,40 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
             positions: collectNodePositions(this.modelState.root),
             routes: collectEdgeRoutes(this.modelState.root)
         };
+        const oldHeight = (this.modelState.index.find(nodeId) as any)?.size?.height;
         if (!(await this.sourceModelStorage.rebuildFromLastDocument(current))) {
             return;
         }
+        // The node is taller or shorter now: the nodes stacked under it move
+        // with its bottom edge, and their edges are rerouted with its own.
+        const moved = typeof oldHeight === 'number' ? this.makeRoomUnder(nodeId, oldHeight) : [];
         await this.rerouteHandler.runReroute({
             kind: WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND,
             isOperation: true,
-            elementIds: [nodeId],
+            elementIds: [nodeId, ...moved],
             source: 'changeBounds'
         } as any);
+    }
+
+    /** Move the siblings stacked under `nodeId`, which was `oldHeight` tall; the ids moved. */
+    makeRoomUnder(nodeId: string, oldHeight: number): string[] {
+        const node: any = this.modelState.index.find(nodeId);
+        const siblings: any[] = (node?.parent?.children ?? []).filter((child: any) =>
+            isMovableNode(child) && child.position && child.size);
+        const boxes: Box[] = siblings.map(child => ({
+            id: String(child.id),
+            x: child.position.x,
+            y: child.position.y,
+            width: child.size.width,
+            height: child.size.height
+        }));
+        const moves = makeRoom(boxes, nodeId, oldHeight);
+        for (const child of siblings) {
+            const dy = moves.get(String(child.id));
+            if (dy !== undefined) {
+                child.position = { x: child.position.x, y: child.position.y + dy };
+            }
+        }
+        return [...moves.keys()];
     }
 }

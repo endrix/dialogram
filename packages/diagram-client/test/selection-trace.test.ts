@@ -31,6 +31,7 @@ import {
     buildTraceGraph,
     computeTrace,
     SelectionTraceFeedbackAction,
+    SelectionTraceFeedbackCommand,
     SelectionTraceListener,
     traceClasses,
     TraceCss,
@@ -239,6 +240,22 @@ describe('the classes on the model', () => {
         applyTraceClasses(root, classes, true);
         // FOCUS was there before the trace: not the trace's to take off.
         expect(root.children![0].cssClasses).toEqual(['mine', TraceCss.FOCUS]);
+    });
+});
+
+describe('the trace on a model rebuilt under the same selection', () => {
+    it('is worked out again from that model, and comes off whole', () => {
+        const before = model(node('a'), node('b'), edge('a', 'b'));
+        const { classes } = trace(before, 'b');
+        const action = SelectionTraceFeedbackAction.create(classes, false, ['b']);
+        // Rebuilt: a new node and edge into b that the first model did not have.
+        const after = model(node('a'), node('c'), node('b'), edge('a', 'b'), edge('c', 'b'));
+        new SelectionTraceFeedbackCommand(action).execute({ root: after } as any);
+        expect(after.children!.find(c => c.id === 'c')!.cssClasses).toContain(TraceCss.UPSTREAM);
+        new SelectionTraceFeedbackCommand(SelectionTraceFeedbackAction.create(classes, true)).execute({ root: after } as any);
+        const traced = (element: any): boolean => [TraceCss.UPSTREAM, TraceCss.DOWNSTREAM, TraceCss.FOCUS, TraceCss.FADED, TraceCss.SCOPE]
+            .some(cssClass => (element.cssClasses ?? []).includes(cssClass)) || (element.children ?? []).some(traced);
+        expect(traced(after)).toBe(false);
     });
 });
 
