@@ -1,0 +1,26 @@
+div .agent-skill-block
+  div .agent-section-head
+    div .agent-skill-label
+      "Agent Preset"
+    label .agent-enabled-toggle
+      span .agent-enabled-text
+        "Enabled"
+      span .agent-enabled-switch
+        input .agent-enabled-input type="checkbox" value="on" checked
+        span .agent-enabled-slider
+          span .agent-enabled-knob
+  div .agent-section-content
+    input .annotation-input placeholder="e.g. code-reviewer" value="code-reviewer"
+    div .agent-skill-hint
+      "Resolved from .claude/agents/<name>.md"
+    div .agent-skill-actions
+      button .mini-btn type="button"
+        "Pick Preset"
+      button .mini-btn type="button"
+        "Open Preset"
+    div .agent-skill-status
+      "Reviews diffs"
+    div .agent-skill-chips style="display: flex;"
+      span .agent-chip.warn
+        "IGNORED tools"
+    div .agent-skill-warning style="display: none;"
