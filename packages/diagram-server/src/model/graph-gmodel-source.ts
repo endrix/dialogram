@@ -1,6 +1,6 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
 import { parseBadgesMeta, parseFactsMeta, parseViewsMeta, type UnitBadge } from '../server/graph-load-request-options';
-import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, type PortSide } from '@dialogram/shared';
+import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, type PortSide } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
 import { groupLayoutOptions, splitEdgesAtGroups } from './group-edges';
@@ -635,7 +635,7 @@ export class GraphGModelSource {
                 const boxW = port.bus ? 2 * busR : portW;
                 const boxH = port.bus ? 2 * busR : portH;
                 const x = east ? size.width - boxW / 2 : -boxW / 2;
-                const y = yStart + idx * portRowH + (portH - boxH) / 2;
+                const y = yStart + idx * portRowH + portRowOffset(boxH);
                 const labelText = port.name;
                 const labelSize = this.estimateLabelSize(labelText, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX);
                 const labelBoxWidth = this.portLabelBoxWidth(port);
@@ -702,8 +702,8 @@ export class GraphGModelSource {
                         east ? 'output-port-label' : 'input-port-label'
                     ],
                     position: {
-                        x: east ? -labelGap - labelBoxWidth : boxW + labelGap,
-                        y: Math.round((boxH - labelSize.height) / 2)
+                        x: portLabelX(east, boxW, labelBoxWidth, labelGap),
+                        y: portLabelY(boxH, labelSize.height)
                     },
                     size: { width: labelBoxWidth, height: labelSize.height },
                     args: {

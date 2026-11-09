@@ -183,9 +183,14 @@ it no longer has.
 
 - **Ports sit centred on the node's border**, as a group frame's dots sit on
   the frame, instead of outside it; a bus port's box is its larger dot,
-  centred on its row. A port's name is 3px from its dot, not 1px
-  (`PORT_LABEL_GAP_PX`), the same in ELK's placement and the server's.
-  Saved routes are re-snapped to the new anchors on open.
+  centred on its row, and keeps that offset when the Free Ports layout
+  reorders a side. A port's name is 3px from its dot, not 1px
+  (`PORT_LABEL_GAP_PX`), on the row's whole pixel beside a bus too; nodes
+  are 4px wider for it, so a saved layout packed edge to edge may touch.
+  Saved routes are re-snapped to the new anchors on open. How a port's name
+  is sized and placed is one shared copy (`port-label-geometry.ts` in
+  shared, `port-labels.ts` on the server) for the model, every submit, the
+  bounds pass and the client.
 
 - **Breaking for a product that showed the agent workflow UI from the stock
   bundle: it no longer loads it.** The `@tool` and `@agent` annotation

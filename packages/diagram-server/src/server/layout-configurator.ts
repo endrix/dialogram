@@ -322,8 +322,8 @@ export class WorkflowLayoutConfigurator extends AbstractLayoutConfigurator {
         
         if (nodeType === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
             // Boundary output nodes - place in dedicated rightmost layer.
-            // FIXED_SIZE prevents ELK from resizing the node: the port is positioned at
-            // x = -portWidth (left edge), so any ELK-computed size change would push the
+            // FIXED_SIZE prevents ELK from resizing the node: its port is placed against
+            // the node's left edge, so any ELK-computed size change would push the
             // port outside the node bounds and break edge routing/anchoring.
             return {
                 'elk.nodeSize.constraints': 'FIXED_SIZE',
@@ -389,8 +389,9 @@ export class WorkflowLayoutConfigurator extends AbstractLayoutConfigurator {
             ...onFrame,
             'elk.port.side': side,
             'elk.portLabels.placement': 'INSIDE NEXT_TO_PORT_IF_POSSIBLE',
-            // The same gap between a port's dot and its name as the server's
-            // own placement, which every submit applies after a layout.
+            // The default gap between a port's dot and its name. ELK's label
+            // placement is provisional: every submit re-places the labels
+            // (port-labels.ts), with the diagram's own gap where it sets one.
             'elk.spacing.labelPortHorizontal': String(WorkflowDiagramConstants.PORT_LABEL_GAP_PX),
             'elk.spacing.labelPortVertical': '0'
         };
