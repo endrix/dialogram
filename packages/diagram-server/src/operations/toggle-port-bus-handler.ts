@@ -205,7 +205,14 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
             const args = (element as any).args as Record<string, unknown> | undefined;
             const openKey = args?.[WorkflowDiagramMetadata.OPEN_NODE_KEY];
             if (typeof openKey === 'string') {
-                open.set(openKey, (open.get(openKey) ?? new Set<string>()).add(ToggleNodeOpenOperation.OPEN));
+                // Open, and with the bundles it had open, which are not drawn now.
+                const groups = open.get(openKey) ?? new Set<string>();
+                groups.add(ToggleNodeOpenOperation.OPEN);
+                const bundles = args?.[WorkflowDiagramMetadata.OPEN_NODE_BUNDLES];
+                for (const group of Array.isArray(bundles) ? bundles : []) {
+                    groups.add(String(group));
+                }
+                open.set(openKey, groups);
             } else if (args?.[WorkflowDiagramMetadata.NODE_OPENABLE] === true) {
                 const key = nodeLayoutKeyOf(element);
                 if (key && !open.has(key)) {

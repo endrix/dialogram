@@ -16,8 +16,9 @@
  * edges where it crosses the frame (group-edges.ts), lays the frame out on
  * its own and keeps its geometry, as for any group.
  *
- * The inner nodes keep the producer's ids (unique by contract), so they take
- * no label another node's saved place is keyed by.
+ * The inner nodes are named under their frame's id (`innerNodeId`), so they
+ * meet no other node's id or saved place, and are drawn as they are: one
+ * holding a graph of its own is not opened again.
  */
 import { ToggleNodeOpenOperation, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import type { PyGraphDocument, PyGraphEdge, PyGraphNode, PyGraphScope } from './graph-gmodel-source';
@@ -50,29 +51,64 @@ export function openFrameId(nodeId: string): string {
     return `scope:${openScopeId(nodeId)}`;
 }
 
+/** Whether a node can open: it holds a graph, and sits where a group can (not in an `if` or a loop). */
+export function canOpen(node: Pick<PyGraphNode, 'meta' | 'scope'>, scopes: readonly PyGraphScope[] | undefined): boolean {
+    if (!innerGraphOf(node)) {
+        return false;
+    }
+    const scope = scopes?.find(s => s.id === node.scope);
+    return !scope?.controlNodeId;
+}
+
+/** An inner node's id in the model: under its frame's, so it meets no other node's. */
+export function innerNodeId(nodeId: string, innerId: string): string {
+    return `${openFrameId(nodeId)}/${innerId}`;
+}
+
+const push = <K, V>(map: Map<K, V[]>, key: K, value: V): void => {
+    const list = map.get(key);
+    if (list) {
+        list.push(value);
+    } else {
+        map.set(key, [value]);
+    }
+};
+
 /** `doc` with the nodes `state` says are open drawn as the groups of what they hold. */
 export function openNodes(doc: PyGraphDocument, state: PortBusState | undefined, ids: StableNodeIds): PyGraphDocument {
     const opened = doc.graph.nodes.filter(node =>
-        innerGraphOf(node) && state?.isExpanded(stableNodeId(ids, node), ToggleNodeOpenOperation.OPEN));
+        canOpen(node, doc.graph.subgraphs) && state?.isExpanded(stableNodeId(ids, node), ToggleNodeOpenOperation.OPEN));
     if (opened.length === 0) {
         return doc;
     }
-    let edges: PyGraphEdge[] = doc.graph.edges;
-    let nodes: PyGraphNode[] = doc.graph.nodes;
-    // An inner node keeps the producer's id unless an outer node's id is it.
-    const taken = new Set(doc.graph.nodes.map(node => stableNodeId(ids, node)));
     const subgraphs: PyGraphScope[] = (doc.graph.subgraphs ?? []).map(scope => ({ ...scope }));
+    const openedIds = new Set(opened.map(node => node.id));
+    // Each opened node's ports, and what they reach inside.
+    interface Inside {
+        node: PyGraphNode;
+        scopeId: string;
+        own: Map<string, PyGraphNode['ports'][number]>;
+        nodeOfPin: Map<string, string>;
+        into: Map<string, string[]>;     // own input -> inner pins it feeds
+        outOf: Map<string, string[]>;    // own output -> the inner pin driving it
+        reads: Map<string, string[]>;    // own output -> inner pins reading it
+        through: Map<string, string[]>;  // own input -> own outputs
+        edges: PyGraphEdge[];            // inside the frame
+        cells: PyGraphNode[];
+    }
+    const insides: Inside[] = [];
+    const ownerOf = new Map<string, Inside>();
     for (const node of opened) {
         const inner = innerGraphOf(node)!;
         const scopeId = openScopeId(node.id);
         const own = new Map(node.ports.map(port => [port.id, port]));
+        // Inner nodes are drawn as they are, not opened again: what they hold is not drawn.
         const cells = inner.nodes.map(cell => {
-            let id = cell.id;
-            while (taken.has(id)) {
-                id = `${id}~`;
+            const meta = cell.meta ? { ...cell.meta } : undefined;
+            if (meta) {
+                delete meta['inner'];
             }
-            taken.add(id);
-            return { ...cell, id, scope: scopeId };
+            return { ...cell, id: innerNodeId(node.id, cell.id), scope: scopeId, ...(meta ? { meta } : {}) };
         });
         const nodeOfPin = new Map<string, string>();
         for (const cell of cells) {
@@ -80,84 +116,107 @@ export function openNodes(doc: PyGraphDocument, state: PortBusState | undefined,
                 nodeOfPin.set(port.id, cell.id);
             }
         }
-        // What each of the node's ports reaches inside.
-        const into = new Map<string, string[]>();     // own input -> inner pins
-        const outOf = new Map<string, string[]>();    // own output -> the inner pin driving it
-        const through = new Map<string, string[]>();  // own input -> own outputs
-        const innerEdges: PyGraphEdge[] = [];
+        const inside: Inside = {
+            node, scopeId, own, nodeOfPin, cells,
+            into: new Map(), outOf: new Map(), reads: new Map(), through: new Map(), edges: []
+        };
         // Edges naming a pin no inner node has are no edges: a wire to nothing.
         inner.edges.forEach((edge, k) => {
-            const fromOwn = own.has(edge.from);
+            const from = own.get(edge.from);
             const toOwn = own.has(edge.to);
-            if (fromOwn && toOwn) {
-                through.set(edge.from, [...(through.get(edge.from) ?? []), edge.to]);
-            } else if (fromOwn && nodeOfPin.has(edge.to)) {
-                into.set(edge.from, [...(into.get(edge.from) ?? []), edge.to]);
+            if (from && toOwn) {
+                push(inside.through, edge.from, edge.to);
+            } else if (from && nodeOfPin.has(edge.to)) {
+                // From one of its inputs, or reading one of its own outputs.
+                push(from.direction === 'out' ? inside.reads : inside.into, edge.from, edge.to);
             } else if (toOwn && nodeOfPin.has(edge.from)) {
-                outOf.set(edge.to, [...(outOf.get(edge.to) ?? []), edge.from]);
+                push(inside.outOf, edge.to, edge.from);
             } else if (nodeOfPin.has(edge.from) && nodeOfPin.has(edge.to)) {
                 // Widths stay on the pins, as on every other wire.
-                innerEdges.push({ id: `${node.id}/edge:${k}`, from: edge.from, to: edge.to, scope: scopeId });
+                inside.edges.push({ id: `${node.id}/edge:${k}`, from: edge.from, to: edge.to, scope: scopeId });
             }
         });
-        // The edges on the node's ports, carried on to the pins they reach.
-        const carried: PyGraphEdge[] = [];
-        const kept: PyGraphEdge[] = [];
-        const inbound = new Map<string, PyGraphEdge[]>();
-        const outbound = new Map<string, PyGraphEdge[]>();
-        for (const edge of edges) {
-            const fromOwn = own.has(edge.from);
-            const toOwn = own.has(edge.to);
-            if (!fromOwn && !toOwn) {
-                kept.push(edge);
-            } else if (toOwn && !fromOwn) {
-                inbound.set(edge.to, [...(inbound.get(edge.to) ?? []), edge]);
-                (into.get(edge.to) ?? []).forEach((pin, k) =>
-                    carried.push(withEnd(edge, `${edge.id}>${k}`, { to: pin, toNode: nodeOfPin.get(pin) })));
-            } else if (fromOwn && !toOwn) {
-                outbound.set(edge.from, [...(outbound.get(edge.from) ?? []), edge]);
-                (outOf.get(edge.from) ?? []).forEach((pin, k) =>
-                    carried.push(withEnd(edge, `${edge.id}<${k}`, { from: pin, fromNode: nodeOfPin.get(pin) })));
-            } else {
-                // From the node back into itself (an output read by its own
-                // input): inside the frame, from the pin driving the output to
-                // each pin the input feeds.
-                let k = 0;
-                for (const driver of outOf.get(edge.from) ?? []) {
-                    for (const fed of into.get(edge.to) ?? []) {
-                        innerEdges.push(withEnd(edge, `${edge.id}@${k++}`, {
-                            from: driver, fromNode: nodeOfPin.get(driver), to: fed, toNode: nodeOfPin.get(fed), scope: scopeId
-                        }));
-                    }
+        // An output it reads itself: from the pin driving it.
+        for (const [output, readers] of inside.reads) {
+            let k = 0;
+            for (const driver of inside.outOf.get(output) ?? []) {
+                for (const reader of readers) {
+                    inside.edges.push({ id: `${node.id}/read:${output}@${k++}`, from: driver, to: reader, scope: scopeId });
                 }
             }
         }
-        for (const [input, outputs] of through) {
+        insides.push(inside);
+        for (const portId of own.keys()) {
+            ownerOf.set(portId, inside);
+        }
+    }
+    // One pass over the edges: those on an opened node's ports are carried on.
+    const edges: PyGraphEdge[] = [];
+    const inbound = new Map<string, PyGraphEdge[]>();
+    const outbound = new Map<string, PyGraphEdge[]>();
+    for (const edge of doc.graph.edges) {
+        const fromIn = ownerOf.get(edge.from);
+        const toIn = ownerOf.get(edge.to);
+        if (!fromIn && !toIn) {
+            edges.push(edge);
+            continue;
+        }
+        if (toIn && fromIn !== toIn) {
+            push(inbound, edge.to, edge);
+            (toIn.into.get(edge.to) ?? []).forEach((pin, k) =>
+                edges.push(withEnd(edge, `${edge.id}>${k}`, { to: pin, toNode: toIn.nodeOfPin.get(pin) })));
+        }
+        if (fromIn && fromIn !== toIn) {
+            push(outbound, edge.from, edge);
+            (fromIn.outOf.get(edge.from) ?? []).forEach((pin, k) =>
+                edges.push(withEnd(edge, `${edge.id}<${k}`, { from: pin, fromNode: fromIn.nodeOfPin.get(pin) })));
+        }
+        if (fromIn && fromIn === toIn) {
+            // From the node back into itself: inside the frame, from the pin
+            // driving the output to each pin the input feeds.
+            let k = 0;
+            for (const driver of fromIn.outOf.get(edge.from) ?? []) {
+                for (const fed of fromIn.into.get(edge.to) ?? []) {
+                    fromIn.edges.push(withEnd(edge, `${edge.id}@${k++}`, {
+                        from: driver, fromNode: fromIn.nodeOfPin.get(driver), to: fed, toNode: fromIn.nodeOfPin.get(fed), scope: fromIn.scopeId
+                    }));
+                }
+            }
+        }
+    }
+    // An edge into one opened node and out of another is carried at both ends.
+    for (const inside of insides) {
+        for (const [input, outputs] of inside.through) {
             for (const a of inbound.get(input) ?? []) {
                 for (const output of outputs) {
                     for (const b of outbound.get(output) ?? []) {
                         // Through the node: from where `a` starts to where `b` ends.
-                        carried.push(withEnd(b, `${a.id}>${b.id}`, { from: a.from, fromNode: fromNodeOf(a) }));
+                        edges.push(withEnd(b, `${a.id}>${b.id}`, { from: a.from, fromNode: fromNodeOf(a) }));
                     }
                 }
             }
         }
-        edges = [...kept, ...carried, ...innerEdges];
-        nodes = [...nodes.filter(other => other !== node), ...cells];
+        edges.push(...inside.edges);
+        const node = inside.node;
         const parent = subgraphs.find(scope => scope.id === node.scope);
         if (parent) {
-            parent.children = [...(parent.children ?? []), scopeId];
+            parent.children = [...(parent.children ?? []), inside.scopeId];
         }
+        // The node's own open bundles, which its frame keeps while they are not drawn.
+        const bundles = [...new Set(node.ports.map(port => port.group).filter((g): g is string => !!g))]
+            .filter(group => state?.isExpanded(stableNodeId(ids, node), group));
         subgraphs.push({
-            id: scopeId,
+            id: inside.scopeId,
             kind: 'group',
             label: node.label,
             parent: parent ? parent.id : (node.scope ?? null),
-            nodes: cells.map(cell => cell.id),
-            edges: innerEdges.map(edge => edge.id),
-            openNodeKey: stableNodeId(ids, node)
+            nodes: inside.cells.map(cell => cell.id),
+            edges: inside.edges.map(edge => edge.id),
+            openNodeKey: stableNodeId(ids, node),
+            ...(bundles.length ? { openNodeBundles: bundles } : {})
         });
     }
+    const nodes = [...doc.graph.nodes.filter(node => !openedIds.has(node.id)), ...insides.flatMap(inside => inside.cells)];
     return { ...doc, graph: { ...doc.graph, nodes, edges, subgraphs } };
 }
 
@@ -245,11 +304,10 @@ export function withOpenNodePositions(graph: unknown, positions: Map<string, Poi
             if (frameAt && !positions.has(nodeKey)) {
                 writable().set(nodeKey, { ...frameAt });
             }
-            // Closed, its frame and members are not drawn.
-            const meta = args[WorkflowDiagramMetadata.NODE_META] as PyGraphNode['meta'];
-            const members = new Set(innerGraphOf({ meta })?.nodes.map(member => member.id) ?? []);
-            for (const key of [frameKey, ...members]) {
-                if (positions.has(key)) {
+            // Closed, its frame and members (named under the frame's id) are not drawn.
+            const memberPrefix = `${frameKey}/`;
+            for (const key of positions.keys()) {
+                if (key === frameKey || key.startsWith(memberPrefix)) {
                     writable().delete(key);
                 }
             }

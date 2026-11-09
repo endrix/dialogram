@@ -89,6 +89,11 @@ export class WorkflowToggleNodeOpenOperationHandler extends WorkflowTogglePortBu
         if (frame) {
             return frame;
         }
+        // Closed, the node's model id is its key; the walk is for a node keyed otherwise.
+        const byKey: any = this.modelState.index.find(target.nodeKey);
+        if (byKey?.args?.[WorkflowDiagramMetadata.GRAPH_NODE_ID] === target.producerId) {
+            return byKey;
+        }
         let found: any;
         const visit = (element: any): void => {
             if (found) {

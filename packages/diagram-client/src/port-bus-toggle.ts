@@ -11,12 +11,38 @@ import { TogglePortBusOperation } from '@dialogram/shared';
 /** The attribute the port view puts on a bus port's dot: the port's id. */
 export const PORT_BUS_TOGGLE_ATTR = 'data-port-bus-toggle';
 
+/** The value of `attr` on the toggle the event landed in, if it landed in one. */
+export function toggleTargetOf(event: Pick<MouseEvent, 'target'>, attr: string): string | undefined {
+    const target = event.target as Element | null;
+    const toggle = typeof target?.closest === 'function' ? target.closest(`[${attr}]`) : null;
+    const value = toggle?.getAttribute(attr);
+    return value ? value : undefined;
+}
+
+/**
+ * A left press in a toggle carrying `attr`: the action it asks for, the event
+ * kept from the tools (so it is a toggle, not the start of a drag); else none.
+ */
+export function pressToggle(event: MouseEvent, attr: string, toAction: (value: string) => Action): Action[] {
+    if (event.button !== 0) {
+        return [];
+    }
+    const value = toggleTargetOf(event, attr);
+    if (!value) {
+        return [];
+    }
+    try {
+        event.preventDefault();
+        event.stopPropagation();
+    } catch {
+        // A synthetic event may not allow it; the toggle still applies.
+    }
+    return [toAction(value)];
+}
+
 /** The bus port whose toggle the event landed on, if it landed on one. */
 export function portBusToggleOf(event: Pick<MouseEvent, 'target'>): string | undefined {
-    const target = event.target as Element | null;
-    const toggle = typeof target?.closest === 'function' ? target.closest(`[${PORT_BUS_TOGGLE_ATTR}]`) : null;
-    const portId = toggle?.getAttribute(PORT_BUS_TOGGLE_ATTR);
-    return portId ? portId : undefined;
+    return toggleTargetOf(event, PORT_BUS_TOGGLE_ATTR);
 }
 
 @injectable()
@@ -25,19 +51,6 @@ export class PortBusToggleMouseListener extends MouseListener implements Ranked 
     rank = 9;
 
     override mouseDown(_target: GModelElement, event: MouseEvent): (Action | Promise<Action>)[] {
-        if (event.button !== 0) {
-            return [];
-        }
-        const portId = portBusToggleOf(event);
-        if (!portId) {
-            return [];
-        }
-        try {
-            event.preventDefault();
-            event.stopPropagation();
-        } catch {
-            // A synthetic event may not allow it; the toggle still applies.
-        }
-        return [TogglePortBusOperation.create({ portId })];
+        return pressToggle(event, PORT_BUS_TOGGLE_ATTR, portId => TogglePortBusOperation.create({ portId }));
     }
 }

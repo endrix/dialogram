@@ -306,6 +306,8 @@ export namespace WorkflowDiagramMetadata {
     export const NODE_OPENABLE = 'wf:openable';
     /** On the frame an open node is drawn as: the node's key, to close it by. */
     export const OPEN_NODE_KEY = 'wf:openNodeKey';
+    /** On that frame: the node's open bundles, saved again while they are not drawn. */
+    export const OPEN_NODE_BUNDLES = 'wf:openNodeBundles';
     /** What a node is drawn as, when not a box (`SymbolKind`, symbol-geometry.ts). */
     export const SYMBOL = 'wf:symbol';
     /** The glyph an `operator` symbol shows (`+`, `==`, `&`). */

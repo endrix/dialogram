@@ -9,6 +9,7 @@ import { Action, GModelElement, MouseListener } from '@eclipse-glsp/sprotty';
 import { injectable } from 'inversify';
 import type { VNode } from 'snabbdom';
 import { ToggleNodeOpenOperation } from '@dialogram/shared';
+import { pressToggle, toggleTargetOf } from './port-bus-toggle';
 
 /** The attribute a header's toggle carries: the id of the node, or of the frame, it toggles. */
 export const NODE_OPEN_TOGGLE_ATTR = 'data-node-open-toggle';
@@ -33,10 +34,7 @@ export function nodeOpenToggle(elementId: string, open: boolean, label: string, 
 
 /** The node or frame whose toggle the event landed on, if it landed on one. */
 export function nodeOpenToggleOf(event: Pick<MouseEvent, 'target'>): string | undefined {
-    const target = event.target as Element | null;
-    const toggle = typeof target?.closest === 'function' ? target.closest(`[${NODE_OPEN_TOGGLE_ATTR}]`) : null;
-    const id = toggle?.getAttribute(NODE_OPEN_TOGGLE_ATTR);
-    return id ? id : undefined;
+    return toggleTargetOf(event, NODE_OPEN_TOGGLE_ATTR);
 }
 
 @injectable()
@@ -45,19 +43,6 @@ export class NodeOpenToggleMouseListener extends MouseListener implements Ranked
     rank = 9;
 
     override mouseDown(_target: GModelElement, event: MouseEvent): (Action | Promise<Action>)[] {
-        if (event.button !== 0) {
-            return [];
-        }
-        const nodeId = nodeOpenToggleOf(event);
-        if (!nodeId) {
-            return [];
-        }
-        try {
-            event.preventDefault();
-            event.stopPropagation();
-        } catch {
-            // A synthetic event may not allow it; the toggle still applies.
-        }
-        return [ToggleNodeOpenOperation.create({ nodeId })];
+        return pressToggle(event, NODE_OPEN_TOGGLE_ATTR, nodeId => ToggleNodeOpenOperation.create({ nodeId }));
     }
 }

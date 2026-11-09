@@ -9,7 +9,7 @@ import { ToggleNodeOpenOperation, WorkflowDiagramMetadata, WorkflowDiagramTypes 
 import { GraphGModelSource, type PyGraphDocument, type PyGraphNode } from '../src/model/graph-gmodel-source';
 import { portBusStateOf } from '../src/model/port-bundles';
 import { stableNodeIds } from '../src/model/stable-ids';
-import { OPEN_NODE_SPACING, openFrameId, openNodes, withOpenNodePositions } from '../src/model/open-nodes';
+import { OPEN_NODE_SPACING, innerNodeId, openFrameId, openNodes, withOpenNodePositions } from '../src/model/open-nodes';
 import { convertToGModelRoot } from '../src/server/gmodel-convert';
 import { relativeToParent, restoreGroupGeometry } from '../src/server/group-geometry';
 import { collectNodePositions, nodeLayoutKeyOf } from '../src/server/layout-snapshot';
@@ -62,6 +62,8 @@ const doc: PyGraphDocument = {
     }
 };
 const KEY = 'q, t';
+/** An inner cell's id in the model: under its frame's. */
+const C = (name: string) => innerNodeId(P, `${P}/cell:${name}`);
 const openState = (open: boolean) => portBusStateOf(open ? new Map([[KEY, new Set([ToggleNodeOpenOperation.OPEN])]]) : new Map());
 
 describe('a node opened in place', () => {
@@ -71,7 +73,7 @@ describe('a node opened in place', () => {
         expect(opened.graph.nodes.some(n => n.id === P)).toBe(false);
         const scope = opened.graph.subgraphs!.find(s => s.id === `open:${P}`)!;
         expect(scope).toMatchObject({ kind: 'group', label: 'q, t', parent: 'root', openNodeKey: KEY });
-        expect(scope.nodes).toEqual([`${P}/cell:not`, `${P}/cell:and`, `${P}/cell:reg`]);
+        expect(scope.nodes).toEqual([C('not'), C('and'), C('reg')]);
         expect(opened.graph.nodes.filter(n => n.scope === `open:${P}`)).toHaveLength(3);
     });
 
@@ -111,9 +113,9 @@ describe('the places a toggle needs', () => {
         expect(at.get(openFrameId(P))).toEqual({ x: 200, y: 100 });
         expect(at.has(KEY)).toBe(false);
         const { padding } = OPEN_NODE_SPACING;
-        const not = at.get(`${P}/cell:not`)!;
-        const and = at.get(`${P}/cell:and`)!;
-        const reg = at.get(`${P}/cell:reg`)!;
+        const not = at.get(C('not'))!;
+        const and = at.get(C('and'))!;
+        const reg = at.get(C('reg'))!;
         expect(not.x).toBe(200 + padding);
         expect(and.x).toBeGreaterThan(not.x);   // fed by the NOT
         expect(reg.x).toBeGreaterThan(and.x);   // fed by the AND
@@ -124,11 +126,11 @@ describe('the places a toggle needs', () => {
         const graph: any = new GraphGModelSource().transform(doc, { portBuses: openState(false) }).graph;
         const at = withOpenNodePositions(graph, new Map([
             [openFrameId(P), { x: 200, y: 100 }],
-            [`${P}/cell:not`, { x: 216, y: 140 }]
+            [C('not'), { x: 216, y: 140 }]
         ]));
         expect(at.get(KEY)).toEqual({ x: 200, y: 100 });
         expect(at.has(openFrameId(P))).toBe(false);
-        expect(at.has(`${P}/cell:not`)).toBe(false);
+        expect(at.has(C('not'))).toBe(false);
     });
 });
 
@@ -199,7 +201,7 @@ describe('opening a node in place', () => {
         await toggle.execute();
         expect(d.open().get(KEY)?.has(ToggleNodeOpenOperation.OPEN)).toBe(true);
         expect(d.at(openFrameId(P))).toEqual({ x: 200, y: 100 });
-        expect(d.at(`${P}/cell:not`)).toBeDefined();
+        expect(d.at(C('not'))).toBeDefined();
         expect(d.find(KEY)).toBeUndefined();
 
         await toggle.undo();
@@ -253,14 +255,56 @@ describe('a node opened in place, in the corners', () => {
         expect(new Set(ids).size).toBe(ids.length);
     });
 
-    it('drops a closed node’s members’ places by its inner graph, not by their names', () => {
+    it('drops a closed node’s members’ places by its frame’s namespace, nobody else’s', () => {
         const graph: any = new GraphGModelSource().transform(doc, { portBuses: openState(false) }).graph;
         const at = withOpenNodePositions(graph, new Map([
-            [`${P}/cell:reg`, { x: 1, y: 1 }],
-            [`${P}/unrelated`, { x: 2, y: 2 }]
+            [C('reg'), { x: 1, y: 1 }],
+            [`${P}/cell:reg`, { x: 2, y: 2 }]
         ]));
-        expect(at.has(`${P}/cell:reg`)).toBe(false);
-        expect(at.has(`${P}/unrelated`)).toBe(true);
+        expect(at.has(C('reg'))).toBe(false);
+        expect(at.has(`${P}/cell:reg`)).toBe(true);
+    });
+
+    it('keeps the node’s open bundles while it is open and they are not drawn', () => {
+        const bussed: PyGraphDocument = {
+            ...doc,
+            graph: { ...doc.graph, nodes: doc.graph.nodes.map(n => (n.id === P ? { ...n, ports: n.ports.map(p => (p.name === 'a' || p.name === 'b' ? { ...p, group: 'ab' } : p)) } : n)) }
+        };
+        const state = portBusStateOf(new Map([[KEY, new Set([ToggleNodeOpenOperation.OPEN, 'ab'])]]));
+        const graph: any = new GraphGModelSource().transform(bussed, { portBuses: state }).graph;
+        const frame = graph.children.find((c: any) => c.id === openFrameId(P));
+        expect(frame.args[WorkflowDiagramMetadata.OPEN_NODE_BUNDLES]).toEqual(['ab']);
+    });
+
+    it('draws its inner nodes as they are: one holding a graph is not offered to open', () => {
+        const nested: PyGraphDocument = {
+            ...doc,
+            graph: {
+                ...doc.graph,
+                nodes: doc.graph.nodes.map(n => n.id === P ? {
+                    ...n,
+                    meta: { ...n.meta, inner: { ...(n.meta as any).inner, nodes: (n.meta as any).inner.nodes.map((c: any) => ({ ...c, meta: { ...c.meta, inner: { nodes: [c], edges: [] } } })) } }
+                } : n)
+            }
+        };
+        const graph: any = new GraphGModelSource().transform(nested, { portBuses: openState(true) }).graph;
+        const frame = graph.children.find((c: any) => c.id === openFrameId(P));
+        expect(frame.children.some((c: any) => c.args?.[WorkflowDiagramMetadata.NODE_OPENABLE])).toBe(false);
+    });
+
+    it('wires a pin reading the node’s own output from the pin driving it', () => {
+        const reading: PyGraphDocument = {
+            ...doc,
+            graph: {
+                ...doc.graph,
+                nodes: doc.graph.nodes.map(n => n.id === P ? {
+                    ...n,
+                    meta: { ...n.meta, inner: { ...(n.meta as any).inner, edges: [...(n.meta as any).inner.edges, { from: `${P}:q`, to: `${P}/cell:and:b` }] } }
+                } : n)
+            }
+        };
+        const opened = openNodes(reading, openState(true), stableNodeIds(reading.graph.nodes));
+        expect(opened.graph.edges.some(e => e.from === `${P}/cell:reg:q` && e.to === `${P}/cell:and:b`)).toBe(true);
     });
 
     it('stays a box when it is also a symbol: its toggle is in the header', () => {
