@@ -25,6 +25,7 @@ import { clientBehavior, operationKind } from './profile';
 import { classifyLink, decodeURIComponentSafe, openTargetOf, referenceAction, type PanelLink } from './open-target';
 import { producerFields, type ProducerField } from './producer-fields';
 import { AnnotationEditor } from './annotation-editor';
+import { lastPerKey } from './contributions';
 import { NodeSectionContribution, type NodeInfoRow, type NodeSectionContext } from './node-section';
 import { createPropertySection, shortenPath } from './property-section';
 
@@ -79,11 +80,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
      * binding replaces the earlier one.
      */
     protected nodeSections(): readonly NodeSectionContribution[] {
-        const byId = new Map<string, NodeSectionContribution>();
-        for (const contribution of this.contributedNodeSections ?? []) {
-            byId.set(contribution.id, contribution);
-        }
-        return [...byId.values()];
+        return lastPerKey(this.contributedNodeSections, contribution => contribution.id);
     }
 
     /** Draw a node again if the panel is open on it, without the editors asking for discovery again. */
@@ -174,11 +171,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
      * module, loaded after the stock one, can replace a stock editor.
      */
     protected annotationEditors(): readonly AnnotationEditor[] {
-        const byName = new Map<string, AnnotationEditor>();
-        for (const editor of this.contributedAnnotationEditors ?? []) {
-            byName.set(editor.annotationName, editor);
-        }
-        return [...byName.values()];
+        return lastPerKey(this.contributedAnnotationEditors, editor => editor.annotationName);
     }
 
     /** The editor for an annotation name, if one is bound. */

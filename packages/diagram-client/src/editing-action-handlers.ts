@@ -1,8 +1,10 @@
-import { inject, injectable } from 'inversify';
+import { inject, injectable, multiInject, optional } from 'inversify';
+import { AnnotationTemplate, CUSTOM_ANNOTATION_ENTRY } from './annotation-template';
+import { lastPerKey } from './contributions';
 import { EditorContextService, IActionDispatcher, TYPES } from '@eclipse-glsp/client';
 import { Action as GlspAction, ApplyLabelEditOperation, ICommand, IActionHandler, NavigateToExternalTargetAction, RequestModelAction } from '@eclipse-glsp/sprotty';
 import { VscodeUi, type VscodeQuickPickItem } from './vscode-ui';
-import { clientBehavior, commandId, settingsNamespace } from './profile';
+import { clientBehavior, commandId } from './profile';
 import { rerunActorFor, WorkflowNavigationUi } from './navigation-ui';
 import { NETWORK_NAME_ARG, OPEN_DIAGRAM_ARG } from './network-navigation-target';
 import { FocusAfterLoadService } from './focus-after-load';
@@ -516,11 +518,6 @@ export class WorkflowEditParametersActionHandler implements IActionHandler {
 }
 
 
-function toWfStringLiteral(value: string): string {
-    const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    return `"${escaped}"`;
-}
-
 @injectable()
 export class WorkflowEditAnnotationsActionHandler implements IActionHandler {
     @inject(EditorContextService)
@@ -528,6 +525,21 @@ export class WorkflowEditAnnotationsActionHandler implements IActionHandler {
 
     @inject(TYPES.IActionDispatcher)
     protected readonly actionDispatcher!: IActionDispatcher;
+
+    /** The templates products contributed; see `annotation-template.ts`. */
+    @multiInject(AnnotationTemplate) @optional()
+    protected readonly contributedTemplates: readonly AnnotationTemplate[] | undefined;
+
+    /**
+     * One template per annotation name, in the order the names were first
+     * bound; a later binding replaces the earlier one. A template without a
+     * name, or named like the wizard's own "Custom annotation…" entry, is
+     * ignored.
+     */
+    protected annotationTemplates(): readonly AnnotationTemplate[] {
+        return lastPerKey(this.contributedTemplates, template => template.annotationName.trim())
+            .filter(template => template.annotationName.trim() !== CUSTOM_ANNOTATION_ENTRY);
+    }
 
     handle(action: GlspAction): ICommand | GlspAction | void {
         if (!WorkflowEditAnnotationsAction.is(action)) {
@@ -581,11 +593,15 @@ export class WorkflowEditAnnotationsActionHandler implements IActionHandler {
         }
 
         // Upsert
+        const templates = this.annotationTemplates();
         const template = await VscodeUi.instance.quickPick({
             items: [
-                { id: 'tool', label: '@tool (external execution)', description: 'cmd, args, inheritStdio, ...' },
-                { id: 'viewer', label: '@viewer (open outputs in VS Code)', description: 'open, diff, openWith (viewType)' },
-                { id: 'custom', label: 'Custom annotation…', description: 'Enter any name and arguments' }
+                ...templates.map(t => ({
+                    id: t.annotationName,
+                    label: t.label,
+                    ...(t.description !== undefined ? { description: t.description } : {})
+                })),
+                { id: CUSTOM_ANNOTATION_ENTRY, label: 'Custom annotation…', description: 'Enter any name and arguments' }
             ],
             placeHolder: 'Choose an annotation template'
         });
@@ -596,129 +612,15 @@ export class WorkflowEditAnnotationsActionHandler implements IActionHandler {
         let annotationName = '';
         let annotationText = '';
 
-        if (template === 'tool') {
-            annotationName = 'tool';
-
-            // Try to seed from existing @tool if present
-            const existing = defAnnotations.find(a => a.name === 'tool');
-            const existingArgs = new Map((existing?.arguments ?? []).map(a => [a.name, a.value]));
-
-            const cmdRaw = await VscodeUi.instance.inputBox({
-                prompt: 'tool.cmd (program to run)',
-                value: existingArgs.get('cmd')?.replace(/^"|"$/g, '') ?? 'bash'
+        const chosen = templates.find(t => t.annotationName === template);
+        if (chosen) {
+            annotationName = chosen.annotationName;
+            const composed = await chosen.compose({
+                elementId: action.elementId,
+                existing: defAnnotations.find(a => a.name === chosen.annotationName)
             });
-            if (cmdRaw === undefined) return;
-
-            const argsExpr = await VscodeUi.instance.inputBox({
-                prompt: 'tool.args (wf-lang expression, e.g. ["-lc", "..."])',
-                value: existingArgs.get('args') ?? '["-lc", "{in.exe} {in.input} > {out.stdout}"]'
-            });
-            if (argsExpr === undefined) return;
-
-            const inherit = await VscodeUi.instance.quickPick({
-                items: [
-                    { id: 'true', label: 'inheritStdio=true' },
-                    { id: 'false', label: 'inheritStdio=false' }
-                ],
-                placeHolder: 'tool.inheritStdio'
-            });
-            if (!inherit) return;
-
-            const cmdExpr = existingArgs.has('cmd') && existingArgs.get('cmd')?.trim().startsWith('"')
-                ? toWfStringLiteral(cmdRaw)
-                : toWfStringLiteral(cmdRaw);
-
-            annotationText = `@tool(\n    cmd=${cmdExpr},\n    args=${argsExpr.trim()},\n    inheritStdio=${inherit}\n)`;
-        } else if (template === 'viewer') {
-            annotationName = 'viewer';
-
-            const action = await VscodeUi.instance.quickPick({
-                items: [
-                    { id: 'open', label: 'Open (single file)', description: 'Open last token using default editor' },
-                    { id: 'diff', label: 'Diff (two files)', description: 'Compare last tokens in VS Code diff editor' },
-                    { id: 'openWith', label: 'Open With…', description: 'Open using a specific VS Code editor viewType' }
-                ],
-                placeHolder: '@viewer.action'
-            });
-            if (!action) return;
-
-            const defaultInputsExpr = action === 'diff' ? '["left", "right"]' : '["In"]';
-            const inputsExpr = await VscodeUi.instance.inputBox({
-                prompt: 'viewer.inputs (wf-lang expression, e.g. ["In"] or ["left","right"])',
-                value: defaultInputsExpr
-            });
-            if (inputsExpr === undefined) return;
-
-            let viewType: string | undefined;
-            if (action === 'openWith') {
-                const editors = await VscodeUi.instance.getViewerEditors();
-                const picked = await VscodeUi.instance.quickPick({
-                    items: [
-                        ...editors.map(e => ({
-                            id: e.viewType,
-                            label: e.label,
-                            description: e.description
-                        })),
-                        { id: '__custom__', label: 'Custom viewType…', description: 'Enter any VS Code editor viewType string' }
-                    ],
-                    placeHolder: 'Choose an editor (viewType)'
-                });
-                if (!picked) return;
-
-                if (picked === '__custom__') {
-                    const customViewType = await VscodeUi.instance.inputBox({
-                        prompt: 'VS Code editor viewType (for vscode.openWith)',
-                        value: ''
-                    });
-                    if (customViewType === undefined) return;
-                    const trimmed = customViewType.trim();
-                    if (!trimmed) return;
-
-                    viewType = trimmed;
-
-                    const add = await VscodeUi.instance.quickPick({
-                        items: [
-                            { id: 'yes', label: 'Add this editor to settings', description: `Append to ${settingsNamespace()}.viewerEditors` },
-                            { id: 'no', label: 'Do not add' }
-                        ],
-                        placeHolder: 'Remember this editor?'
-                    });
-                    if (add === 'yes') {
-                        const label = await VscodeUi.instance.inputBox({
-                            prompt: 'Display label for this editor',
-                            value: trimmed
-                        });
-                        if (label !== undefined) {
-                            await VscodeUi.instance.appendViewerEditor({
-                                label: label.trim() || trimmed,
-                                viewType: trimmed
-                            });
-                        }
-                    }
-                } else {
-                    viewType = picked;
-                }
-
-                // Special-case: "default" means normal open (not openWith).
-                if (viewType === 'default') {
-                    annotationText = `@viewer(\n    action="open",\n    inputs=${inputsExpr.trim()},\n    token="last"\n)`;
-                } else {
-                    annotationText = `@viewer(\n    action="openWith",\n    inputs=${inputsExpr.trim()},\n    token="last",\n    viewType=${toWfStringLiteral(viewType)}\n)`;
-                }
-            }
-
-            if (action === 'open') {
-                annotationText = `@viewer(\n    action="open",\n    inputs=${inputsExpr.trim()},\n    token="last"\n)`;
-            }
-
-            if (action === 'diff') {
-                const title = await VscodeUi.instance.inputBox({
-                    prompt: 'viewer.title (optional; shown in the diff editor tab)',
-                    value: 'Workflow Diff'
-                });
-                if (title === undefined) return;
-                annotationText = `@viewer(\n    action="diff",\n    inputs=${inputsExpr.trim()},\n    token="last",\n    title=${toWfStringLiteral(title)}\n)`;
-            }
+            if (!composed?.trim()) return;
+            annotationText = composed;
         } else {
             const name = await VscodeUi.instance.inputBox({
                 prompt: 'Annotation name (without @)',

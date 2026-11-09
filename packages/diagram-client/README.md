@@ -245,6 +245,31 @@ binding for an id replaces the earlier one, so your module can replace the
 stock bundle's agent sections (id `agent`: the Skill row, Agent Tools and the
 live Agent Context).
 
+**Annotation templates.** The Annotations header's "Wizard…" adds an
+annotation from a template, or from a name and arguments typed in. To offer a
+template, bind an `AnnotationTemplate`:
+
+```ts
+import { ContainerModule } from 'inversify';
+import { AnnotationTemplate } from '@dialogram/diagram-client';
+
+export const myFeaturesModule = new ContainerModule(bind => {
+    bind(AnnotationTemplate).toConstantValue({
+        annotationName: 'retry',
+        label: '@retry (run again on failure)',
+        async compose({ existing }) {
+            const times = existing?.arguments?.find(a => a.name === 'times')?.value ?? '3';
+            return `@retry(times=${times})`; // or undefined: the person cancelled
+        }
+    });
+});
+```
+
+There is one template per annotation name, and a later binding replaces an
+earlier one. The wizard lists them before its own "Custom annotation…" entry
+(`custom`), which a template cannot replace. The stock bundle binds `@tool`
+and `@viewer`.
+
 **A diagram of your own.** When you compose the container yourself:
 
 ```ts
