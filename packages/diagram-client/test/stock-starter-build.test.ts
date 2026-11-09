@@ -89,4 +89,9 @@ describe('the stock start-up, bundled', () => {
         expect(at(css, 'css/glsp-sprotty.css')).toBeLessThan(at(css, 'src/diagram-client.css'));
         expect(at(css, 'src/diagram-client.css')).toBeLessThan(at(css, 'stock-starter-consumer/consumer.css'));
     }, 120_000);
+
+    it('builds a product’s bundle that loads the agent workflow UI through its documented path import', async () => {
+        const { js } = await build(path.resolve(__dirname, 'fixtures/agent-ui-consumer/entry.ts'));
+        expect(js).toContain('agentUiModule');
+    }, 120_000);
 });
