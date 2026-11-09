@@ -3322,6 +3322,15 @@ details[open] > summary .agent-chat-expand-arrow {
     cursor: pointer;
 }
 
+/* The toggle a bundle of the unit's ports carries beside its arrow: drawn by
+   the boundary symbol, outside any port, so it is styled as a port's dot here. */
+.boundary-node .port-bus-toggle .port-bus-dot {
+    fill: var(--vscode-foreground, #cccccc);
+    stroke: var(--vscode-editor-background, #1e1e1e);
+    stroke-width: 1.5px;
+    cursor: pointer;
+}
+
 /* The mark is cut out of the dot: drawn in the background colour. */
 .port-bus-toggle .port-bus-toggle-mark {
     stroke: var(--vscode-editor-background, #1e1e1e);
@@ -3330,7 +3339,8 @@ details[open] > summary .agent-chat-expand-arrow {
     pointer-events: none;
 }
 
-.port-bus-toggle:hover .port-shape.port-bus-dot {
+.port-bus-toggle:hover .port-shape.port-bus-dot,
+.boundary-node .port-bus-toggle:hover .port-bus-dot {
     /* The ring, not the fill: a product's fill (a role colour) stays. */
     stroke: var(--vscode-focusBorder, #007fd4);
     stroke-width: 2px;

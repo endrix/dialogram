@@ -43,6 +43,7 @@ import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-r
 import { convertToGModelRoot } from './gmodel-convert';
 import { applyPersistedEdgeRoutes } from '../routing/persisted-edge-routes';
 import { relativeToParent, restoreGroupGeometry } from './group-geometry';
+import { withBoundaryBusPositions } from './boundary-bus-positions';
 import { PERF_ENABLED, perfNow, GraphLoadPerf, nextBuildCount } from './graph-load-perf';
 import { getGraphDiagnosticsCollection } from './graph-diagnostics';
 import {
@@ -538,6 +539,12 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         const graphTransform = new GraphGModelSource(this.storageOptions);
         const diagramModel = graphTransform.transform(doc, { portBuses: portBusStateOf(portBuses) });
         perf?.mark('transform');
+        // A bundle of the unit's ports drawn as one, and its members opened,
+        // are placed from the layout around them rather than re-laying out
+        // the whole diagram for want of a saved place.
+        if (loadedLayoutPositions) {
+            loadedLayoutPositions = withBoundaryBusPositions((diagramModel as any).graph, loadedLayoutPositions);
+        }
         (diagramModel as any).workflowName = workflowName;
         (diagramModel as any).documentUri = sourceUri;
 

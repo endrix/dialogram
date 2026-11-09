@@ -775,6 +775,24 @@ function portSideOf(port: unknown, fallbackEast: boolean): 'WEST' | 'EAST' {
         ?? (fallbackEast ? 'EAST' : 'WEST');
 }
 
+/** A boundary node that stands for a bundle of the unit's ports: its port and bus args. */
+interface BoundaryBus {
+    portId: string;
+    group: string;
+    args: Record<string, unknown> | undefined;
+}
+
+function boundaryBus(node: unknown): BoundaryBus | undefined {
+    const args = (node as { args?: Record<string, unknown> })?.args;
+    const group = args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP];
+    if (typeof group !== 'string') {
+        return undefined;
+    }
+    const port = ((node as { children?: Array<{ id: string; type?: string }> })?.children ?? [])
+        .find(child => typeof child.type === 'string' && child.type.startsWith('port'));
+    return port ? { portId: port.id, group, args } : undefined;
+}
+
 /** One of a boundary node's own text values, from the args the server set. */
 function boundaryText(node: unknown, key: string): string {
     const value = (node as { args?: Record<string, unknown> })?.args?.[key];
@@ -797,7 +815,14 @@ function boundaryText(node: unknown, key: string): string {
  * wire misses the arrow — both read `BoundaryPortGeometry` for exactly that
  * reason.
  */
-function boundaryPort(isInput: boolean, nodeWidth: number, name: string, type: string, mirrored = false): VNode[] {
+function boundaryPort(
+    isInput: boolean,
+    nodeWidth: number,
+    name: string,
+    type: string,
+    mirrored = false,
+    bus?: BoundaryBus
+): VNode[] {
     const G = BoundaryPortGeometry;
     const axis = G.AXIS_Y_PX;
     const arrow = isInput ? G.SOURCE_ARROW : G.SINK_ARROW;
@@ -812,15 +837,19 @@ function boundaryPort(isInput: boolean, nodeWidth: number, name: string, type: s
     const top = axis - arrow.height / 2;
     const tipX = pointsEast ? glyphX + arrow.width : glyphX;
     const baseX = pointsEast ? glyphX : glyphX + arrow.width;
-    const textX = glyphEast ? nodeWidth - G.textOffset(isInput) : G.textOffset(isInput);
+    // A bus carries its toggle between the arrow and the name, which moves out
+    // by the toggle's width and the gap a port keeps from its label.
+    const toggleSpan = bus ? 2 * WorkflowDiagramConstants.PORT_BUS_DOT_RADIUS_PX + WorkflowDiagramConstants.PORT_LABEL_GAP_PX : 0;
+    const glyphTextX = glyphEast ? nodeWidth - G.textOffset(isInput) : G.textOffset(isInput);
+    const textX = glyphEast ? glyphTextX - toggleSpan : glyphTextX + toggleSpan;
     const anchor = glyphEast ? 'end' : 'start';
 
     // How far the text reaches, from the glyph outward. Approximate by design —
     // see approximateTextWidth; it sizes these rectangles and nothing else.
-    const nameReach = G.approximateTextWidth(name, G.NAME_FONT_PX);
-    const textReach = Math.max(nameReach, G.approximateTextWidth(type, G.TYPE_FONT_PX));
+    const nameReach = G.approximateTextWidth(name, G.NAME_FONT_PX) + toggleSpan;
+    const textReach = Math.max(nameReach, G.approximateTextWidth(type, G.TYPE_FONT_PX) + toggleSpan);
     const spanFrom = (reach: number): { x: number; width: number } => glyphEast
-        ? { x: textX - reach, width: reach + G.textOffset(isInput) }
+        ? { x: glyphTextX - reach, width: reach + G.textOffset(isInput) }
         : { x: 0, width: G.textOffset(isInput) + reach };
 
     // Two rectangles, because clicking and highlighting are not the same extent
@@ -873,6 +902,10 @@ function boundaryPort(isInput: boolean, nodeWidth: number, name: string, type: s
     // the glyph — an element with no layout feature still carries a stale
     // position, and anything that reads it moves the text. Drawn here it cannot
     // disagree with the arrow it labels.
+    if (bus) {
+        const r = WorkflowDiagramConstants.PORT_BUS_DOT_RADIUS_PX;
+        parts.push(busToggle(bus.portId, bus.group, bus.args, glyphEast ? glyphTextX - r : glyphTextX + r, axis));
+    }
     parts.push(svg('text', {
         class: { 'boundary-name': true },
         // As an inline style, NOT only as an attribute. A presentation attribute
@@ -920,7 +953,7 @@ export class BoundaryInputNodeView extends ShapeView {
             // No body: the symbol on the axis IS the port — glyph, name and
             // type together, drawn as one thing.
             ...boundaryPort(true, width, boundaryText(node, WorkflowDiagramMetadata.PORT_NAME),
-                boundaryText(node, WorkflowDiagramMetadata.PORT_TYPE), boundaryMirrored(node, true)),
+                boundaryText(node, WorkflowDiagramMetadata.PORT_TYPE), boundaryMirrored(node, true), boundaryBus(node)),
             // The port element (an anchor only) and the label elements, which
             // render nothing — see WorkflowLabelView.
             ...context.renderChildren(node)
@@ -955,10 +988,43 @@ export class BoundaryOutputNodeView extends ShapeView {
         },
             // No body — see the input view above.
             ...boundaryPort(false, width, boundaryText(node, WorkflowDiagramMetadata.PORT_NAME),
-                boundaryText(node, WorkflowDiagramMetadata.PORT_TYPE), boundaryMirrored(node, false)),
+                boundaryText(node, WorkflowDiagramMetadata.PORT_TYPE), boundaryMirrored(node, false), boundaryBus(node)),
             ...context.renderChildren(node)
         );
     }
+}
+
+/**
+ * The toggle of a bus: a dot with `+` while the bundle is closed and `−` while
+ * it is open, drawn as lines so it needs no font. Pressing it opens or closes
+ * the bundle (port-bus-toggle.ts). An instance's bus port is one; a bundle of
+ * the unit's ports carries one between its arrow and its name.
+ */
+function busToggle(
+    portId: string,
+    group: string,
+    args: Record<string, unknown> | undefined,
+    cx: number,
+    cy: number,
+    shapeClasses: Record<string, boolean> = {}
+): VNode {
+    const r = WorkflowDiagramConstants.PORT_BUS_DOT_RADIUS_PX;
+    const arm = r - 2.5;
+    const expanded = args?.[WorkflowDiagramMetadata.PORT_BUS_EXPANDED] === true;
+    const members = args?.[WorkflowDiagramMetadata.PORT_BUS_MEMBERS];
+    const count = typeof members === 'number' ? `${members} ports` : 'its ports';
+    const title = expanded ? `Draw ${group} as one port` : `Show ${count} of ${group}`;
+    return svg('g', {
+        class: { 'port-bus-toggle': true, expanded },
+        attrs: { [PORT_BUS_TOGGLE_ATTR]: portId }
+    },
+        svg('title', {}, title),
+        svg('circle', { class: { ...shapeClasses, 'port-bus-dot': true }, attrs: { cx, cy, r } }),
+        svg('line', { class: { 'port-bus-toggle-mark': true }, attrs: { x1: cx - arm, y1: cy, x2: cx + arm, y2: cy } }),
+        ...(expanded
+            ? []
+            : [svg('line', { class: { 'port-bus-toggle-mark': true }, attrs: { x1: cx, y1: cy - arm, x2: cx, y2: cy + arm } })])
+    );
 }
 
 /**
@@ -975,23 +1041,7 @@ function portDot(port: any, width: number, height: number, shapeClasses: Record<
     if (typeof group !== 'string') {
         return svg('circle', { class: shapeClasses, attrs: { cx, cy, r: Math.max(width, height) / 2 } });
     }
-    const r = WorkflowDiagramConstants.PORT_BUS_DOT_RADIUS_PX;
-    const arm = r - 2.5;
-    const expanded = port?.args?.[WorkflowDiagramMetadata.PORT_BUS_EXPANDED] === true;
-    const members = port?.args?.[WorkflowDiagramMetadata.PORT_BUS_MEMBERS];
-    const count = typeof members === 'number' ? `${members} ports` : 'its ports';
-    const title = expanded ? `Draw ${group} as one port` : `Show ${count} of ${group}`;
-    return svg('g', {
-        class: { 'port-bus-toggle': true, expanded },
-        attrs: { [PORT_BUS_TOGGLE_ATTR]: String(port?.id ?? '') }
-    },
-        svg('title', {}, title),
-        svg('circle', { class: { ...shapeClasses, 'port-bus-dot': true }, attrs: { cx, cy, r } }),
-        svg('line', { class: { 'port-bus-toggle-mark': true }, attrs: { x1: cx - arm, y1: cy, x2: cx + arm, y2: cy } }),
-        ...(expanded
-            ? []
-            : [svg('line', { class: { 'port-bus-toggle-mark': true }, attrs: { x1: cx, y1: cy - arm, x2: cx, y2: cy + arm } })])
-    );
+    return busToggle(String(port?.id ?? ''), group, port?.args, cx, cy, shapeClasses);
 }
 
 /**

@@ -25,6 +25,7 @@ import {
 } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
 import {
+    BoundaryPortGeometry,
     TogglePortBusOperation,
     WORKFLOW_NETWORK_MODEL_KEY,
     WorkflowDiagramConstants,
@@ -34,6 +35,7 @@ import {
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { collectEdgeRoutes, collectNodePositions, isMovableNode, movableNodeIdFor, nodeLayoutKeyOf, type Point } from '../server/layout-snapshot';
 import { makeRoom, type Box } from './make-room';
+import { boundaryBusMembersOf } from '../server/boundary-bus-positions';
 import { groupSizeAroundMembers } from '../server/group-geometry';
 import { layoutTargetOf, type LayoutTarget } from '../server/layout-target';
 import {
@@ -260,6 +262,12 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
             routes: collectEdgeRoutes(this.modelState.root)
         };
         const oldHeights = this.heightsUpFrom(nodeId);
+        // A bundle of the unit's ports opens into boundary nodes of their own:
+        // the rebuild puts them in the rows under the bus (boundary-bus-positions.ts),
+        // and the column under it makes room for those rows. They always take
+        // those rows: the rebuild starts from the positions drawn now, and a
+        // closed bundle's members are not drawn.
+        const boundaryMembers = boundaryBusMembersOf(this.modelState.index.find(nodeId));
         const rooms = roomMade.get(this.modelState) ?? new Map<string, NodeMoves>();
         roomMade.set(this.modelState, rooms);
         if (!(await this.sourceModelStorage.rebuildFromLastDocument(current))) {
@@ -270,7 +278,10 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
         if (moves) {
             made = this.replay(moves);
         } else if (expanded) {
-            made = this.makeRoomUnder(nodeId, oldHeights);
+            const rows = boundaryMembers
+                ? { ids: new Set(boundaryMembers), height: boundaryMembers.length * BoundaryPortGeometry.ROW_PITCH_PX }
+                : undefined;
+            made = this.makeRoomUnder(nodeId, oldHeights, rows);
         } else {
             const opened = rooms.get(key);
             made = opened ? this.replay(inverse(opened)) : new Map();
@@ -426,7 +437,11 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
      * the same room is made for the group among its own siblings, up to the
      * diagram. The moves made.
      */
-    makeRoomUnder(nodeId: string, oldHeights: ReadonlyMap<string, number>): NodeMoves {
+    makeRoomUnder(
+        nodeId: string,
+        oldHeights: ReadonlyMap<string, number>,
+        rows?: { ids: ReadonlySet<string>; height: number }
+    ): NodeMoves {
         const made: NodeMoves = new Map();
         let level: any = this.modelState.index.find(nodeId);
         while (level && isMovableNode(level)) {
@@ -435,14 +450,16 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
             if (oldHeight === undefined || !parent) {
                 break;
             }
+            // Rows put under the node (an opened boundary bus's members) count
+            // as the node grown by their height, and do not move themselves.
             const siblings: any[] = (parent.children ?? []).filter((child: any) =>
-                isMovableNode(child) && child.position && child.size);
+                isMovableNode(child) && child.position && child.size && !rows?.ids.has(String(child.id)));
             const boxes: Box[] = siblings.map(child => ({
                 id: String(child.id),
                 x: child.position.x,
                 y: child.position.y,
                 width: child.size.width,
-                height: child.size.height
+                height: child.size.height + (rows && String(child.id) === nodeId ? rows.height : 0)
             }));
             const step = this.moveBy(makeRoom(boxes, String(level.id), oldHeight));
             for (const [id, move] of step) {

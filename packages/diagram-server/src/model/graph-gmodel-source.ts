@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
 import { groupLayoutOptions, splitEdgesAtGroups } from './group-edges';
 import { URI } from 'vscode-uri';
-import { bundlePorts, type PortBus, type PortBusState } from './port-bundles';
+import { boundaryMargin, bundlePorts, type PortBus, type PortBusState } from './port-bundles';
 import { stableNodeId as stableNodeIdOf, stableNodeIds } from './stable-ids';
 
 export type PyGraphPort = {
@@ -225,8 +225,13 @@ export class GraphGModelSource {
      */
     transform(doc: PyGraphDocument, options?: { portBuses?: PortBusState }): { graph: GGraph } {
         doc = resolveSourceFiles(doc);
-        // Bundling adds ports, never nodes or labels: the ids hold for both.
+        // Ids are settled on the producer's nodes. The only nodes bundling adds
+        // are buses of the unit's ports, whose ids are their own and in no
+        // producer's namespace, so the ids hold for both.
         const stableIds = stableNodeIds(doc.graph.nodes);
+        // The network is named by the producer's nodes: a bus bundling the
+        // unit's ports is named after the bundle.
+        const producerNodes = doc.graph.nodes;
         doc = bundlePorts(doc, options?.portBuses, stableIds);
         const children: GModelElement[] = [];
         const nodeMap = new Map<string, GNode>();
@@ -245,10 +250,12 @@ export class GraphGModelSource {
             scopeById.set(scope.id, scope);
         }
 
-        for (const node of doc.graph.nodes) {
+        for (const node of producerNodes) {
             if (!workflowName && (node.kind === 'workflow' || node.kind === 'wf-input' || node.kind === 'wf-output')) {
                 workflowName = node.label;
             }
+        }
+        for (const node of doc.graph.nodes) {
             if (!workflowDefinitionSource && node.kind === 'workflow') {
                 const workflowSource = node.meta?.['source'] as { file?: string; line?: number } | undefined;
                 if (typeof workflowSource?.line === 'number' && workflowSource.line > 0) {
@@ -659,14 +666,7 @@ export class GraphGModelSource {
                         'wf:portRole': port.role,
                         ...(normalizePortSide(port.side) ? { [WorkflowDiagramMetadata.PORT_SIDE]: side } : {}),
                         ...(port.group ? { [WorkflowDiagramMetadata.PORT_GROUP]: port.group } : {}),
-                        ...(port.bus
-                            ? {
-                                [WorkflowDiagramMetadata.PORT_BUS_GROUP]: port.bus.group,
-                                [WorkflowDiagramMetadata.PORT_BUS_EXPANDED]: port.bus.expanded,
-                                [WorkflowDiagramMetadata.PORT_BUS_MEMBERS]: port.bus.members
-                            }
-                            : {}),
-                        ...(port.busMember ? { [WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF]: port.busMember } : {})
+                        ...busArgsOf(port)
                     },
                     layoutOptions: {
                         'elk.port.side': side
@@ -713,13 +713,7 @@ export class GraphGModelSource {
                     args: {
                         [WorkflowDiagramMetadata.PORT_ID]: portId,
                         [WorkflowDiagramMetadata.PORT_NAME]: port.name,
-                        ...(port.bus
-                            ? {
-                                [WorkflowDiagramMetadata.PORT_BUS_GROUP]: port.bus.group,
-                                [WorkflowDiagramMetadata.PORT_BUS_EXPANDED]: port.bus.expanded
-                            }
-                            : {}),
-                        ...(port.busMember ? { [WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF]: port.busMember } : {}),
+                        ...busArgsOf(port),
                         [WorkflowDiagramMetadata.PORT_DIRECTION]: direction,
                         [WorkflowDiagramMetadata.PORT_TYPE]: port.type
                     }
@@ -1461,7 +1455,7 @@ export class GraphGModelSource {
         // placed it with its bundle (`meta.side`): an output `ready` belongs
         // beside the input `valid` and `data` it answers. Then the glyph faces
         // the other way and the port sits on the other edge.
-        const margin: PortSide = normalizePortSide(node.meta?.['side']) ?? (isInput ? 'WEST' : 'EAST');
+        const margin: PortSide = boundaryMargin(node);
         const mirrored = margin !== (isInput ? 'WEST' : 'EAST');
         const facesEast = margin === 'WEST';
         // One row tall now, not a 50px box — the port is a symbol on the wire's
@@ -1476,6 +1470,10 @@ export class GraphGModelSource {
             height: BoundaryPortGeometry.SOURCE_ARROW.height
         };
         const portId = `${stableNodeId}_port_${port?.name ?? 'Port'}`;
+        // A bundle of the unit's ports drawn as one boundary node (port-bundles.ts)
+        // carries the args an instance's bus port does, so the toggle and its
+        // saved state work the same way.
+        const busArgs = busArgsOf(port);
         const p: GPort = {
             id: portId,
             type: isInput ? WorkflowDiagramTypes.PORT_OUTPUT : WorkflowDiagramTypes.PORT_INPUT,
@@ -1494,12 +1492,15 @@ export class GraphGModelSource {
                 [WorkflowDiagramMetadata.PORT_NAME]: port?.name ?? '',
                 [WorkflowDiagramMetadata.PORT_DIRECTION]: isInput ? 'output' : 'input',
                 ...(mirrored ? { [WorkflowDiagramMetadata.PORT_SIDE]: facesEast ? 'EAST' : 'WEST' } : {}),
-                ...(port?.group ? { [WorkflowDiagramMetadata.PORT_GROUP]: port.group } : {})
+                ...(port?.group ? { [WorkflowDiagramMetadata.PORT_GROUP]: port.group } : {}),
+                ...busArgs
             },
             layoutOptions: { 'elk.port.side': facesEast ? 'EAST' : 'WEST' }
         };
 
-        const typeText = port?.type ?? '';
+        // A bundle of the unit's ports drawn as one says what it holds where
+        // a port says its type.
+        const typeText = port?.bus ? `${port.bus.members} ports` : port?.type ?? '';
         // Where this port is declared, so "Go to Source" works on a boundary node
         // the way it already does on every other node. It was never wired at
         // all: the boundary node took `name` and `type` off its port and read
@@ -1572,6 +1573,8 @@ export class GraphGModelSource {
                 'wf:boundaryKind': isInput ? 'input' : 'output',
                 'wf:portName': port?.name ?? '',
                 ...(mirrored ? { [WorkflowDiagramMetadata.BOUNDARY_SIDE]: margin } : {}),
+                ...busArgs,
+                ...(Array.isArray(node.meta?.['busMembers']) ? { [WorkflowDiagramMetadata.BOUNDARY_BUS_MEMBERS]: node.meta!['busMembers'] } : {}),
                 ...boundaryNavigation
             }
         };
@@ -1767,3 +1770,14 @@ export function resolveSourceFiles(doc: PyGraphDocument): PyGraphDocument {
     return changed ? { ...doc, graph: { ...doc.graph, nodes, edges } } : doc;
 }
 
+/** What a bus port, or a member of an open bundle, carries for the toggle and the views (port-bundles.ts). */
+function busArgsOf(port: PyGraphPort | undefined): Record<string, unknown> {
+    if (port?.bus) {
+        return {
+            [WorkflowDiagramMetadata.PORT_BUS_GROUP]: port.bus.group,
+            [WorkflowDiagramMetadata.PORT_BUS_EXPANDED]: port.bus.expanded,
+            [WorkflowDiagramMetadata.PORT_BUS_MEMBERS]: port.bus.members
+        };
+    }
+    return port?.busMember ? { [WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF]: port.busMember } : {};
+}

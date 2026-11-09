@@ -39,12 +39,16 @@ describe('the bus toggle', () => {
         expect(portBusToggleOf({ target: null })).toBeUndefined();
     });
 
-    it('is drawn in the port label, carrying its port, and is clickable where the label is not', () => {
+    it('is drawn on the port, carrying its port, and is clickable where the label is not', () => {
         const here = path.dirname(fileURLToPath(import.meta.url));
         const views = readFileSync(path.resolve(here, '../src/views.ts'), 'utf8');
         const css = readFileSync(path.resolve(here, '../src/diagram-client.css'), 'utf8');
         const module = readFileSync(path.resolve(here, '../src/stock-features.module.ts'), 'utf8');
-        expect(views).toMatch(/\[PORT_BUS_TOGGLE_ATTR\]: String\(port\?\.id/);
+        expect(views).toMatch(/\[PORT_BUS_TOGGLE_ATTR\]: portId/);
+        expect(views).toMatch(/busToggle\(String\(port\?\.id/);
+        // A bundle of the unit's ports, drawn as one boundary node, carries it too.
+        expect(views.match(/boundaryMirrored\(node, (true|false)\), boundaryBus\(node\)\)/g)).toHaveLength(2);
+        expect(views).toMatch(/if \(bus\) \{[^}]*parts\.push\(busToggle\(bus\.portId/);
         expect(css).toMatch(/\.port-bus-toggle \{[^}]*pointer-events: all/);
         expect(module).toMatch(/bindAsService\(context, TYPES\.MouseListener, PortBusToggleMouseListener\)/);
     });
