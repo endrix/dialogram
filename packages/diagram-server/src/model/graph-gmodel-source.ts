@@ -6,6 +6,7 @@ import { findFeedbackEdges } from './feedback-edges';
 import { groupLayoutOptions, splitEdgesAtGroups } from './group-edges';
 import { URI } from 'vscode-uri';
 import { bundlePorts, type PortBus, type PortBusState } from './port-bundles';
+import { stableNodeIds } from './stable-ids';
 
 export type PyGraphPort = {
     id: string;
@@ -241,6 +242,7 @@ export class GraphGModelSource {
             scopeById.set(scope.id, scope);
         }
 
+        const stableIds = stableNodeIds(doc.graph.nodes);
         for (const node of doc.graph.nodes) {
             if (!workflowName && (node.kind === 'workflow' || node.kind === 'wf-input' || node.kind === 'wf-output')) {
                 workflowName = node.label;
@@ -254,7 +256,7 @@ export class GraphGModelSource {
                     };
                 }
             }
-            const stableNodeId = node.label ? node.label : node.id;
+            const stableNodeId = stableIds.get(node.id) ?? node.id;
             if (node.kind === 'wf-input' || node.kind === 'wf-output') {
                 const boundaryNode = this.createBoundaryNode(node, stableNodeId);
                 children.push(boundaryNode);

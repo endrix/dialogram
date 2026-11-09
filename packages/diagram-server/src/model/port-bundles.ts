@@ -20,6 +20,7 @@
  */
 import { normalizePortSide, type PortSide } from '@dialogram/shared';
 import type { PyGraphDocument, PyGraphEdge, PyGraphNode, PyGraphPort } from './graph-gmodel-source';
+import { stableNodeIds } from './stable-ids';
 
 /** Which bundles the reader has opened, by node layout key and bundle name. */
 export interface PortBusState {
@@ -47,10 +48,6 @@ export interface PortBus {
     members: number;
 }
 
-/** The layout key a node's position and open bundles are stored under. */
-export function nodeLayoutKey(node: PyGraphNode): string {
-    return node.label ? node.label : node.id;
-}
 
 export function portSideOf(port: PyGraphPort): PortSide {
     return normalizePortSide(port.side) ?? (port.direction === 'in' ? 'WEST' : 'EAST');
@@ -74,6 +71,8 @@ interface MemberInfo {
 export function bundlePorts(doc: PyGraphDocument, state: PortBusState = ALL_BUSES_COLLAPSED): PyGraphDocument {
     const memberOf = new Map<string, MemberInfo>();
     let anyBus = false;
+    // The key a node's open bundles are saved under: its model id.
+    const nodeKeys = stableNodeIds(doc.graph.nodes);
 
     const nodes = doc.graph.nodes.map(node => {
         if (isBoundaryNode(node) || !node.ports.some(p => p.group)) {
@@ -103,7 +102,7 @@ export function bundlePorts(doc: PyGraphDocument, state: PortBusState = ALL_BUSE
             }
         }
 
-        const nodeKey = nodeLayoutKey(node);
+        const nodeKey = nodeKeys.get(node.id) ?? node.id;
         const ports: PyGraphPort[] = [];
         const emitted = new Set<string>();
         for (const port of node.ports) {
