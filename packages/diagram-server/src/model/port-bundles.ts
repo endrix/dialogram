@@ -146,12 +146,107 @@ export function bundlePorts(
         return { ...node, ports };
     });
 
-    if (!anyBus) {
+    const withBoundaries = bundleBoundaries(nodes, state, memberOf, nodeIds);
+    if (!anyBus && withBoundaries === nodes) {
         return doc;
     }
 
     const edges = mergeBusEdges(doc.graph.edges, memberOf);
-    return { ...doc, graph: { ...doc.graph, nodes, edges } };
+    return { ...doc, graph: { ...doc.graph, nodes: withBoundaries, edges } };
+}
+
+/** The margin a boundary node sits in: its producer's `meta.side`, else by its kind. */
+function boundaryMargin(node: PyGraphNode): PortSide {
+    return normalizePortSide(node.meta?.['side'] as string | undefined) ?? (node.kind === 'wf-input' ? 'WEST' : 'EAST');
+}
+
+/**
+ * The unit's own ports, bundled: a boundary node is one port, so a bundle of
+ * them (`cpx_vld`, `cpx_req`, `cpx_data`) is drawn as one boundary node, named
+ * after the bundle, in their margin, in place of the first of them; open,
+ * that node stays as the bundle's header and its members are drawn after it.
+ * Members are grouped by bundle and margin, so a `ready` output the producer
+ * placed beside its inputs is in their bus. The bus node is an input when
+ * most of its members are.
+ */
+function bundleBoundaries(
+    nodes: PyGraphNode[],
+    state: PortBusState,
+    memberOf: Map<string, MemberInfo>,
+    nodeIds: StableNodeIds
+): PyGraphNode[] {
+    const byKey = new Map<string, PyGraphNode[]>();
+    for (const node of nodes) {
+        const group = isBoundaryNode(node) ? node.ports[0]?.group : undefined;
+        if (!group) {
+            continue;
+        }
+        const key = `${group}\u0000${boundaryMargin(node)}`;
+        byKey.set(key, [...(byKey.get(key) ?? []), node]);
+    }
+    const buses = [...byKey.entries()].filter(([, members]) => members.length >= 2);
+    if (buses.length === 0) {
+        return nodes;
+    }
+    const busOf = new Map<string, { bus: PyGraphNode; members: PyGraphNode[]; expanded: boolean }>();
+    for (const [key, members] of buses) {
+        const group = members[0].ports[0].group!;
+        const margin = boundaryMargin(members[0]);
+        const inputs = members.filter(m => m.kind === 'wf-input').length;
+        const kind = inputs * 2 >= members.length ? 'wf-input' : 'wf-output';
+        const defaultMargin: PortSide = kind === 'wf-input' ? 'WEST' : 'EAST';
+        const id = `bus:wf:${margin.toLowerCase()}:${group}`;
+        const busId = `${id}:port`;
+        // Keyed by the bus node's own id: it is no producer's node, so its
+        // model id is this one.
+        const expanded = state.isExpanded(id, group);
+        const bus: PyGraphNode = {
+            id,
+            kind,
+            label: group,
+            scope: members[0].scope,
+            ports: [{
+                id: busId,
+                name: group,
+                direction: kind === 'wf-input' ? 'out' : 'in',
+                group,
+                ...(margin !== defaultMargin ? { side: margin === 'WEST' ? 'east' : 'west' } : {}),
+                bus: { group, key: group, expanded, members: members.length }
+            }],
+            meta: {
+                ...(margin !== defaultMargin ? { side: margin.toLowerCase() } : {}),
+                // The members' model ids, in order: opening the bus places them
+                // under it before the model is built again.
+                busMembers: members.map(m => stableNodeId(nodeIds, m))
+            }
+        };
+        for (const member of members) {
+            memberOf.set(member.ports[0].id, { busId, expanded });
+        }
+        busOf.set(key, { bus, members, expanded });
+    }
+    const out: PyGraphNode[] = [];
+    const placed = new Set<string>();
+    for (const node of nodes) {
+        const group = isBoundaryNode(node) ? node.ports[0]?.group : undefined;
+        const key = group ? `${group}\u0000${boundaryMargin(node)}` : undefined;
+        const entry = key ? busOf.get(key) : undefined;
+        if (!entry) {
+            out.push(node);
+            continue;
+        }
+        if (placed.has(key!)) {
+            continue;
+        }
+        placed.add(key!);
+        out.push(entry.bus);
+        if (entry.expanded) {
+            for (const member of entry.members) {
+                out.push({ ...member, ports: [{ ...member.ports[0], busMember: entry.bus.label }] });
+            }
+        }
+    }
+    return out;
 }
 
 /**

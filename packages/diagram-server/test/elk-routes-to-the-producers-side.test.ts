@@ -74,7 +74,10 @@ const DOC: PyGraphDocument = {
 };
 
 async function layout(): Promise<GGraph> {
-    const root = convertToGModelRoot(new GraphGModelSource({} as any).transform(DOC) as any) as unknown as GGraph;
+    // Every bundle open: this is about where a member's wire runs.
+    const root = convertToGModelRoot(new GraphGModelSource({} as any).transform(DOC, {
+        portBuses: { isExpanded: () => true }
+    }) as any) as unknown as GGraph;
     const modelState: any = {
         root,
         index: { get: (id: string) => find(root, id), findByClass: (id: string) => find(root, id) }

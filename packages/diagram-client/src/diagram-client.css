@@ -3322,6 +3322,15 @@ details[open] > summary .agent-chat-expand-arrow {
     cursor: pointer;
 }
 
+/* The toggle a bundle of the unit's ports carries beside its arrow: drawn by
+   the boundary symbol, outside any port, so it is styled as a port's dot here. */
+.boundary-node .port-bus-toggle .port-bus-dot {
+    fill: var(--vscode-foreground, #cccccc);
+    stroke: var(--vscode-editor-background, #1e1e1e);
+    stroke-width: 1.5px;
+    cursor: pointer;
+}
+
 /* The mark is cut out of the dot: drawn in the background colour. */
 .port-bus-toggle .port-bus-toggle-mark {
     stroke: var(--vscode-editor-background, #1e1e1e);

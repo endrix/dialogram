@@ -83,9 +83,8 @@ it no longer has.
   them. Every bundle starts closed, and which ones are open is saved in the
   layout file beside the positions (`portBuses`, by node). Any producer that
   sends `group` gets it; today that is hdl-sidecar, so sv-ide and vhdl-ide.
-  A bundle of one stays a port, a bundle whose members sit on both sides
-  becomes a bus on each, and the diagram's own boundary ports are not
-  bundled. Opening or closing one is the `dialogram.togglePortBus`
+  A bundle of one stays a port, and a bundle whose members sit on both sides
+  becomes a bus on each. Opening or closing one is the `dialogram.togglePortBus`
   operation, bound in read-only sessions too: it saves every bundle the view
   shows open (a nested view keeps what it took from its fallback), rebuilds
   the model from the document it was last built from and the positions the
@@ -105,6 +104,19 @@ it no longer has.
   node; otherwise, and for a bundle opened before, the close leaves the
   room it had. Groups are fitted to their members again after either, and
   a toggle into the state the bundle is already in does nothing.
+
+- **A bundle of the unit's own ports is one boundary node.** The boundary
+  nodes of one bundle in one margin (`s_axis_tvalid`, `s_axis_tdata`, and
+  the `s_axis_tready` placed beside them) are drawn as one, named after the
+  bundle, saying how many ports it holds where a port says its type, in
+  place of the first of them; it is an input when most of its members are.
+  Its toggle sits between the arrow and the name and works as an instance
+  bus's does: open, the node stays as the bundle's header, the members are
+  drawn in the rows under it in its margin, and what was laid out under it
+  moves down to make room, back again on undo or close. Its edges are
+  merged and split by the same rule. A bundle split across both margins is
+  a bus in each; a bundle of one stays the port it is. The open state is
+  saved under the bus node's id (`bus:wf:<margin>:<bundle>`).
 
 - **What a double-click on a node opens is a contribution point:
   `NodeOpener`** (exported). An opener answers before the platform's own

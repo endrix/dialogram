@@ -25,6 +25,7 @@ import {
 } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
 import {
+    BoundaryPortGeometry,
     TogglePortBusOperation,
     WORKFLOW_NETWORK_MODEL_KEY,
     WorkflowDiagramConstants,
@@ -260,6 +261,19 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
             routes: collectEdgeRoutes(this.modelState.root)
         };
         const oldHeights = this.heightsUpFrom(nodeId);
+        // A bundle of the unit's ports opens into boundary nodes of their own,
+        // which have no place yet: they take the rows under the bus, in its
+        // margin, before the model is built (a node with no place would have
+        // the whole diagram laid out again), and the column under it makes
+        // room for them below.
+        const boundaryMembers = this.boundaryBusMembers(nodeId);
+        const pitch = BoundaryPortGeometry.ROW_PITCH_PX;
+        if (boundaryMembers && expanded) {
+            const at = current.positions.get(nodeKey);
+            if (at) {
+                boundaryMembers.forEach((member, k) => current.positions.set(member, { x: at.x, y: at.y + (k + 1) * pitch }));
+            }
+        }
         const rooms = roomMade.get(this.modelState) ?? new Map<string, NodeMoves>();
         roomMade.set(this.modelState, rooms);
         if (!(await this.sourceModelStorage.rebuildFromLastDocument(current))) {
@@ -269,6 +283,8 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
         let made: NodeMoves;
         if (moves) {
             made = this.replay(moves);
+        } else if (expanded && boundaryMembers) {
+            made = this.makeRoomForRows(nodeId, boundaryMembers, boundaryMembers.length * pitch);
         } else if (expanded) {
             made = this.makeRoomUnder(nodeId, oldHeights);
         } else {
@@ -391,6 +407,37 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
             changed.push(String(group.id));
         }
         return changed;
+    }
+
+    /** The members' ids of a bundle of the unit's ports drawn as one boundary node. */
+    boundaryBusMembers(nodeId: string): string[] | undefined {
+        const node: any = this.modelState.index.find(nodeId);
+        const type = node?.type as string | undefined;
+        if (type !== WorkflowDiagramTypes.NODE_BOUNDARY_INPUT && type !== WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+            return undefined;
+        }
+        const members = node.args?.['wf:busMembers'];
+        return Array.isArray(members) ? members.map(String) : undefined;
+    }
+
+    /**
+     * Room under a node for rows inserted below it (an opened boundary bus's
+     * members, already placed there): the column under it moves down as it
+     * would for the node growing by `height`. The rows themselves stay.
+     */
+    makeRoomForRows(nodeId: string, rowIds: readonly string[], height: number): NodeMoves {
+        const node: any = this.modelState.index.find(nodeId);
+        const rows = new Set(rowIds);
+        const siblings: any[] = (node?.parent?.children ?? []).filter((child: any) =>
+            isMovableNode(child) && child.position && child.size && !rows.has(String(child.id)));
+        const boxes: Box[] = siblings.map(child => ({
+            id: String(child.id),
+            x: child.position.x,
+            y: child.position.y,
+            width: child.size.width,
+            height: child.size.height + (String(child.id) === nodeId ? height : 0)
+        }));
+        return this.moveBy(makeRoom(boxes, nodeId, node?.size?.height ?? 0));
     }
 
     /** The heights of the node and of each group around it, by id. */
