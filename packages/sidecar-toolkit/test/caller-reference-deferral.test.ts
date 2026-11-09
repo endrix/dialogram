@@ -74,7 +74,6 @@ function stubOverlaySideChannels(storage: Record<string, unknown>): void {
     storage.applyViewerOverlayToEdges = async () => undefined;
     storage.applyAgentContextToNodes = async () => undefined;
     storage.attachWorkflowRunHistory = async () => undefined;
-    storage.applyAgentEnrichment = async () => undefined;
 }
 
 /** Minimal doc for `finishLoadFromDoc` — one workflow node, no edges. */
@@ -156,7 +155,7 @@ describe('caller-reference deferral (cold load) and warm-cache parity', () => {
 
     it('collapses re-entrant schedules (cold walk) onto one agent-context-only refresh', async () => {
         // Reproduces the drill-in regression: while the (slow) caller walk is still cold, a fast
-        // agent-context-only redelivery (enrichment, or a prior caller-refs refresh) re-enters and
+        // agent-context-only redelivery (a prior caller-refs refresh) re-enters and
         // re-schedules discovery. The per-key guard must collapse both onto a single redelivery.
         const root = await mkTempDir('wf-lang-caller-reentrant-');
         const workflowFile = path.join(root, 'child.py');

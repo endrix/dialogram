@@ -52,23 +52,12 @@ export class GraphLoadPerf {
      * the first-load critical path and will arrive via a background refresh). Undefined until set.
      */
     private callersInfo?: string;
-    /**
-     * Agent-enrichment phase outcome for the open breadcrumb: either the synchronous warm-cache
-     * apply cost in ms or the sentinel `'deferred'` (cold cache — the skill-status/skills/agents
-     * discovery was moved off the first-load critical path and will arrive via a background
-     * refresh). Undefined until set. Mirrors {@link callersInfo}.
-     */
-    private enrichmentInfo?: string;
     constructor(private readonly label: string) {
         this.startedAt = this.lastAt = GraphLoadPerf.now();
     }
     /** Record the caller-reference phase outcome surfaced on the open breadcrumb. */
     setCallers(info: number | 'deferred'): void {
         this.callersInfo = typeof info === 'number' ? `${Math.round(info)}ms` : info;
-    }
-    /** Record the agent-enrichment (skill-status/skills/agents) phase outcome for the breadcrumb. */
-    setEnrichment(info: number | 'deferred'): void {
-        this.enrichmentInfo = typeof info === 'number' ? `${Math.round(info)}ms` : info;
     }
     private static now(): number {
         return perfNow();
@@ -88,9 +77,8 @@ export class GraphLoadPerf {
      * load: `misc` is computed by the caller as `total − Σ(named buckets)`, catching the post-submit
      * tail plus any span whose mark name is not yet bucketed here (a newly added mark lands in
      * `misc` rather than vanishing). Overlay work is split into its dominant readers
-     * (`viewerOverlay`, `agentCtx`, `runHistory`) and the three agent-enrichment phases
-     * (`skillStatus`, `skills`, `agents`); `overlaysRest` is the true residual — any `ov:*` span not
-     * bucketed above — and should now approach 0 (enrichment is deferred off cold loads).
+     * (`viewerOverlay`, `agentCtx`, `runHistory`); `overlaysRest` is the true residual — any `ov:*`
+     * span not bucketed above — and should approach 0.
      */
     private summarize(): {
         acquireMs: number;
@@ -103,9 +91,6 @@ export class GraphLoadPerf {
         viewerOverlayMs: number;
         agentCtxMs: number;
         runHistoryMs: number;
-        skillStatusMs: number;
-        skillsMs: number;
-        agentsMs: number;
         overlaysRestMs: number;
         totalMs: number;
     } {
@@ -119,9 +104,6 @@ export class GraphLoadPerf {
         let viewerOverlayMs = 0;
         let agentCtxMs = 0;
         let runHistoryMs = 0;
-        let skillStatusMs = 0;
-        let skillsMs = 0;
-        let agentsMs = 0;
         let overlaysRestMs = 0;
         for (const [name, ms] of this.spans) {
             if (name === 'acquire') { acquireMs += ms; }
@@ -134,9 +116,6 @@ export class GraphLoadPerf {
             else if (name === 'ov:viewer') { viewerOverlayMs += ms; }
             else if (name === 'ov:agentCtx') { agentCtxMs += ms; }
             else if (name === 'ov:history') { runHistoryMs += ms; }
-            else if (name === 'ov:skillStatus') { skillStatusMs += ms; }
-            else if (name === 'ov:skills') { skillsMs += ms; }
-            else if (name === 'ov:agents') { agentsMs += ms; }
             else if (name.startsWith('ov:')) { overlaysRestMs += ms; }
         }
         return {
@@ -150,9 +129,6 @@ export class GraphLoadPerf {
             viewerOverlayMs,
             agentCtxMs,
             runHistoryMs,
-            skillStatusMs,
-            skillsMs,
-            agentsMs,
             overlaysRestMs,
             totalMs: GraphLoadPerf.now() - this.startedAt,
         };
@@ -171,9 +147,6 @@ export class GraphLoadPerf {
      *  - `viewerOverlay` latest viewer-overlay scan/apply (edges)
      *  - `agentCtx`      agent-context scan/apply (nodes)
      *  - `runHistory`    run-history enumeration (resolve run-output dirs + read run logs)
-     *  - `skillStatus`   per-node agent skill-status apply (warm-cache; deferred off cold loads)
-     *  - `skills`        agent-skills picker snapshot apply (warm-cache; deferred off cold loads)
-     *  - `agents`        Claude-agents picker snapshot apply (warm-cache; deferred off cold loads)
      *  - `overlaysRest`  residual `ov:*` not bucketed above (should approach 0)
      *  - `misc`          post-submit tail and any not-yet-bucketed span
      * ELK layout and edge reroute run later, in the client-bounds round-trip (see
@@ -184,7 +157,7 @@ export class GraphLoadPerf {
         const s = this.summarize();
         const accounted = s.acquireMs + s.relationshipsMs + s.transformMs + s.layoutMs + s.convertMs
             + s.defRangeMs + s.callerScanMs + s.viewerOverlayMs + s.agentCtxMs + s.runHistoryMs
-            + s.skillStatusMs + s.skillsMs + s.agentsMs + s.overlaysRestMs;
+            + s.overlaysRestMs;
         const miscMs = Math.max(0, s.totalMs - accounted);
         // eslint-disable-next-line no-console
         console.log(
@@ -193,10 +166,9 @@ export class GraphLoadPerf {
             + `layout=${Math.round(s.layoutMs)}ms convert=${Math.round(s.convertMs)}ms `
             + `defRange=${Math.round(s.defRangeMs)}ms callerScan=${Math.round(s.callerScanMs)}ms `
             + `viewerOverlay=${Math.round(s.viewerOverlayMs)}ms agentCtx=${Math.round(s.agentCtxMs)}ms `
-            + `runHistory=${Math.round(s.runHistoryMs)}ms skillStatus=${Math.round(s.skillStatusMs)}ms `
-            + `skills=${Math.round(s.skillsMs)}ms agents=${Math.round(s.agentsMs)}ms `
+            + `runHistory=${Math.round(s.runHistoryMs)}ms `
             + `overlaysRest=${Math.round(s.overlaysRestMs)}ms misc=${Math.round(miscMs)}ms `
-            + `callers=${this.callersInfo ?? 'n/a'} enrichment=${this.enrichmentInfo ?? 'n/a'} `
+            + `callers=${this.callersInfo ?? 'n/a'} `
             + `loadTotal=${Math.round(s.totalMs)}ms `
             + `(nodes=${extra.nodes} edges=${extra.edges})`
         );
