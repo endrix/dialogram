@@ -97,6 +97,16 @@
         "to": "ViewportPreservingSetModelCommand"
     },
     {
+        "id": "Symbol(dialogram.AnnotationEditor)",
+        "op": "bind",
+        "to": "const:ToolAnnotationEditor"
+    },
+    {
+        "id": "Symbol(dialogram.AnnotationEditor)",
+        "op": "bind",
+        "to": "const:AgentAnnotationEditor"
+    },
+    {
         "id": "Symbol(stub.ICopyPasteHandler)",
         "op": "bind",
         "scope": "singleton",

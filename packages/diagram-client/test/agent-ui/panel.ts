@@ -1,6 +1,6 @@
 /**
- * The shipped property panel with its window wiring skipped and its dispatcher
- * a recorder. Shared by the agent-UI characterization tests.
+ * The shipped property panel with its window wiring skipped, its dispatcher a
+ * recorder, and the stock annotation editors injected. Shared by the agent-UI characterization tests.
  *
  * `initialize` is skipped whole: the window chrome (it needs the editor's
  * page), the discovered-skills listener (installed on demand, see
@@ -8,6 +8,7 @@
  * a rendered reply is not exercised here.
  */
 import { PropertyPanel } from '../../src/property-panel';
+import { stockAnnotationEditors } from '../../src/agent-ui';
 import { WorkflowShowAgentSkillsActionHandler, WorkflowShowClaudeAgentsActionHandler } from '../../src/editing-action-handlers';
 import { ui } from './harness';
 
@@ -32,6 +33,8 @@ export class TestPanel extends PropertyPanel {
 
     constructor() {
         super();
+        // What the stock feature module binds.
+        (this as any).contributedAnnotationEditors = stockAnnotationEditors();
         (this as any).actionDispatcher = {
             dispatch: async (action: unknown) => { this.dispatched.push(action); },
             dispatchAll: async (actions: unknown[]) => { this.dispatched.push(...actions); }

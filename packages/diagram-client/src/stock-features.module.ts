@@ -13,6 +13,8 @@ import { ContainerModule } from 'inversify';
 import { ChangeBoundsTool, TYPES, bindAsService, configureActionHandler } from '@eclipse-glsp/client';
 import { MoveAction } from '@eclipse-glsp/sprotty';
 import { PropertyPanel } from './property-panel';
+import { AnnotationEditor } from './annotation-editor';
+import { stockAnnotationEditors } from './agent-ui';
 import { ChatPanel } from './chat-panel-integrated';
 import { clientBehavior } from './profile';
 import { WorkflowNavigationUi } from './navigation-ui';
@@ -71,6 +73,11 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     bind(PropertyPanel).toSelf().inSingletonScope();
     bind(TYPES.ISelectionListener).toService(PropertyPanel);
     bind(TYPES.IGModelRootListener).toService(PropertyPanel);
+    // The panel's annotation editors (`@tool`, `@agent`); a product's feature
+    // module binds more the same way.
+    for (const editor of stockAnnotationEditors()) {
+        bind(AnnotationEditor).toConstantValue(editor);
+    }
 
     // The hierarchy outline, fed by the root model's `wf:hierarchy`. Shown only
     // when the product navigates nested workflows in place and the model

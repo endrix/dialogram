@@ -180,6 +180,37 @@ startStockDiagram({ features: [myFeaturesModule] });
 A sidecar product names the built bundle with `clientAssets` on its
 `createSidecarDiagramProfile` input (§5).
 
+**An annotation editor.** The property panel draws a card for every
+annotation on a node's definition: Save, Remove, and a free key/value row per
+argument. To give one annotation controls of its own, bind an
+`AnnotationEditor` in your features module:
+
+```ts
+import { ContainerModule } from 'inversify';
+import { AnnotationEditor } from '@dialogram/diagram-client';
+
+export const myFeaturesModule = new ContainerModule(bind => {
+    bind(AnnotationEditor).toConstantValue({
+        annotationName: 'retry',     // edits @retry(...)
+        reservedArgs: ['times'],     // the free rows skip it
+        render({ args, body }) {
+            const input = document.createElement('input');
+            input.value = args.get('times') ?? '';
+            input.addEventListener('input', () => args.set('times', input.value));
+            body.appendChild(input); // Save reads `args`
+        }
+    });
+});
+```
+
+Without `formatAnnotation`, Save writes `@name(key=value, ...)`. With
+`mergeArgUpdates`, Save also sends the arguments, so the server keeps the
+ones the card does not show. `guiOnlyArgs` are keys your editor keeps in
+`args` for its own state; Save writes them nowhere. `quickAdd` puts an "add
+from template" button in the Annotations header. There is one editor per
+name: a later binding replaces an earlier one, so your module can replace one
+of the stock editors (`@tool`, `@agent`).
+
 **A diagram of your own.** When you compose the container yourself:
 
 ```ts
