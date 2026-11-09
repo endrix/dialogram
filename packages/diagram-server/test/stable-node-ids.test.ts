@@ -136,19 +136,25 @@ describe('port ids', () => {
         }
     };
 
-    it('are the name for the first port on the node that carries it, the producer’s port id for later ones', () => {
-        const names = stablePortNames(twice.ports);
-        expect([...names.values()]).toEqual(['din', 'div_lead0[5:0]', 'port:node:scope:root:regs.din:in:1']);
-        expect([...stablePortNames(self.ports).values()]).toEqual(['fp_rdy', 'port:node:scope:root:u.fp_rdy:in:0']);
+    it('are the name for the first output that carries it, numbered for the others', () => {
+        expect([...stablePortNames(twice.ports).values()]).toEqual(['din', 'div_lead0[5:0]', 'div_lead0[5:0]#1']);
+        expect([...stablePortNames(self.ports).values()]).toEqual(['fp_rdy', 'fp_rdy#1']);
+        // The output keeps its name wherever the producer lists it.
+        expect([...stablePortNames([...self.ports].reverse()).values()]).toEqual(['fp_rdy#1', 'fp_rdy']);
     });
 
-    it('give up a name another port’s fallback id takes', () => {
+    it('never number a port into a name another port on the node has', () => {
         const names = stablePortNames([
             { id: 'a', name: 'x', direction: 'in' },
-            { id: 'b', name: 'x', direction: 'in' },   // falls back to `b`
-            { id: 'c', name: 'b', direction: 'out' }   // so `b` is taken
+            { id: 'b', name: 'x', direction: 'in' },
+            { id: 'c', name: 'x#1', direction: 'in' }
         ]);
-        expect([...names.values()]).toEqual(['x', 'b', 'c']);
+        expect([...names.values()]).toEqual(['x', 'x#2', 'x#1']);
+    });
+
+    it('are the name as written where it is the node’s only one', () => {
+        const names = stablePortNames([{ id: 'a', name: ' clk', direction: 'in' }, { id: 'b', name: 'q', direction: 'out' }]);
+        expect([...names.values()]).toEqual([' clk', 'q']);
     });
 
     it('are unique across the model, and each edge reaches the port it was drawn to', () => {
@@ -158,8 +164,8 @@ describe('port ids', () => {
         const edges = graph.children.filter((c: any) => typeof c.sourceId === 'string');
         expect(edges.map((e: any) => e.targetId)).toEqual([
             '{ div_lead0[5:0], div_lead0[5:0] }_port_div_lead0[5:0]',
-            '{ div_lead0[5:0], div_lead0[5:0] }_port_port:node:scope:root:regs.din:in:1',
-            "fp_rdy!=8'h00_port_port:node:scope:root:u.fp_rdy:in:0"
+            '{ div_lead0[5:0], div_lead0[5:0] }_port_div_lead0[5:0]#1',
+            "fp_rdy!=8'h00_port_fp_rdy#1"
         ]);
         // Both ports still read as the net they carry.
         const node = graph.children.find((c: any) => c.id === '{ div_lead0[5:0], div_lead0[5:0] }');

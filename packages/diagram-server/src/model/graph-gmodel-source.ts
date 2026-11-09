@@ -639,7 +639,7 @@ export class GraphGModelSource {
                 // named exactly like its bundle: the ids must not meet.
                 const portId = port.bus
                     ? `${stableNodeId}_bus_${port.bus.key}`
-                    : `${stableNodeId}_port_${portNames.get(port.id) ?? port.name}`;
+                    : `${stableNodeId}_port_${portNames.get(port.id)!}`;
                 const direction: 'input' | 'output' = port.direction === 'out' ? 'output' : 'input';
                 const east = side === 'EAST';
                 // A port sits centred on the node's border, as a group frame's
