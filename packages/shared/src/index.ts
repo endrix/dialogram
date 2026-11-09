@@ -22,3 +22,4 @@ export * from './entity-names';
 export * from './clipboard-payload';
 export * from './port-bus';
 export * from './port-label-geometry';
+export * from './symbol-geometry';

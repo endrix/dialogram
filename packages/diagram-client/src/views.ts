@@ -43,7 +43,8 @@ import { PORT_BUS_TOGGLE_ATTR } from './port-bus-toggle';
 import { clientBehavior } from './profile';
 import { captionIsShared, carriedTextOf } from './edge-caption-sharing';
 import { isEdgeHiddenForDrag, isIncidentEdgeInActiveDrag, routeReachesPorts } from './elk-live-drag-router';
-import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide } from '@dialogram/shared';
+import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide } from '@dialogram/shared';
+import { renderSymbolBody, symbolPinsOf } from './symbol-views';
 import { WorkflowDiagramConstants, estimatePortLabelSize } from '@dialogram/shared';
 
 /** Walk to the model root; the drag-active window is tracked per root. */
@@ -654,6 +655,35 @@ function renderEntityNode(
     // A node in a product's family wears its mark; a subgraph as an actor does.
     const defAnnotations = ((node as any).args?.[WorkflowDiagramMetadata.ENTITY_DEFINITION_ANNOTATIONS] as NodeAnnotations | undefined) ?? [];
     const family = resolveNodeFamily(defAnnotations, clientBehavior().nodeFamilies ?? []);
+    // A node the producer draws as a symbol (a gate, a mux, a register): its
+    // shape instead of the box, no family mark over it (symbol-views.ts).
+    const symbol = (node as any).args?.[WorkflowDiagramMetadata.SYMBOL];
+    if (SymbolGeometry.isKind(symbol)) {
+        const args = (node as any).args ?? {};
+        const operator = typeof args[WorkflowDiagramMetadata.SYMBOL_OPERATOR] === 'string' ? args[WorkflowDiagramMetadata.SYMBOL_OPERATOR] : undefined;
+        const caption = typeof args[WorkflowDiagramMetadata.SYMBOL_CAPTION] === 'string' ? args[WorkflowDiagramMetadata.SYMBOL_CAPTION] : undefined;
+        return svg('g', {
+            class: {
+                'workflow-node': true,
+                ...rootClasses(family),
+                'symbol-node': true,
+                [`symbol-${symbol}`]: true,
+                'cal-node-active': isExecuting,
+                'cal-node-finished': isFinished,
+                'cal-node-error': isErrored,
+                'cal-node-warning': isWarned,
+                selected: node.selected,
+                'hover': node.hoverFeedback
+            },
+            attrs: {
+                transform: `translate(${node.position.x}, ${node.position.y})`
+            }
+        },
+            ...renderSymbolBody(symbol, { width, height }, symbolPinsOf(node.children ?? [], width), operator, caption),
+            ...(isExecuting ? [renderRunRing(width, SymbolGeometry.bodyHeight(symbol, height))] : []),
+            ...context.renderChildren(node)
+        );
+    }
     const { height: bodyHeight, footerLabel } = getNodeBody(node as any, { width, height });
     const footerLabelNode = footerLabel
         ? svg('text', {
