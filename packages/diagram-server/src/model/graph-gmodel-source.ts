@@ -284,7 +284,10 @@ export class GraphGModelSource {
             const sideOf = (p: PyGraphPort): PortSide => normalizePortSide(p.side) ?? (p.direction === 'in' ? 'WEST' : 'EAST');
             // A node the producer says is drawn as a symbol (a gate, a mux, a
             // register): its pins in the symbol's order, its size the symbol's.
+            // A node with badges stays a box: they are drawn in the header a
+            // symbol has none of.
             const symbolKind = node.kind !== 'if' && node.kind !== 'loop' && SymbolGeometry.isKind(node.meta?.['symbol'])
+                && !(Array.isArray(node.meta?.['badges']) && (node.meta['badges'] as unknown[]).length > 0)
                 ? node.meta['symbol'] as SymbolKind
                 : undefined;
             const bySymbolPin = (ps: PyGraphPort[]): PyGraphPort[] => symbolKind
@@ -292,6 +295,9 @@ export class GraphGModelSource {
                 : ps;
             const inputs = bySymbolPin(node.ports.filter(p => sideOf(p) === 'WEST'));
             const outputs = bySymbolPin(node.ports.filter(p => sideOf(p) === 'EAST'));
+            // A register's clock is drawn at its wedge, not on a pin row.
+            const clocks = symbolKind ? inputs.filter(p => SymbolGeometry.isClockPin(symbolKind, p.pins)) : [];
+            const rowInputs = clocks.length ? inputs.filter(p => !clocks.includes(p)) : inputs;
 
             const portW = WorkflowDiagramConstants.PORT_WIDTH_PX;
             const portH = WorkflowDiagramConstants.PORT_HEIGHT_PX;
@@ -346,8 +352,11 @@ export class GraphGModelSource {
             const footerReserve = footerTypeLabel && !symbolKind
                 ? WorkflowDiagramConstants.NODE_FOOTER_LABEL_HEIGHT_PX
                 : 0;
+            const pinNameWidth = (ps: PyGraphPort[]): number => Math.max(0, ...ps.map(p =>
+                this.estimateLabelSize(p.pins?.[0] ?? p.name, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX).width));
             const size = symbolKind
-                ? SymbolGeometry.size(symbolKind, inputs.length, outputs.length)
+                ? SymbolGeometry.size(symbolKind, rowInputs.length, outputs.length,
+                    symbolKind === 'register' ? SymbolGeometry.registerBodyWidth(pinNameWidth(rowInputs), pinNameWidth(outputs)) : undefined)
                 : {
                     width: Math.max(defaultWidth, labelRequiredWidth, headerLabelW),
                     height: Math.max(minHeight, requiredHeight) + footerReserve
@@ -639,7 +648,6 @@ export class GraphGModelSource {
                     ...(typeof node.meta?.['operator'] === 'string' ? { [WorkflowDiagramMetadata.SYMBOL_OPERATOR]: node.meta['operator'] } : {}),
                     ...(symbolKind === 'register' ? { [WorkflowDiagramMetadata.SYMBOL_CAPTION]: node.label } : {})
                 };
-                gnode.cssClasses = [...(gnode.cssClasses ?? []), WorkflowDiagramCss.NODE_SYMBOL];
             } else {
                 gnode.children!.push(this.createHeaderCompartment(headerLabelId, node.label, subtitle, headerClasses, unitBadges));
             }
@@ -674,15 +682,21 @@ export class GraphGModelSource {
                 const boxW = port.bus ? 2 * busR : portW;
                 const boxH = port.bus ? 2 * busR : portH;
                 const x = east ? size.width - boxW / 2 : -boxW / 2;
-                const y = symbolKind
-                    ? SymbolGeometry.symbolPinY(symbolKind, SymbolGeometry.bodyHeight(symbolKind, size.height), !east,
-                        east ? outputs.length : inputs.length, idx) - boxH / 2
-                    : yStart + idx * portRowH + portRowOffset(boxH);
+                const symbolBody = symbolKind ? SymbolGeometry.bodyHeight(symbolKind, size.height) : 0;
+                const y = !symbolKind
+                    ? yStart + idx * portRowH + portRowOffset(boxH)
+                    : clocks.includes(port)
+                        ? SymbolGeometry.clockY(symbolBody) - boxH / 2
+                        : SymbolGeometry.symbolPinY(symbolKind, symbolBody, !east,
+                            east ? outputs.length : rowInputs.length, east ? idx : rowInputs.indexOf(port)) - boxH / 2;
                 // A register's pins are named by what they are (`d`, `en`, `q`);
                 // a gate's pins say nothing a wire does not, and are hidden.
                 const labelText = symbolKind === 'register' && port.pins?.length ? port.pins[0] : port.name;
                 const labelSize = this.estimateLabelSize(labelText, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX);
-                const labelBoxWidth = symbolKind === 'register' ? labelSize.width : this.portLabelBoxWidth(port);
+                // A gate's pin names are hidden and take no room in its body.
+                const labelBoxWidth = symbolKind === 'register' ? labelSize.width
+                    : symbolKind ? 0
+                        : this.portLabelBoxWidth(port);
                 const gport: GPort = {
                     id: portId,
                     type: direction === 'output' ? WorkflowDiagramTypes.PORT_OUTPUT : WorkflowDiagramTypes.PORT_INPUT,

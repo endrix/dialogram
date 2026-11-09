@@ -85,9 +85,14 @@ it no longer has.
   result; a register's pins are named by what they are (`d`, `en`, `q`), a
   gate's are not named. Sizes and pin rows are `SymbolGeometry`
   (`shared/symbol-geometry.ts`), read by the server to place the pins and by
-  the client (`symbol-views.ts`) to draw the body between them. A symbol the
-  platform does not know is drawn as a box. hdl-sidecar sends these for a
-  statement that synthesises to one cell.
+  the client (`symbol-views.ts`) to draw the body between them; output stubs
+  meet the body's front at any height, a register widens for its pin names
+  and draws a `clk` pin at its wedge, and the whole box takes the pointer. A
+  symbol the platform does not know, or a node with badges (drawn in the
+  header a symbol has none of), is drawn as a box. A symbol has no header
+  label, so it is not renamed by editing one: meant for a read-only
+  producer. hdl-sidecar sends these for a statement that synthesises to one
+  cell.
 
 - **Port bundles are drawn as buses.** The ports of one bundle (a producer's
   `port.group`: a channel's payload with its `valid` and `ready`) are drawn

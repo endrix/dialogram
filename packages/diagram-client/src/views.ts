@@ -680,6 +680,7 @@ function renderEntityNode(
             }
         },
             ...renderSymbolBody(symbol, { width, height }, symbolPinsOf(node.children ?? [], width), operator, caption),
+            ...(isExecuting ? [renderRunRing(width, SymbolGeometry.bodyHeight(symbol, height))] : []),
             ...context.renderChildren(node)
         );
     }

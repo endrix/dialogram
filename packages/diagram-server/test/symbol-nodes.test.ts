@@ -27,15 +27,15 @@ describe('symbol nodes', () => {
         const node = graph.children.find((c: any) => c.id === 'a & b');
         expect(node.size).toEqual(SymbolGeometry.size('and', 2, 1));
         expect(node.args[WorkflowDiagramMetadata.SYMBOL]).toBe('and');
-        expect(node.cssClasses).toContain(WorkflowDiagramCss.NODE_SYMBOL);
         expect(node.children.some((c: any) => c.type === 'comp:header')).toBe(false);
         const pins = ports(node);
         const centre = (p: any) => p.position.y + p.size.height / 2;
         const [a, b] = pins.filter((p: any) => p.position.x < 0);
         expect([centre(a), centre(b)]).toEqual([0, 1].map(k => SymbolGeometry.pinY(node.size.height, 2, k)));
         expect(pins.every((p: any) => p.cssClasses.includes(WorkflowDiagramCss.SYMBOL_PIN))).toBe(true);
-        // A gate's pin names say nothing a wire does not.
+        // A gate's pin names say nothing a wire does not, and take no room.
         expect(pins.every((p: any) => p.children[0].cssClasses.includes(WorkflowDiagramCss.SYMBOL_PIN_LABEL_HIDDEN))).toBe(true);
+        expect(pins.every((p: any) => p.children[0].size.width === 0)).toBe(true);
     });
 
     it('put a mux select below its data, whatever order the producer lists them', () => {
@@ -81,6 +81,51 @@ describe('symbol nodes', () => {
         const node = graph.children.find((c: any) => c.id === 'x');
         expect(node.args[WorkflowDiagramMetadata.SYMBOL]).toBeUndefined();
         expect(node.children.some((c: any) => c.type === 'comp:header')).toBe(true);
+    });
+});
+
+describe('symbol nodes, in the corners', () => {
+    it('put a register clock pin at its wedge, not on a row', () => {
+        const graph = transform([{
+            id: 'n:reg', kind: 'logic', label: 'q', scope: 'root',
+            ports: [port('n:reg', 'q', 'out', ['q']), port('n:reg', 'd', 'in', ['d']), port('n:reg', 'clk', 'in', ['clk'])],
+            meta: { symbol: 'register' }
+        }]);
+        const node = graph.children.find((c: any) => c.args?.[WorkflowDiagramMetadata.SYMBOL] === 'register');
+        expect(node.size.height).toBe(SymbolGeometry.size('register', 1, 1).height);
+        const clk = ports(node).find((p: any) => p.args[WorkflowDiagramMetadata.PORT_NAME] === 'clk');
+        expect(clk.position.y + clk.size.height / 2).toBe(SymbolGeometry.clockY(SymbolGeometry.bodyHeight('register', node.size.height)));
+    });
+
+    it('widen a register for its pin names', () => {
+        const graph = transform([{
+            id: 'n:reg', kind: 'logic', label: 'q', scope: 'root',
+            ports: [port('n:reg', 'q', 'out', ['q']), port('n:reg', 'd', 'in', ['d']), port('n:reg', 'l', 'in', ['aload'])],
+            meta: { symbol: 'register' }
+        }]);
+        const node = graph.children.find((c: any) => c.args?.[WorkflowDiagramMetadata.SYMBOL] === 'register');
+        expect(node.size.width).toBeGreaterThan(SymbolGeometry.size('register', 2, 1).width);
+    });
+
+    it('stay a box with badges, which live in a header', () => {
+        const graph = transform([{
+            id: 'n:and', kind: 'logic', label: 'a & b', scope: 'root',
+            ports: [port('n:and', 'y', 'out', ['y'])],
+            meta: { symbol: 'and', badges: [{ text: '2', kind: 'error' }] }
+        }]);
+        const node = graph.children.find((c: any) => c.id === 'a & b');
+        expect(node.args[WorkflowDiagramMetadata.SYMBOL]).toBeUndefined();
+    });
+
+    it('meet an output stub on the body’s front at any height', () => {
+        const { width, height } = SymbolGeometry.size('and', 2, 2);
+        expect(SymbolGeometry.frontX('and', width, height, height / 2)).toBeCloseTo(width - SymbolGeometry.STUB_PX);
+        expect(SymbolGeometry.frontX('and', width, height, 4)).toBeLessThan(width - SymbolGeometry.STUB_PX);
+        expect(SymbolGeometry.frontX('not', ...Object.values(SymbolGeometry.size('not', 1, 1)) as [number, number], 11))
+            .toBe(SymbolGeometry.size('not', 1, 1).width - SymbolGeometry.STUB_PX);
+        const mux = SymbolGeometry.size('mux', 3, 1);
+        expect(SymbolGeometry.frontX('mux', mux.width, mux.height, mux.height / 2)).toBe(mux.width - SymbolGeometry.STUB_PX);
+        expect(SymbolGeometry.frontX('mux', mux.width, mux.height, 1)).toBeLessThan(mux.width - SymbolGeometry.STUB_PX);
     });
 });
 

@@ -95,8 +95,6 @@ export namespace WorkflowDiagramCss {
     export const NODE_STRUCTURE_IF = 'workflow-node-structure-if';
     export const NODE_STRUCTURE_FOREACH = 'workflow-node-structure-foreach';
     export const NODE_GROUP = 'workflow-node-group';
-    /** A node drawn as a symbol (a gate, a mux, a register): symbol-geometry.ts. */
-    export const NODE_SYMBOL = 'workflow-node-symbol';
     /** A symbol's pin, drawn as its stub. */
     export const SYMBOL_PIN = 'symbol-pin';
     /** A symbol pin's name, shown on a register only. */

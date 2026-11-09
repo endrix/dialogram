@@ -893,6 +893,12 @@ body.vscode-high-contrast-light .node-center-image-light {
    hover or selection, since the stub is where the wire lands.
    ============================================ */
 
+.symbol-node .symbol-hit {
+    fill: transparent;
+    stroke: none;
+    pointer-events: all;
+}
+
 .symbol-node .symbol-body {
     fill: var(--workflow-node-fill);
     stroke: var(--vscode-foreground, #cccccc);

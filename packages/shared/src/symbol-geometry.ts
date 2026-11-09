@@ -65,13 +65,30 @@ export namespace SymbolGeometry {
         return typeof value === 'string' && (KINDS as readonly string[]).includes(value);
     }
 
-    /** The node's box: the body, its stubs, and a register's name under it. */
-    export function size(kind: SymbolKind, inputs: number, outputs: number): { width: number; height: number } {
+    /** The node's box: the body, its stubs, and a register's name under it.
+     * `bodyWidth` widens a body past its kind's (a register's pin names). */
+    export function size(kind: SymbolKind, inputs: number, outputs: number, bodyWidth?: number): { width: number; height: number } {
         const body = BODY[kind];
         // A register keeps a row under its inputs for the clock wedge.
         const rows = Math.max(inputs + (kind === 'register' ? 1 : 0), outputs, 1);
         const height = Math.max(body.minHeight, (rows - 1) * PIN_PITCH_PX + 2 * PIN_MARGIN_PX);
-        return { width: body.width + 2 * STUB_PX, height: height + (kind === 'register' ? CAPTION_HEIGHT_PX : 0) };
+        const width = Math.max(body.width, bodyWidth ?? 0);
+        return { width: width + 2 * STUB_PX, height: height + (kind === 'register' ? CAPTION_HEIGHT_PX : 0) };
+    }
+
+    /** The height the body is drawn at: the box less a register's caption. */
+    export function bodyHeight(kind: SymbolKind, boxHeight: number): number {
+        return kind === 'register' ? boxHeight - CAPTION_HEIGHT_PX : boxHeight;
+    }
+
+    /** The y of pin `index` of `count` on one side, centred on a height. */
+    export function pinY(bodyHeightPx: number, count: number, index: number): number {
+        return bodyHeightPx / 2 + (index - (count - 1) / 2) * PIN_PITCH_PX;
+    }
+
+    /** Whether a port is a register's clock: drawn at the wedge, not on a stub row. */
+    export function isClockPin(kind: SymbolKind, pins: readonly string[] | undefined): boolean {
+        return kind === 'register' && !!pins?.includes('clk');
     }
 
     /**
@@ -93,6 +110,8 @@ export namespace SymbolGeometry {
 
     /** Gap between a register's pin name and the body's edge. */
     export const PIN_NAME_INSET_PX = 3;
+    /** Least gap between a register's input names and its output names. */
+    export const PIN_NAME_SPACING_PX = 6;
 
     /**
      * The gap between a symbol pin's box and its name (`portLabelX`'s), so
@@ -102,33 +121,74 @@ export namespace SymbolGeometry {
         return STUB_PX + PIN_NAME_INSET_PX - portBoxWidth / 2;
     }
 
-    /** The height the body is drawn at: the box less a register's caption. */
-    export function bodyHeight(kind: SymbolKind, boxHeight: number): number {
-        return kind === 'register' ? boxHeight - CAPTION_HEIGHT_PX : boxHeight;
+    /** A register's body wide enough for its widest input and output names side by side. */
+    export function registerBodyWidth(widestInput: number, widestOutput: number): number {
+        return Math.max(BODY.register.width, widestInput + widestOutput + 2 * PIN_NAME_INSET_PX + PIN_NAME_SPACING_PX);
     }
 
-    /** The y of pin `index` of `count` on one side, centred on the body. */
-    export function pinY(bodyHeightPx: number, count: number, index: number): number {
-        return bodyHeightPx / 2 + (index - (count - 1) / 2) * PIN_PITCH_PX;
+    /** How far an OR's (an XOR's, an XNOR's) back curves in at its middle. */
+    export function backDepth(kind: SymbolKind): number {
+        return BODY[kind].width * BACK_CURVE;
+    }
+
+    /**
+     * The back curve of an OR from top to bottom at `x`: a quadratic with its
+     * control at mid-height, `backDepth` in. The body's outline, an XOR's
+     * second line and the stubs' ends all follow it.
+     */
+    export function backCurvePath(kind: SymbolKind, x: number, bodyHeightPx: number): string {
+        return `M ${x} 0 Q ${x + backDepth(kind)} ${bodyHeightPx / 2} ${x} ${bodyHeightPx}`;
     }
 
     /**
      * Where the body's back is at height `y` (relative to the body's top), as
-     * an x in the node's box: the stub of an input pin runs to here. Straight
-     * for most; curved in for an OR, an XOR and an XNOR, whose second back
-     * line is where an XOR's pins end.
+     * an x in the node's box: an input pin's stub runs to here. Straight for
+     * most; on the curve for an OR, and on the second back line (the same
+     * curve, at the stub's end) for an XOR and an XNOR.
      */
     export function backX(kind: SymbolKind, bodyHeightPx: number, y: number): number {
-        const left = STUB_PX + (kind === 'xor' || kind === 'xnor' ? XOR_GAP_PX : 0);
         if (kind !== 'or' && kind !== 'xor' && kind !== 'xnor') {
             return STUB_PX;
         }
         const t = Math.min(1, Math.max(0, y / bodyHeightPx));
-        const depth = BODY[kind].width * BACK_CURVE;
-        // A quadratic from the top to the bottom with its control at mid-height,
-        // `depth` in: x(t) = left + 2t(1-t)·depth. An XOR's pins end on its
-        // second back line, the same curve `XOR_GAP_PX` behind.
-        const curve = 2 * t * (1 - t) * depth;
-        return kind === 'or' ? left + curve : left - XOR_GAP_PX + curve;
+        return STUB_PX + 2 * t * (1 - t) * backDepth(kind);
+    }
+
+    /**
+     * Where the body's front is at height `y`, as an x in the node's box: an
+     * output pin's stub runs from here. On the half-ellipse for an AND, the
+     * front curve for an OR, the slant for a NOT and a mux, past the bubble
+     * for a NOT and an XNOR.
+     */
+    export function frontX(kind: SymbolKind, width: number, bodyHeightPx: number, y: number): number {
+        const bubble = kind === 'not' || kind === 'xnor' ? 2 * BUBBLE_RADIUS_PX : 0;
+        const right = width - STUB_PX;
+        const front = right - bubble;
+        const left = STUB_PX + (kind === 'xor' || kind === 'xnor' ? XOR_GAP_PX : 0);
+        const mid = bodyHeightPx / 2;
+        // How far from the middle, 0 there, 1 at the top or bottom.
+        const off = Math.min(1, Math.abs(y - mid) / Math.max(mid, 1));
+        if (bubble && off === 0) {
+            return right;
+        }
+        switch (kind) {
+            case 'and':
+                return left + (front - left) / 2 * (1 + Math.sqrt(1 - off * off));
+            case 'or':
+            case 'xor':
+            case 'xnor':
+                // The two front quadratics meet at the tip; a parabola is near enough.
+                return left + (front - left) * (1 - 0.65 * off * off);
+            case 'not':
+                return left + (front - left) * (1 - off);
+            case 'mux': {
+                // Straight between 20% and 80% of its height, slanting back above and below.
+                const edge = 0.2 * bodyHeightPx;
+                const fromEnd = Math.min(y, bodyHeightPx - y);
+                return fromEnd >= edge ? right : left + (right - left) * Math.max(0, fromEnd) / edge;
+            }
+            default:
+                return right;
+        }
     }
 }

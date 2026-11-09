@@ -136,12 +136,15 @@ export function bundlePorts(
             // Not a port name: a member may be named exactly like its bundle
             // (a channel's payload), and the two must not share an id.
             const busId = `bus:${node.id}:${busKey}`;
+            // On a node drawn as a symbol, the bus sits where its members' pins do.
+            const memberPins = [...new Set(members.flatMap(m => m.pins ?? []))];
             ports.push({
                 id: busId,
                 name: group,
                 direction: side === 'EAST' ? 'out' : 'in',
                 side: side.toLowerCase(),
                 group,
+                ...(memberPins.length ? { pins: memberPins } : {}),
                 bus: { group, key: busKey, expanded, members: members.length }
             });
             for (const member of members) {

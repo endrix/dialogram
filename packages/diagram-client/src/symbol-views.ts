@@ -49,12 +49,10 @@ export function symbolPath(kind: SymbolKind, width: number, height: number): str
             return `M ${left} 0 H ${left + w / 2} A ${w / 2} ${mid} 0 0 1 ${left + w / 2} ${height} H ${left} Z`;
         case 'or':
         case 'xor':
-        case 'xnor': {
-            const depth = SymbolGeometry.BODY[kind].width * SymbolGeometry.BACK_CURVE;
-            return `M ${left} 0 Q ${left + depth} ${mid} ${left} ${height}`
+        case 'xnor':
+            return SymbolGeometry.backCurvePath(kind, left, height)
                 + ` Q ${left + w * 0.65} ${height} ${right} ${mid}`
                 + ` Q ${left + w * 0.65} 0 ${left} 0 Z`;
-        }
         case 'not':
             return `M ${left} 0 L ${right} ${mid} L ${left} ${height} Z`;
         case 'mux':
@@ -80,14 +78,13 @@ export function renderSymbolBody(
     const width = size.width;
     const stub = SymbolGeometry.STUB_PX;
     const out: VNode[] = [
+        // The whole box takes the pointer, not only the shape: a click beside
+        // a mux's narrow end or in an OR's back selects the node.
+        svg('rect', { class: { 'symbol-hit': true }, attrs: { x: 0, y: 0, width, height } }),
         svg('path', { class: { 'node-body': true, 'symbol-body': true }, attrs: { d: symbolPath(kind, width, height) } })
     ];
     if (kind === 'xor' || kind === 'xnor') {
-        const depth = SymbolGeometry.BODY[kind].width * SymbolGeometry.BACK_CURVE;
-        out.push(svg('path', {
-            class: { 'symbol-line': true },
-            attrs: { d: `M ${stub} 0 Q ${stub + depth} ${height / 2} ${stub} ${height}` }
-        }));
+        out.push(svg('path', { class: { 'symbol-line': true }, attrs: { d: SymbolGeometry.backCurvePath(kind, stub, height) } }));
     }
     if (kind === 'not' || kind === 'xnor') {
         const r = SymbolGeometry.BUBBLE_RADIUS_PX;
@@ -114,7 +111,7 @@ export function renderSymbolBody(
     for (const y of pins.east) {
         out.push(svg('line', {
             class: { 'symbol-stub': true },
-            attrs: { x1: width - stub, y1: y, x2: width, y2: y }
+            attrs: { x1: SymbolGeometry.frontX(kind, width, height, y), y1: y, x2: width, y2: y }
         }));
     }
     if (kind === 'operator' && operator) {
