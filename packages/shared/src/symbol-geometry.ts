@@ -41,7 +41,7 @@ export namespace SymbolGeometry {
     export const XOR_GAP_PX = 5;
     /** The bubble on a NOT's or an XNOR's output. */
     export const BUBBLE_RADIUS_PX = 3;
-    /** Room under a register for its name. */
+    /** Room under a symbol for its caption: a register's name, or the one its producer gives. */
     export const CAPTION_HEIGHT_PX = 14;
 
     /** The order pins are placed in on a side: data, then controls, then the result. */
@@ -65,20 +65,28 @@ export namespace SymbolGeometry {
         return typeof value === 'string' && (KINDS as readonly string[]).includes(value);
     }
 
-    /** The node's box: the body, its stubs, and a register's name under it.
-     * `bodyWidth` widens a body past its kind's (a register's pin names). */
-    export function size(kind: SymbolKind, inputs: number, outputs: number, bodyWidth?: number): { width: number; height: number } {
+    /** The node's box: the body, its stubs, and its caption under it (a
+     * register always has one). `bodyWidth` widens a body past its kind's (a
+     * register's pin names). */
+    export function size(kind: SymbolKind, inputs: number, outputs: number, bodyWidth?: number,
+        captioned = kind === 'register'): { width: number; height: number } {
         const body = BODY[kind];
         // A register keeps a row under its inputs for the clock wedge.
         const rows = Math.max(inputs + (kind === 'register' ? 1 : 0), outputs, 1);
         const height = Math.max(body.minHeight, (rows - 1) * PIN_PITCH_PX + 2 * PIN_MARGIN_PX);
         const width = Math.max(body.width, bodyWidth ?? 0);
-        return { width: width + 2 * STUB_PX, height: height + (kind === 'register' ? CAPTION_HEIGHT_PX : 0) };
+        return { width: width + 2 * STUB_PX, height: height + (captioned ? CAPTION_HEIGHT_PX : 0) };
     }
 
-    /** The height the body is drawn at: the box less a register's caption. */
-    export function bodyHeight(kind: SymbolKind, boxHeight: number): number {
-        return kind === 'register' ? boxHeight - CAPTION_HEIGHT_PX : boxHeight;
+    /** The height the body is drawn at: the box less its caption's room. */
+    export function bodyHeight(kind: SymbolKind, boxHeight: number, captioned = kind === 'register'): number {
+        return captioned ? boxHeight - CAPTION_HEIGHT_PX : boxHeight;
+    }
+
+    /** Whether a symbol has a caption under it: a register always, another
+     * symbol when it has a caption to show. */
+    export function isCaptioned(kind: SymbolKind, caption: string | undefined): boolean {
+        return kind === 'register' || !!caption;
     }
 
     /** The y of pin `index` of `count` on one side, centred on a height. */

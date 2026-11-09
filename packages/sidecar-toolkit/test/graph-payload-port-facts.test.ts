@@ -18,7 +18,7 @@ const CFG: SidecarRuntimeConfig = {
 };
 
 describe('graph payload port facts', () => {
-    it('passes a port\'s role, bundle, side and width through to the document', () => {
+    it('passes a port\'s role, bundle, side, width and symbol pins through to the document', () => {
         const doc = new SidecarModelSource(CFG).graphPayloadToDoc({
             network: 'top',
             nodes: [{
@@ -27,7 +27,8 @@ describe('graph payload port facts', () => {
                     { id: 'p:valid', name: 's_valid', direction: 'in', type: 'logic', group: 's', width: 1 },
                     { id: 'p:ready', name: 's_ready', direction: 'out', type: 'logic', group: 's', side: 'west' },
                     { id: 'p:sda', name: 'sda', direction: 'out', type: 'wire', role: 'bidirectional' },
-                    { id: 'p:plain', name: 'q', direction: 'out', type: 'logic', side: 42, width: 'wide' }
+                    { id: 'p:plain', name: 'q', direction: 'out', type: 'logic', side: 42, width: 'wide', pins: ['q', 3] },
+                    { id: 'p:d', name: 'din', direction: 'in', type: 'logic', pins: ['d'] }
                 ],
                 metadata: {}
             }],
@@ -38,8 +39,10 @@ describe('graph payload port facts', () => {
         expect(ports[0].side).toBeUndefined();
         expect(ports[1]).toMatchObject({ name: 's_ready', direction: 'out', group: 's', side: 'west' });
         expect(ports[2]).toMatchObject({ name: 'sda', role: 'bidirectional' });
+        expect(ports[4]).toMatchObject({ name: 'din', pins: ['d'] });
         // Values of the wrong type are dropped, not passed along.
         expect(ports[3].side).toBeUndefined();
         expect(ports[3].width).toBeUndefined();
+        expect(ports[3].pins).toBeUndefined();
     });
 });

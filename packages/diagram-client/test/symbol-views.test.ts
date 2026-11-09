@@ -55,4 +55,19 @@ describe('symbol views', () => {
         const reg = renderSymbolBody('register', SymbolGeometry.size('register', 2, 1), { west: [], east: [] }, undefined, 'count') as unknown as Drawn[];
         expect(texts(reg)).toEqual(['count']);
     });
+
+    it('draw a captioned mux’s body above its caption', () => {
+        const size = SymbolGeometry.size('mux', 2, 1, undefined, true);
+        const nodes = renderSymbolBody('mux', size, { west: [], east: [] }, undefined, 'u_mux') as unknown as Drawn[];
+        const body = SymbolGeometry.bodyHeight('mux', size.height, true);
+        expect(body).toBe(size.height - SymbolGeometry.CAPTION_HEIGHT_PX);
+        const hit = nodes.find(n => n.props?.class?.['symbol-hit']);
+        expect(hit?.props.attrs.height).toBe(body);
+        const caption = nodes.find(n => n.props?.class?.['symbol-caption']);
+        expect(caption?.children).toEqual(['u_mux']);
+        expect(caption?.props.attrs.y).toBe(body + 3);
+        // Without one, the body is the whole box.
+        const bare = renderSymbolBody('mux', SymbolGeometry.size('mux', 2, 1), { west: [], east: [] }) as unknown as Drawn[];
+        expect(bare.find(n => n.props?.class?.['symbol-hit'])?.props.attrs.height).toBe(SymbolGeometry.size('mux', 2, 1).height);
+    });
 });
