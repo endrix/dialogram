@@ -42,6 +42,25 @@ platform API version.
 
 ### Added
 
+- **Contribution points in the property panel and the annotation wizard, and
+  the agent workflow UI as a module of its own.** `AnnotationEditor` (an
+  annotation card's own controls, Save's text and merge, a quick-add button),
+  `NodeSectionContribution` (Basic Info rows, a section after Annotations
+  and one last, preparation before a node draws, in-place updates while the
+  model changes, a one-time install) and `AnnotationTemplate` (a wizard
+  entry that composes the annotation's text), all exported from
+  `@dialogram/diagram-client`. A product binds them in a feature module
+  passed to `startStockDiagram({ features })`; each keeps one contribution
+  per name or id, the last binding winning, so a product can replace a
+  stock one. wfpy's `@tool`/`@agent` editors, agent sections and
+  `@tool`/`@viewer` templates moved onto them (`src/agent-ui/`, #133–#135)
+  and are bound together by `agentUiModule`, imported by path as
+  `@dialogram/diagram-client/agent-ui/index` (#136). The stock bundle still
+  binds them; a product's bundle that loads `agentUiModule` too draws
+  everything once. On the way: a node's discovered skills are no longer
+  replaced by the model's older snapshot when discovery answers, and the
+  wizard escapes a newline or tab in what it quotes.
+
 - **A product whose CLI has no `run` says so: `cliRuns: false`.** The
   toolkit then registers no run driver and the chat offers no resume. The
   webview learns it from a derived `clientBehavior.runDriver` (like

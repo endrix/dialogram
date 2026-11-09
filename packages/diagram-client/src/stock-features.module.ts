@@ -13,10 +13,7 @@ import { ContainerModule } from 'inversify';
 import { ChangeBoundsTool, TYPES, bindAsService, configureActionHandler } from '@eclipse-glsp/client';
 import { MoveAction } from '@eclipse-glsp/sprotty';
 import { PropertyPanel } from './property-panel';
-import { AnnotationEditor } from './annotation-editor';
-import { stockAnnotationEditors, stockAnnotationTemplates, stockNodeSections } from './agent-ui';
-import { AnnotationTemplate } from './annotation-template';
-import { NodeSectionContribution } from './node-section';
+import { bindAgentUi } from './agent-ui';
 import { ChatPanel } from './chat-panel-integrated';
 import { clientBehavior } from './profile';
 import { WorkflowNavigationUi } from './navigation-ui';
@@ -75,20 +72,11 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     bind(PropertyPanel).toSelf().inSingletonScope();
     bind(TYPES.ISelectionListener).toService(PropertyPanel);
     bind(TYPES.IGModelRootListener).toService(PropertyPanel);
-    // The panel's annotation editors (`@tool`, `@agent`); a product's feature
-    // module binds more the same way.
-    for (const editor of stockAnnotationEditors()) {
-        bind(AnnotationEditor).toConstantValue(editor);
-    }
-    // And the agent sections of a node's panel: Basic Info's Skill row,
-    // Agent Tools and the live Agent Context.
-    for (const sections of stockNodeSections()) {
-        bind(NodeSectionContribution).toConstantValue(sections);
-    }
-    // And the annotation wizard's templates (`@tool`, `@viewer`).
-    for (const template of stockAnnotationTemplates()) {
-        bind(AnnotationTemplate).toConstantValue(template);
-    }
+    // The agent workflow UI (agent-ui/): the panel's `@tool` and `@agent`
+    // editors, the agent sections of a node's panel (Basic Info's Skill row,
+    // Agent Tools, the live Agent Context) and the wizard's `@tool` and
+    // `@viewer` templates. A product's module binds its own the same way.
+    bindAgentUi(bind);
 
     // The hierarchy outline, fed by the root model's `wf:hierarchy`. Shown only
     // when the product navigates nested workflows in place and the model

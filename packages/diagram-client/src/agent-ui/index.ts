@@ -1,11 +1,17 @@
 /**
- * The agent workflow UI the stock client ships: the `@tool` and `@agent`
- * annotation editors, the agent sections of a node's panel, and the wizard's
- * `@tool` and `@viewer` templates.
+ * The agent workflow UI: the `@tool` and `@agent` annotation editors, the agent
+ * sections of a node's panel, and the wizard's `@tool` and `@viewer` templates.
+ *
+ * `agentUiModule` binds all of it. A product's own webview bundle passes it to
+ * `startStockDiagram({ features: [agentUiModule] })` (imported by path,
+ * `@dialogram/diagram-client/agent-ui/index`); the stock feature module binds
+ * the same today, and each contribution point keeps the last binding per
+ * name or id, so binding it twice draws everything once.
  */
-import type { AnnotationEditor } from '../annotation-editor';
-import type { AnnotationTemplate } from '../annotation-template';
-import type { NodeSectionContribution } from '../node-section';
+import { ContainerModule, type interfaces } from 'inversify';
+import { AnnotationEditor } from '../annotation-editor';
+import { AnnotationTemplate } from '../annotation-template';
+import { NodeSectionContribution } from '../node-section';
 import { AgentAnnotationEditor } from './agent-editor';
 import { AgentNodeSections } from './agent-sections';
 import { ToolAnnotationEditor } from './tool-editor';
@@ -26,3 +32,19 @@ export function stockNodeSections(): NodeSectionContribution[] {
 export function stockAnnotationTemplates(): AnnotationTemplate[] {
     return [new ToolAnnotationTemplate(), new ViewerAnnotationTemplate()];
 }
+
+/** Bind fresh instances of all of it into a feature module. */
+export function bindAgentUi(bind: interfaces.Bind): void {
+    for (const editor of stockAnnotationEditors()) {
+        bind(AnnotationEditor).toConstantValue(editor);
+    }
+    for (const sections of stockNodeSections()) {
+        bind(NodeSectionContribution).toConstantValue(sections);
+    }
+    for (const template of stockAnnotationTemplates()) {
+        bind(AnnotationTemplate).toConstantValue(template);
+    }
+}
+
+/** The agent workflow UI as a feature module of its own. */
+export const agentUiModule = new ContainerModule(bind => bindAgentUi(bind));
