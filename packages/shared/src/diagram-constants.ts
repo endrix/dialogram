@@ -32,11 +32,14 @@ export const WorkflowDiagramConstants = {
     // computing node width.
     PORT_LABEL_PADDING_PX: 8,
 
-    // The toggle in front of a bus port's name, and the gap between it and the
-    // name. A member of an open bus is indented by the same slot, so its name
-    // lines up under the bundle's.
-    PORT_BUS_TOGGLE_PX: 9,
-    PORT_BUS_TOGGLE_GAP_PX: 3,
+    // A bus port is a larger dot than a port, with its toggle (+ or −) inside.
+    // Its outer edge stays on the port's anchor, so it reaches into the node
+    // by twice the radius less the port's width; its name keeps an inset that
+    // clears it. A member of an open bus keeps a slot for its rail, so its
+    // name sits under the bundle's, one step in.
+    PORT_BUS_DOT_RADIUS_PX: 6,
+    PORT_BUS_LABEL_INSET_PX: 5,
+    PORT_BUS_RAIL_SLOT_PX: 12,
 
     // Vertical band reserved below a node for its italic type label (the
     // `wf:footerTypeLabel`), when it has one.

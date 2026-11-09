@@ -870,16 +870,19 @@ body.vscode-high-contrast-light .node-center-image-light {
 }
 
 /* ============================================
-   Port styles (rounded squares)
+   Port styles (dots)
+
+   A port is a dot on the node's edge, ringed in the editor's background so
+   the edge running into it stays apart from it, as a group frame's dots are.
+   Which way it points is the side it sits on and the edge's arrow.
    ============================================ */
 
 .workflow-port .port-shape {
     /* Theme-aware neutral ports: light on dark themes, dark on light themes. */
     fill: var(--vscode-foreground, #cccccc);
     fill-opacity: 0.85;
-    /* Direction is encoded via stroke color (see input/output rules below). */
-    stroke: var(--vscode-panel-border, #808080);
-    stroke-width: 1px;
+    stroke: var(--vscode-editor-background, #1e1e1e);
+    stroke-width: 1.5px;
     cursor: crosshair;
 }
 
@@ -890,17 +893,9 @@ body.vscode-high-contrast-light .node-center-image-light {
     pointer-events: all;
 }
 
-.workflow-port.input-port .port-shape {
-    /* Two-tone greys for direction: input is slightly stronger */
-    stroke: var(--vscode-descriptionForeground, #8b8b8b);
-}
-
-.workflow-port.output-port .port-shape {
-    /* Output is a bit lighter/more muted than input */
-    stroke: var(--vscode-disabledForeground, #6f6f6f);
-}
-
 .workflow-port .port-shape.array-port {
+    /* The ring is the background elsewhere; an array port's is drawn, dashed. */
+    stroke: var(--vscode-descriptionForeground, #8b8b8b);
     stroke-width: 2px;
     stroke-dasharray: 2, 1;
 }
@@ -926,6 +921,8 @@ body.vscode-high-contrast-light .node-center-image-light {
 
 /* Port compatibility highlighting during connection */
 .workflow-port.compatible .port-shape {
+    /* The dot itself turns green: a ring alone is thin on a dot this small. */
+    fill: var(--vscode-charts-green, #89d185);
     stroke: var(--vscode-charts-green, #89d185);
     stroke-width: 2px;
     animation: pulse 1s infinite;
@@ -3299,8 +3296,8 @@ details[open] > summary .agent-chat-expand-arrow {
 /* ── Buses ───────────────────────────────────────────────────────────────
    A bundle of ports drawn as one port, and the one edge that stands for
    every connection between two of them. The edge is drawn wider, so a reader
-   can tell it carries a bundle rather than one signal; the port wears the
-   same weight. The toggle in front of the name opens the bundle. */
+   can tell it carries a bundle rather than one signal; the port is a larger
+   dot with its toggle inside, which opens the bundle. */
 /* An edge's line is `.workflow-edge .edge-line` at 3.5px, re-asserted for
    selected and hovered edges; the bus is the same selectors, inside the bus.
 
@@ -3315,29 +3312,28 @@ details[open] > summary .agent-chat-expand-arrow {
     stroke-width: var(--workflow-edge-bus-width, 4.5px);
 }
 
-.workflow-port.workflow-port-bus .port-shape {
-    stroke-width: 2px;
-}
-
 .port-bus-toggle {
     cursor: pointer;
     pointer-events: all;
 }
 
-.port-bus-toggle .port-bus-toggle-box {
-    fill: var(--vscode-editor-background, #1e1e1e);
-    stroke: var(--vscode-descriptionForeground, #8b8b8b);
-    stroke-width: 1px;
+.workflow-port .port-shape.port-bus-dot {
+    fill-opacity: 1;
+    cursor: pointer;
 }
 
+/* The mark is cut out of the dot: drawn in the background colour. */
 .port-bus-toggle .port-bus-toggle-mark {
-    stroke: var(--vscode-editor-foreground, #cccccc);
-    stroke-width: 1.25px;
+    stroke: var(--vscode-editor-background, #1e1e1e);
+    stroke-width: 1.5px;
     stroke-linecap: round;
+    pointer-events: none;
 }
 
-.port-bus-toggle:hover .port-bus-toggle-box {
+.port-bus-toggle:hover .port-shape.port-bus-dot {
+    /* The ring, not the fill: a product's fill (a role colour) stays. */
     stroke: var(--vscode-focusBorder, #007fd4);
+    stroke-width: 2px;
 }
 
 .port-bus-rail {

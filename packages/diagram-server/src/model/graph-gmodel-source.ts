@@ -1102,13 +1102,16 @@ export class GraphGModelSource {
     }
 
     /**
-     * The width of a port's label box: its name, and for a bus or a member of
-     * an open one the toggle's slot in front of it.
+     * The width of a port's label box: its name, and in front of it the inset
+     * a bus's larger dot needs, or a member's rail slot.
      */
     private portLabelBoxWidth(port: PyGraphPort): number {
         const text = this.estimateLabelSize(port.name, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX).width;
-        return port.bus || port.busMember
-            ? text + WorkflowDiagramConstants.PORT_BUS_TOGGLE_PX + WorkflowDiagramConstants.PORT_BUS_TOGGLE_GAP_PX
+        if (port.bus) {
+            return text + WorkflowDiagramConstants.PORT_BUS_LABEL_INSET_PX;
+        }
+        return port.busMember
+            ? text + WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX
             : text;
     }
 
