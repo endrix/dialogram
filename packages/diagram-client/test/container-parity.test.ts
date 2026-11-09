@@ -32,8 +32,7 @@
  * states, and the read-only view marker (hides the palette's tools while the view shown is
  * read-only, bound to itself and as a model-root listener), and the selection trace (its listener,
  * bound to itself and as a selection listener, and the `SelectionTraceFeedbackCommand` that draws
- * the path), and the `@viewer` node opener (`ViewerNodeOpener`, bound as a constant under
- * `NodeOpener`) — plus one change: `label:boundary:type` is bound to
+ * the path) — plus one change: `label:boundary:type` is bound to
  * the non-editable `BoundaryLabel`, because editing it renamed the port.
  * The oracle still does its job: it fails on any binding this composition gains
  * or loses, and updating the fixture is the deliberate act of accepting one.

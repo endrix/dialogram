@@ -18,8 +18,6 @@ import { clientBehavior } from './profile';
 import { WorkflowNavigationUi } from './navigation-ui';
 import { WorkflowNetworkNavigationMouseListener } from './network-navigation-mouse-listener';
 import { ViewerMouseListener } from './viewer-mouse-listener';
-import { NodeOpener } from './node-opener';
-import { ViewerNodeOpener } from './viewer-node-opener';
 import { EdgeOpenMouseListener } from './edge-open-mouse-listener';
 import { WhitespaceRootPropertiesMouseListener } from './whitespace-root-properties-mouse-listener';
 import { WorkflowElkLiveDragRouter } from './elk-live-drag-router';
@@ -116,9 +114,6 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     // Double-click on a node: what a product's openers open for it, else its
     // definition (every product relies on the latter).
     bindAsService(context, TYPES.MouseListener, ViewerMouseListener);
-    // What a double-click on a `@viewer` task opens (its last tokens), until
-    // the product that has `@viewer` binds it in its own bundle.
-    bind(NodeOpener).toConstantValue(new ViewerNodeOpener());
 
     // Double-click on diagram whitespace to show root/workflow properties.
     bindAsService(context, TYPES.MouseListener, WhitespaceRootPropertiesMouseListener);

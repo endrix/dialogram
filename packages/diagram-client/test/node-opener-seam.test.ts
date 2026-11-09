@@ -2,8 +2,7 @@
  * The contribution point for what a double-click on a node opens
  * (`node-opener.ts`): an opener a product binds answers first, an opener that
  * leaves the node lets the platform open its definition, and the stock
- * module binds the `@viewer` opener until the product that has `@viewer`
- * binds it itself.
+ * module binds none.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { Container, ContainerModule } from 'inversify';
@@ -94,15 +93,20 @@ describe('the openers the listener is given', () => {
     // The stock module binds the listener as a mouse listener; resolve one the way the container builds it.
     const ids = (c: Container) => (c.resolve(ViewerMouseListener) as any).nodeOpeners().map((o: NodeOpener) => o.id);
 
-    it('are the stock @viewer opener, then a product’s', () => {
-        expect(ids(container())).toEqual(['viewer']);
-        expect(ids(container(new ContainerModule(bind => { bind(NodeOpener).toConstantValue(opener('mine', undefined)); }))))
-            .toEqual(['viewer', 'mine']);
+    it('are none in the stock diagram, and those a product binds, in binding order', () => {
+        expect(ids(container())).toEqual([]);
+        expect(ids(container(
+            new ContainerModule(bind => { bind(NodeOpener).toConstantValue(opener('viewer', undefined)); }),
+            new ContainerModule(bind => { bind(NodeOpener).toConstantValue(opener('mine', undefined)); })
+        ))).toEqual(['viewer', 'mine']);
     });
 
-    it('take a product’s viewer opener in place of the stock one', () => {
+    it('take a later module’s opener in place of an earlier one’s of the same id', () => {
         const mine = opener('viewer', undefined);
-        const c = container(new ContainerModule(bind => { bind(NodeOpener).toConstantValue(mine); }));
+        const c = container(
+            new ContainerModule(bind => { bind(NodeOpener).toConstantValue(opener('viewer', [])); }),
+            new ContainerModule(bind => { bind(NodeOpener).toConstantValue(mine); })
+        );
         expect((c.resolve(ViewerMouseListener) as any).nodeOpeners()).toEqual([mine]);
     });
 
