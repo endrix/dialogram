@@ -44,7 +44,7 @@ import { clientBehavior } from './profile';
 import { captionIsShared, carriedTextOf } from './edge-caption-sharing';
 import { isEdgeHiddenForDrag, isIncidentEdgeInActiveDrag, routeReachesPorts } from './elk-live-drag-router';
 import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide } from '@dialogram/shared';
-import { WorkflowDiagramConstants } from '@dialogram/shared';
+import { WorkflowDiagramConstants, estimatePortLabelSize } from '@dialogram/shared';
 
 /** Walk to the model root; the drag-active window is tracked per root. */
 function rootOfEdge(element: any): any {
@@ -962,21 +962,20 @@ export class BoundaryOutputNodeView extends ShapeView {
 }
 
 /**
- * A port's dot: a circle across the port's box, its outer edge on the port's
- * anchor. A bus port's is larger, with its toggle inside, `+` while the
- * bundle is closed and `−` while it is open, drawn as lines so it needs no
- * font; pressing it opens or closes the bundle (port-bus-toggle.ts). Larger,
- * it keeps its outer edge on the anchor and reaches further into the node.
+ * A port's dot: a circle across the port's box, which the server centres on
+ * the node's border, so the dot sits on the border and its rim on the port's
+ * anchor. A bus port's box is its larger dot; the toggle is inside, `+` while
+ * the bundle is closed and `−` while it is open, drawn as lines so it needs
+ * no font; pressing it opens or closes the bundle (port-bus-toggle.ts).
  */
 function portDot(port: any, width: number, height: number, shapeClasses: Record<string, boolean>): VNode {
+    const cx = width / 2;
     const cy = height / 2;
     const group = port?.args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP] as string | undefined;
     if (typeof group !== 'string') {
-        return svg('circle', { class: shapeClasses, attrs: { cx: width / 2, cy, r: Math.max(width, height) / 2 } });
+        return svg('circle', { class: shapeClasses, attrs: { cx, cy, r: Math.max(width, height) / 2 } });
     }
     const r = WorkflowDiagramConstants.PORT_BUS_DOT_RADIUS_PX;
-    const east = portSideOf(port, port?.args?.[WorkflowDiagramMetadata.PORT_DIRECTION] === 'output') === 'EAST';
-    const cx = east ? width - r : r;
     const arm = r - 2.5;
     const expanded = port?.args?.[WorkflowDiagramMetadata.PORT_BUS_EXPANDED] === true;
     const members = port?.args?.[WorkflowDiagramMetadata.PORT_BUS_MEMBERS];
@@ -2101,16 +2100,8 @@ export class WorkflowLabelView implements IView {
             // For output labels with text-anchor:end, the text "ends" at x.
             // ELK positions the label box so that its RIGHT edge is at the port.
             // So we need to set x = labelWidth so text ends at the right edge of the box.
-            const estimateLabelSizeFallback = (text: string): { width: number; height: number } => {
-                // Keep aligned with server-side fallback in WorkflowDiagramModule.applyDeterministicPortLabelPositions.
-                const fontSizePx = WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX;
-                const avgCharWidth = fontSizePx * 0.7;
-                const padding = 3;
-                return {
-                    width: Math.max(1, Math.ceil(text.length * avgCharWidth + padding * 2)),
-                    height: Math.max(1, Math.ceil(fontSizePx * 1.25)),
-                };
-            };
+            // The same estimate the server sized the label with, until the client has measured it.
+            const estimateLabelSizeFallback = estimatePortLabelSize;
 
             const labelWRaw = label.size?.width ?? label.bounds?.width ?? 0;
             const labelHRaw = label.size?.height ?? label.bounds?.height ?? 0;

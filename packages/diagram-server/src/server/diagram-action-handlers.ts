@@ -50,6 +50,7 @@ import {
     portSide
 } from '@dialogram/shared';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
+import { placePortLabel, placePortLabels, portLabelGapOf } from './port-labels';
 import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
 import {
     WorkflowRerouteEdgesAvoidOverlapsOperationHandler,
@@ -291,7 +292,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
 
         // Persisted-layout reopen path typically skips ELK, which means port-label positions
         // won't be updated by the layout engine. Ensure stable, deterministic placement.
-        this.applyDeterministicPortLabelPositions(modelState.root);
+        placePortLabels(modelState.root);
 
         const root = serializer.createSchema(modelState.root);
 
@@ -314,79 +315,6 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             result.push(...validationActions);
         }
         return result;
-    }
-
-    private applyDeterministicPortLabelPositions(root: GModelRoot): void {
-        const portLabelGapPx = (() => {
-            const raw = (root as any)?.args?.['cal:portLabelGapPx'];
-            const n = typeof raw === 'number' ? raw : Number(raw);
-            return Number.isFinite(n) ? n : WorkflowDiagramConstants.PORT_LABEL_GAP_PX;
-        })();
-
-        const estimateLabelSizeFallback = (text: string): { width: number; height: number } => {
-            // Keep aligned with WorkflowDiagramModelSource sizing.
-            const fontSizePx = WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX;
-            const avgCharWidth = fontSizePx * 0.7;
-            const padding = 3;
-            return {
-                width: Math.max(1, Math.ceil(text.length * avgCharWidth + padding * 2)),
-                height: Math.max(1, Math.ceil(fontSizePx * 1.25)),
-            };
-        };
-
-        const visit = (element: any): void => {
-            if (!element) return;
-
-            if (element instanceof GPort) {
-                const portW = element.size?.width ?? WorkflowDiagramConstants.PORT_WIDTH_PX;
-                const portH = element.size?.height ?? WorkflowDiagramConstants.PORT_HEIGHT_PX;
-                // The label sits inside the node, on the port's SIDE — which is
-                // the direction unless the producer placed the port with its
-                // bundle (`cal:portSide`).
-                const east = portSide({
-                    absolute: { x: 0, y: 0 },
-                    direction: element.args?.[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined,
-                    side: element.args?.[WorkflowDiagramMetadata.PORT_SIDE] as string | undefined,
-                    type: element.type
-                }) === 'EAST';
-
-                const children = (element.children as any[] | undefined) ?? [];
-                for (const child of children) {
-                    if (!(child instanceof GLabel)) continue;
-                    if (child.type !== WorkflowDiagramTypes.LABEL_PORT) continue;
-
-                    const text = child.text ?? '';
-                    const fallback = estimateLabelSizeFallback(text);
-                    const labelW = child.size?.width ?? fallback.width;
-                    const labelH = child.size?.height ?? fallback.height;
-
-                    const y = Math.round((portH - labelH) / 2);
-                    // Port labels are positioned relative to the port. For output labels, the label box
-                    // sits to the *left* of the port marker with a fixed gap. Client-side alignment
-                    // transforms for port labels are intentionally disabled (see ComputedBounds handling),
-                    // so we use the label's top-left origin here.
-                    const x = east
-                        ? -portLabelGapPx - labelW
-                        : portW + portLabelGapPx;
-
-                    child.position = { x, y };
-
-                    // Ensure port-label rendering is driven purely by position/size.
-                    // Any previously stored alignment (e.g., from an older computed-bounds
-                    // cycle) can introduce an additional client-side translate().
-                    (child as any).alignment = undefined;
-                }
-            }
-
-            const children = element.children as any[] | undefined;
-            if (Array.isArray(children)) {
-                for (const child of children) {
-                    visit(child);
-                }
-            }
-        };
-
-        visit(root);
     }
 
     /**
@@ -740,8 +668,8 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
             // Node sizes are SERVER-AUTHORITATIVE on every path.
             //
             // WorkflowDiagramModelSource computes each node's size deterministically from its
-            // ports, port labels and header label, and places the ports just outside the border
-            // (input at x=-portWidth, output at x=nodeWidth). That estimate is what a persisted
+            // ports, port labels and header label, and places the ports centred on the border
+            // (input at x=-portWidth/2, output at x=nodeWidth-portWidth/2). That estimate is what a persisted
             // reopen renders, verbatim, so it is already the geometry users see most of the time.
             // A fresh open used to instead COMMIT the client's measurement and re-anchor the ports
             // inside the committed width — which made the two paths disagree. The client's
@@ -844,43 +772,19 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
 
         const hasPersistedLayout = layoutMeta?.hasPersistedLayout === true;
 
-        const portLabelGapPx = (() => {
-            const raw = (root as any)?.args?.['cal:portLabelGapPx'];
-            const n = typeof raw === 'number' ? raw : Number(raw);
-            return Number.isFinite(n) ? n : WorkflowDiagramConstants.PORT_LABEL_GAP_PX;
-        })();
+        const portLabelGapPx = portLabelGapOf(root);
 
+        // A measured label goes back beside its port, the way every submit
+        // places it (port-labels.ts); one not measured yet is left alone.
         const reanchorPortLabelToPort = (label: any): void => {
             const parentPort = label?.parent as any;
-            if (!parentPort) {
+            if (!(parentPort?.size?.width > 0) || !(parentPort?.size?.height > 0)) {
                 return;
             }
-            const portType = parentPort.type as string | undefined;
-            const portW = parentPort.size?.width ?? 0;
-            const portH = parentPort.size?.height ?? 0;
-            if (!(portW > 0) || !(portH > 0)) {
+            if (!(label.size?.width > 0) || !(label.size?.height > 0)) {
                 return;
             }
-
-            const labelW = label.size?.width ?? 0;
-            const labelH = label.size?.height ?? 0;
-            if (!(labelW > 0) || !(labelH > 0)) {
-                return;
-            }
-
-            const east = portSide({
-                absolute: { x: 0, y: 0 },
-                direction: parentPort.args?.[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined,
-                side: parentPort.args?.[WorkflowDiagramMetadata.PORT_SIDE] as string | undefined,
-                type: portType
-            }) === 'EAST';
-
-            const y = Math.round((portH - labelH) / 2);
-            const x = east
-                ? -portLabelGapPx - labelW
-                : portW + portLabelGapPx;
-
-            label.position = { x, y };
+            placePortLabel(label, parentPort, portLabelGapPx);
         };
 
                 // Only accept client-measured node size expansions during the initial bounds sync.

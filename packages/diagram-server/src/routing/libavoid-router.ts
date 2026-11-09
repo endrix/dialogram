@@ -276,8 +276,8 @@ export async function routeOrthogonal(
 
     const requested = { ...DEFAULT_OPTIONS, ...options };
     // A connector endpoint that lies inside a shape's clearance region makes
-    // libavoid route straight THROUGH that shape. Port anchors sit only
-    // PORT_WIDTH_PX (9) outside their node box, so a buffer of 15 — the value
+    // libavoid route straight THROUGH that shape. Port anchors sit only half a
+    // port's width (4.5px; 6 for a bus) outside their node box, so a buffer of 15 — the value
     // the obstacle padding uses — silently produced routes cutting across the
     // very nodes they attach to. The failure is invisible to any check that
     // excludes an edge's own endpoint nodes, which is how it shipped.

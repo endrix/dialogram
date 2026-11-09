@@ -73,16 +73,17 @@ describe('port side from the producer', () => {
         expect(ready.args[WorkflowDiagramMetadata.PORT_SIDE]).toBe('WEST');
         expect(ready.args[WorkflowDiagramMetadata.PORT_GROUP]).toBe('s');
         expect(ready.layoutOptions['elk.port.side']).toBe('WEST');
-        expect(ready.position).toEqual({ x: -PORT_W, y: Y0 + 2 * ROW_H });
+        // Centred on the west border, as every port is.
+        expect(ready.position).toEqual({ x: -PORT_W / 2, y: Y0 + 2 * ROW_H });
         // Its label reads inward from the west edge, like its neighbours'.
-        expect(ready.children[0].position.x).toBe(PORT_W + 1);
+        expect(ready.children[0].position.x).toBe(PORT_W + WorkflowDiagramConstants.PORT_LABEL_GAP_PX);
         expect(ready.children[0].cssClasses).toContain('input-port-label');
         // The west column is the header, valid, ready, data; the east column is q alone.
         const data = node.children.find((c: any) => c.id === 'c_port_s_data');
         const q = node.children.find((c: any) => c.id === 'c_port_q');
-        expect(data.position).toEqual({ x: -PORT_W, y: Y0 + 3 * ROW_H });
+        expect(data.position).toEqual({ x: -PORT_W / 2, y: Y0 + 3 * ROW_H });
         expect(q.position.y).toBe(Y0);
-        expect(q.position.x).toBe(node.size.width);
+        expect(q.position.x).toBe(node.size.width - PORT_W / 2);
     });
 
     it('leaves a port without a side exactly as before', () => {

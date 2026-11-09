@@ -265,7 +265,7 @@ export class LibavoidEdgeRouter extends AbstractEdgeRouter {
                     continue;
                 }
                 // Route from a stub off the port, not the port itself: an anchor
-                // sits only PORT_WIDTH_PX outside its node, and an endpoint inside
+                // sits only half a port's width outside its node, and an endpoint inside
                 // a shape's clearance makes libavoid route through that shape.
                 const from = this.stub(source, stubs.get(portStubKey(edgeId, 'source')) ?? base);
                 const to = this.stub(target, stubs.get(portStubKey(edgeId, 'target')) ?? base);

@@ -78,6 +78,14 @@ describe('a closed bundle', () => {
         expect(bus.args[WorkflowDiagramMetadata.PORT_BUS_EXPANDED]).toBe(false);
         expect(bus.args[WorkflowDiagramMetadata.PORT_BUS_MEMBERS]).toBe(3);
         expect(bus.children[0].text).toBe('out');
+        // Its box is its dot, centred on the east border and on its row.
+        const r = WorkflowDiagramConstants.PORT_BUS_DOT_RADIUS_PX;
+        const node = nodeOf(children, 'u_prod');
+        expect(bus.size).toEqual({ width: 2 * r, height: 2 * r });
+        expect(bus.position.x + r).toBe(node.size.width);
+        const clk = node.children.find((c: any) => c.id === 'u_prod_port_clk');
+        expect(clk.position.x + clk.size.width / 2).toBe(0);
+        expect(bus.position.y + r).toBe(clk.position.y + clk.size.height / 2);
     });
 
     it('leaves room in its label for its larger dot', () => {

@@ -16,7 +16,7 @@ import { GlspElkLayoutEngine, ElkFactory, ElementFilter, LayoutConfigurator } fr
 import { ElkExtendedEdge, ElkNode, ElkPort, ElkShape } from 'elkjs';
 import { injectable } from 'inversify';
 import { WorkflowDiagramTypes, WORKFLOW_LAYOUT_PERSISTENCE_KEY } from '@dialogram/shared';
-import { WorkflowDiagramConstants, WorkflowDiagramMetadata, portSide, type PortSide } from '@dialogram/shared';
+import { WorkflowDiagramConstants, WorkflowDiagramMetadata, portRowOffset, portSide, type PortSide } from '@dialogram/shared';
 
 /** Which side of its node a GPort sits on: the producer's placement, else its direction or type. */
 function gportSide(port: GPort): PortSide {
@@ -262,16 +262,20 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
 
     /**
      * The node's ports of one side take the rows they already occupy, in the
-     * order ELK placed them top to bottom. The labels are the ports' children and
-     * move with them; nothing else about the node changes.
+     * order ELK placed them top to bottom. A port's box sits on its row, or
+     * above it when taller (a bus's dot, centred on the row): the rows are
+     * read without that offset and each port keeps its own. The labels are the
+     * ports' children and move with them; nothing else about the node changes.
      */
     private regridPorts(node: GNode, elkPorts: ElkPort[]): void {
+        const offsetOf = (port: GPort): number =>
+            portRowOffset(port.size?.height ?? WorkflowDiagramConstants.PORT_HEIGHT_PX);
         for (const side of ['WEST', 'EAST'] as const) {
             const ports = this.findChildren(node, GPort).filter(p => gportSide(p) === side);
             if (ports.length < 2) {
                 continue;
             }
-            const rows = ports.map(p => p.position?.y ?? 0).sort((a, b) => a - b);
+            const rows = ports.map(p => (p.position?.y ?? 0) - offsetOf(p)).sort((a, b) => a - b);
             const byId = new Map(ports.map(p => [p.id, p] as const));
             const order = elkPorts.filter(ep => byId.has(ep.id)).sort((a, b) => (a.y ?? 0) - (b.y ?? 0));
             if (order.length !== ports.length) {
@@ -283,7 +287,7 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
                 if (args[DECLARED_ROW_ARG] === undefined) {
                     port.args = { ...args, [DECLARED_ROW_ARG]: port.position?.y ?? 0 };
                 }
-                port.position = { x: port.position?.x ?? 0, y: rows[k] };
+                port.position = { x: port.position?.x ?? 0, y: rows[k] + offsetOf(port) };
             });
         }
     }
