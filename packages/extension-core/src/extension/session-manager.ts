@@ -186,9 +186,15 @@ export class SessionManager {
    * Get all sessions for a specific workflow file
    */
   getSessionsForWorkflow(workflowFile: string): SessionData[] {
+    // Most recent first; between equal times (created or restored in the same
+    // millisecond), the one added later.
     return Array.from(this.sessions.values())
-      .filter((s) => s.workflowFile === workflowFile)
-      .sort((a, b) => b.updatedAt - a.updatedAt);
+      .map((session, order) => ({ session, order }))
+      .filter(({ session }) => session.workflowFile === workflowFile)
+      .sort((a, b) => b.session.updatedAt - a.session.updatedAt
+        || b.session.createdAt - a.session.createdAt
+        || b.order - a.order)
+      .map(({ session }) => session);
   }
 
   /**
