@@ -25,6 +25,11 @@ function nameOf(value: unknown): string {
     if (typeof value === 'symbol') {
         return value.toString();
     }
+    // An instance bound as a constant reads as its class, not `[object Object]`.
+    const ctor = (value as { constructor?: { name?: string } } | null | undefined)?.constructor;
+    if (typeof value === 'object' && ctor && ctor !== Object && ctor.name) {
+        return ctor.name;
+    }
     return String(value);
 }
 

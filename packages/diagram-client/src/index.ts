@@ -69,6 +69,7 @@ export {
     renderInto,
     type NumberFieldOptions
 } from './property-fields';
+export { AnnotationEditor, type AnnotationEditorContext } from './annotation-editor';
 export {
     type PropertyElement,
     type PropertyArgs,
