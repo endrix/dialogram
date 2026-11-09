@@ -15,10 +15,10 @@
  *
  * The vitest env is `node`, and this package has no DOM. Rather than take on
  * jsdom for one test, this installs the same kind of minimal fake `document`
- * the chrome test uses — `createSection` touches very little of it.
+ * the chrome test uses — `createPropertySection` touches very little of it.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PropertyPanel } from '../src/property-panel';
+import { createPropertySection } from '../src/property-section';
 
 // ── Minimal fake DOM ────────────────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ class FakeElement {
     textContent = '';
     onclick: ((e: any) => void) | null = null;
     // className and classList are two views of one value in a real DOM, and
-    // createSection writes className first then classList.add — so the fake has
+    // createPropertySection writes className first then classList.add — so the fake has
     // to keep them in step or the assertion below would pass vacuously.
     get className(): string { return ''; }
     set className(value: string) { this.classList.replaceAll(value); }
@@ -63,15 +63,8 @@ afterEach(() => {
     (globalThis as any).window = original.window;
 });
 
-/** The panel with its chrome/window wiring skipped; only sections are exercised. */
-class TestPanel extends PropertyPanel {
-    protected override initialize(): void {
-        // no chrome, no global listeners
-    }
-    build(title: string, opts?: { collapsed?: boolean }): any {
-        return this.createSection(title, opts);
-    }
-}
+/** A section, as every panel section is built. */
+const build = (title: string, opts?: { collapsed?: boolean }): any => createPropertySection(title, opts);
 
 /** Click the section header the way a user would. */
 function clickHeader(section: any): void {
@@ -81,21 +74,20 @@ function clickHeader(section: any): void {
 
 describe('property section collapse', () => {
     it('opens expanded by default', () => {
-        const section = new TestPanel().build('Input Ports (2)');
+        const section = build('Input Ports (2)');
 
         expect(section.classList.contains('collapsed')).toBe(false);
     });
 
     it('opens collapsed when asked', () => {
-        const section = new TestPanel().build('Input Ports (0)', { collapsed: true });
+        const section = build('Input Ports (0)', { collapsed: true });
 
         expect(section.classList.contains('collapsed')).toBe(true);
     });
 
     /** The failure worth guarding: pre-collapsed but no longer openable. */
     it('still opens on click when it started collapsed', () => {
-        const panel = new TestPanel();
-        const section = panel.build('Annotations (0)', { collapsed: true });
+        const section = build('Annotations (0)', { collapsed: true });
 
         clickHeader(section);
         expect(section.classList.contains('collapsed')).toBe(false);
@@ -105,7 +97,7 @@ describe('property section collapse', () => {
     });
 
     it('keeps the section class alongside the collapsed one', () => {
-        const section = new TestPanel().build('Output Ports (0)', { collapsed: true });
+        const section = build('Output Ports (0)', { collapsed: true });
 
         // Guards the fake as much as the code: if `className =` clobbered the
         // classList, `collapsed` would survive and `property-section` would not.

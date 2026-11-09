@@ -14,7 +14,8 @@ import { ChangeBoundsTool, TYPES, bindAsService, configureActionHandler } from '
 import { MoveAction } from '@eclipse-glsp/sprotty';
 import { PropertyPanel } from './property-panel';
 import { AnnotationEditor } from './annotation-editor';
-import { stockAnnotationEditors } from './agent-ui';
+import { stockAnnotationEditors, stockNodeSections } from './agent-ui';
+import { NodeSectionContribution } from './node-section';
 import { ChatPanel } from './chat-panel-integrated';
 import { clientBehavior } from './profile';
 import { WorkflowNavigationUi } from './navigation-ui';
@@ -77,6 +78,11 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     // module binds more the same way.
     for (const editor of stockAnnotationEditors()) {
         bind(AnnotationEditor).toConstantValue(editor);
+    }
+    // And the agent sections of a node's panel: Basic Info's Skill row,
+    // Agent Tools and the live Agent Context.
+    for (const sections of stockNodeSections()) {
+        bind(NodeSectionContribution).toConstantValue(sections);
     }
 
     // The hierarchy outline, fed by the root model's `wf:hierarchy`. Shown only
