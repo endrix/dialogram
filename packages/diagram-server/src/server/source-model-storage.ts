@@ -11,6 +11,7 @@ import {
     GModelRoot,
     GNode,
     GEdge,
+    GModelIndex,
     ModelState,
     SourceModelStorage
 } from '@eclipse-glsp/server';
@@ -517,7 +518,9 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         let edgeRoutes = fromCurrent
             ? (current!.routes.size > 0 ? new Map(current!.routes) : undefined)
             : await this.layoutPersistence.loadEdgeRoutes(workflowFilePath, networkId);
+        let layoutIsFallbacks = false;
         if (!loadedLayoutPositions && fallbackLayout) {
+            layoutIsFallbacks = true;
             loadedLayoutPositions = await this.layoutPersistence.loadLayout(fallbackLayout.filePath, fallbackLayout.networkId);
             edgeRoutes = await this.layoutPersistence.loadEdgeRoutes(fallbackLayout.filePath, fallbackLayout.networkId);
         }
@@ -737,14 +740,28 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             restoreGroupGeometry(gmodelRoot as any, edgeRoutes);
         }
         if (hasPersistedLayout && edgeRoutes && edgeRoutes.size > 0) {
-            // An edge the saved routes do not cover would be drawn straight,
-            // port to port: one added since the layout was saved, or one drawn
-            // differently since (a bundle closed into a bus). Routed once the
-            // client has measured the diagram; see the submission handler.
-            const unroutedEdgeIds = applyPersistedEdgeRoutes(gmodelRoot, edgeRoutes);
+            const unrouted = applyPersistedEdgeRoutes(gmodelRoot, edgeRoutes);
+            // A bus edge the saved routes do not cover would be drawn straight,
+            // port to port: a layout saved before buses has routes for the
+            // members only, and a toggle draws other edges than were saved.
+            // Routed once the client has measured; see the submission handler.
+            // Only edges at a bus: any other edge without a route was added
+            // since, or cleared on purpose, and is left as it was.
+            const index = new GModelIndex();
+            index.indexRoot(gmodelRoot);
+            const atBus = (id: string): boolean => {
+                const edge: any = index.find(id);
+                return [edge?.sourceId, edge?.targetId].some(end =>
+                    typeof (index.find(end) as any)?.args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP] === 'string');
+            };
+            const unroutedEdgeIds = unrouted.filter(atBus);
             const meta = this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as Record<string, unknown> | undefined;
             if (meta && unroutedEdgeIds.length > 0) {
                 meta['unroutedEdgeIds'] = unroutedEdgeIds;
+                // A view showing its fallback's layout routes them without
+                // saving: saving would give it a layout of its own, and it
+                // would stop following the fallback's.
+                meta['unroutedEdgesUnsaved'] = layoutIsFallbacks;
                 this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, meta);
             }
         }

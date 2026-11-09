@@ -285,6 +285,29 @@ describe('the toggle', () => {
         expect(steps[2]).toBe('reroute u_prod');
     });
 
+    it('does nothing when the view it was made in is no longer shown (an undo after navigating)', async () => {
+        const steps: string[] = [];
+        const handler = handlerOver({ u_prod: ['out'] }, steps);
+        const target = handler.targetOf('u_prod_bus_out')!;
+        (handler as any).modelState.get = () => ({ documentUri: 'file:///w/top.sv', workflowName: 'top/u_b' });
+        await handler.apply(target, false);
+        expect(steps).toEqual([]);
+    });
+
+    it('keeps the toggles before it undoable, and drops anything else', () => {
+        const handler = handlerOver({}, []);
+        const flushed: string[] = [];
+        const stack = { commands: [] as unknown[], flush() { flushed.push('flush'); this.commands = []; } };
+        (handler as any).commandStack = stack;
+        const toggle = (): any => handler.createCommand({ kind: 'dialogram.togglePortBus', portId: 'u_prod_bus_out' } as any);
+        stack.commands = [toggle()];
+        (toggle() as any).beforeExecute();
+        expect(flushed).toEqual([]);
+        stack.commands = [toggle(), { execute() {}, undo() {}, redo() {} }];
+        (toggle() as any).beforeExecute();
+        expect(flushed).toEqual(['flush']);
+    });
+
     it('closing an inherited bundle closes that one alone', async () => {
         const steps: string[] = [];
         const handler = handlerOver({ u_prod: ['out'], u_cons: ['s'] }, steps);

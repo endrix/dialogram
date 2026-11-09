@@ -118,9 +118,14 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
         const expanded = port?.args?.[WorkflowDiagramMetadata.PORT_BUS_EXPANDED] === true;
         // The commands before this one recorded their changes as patches to
         // the model as it was; the rebuilt model has other ports and edges, and
-        // a patch undone against it could land on the wrong element. A source
-        // reload drops them for the same reason.
-        return new TogglePortBusCommand(open => this.apply(target, open), !expanded, () => this.commandStack.flush());
+        // a patch undone against it could land on the wrong element. They are
+        // dropped, unless every one is a toggle: a toggle records no patch.
+        return new TogglePortBusCommand(open => this.apply(target, open), !expanded, () => {
+            const commands = (this.commandStack as unknown as { commands?: unknown[] }).commands;
+            if (!Array.isArray(commands) || !commands.every(command => command instanceof TogglePortBusCommand)) {
+                this.commandStack.flush();
+            }
+        });
     }
 
     /** The bundle a bus port stands for, or nothing when the id names no bus. */
@@ -170,6 +175,15 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
 
     async apply(target: PortBusTarget, expanded: boolean): Promise<void> {
         const { layout, nodeId, nodeKey, group } = target;
+        // An undo or redo that arrives after the editor showed another view
+        // in place: what is drawn is not the view the toggle was made in, and
+        // saving its bundles would write that view's nodes into this one.
+        const diagramModel = this.modelState.get(WORKFLOW_NETWORK_MODEL_KEY) as any;
+        const shown = diagramModel ? layoutTargetOf(diagramModel) : undefined;
+        if (!shown || shown.filePath !== layout.filePath || shown.networkId !== layout.networkId) {
+            console.warn('[dialogram] bus toggle skipped: the view it was made in is no longer shown', layout);
+            return;
+        }
         const open = this.openBundles();
         const groups = open.get(nodeKey) ?? new Set<string>();
         if (expanded) {

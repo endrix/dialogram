@@ -471,10 +471,12 @@ export class LayoutPersistenceService {
         const previous = this.writes.get(layoutPath) ?? Promise.resolve();
         const next = previous.then(write, write);
         this.writes.set(layoutPath, next);
-        void next.finally(() => {
+        next.finally(() => {
             if (this.writes.get(layoutPath) === next) {
                 this.writes.delete(layoutPath);
             }
+        }).catch(() => {
+            // The caller awaits `next` and sees its failure; this chain only tidies up.
         });
         return next;
     }

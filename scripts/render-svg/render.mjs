@@ -104,7 +104,8 @@ function parseArgs(argv) {
     }
     for (const entry of repeated.open) {
         if (entry !== '*' && !(entry.lastIndexOf(':') > 0)) {
-            throw new Error(`--open expects <node>:<bundle>, <node>:* or *, got '${entry}'`);
+            console.error(`--open expects <node>:<bundle>, <node>:* or *, got '${entry}'`);
+            process.exit(2);
         }
     }
     const elk = {};

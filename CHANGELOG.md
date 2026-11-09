@@ -89,15 +89,13 @@ it no longer has.
   shows open (a nested view keeps what it took from its fallback), rebuilds
   the model from the document it was last built from and the positions the
   diagram has now, without asking the producer again, and reroutes the
-  node's edges. Undo closes what it opened; the history before a toggle is
-  dropped, as a source reload drops it. When the layout file cannot be
-  written, the choice still holds for the session.
-
-- **Edges a saved layout has no route for are routed on open.** With some
-  routes saved, an edge added since, or drawn differently since (a bundle
-  closed into a bus, on a layout saved before buses), was drawn straight
-  from port to port until the next reroute. They are routed once the client
-  has measured the diagram, and saved.
+  node's edges. Undo closes what it opened, in the view it was made in; the
+  history before a toggle is dropped unless it is all toggles (layout edits
+  are recorded as patches to a model the rebuild replaces). When the layout
+  file cannot be written, the choice still holds for the session. A bus edge
+  a saved layout has no route for (one saved before buses, or one a toggle
+  drew) is routed once the client has measured, and saved, unless the view
+  is showing its fallback's layout.
 
 - **What a double-click on a node opens is a contribution point:
   `NodeOpener`** (exported). An opener answers before the platform's own

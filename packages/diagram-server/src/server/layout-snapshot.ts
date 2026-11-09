@@ -29,8 +29,10 @@ export interface LayoutPersistenceMeta {
     sizeMeasurePassCount?: number;
     lastClientNodeSizes?: Record<string, { width: number; height: number }>;
     rerouteEdgeIds?: string[];
-    /** Edges the saved routes did not cover on load, routed once the client has measured. */
+    /** Bus edges the saved routes did not cover on load, routed once the client has measured. */
     unroutedEdgeIds?: string[];
+    /** Route `unroutedEdgeIds` without saving: the view shows its fallback's layout. */
+    unroutedEdgesUnsaved?: boolean;
     [key: string]: unknown;
 }
 
