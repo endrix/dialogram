@@ -247,17 +247,28 @@ describe('SessionManager', () => {
 
   describe('getSessionsForWorkflow', () => {
     it('should return sessions for specific workflow', async () => {
-      await sessionManager.createSession('/test/workflow1.py', 'Session 1');
-      mockACPClient.createSession.mockResolvedValue('session-2');
-      await sessionManager.createSession('/test/workflow2.py', 'Session 2');
-      mockACPClient.createSession.mockResolvedValue('session-3');
-      await sessionManager.createSession('/test/workflow1.py', 'Session 3');
+      // Each session at its own time. The expectation used to hold only when
+      // all three were created within one millisecond (the sort then kept
+      // insertion order), and failed on a runner where the clock ticked.
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.setSystemTime(1_000);
+        await sessionManager.createSession('/test/workflow1.py', 'Session 1');
+        vi.setSystemTime(2_000);
+        mockACPClient.createSession.mockResolvedValue('session-2');
+        await sessionManager.createSession('/test/workflow2.py', 'Session 2');
+        vi.setSystemTime(3_000);
+        mockACPClient.createSession.mockResolvedValue('session-3');
+        await sessionManager.createSession('/test/workflow1.py', 'Session 3');
+      } finally {
+        vi.useRealTimers();
+      }
 
       const sessions = sessionManager.getSessionsForWorkflow('/test/workflow1.py');
 
       expect(sessions).toHaveLength(2);
       // Sessions are sorted by updatedAt descending (most recent first)
-      expect(sessions.map((s) => s.name)).toEqual(['Session 1', 'Session 3']);
+      expect(sessions.map((s) => s.name)).toEqual(['Session 3', 'Session 1']);
     });
 
     it('should return empty array for workflow with no sessions', () => {
