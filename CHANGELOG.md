@@ -47,6 +47,15 @@ to fail its version check rather than run against what it no longer has.
 
 ### Added
 
+- **What a product's webview code needs, from the package.**
+  `@dialogram/diagram-client` exports `VscodeUi` (the host's quick picks,
+  input boxes and commands), `clientBehavior`, `commandId`, `offersRun`,
+  `settingsNamespace`, `escapeHtml`, `shortenPath`, the markdown helpers
+  (`renderMarkdownSafe`, `renderDocumentMarkdownSafe`, `looksLikeMarkdown`)
+  and the agent-output helpers (`isBlock`, `looksLikeDiff`,
+  `parseEmbedded`, `formatAgentOutputs`), so a product bundle's own
+  contributions import names rather than the package's files by path.
+
 - **Contribution points in the property panel and the annotation wizard, and
   the agent workflow UI as a module of its own.** `AnnotationEditor` (an
   annotation card's own controls, Save's text and merge, a quick-add button),
