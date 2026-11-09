@@ -168,17 +168,22 @@ describe('a node section contribution', () => {
     });
 });
 
-describe('an agent node without the agent sections', () => {
-    it('has no Skill row, no Agent Tools and no Agent Context', () => {
-        const agent = { name: 'agent', arguments: [{ name: 'prompt', value: '"Analyse."' }, { name: 'useSkill', value: 'true' }] };
-        const node = taskNode('bare', [agent], {
-            'wf:agentSpec': { skill: 'turnus-reader' },
-            [WorkflowDiagramMetadata.AGENT_CHAT_HISTORY]: JSON.stringify([{ role: 'user', content: 'hi' }])
-        });
-        panelWith(undefined).show(node);
-        expect(infoKeys()).toEqual(['Name', 'Type']);
-        expect(sectionTitles()).not.toContain('Agent Tools');
-        expect(sectionTitles().some(t => t.startsWith('Agent Context'))).toBe(false);
+describe('a redraw a contribution asks for', () => {
+    it('tells the annotation editors not to ask for discovery again', () => {
+        const asked: boolean[] = [];
+        const editor = {
+            annotationName: 'probe',
+            reservedArgs: [],
+            render: (context: { requestDiscovery: boolean }) => { asked.push(context.requestDiscovery); }
+        };
+        const contribution = probe();
+        const panel = panelWith([contribution]);
+        (panel as any).contributedAnnotationEditors = [editor];
+        (panel as any).installNodeSections();
+        const node = taskNode('asking', [{ name: 'probe', arguments: [] }]);
+        panel.show(node);
+        contribution.host!.redrawIfShowing(node.id);
+        expect(asked).toEqual([true, false]);
     });
 });
 

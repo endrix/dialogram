@@ -848,7 +848,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
     /**
      * Per-(file, workflow) re-entrancy guard for {@link scheduleDeferredCallerDiscovery}. The caller
      * walk is slow (it scans up to {@link MAX_SOURCE_FILES_PER_SCAN} files), so it is still cold when
-     * the fast, agent-context-only redeliveries (agent enrichment, or a prior caller-refs refresh)
+     * the fast, agent-context-only redeliveries (a prior caller-refs refresh, an agent-context refresh)
      * re-enter `loadSourceModel`. Each re-entry would otherwise schedule its own discovery and fire a
      * duplicate refresh. Holding the key while a discovery is pending collapses every re-entrant
      * schedule onto the first one, so exactly one redelivery ever fires per open.

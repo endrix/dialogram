@@ -26,8 +26,6 @@ export const ui = {
     }
 };
 
-/** What the real bridge answers when a test does not say: its declared types' empty values. */
-const DEFAULT_ANSWERS: Record<string, unknown> = { getViewerEditors: [], appendViewerEditor: true };
 
 /**
  * The VS Code bridge as a recorder. A test file mocks `../src/vscode-ui` with
@@ -42,16 +40,14 @@ export function vscodeUiModule(): unknown {
         if (method === 'quickPick' || method === 'inputBox') {
             return ui.picks.shift();
         }
-        return ui.answers.has(method) ? ui.answers.get(method) : DEFAULT_ANSWERS[method];
+        return ui.answers.get(method);
     };
     const instance = {
         executeCommand: record('executeCommand'),
         infoMessage: record('infoMessage'),
         errorMessage: record('errorMessage'),
         inputBox: record('inputBox'),
-        quickPick: record('quickPick'),
-        getViewerEditors: record('getViewerEditors'),
-        appendViewerEditor: record('appendViewerEditor')
+        quickPick: record('quickPick')
     };
     return { VscodeUi: { get instance() { return instance; } } };
 }

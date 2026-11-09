@@ -20,12 +20,12 @@ function captureBreadcrumb(spans: Array<[string, number]>): string {
 }
 
 describe('open breadcrumb: runHistory phase split', () => {
-    it('reports runHistory and the enrichment phases as separate fields', () => {
+    it('reports runHistory as its own field', () => {
         // ov:skills is now its own `skills=` phase (not folded into overlaysRest), and run-history
         // stays distinct; overlaysRest is the residual (0 here — every span is bucketed).
-        const line = captureBreadcrumb([['ov:history', 111], ['ov:skills', 22]]);
+        const line = captureBreadcrumb([['ov:history', 111], ['ov:agentCtx', 22]]);
         expect(line).toContain('runHistory=111ms');
-        expect(line).toContain('skills=22ms');
+        expect(line).toContain('agentCtx=22ms');
         expect(line).toContain('overlaysRest=0ms');
     });
 
@@ -36,30 +36,14 @@ describe('open breadcrumb: runHistory phase split', () => {
         expect(line).toContain('overlaysRest=0ms');
     });
 
-    it('splits skill-status, skills, and agents into their own phases (overlaysRest stays the residual)', () => {
-        // Post-deferral: each enrichment phase is named on the breadcrumb and overlaysRest is the true
-        // residual — any ov:* span not bucketed above — which is 0 here since all spans are bucketed.
-        const line = captureBreadcrumb([['ov:skillStatus', 5], ['ov:skills', 7], ['ov:agents', 9]]);
-        expect(line).toContain('skillStatus=5ms');
-        expect(line).toContain('skills=7ms');
-        expect(line).toContain('agents=9ms');
-        expect(line).toContain('overlaysRest=0ms');
-        expect(line).toContain('runHistory=0ms');
+    it('reports no agent-enrichment phases: the platform no longer discovers skills and presets', () => {
+        const line = captureBreadcrumb([['ov:history', 3]]);
+        expect(line).not.toMatch(/skillStatus=|skills=|agents=|enrichment=/);
     });
 
     it('folds only unbucketed ov:* spans into overlaysRest', () => {
-        const line = captureBreadcrumb([['ov:skills', 4], ['ov:somethingNew', 6]]);
-        expect(line).toContain('skills=4ms');
+        const line = captureBreadcrumb([['ov:history', 4], ['ov:somethingNew', 6]]);
+        expect(line).toContain('runHistory=4ms');
         expect(line).toContain('overlaysRest=6ms');
-    });
-
-    it('reports the enrichment outcome field', () => {
-        const perf = new (GraphLoadPerf as any)('demo.py');
-        perf.setEnrichment('deferred');
-        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
-        perf.emitOpenBreadcrumb(1, { nodes: 3, edges: 2 });
-        const line = String(logSpy.mock.calls[0]?.[0] ?? '');
-        logSpy.mockRestore();
-        expect(line).toContain('enrichment=deferred');
     });
 });

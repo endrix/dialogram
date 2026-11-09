@@ -271,11 +271,10 @@ consumer's profile input — never to extend the allow-list.
   bundle at build time; check the extension host console to confirm the
   running bundles are fresh.
 - `[dialogram perf] load <file>#<n>: acquire=… layout=… loadTotal=…` —
-  per-load phase attribution emitted by the diagram server, including which
-  enrichment phases were deferred off the first paint. Loads after the first
-  should be low-millisecond (memoized); expensive scans (caller references,
-  skills/agents enrichment) run bounded in the background and redeliver via
-  `refresh-*` model requests.
+  per-load phase attribution emitted by the diagram server, including whether
+  the caller-reference scan was deferred off the first paint. Loads after the
+  first should be low-millisecond (memoized); the caller-reference scan runs
+  bounded in the background and redelivers via a `refresh-*` model request.
 
 ## Documentation
 

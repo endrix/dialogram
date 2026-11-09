@@ -7,9 +7,10 @@ platform API version.
 ## [Unreleased]
 
 **Release:** this release must bump `DIALOGRAM_API_VERSION` to 0.9 and ship
-with products built against it: its API removals (#127, #129) and the stock
-bundle's dropping the agent workflow UI (below) need a product still at 0.8
-to fail its version check rather than run against what it no longer has.
+with products built against it: its API removals (#127, #129), the stock
+bundle's dropping the agent workflow UI (#137) and the server's no longer
+answering agent discovery (#139) need a product still at 0.8 to fail its
+version check rather than run against what it no longer has.
 
 ### Removed
 
@@ -84,9 +85,6 @@ to fail its version check rather than run against what it no longer has.
   stock one. wfpy's `@tool`/`@agent` editors, agent sections and
   `@tool`/`@viewer` templates moved onto them (#133–#135), then into
   wfpy-ide's own webview bundle (#136, #137, endrix/wfpy-ide#24, #27).
-  On the way: a node's discovered skills are no longer replaced by the
-  model's older snapshot when discovery answers, and the wizard escapes a
-  newline or tab in what it quotes.
 
 - **A product whose CLI has no `run` says so: `cliRuns: false`.** The
   toolkit then registers no run driver and the chat offers no resume. The
