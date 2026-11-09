@@ -337,6 +337,8 @@ export namespace WorkflowDiagramMetadata {
     // Indexed entity/list references in connections (e.g. bf[0].In)
     export const EDGE_FROM_INDEX = 'cal:fromIndex';
     export const EDGE_TO_INDEX = 'cal:toIndex';
+    /** The edge's indices are the bits of a port it is (a producer's `fromSlice`/`toSlice`): always written. */
+    export const EDGE_SLICE = 'wf:slice';
 
     /** Marks an edge as derived (not in the source), hence read-only. */
     export const IS_VIRTUAL = 'cal:isVirtual';

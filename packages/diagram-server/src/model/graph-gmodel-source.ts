@@ -1072,6 +1072,24 @@ export class GraphGModelSource {
             if (typeof edgeLabel === 'string' && edgeLabel.trim() !== '') {
                 (gedge.args as Record<string, unknown>)[WorkflowDiagramMetadata.EDGE_LABEL] = edgeLabel.trim();
             }
+            // The bits of a port a wire is (`fromSlice`, `toSlice`: one operand
+            // of a concatenation wired straight to the port): written at that
+            // end, as an index is, and always, since the wire alone cannot say it.
+            const sliceText = (raw: unknown): string | undefined =>
+                typeof raw === 'number' && Number.isFinite(raw) ? String(raw)
+                    : typeof raw === 'string' && raw.trim() !== '' ? raw.trim()
+                        : undefined;
+            const fromSlice = sliceText(edgeMeta?.['fromSlice']);
+            const toSlice = sliceText(edgeMeta?.['toSlice']);
+            if (fromSlice) {
+                (gedge.args as Record<string, unknown>)[WorkflowDiagramMetadata.EDGE_FROM_INDEX] = fromSlice;
+            }
+            if (toSlice) {
+                (gedge.args as Record<string, unknown>)[WorkflowDiagramMetadata.EDGE_TO_INDEX] = toSlice;
+            }
+            if (fromSlice || toSlice) {
+                (gedge.args as Record<string, unknown>)[WorkflowDiagramMetadata.EDGE_SLICE] = true;
+            }
             // Producer-declared feedback. Recorded per edge here; whether the
             // document uses declared or derived feedback is decided once, for
             // the whole graph, in `markFeedbackEdges`.

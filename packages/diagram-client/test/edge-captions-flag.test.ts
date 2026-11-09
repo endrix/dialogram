@@ -6,7 +6,8 @@
  * button, and the index labels of a list connection. A product with many
  * wires whose ports already say what they carry turns them all off with one
  * flag. The views need the GLSP runtime to render, so this pins the source:
- * the flag is read once in the edge view and guards each of the four.
+ * the flag is read once in the edge view and guards each of the four, an
+ * index save when it is the bits of a port the wire is.
  */
 import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
@@ -28,8 +29,11 @@ describe('edge captions', () => {
             expect(at, draw).toBeGreaterThan(-1);
             expect(EDGE_VIEW.slice(Math.max(0, at - 80), at)).toContain('captions &&');
         }
-        expect(EDGE_VIEW).toContain('...(captions && fromIndexLabel && fromIndexPos');
-        expect(EDGE_VIEW).toContain('...(captions && toIndexLabel && toIndexPos');
+        // An index is guarded too, unless it is the bits of a port the wire is
+        // (`EDGE_SLICE`), which nothing else on the drawing says.
+        expect(EDGE_VIEW).toContain('const indexCaptions = captions || edgeArgs?.[WorkflowDiagramMetadata.EDGE_SLICE] === true;');
+        expect(EDGE_VIEW).toContain('...(indexCaptions && fromIndexLabel && fromIndexPos');
+        expect(EDGE_VIEW).toContain('...(indexCaptions && toIndexLabel && toIndexPos');
     });
 
     it('leaves the hover tooltip alone', () => {
