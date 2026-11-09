@@ -95,6 +95,12 @@ export namespace WorkflowDiagramCss {
     export const NODE_STRUCTURE_IF = 'workflow-node-structure-if';
     export const NODE_STRUCTURE_FOREACH = 'workflow-node-structure-foreach';
     export const NODE_GROUP = 'workflow-node-group';
+    /** A node drawn as a symbol (a gate, a mux, a register): symbol-geometry.ts. */
+    export const NODE_SYMBOL = 'workflow-node-symbol';
+    /** A symbol's pin, drawn as its stub. */
+    export const SYMBOL_PIN = 'symbol-pin';
+    /** A symbol pin's name, shown on a register only. */
+    export const SYMBOL_PIN_LABEL_HIDDEN = 'symbol-pin-label-hidden';
     export const GROUP_BOUNDARY_PORT = 'workflow-group-boundary-port';
     export const NODE_BOUNDARY = 'workflow-node-boundary';
     export const NODE_BOUNDARY_INPUT = 'workflow-node-boundary-input';
@@ -296,6 +302,12 @@ export namespace WorkflowDiagramMetadata {
      * members' node ids, in order (port-bundles.ts).
      */
     export const BOUNDARY_BUS_MEMBERS = 'wf:busMembers';
+    /** What a node is drawn as, when not a box (`SymbolKind`, symbol-geometry.ts). */
+    export const SYMBOL = 'wf:symbol';
+    /** The glyph an `operator` symbol shows (`+`, `==`, `&`). */
+    export const SYMBOL_OPERATOR = 'wf:symbolOperator';
+    /** The name shown under a `register` symbol. */
+    export const SYMBOL_CAPTION = 'wf:symbolCaption';
     export const IS_ARRAY_PORT = 'cal:isArrayPort';
     export const ARRAY_SIZE = 'cal:arraySize';
     

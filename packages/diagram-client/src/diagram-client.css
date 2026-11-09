@@ -886,6 +886,69 @@ body.vscode-high-contrast-light .node-center-image-light {
     cursor: crosshair;
 }
 
+/* ============================================
+   A node drawn as a symbol (symbol-views.ts): a gate's shape, a mux, a
+   register, an operator's box. Outlined in the editor's foreground over the
+   node fill; each pin a stub in the wires' colour, its dot shown only on
+   hover or selection, since the stub is where the wire lands.
+   ============================================ */
+
+.symbol-node .symbol-body {
+    fill: var(--workflow-node-fill);
+    stroke: var(--vscode-foreground, #cccccc);
+    stroke-width: 1.5px;
+    stroke-linejoin: round;
+}
+
+.symbol-node .symbol-line,
+.symbol-node .symbol-stub {
+    fill: none;
+    stroke: var(--vscode-foreground, #cccccc);
+    stroke-width: 1.5px;
+    stroke-linecap: round;
+}
+
+.symbol-node.selected .symbol-body {
+    fill: var(--workflow-node-fill-selected);
+    stroke: var(--vscode-focusBorder, #007fd4);
+}
+
+.symbol-node.hover .symbol-body {
+    fill: var(--workflow-node-fill-hover);
+}
+
+.symbol-node .symbol-operator {
+    fill: var(--vscode-foreground, #cccccc);
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 11px;
+    font-weight: 600;
+    pointer-events: none;
+}
+
+.symbol-node .symbol-caption {
+    pointer-events: none;
+}
+
+.workflow-port.symbol-pin .port-shape {
+    fill-opacity: 0;
+    stroke-opacity: 0;
+}
+
+.workflow-port.symbol-pin.hover .port-shape,
+.workflow-port.symbol-pin.selected .port-shape {
+    fill-opacity: 0.85;
+    stroke-opacity: 1;
+}
+
+.port-label.symbol-pin-label-hidden {
+    display: none;
+}
+
+.symbol-node .port-label {
+    font-size: 10px;
+    fill: var(--vscode-descriptionForeground, #9d9d9d);
+}
+
 .workflow-port .port-hit-area {
     fill: #000;
     opacity: 0;

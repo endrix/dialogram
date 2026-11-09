@@ -1,6 +1,6 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
 import { parseBadgesMeta, parseFactsMeta, parseViewsMeta, type UnitBadge } from '../server/graph-load-request-options';
-import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, type PortSide } from '@dialogram/shared';
+import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, type PortSide, type SymbolKind } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
 import { groupLayoutOptions, splitEdgesAtGroups } from './group-edges';
@@ -22,6 +22,8 @@ export type PyGraphPort = {
     side?: string;
     /** The bundle the port belongs to (`s_axis`). */
     group?: string;
+    /** On a node drawn as a symbol, the symbol's pins the port is wired to (`symbol-geometry.ts`). */
+    pins?: string[];
     width?: number;
     source?: { file?: string; line?: number } | null;
     /** The platform's, never a producer's: this port is a bundle drawn as one (`port-bundles.ts`). */
@@ -280,8 +282,16 @@ export class GraphGModelSource {
             // Ports are laid out by SIDE, which is the direction unless the
             // producer placed the port with its bundle (`port.side`).
             const sideOf = (p: PyGraphPort): PortSide => normalizePortSide(p.side) ?? (p.direction === 'in' ? 'WEST' : 'EAST');
-            const inputs = node.ports.filter(p => sideOf(p) === 'WEST');
-            const outputs = node.ports.filter(p => sideOf(p) === 'EAST');
+            // A node the producer says is drawn as a symbol (a gate, a mux, a
+            // register): its pins in the symbol's order, its size the symbol's.
+            const symbolKind = node.kind !== 'if' && node.kind !== 'loop' && SymbolGeometry.isKind(node.meta?.['symbol'])
+                ? node.meta['symbol'] as SymbolKind
+                : undefined;
+            const bySymbolPin = (ps: PyGraphPort[]): PyGraphPort[] => symbolKind
+                ? ps.map((p, k) => ({ p, k })).sort((a, b) => (SymbolGeometry.pinRank(a.p.pins) - SymbolGeometry.pinRank(b.p.pins)) || a.k - b.k).map(e => e.p)
+                : ps;
+            const inputs = bySymbolPin(node.ports.filter(p => sideOf(p) === 'WEST'));
+            const outputs = bySymbolPin(node.ports.filter(p => sideOf(p) === 'EAST'));
 
             const portW = WorkflowDiagramConstants.PORT_WIDTH_PX;
             const portH = WorkflowDiagramConstants.PORT_HEIGHT_PX;
@@ -333,13 +343,15 @@ export class GraphGModelSource {
             // these same boxes as obstacles, so a route could cross a label.
             // The client draws the body shorter by the same amount, so nothing
             // changes visually.
-            const footerReserve = footerTypeLabel
+            const footerReserve = footerTypeLabel && !symbolKind
                 ? WorkflowDiagramConstants.NODE_FOOTER_LABEL_HEIGHT_PX
                 : 0;
-            const size = {
-                width: Math.max(defaultWidth, labelRequiredWidth, headerLabelW),
-                height: Math.max(minHeight, requiredHeight) + footerReserve
-            };
+            const size = symbolKind
+                ? SymbolGeometry.size(symbolKind, inputs.length, outputs.length)
+                : {
+                    width: Math.max(defaultWidth, labelRequiredWidth, headerLabelW),
+                    height: Math.max(minHeight, requiredHeight) + footerReserve
+                };
             const gnode: GNode = {
                 id: stableNodeId,
                 type: this.nodeType(node),
@@ -618,14 +630,26 @@ export class GraphGModelSource {
             const headerLabelId = `${stableNodeId}_label_name`;
             const subtitle = this.controlSubtitle(node);
             const headerClasses = this.getHeaderCssClasses(node);
-            gnode.children!.push(this.createHeaderCompartment(headerLabelId, node.label, subtitle, headerClasses, unitBadges));
+            if (symbolKind) {
+                // The symbol is what the reader reads: no header, no type
+                // under it; a register's name under its body.
+                gnode.args = {
+                    ...(gnode.args ?? {}),
+                    [WorkflowDiagramMetadata.SYMBOL]: symbolKind,
+                    ...(typeof node.meta?.['operator'] === 'string' ? { [WorkflowDiagramMetadata.SYMBOL_OPERATOR]: node.meta['operator'] } : {}),
+                    ...(symbolKind === 'register' ? { [WorkflowDiagramMetadata.SYMBOL_CAPTION]: node.label } : {})
+                };
+                gnode.cssClasses = [...(gnode.cssClasses ?? []), WorkflowDiagramCss.NODE_SYMBOL];
+            } else {
+                gnode.children!.push(this.createHeaderCompartment(headerLabelId, node.label, subtitle, headerClasses, unitBadges));
+            }
             if (unitBadges.length > 0) {
                 gnode.args = {
                     ...(gnode.args ?? {}),
                     [WorkflowDiagramMetadata.BADGES]: unitBadges as any
                 };
             }
-            const typeLabel = footerTypeLabel;
+            const typeLabel = symbolKind ? undefined : footerTypeLabel;
             if (typeLabel) {
                 gnode.args = {
                     ...(gnode.args ?? {}),
@@ -650,10 +674,15 @@ export class GraphGModelSource {
                 const boxW = port.bus ? 2 * busR : portW;
                 const boxH = port.bus ? 2 * busR : portH;
                 const x = east ? size.width - boxW / 2 : -boxW / 2;
-                const y = yStart + idx * portRowH + portRowOffset(boxH);
-                const labelText = port.name;
+                const y = symbolKind
+                    ? SymbolGeometry.symbolPinY(symbolKind, SymbolGeometry.bodyHeight(symbolKind, size.height), !east,
+                        east ? outputs.length : inputs.length, idx) - boxH / 2
+                    : yStart + idx * portRowH + portRowOffset(boxH);
+                // A register's pins are named by what they are (`d`, `en`, `q`);
+                // a gate's pins say nothing a wire does not, and are hidden.
+                const labelText = symbolKind === 'register' && port.pins?.length ? port.pins[0] : port.name;
                 const labelSize = this.estimateLabelSize(labelText, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX);
-                const labelBoxWidth = this.portLabelBoxWidth(port);
+                const labelBoxWidth = symbolKind === 'register' ? labelSize.width : this.portLabelBoxWidth(port);
                 const gport: GPort = {
                     id: portId,
                     type: direction === 'output' ? WorkflowDiagramTypes.PORT_OUTPUT : WorkflowDiagramTypes.PORT_INPUT,
@@ -689,6 +718,9 @@ export class GraphGModelSource {
                 if (port.busMember) {
                     gport.cssClasses.push(WorkflowDiagramCss.PORT_BUS_MEMBER);
                 }
+                if (symbolKind) {
+                    gport.cssClasses.push(WorkflowDiagramCss.SYMBOL_PIN);
+                }
                 // `control` keeps its established class; every role also gets a
                 // derived one. Without this a producer whose ports carry a role
                 // this file has never heard of can neither style them nor hide
@@ -703,14 +735,16 @@ export class GraphGModelSource {
                 const label: GModelElement = {
                     id: labelId,
                     type: WorkflowDiagramTypes.LABEL_PORT,
-                    text: port.name,
+                    text: labelText,
                     cssClasses: [
                         WorkflowDiagramCss.LABEL,
                         'port-label',
-                        east ? 'output-port-label' : 'input-port-label'
+                        east ? 'output-port-label' : 'input-port-label',
+                        ...(symbolKind && symbolKind !== 'register' ? [WorkflowDiagramCss.SYMBOL_PIN_LABEL_HIDDEN] : [])
                     ],
                     position: {
-                        x: portLabelX(east, boxW, labelBoxWidth, labelGap),
+                        // A symbol's pin names sit inside its body, past the stubs.
+                        x: portLabelX(east, boxW, labelBoxWidth, symbolKind ? SymbolGeometry.pinNameGap(boxW) : labelGap),
                         y: portLabelY(boxH, labelSize.height)
                     },
                     size: { width: labelBoxWidth, height: labelSize.height },

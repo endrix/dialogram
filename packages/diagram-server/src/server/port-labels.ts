@@ -11,7 +11,9 @@
  */
 import { GLabel, GModelRoot, GPort } from '@eclipse-glsp/server';
 import {
+    SymbolGeometry,
     WorkflowDiagramConstants,
+    WorkflowDiagramCss,
     WorkflowDiagramMetadata,
     WorkflowDiagramTypes,
     estimatePortLabelSize,
@@ -45,7 +47,12 @@ export function placePortLabel(label: any, port: any, gap: number): void {
     // Positioned by its top-left: client-side alignment for port labels is
     // switched off (see the ComputedBounds handling), and any alignment left
     // from an earlier bounds pass would add a translate of its own.
-    label.position = { x: portLabelX(east, portW, labelW, gap), y: portLabelY(portH, labelH) };
+    // A symbol's pin names sit inside its body, past the pin's stub.
+    const symbolPin = Array.isArray(port?.cssClasses) && port.cssClasses.includes(WorkflowDiagramCss.SYMBOL_PIN);
+    label.position = {
+        x: portLabelX(east, portW, labelW, symbolPin ? SymbolGeometry.pinNameGap(portW) : gap),
+        y: portLabelY(portH, labelH)
+    };
     label.alignment = undefined;
 }
 
