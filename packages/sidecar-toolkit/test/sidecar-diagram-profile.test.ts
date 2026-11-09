@@ -170,6 +170,17 @@ describe('createSidecarDiagramProfile', () => {
         expect(withResume.clientBehavior).toMatchObject({ noneSentinel: 'x', resumeAtStep: true });
     });
 
+    it('tells the client the product’s node families, unless the product named its own', () => {
+        const families = [{ annotation: 'register', color: '#c586c0' }];
+        // The client draws a family's mark and colour: the server only classes the node.
+        expect(createSidecarDiagramProfile(baseInput({ nodeFamilies: families })).clientBehavior)
+            .toMatchObject({ nodeFamilies: families });
+        const own = [{ annotation: 'logic', color: '#4ec9b0' }];
+        expect(createSidecarDiagramProfile(baseInput({ nodeFamilies: families, clientBehavior: { nodeFamilies: own } })).clientBehavior)
+            .toMatchObject({ nodeFamilies: own });
+        expect(createSidecarDiagramProfile(baseInput()).clientBehavior?.nodeFamilies).toBeUndefined();
+    });
+
     it('builds no run driver, offers no resume, for a product whose CLI has no run', () => {
         const resume = (runDir: string, step: number) => ['--resume-from', runDir, '--at-step', String(step)];
         const runs = createSidecarDiagramProfile(baseInput({ cliResumeArgs: resume }));

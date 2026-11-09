@@ -736,9 +736,7 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
         // A projection creates nothing, whatever the input says.
         supportsElementCreation: readOnly ? false : input.supportsElementCreation,
         operationKinds: input.operationKinds,
-        clientBehavior: runs && input.cliResumeArgs
-            ? { ...input.clientBehavior, resumeAtStep: true }
-            : input.clientBehavior,
+        clientBehavior: clientBehaviorOf(input, Boolean(runs && input.cliResumeArgs)),
         clientStylesheets: input.clientStylesheets,
         clientAssets: input.clientAssets,
         // Read-only, the server registers no writing operation handler at all
@@ -817,4 +815,15 @@ export function resumeFailedRunTool(runWorkflowCommandId: string): RegistryChatT
             return typeof result === 'string' ? result : 'The resume could not be offered.';
         }
     };
+}
+
+/**
+ * What the client is told: the product's behavior, with its node families
+ * (the client draws their marks and colours; the server only classes the
+ * nodes) unless it named its own, and the run's resume flag.
+ */
+function clientBehaviorOf(input: ResolvedSidecarProfileInput, resumeAtStep: boolean): SidecarClientBehavior | undefined {
+    const families = input.nodeFamilies && !input.clientBehavior?.nodeFamilies ? { nodeFamilies: input.nodeFamilies } : {};
+    const behavior = { ...families, ...input.clientBehavior, ...(resumeAtStep ? { resumeAtStep: true } : {}) };
+    return Object.keys(behavior).length > 0 ? behavior : input.clientBehavior;
 }
