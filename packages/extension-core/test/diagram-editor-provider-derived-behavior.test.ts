@@ -93,3 +93,26 @@ describe('the run driver, as the webview sees it', () => {
         expect(clientBehaviorFor({ ...PROFILE, clientBehavior: { resumeAtStep: true } as any }).resumeAtStep).toBe(false);
     });
 });
+
+describe('the node families, as the webview sees them', () => {
+    const families = [{ annotation: 'register', color: '#c586c0' }];
+
+    it('are the ones the server classes nodes with, so the editor draws their marks', () => {
+        const behavior = clientBehaviorFor({ ...PROFILE, storageOptions: { nodeFamilies: families } } as unknown as DiagramProfile);
+        expect(behavior.nodeFamilies).toEqual(families);
+    });
+
+    it('are the product’s own for the client when it names them, its other flags kept', () => {
+        const own = [{ annotation: 'logic', color: '#4ec9b0' }];
+        const behavior = clientBehaviorFor({
+            ...PROFILE,
+            storageOptions: { nodeFamilies: families },
+            clientBehavior: { nodeFamilies: own, noneSentinel: 'x' }
+        } as unknown as DiagramProfile);
+        expect(behavior).toMatchObject({ nodeFamilies: own, noneSentinel: 'x' });
+    });
+
+    it('are absent when no side has any', () => {
+        expect(clientBehaviorFor(PROFILE)).not.toHaveProperty('nodeFamilies');
+    });
+});

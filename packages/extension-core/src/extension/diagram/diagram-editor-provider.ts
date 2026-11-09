@@ -995,6 +995,11 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
                 // resumable only where something can run it again.
                 runDriver: this.profile.runDriver !== undefined,
                 resumeAtStep: this.profile.clientBehavior?.resumeAtStep === true && this.profile.runDriver !== undefined,
+                // The node families the server classes nodes with are the ones
+                // the client draws marks and colours for, unless the product
+                // names others for the client: a profile that gives them to
+                // the server only would class nodes the editor draws plain.
+                nodeFamilies: this.profile.clientBehavior?.nodeFamilies ?? this.profile.storageOptions?.nodeFamilies,
                 // The same for the status source: the menu offers exactly the
                 // commands the host registered, or none. Data only; `collect`
                 // stays on the host.
