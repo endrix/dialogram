@@ -762,6 +762,13 @@ export class WorkflowShowAgentSkillsActionHandler implements IActionHandler {
         return this.skillsByElementId.get(elementId) ?? [];
     }
 
+    /** Skills from the model's snapshot, for a node discovery has not answered for yet. */
+    static seed(elementId: string, skills: WorkflowAgentSkill[]): void {
+        if (!this.skillsByElementId.has(elementId)) {
+            this.skillsByElementId.set(elementId, skills);
+        }
+    }
+
     handle(action: GlspAction): ICommand | GlspAction | void {
         if (!WorkflowShowAgentSkillsAction.is(action)) {
             return;
@@ -786,6 +793,13 @@ export class WorkflowShowClaudeAgentsActionHandler implements IActionHandler {
 
     static getAgentsForElement(elementId: string): WorkflowClaudeAgentProfile[] {
         return this.agentsByElementId.get(elementId) ?? [];
+    }
+
+    /** Agent presets from the model's snapshot, for a node discovery has not answered for yet. */
+    static seed(elementId: string, agents: WorkflowClaudeAgentProfile[]): void {
+        if (!this.agentsByElementId.has(elementId)) {
+            this.agentsByElementId.set(elementId, agents);
+        }
     }
 
     handle(action: GlspAction): ICommand | GlspAction | void {

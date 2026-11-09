@@ -24,6 +24,8 @@ import {
 import { describeSkillStatus } from './agent-editor';
 
 export class AgentNodeSections implements NodeSectionContribution {
+    readonly id = 'agent';
+
     /** The chat history the Agent Context last drew, so it redraws only when that changes. */
     private lastHistoryJson: string | undefined;
 
@@ -37,9 +39,21 @@ export class AgentNodeSections implements NodeSectionContribution {
         });
     }
 
+    /**
+     * Seed the node's skills and agent presets from the root's model-load
+     * snapshots, so a configured skill reads right on the first draw. A
+     * snapshot never replaces what discovery answered for the node, which is
+     * newer, and an empty one seeds nothing.
+     */
     prepare(node: PropertyElement, root: PanelModelRoot | undefined): void {
-        this.primeAgentSkillsCacheFromRoot(node, root);
-        this.primeClaudeAgentsCacheFromRoot(node, root);
+        const skills = snapshotList<WorkflowAgentSkill>(root, 'wf:agentSkillsSnapshot');
+        if (skills.length > 0) {
+            WorkflowShowAgentSkillsActionHandler.seed(node.id, skills);
+        }
+        const agents = snapshotList<WorkflowClaudeAgentProfile>(root, 'wf:claudeAgentsSnapshot');
+        if (agents.length > 0) {
+            WorkflowShowClaudeAgentsActionHandler.seed(node.id, agents);
+        }
     }
 
     /** The configured skill's status; also written back into args for downstream consumers. */
@@ -61,7 +75,7 @@ export class AgentNodeSections implements NodeSectionContribution {
 
     /** Agent Tools, for an @agent node where a run driver is behind the diagram: its two commands are the driver's. */
     afterAnnotations(node: PropertyElement, context: NodeSectionContext): HTMLElement | undefined {
-        return offersRun() ? this.buildAgentToolsSection(context.entityName, node.args || {}) ?? undefined : undefined;
+        return offersRun() ? this.buildAgentToolsSection(context.entityName, node.args || {}) : undefined;
     }
 
     /** The live chat history of a stateful agent task. */
@@ -82,18 +96,12 @@ export class AgentNodeSections implements NodeSectionContribution {
 
 
     /**
-     * Incrementally replace only the agent context section in the property panel.
-     * Called during streaming when the same node is selected and only the
-     * agent chat history changed.  Avoids ~50-100ms of DOM rebuild for all other
-     * sections (ports, annotations, parameters, etc.).
+     * Streaming update for the agent context, instead of redrawing the whole
+     * panel: re-render the lit body into the existing section host so lit diffs
+     * it — preserving open `<details>`, scroll position, and DOM identity.
+     * Builds the section if it isn't present yet.
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    /**
-     * Streaming update for the agent context: re-render the lit body into the existing
-     * section host so lit diffs it — preserving open `<details>`, scroll position, and
-     * DOM identity — instead of tearing the whole section down each token. Builds the
-     * section if it isn't present yet. Replaces the former manual remove-and-rebuild.
-     */
     protected refreshAgentContext(node: any, content: HTMLElement): void {
         const args = node.args || {};
         const parsed = this.parseAgentContext(args);
@@ -215,7 +223,7 @@ export class AgentNodeSections implements NodeSectionContribution {
                     </summary>
                     <div class="agent-thinking-body">
                         ${this.looksLikeMarkdown(msg.thinking)
-                            ? html`<div class="agent-md-content">${unsafeHTML(this.renderMarkdown(msg.thinking))}</div>`
+                            ? html`<div class="agent-md-content">${unsafeHTML(renderMarkdownSafe(msg.thinking))}</div>`
                             : html`<div class="agent-chat-text">${msg.thinking}</div>`}
                     </div>
                 </details>`
@@ -277,7 +285,7 @@ export class AgentNodeSections implements NodeSectionContribution {
         if (this.looksLikeMarkdown(content)) {
             const mdDiv = document.createElement('div');
             mdDiv.className = 'agent-md-content';
-            mdDiv.innerHTML = this.renderMarkdown(content);
+            mdDiv.innerHTML = renderMarkdownSafe(content);
             container.appendChild(mdDiv);
             return;
         }
@@ -422,7 +430,7 @@ export class AgentNodeSections implements NodeSectionContribution {
             if (this.looksLikeMarkdown(value)) {
                 const mdDiv = document.createElement('div');
                 mdDiv.className = 'agent-md-content';
-                mdDiv.innerHTML = this.renderMarkdown(value);
+                mdDiv.innerHTML = renderMarkdownSafe(value);
                 container.appendChild(mdDiv);
                 return;
             }
@@ -507,25 +515,18 @@ export class AgentNodeSections implements NodeSectionContribution {
     }
 
     /**
-     * Markdown → sanitized HTML (markdown-it + DOMPurify via the shared util).
-     */
-    protected renderMarkdown(md: string): string {
-        return renderMarkdownSafe(md);
-    }
-
-    /**
      * Build a property-panel section for configuring agent tool-calling.
      * Shows a checkbox to enable/disable tools and a dropdown for auth mode.
      * Changes are dispatched to the extension host via NavigateToExternalTargetAction.
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    protected buildAgentToolsSection(entityName: string, args: any): HTMLElement | null {
+    protected buildAgentToolsSection(entityName: string, args: any): HTMLElement | undefined {
         const defAnnotations = (args?.[WorkflowDiagramMetadata.ENTITY_DEFINITION_ANNOTATIONS] as any[]) || [];
         const isAgent = Array.isArray(defAnnotations) && defAnnotations.some(
             (a: { name?: string }) => a?.name === 'agent'
         );
         if (!isAgent) {
-            return null;
+            return undefined;
         }
 
         const section = createPropertySection('Agent Tools');
@@ -679,67 +680,6 @@ export class AgentNodeSections implements NodeSectionContribution {
         return section;
     }
 
-    protected primeAgentSkillsCacheFromRoot(node: PropertyElement, root: PanelModelRoot | undefined): void {
-        const rootArgs = (root as any)?.args as Record<string, unknown> | undefined;
-        const raw = typeof rootArgs?.['wf:agentSkillsSnapshot'] === 'string'
-            ? String(rootArgs['wf:agentSkillsSnapshot'])
-            : '';
-        if (!raw) {
-            return;
-        }
-        try {
-            const parsed = JSON.parse(raw);
-            if (!Array.isArray(parsed)) {
-                return;
-            }
-            const skills = parsed as WorkflowAgentSkill[];
-            // An empty snapshot must not clobber a cache the on-demand request already populated
-            // (the snapshot is computed at model-load time and can lag behind live discovery).
-            if (skills.length === 0) {
-                return;
-            }
-            if (!node.id) {
-                return;
-            }
-            const store = (WorkflowShowAgentSkillsActionHandler as any).skillsByElementId;
-            if (store && typeof store.set === 'function') {
-                store.set(node.id, skills);
-            }
-        } catch {
-            // ignore best-effort snapshot parse
-        }
-    }
-
-    protected primeClaudeAgentsCacheFromRoot(node: PropertyElement, root: PanelModelRoot | undefined): void {
-        const rootArgs = (root as any)?.args as Record<string, unknown> | undefined;
-        const raw = typeof rootArgs?.['wf:claudeAgentsSnapshot'] === 'string'
-            ? String(rootArgs['wf:claudeAgentsSnapshot'])
-            : '';
-        if (!raw) {
-            return;
-        }
-        try {
-            const parsed = JSON.parse(raw);
-            if (!Array.isArray(parsed)) {
-                return;
-            }
-            const agents = parsed as WorkflowClaudeAgentProfile[];
-            // Don't let an empty snapshot clobber a cache the on-demand request already populated.
-            if (agents.length === 0) {
-                return;
-            }
-            if (!node.id) {
-                return;
-            }
-            const store = (WorkflowShowClaudeAgentsActionHandler as any).agentsByElementId;
-            if (store && typeof store.set === 'function') {
-                store.set(node.id, agents);
-            }
-        } catch {
-            // ignore best-effort snapshot parse
-        }
-    }
-
     protected extractConfiguredSkillName(agentSpec: Record<string, unknown> | undefined): string {
         if (!agentSpec || typeof agentSpec !== 'object') {
             return '';
@@ -749,5 +689,19 @@ export class AgentNodeSections implements NodeSectionContribution {
             return raw.trim();
         }
         return '';
+    }
+}
+
+/** A JSON array the root carries as a string, or none when absent or malformed. */
+function snapshotList<T>(root: PanelModelRoot | undefined, key: string): T[] {
+    const raw = root?.args?.[key];
+    if (typeof raw !== 'string' || raw === '') {
+        return [];
+    }
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed as T[] : [];
+    } catch {
+        return []; // a best-effort snapshot
     }
 }

@@ -10,8 +10,11 @@
  *
  *     bind(NodeSectionContribution).toConstantValue(mySections);
  *
- * and passes the module to `startStockDiagram({ features })`. Contributions
- * bound earlier are asked first, so their rows and sections come first.
+ * and passes the module to `startStockDiagram({ features })`. There is one
+ * contribution per `id`: a later binding for an id replaces the earlier one, so
+ * a product's module, which loads after the stock one, can replace a stock
+ * contribution. Contributions are asked in the order their ids were first
+ * bound, so their rows and sections come in that order.
  */
 import type { PropertyElement } from './property-model';
 
@@ -44,6 +47,9 @@ export interface NodeSectionHost {
 }
 
 export interface NodeSectionContribution {
+    /** What the contribution is, for a later binding to replace it: the stock one is `'agent'`. */
+    readonly id: string;
+
     /** Once, when the panel starts. */
     install?(host: NodeSectionHost): void;
 

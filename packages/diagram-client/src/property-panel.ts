@@ -74,8 +74,16 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         }
     }
 
+    /**
+     * One contribution per id, in the order the ids were first bound; a later
+     * binding replaces the earlier one.
+     */
     protected nodeSections(): readonly NodeSectionContribution[] {
-        return this.contributedNodeSections ?? [];
+        const byId = new Map<string, NodeSectionContribution>();
+        for (const contribution of this.contributedNodeSections ?? []) {
+            byId.set(contribution.id, contribution);
+        }
+        return [...byId.values()];
     }
 
     /** Draw a node again if the panel is open on it, without the editors asking for discovery again. */
@@ -312,7 +320,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             }
         } else {
             // Fallback for other elements
-            const basicSection = this.createSection('Basic Information');
+            const basicSection = createPropertySection('Basic Information');
             this.addProperty(basicSection, 'Type', element.type);
             this.addProperty(basicSection, 'ID', element.id);
             content.appendChild(basicSection);
@@ -462,13 +470,6 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         }
     }
 
-    /**
-     * Shorten a file path to just the last 2 path segments for display.
-     */
-    protected shortenPath(p: string): string {
-        return shortenPath(p);
-    }
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     protected async promptAndUpdateEntityPort(
         _node: any,
@@ -549,7 +550,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     ): HTMLElement {
         const defAnnotations = (args?.[WorkflowDiagramMetadata.ENTITY_DEFINITION_ANNOTATIONS] as any[]) || [];
 
-        const annSection = this.createSection(
+        const annSection = createPropertySection(
             Array.isArray(defAnnotations) ? `Annotations (${defAnnotations.length})` : 'Annotations',
             { collapsed: !Array.isArray(defAnnotations) || defAnnotations.length === 0 }
         );
@@ -804,7 +805,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             && args?.[WorkflowDiagramMetadata.IS_NETWORK_INSTANCE] === true;
 
         const paramCount = Array.isArray(defParams) ? defParams.length : 0;
-        const section = this.createSection(
+        const section = createPropertySection(
             isNetworkModelInstance
                 ? `Network Parameters (${paramCount})`
                 : `Definition Parameters (${paramCount})`,
@@ -1256,7 +1257,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             return undefined;
         }
 
-        const section = this.createSection(`${this.isNetworkRuntime() ? 'Network' : 'Workflow'} Parameters (${parameters.length})`);
+        const section = createPropertySection(`${this.isNetworkRuntime() ? 'Network' : 'Workflow'} Parameters (${parameters.length})`);
         if (!factoryName) {
             for (const parameter of parameters) {
                 const value = (parameter as { valueText: string }).valueText || '(unspecified)';
@@ -1414,7 +1415,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         const referencedUri = (rootArgs as Record<string, unknown>)['wf:workflowSourceUri'] as string | undefined
             ?? (rootArgs as Record<string, unknown>)[WorkflowDiagramMetadata.REFERENCED_URI] as string | undefined;
 
-        const basicSection = this.createSection(usesNetworkModel ? 'Network' : 'Workflow');
+        const basicSection = createPropertySection(usesNetworkModel ? 'Network' : 'Workflow');
         this.addProperty(basicSection, 'Name', workflowName ?? '(unknown)');
         if (factoryName) {
             this.addProperty(basicSection, 'Factory', factoryName);
@@ -1473,7 +1474,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         if (facts.length === 0) {
             return undefined;
         }
-        const section = this.createSection(`Facts (${facts.length})`);
+        const section = createPropertySection(`Facts (${facts.length})`);
         const content = section.querySelector('.property-section-content') as HTMLElement | null;
         if (!content) {
             return section;
@@ -1532,7 +1533,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             return undefined;
         }
 
-        const section = this.createSection('Graph Load Issues');
+        const section = createPropertySection('Graph Load Issues');
         this.addProperty(section, 'Status', partial ? 'Partial graph' : 'Errors reported');
         if (errors.length === 0) {
             this.addProperty(section, 'Message', 'Graph export completed with recoverable issues.');
@@ -1580,7 +1581,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         direction: 'input' | 'output',
         boundaryNodes: any[]
     ): HTMLElement {
-        const section = this.createSection(title, { collapsed: boundaryNodes.length === 0 });
+        const section = createPropertySection(title, { collapsed: boundaryNodes.length === 0 });
         const header = section.querySelector('.property-section-header');
         if (header) {
             const actions = document.createElement('div');
@@ -1825,27 +1826,14 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     }
 
     /**
-     * A collapsible section.
-     *
-     * `collapsed` sets the INITIAL state only — the header toggle still works,
-     * and nothing here remembers the choice, so reopening the panel starts from
-     * the default again. Callers pass it for sections that turned out empty:
-     * an "(0)" section costs a screenful of nothing to scroll past, and the
-     * count in the header already says everything its body would.
-     */
-    protected createSection(title: string, opts?: { collapsed?: boolean }): HTMLElement {
-        return createPropertySection(title, opts);
-    }
-
-    /**
      * Build a collapsible section whose body (and optional header action) is a
-     * declarative Lit template. Reuses createSection so collapse + chevron work.
+     * declarative Lit template. Reuses createPropertySection so collapse + chevron work.
      */
     protected litSection(
         title: string,
         opts: { headerAction?: TemplateResult; body: TemplateResult; extraClass?: string; collapsed?: boolean }
     ): HTMLElement {
-        const section = this.createSection(title, { collapsed: opts.collapsed });
+        const section = createPropertySection(title, { collapsed: opts.collapsed });
         if (opts.extraClass) section.classList.add(opts.extraClass);
         if (opts.headerAction) {
             const actions = document.createElement('div');
@@ -1883,7 +1871,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                   <span class="pp-akey">Opens</span>
                   <span class="pp-aval pp-aval-wrap">
                       <a href=${opens.line ? `${opens.uri}#L${opens.line}` : opens.uri} title=${opensPath}
-                          >${this.shortenPath(opensPath)}${opens.line ? `:${opens.line}` : ''}</a>
+                          >${shortenPath(opensPath)}${opens.line ? `:${opens.line}` : ''}</a>
                   </span>
               </div>`
             : nothing;

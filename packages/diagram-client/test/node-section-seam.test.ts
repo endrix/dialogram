@@ -27,8 +27,9 @@ vi.mock('../src/libavoid-loader', async (original) => ({
 type Call = [hook: string, ...args: unknown[]];
 
 /** A contribution that records each call and draws one row and two sections. */
-function probe(calls: Call[] = [], tag = 'probe'): NodeSectionContribution & { host?: NodeSectionHost } {
+function probe(calls: Call[] = [], tag = 'probe', id = tag): NodeSectionContribution & { host?: NodeSectionHost } {
     const contribution: NodeSectionContribution & { host?: NodeSectionHost } = {
+        id,
         install(host) {
             calls.push(['install']);
             contribution.host = host;
@@ -94,6 +95,14 @@ describe('a node section contribution', () => {
         const after = titles.indexOf('Annotations') + 1;
         expect(titles.slice(after, after + 2)).toEqual(['first after', 'second after']);
         expect(titles.slice(-2)).toEqual(['first last', 'second last']);
+    });
+
+    it('is replaced by a later contribution of the same id, which keeps its place', () => {
+        const first: Call[] = [];
+        panelWith([probe(first, 'first', 'shared'), probe([], 'other'), probe([], 'second', 'shared')]).show(taskNode('swapped', []));
+        expect(first).toEqual([]);
+        expect(infoKeys().slice(2)).toEqual(['second row', 'other row']);
+        expect(sectionTitles().slice(-2)).toEqual(['second last', 'other last']);
     });
 
     it('prepares a selected node with the root, but not the node of a selected port', () => {
@@ -194,6 +203,17 @@ describe('the node sections the panel is given', () => {
         });
         const panel = stockContainer(product).get(PropertyPanel);
         expect(kinds(panel)).toEqual(['AgentNodeSections', 'product']);
+        expect(calls).toEqual([['install']]);
+    });
+
+    it('take a product’s agent sections in place of the stock ones', () => {
+        const calls: Call[] = [];
+        const mine = probe(calls, 'mine', 'agent');
+        const product = new ContainerModule(bind => {
+            bind(NodeSectionContribution).toConstantValue(mine);
+        });
+        const panel = stockContainer(product).get(PropertyPanel);
+        expect((panel as any).nodeSections()).toEqual([mine]);
         expect(calls).toEqual([['install']]);
     });
 

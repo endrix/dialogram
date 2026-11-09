@@ -212,7 +212,7 @@ name: a later binding replaces an earlier one, so your module can replace one
 of the stock editors (`@tool`, `@agent`).
 
 **Node sections.** To show more about a node than the panel's own sections,
-bind a `NodeSectionContribution`. Every hook is optional:
+bind a `NodeSectionContribution`. It needs an `id`; every hook is optional:
 
 ```ts
 import { ContainerModule } from 'inversify';
@@ -220,6 +220,7 @@ import { NodeSectionContribution, createPropertySection } from '@dialogram/diagr
 
 export const myFeaturesModule = new ContainerModule(bind => {
     bind(NodeSectionContribution).toConstantValue({
+        id: 'owner',
         infoRows: node => [{ label: 'Owner', value: String(node.args?.['my:owner'] ?? '') }],
         last: node => {
             const section = createPropertySection('History');
@@ -239,8 +240,10 @@ export const myFeaturesModule = new ContainerModule(bind => {
 - `install(host)` runs once. Its `host.redrawIfShowing(id)` draws the node
   again, for an answer that arrives later.
 
-Contributions are asked in the order they were bound. The stock bundle binds
-the agent sections: the Skill row, Agent Tools and the live Agent Context.
+Contributions are asked in the order their ids were first bound. A later
+binding for an id replaces the earlier one, so your module can replace the
+stock bundle's agent sections (id `agent`: the Skill row, Agent Tools and the
+live Agent Context).
 
 **A diagram of your own.** When you compose the container yourself:
 

@@ -112,6 +112,24 @@ describe('when discovery answers', () => {
         expect(kinds(panel)).toEqual(['dialogram.requestAgentSkills', 'dialogram.requestClaudeAgents', 'dialogram.requestClaudeAgents']);
     });
 
+    it('keeps what it found when it redraws over the root’s older snapshot', async () => {
+        const node = skilled('fresh');
+        const root = rootOf(node);
+        const stale = { ...READER, description: 'From the snapshot' };
+        root.args = { 'wf:agentSkillsSnapshot': JSON.stringify([stale]), 'wf:claudeAgentsSnapshot': JSON.stringify([PRESET]) };
+        const panel = listening();
+        panel.show(node, root);
+        expect(infoRows().Skill).toBe('From the snapshot');
+
+        const newer = { ...PRESET, description: 'Reviews a change, newer' };
+        new WorkflowShowClaudeAgentsActionHandler().handle({ kind: 'dialogram.showClaudeAgents', elementId: node.id, agents: [newer] } as any);
+        new WorkflowShowAgentSkillsActionHandler().handle({ kind: 'dialogram.showAgentSkills', elementId: node.id, skills: [READER] } as any);
+        await tick();
+        expect(infoRows().Skill).toBe('Reads Turnus analyses');
+        expect(WorkflowShowAgentSkillsActionHandler.getSkillsForElement(node.id)).toEqual([READER]);
+        expect(WorkflowShowClaudeAgentsActionHandler.getAgentsForElement(node.id)).toEqual([newer]);
+    });
+
     it('does not redraw for another node', async () => {
         const node = skilled('shown');
         const panel = listening();
