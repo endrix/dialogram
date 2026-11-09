@@ -109,14 +109,20 @@ it no longer has.
   nodes of one bundle in one margin (`s_axis_tvalid`, `s_axis_tdata`, and
   the `s_axis_tready` placed beside them) are drawn as one, named after the
   bundle, saying how many ports it holds where a port says its type, in
-  place of the first of them; it is an input when most of its members are.
-  Its toggle sits between the arrow and the name and works as an instance
-  bus's does: open, the node stays as the bundle's header, the members are
-  drawn in the rows under it in its margin, and what was laid out under it
-  moves down to make room, back again on undo or close. Its edges are
-  merged and split by the same rule. A bundle split across both margins is
-  a bus in each; a bundle of one stays the port it is. The open state is
-  saved under the bus node's id (`bus:wf:<margin>:<bundle>`).
+  place of the first of them, and Go to Source opens that one's
+  declaration; it is an input when most of its members are, and its edges
+  run the way its arrow points. Its toggle sits between the arrow and the
+  name and works as an instance bus's does: open, the node stays as the
+  bundle's header, the members are drawn in the rows under it in its
+  margin, and what was laid out under it moves down to make room, back
+  again on undo or close. Its edges are merged and split by the same rule;
+  a wire from one member of a closed bus to another is drawn once it is
+  open. A bundle split across both margins is a bus in each; a bundle of
+  one stays the port it is. The open state is saved under the bus node's
+  id (`bus:wf:<margin>:<bundle>`). A layout saved before the bundle was
+  drawn as one stays usable: the bus takes its topmost member's place
+  rather than the whole diagram being laid out again
+  (`boundary-bus-positions.ts`).
 
 - **What a double-click on a node opens is a contribution point:
   `NodeOpener`** (exported). An opener answers before the platform's own

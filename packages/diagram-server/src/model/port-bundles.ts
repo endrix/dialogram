@@ -61,6 +61,11 @@ function isBoundaryNode(node: PyGraphNode): boolean {
 interface MemberInfo {
     busId: string;
     expanded: boolean;
+    /**
+     * A bundle of the unit's ports is drawn as an input or an output, its arrow
+     * pointing one way: its edges run that way, `out` from it, `in` into it.
+     */
+    runs?: 'out' | 'in';
 }
 
 /**
@@ -155,8 +160,12 @@ export function bundlePorts(
     return { ...doc, graph: { ...doc.graph, nodes: withBoundaries, edges } };
 }
 
-/** The margin a boundary node sits in: its producer's `meta.side`, else by its kind. */
-function boundaryMargin(node: PyGraphNode): PortSide {
+/**
+ * The margin a boundary node sits in: its producer's `meta.side` (an output
+ * `ready` placed beside the inputs it answers), else inputs west and outputs
+ * east. Bundling groups by it and the node is drawn in it, so both read it here.
+ */
+export function boundaryMargin(node: Pick<PyGraphNode, 'kind' | 'meta'>): PortSide {
     return normalizePortSide(node.meta?.['side'] as string | undefined) ?? (node.kind === 'wf-input' ? 'WEST' : 'EAST');
 }
 
@@ -167,7 +176,7 @@ function boundaryMargin(node: PyGraphNode): PortSide {
  * that node stays as the bundle's header and its members are drawn after it.
  * Members are grouped by bundle and margin, so a `ready` output the producer
  * placed beside its inputs is in their bus. The bus node is an input when
- * most of its members are.
+ * most of its members are, and its edges run the way its arrow points.
  */
 function bundleBoundaries(
     nodes: PyGraphNode[],
@@ -175,15 +184,20 @@ function bundleBoundaries(
     memberOf: Map<string, MemberInfo>,
     nodeIds: StableNodeIds
 ): PyGraphNode[] {
-    const byKey = new Map<string, PyGraphNode[]>();
-    for (const node of nodes) {
+    const keyOf = (node: PyGraphNode): string | undefined => {
         const group = isBoundaryNode(node) ? node.ports[0]?.group : undefined;
-        if (!group) {
-            continue;
+        return group ? `${group}\u0000${boundaryMargin(node)}` : undefined;
+    };
+    const keys = nodes.map(keyOf);
+    const byKey = new Map<string, PyGraphNode[]>();
+    nodes.forEach((node, k) => {
+        const key = keys[k];
+        if (key) {
+            const members = byKey.get(key) ?? [];
+            members.push(node);
+            byKey.set(key, members);
         }
-        const key = `${group}\u0000${boundaryMargin(node)}`;
-        byKey.set(key, [...(byKey.get(key) ?? []), node]);
-    }
+    });
     const buses = [...byKey.entries()].filter(([, members]) => members.length >= 2);
     if (buses.length === 0) {
         return nodes;
@@ -200,6 +214,9 @@ function bundleBoundaries(
         // Keyed by the bus node's own id: it is no producer's node, so its
         // model id is this one.
         const expanded = state.isExpanded(id, group);
+        // Go to Source on the bus opens its first member's declaration.
+        const first = members[0];
+        const source = first.meta?.['source'] ?? first.ports[0].source;
         const bus: PyGraphNode = {
             id,
             kind,
@@ -211,32 +228,34 @@ function bundleBoundaries(
                 direction: kind === 'wf-input' ? 'out' : 'in',
                 group,
                 ...(margin !== defaultMargin ? { side: margin === 'WEST' ? 'east' : 'west' } : {}),
+                ...(first.ports[0].source ? { source: first.ports[0].source } : {}),
                 bus: { group, key: group, expanded, members: members.length }
             }],
             meta: {
                 ...(margin !== defaultMargin ? { side: margin.toLowerCase() } : {}),
+                ...(source ? { source } : {}),
                 // The members' model ids, in order: opening the bus places them
                 // under it before the model is built again.
                 busMembers: members.map(m => stableNodeId(nodeIds, m))
             }
         };
+        const runs = kind === 'wf-input' ? 'out' : 'in';
         for (const member of members) {
-            memberOf.set(member.ports[0].id, { busId, expanded });
+            memberOf.set(member.ports[0].id, { busId, expanded, runs });
         }
         busOf.set(key, { bus, members, expanded });
     }
     const out: PyGraphNode[] = [];
     const placed = new Set<string>();
-    for (const node of nodes) {
-        const group = isBoundaryNode(node) ? node.ports[0]?.group : undefined;
-        const key = group ? `${group}\u0000${boundaryMargin(node)}` : undefined;
+    nodes.forEach((node, k) => {
+        const key = keys[k];
         const entry = key ? busOf.get(key) : undefined;
         if (!entry) {
             out.push(node);
-            continue;
+            return;
         }
         if (placed.has(key!)) {
-            continue;
+            return;
         }
         placed.add(key!);
         out.push(entry.bus);
@@ -245,7 +264,7 @@ function bundleBoundaries(
                 out.push({ ...member, ports: [{ ...member.ports[0], busMember: entry.bus.label }] });
             }
         }
-    }
+    });
     return out;
 }
 
@@ -277,6 +296,12 @@ function mergeBusEdges(edges: readonly PyGraphEdge[], memberOf: ReadonlyMap<stri
             out.push(edge);
             continue;
         }
+        // A connection from one member of a closed bundle to another (a
+        // feedthrough) is inside the bus: it is drawn once the bundle is open,
+        // not as a loop on the bus.
+        if (from === to) {
+            continue;
+        }
         // Keyed on the pair, either way round: a handshake's `ready` runs
         // against its `valid` and belongs to the same bus edge.
         const pair = from < to ? `${from}\u0000${to}` : `${to}\u0000${from}`;
@@ -290,27 +315,39 @@ function mergeBusEdges(edges: readonly PyGraphEdge[], memberOf: ReadonlyMap<stri
         }
     }
 
+    const runs = new Map<string, 'out' | 'in'>();
+    for (const info of memberOf.values()) {
+        if (info.runs) {
+            runs.set(info.busId, info.runs);
+        }
+    }
     return out.map(entry => {
         if (!('merged' in entry)) {
             return entry;
         }
-        return busEdge(merged.get(entry.merged)!);
+        return busEdge(merged.get(entry.merged)!, runs);
     });
 }
 
 /**
  * One edge for connections that now join the same two ports. It runs the way
  * most of them run (data and `valid` outvote `ready`), the first one breaking
- * a tie, and keeps the facts its members agree on.
+ * a tie, or the way a bundle of the unit's ports at either end points, and
+ * keeps the facts its members agree on.
  */
-function busEdge(members: readonly PyGraphEdge[]): PyGraphEdge {
+function busEdge(members: readonly PyGraphEdge[], runs: ReadonlyMap<string, 'out' | 'in'>): PyGraphEdge {
     const first = members[0];
+    // At a bundle of the unit's ports the bus's arrow decides.
+    const against = (from: string, to: string): boolean => runs.get(from) === 'in' || runs.get(to) === 'out';
     if (members.length === 1) {
-        return first;
+        return against(first.from, first.to) ? { ...first, from: first.to, to: first.from } : first;
     }
     const forward = members.filter(e => e.from === first.from).length;
     const reversed = members.length - forward;
-    const [from, to] = reversed > forward ? [first.to, first.from] : [first.from, first.to];
+    let [from, to] = reversed > forward ? [first.to, first.from] : [first.from, first.to];
+    if (against(from, to)) {
+        [from, to] = [to, from];
+    }
     return {
         id: `bus:${from}->${to}`,
         from,

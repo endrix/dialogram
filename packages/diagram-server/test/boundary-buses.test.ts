@@ -11,6 +11,8 @@ import { portBusStateOf } from '../src/model/port-bundles';
 import { convertToGModelRoot } from '../src/server/gmodel-convert';
 import { relativeToParent, restoreGroupGeometry } from '../src/server/group-geometry';
 import { collectNodePositions, nodeLayoutKeyOf } from '../src/server/layout-snapshot';
+import { withBoundaryBusPositions } from '../src/server/boundary-bus-positions';
+import { countCoincidentNodes } from '../src/server/source-model-storage';
 import { TogglePortBusCommand, WorkflowTogglePortBusOperationHandler } from '../src/operations/toggle-port-bus-handler';
 
 type Point = { x: number; y: number };
@@ -18,7 +20,7 @@ type Point = { x: number; y: number };
 const input = (name: string, group?: string, side?: string): PyGraphNode => ({
     id: `wf:input:${name}`, kind: 'wf-input', label: name, scope: 'root',
     ports: [{ id: `port:wf:input:${name}:out`, name, direction: 'out', ...(group ? { group } : {}) }],
-    ...(side ? { meta: { side } } : {})
+    meta: { ...(side ? { side } : {}), source: { file: '/w/top.sv', line: 10 + name.length } }
 });
 const output = (name: string, group?: string, side?: string): PyGraphNode => ({
     id: `wf:output:${name}`, kind: 'wf-output', label: name, scope: 'root',
@@ -99,6 +101,12 @@ describe('a closed bundle of the unit’s ports', () => {
         expect(irq.args['wf:busMembers']).toBeUndefined();
     });
 
+    it('goes to its first member’s declaration', () => {
+        const bus = nodeOf(model(), S_AXIS);
+        expect(bus.args[WorkflowDiagramMetadata.REFERENCED_URI]).toBe('file:///w/top.sv');
+        expect(bus.args[WorkflowDiagramMetadata.REFERENCED_SOURCE_RANGE].start.line).toBe(10 + 's_axis_tvalid'.length - 1);
+    });
+
     it('joins a closed bundle at the other end by one edge, and an unbundled port by its own', () => {
         const edges = edgesOf(model());
         expect(edges.map(e => [e.sourceId, e.targetId])).toEqual([
@@ -156,8 +164,9 @@ describe('a bundle split across both margins', () => {
 function diagram(positions: Record<string, Point>) {
     let open = new Map<string, Set<string>>();
     const state: { root?: any; index?: GModelIndex } = {};
-    const build = (at: Map<string, Point>): void => {
+    const build = (saved: Map<string, Point>): void => {
         const built: any = new GraphGModelSource().transform(doc, { portBuses: portBusStateOf(open) });
+        const at = withBoundaryBusPositions(built.graph, saved);
         for (const element of built.graph.children ?? []) {
             const key = typeof element.type === 'string' && element.type.startsWith('node:') ? nodeLayoutKeyOf(element) : undefined;
             const saved = key ? at.get(key) : undefined;
@@ -214,5 +223,75 @@ describe('opening a bundle of the unit’s ports', () => {
         await toggle.redo();
         expect(d.at('s_axis_tdata')).toEqual({ x: 0, y: 100 + 3 * pitch });
         expect(d.at('irq')).toEqual({ x: 0, y: 140 + MEMBERS.length * pitch });
+    });
+});
+
+describe('a bus edge at a bundle of the unit’s ports', () => {
+    const graph = (nodes: PyGraphNode[], edges: PyGraphEdge[]): any[] =>
+        new GraphGModelSource().transform({ version: '1', graph: { id: 'root', nodes, edges } }).graph.children ?? [];
+    const sink: PyGraphNode = {
+        id: U, kind: 'instance', label: 'u_prod', scope: 'root',
+        ports: [port('a', 'in'), port('b', 'out'), port('c', 'out')]
+    };
+
+    it('runs the way the bus’s arrow points, whichever way most of its wires run', () => {
+        // Two inputs and two outputs in the west margin: an input bus. Only one
+        // input is connected and both outputs are, so most wires run into it.
+        const nodes = [input('x_a', 'x'), input('x_n', 'x'), output('x_b', 'x', 'west'), output('x_c', 'x', 'west'), sink];
+        const edges = [
+            edge('port:wf:input:x_a:out', `port:${U}:a`),
+            edge(`port:${U}:b`, 'port:wf:output:x_b:in'),
+            edge(`port:${U}:c`, 'port:wf:output:x_c:in')
+        ];
+        const children = graph(nodes, edges);
+        expect(nodeOf(children, 'bus:wf:west:x').type).toBe(WorkflowDiagramTypes.NODE_BOUNDARY_INPUT);
+        expect(edgesOf(children).map(e => e.sourceId)).toEqual(['bus:wf:west:x_port_x', 'bus:wf:west:x_port_x', 'bus:wf:west:x_port_x']);
+    });
+
+    it('is not drawn from a member to another member of the same closed bus', () => {
+        const nodes = [input('x_valid', 'x'), output('x_ready', 'x', 'west')];
+        const children = graph(nodes, [edge('port:wf:input:x_valid:out', 'port:wf:output:x_ready:in')]);
+        expect(edgesOf(children)).toEqual([]);
+    });
+});
+
+describe('the place of a bundle of the unit’s ports', () => {
+    const graphOf = (open: Record<string, string[]> = {}) =>
+        new GraphGModelSource().transform(doc, {
+            portBuses: portBusStateOf(new Map(Object.entries(open).map(([k, v]) => [k, new Set(v)])))
+        }).graph;
+    const pitch = BoundaryPortGeometry.ROW_PITCH_PX;
+    const others = { clk: { x: 0, y: 0 }, irq: { x: 0, y: 300 }, 'bus:wf:east:m_axis': { x: 600, y: 0 }, u_prod: { x: 300, y: 100 } };
+
+    it('in a layout saved before it was one, is its topmost member’s, the others left out', () => {
+        const saved = new Map(Object.entries({
+            ...others, s_axis_tvalid: { x: 0, y: 140 }, s_axis_tready: { x: 0, y: 100 }, s_axis_tdata: { x: 0, y: 180 }
+        }));
+        const placed = withBoundaryBusPositions(graphOf(), saved);
+        expect(placed.get(S_AXIS)).toEqual({ x: 0, y: 100 });
+        expect(MEMBERS.map(m => placed.has(m))).toEqual([false, false, false]);
+        expect(countCoincidentNodes(placed.values())).toBe(0);
+        // What the layout file loaded is not changed.
+        expect(saved.has(S_AXIS)).toBe(false);
+    });
+
+    it('open, and saved before it was one, is the row above its members, who keep theirs', () => {
+        const saved = new Map(Object.entries({
+            ...others, s_axis_tvalid: { x: 0, y: 140 }, s_axis_tready: { x: 0, y: 100 }, s_axis_tdata: { x: 0, y: 180 }
+        }));
+        const placed = withBoundaryBusPositions(graphOf({ [S_AXIS]: ['s_axis'] }), saved);
+        expect(placed.get(S_AXIS)).toEqual({ x: 0, y: 100 - pitch });
+        expect(placed.get('s_axis_tready')).toEqual({ x: 0, y: 100 });
+    });
+
+    it('gives the members just opened the rows under the bus', () => {
+        const saved = new Map(Object.entries({ ...others, [S_AXIS]: { x: 0, y: 100 } }));
+        const placed = withBoundaryBusPositions(graphOf({ [S_AXIS]: ['s_axis'] }), saved);
+        expect(MEMBERS.map(m => placed.get(m))).toEqual(MEMBERS.map((_m, k) => ({ x: 0, y: 100 + (k + 1) * pitch })));
+    });
+
+    it('is the layout itself when nothing is missing', () => {
+        const saved = new Map(Object.entries({ ...others, [S_AXIS]: { x: 0, y: 100 } }));
+        expect(withBoundaryBusPositions(graphOf(), saved)).toBe(saved);
     });
 });

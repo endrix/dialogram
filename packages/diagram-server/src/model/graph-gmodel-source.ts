@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
 import { groupLayoutOptions, splitEdgesAtGroups } from './group-edges';
 import { URI } from 'vscode-uri';
-import { bundlePorts, type PortBus, type PortBusState } from './port-bundles';
+import { boundaryMargin, bundlePorts, type PortBus, type PortBusState } from './port-bundles';
 import { stableNodeId as stableNodeIdOf, stableNodeIds } from './stable-ids';
 
 export type PyGraphPort = {
@@ -661,14 +661,7 @@ export class GraphGModelSource {
                         'wf:portRole': port.role,
                         ...(normalizePortSide(port.side) ? { [WorkflowDiagramMetadata.PORT_SIDE]: side } : {}),
                         ...(port.group ? { [WorkflowDiagramMetadata.PORT_GROUP]: port.group } : {}),
-                        ...(port.bus
-                            ? {
-                                [WorkflowDiagramMetadata.PORT_BUS_GROUP]: port.bus.group,
-                                [WorkflowDiagramMetadata.PORT_BUS_EXPANDED]: port.bus.expanded,
-                                [WorkflowDiagramMetadata.PORT_BUS_MEMBERS]: port.bus.members
-                            }
-                            : {}),
-                        ...(port.busMember ? { [WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF]: port.busMember } : {})
+                        ...busArgsOf(port)
                     },
                     layoutOptions: {
                         'elk.port.side': side
@@ -715,13 +708,7 @@ export class GraphGModelSource {
                     args: {
                         [WorkflowDiagramMetadata.PORT_ID]: portId,
                         [WorkflowDiagramMetadata.PORT_NAME]: port.name,
-                        ...(port.bus
-                            ? {
-                                [WorkflowDiagramMetadata.PORT_BUS_GROUP]: port.bus.group,
-                                [WorkflowDiagramMetadata.PORT_BUS_EXPANDED]: port.bus.expanded
-                            }
-                            : {}),
-                        ...(port.busMember ? { [WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF]: port.busMember } : {}),
+                        ...busArgsOf(port),
                         [WorkflowDiagramMetadata.PORT_DIRECTION]: direction,
                         [WorkflowDiagramMetadata.PORT_TYPE]: port.type
                     }
@@ -1463,7 +1450,7 @@ export class GraphGModelSource {
         // placed it with its bundle (`meta.side`): an output `ready` belongs
         // beside the input `valid` and `data` it answers. Then the glyph faces
         // the other way and the port sits on the other edge.
-        const margin: PortSide = normalizePortSide(node.meta?.['side']) ?? (isInput ? 'WEST' : 'EAST');
+        const margin: PortSide = boundaryMargin(node);
         const mirrored = margin !== (isInput ? 'WEST' : 'EAST');
         const facesEast = margin === 'WEST';
         // One row tall now, not a 50px box — the port is a symbol on the wire's
@@ -1478,16 +1465,10 @@ export class GraphGModelSource {
             height: BoundaryPortGeometry.SOURCE_ARROW.height
         };
         const portId = `${stableNodeId}_port_${port?.name ?? 'Port'}`;
-        // A bundle of the unit's ports drawn as one boundary node (port-bundles.ts):
-        // the same bus args an instance's bus port carries, so the toggle and
-        // its saved state work the same way.
-        const busArgs = port?.bus
-            ? {
-                [WorkflowDiagramMetadata.PORT_BUS_GROUP]: port.bus.group,
-                [WorkflowDiagramMetadata.PORT_BUS_EXPANDED]: port.bus.expanded,
-                [WorkflowDiagramMetadata.PORT_BUS_MEMBERS]: port.bus.members
-            }
-            : port?.busMember ? { [WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF]: port.busMember } : {};
+        // A bundle of the unit's ports drawn as one boundary node (port-bundles.ts)
+        // carries the args an instance's bus port does, so the toggle and its
+        // saved state work the same way.
+        const busArgs = busArgsOf(port);
         const p: GPort = {
             id: portId,
             type: isInput ? WorkflowDiagramTypes.PORT_OUTPUT : WorkflowDiagramTypes.PORT_INPUT,
@@ -1784,3 +1765,14 @@ export function resolveSourceFiles(doc: PyGraphDocument): PyGraphDocument {
     return changed ? { ...doc, graph: { ...doc.graph, nodes, edges } } : doc;
 }
 
+/** What a bus port, or a member of an open bundle, carries for the toggle and the views (port-bundles.ts). */
+function busArgsOf(port: PyGraphPort | undefined): Record<string, unknown> {
+    if (port?.bus) {
+        return {
+            [WorkflowDiagramMetadata.PORT_BUS_GROUP]: port.bus.group,
+            [WorkflowDiagramMetadata.PORT_BUS_EXPANDED]: port.bus.expanded,
+            [WorkflowDiagramMetadata.PORT_BUS_MEMBERS]: port.bus.members
+        };
+    }
+    return port?.busMember ? { [WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF]: port.busMember } : {};
+}

@@ -776,7 +776,13 @@ function portSideOf(port: unknown, fallbackEast: boolean): 'WEST' | 'EAST' {
 }
 
 /** A boundary node that stands for a bundle of the unit's ports: its port and bus args. */
-function boundaryBus(node: unknown): { portId: string; group: string; args: Record<string, unknown> | undefined } | undefined {
+interface BoundaryBus {
+    portId: string;
+    group: string;
+    args: Record<string, unknown> | undefined;
+}
+
+function boundaryBus(node: unknown): BoundaryBus | undefined {
     const args = (node as { args?: Record<string, unknown> })?.args;
     const group = args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP];
     if (typeof group !== 'string') {
@@ -815,7 +821,7 @@ function boundaryPort(
     name: string,
     type: string,
     mirrored = false,
-    bus?: { portId: string; group: string; args: Record<string, unknown> | undefined }
+    bus?: BoundaryBus
 ): VNode[] {
     const G = BoundaryPortGeometry;
     const axis = G.AXIS_Y_PX;
@@ -832,8 +838,8 @@ function boundaryPort(
     const tipX = pointsEast ? glyphX + arrow.width : glyphX;
     const baseX = pointsEast ? glyphX : glyphX + arrow.width;
     // A bus carries its toggle between the arrow and the name, which moves out
-    // by the toggle's width.
-    const toggleSpan = bus ? 2 * WorkflowDiagramConstants.PORT_BUS_DOT_RADIUS_PX + 3 : 0;
+    // by the toggle's width and the gap a port keeps from its label.
+    const toggleSpan = bus ? 2 * WorkflowDiagramConstants.PORT_BUS_DOT_RADIUS_PX + WorkflowDiagramConstants.PORT_LABEL_GAP_PX : 0;
     const glyphTextX = glyphEast ? nodeWidth - G.textOffset(isInput) : G.textOffset(isInput);
     const textX = glyphEast ? glyphTextX - toggleSpan : glyphTextX + toggleSpan;
     const anchor = glyphEast ? 'end' : 'start';

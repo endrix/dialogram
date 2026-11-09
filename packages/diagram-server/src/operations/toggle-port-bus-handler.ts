@@ -261,19 +261,10 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
             routes: collectEdgeRoutes(this.modelState.root)
         };
         const oldHeights = this.heightsUpFrom(nodeId);
-        // A bundle of the unit's ports opens into boundary nodes of their own,
-        // which have no place yet: they take the rows under the bus, in its
-        // margin, before the model is built (a node with no place would have
-        // the whole diagram laid out again), and the column under it makes
-        // room for them below.
+        // A bundle of the unit's ports opens into boundary nodes of their own:
+        // the rebuild puts them in the rows under the bus (boundary-bus-positions.ts),
+        // and the column under it makes room for those rows.
         const boundaryMembers = this.boundaryBusMembers(nodeId);
-        const pitch = BoundaryPortGeometry.ROW_PITCH_PX;
-        if (boundaryMembers && expanded) {
-            const at = current.positions.get(nodeKey);
-            if (at) {
-                boundaryMembers.forEach((member, k) => current.positions.set(member, { x: at.x, y: at.y + (k + 1) * pitch }));
-            }
-        }
         const rooms = roomMade.get(this.modelState) ?? new Map<string, NodeMoves>();
         roomMade.set(this.modelState, rooms);
         if (!(await this.sourceModelStorage.rebuildFromLastDocument(current))) {
@@ -283,10 +274,11 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
         let made: NodeMoves;
         if (moves) {
             made = this.replay(moves);
-        } else if (expanded && boundaryMembers) {
-            made = this.makeRoomForRows(nodeId, boundaryMembers, boundaryMembers.length * pitch);
         } else if (expanded) {
-            made = this.makeRoomUnder(nodeId, oldHeights);
+            const rows = boundaryMembers
+                ? { ids: new Set(boundaryMembers), height: boundaryMembers.length * BoundaryPortGeometry.ROW_PITCH_PX }
+                : undefined;
+            made = this.makeRoomUnder(nodeId, oldHeights, rows);
         } else {
             const opened = rooms.get(key);
             made = opened ? this.replay(inverse(opened)) : new Map();
@@ -420,26 +412,6 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
         return Array.isArray(members) ? members.map(String) : undefined;
     }
 
-    /**
-     * Room under a node for rows inserted below it (an opened boundary bus's
-     * members, already placed there): the column under it moves down as it
-     * would for the node growing by `height`. The rows themselves stay.
-     */
-    makeRoomForRows(nodeId: string, rowIds: readonly string[], height: number): NodeMoves {
-        const node: any = this.modelState.index.find(nodeId);
-        const rows = new Set(rowIds);
-        const siblings: any[] = (node?.parent?.children ?? []).filter((child: any) =>
-            isMovableNode(child) && child.position && child.size && !rows.has(String(child.id)));
-        const boxes: Box[] = siblings.map(child => ({
-            id: String(child.id),
-            x: child.position.x,
-            y: child.position.y,
-            width: child.size.width,
-            height: child.size.height + (String(child.id) === nodeId ? height : 0)
-        }));
-        return this.moveBy(makeRoom(boxes, nodeId, node?.size?.height ?? 0));
-    }
-
     /** The heights of the node and of each group around it, by id. */
     heightsUpFrom(nodeId: string): Map<string, number> {
         const heights = new Map<string, number>();
@@ -473,7 +445,11 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
      * the same room is made for the group among its own siblings, up to the
      * diagram. The moves made.
      */
-    makeRoomUnder(nodeId: string, oldHeights: ReadonlyMap<string, number>): NodeMoves {
+    makeRoomUnder(
+        nodeId: string,
+        oldHeights: ReadonlyMap<string, number>,
+        rows?: { ids: ReadonlySet<string>; height: number }
+    ): NodeMoves {
         const made: NodeMoves = new Map();
         let level: any = this.modelState.index.find(nodeId);
         while (level && isMovableNode(level)) {
@@ -482,14 +458,16 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
             if (oldHeight === undefined || !parent) {
                 break;
             }
+            // Rows put under the node (an opened boundary bus's members) count
+            // as the node grown by their height, and do not move themselves.
             const siblings: any[] = (parent.children ?? []).filter((child: any) =>
-                isMovableNode(child) && child.position && child.size);
+                isMovableNode(child) && child.position && child.size && !rows?.ids.has(String(child.id)));
             const boxes: Box[] = siblings.map(child => ({
                 id: String(child.id),
                 x: child.position.x,
                 y: child.position.y,
                 width: child.size.width,
-                height: child.size.height
+                height: child.size.height + (rows && String(child.id) === nodeId ? rows.height : 0)
             }));
             const step = this.moveBy(makeRoom(boxes, String(level.id), oldHeight));
             for (const [id, move] of step) {
