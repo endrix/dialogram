@@ -75,7 +75,8 @@ it no longer has.
 - **Port bundles are drawn as buses.** The ports of one bundle (a producer's
   `port.group`: a channel's payload with its `valid` and `ready`) are drawn
   as one port named after the bundle, and every connection between two
-  buses as one wider edge. A toggle in front of the name opens the bundle:
+  buses as one wider edge (4.5px against 3.5px; a product sets
+  `--workflow-edge-bus-width` to draw it otherwise). A toggle in front of the name opens the bundle:
   its row stays as a header and its members are drawn under it. The edge
   stays one bus edge, drawn from the open header, until both ends are open;
   then the connections are drawn member to member as the producer sent

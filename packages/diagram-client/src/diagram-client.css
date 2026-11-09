@@ -3302,12 +3302,17 @@ details[open] > summary .agent-chat-expand-arrow {
    can tell it carries a bundle rather than one signal; the port wears the
    same weight. The toggle in front of the name opens the bundle. */
 /* An edge's line is `.workflow-edge .edge-line` at 3.5px, re-asserted for
-   selected and hovered edges; the bus is the same selectors, inside the bus. */
+   selected and hovered edges; the bus is the same selectors, inside the bus.
+
+   Wider by a step, not by half again: the router lays parallel edges 8px
+   apart (centre to centre), and at 6px two buses side by side left a 2px
+   seam and read as one band. At 4.5px the seam is 3.5px. A product sets
+   `--workflow-edge-bus-width` to draw it otherwise. */
 .sprotty-edge.workflow-edge-bus .workflow-edge .edge-line,
 .sprotty-edge.workflow-edge-bus .workflow-edge.selected .edge-line,
 .sprotty-edge.workflow-edge-bus .workflow-edge.hover:not(.selected) .edge-line,
 .sprotty-edge.workflow-edge-bus .workflow-edge.mouseover:not(.selected) .edge-line {
-    stroke-width: 6px;
+    stroke-width: var(--workflow-edge-bus-width, 4.5px);
 }
 
 .workflow-port.workflow-port-bus .port-shape {
