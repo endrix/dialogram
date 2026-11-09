@@ -23,3 +23,4 @@ export * from './clipboard-payload';
 export * from './port-bus';
 export * from './port-label-geometry';
 export * from './symbol-geometry';
+export * from './node-open';

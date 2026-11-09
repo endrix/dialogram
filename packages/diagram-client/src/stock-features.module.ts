@@ -20,6 +20,7 @@ import { WorkflowNetworkNavigationMouseListener } from './network-navigation-mou
 import { ViewerMouseListener } from './viewer-mouse-listener';
 import { EdgeOpenMouseListener } from './edge-open-mouse-listener';
 import { PortBusToggleMouseListener } from './port-bus-toggle';
+import { NodeOpenToggleMouseListener } from './node-open-toggle';
 import { WhitespaceRootPropertiesMouseListener } from './whitespace-root-properties-mouse-listener';
 import { WorkflowElkLiveDragRouter } from './elk-live-drag-router';
 import { WorkflowChangeBoundsTool } from './change-bounds-drag-threshold';
@@ -124,6 +125,7 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
 
     // The toggle in front of a bus port's name opens or closes its bundle.
     bindAsService(context, TYPES.MouseListener, PortBusToggleMouseListener);
+    bindAsService(context, TYPES.MouseListener, NodeOpenToggleMouseListener);
 
     // Client-side handlers for server-driven context menu actions.
     configureActionHandler(context, WorkflowPromptLabelEditAction.KIND, WorkflowPromptLabelEditActionHandler);

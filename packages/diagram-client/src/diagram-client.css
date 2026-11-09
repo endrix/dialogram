@@ -1215,6 +1215,8 @@ body.vscode-high-contrast-light .node-center-image-light {
 }
 
 .workflow-node-group .group-label {
+    /* From the title's x, as the view places it: a general text rule centred it. */
+    text-anchor: start;
     fill: var(--vscode-foreground, #cccccc);
     font-family: var(--vscode-font-family);
     font-size: 11px;
@@ -3379,6 +3381,29 @@ details[open] > summary .agent-chat-expand-arrow {
 .sprotty-edge.workflow-edge-bus .workflow-edge.hover:not(.selected) .edge-line,
 .sprotty-edge.workflow-edge-bus .workflow-edge.mouseover:not(.selected) .edge-line {
     stroke-width: var(--workflow-edge-bus-width, 4.5px);
+}
+
+/* The toggle in the header of a node holding a graph of its own, and in its
+   frame's header when open (node-open-toggle.ts). */
+.node-open-toggle {
+    cursor: pointer;
+    pointer-events: all;
+}
+
+.node-open-toggle .node-open-toggle-ring {
+    fill: var(--workflow-node-fill);
+    stroke: var(--vscode-foreground, #cccccc);
+    stroke-width: 1.2px;
+}
+
+.node-open-toggle .node-open-toggle-mark {
+    stroke: var(--vscode-foreground, #cccccc);
+    stroke-width: 1.5px;
+    stroke-linecap: round;
+}
+
+.node-open-toggle:hover .node-open-toggle-ring {
+    stroke: var(--vscode-focusBorder, #007fd4);
 }
 
 .port-bus-toggle {

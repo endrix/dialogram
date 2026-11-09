@@ -406,5 +406,10 @@
         "impl": "PortBusToggleMouseListener",
         "op": "bindAsService",
         "service": "Symbol(stub.MouseListener)"
+    },
+    {
+        "impl": "NodeOpenToggleMouseListener",
+        "op": "bindAsService",
+        "service": "Symbol(stub.MouseListener)"
     }
 ]

@@ -7,6 +7,10 @@ import { groupLayoutOptions, splitEdgesAtGroups } from './group-edges';
 import { URI } from 'vscode-uri';
 import { boundaryMargin, bundlePorts, type PortBus, type PortBusState } from './port-bundles';
 import { stableNodeId as stableNodeIdOf, stableNodeIds, stablePortNames } from './stable-ids';
+import { innerGraphOf, openNodes } from './open-nodes';
+
+/** What an openable node's header toggle takes from its start: its ring and a gap. */
+const OPEN_TOGGLE_ROOM_PX = 20;
 
 export type PyGraphPort = {
     id: string;
@@ -61,6 +65,8 @@ export type PyGraphScope = {
     label?: string;
     parent?: string | null;
     controlNodeId?: string | null;
+    /** The platform's: the key of the open node this group stands for (open-nodes.ts). */
+    openNodeKey?: string;
     children?: string[];
     nodes?: string[];
     edges?: string[];
@@ -234,6 +240,9 @@ export class GraphGModelSource {
         // The network is named by the producer's nodes: a bus bundling the
         // unit's ports is named after the bundle.
         const producerNodes = doc.graph.nodes;
+        // A node the reader opened is drawn as the group of what it holds
+        // (open-nodes.ts); its inner nodes keep the producer's ids.
+        doc = openNodes(doc, options?.portBuses, stableIds);
         doc = bundlePorts(doc, options?.portBuses, stableIds);
         const children: GModelElement[] = [];
         const nodeMap = new Map<string, GNode>();
@@ -333,9 +342,12 @@ export class GraphGModelSource {
             // name's tail. Their widths follow the client's drawing: text at
             // the badge font, padding, a gap between badges.
             const unitBadges = parseBadgesMeta(node.meta?.['badges']) ?? [];
+            // An openable node's header starts with its toggle (node-open-toggle.ts),
+            // on both sides of the centred name.
             const headerLabelW = this.estimateLabelSize(node.label, WorkflowDiagramConstants.HEADER_LABEL_FONT_SIZE_PX).width
                 + WorkflowDiagramConstants.HEADER_LABEL_EXTRA_WIDTH_PX
-                + this.badgesWidth(unitBadges);
+                + this.badgesWidth(unitBadges)
+                + (innerGraphOf(node) ? 2 * OPEN_TOGGLE_ROOM_PX : 0);
             const isNetworkInstanceNode = this.isNetworkInstanceNode(node);
             // Does this node get an italic type label under it? Mirrors the
             // condition used below when setting `wf:footerTypeLabel`.
@@ -433,6 +445,10 @@ export class GraphGModelSource {
                 };
             }
             gnode.args = { ...(gnode.args ?? {}), [WorkflowDiagramMetadata.GRAPH_NODE_ID]: node.id };
+            if (innerGraphOf(node)) {
+                // It holds a graph of its own: it can be opened in place.
+                gnode.args = { ...(gnode.args ?? {}), [WorkflowDiagramMetadata.NODE_OPENABLE]: true };
+            }
             const openTarget = this.openTarget(node.meta?.['open']);
             if (openTarget) {
                 gnode.args = {
@@ -1258,7 +1274,8 @@ export class GraphGModelSource {
                 [WorkflowDiagramMetadata.AST_PATH]: nodeId,
                 'wf:scopeId': scope.id,
                 [WorkflowDiagramMetadata.STRUCTURE_KIND]: 'group',
-                [WorkflowDiagramMetadata.GROUP_LABEL]: label
+                [WorkflowDiagramMetadata.GROUP_LABEL]: label,
+                ...(scope.openNodeKey ? { [WorkflowDiagramMetadata.OPEN_NODE_KEY]: scope.openNodeKey } : {})
             }
         };
         const memberIds = new Set<string>();

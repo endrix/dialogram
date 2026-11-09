@@ -300,6 +300,10 @@ export namespace WorkflowDiagramMetadata {
      * members' node ids, in order (port-bundles.ts).
      */
     export const BOUNDARY_BUS_MEMBERS = 'wf:busMembers';
+    /** On a node holding a graph of its own: it can be opened in place (node-open.ts). */
+    export const NODE_OPENABLE = 'wf:openable';
+    /** On the frame an open node is drawn as: the node's key, to close it by. */
+    export const OPEN_NODE_KEY = 'wf:openNodeKey';
     /** What a node is drawn as, when not a box (`SymbolKind`, symbol-geometry.ts). */
     export const SYMBOL = 'wf:symbol';
     /** The glyph an `operator` symbol shows (`+`, `==`, `&`). */

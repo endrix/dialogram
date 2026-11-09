@@ -50,6 +50,7 @@ import { WorkflowChangeBoundsOperationHandler } from '../operations/change-bound
 import { WorkflowResetEdgeRoutesOperationHandler } from '../operations/reset-edge-routes-handler';
 import { WorkflowRerouteEdgesAvoidOverlapsOperationHandler } from '../operations/reroute-edges-avoid-overlaps-handler';
 import { WorkflowTogglePortBusOperationHandler } from '../operations/toggle-port-bus-handler';
+import { WorkflowToggleNodeOpenOperationHandler } from '../operations/toggle-node-open-handler';
 import { WorkflowLayoutBoundaryFlowOperationHandler } from '../operations/layout-boundary-flow-handler';
 import { WorkflowLayoutSerpentineMeshOperationHandler } from '../operations/layout-serpentine-mesh-handler';
 import { WorkflowLayoutFreePortsOperationHandler, WorkflowLayoutUntangledOperationHandler } from '../operations/layout-tuned-handler';
@@ -165,6 +166,8 @@ export class WorkflowDiagramModule extends GModelDiagramModule {
         binding.add(WorkflowRerouteEdgesAvoidOverlapsOperationHandler);
         // Opening a bundle is presentation too: it is saved in the layout file.
         binding.add(WorkflowTogglePortBusOperationHandler);
+        // So is opening a node that holds a graph of its own.
+        binding.add(WorkflowToggleNodeOpenOperationHandler);
 
         // Everything above is presentation or discovery, and safe for a session
         // that may not edit. Everything below writes to the source, so this is
