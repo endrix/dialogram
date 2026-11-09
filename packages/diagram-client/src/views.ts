@@ -431,33 +431,83 @@ export class GroupNodeView extends ShapeView {
 const INDEX_LABEL_CHAR_PX = 6;
 const INDEX_LABEL_GAP_PX = 6;
 
+/** The shifts worked out per port end, once per model (ports are new objects in each). */
+const indexShifts = new WeakMap<object, Map<string, number>>();
+
 /**
- * How much further along its wire an edge's index label at one end goes:
- * the widths of the labels of the edges before it at the same port end, the
- * one with the highest bits first (a concatenation reads from its top bits).
+ * How much further along its wire an edge's slice label at one end goes:
+ * the widths of the slice labels of the edges before it at the same port
+ * end, the one with the highest bits first (a concatenation reads from its
+ * top bits), the producer's order where the bits are not plain numbers. Only
+ * slices (`EDGE_SLICE`) are lined up; any other index stays where it was.
  */
 export function indexLabelShift(edge: unknown, end: 'from' | 'to'): number {
     const key = end === 'from' ? WorkflowDiagramMetadata.EDGE_FROM_INDEX : WorkflowDiagramMetadata.EDGE_TO_INDEX;
-    const own = (edge as any)?.args?.[key];
-    if (typeof own !== 'string') {
+    const args = (edge as any)?.args;
+    if (typeof args?.[key] !== 'string' || args?.[WorkflowDiagramMetadata.EDGE_SLICE] !== true) {
         return 0;
     }
     const port: any = end === 'from' ? (edge as any)?.source : (edge as any)?.target;
-    const attached: unknown = end === 'from' ? port?.outgoingEdges : port?.incomingEdges;
-    const siblings = attached ? [...(attached as Iterable<any>)].filter(e => typeof e?.args?.[key] === 'string') : [];
-    if (siblings.length < 2) {
+    if (!port || typeof port !== 'object') {
         return 0;
     }
-    const top = (text: string): number => Number.parseInt(text, 10) || 0;
-    siblings.sort((a, b) => top(b.args[key]) - top(a.args[key]) || String(a.id).localeCompare(String(b.id)));
-    let shift = 0;
-    for (const sibling of siblings) {
-        if (sibling === edge || sibling.id === (edge as any).id) {
-            break;
+    const cache = indexShifts.get(port) ?? new Map<string, number>();
+    indexShifts.set(port, cache);
+    const cacheKey = (id: string) => `${end}\u0000${id}`;
+    const done = `${end}\u0000*`;
+    if (!cache.has(done)) {
+        const attached: unknown = end === 'from' ? port.outgoingEdges : port.incomingEdges;
+        const siblings = attached
+            ? [...(attached as Iterable<any>)].map((e, order) => ({ e, order }))
+                .filter(({ e }) => typeof e?.args?.[key] === 'string' && e?.args?.[WorkflowDiagramMetadata.EDGE_SLICE] === true)
+            : [];
+        const top = (text: string): number => {
+            const n = Number.parseInt(text, 10);
+            return Number.isFinite(n) ? n : Number.NEGATIVE_INFINITY;
+        };
+        siblings.sort((a, b) => {
+            const ta = top(a.e.args[key]);
+            const tb = top(b.e.args[key]);
+            return (Number.isFinite(ta) && Number.isFinite(tb) ? tb - ta : 0) || a.order - b.order;
+        });
+        let shift = 0;
+        for (const { e } of siblings) {
+            cache.set(cacheKey(String(e.id)), shift);
+            shift += (String(e.args[key]).length + 2) * INDEX_LABEL_CHAR_PX + INDEX_LABEL_GAP_PX;
         }
-        shift += (String(sibling.args[key]).length + 2) * INDEX_LABEL_CHAR_PX + INDEX_LABEL_GAP_PX;
+        cache.set(done, 0);
     }
-    return shift;
+    return cache.get(cacheKey(String((edge as any).id))) ?? 0;
+}
+
+/**
+ * The point `distance` along a route from one of its ends, `perp` to the
+ * left of the way it runs there: a label walked back along the wire, round
+ * its bends, never past its other end.
+ */
+export function pointAlongRoute(points: ReadonlyArray<{ x: number; y: number }>, fromEnd: 'start' | 'end',
+    distance: number, perp: number): { x: number; y: number } | undefined {
+    const route = fromEnd === 'start' ? points : [...points].reverse();
+    if (route.length < 2) {
+        return undefined;
+    }
+    let left = distance;
+    for (let k = 0; k < route.length - 1; k++) {
+        const a = route[k];
+        const b = route[k + 1];
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        if (len === 0) {
+            continue;
+        }
+        if (left <= len || k === route.length - 2) {
+            const t = Math.min(left, len) / len;
+            const ux = (b.x - a.x) / len;
+            const uy = (b.y - a.y) / len;
+            return { x: a.x + (b.x - a.x) * t - uy * perp, y: a.y + (b.y - a.y) * t + ux * perp };
+        }
+        left -= len;
+    }
+    return undefined;
 }
 
 /** A band `width` wide and `height` tall with its top corners rounded and its bottom square. */
@@ -1631,11 +1681,15 @@ export class WorkflowEdgeView extends PolylineEdgeView {
 
         // Wires meeting one port end often share their last stretch: their
         // labels go one after another along it, highest bits nearest the port.
+        const fromShift = fromIndexLabel ? indexLabelShift(edge, 'from') : 0;
+        const toShift = toIndexLabel ? indexLabelShift(edge, 'to') : 0;
         const fromIndexPos = (fromIndexLabel && startSeg && startNext)
-            ? this.offsetPointAlongSegment(startSeg, startNext, 12 + indexLabelShift(edge, 'from'), -10)
+            ? (fromShift > 0 ? pointAlongRoute(normalizedSegments, 'start', 12 + fromShift, -10) : undefined)
+                ?? this.offsetPointAlongSegment(startSeg, startNext, 12, -10)
             : undefined;
         const toIndexPos = (toIndexLabel && endSeg && endPrev)
-            ? this.offsetPointAlongSegment(endSeg, endPrev, 18 + indexLabelShift(edge, 'to'), -10)
+            ? (toShift > 0 ? pointAlongRoute(normalizedSegments, 'end', 18 + toShift, -10) : undefined)
+                ?? this.offsetPointAlongSegment(endSeg, endPrev, 18, -10)
             : undefined;
 
         return svg('g', {

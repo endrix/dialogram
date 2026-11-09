@@ -177,14 +177,16 @@ export function splitEdgesAtGroups(children: GModelElement[]): void {
         for (const group of targetSide) {
             to = crossing(group, 'in', to, edge);
         }
-        edge.sourceId = from;
-        edge.targetId = to;
-        edge.args = {
+        const args: Record<string, unknown> = {
             ...(edge.args ?? {}),
             [WorkflowDiagramMetadata.EDGE_OF]: edge.id,
             [WorkflowDiagramMetadata.EDGES_OF]: [edge.id],
             [WorkflowDiagramMetadata.EDGE_SEGMENT]: 'middle'
         };
+        keepEndIndices(args, from === edge.sourceId, to === edge.targetId);
+        edge.sourceId = from;
+        edge.targetId = to;
+        edge.args = args;
     }
     children.push(...pieces.values());
 }
@@ -195,6 +197,9 @@ function piece(edge: GEdge, id: string, sourceId: string, targetId: string, segm
     // The caption is drawn once, on the middle piece.
     delete args[WorkflowDiagramMetadata.EDGE_LABEL];
     delete args[WorkflowDiagramMetadata.EDGE_WIDTH];
+    // An end's index (the bits of a port the wire is) is drawn on the piece
+    // that ends at that port, not at a frame.
+    keepEndIndices(args, sourceId === edge.sourceId, targetId === edge.targetId);
     args[WorkflowDiagramMetadata.AST_PATH] = id;
     args[WorkflowDiagramMetadata.EDGE_OF] = edge.id;
     args[WorkflowDiagramMetadata.EDGES_OF] = [edge.id];
@@ -209,9 +214,24 @@ function piece(edge: GEdge, id: string, sourceId: string, targetId: string, segm
     };
 }
 
+/** Keep an end's index only on a piece that ends at that end's real port. */
+function keepEndIndices(args: Record<string, unknown>, atSource: boolean, atTarget: boolean): void {
+    if (!atSource) {
+        delete args[WorkflowDiagramMetadata.EDGE_FROM_INDEX];
+    }
+    if (!atTarget) {
+        delete args[WorkflowDiagramMetadata.EDGE_TO_INDEX];
+    }
+    if (args[WorkflowDiagramMetadata.EDGE_FROM_INDEX] === undefined && args[WorkflowDiagramMetadata.EDGE_TO_INDEX] === undefined) {
+        delete args[WorkflowDiagramMetadata.EDGE_SLICE];
+    }
+}
+
 /** Edge-specific arguments a shared piece cannot carry: they would name only one of its edges. */
 const ONE_EDGE_ARGS = [
     'wf:from', 'wf:to', 'wf:outPort', 'wf:inPort',
+    // One edge's bits, not the shared wire's.
+    WorkflowDiagramMetadata.EDGE_FROM_INDEX, WorkflowDiagramMetadata.EDGE_TO_INDEX, WorkflowDiagramMetadata.EDGE_SLICE,
     WorkflowDiagramMetadata.SOURCE_PORT_NAME, WorkflowDiagramMetadata.TARGET_PORT_NAME,
     WorkflowDiagramMetadata.SOURCE_RANGE, WorkflowDiagramMetadata.REFERENCED_SOURCE_RANGE,
     WorkflowDiagramMetadata.REFERENCED_URI
