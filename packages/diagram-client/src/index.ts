@@ -77,7 +77,7 @@ export {
     type NodeSectionHost,
     type PanelModelRoot
 } from './node-section';
-export { createPropertySection } from './property-section';
+export { createPropertySection, escapeHtml, shortenPath } from './property-section';
 export {
     AnnotationTemplate,
     CUSTOM_ANNOTATION_ENTRY,
@@ -100,3 +100,21 @@ export {
     type ChannelMessenger,
     type ActionKindHandler
 } from './webview-channel';
+
+// ── What a product's webview code reaches the host and the profile through ──
+// For a product bundle's own contributions (annotation editors, node sections,
+// templates): the host's quick picks, input boxes and commands, the profile's
+// client behaviour and command ids, and the text helpers the panel renders
+// with. Their contracts are the modules' own docs.
+export { VscodeUi, type VscodeQuickPickItem, type ViewerEditorSetting } from './vscode-ui';
+export {
+    clientBehavior,
+    commandId,
+    operationKind,
+    offersRun,
+    settingsNamespace,
+    type DiagramCommandKey,
+    type DiagramOperationKey
+} from './profile';
+export { renderMarkdownSafe, renderDocumentMarkdownSafe, looksLikeMarkdown } from './markdown';
+export { isBlock, looksLikeDiff, parseEmbedded, formatAgentOutputs } from './agent-outputs';
