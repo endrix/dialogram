@@ -10,7 +10,7 @@
  * runs on demand: see `listenForDiscovery`.
  */
 import { PropertyPanel } from '../../src/property-panel';
-import { stockAnnotationEditors, stockNodeSections } from '../../src/agent-ui';
+import { agentUiEditors, agentUiNodeSections } from '../../src/agent-ui';
 import { WorkflowShowAgentSkillsActionHandler, WorkflowShowClaudeAgentsActionHandler } from '../../src/editing-action-handlers';
 import { ui } from './harness';
 
@@ -35,9 +35,9 @@ export class TestPanel extends PropertyPanel {
 
     constructor() {
         super();
-        // What the stock feature module binds.
-        (this as any).contributedAnnotationEditors = stockAnnotationEditors();
-        (this as any).contributedNodeSections = stockNodeSections();
+        // What `agentUiModule` binds.
+        (this as any).contributedAnnotationEditors = agentUiEditors();
+        (this as any).contributedNodeSections = agentUiNodeSections();
         (this as any).actionDispatcher = {
             dispatch: async (action: unknown) => { this.dispatched.push(action); },
             dispatchAll: async (actions: unknown[]) => { this.dispatched.push(...actions); }

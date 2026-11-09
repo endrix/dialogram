@@ -6,6 +6,11 @@ platform API version.
 
 ## [Unreleased]
 
+**Release:** this release must bump `DIALOGRAM_API_VERSION` to 0.9 and ship
+with products built against it: its API removals (#127, #129) and the stock
+bundle's dropping the agent workflow UI (below) need a product still at 0.8
+to fail its version check rather than run against what it no longer has.
+
 ### Removed
 
 - **The `@path` annotation editor and its wizard template.** No producer has
@@ -95,6 +100,19 @@ platform API version.
   feedback, so it survives a relayout or an edit.
 
 ### Changed
+
+- **Breaking for a product that showed the agent workflow UI from the stock
+  bundle: it no longer loads it.** The `@tool` and `@agent` annotation
+  editors, the agent sections of a node's panel (Skill row, Agent Tools, live
+  Agent Context), the wizard's `@tool` and `@viewer` templates and the
+  handlers of the server's skill and agent-preset answers were wfpy's, yet
+  every stock-bundle product showed the editors, the header's "Add @tool" and
+  "Add @agent" and the templates. They are `agentUiModule`, which wfpy-ide's
+  own webview bundle loads (endrix/wfpy-ide#24, merged). sv, vhdl, ndf and
+  calpy get the plain annotation card and only the wizard's "Custom
+  annotation…"; none of them has `@agent` nodes, so Agent Tools, the Skill
+  row and Agent Context never appeared for them. The stock bundle is 141 KB
+  smaller. Ship in the 0.9 release (above).
 
 - **Breaking for a profile that relied on the defaults: the Entities palette,
   navigation and the source MIME type are the product's.** The tool-palette

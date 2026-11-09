@@ -167,8 +167,8 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
 
     /**
      * One editor per annotation name, in the order the names were first bound.
-     * A later binding for a name replaces the earlier one, so a product's
-     * module, loaded after the stock one, can replace a stock editor.
+     * A later binding for a name replaces the earlier one, so a module that
+     * loads later can replace an editor an earlier one bound.
      */
     protected annotationEditors(): readonly AnnotationEditor[] {
         return lastPerKey(this.contributedAnnotationEditors, editor => editor.annotationName);

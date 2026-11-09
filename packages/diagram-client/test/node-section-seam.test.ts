@@ -14,6 +14,7 @@ import { NodeSectionContribution, type NodeSectionHost } from '../src/node-secti
 import { createPropertySection } from '../src/property-section';
 import { PropertyPanel } from '../src/property-panel';
 import { workflowFeaturesModule } from '../src/stock-features.module';
+import { agentUiModule } from '../src/agent-ui';
 import { installPage, taskNode, ANALYST_AGENT } from './agent-ui/harness';
 import { TestPanel, resetAgentUi, rootOf, section } from './agent-ui/panel';
 
@@ -196,23 +197,33 @@ describe('the node sections the panel is given', () => {
     const kinds = (panel: PropertyPanel) =>
         (panel as any).nodeSections().map((s: NodeSectionContribution) => s.constructor?.name === 'Object' ? 'product' : s.constructor?.name);
 
-    it('are the stock agent sections, then a product’s, each installed once after injection', () => {
+    it('are none in the stock diagram, and only a product’s, installed once, when it binds one', () => {
         const calls: Call[] = [];
         const product = new ContainerModule(bind => {
             bind(NodeSectionContribution).toConstantValue(probe(calls));
         });
-        const panel = stockContainer(product).get(PropertyPanel);
+        expect(kinds(stockContainer().get(PropertyPanel))).toEqual([]);
+        expect(kinds(stockContainer(product).get(PropertyPanel))).toEqual(['product']);
+        expect(calls).toEqual([['install']]);
+    });
+
+    it('are the agent UI’s sections when a bundle loads it, then another module’s, each installed once after injection', () => {
+        const calls: Call[] = [];
+        const product = new ContainerModule(bind => {
+            bind(NodeSectionContribution).toConstantValue(probe(calls));
+        });
+        const panel = stockContainer(agentUiModule, product).get(PropertyPanel);
         expect(kinds(panel)).toEqual(['AgentNodeSections', 'product']);
         expect(calls).toEqual([['install']]);
     });
 
-    it('take a product’s agent sections in place of the stock ones', () => {
+    it('take a later module’s agent sections in place of the agent UI’s', () => {
         const calls: Call[] = [];
         const mine = probe(calls, 'mine', 'agent');
         const product = new ContainerModule(bind => {
             bind(NodeSectionContribution).toConstantValue(mine);
         });
-        const panel = stockContainer(product).get(PropertyPanel);
+        const panel = stockContainer(agentUiModule, product).get(PropertyPanel);
         expect((panel as any).nodeSections()).toEqual([mine]);
         expect(calls).toEqual([['install']]);
     });

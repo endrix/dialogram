@@ -208,8 +208,8 @@ Without `formatAnnotation`, Save writes `@name(key=value, ...)`. With
 ones the card does not show. `guiOnlyArgs` are keys your editor keeps in
 `args` for its own state; Save writes them nowhere. `quickAdd` puts an "add
 from template" button in the Annotations header. There is one editor per
-name: a later binding replaces an earlier one, so your module can replace one
-of the stock editors (`@tool`, `@agent`).
+name: a later binding replaces an earlier one, so a module loaded later can
+replace an editor an earlier one bound.
 
 **Node sections.** To show more about a node than the panel's own sections,
 bind a `NodeSectionContribution`. It needs an `id`; every hook is optional:
@@ -241,9 +241,7 @@ export const myFeaturesModule = new ContainerModule(bind => {
   again, for an answer that arrives later.
 
 Contributions are asked in the order their ids were first bound. A later
-binding for an id replaces the earlier one, so your module can replace the
-stock bundle's agent sections (id `agent`: the Skill row, Agent Tools and the
-live Agent Context).
+binding for an id replaces the earlier one.
 
 **Annotation templates.** The Annotations header's "Wizard…" adds an
 annotation from a template, or from a name and arguments typed in. To offer a
@@ -267,8 +265,14 @@ export const myFeaturesModule = new ContainerModule(bind => {
 
 There is one template per annotation name, and a later binding replaces an
 earlier one. The wizard lists them before its own "Custom annotation…" entry
-(`custom`), which a template cannot replace. The stock bundle binds `@tool`
-and `@viewer`.
+(`custom`), which a template cannot replace.
+
+**The agent workflow UI.** The stock bundle binds no editors, sections or
+templates. wfpy's are `agentUiModule`, imported by path as
+`@dialogram/diagram-client/agent-ui/index`: the `@tool` and `@agent`
+editors, the agent sections (id `agent`: Basic Info's Skill row, Agent Tools
+and the live Agent Context) and the `@tool` and `@viewer` templates. A bundle
+that wants them passes it in `features`, as wfpy-ide's does.
 
 **A diagram of your own.** When you compose the container yourself:
 
