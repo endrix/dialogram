@@ -371,9 +371,15 @@ export class GraphGModelSource {
                 : 0;
             const pinNameWidth = (ps: PyGraphPort[]): number => Math.max(0, ...ps.map(p =>
                 this.estimateLabelSize(p.pins?.[0] ?? p.name, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX).width));
+            // Under a symbol, its caption: a register's name; any symbol's the
+            // producer gives (`meta.caption`, a library mux's instance name).
+            const producerCaption = typeof node.meta?.['caption'] === 'string' && node.meta['caption'] ? node.meta['caption'] as string : undefined;
+            const symbolCaption = symbolKind ? producerCaption ?? (symbolKind === 'register' ? node.label : undefined) : undefined;
+            const captioned = !!symbolKind && SymbolGeometry.isCaptioned(symbolKind, symbolCaption);
             const size = symbolKind
                 ? SymbolGeometry.size(symbolKind, rowInputs.length, outputs.length,
-                    symbolKind === 'register' ? SymbolGeometry.registerBodyWidth(pinNameWidth(rowInputs), pinNameWidth(outputs)) : undefined)
+                    symbolKind === 'register' ? SymbolGeometry.registerBodyWidth(pinNameWidth(rowInputs), pinNameWidth(outputs)) : undefined,
+                    captioned)
                 : {
                     width: Math.max(defaultWidth, labelRequiredWidth, headerLabelW),
                     height: Math.max(minHeight, requiredHeight) + footerReserve
@@ -667,7 +673,7 @@ export class GraphGModelSource {
                     ...(gnode.args ?? {}),
                     [WorkflowDiagramMetadata.SYMBOL]: symbolKind,
                     ...(typeof node.meta?.['operator'] === 'string' ? { [WorkflowDiagramMetadata.SYMBOL_OPERATOR]: node.meta['operator'] } : {}),
-                    ...(symbolKind === 'register' ? { [WorkflowDiagramMetadata.SYMBOL_CAPTION]: node.label } : {})
+                    ...(symbolCaption !== undefined ? { [WorkflowDiagramMetadata.SYMBOL_CAPTION]: symbolCaption } : {})
                 };
             } else {
                 gnode.children!.push(this.createHeaderCompartment(headerLabelId, node.label, subtitle, headerClasses, unitBadges));
@@ -703,7 +709,7 @@ export class GraphGModelSource {
                 const boxW = port.bus ? 2 * busR : portW;
                 const boxH = port.bus ? 2 * busR : portH;
                 const x = east ? size.width - boxW / 2 : -boxW / 2;
-                const symbolBody = symbolKind ? SymbolGeometry.bodyHeight(symbolKind, size.height) : 0;
+                const symbolBody = symbolKind ? SymbolGeometry.bodyHeight(symbolKind, size.height, captioned) : 0;
                 const y = !symbolKind
                     ? yStart + idx * portRowH + portRowOffset(boxH)
                     : clocks.includes(port)

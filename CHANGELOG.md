@@ -72,6 +72,17 @@ it no longer has.
 
 ### Added
 
+- **Any symbol can have a caption.** A producer can name what is written
+  under a symbol node (`meta.caption`), as hdl-sidecar now does for an
+  instance of a library cell it draws as a register or a mux (the
+  instance's name: `mux_ccr_m` under its mux). A register still shows its
+  label when it has no caption; a gate or a mux without one has none and
+  no room for one. The symbol's box takes the caption's row, so the layout
+  and the routers keep clear of it, and the body is drawn above it
+  (`SymbolGeometry.size`, `bodyHeight` and `isCaptioned`). A sidecar's graph
+  payload now passes a port's symbol `pins` through to the document, as the
+  plan command's document already did.
+
 - **A wire that is some bits of a port says which.** A producer can say
   that an edge is some bits of the port at one end (`meta.fromSlice`,
   `meta.toSlice`: `7:4`, `3`), as hdl-sidecar does for each operand of a

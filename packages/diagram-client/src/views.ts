@@ -772,7 +772,7 @@ function renderEntityNode(
             }
         },
             ...renderSymbolBody(symbol, { width, height }, symbolPinsOf(node.children ?? [], width), operator, caption),
-            ...(isExecuting ? [renderRunRing(width, SymbolGeometry.bodyHeight(symbol, height))] : []),
+            ...(isExecuting ? [renderRunRing(width, SymbolGeometry.bodyHeight(symbol, height, SymbolGeometry.isCaptioned(symbol, caption)))] : []),
             ...context.renderChildren(node)
         );
     }

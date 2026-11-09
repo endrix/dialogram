@@ -312,7 +312,7 @@ export namespace WorkflowDiagramMetadata {
     export const SYMBOL = 'wf:symbol';
     /** The glyph an `operator` symbol shows (`+`, `==`, `&`). */
     export const SYMBOL_OPERATOR = 'wf:symbolOperator';
-    /** The name shown under a `register` symbol. */
+    /** The name shown under a symbol: a `register`'s label, or any symbol's `meta.caption`. */
     export const SYMBOL_CAPTION = 'wf:symbolCaption';
     export const IS_ARRAY_PORT = 'cal:isArrayPort';
     export const ARRAY_SIZE = 'cal:arraySize';

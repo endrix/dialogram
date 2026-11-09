@@ -73,6 +73,50 @@ describe('symbol nodes', () => {
         }
     });
 
+    it('caption any symbol its producer names, the body drawn above it', () => {
+        const graph = transform([{
+            id: 'n:mux', kind: 'instance', label: 'u_mux', type: 'mux2ds', scope: 'root',
+            ports: [port('n:mux', 'dout', 'out', ['y']), port('n:mux', 'in0', 'in', ['a']),
+                port('n:mux', 'in1', 'in', ['b']), port('n:mux', 'sel', 'in', ['s'])],
+            meta: { symbol: 'mux', caption: 'u_mux', referencedSource: { file: '/rtl/lib.v', line: 7 } }
+        }]);
+        const node = graph.children.find((c: any) => c.args?.[WorkflowDiagramMetadata.SYMBOL] === 'mux');
+        expect(node.args[WorkflowDiagramMetadata.SYMBOL_CAPTION]).toBe('u_mux');
+        expect(node.size).toEqual(SymbolGeometry.size('mux', 3, 1, undefined, true));
+        expect(node.size.height).toBe(SymbolGeometry.size('mux', 3, 1).height + SymbolGeometry.CAPTION_HEIGHT_PX);
+        // Its pins are on the body, not on the box with the caption's room.
+        const body = SymbolGeometry.bodyHeight('mux', node.size.height, true);
+        const centre = (p: any) => p.position.y + p.size.height / 2;
+        const west = ports(node).filter((p: any) => p.position.x < 0).map(centre).sort((a: number, b: number) => a - b);
+        expect(west).toEqual([0, 1, 2].map(k => SymbolGeometry.pinY(body, 3, k)));
+        const [y] = ports(node).filter((p: any) => p.position.x > 0).map(centre);
+        expect(y).toBe(body / 2);
+        // An instance drawn as a symbol still leads to its definition.
+        expect(node.args[WorkflowDiagramMetadata.REFERENCED_URI]).toContain('lib.v');
+    });
+
+    it('caption a register by its producer’s caption over its label', () => {
+        const graph = transform([{
+            id: 'n:reg', kind: 'instance', label: 'u_q', scope: 'root',
+            ports: [port('n:reg', 'q', 'out', ['q']), port('n:reg', 'din', 'in', ['d'])],
+            meta: { symbol: 'register', caption: 'u_q (dff_s)' }
+        }]);
+        const node = graph.children.find((c: any) => c.args?.[WorkflowDiagramMetadata.SYMBOL] === 'register');
+        expect(node.args[WorkflowDiagramMetadata.SYMBOL_CAPTION]).toBe('u_q (dff_s)');
+        expect(node.size.height).toBe(SymbolGeometry.size('register', 1, 1).height);
+    });
+
+    it('give a gate no caption and no room for one', () => {
+        const graph = transform([{
+            id: 'n:and', kind: 'logic', label: 'a & b', scope: 'root',
+            ports: [port('n:and', 'y', 'out', ['y']), port('n:and', 'a', 'in', ['a'])],
+            meta: { symbol: 'and' }
+        }]);
+        const node = graph.children.find((c: any) => c.id === 'a & b');
+        expect(node.args[WorkflowDiagramMetadata.SYMBOL_CAPTION]).toBeUndefined();
+        expect(node.size).toEqual(SymbolGeometry.size('and', 1, 1));
+    });
+
     it('draw a node with no symbol, or one it does not know, as a box', () => {
         const graph = transform([{
             id: 'n:x', kind: 'logic', label: 'x', scope: 'root',

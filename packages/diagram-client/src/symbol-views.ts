@@ -74,7 +74,7 @@ export function renderSymbolBody(
     operator?: string,
     caption?: string
 ): VNode[] {
-    const height = SymbolGeometry.bodyHeight(kind, size.height);
+    const height = SymbolGeometry.bodyHeight(kind, size.height, SymbolGeometry.isCaptioned(kind, caption));
     const width = size.width;
     const stub = SymbolGeometry.STUB_PX;
     const out: VNode[] = [
