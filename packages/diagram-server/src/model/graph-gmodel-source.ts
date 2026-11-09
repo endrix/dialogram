@@ -627,8 +627,15 @@ export class GraphGModelSource {
                 const portId = port.bus ? `${stableNodeId}_bus_${port.bus.key}` : `${stableNodeId}_port_${port.name}`;
                 const direction: 'input' | 'output' = port.direction === 'out' ? 'output' : 'input';
                 const east = side === 'EAST';
-                const x = east ? size.width : -portW;
-                const y = yStart + idx * portRowH;
+                // A port sits centred on the node's border, as a group frame's
+                // dots sit on the frame. A bus port's box is its larger dot,
+                // square, centred on the same row, so its edge still ends on
+                // the dot's rim.
+                const busR = WorkflowDiagramConstants.PORT_BUS_DOT_RADIUS_PX;
+                const boxW = port.bus ? 2 * busR : portW;
+                const boxH = port.bus ? 2 * busR : portH;
+                const x = east ? size.width - boxW / 2 : -boxW / 2;
+                const y = yStart + idx * portRowH + (portH - boxH) / 2;
                 const labelText = port.name;
                 const labelSize = this.estimateLabelSize(labelText, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX);
                 const labelBoxWidth = this.portLabelBoxWidth(port);
@@ -636,7 +643,7 @@ export class GraphGModelSource {
                     id: portId,
                     type: direction === 'output' ? WorkflowDiagramTypes.PORT_OUTPUT : WorkflowDiagramTypes.PORT_INPUT,
                     position: { x, y },
-                    size: { width: portW, height: portH },
+                    size: { width: boxW, height: boxH },
                     args: {
                         [WorkflowDiagramMetadata.PORT_NAME]: port.name,
                         [WorkflowDiagramMetadata.PORT_DIRECTION]: direction,
@@ -695,8 +702,8 @@ export class GraphGModelSource {
                         east ? 'output-port-label' : 'input-port-label'
                     ],
                     position: {
-                        x: east ? -1 - labelBoxWidth : portW + 1,
-                        y: Math.round((portH - labelSize.height) / 2)
+                        x: east ? -labelGap - labelBoxWidth : boxW + labelGap,
+                        y: Math.round((boxH - labelSize.height) / 2)
                     },
                     size: { width: labelBoxWidth, height: labelSize.height },
                     args: {
@@ -753,7 +760,7 @@ export class GraphGModelSource {
                     const gport: GPort = {
                         id: ports.inId,
                         type: WorkflowDiagramTypes.PORT_INPUT,
-                        position: { x: -portW, y: yStart + ports.inIndex * portRowH },
+                        position: { x: -portW / 2, y: yStart + ports.inIndex * portRowH },
                         size: { width: portW, height: portH },
                         args: {
                             [WorkflowDiagramMetadata.PORT_NAME]: inName,
@@ -769,7 +776,7 @@ export class GraphGModelSource {
                     const gportOut: GPort = {
                         id: ports.outId,
                         type: WorkflowDiagramTypes.PORT_OUTPUT,
-                        position: { x: size.width, y: yStart + ports.outIndex * portRowH },
+                        position: { x: size.width - portW / 2, y: yStart + ports.outIndex * portRowH },
                         size: { width: portW, height: portH },
                         args: {
                             [WorkflowDiagramMetadata.PORT_NAME]: outName,
@@ -793,7 +800,7 @@ export class GraphGModelSource {
                             text: inName,
                             cssClasses: [WorkflowDiagramCss.LABEL, 'port-label', 'input-port-label'],
                             position: {
-                                x: portW + 1,
+                                x: portW + labelGap,
                                 y: Math.round((portH - inLabelSize.height) / 2)
                             },
                             size: { width: inLabelSize.width, height: inLabelSize.height },
@@ -811,7 +818,7 @@ export class GraphGModelSource {
                             text: outName,
                             cssClasses: [WorkflowDiagramCss.LABEL, 'port-label', 'output-port-label'],
                             position: {
-                                x: -1 - outLabelSize.width,
+                                x: -labelGap - outLabelSize.width,
                                 y: Math.round((portH - outLabelSize.height) / 2)
                             },
                             size: { width: outLabelSize.width, height: outLabelSize.height },

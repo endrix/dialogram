@@ -181,6 +181,12 @@ it no longer has.
   style are unchanged. A bus port is a larger dot with its toggle inside,
   `+` or `−`, in place of the square toggle in front of its name.
 
+- **Ports sit centred on the node's border**, as a group frame's dots sit on
+  the frame, instead of outside it; a bus port's box is its larger dot,
+  centred on its row. A port's name is 3px from its dot, not 1px
+  (`PORT_LABEL_GAP_PX`), the same in ELK's placement and the server's.
+  Saved routes are re-snapped to the new anchors on open.
+
 - **Breaking for a product that showed the agent workflow UI from the stock
   bundle: it no longer loads it.** The `@tool` and `@agent` annotation
   editors, the agent sections of a node's panel (Skill row, Agent Tools, live
@@ -424,6 +430,10 @@ it no longer has.
   longer compiles: drop the line (the chat tools are always on).
 
 ### Tooling
+
+- `scripts/render-svg` places port labels as every submit in the editor does
+  (`placePortLabels`, now shared), so a render shows names where the editor
+  does rather than where ELK left them.
 
 - `scripts/render-svg --open <node:bundle>` draws a bundle open (repeatable;
   `<node>:*` opens all of a node's, `*` every one), so each state of a bus

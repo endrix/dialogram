@@ -23,6 +23,7 @@ import { convertToGModelRoot } from '@dialogram/diagram-server/server/gmodel-con
 import { WorkflowElkLayoutEngine } from '@dialogram/diagram-server/server/elk-layout-engine';
 import { WorkflowLayoutConfigurator } from '@dialogram/diagram-server/server/layout-configurator';
 import { tunedLayoutOptions } from '@dialogram/diagram-server/operations/layout-tuned-handler';
+import { placePortLabels } from '@dialogram/diagram-server/server/port-labels';
 
 interface Config {
     doc: string;
@@ -96,6 +97,8 @@ async function main(): Promise<void> {
         new WorkflowLayoutConfigurator(),
         modelState
     ).layout();
+    // Each submit in the editor places the port labels after the layout; so does the render.
+    placePortLabels(root);
     writeFileSync(config.out, JSON.stringify(createSchema(root)));
     const nodes = [...byId.values()].filter(e => typeof e.type === 'string' && e.type.startsWith('node')).length;
     const edges = [...byId.values()].filter(e => typeof e.type === 'string' && e.type.startsWith('edge')).length;
