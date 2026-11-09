@@ -397,13 +397,14 @@ it no longer has.
 
 ### Fixed
 
-- **A sidecar product's node families reach the editor.** The toolkit gave
-  a profile's `nodeFamilies` to the server, which classes the nodes, but
-  not to the client, which draws a family's mark and colour from
+- **A product's node families reach the editor.** A sidecar profile's
+  `nodeFamilies` went to the server, which classes the nodes, but not to
+  the client, which draws a family's mark and colour from
   `clientBehavior.nodeFamilies`: sv-ide's, vhdl-ide's and ndf-ide's nodes
   had no icon and no colour in the editor, while the headless renderer,
-  which feeds both, drew them. They are now the client's too, unless the
-  product names its own in `clientBehavior` (wfpy-ide does).
+  which feeds both, drew them. The platform now tells the client the
+  families the server classes nodes with, for every profile, unless the
+  product names others in `clientBehavior` (wfpy-ide does).
 
 - **A diagram whose nodes share a label draws.** A node's id was its label,
   and an HDL producer labels an expression node with the expression: the
