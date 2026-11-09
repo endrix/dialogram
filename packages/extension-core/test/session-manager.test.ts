@@ -247,9 +247,7 @@ describe('SessionManager', () => {
 
   describe('getSessionsForWorkflow', () => {
     it('should return sessions for specific workflow', async () => {
-      // Each session at its own time. The expectation used to hold only when
-      // all three were created within one millisecond (the sort then kept
-      // insertion order), and failed on a runner where the clock ticked.
+      // Each session at its own time, so the order is the updatedAt sort's.
       vi.useFakeTimers({ toFake: ['Date'] });
       try {
         vi.setSystemTime(1_000);
@@ -269,6 +267,20 @@ describe('SessionManager', () => {
       expect(sessions).toHaveLength(2);
       // Sessions are sorted by updatedAt descending (most recent first)
       expect(sessions.map((s) => s.name)).toEqual(['Session 3', 'Session 1']);
+    });
+
+    it('should put the later of two sessions with the same time first', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.setSystemTime(5_000);
+        await sessionManager.createSession('/test/same.py', 'Earlier');
+        mockACPClient.createSession.mockResolvedValue('session-later');
+        await sessionManager.createSession('/test/same.py', 'Later');
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect(sessionManager.getSessionsForWorkflow('/test/same.py').map((s) => s.name)).toEqual(['Later', 'Earlier']);
     });
 
     it('should return empty array for workflow with no sessions', () => {
