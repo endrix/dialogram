@@ -267,6 +267,15 @@ There is one template per annotation name, and a later binding replaces an
 earlier one. The wizard lists them before its own "Custom annotation…" entry
 (`custom`), which a template cannot replace.
 
+**Node openers.** A double-click on a node opens its definition, unless the
+network navigation opens something for it. To open something else for some
+of your nodes, bind a `NodeOpener` with an `id`: its `open(node, { sourceUri })`
+returns the actions to run, or `undefined` to leave the node to the platform.
+Openers are asked in the order their ids were first bound, and the first
+that answers wins; a later binding for an id replaces the earlier one. The
+stock bundle binds wfpy's `@viewer` opener (id `viewer`) until wfpy-ide binds
+its own.
+
 **The agent workflow UI.** The stock bundle binds no editors, sections or
 templates. wfpy's are `agentUiModule`, imported by path as
 `@dialogram/diagram-client/agent-ui/index`: the `@tool` and `@agent`

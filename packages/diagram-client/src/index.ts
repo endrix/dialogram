@@ -78,6 +78,7 @@ export {
     type PanelModelRoot
 } from './node-section';
 export { createPropertySection, escapeHtml, shortenPath } from './property-section';
+export { NodeOpener, type NodeOpenerContext } from './node-opener';
 export {
     AnnotationTemplate,
     CUSTOM_ANNOTATION_ENTRY,

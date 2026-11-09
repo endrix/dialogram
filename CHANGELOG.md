@@ -47,6 +47,14 @@ to fail its version check rather than run against what it no longer has.
 
 ### Added
 
+- **What a double-click on a node opens is a contribution point:
+  `NodeOpener`** (exported). An opener answers before the platform's own
+  definition navigation, or leaves the node to it; one per `id`, the last
+  binding winning. The `@viewer` half of the double-click listener (open,
+  diff, open with an editor or run a command on a task's last tokens, or a
+  path it declares) is the `viewer` opener (`viewer-node-opener.ts`), which
+  the stock module binds until wfpy-ide binds its own.
+
 - **What a product's webview code needs, from the package.**
   `@dialogram/diagram-client` exports `VscodeUi` (the host's quick picks,
   input boxes and commands), `clientBehavior`, `commandId`, `offersRun`,
