@@ -68,7 +68,7 @@ describe('a node opener', () => {
     it('is asked for any node the listener answers for, and the first that answers wins', () => {
         const later: unknown[] = [];
         const first = NavigateToExternalTargetAction.create({ uri: 'file:///first' });
-        const listener = listenerWith([opener('quiet', undefined), opener('first', [first]), opener('later', [], later)]);
+        const listener = listenerWith([opener('quiet', undefined), opener('first', [first]), opener('later', [first], later)]);
         expect(opens(listener, task(WorkflowDiagramTypes.NODE_ACTOR))).toEqual([first]);
         expect(later).toEqual([]);
     });
@@ -110,5 +110,26 @@ describe('the openers the listener is given', () => {
         const c = new Container();
         c.bind(EditorContextService).toConstantValue({ sourceUri: SOURCE } as never);
         expect(ids(c)).toEqual([]);
+    });
+});
+
+describe('an opener that answers nothing useful', () => {
+    it('with an empty list, or by throwing, leaves the node to the next opener and the platform', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const failing: NodeOpener = { id: 'failing', open: () => { throw new Error('boom'); } };
+        expect(isDefinition(opens(listenerWith([opener('empty', []), failing])))).toBe(true);
+        expect(warn).toHaveBeenCalledTimes(1);
+        warn.mockRestore();
+    });
+});
+
+describe('the platform’s own answer', () => {
+    it('opens the definition of a task and of an actor, but not of an actor marked external', () => {
+        const listener = listenerWith(undefined);
+        expect(isDefinition(opens(listener, task(WorkflowDiagramTypes.NODE_EXTERNAL_ACTOR)))).toBe(true);
+        expect(isDefinition(opens(listener, task(WorkflowDiagramTypes.NODE_ACTOR)))).toBe(true);
+        const marked = task(WorkflowDiagramTypes.NODE_ACTOR);
+        marked.args[WorkflowDiagramMetadata.IS_EXTERNAL_ACTOR] = true;
+        expect(opens(listener, marked)).toEqual([]);
     });
 });

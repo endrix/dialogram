@@ -28,6 +28,12 @@ type DefinitionAnnotation = {
     arguments?: Array<{ name: string; value: string }>;
 };
 
+/**
+ * Anything with a scheme is already a complete address — a URL, or a URI the
+ * host knows how to route. It must not be treated as a path and glued onto a
+ * directory, which is what turned `https://example.com/x` into
+ * `file:///w/https://example.com/x`.
+ */
 const ABSOLUTE_URI = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
 
 function parseStringLiteralish(text: string | undefined): string | undefined {

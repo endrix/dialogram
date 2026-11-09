@@ -11,8 +11,14 @@
  *     bind(NodeOpener).toConstantValue(myOpener);
  *
  * There is one opener per `id`: a later binding for an id replaces the
- * earlier one. Openers are asked in the order their ids were first bound; the
- * first that answers wins.
+ * earlier one, and an opener without an id is dropped. Openers are asked in
+ * the order their ids were first bound; the first that answers with actions
+ * wins (an empty list is no answer), and one that throws is skipped.
+ *
+ * The network navigation listener may open something for the same
+ * double-click (a node's first view); the platform's definition stands back
+ * for it, but an opener's answer does not. An opener should leave such nodes
+ * unless it means to open its own thing beside the view.
  */
 import type { Action, GModelElement } from '@eclipse-glsp/sprotty';
 
@@ -26,6 +32,6 @@ export interface NodeOpenerContext {
 export interface NodeOpener {
     /** What the opener is, for a later binding to replace it. */
     readonly id: string;
-    /** The actions a double-click on `node` runs, or `undefined` to leave it to the platform. */
+    /** The actions a double-click on `node` runs, or `undefined` (or none) to leave it to the platform. */
     open(node: GModelElement, context: NodeOpenerContext): Array<Action | Promise<Action>> | undefined;
 }

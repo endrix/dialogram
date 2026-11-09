@@ -113,7 +113,8 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     // Double-click navigation into nested networks.
     bindAsService(context, TYPES.MouseListener, WorkflowNetworkNavigationMouseListener);
 
-    // Double-click on @viewer external tasks to open/diff the last token files.
+    // Double-click on a node: what a product's openers open for it, else its
+    // definition (every product relies on the latter).
     bindAsService(context, TYPES.MouseListener, ViewerMouseListener);
     // What a double-click on a `@viewer` task opens (its last tokens), until
     // the product that has `@viewer` binds it in its own bundle.

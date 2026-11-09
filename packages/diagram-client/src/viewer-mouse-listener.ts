@@ -37,12 +37,6 @@ function findContainingEntityNode(element: GModelElement | undefined): GModelEle
     return undefined;
 }
 
-/**
- * Anything with a scheme is already a complete address — a URL, or a URI the
- * host knows how to route. It must not be treated as a path and glued onto a
- * directory, which is what turned `https://example.com/x` into
- * `file:///w/https://example.com/x`.
- */
 function isSerializedPosition(value: unknown): value is SerializedPosition {
     if (!value || typeof value !== 'object') {
         return false;
@@ -192,33 +186,29 @@ export class ViewerMouseListener extends MouseListener implements Ranked {
             return [];
         }
 
-        // What a product opens for the node, before the platform's own: its definition.
+        // What a product opens for the node, before the platform's own: its
+        // definition. An empty answer is no answer; an opener that throws is
+        // skipped, so it cannot stop the node from opening anything.
         for (const opener of this.nodeOpeners()) {
-            const opened = opener.open(node, { sourceUri: this.editorContext.sourceUri });
-            if (opened) {
+            let opened: (Action | Promise<Action>)[] | undefined;
+            try {
+                opened = opener.open(node, { sourceUri: this.editorContext.sourceUri });
+            } catch (error) {
+                console.warn(`[dialogram] the node opener '${opener.id}' failed`, error);
+                continue;
+            }
+            if (opened && opened.length > 0) {
                 return opened;
             }
         }
 
-        const isExternal = args[WorkflowDiagramMetadata.IS_EXTERNAL_ACTOR] === true || node.type === WorkflowDiagramTypes.NODE_EXTERNAL_ACTOR;
-        const sourceUri = this.editorContext.sourceUri;
-        const definitionNavigationAction = buildDefinitionNavigationAction(node, sourceUri);
-        if (!isExternal) {
-            if (node.type !== WorkflowDiagramTypes.NODE_ACTOR) {
-                return [];
-            }
-
-            if (!definitionNavigationAction || leafOpensItself(node)) {
-                return [];
-            }
-
-            return [definitionNavigationAction];
-        }
-
-        if (node.type !== WorkflowDiagramTypes.NODE_EXTERNAL_ACTOR) {
+        // The definition of a task, or of an actor that is not marked external.
+        const opensDefinition = node.type === WorkflowDiagramTypes.NODE_EXTERNAL_ACTOR
+            || (node.type === WorkflowDiagramTypes.NODE_ACTOR && args[WorkflowDiagramMetadata.IS_EXTERNAL_ACTOR] !== true);
+        if (!opensDefinition) {
             return [];
         }
-
+        const definitionNavigationAction = buildDefinitionNavigationAction(node, this.editorContext.sourceUri);
         return definitionNavigationAction && !leafOpensItself(node) ? [definitionNavigationAction] : [];
     }
 }
