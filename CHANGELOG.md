@@ -8,11 +8,20 @@ platform API version.
 
 **Release:** this release must bump `DIALOGRAM_API_VERSION` to 0.9 and ship
 with products built against it: its API removals (#127, #129), the stock
-bundle's dropping the agent workflow UI (#137) and the server's no longer
-answering agent discovery (#139) need a product still at 0.8 to fail its
-version check rather than run against what it no longer has.
+bundle's dropping the agent workflow UI (#137) and the `@viewer` opener
+(#141), and the server's no longer answering agent discovery (#139), need a
+product still at 0.8 to fail its version check rather than run against what
+it no longer has.
 
 ### Removed
+
+- **The `@viewer` double-click in the stock bundle.** Opening, diffing,
+  opening with an editor or running a command on a `@viewer` task's last
+  tokens, or opening the path it declares, is wfpy-ide's `NodeOpener` in its
+  own bundle (endrix/wfpy-ide#29); the stock bundle binds no opener (#141).
+  No other product emits `@viewer`. The double-click still opens a node's
+  definition for every product, and the host still handles the
+  `wf:viewer*` arguments of the actions.
 
 - **Agent discovery and enrichment in the platform.** The server no longer
   scans `.wf/skills`, `.claude/skills`, `~/.claude/skills` and the
