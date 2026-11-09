@@ -32,6 +32,7 @@ import {
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { collectEdgeRoutes, collectNodePositions, isMovableNode, movableNodeIdFor, nodeLayoutKeyOf, type Point } from '../server/layout-snapshot';
 import { makeRoom, type Box } from './make-room';
+import { growGroupsToFit } from '../server/group-geometry';
 import { layoutTargetOf, type LayoutTarget } from '../server/layout-target';
 import {
     WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND,
@@ -63,30 +64,53 @@ export interface PortBusTarget {
     group: string;
 }
 
+/** How far each node moved down (negative: up), by id. */
+export type NodeMoves = Map<string, number>;
+
+function inverse(moves: NodeMoves): NodeMoves {
+    return new Map([...moves].map(([id, dy]) => [id, -dy]));
+}
+
 /**
  * Undo closes what the toggle opened, and redo opens it again: each is the
- * same write and rebuild with the other answer. `beforeExecute` runs on the
- * first execution only.
+ * same write and rebuild with the other answer. The nodes the toggle moved
+ * are moved back exactly by undo and again by redo, never worked out anew:
+ * what a growth pushed cannot be read back off the layout. `beforeExecute`
+ * runs on the first execution only.
  */
 export class TogglePortBusCommand implements Command {
+    private moves: NodeMoves = new Map();
+
     constructor(
-        private readonly apply: (expanded: boolean) => Promise<void>,
+        private readonly apply: (expanded: boolean, moves?: NodeMoves) => Promise<NodeMoves | void>,
         private readonly expanded: boolean,
         private readonly beforeExecute?: () => void
     ) {}
 
-    execute(): Promise<void> {
+    async execute(): Promise<void> {
         this.beforeExecute?.();
-        return this.apply(this.expanded);
+        const made = await this.apply(this.expanded);
+        this.moves = made instanceof Map ? made : new Map();
     }
 
-    undo(): Promise<void> {
-        return this.apply(!this.expanded);
+    async undo(): Promise<void> {
+        await this.apply(!this.expanded, inverse(this.moves));
     }
 
-    redo(): Promise<void> {
-        return this.apply(this.expanded);
+    async redo(): Promise<void> {
+        await this.apply(this.expanded, this.moves);
     }
+}
+
+/**
+ * What opening each bundle moved, this session, by view and bundle: closing
+ * it moves exactly that back. A bundle opened before (another session, or
+ * the fallback's choice) closes leaving the room it had.
+ */
+const roomMade = new Map<string, NodeMoves>();
+
+function bundleKey(target: PortBusTarget): string {
+    return [target.layout.filePath, target.layout.networkId, target.nodeKey, target.group].join('\u0000');
 }
 
 @injectable()
@@ -122,7 +146,7 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
         // the model as it was; the rebuilt model has other ports and edges, and
         // a patch undone against it could land on the wrong element. They are
         // dropped, unless every one is a toggle: a toggle records no patch.
-        return new TogglePortBusCommand(open => this.apply(target, open), !expanded, () => {
+        return new TogglePortBusCommand((open, moves) => this.apply(target, open, moves), !expanded, () => {
             const commands = (this.commandStack as unknown as { commands?: unknown[] }).commands;
             if (!Array.isArray(commands) || !commands.every(command => command instanceof TogglePortBusCommand)) {
                 this.commandStack.flush();
@@ -175,7 +199,13 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
         return open;
     }
 
-    async apply(target: PortBusTarget, expanded: boolean): Promise<void> {
+    /**
+     * Open or close the bundle, rebuild, and move the nodes around it: `moves`
+     * exactly, when given (an undo or a redo); else, opening, the column the
+     * growth pushes, and closing, what this session's opening of it moved.
+     * Returns the moves made.
+     */
+    async apply(target: PortBusTarget, expanded: boolean, moves?: NodeMoves): Promise<NodeMoves> {
         const { layout, nodeId, nodeKey, group } = target;
         // An undo or redo that arrives after the editor showed another view
         // in place: what is drawn is not the view the toggle was made in, and
@@ -184,7 +214,7 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
         const shown = diagramModel ? layoutTargetOf(diagramModel) : undefined;
         if (!shown || shown.filePath !== layout.filePath || shown.networkId !== layout.networkId) {
             console.warn('[dialogram] bus toggle skipped: the view it was made in is no longer shown', layout);
-            return;
+            return new Map();
         }
         const open = this.openBundles();
         const groups = open.get(nodeKey) ?? new Set<string>();
@@ -197,46 +227,101 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
         await this.layoutPersistence.savePortBuses(layout.filePath, layout.networkId, open);
 
         if (!canRebuild(this.sourceModelStorage)) {
-            return;
+            return new Map();
         }
         const current: CurrentLayout = {
             positions: collectNodePositions(this.modelState.root),
             routes: collectEdgeRoutes(this.modelState.root)
         };
-        const oldHeight = (this.modelState.index.find(nodeId) as any)?.size?.height;
+        const oldHeights = this.heightsUpFrom(nodeId);
         if (!(await this.sourceModelStorage.rebuildFromLastDocument(current))) {
-            return;
+            return new Map();
         }
-        // The node is taller or shorter now: the nodes stacked under it move
-        // with its bottom edge, and their edges are rerouted with its own.
-        const moved = typeof oldHeight === 'number' ? this.makeRoomUnder(nodeId, oldHeight) : [];
+        const key = bundleKey(target);
+        let made: NodeMoves;
+        if (moves) {
+            made = this.moveNodes(moves);
+        } else if (expanded) {
+            made = this.makeRoomUnder(nodeId, oldHeights);
+        } else {
+            const opened = roomMade.get(key);
+            made = opened ? this.moveNodes(inverse(opened)) : new Map();
+        }
+        if (expanded) {
+            roomMade.set(key, made);
+        } else {
+            roomMade.delete(key);
+        }
         await this.rerouteHandler.runReroute({
             kind: WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND,
             isOperation: true,
-            elementIds: [nodeId, ...moved],
+            elementIds: [nodeId, ...made.keys()],
             source: 'changeBounds'
         } as any);
+        return made;
     }
 
-    /** Move the siblings stacked under `nodeId`, which was `oldHeight` tall; the ids moved. */
-    makeRoomUnder(nodeId: string, oldHeight: number): string[] {
-        const node: any = this.modelState.index.find(nodeId);
-        const siblings: any[] = (node?.parent?.children ?? []).filter((child: any) =>
-            isMovableNode(child) && child.position && child.size);
-        const boxes: Box[] = siblings.map(child => ({
-            id: String(child.id),
-            x: child.position.x,
-            y: child.position.y,
-            width: child.size.width,
-            height: child.size.height
-        }));
-        const moves = makeRoom(boxes, nodeId, oldHeight);
-        for (const child of siblings) {
-            const dy = moves.get(String(child.id));
-            if (dy !== undefined) {
-                child.position = { x: child.position.x, y: child.position.y + dy };
+    /** The heights of the node and of each group around it, by id. */
+    heightsUpFrom(nodeId: string): Map<string, number> {
+        const heights = new Map<string, number>();
+        let element: any = this.modelState.index.find(nodeId);
+        while (element && isMovableNode(element)) {
+            if (typeof element.size?.height === 'number') {
+                heights.set(String(element.id), element.size.height);
+            }
+            element = element.parent;
+        }
+        return heights;
+    }
+
+    /** Move nodes by `moves`, growing the groups they are in to hold them; the moves made. */
+    moveNodes(moves: NodeMoves): NodeMoves {
+        const made: NodeMoves = new Map();
+        for (const [id, dy] of moves) {
+            const node: any = this.modelState.index.find(id);
+            if (node?.position) {
+                node.position = { x: node.position.x, y: node.position.y + dy };
+                made.set(id, dy);
+                growGroupsToFit(node);
             }
         }
-        return [...moves.keys()];
+        return made;
+    }
+
+    /**
+     * Move the siblings stacked under `nodeId`, which grew from its height in
+     * `oldHeights`. Inside a group the group grows to hold what moved, and
+     * the same room is made for the group among its own siblings, up to the
+     * diagram. The moves made.
+     */
+    makeRoomUnder(nodeId: string, oldHeights: ReadonlyMap<string, number>): NodeMoves {
+        const made: NodeMoves = new Map();
+        let level: any = this.modelState.index.find(nodeId);
+        while (level && isMovableNode(level)) {
+            const oldHeight = oldHeights.get(String(level.id));
+            const parent = level.parent;
+            if (oldHeight === undefined || !parent) {
+                break;
+            }
+            const siblings: any[] = (parent.children ?? []).filter((child: any) =>
+                isMovableNode(child) && child.position && child.size);
+            const boxes: Box[] = siblings.map(child => ({
+                id: String(child.id),
+                x: child.position.x,
+                y: child.position.y,
+                width: child.size.width,
+                height: child.size.height
+            }));
+            const step = makeRoom(boxes, String(level.id), oldHeight);
+            for (const [id, dy] of this.moveNodes(step)) {
+                made.set(id, (made.get(id) ?? 0) + dy);
+            }
+            growGroupsToFit(level);
+            if (!isMovableNode(parent)) {
+                break;
+            }
+            level = parent;
+        }
+        return made;
     }
 }

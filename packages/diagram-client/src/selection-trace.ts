@@ -432,8 +432,9 @@ export function traceClasses(graph: TraceGraph, trace: Trace): Record<string, st
  * Puts a trace's classes on the model, or (`remove`) takes them off.
  * `selected`: what the trace is of. Given, the classes are worked out again
  * from each model the feedback is put on, so a model rebuilt under the same
- * selection (a bus opened, its member edges new) is traced as it now is;
- * `classes` are those of the model the selection was made on.
+ * selection (a bus opened, its member edges new) is traced as it now is, and
+ * `classes` (those of the model the selection was made on) are not read. A
+ * `remove` takes off whatever the trace put on, whatever `classes` says.
  */
 export interface SelectionTraceFeedbackAction extends Action {
     kind: typeof SelectionTraceFeedbackAction.KIND;

@@ -97,8 +97,10 @@ it no longer has.
   drew) is routed once the client has measured, and saved, unless the view
   is showing its fallback's layout. Opening a bundle makes its node taller:
   the nodes stacked under it move down with its bottom edge, each keeping
-  its gap, and closing it moves them back up as far as nothing above stands
-  in the way (`make-room.ts`).
+  its gap, and inside a group the group grows and makes the same room among
+  its own siblings (`make-room.ts`). Undo, redo, and closing a bundle opened
+  in the same session move exactly those nodes back; a bundle opened before
+  closes leaving the room it had.
 
 - **What a double-click on a node opens is a contribution point:
   `NodeOpener`** (exported). An opener answers before the platform's own

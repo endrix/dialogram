@@ -1,9 +1,9 @@
 /**
  * A node that grows in place (a bus opened) pushes down the nodes stacked
- * under it, and pulls them back up when it shrinks.
+ * under it. Moving them back is the toggle's (port-buses.test.ts).
  */
 import { describe, expect, it } from 'vitest';
-import { makeRoom, MIN_GAP_PX, type Box } from '../src/operations/make-room';
+import { makeRoom, type Box } from '../src/operations/make-room';
 
 const box = (id: string, x: number, y: number, height = 60, width = 140): Box => ({ id, x, y, width, height });
 
@@ -41,24 +41,11 @@ describe('a node that grows', () => {
 });
 
 describe('a node that shrinks', () => {
-    it('pulls the column back up by what it shrank, so a toggle and its undo leave the layout as it was', () => {
-        const grown = [box('queue7', 0, 110, 150), box('queue9', 0, 310), box('queue5', 0, 420)];
-        expect(Object.fromEntries(makeRoom(grown, 'queue7', 60).entries())).toEqual({});
-        const shrunk = [box('queue7', 0, 110, 60), box('queue9', 0, 310), box('queue5', 0, 420)];
-        expect(Object.fromEntries(makeRoom(shrunk, 'queue7', 150))).toEqual({ queue9: -90, queue5: -90 });
+    it('moves nothing: what a growth pushed cannot be read off the layout, so the toggle moves it back itself', () => {
+        expect(makeRoom([box('a', 0, 0, 60), box('b', 0, 200)], 'a', 150).size).toBe(0);
     });
 
-    it('pulls up only as far as a node above the column, outside it, allows', () => {
-        const moves = makeRoom([
-            box('a', 0, 0, 60),
-            box('b', 0, 200, 60, 400),          // stacked under a, wide
-            box('blocker', 300, 0, 160)         // above b's right half, bottom at 160
-        ], 'a', 150);
-        // Without the blocker b would rise 90; it may rise to 20 under the blocker's bottom.
-        expect(moves.get('b')).toBe(-(200 - 160 - MIN_GAP_PX));
-    });
-
-    it('moves nothing when the height did not change', () => {
+    it('nor does a node that kept its height', () => {
         expect(makeRoom([box('a', 0, 0), box('b', 0, 110)], 'a', 60).size).toBe(0);
     });
 });
