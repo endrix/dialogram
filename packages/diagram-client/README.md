@@ -211,6 +211,37 @@ from template" button in the Annotations header. There is one editor per
 name: a later binding replaces an earlier one, so your module can replace one
 of the stock editors (`@tool`, `@agent`).
 
+**Node sections.** To show more about a node than the panel's own sections,
+bind a `NodeSectionContribution`. Every hook is optional:
+
+```ts
+import { ContainerModule } from 'inversify';
+import { NodeSectionContribution, createPropertySection } from '@dialogram/diagram-client';
+
+export const myFeaturesModule = new ContainerModule(bind => {
+    bind(NodeSectionContribution).toConstantValue({
+        infoRows: node => [{ label: 'Owner', value: String(node.args?.['my:owner'] ?? '') }],
+        last: node => {
+            const section = createPropertySection('History');
+            section.querySelector('.property-section-content')!.textContent = '…';
+            return section;
+        }
+    });
+});
+```
+
+- `infoRows` are rows of Basic Info, after the node's type.
+- `afterAnnotations` and `last` return a section, or nothing.
+- `prepare(node, root)` runs before a selected node is drawn.
+- `modelChanged(node, content)` runs on every model change while the panel
+  shows the node. The panel does not redraw then: the contribution updates
+  its own section in place.
+- `install(host)` runs once. Its `host.redrawIfShowing(id)` draws the node
+  again, for an answer that arrives later.
+
+Contributions are asked in the order they were bound. The stock bundle binds
+the agent sections: the Skill row, Agent Tools and the live Agent Context.
+
 **A diagram of your own.** When you compose the container yourself:
 
 ```ts

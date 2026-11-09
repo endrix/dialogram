@@ -71,6 +71,14 @@ export {
 } from './property-fields';
 export { AnnotationEditor, type AnnotationEditorContext } from './annotation-editor';
 export {
+    NodeSectionContribution,
+    type NodeInfoRow,
+    type NodeSectionContext,
+    type NodeSectionHost,
+    type PanelModelRoot
+} from './node-section';
+export { createPropertySection } from './property-section';
+export {
     type PropertyElement,
     type PropertyArgs,
     readStringArg,

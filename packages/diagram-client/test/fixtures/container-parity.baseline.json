@@ -107,6 +107,11 @@
         "to": "const:AgentAnnotationEditor"
     },
     {
+        "id": "Symbol(dialogram.NodeSectionContribution)",
+        "op": "bind",
+        "to": "const:AgentNodeSections"
+    },
+    {
         "id": "Symbol(stub.ICopyPasteHandler)",
         "op": "bind",
         "scope": "singleton",

@@ -1,14 +1,16 @@
 /**
  * The shipped property panel with its window wiring skipped, its dispatcher a
- * recorder, and the stock annotation editors injected. Shared by the agent-UI characterization tests.
+ * recorder, and the stock annotation editors and node sections injected.
+ * Shared by the agent-UI characterization tests.
  *
  * `initialize` is skipped whole: the window chrome (it needs the editor's
- * page), the discovered-skills listener (installed on demand, see
- * `listenForDiscovery`) and the document's link listener. So link handling in
- * a rendered reply is not exercised here.
+ * page) and the document's link listener. So link handling in a rendered
+ * reply is not exercised here. The node sections' one-time setup (the
+ * discovered-skills listener), which the container runs after injection,
+ * runs on demand: see `listenForDiscovery`.
  */
 import { PropertyPanel } from '../../src/property-panel';
-import { stockAnnotationEditors } from '../../src/agent-ui';
+import { stockAnnotationEditors, stockNodeSections } from '../../src/agent-ui';
 import { WorkflowShowAgentSkillsActionHandler, WorkflowShowClaudeAgentsActionHandler } from '../../src/editing-action-handlers';
 import { ui } from './harness';
 
@@ -35,6 +37,7 @@ export class TestPanel extends PropertyPanel {
         super();
         // What the stock feature module binds.
         (this as any).contributedAnnotationEditors = stockAnnotationEditors();
+        (this as any).contributedNodeSections = stockNodeSections();
         (this as any).actionDispatcher = {
             dispatch: async (action: unknown) => { this.dispatched.push(action); },
             dispatchAll: async (actions: unknown[]) => { this.dispatched.push(...actions); }
@@ -59,7 +62,7 @@ export class TestPanel extends PropertyPanel {
             add(type, listener, options as never);
         };
         try {
-            this.initializeAsyncDiscoveryRefresh();
+            this.installNodeSections();
         } finally {
             (window as any).addEventListener = add;
         }
