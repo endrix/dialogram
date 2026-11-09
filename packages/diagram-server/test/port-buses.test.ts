@@ -80,11 +80,11 @@ describe('a closed bundle', () => {
         expect(bus.children[0].text).toBe('out');
     });
 
-    it('leaves room in its label for the toggle in front of the name', () => {
+    it('leaves room in its label for its larger dot', () => {
         const children = model();
         const bus = nodeOf(children, 'u_prod').children.find((c: any) => c.id === 'u_prod_bus_out');
         const clk = nodeOf(children, 'u_prod').children.find((c: any) => c.id === 'u_prod_port_clk');
-        const slot = WorkflowDiagramConstants.PORT_BUS_TOGGLE_PX + WorkflowDiagramConstants.PORT_BUS_TOGGLE_GAP_PX;
+        const slot = WorkflowDiagramConstants.PORT_BUS_LABEL_INSET_PX;
         // `out` and `clk` are as long, so the difference is the slot alone.
         expect(bus.children[0].size.width - clk.children[0].size.width).toBe(slot);
     });

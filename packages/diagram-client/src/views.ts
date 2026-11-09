@@ -962,6 +962,38 @@ export class BoundaryOutputNodeView extends ShapeView {
 }
 
 /**
+ * A port's dot: a circle across the port's box, its outer edge on the port's
+ * anchor. A bus port's is larger, with its toggle inside, `+` while the
+ * bundle is closed and `−` while it is open, drawn as lines so it needs no
+ * font; pressing it opens or closes the bundle (port-bus-toggle.ts).
+ */
+function portDot(port: any, width: number, height: number, shapeClasses: Record<string, boolean>): VNode {
+    const cx = width / 2;
+    const cy = height / 2;
+    const group = port?.args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP] as string | undefined;
+    if (typeof group !== 'string') {
+        return svg('circle', { class: shapeClasses, attrs: { cx, cy, r: Math.max(width, height) / 2 } });
+    }
+    const r = WorkflowDiagramConstants.PORT_BUS_DOT_RADIUS_PX;
+    const arm = r - 2.5;
+    const expanded = port?.args?.[WorkflowDiagramMetadata.PORT_BUS_EXPANDED] === true;
+    const members = port?.args?.[WorkflowDiagramMetadata.PORT_BUS_MEMBERS];
+    const count = typeof members === 'number' ? `${members} ports` : 'its ports';
+    const title = expanded ? `Draw ${group} as one port` : `Show ${count} of ${group}`;
+    return svg('g', {
+        class: { 'port-bus-toggle': true, expanded },
+        attrs: { [PORT_BUS_TOGGLE_ATTR]: String(port?.id ?? '') }
+    },
+        svg('title', {}, title),
+        svg('circle', { class: { ...shapeClasses, 'port-bus-dot': true }, attrs: { cx, cy, r } }),
+        svg('line', { class: { 'port-bus-toggle-mark': true }, attrs: { x1: cx - arm, y1: cy, x2: cx + arm, y2: cy } }),
+        ...(expanded
+            ? []
+            : [svg('line', { class: { 'port-bus-toggle-mark': true }, attrs: { x1: cx, y1: cy - arm, x2: cx, y2: cy + arm } })])
+    );
+}
+
+/**
  * Input port view (left side of node)
  * Port position is managed by ELK layout.
  */
@@ -996,17 +1028,7 @@ export class WorkflowInputPortView extends ShapeView {
                     'pointer-events': 'all'
                 }
             }),
-            svg('rect', {
-                class: { 'port-shape': true, 'array-port': isArray },
-                attrs: {
-                    x: 0,
-                    y: 0,
-                    width: portWidth,
-                    height: portHeight,
-                    rx: cornerRadius,
-                    ry: cornerRadius
-                }
-            })
+            portDot(port, portWidth, portHeight, { 'port-shape': true, 'array-port': isArray })
         ];
 
         // Multiplicity badge (for array ports)
@@ -1078,17 +1100,7 @@ export class WorkflowOutputPortView extends ShapeView {
                     'pointer-events': 'all'
                 }
             }),
-            svg('rect', {
-                class: { 'port-shape': true, 'output': true, 'array-port': isArray },
-                attrs: {
-                    x: 0,
-                    y: 0,
-                    width: portWidth,
-                    height: portHeight,
-                    rx: cornerRadius,
-                    ry: cornerRadius
-                }
-            })
+            portDot(port, portWidth, portHeight, { 'port-shape': true, 'output': true, 'array-port': isArray })
         ];
 
         // Multiplicity badge
@@ -2045,33 +2057,6 @@ export class WorkflowNoArrowEdgeView extends WorkflowEdgeView {
 }
 
 /**
- * The square in front of a bus port's name: `+` while the bundle is closed,
- * `−` while it is open. Drawn as lines, not glyphs, so it needs no font to
- * have them.
- */
-function portBusToggle(port: any, group: string, x: number, centreY: number): VNode {
-    const size = WorkflowDiagramConstants.PORT_BUS_TOGGLE_PX;
-    const expanded = port?.args?.[WorkflowDiagramMetadata.PORT_BUS_EXPANDED] === true;
-    const members = port?.args?.[WorkflowDiagramMetadata.PORT_BUS_MEMBERS];
-    const y = centreY - size / 2;
-    const mid = size / 2;
-    const arm = size / 2 - 2;
-    const count = typeof members === 'number' ? `${members} ports` : 'its ports';
-    const title = expanded ? `Draw ${group} as one port` : `Show ${count} of ${group}`;
-    return svg('g', {
-        class: { 'port-bus-toggle': true, expanded },
-        attrs: { transform: `translate(${x}, ${y})`, [PORT_BUS_TOGGLE_ATTR]: String(port?.id ?? '') }
-    },
-        svg('title', {}, title),
-        svg('rect', { class: { 'port-bus-toggle-box': true }, attrs: { x: 0, y: 0, width: size, height: size, rx: 1.5, ry: 1.5 } }),
-        svg('line', { class: { 'port-bus-toggle-mark': true }, attrs: { x1: mid - arm, y1: mid, x2: mid + arm, y2: mid } }),
-        ...(expanded
-            ? []
-            : [svg('line', { class: { 'port-bus-toggle-mark': true }, attrs: { x1: mid, y1: mid - arm, x2: mid, y2: mid + arm } })])
-    );
-}
-
-/**
  * Label view - renders labels with positions computed by ELK.
  */
 @injectable()
@@ -2130,13 +2115,15 @@ export class WorkflowLabelView implements IView {
             const labelHRaw = label.size?.height ?? label.bounds?.height ?? 0;
             // On persisted-layout reopen (ELK skipped), labels may briefly have width 0
             // before client-measured bounds are sent; keep output anchoring stable.
-            // A bus, or a member of an open one, keeps a slot beside the port:
-            // the bus draws its toggle there, a member a rail, so a member's
-            // name lines up under its bundle's. The server sized the box for it.
+            // A bus keeps an inset beside the port for its larger dot, and a
+            // member of an open one a slot for its rail, so its name sits under
+            // the bundle's, one step in. The server sized the box for it.
             const busGroup = parentPort?.args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP] as string | undefined;
             const busMemberOf = parentPort?.args?.[WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF] as string | undefined;
             const toggleW = WorkflowDiagramConstants.PORT_BUS_TOGGLE_PX;
-            const slot = busGroup || busMemberOf ? toggleW + WorkflowDiagramConstants.PORT_BUS_TOGGLE_GAP_PX : 0;
+            const slot = busGroup
+                ? WorkflowDiagramConstants.PORT_BUS_LABEL_INSET_PX
+                : busMemberOf ? toggleW + WorkflowDiagramConstants.PORT_BUS_TOGGLE_GAP_PX : 0;
             const estimate = estimateLabelSizeFallback(label.text || '');
             const labelW = labelWRaw > 0 ? labelWRaw : estimate.width + slot;
             const labelH = labelHRaw > 0 ? labelHRaw : estimate.height;
@@ -2144,9 +2131,7 @@ export class WorkflowLabelView implements IView {
             const textY = Math.round(labelH / 2);
             const slotX = isOutput ? labelW - toggleW : 0;
             const slotChildren: VNode[] = [];
-            if (busGroup) {
-                slotChildren.push(portBusToggle(parentPort, busGroup, slotX, textY));
-            } else if (busMemberOf) {
+            if (busMemberOf) {
                 slotChildren.push(svg('line', {
                     class: { 'port-bus-rail': true },
                     attrs: { x1: slotX + toggleW / 2, y1: 0, x2: slotX + toggleW / 2, y2: labelH }

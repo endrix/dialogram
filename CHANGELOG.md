@@ -173,6 +173,14 @@ it no longer has.
 
 ### Changed
 
+- **Ports are dots.** A node's port is drawn as a circle on the node's
+  edge, ringed in the editor's background so the edge running into it stays
+  apart from it, as a group frame's dots are, instead of a rounded square
+  whose stroke told input from output (the side and the edge's arrow
+  already do). The geometry, anchors and the `port-shape` class products
+  style are unchanged. A bus port is a larger dot with its toggle inside,
+  `+` or `−`, in place of the square toggle in front of its name.
+
 - **Breaking for a product that showed the agent workflow UI from the stock
   bundle: it no longer loads it.** The `@tool` and `@agent` annotation
   editors, the agent sections of a node's panel (Skill row, Agent Tools, live
