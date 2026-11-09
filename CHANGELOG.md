@@ -72,6 +72,25 @@ it no longer has.
 
 ### Added
 
+- **A node holding a graph of its own opens in place.** A producer can give
+  a node the graph it is made of (`meta.inner`: `nodes`, and `edges` between
+  their pins and the node's own ports; an HDL process and the gates and
+  registers it synthesises to). Such a node has a `+` at the start of its
+  header; pressed, the node is drawn as a group frame titled with its name,
+  holding its inner nodes, and its edges are carried on to the pins they
+  reach (an edge into an input goes to each pin the input feeds, one out of
+  an output comes from the pin driving it, one through it joins its ends),
+  split at the frame as any group's are; the `−` in the frame's header
+  closes it. Whether a node is open is saved in the layout file with its
+  open bundles (the reserved name `*`, `ToggleNodeOpenOperation.OPEN`).
+  Opened, the frame takes the node's place, its members are set in columns
+  by depth from its inputs, and the nodes stacked under it move down;
+  closed, the node takes the frame's place and they move back; undo and redo
+  replay the moves (`model/open-nodes.ts`,
+  `operations/toggle-node-open-handler.ts`, `node-open-toggle.ts`). Bound
+  for read-only sessions too. A group's title now starts where the view puts
+  it (a general text rule centred it on its x).
+
 - **A node can be drawn as a symbol: a gate, a mux, a register, an
   operator.** A producer says what a node is (`meta.symbol`: `and`, `or`,
   `xor`, `xnor`, `not`, `mux`, `register`, `operator`, the last with its glyph

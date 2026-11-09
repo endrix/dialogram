@@ -45,6 +45,7 @@ import { captionIsShared, carriedTextOf } from './edge-caption-sharing';
 import { isEdgeHiddenForDrag, isIncidentEdgeInActiveDrag, routeReachesPorts } from './elk-live-drag-router';
 import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide } from '@dialogram/shared';
 import { renderSymbolBody, symbolPinsOf } from './symbol-views';
+import { NODE_OPEN_TOGGLE_RADIUS_PX, nodeOpenToggle } from './node-open-toggle';
 import { WorkflowDiagramConstants, estimatePortLabelSize } from '@dialogram/shared';
 
 /** Walk to the model root; the drag-active window is tracked per root. */
@@ -375,6 +376,7 @@ export class GroupNodeView extends ShapeView {
         const { width, height } = getNodeSize(node as any, 200, 80);
         const raw = (node as any).args?.[WorkflowDiagramMetadata.GROUP_LABEL];
         const label = typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : '';
+        const openNode = typeof (node as any).args?.[WorkflowDiagramMetadata.OPEN_NODE_KEY] === 'string';
         const header = Math.min(WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX, height);
         const radius = 6;
         const children = ((node as any).children ?? []) as Array<{ type?: string }>;
@@ -407,11 +409,13 @@ export class GroupNodeView extends ShapeView {
                 class: { 'group-frame': true },
                 attrs: { x: 0, y: 0, width, height, rx: radius, ry: radius }
             }),
+            // The frame of an open node: a `−` before the title closes it.
+            ...(openNode ? [nodeOpenToggle(String(node.id), true, label, 10 + NODE_OPEN_TOGGLE_RADIUS_PX, header / 2)] : []),
             ...(label
                 ? [svg('text', {
                     class: { 'group-label': true },
                     attrs: {
-                        x: 10,
+                        x: openNode ? 10 + 2 * NODE_OPEN_TOGGLE_RADIUS_PX + 6 : 10,
                         y: header / 2,
                         'text-anchor': 'start',
                         'dominant-baseline': 'central'
@@ -615,7 +619,12 @@ export class HeaderCompartmentView extends ShapeView {
                 }
             }),
             ...labelChildren,
-            ...badgeChildren
+            ...badgeChildren,
+            // A node holding a graph of its own: a `+` at the header's start opens it.
+            ...((parent as any)?.args?.[WorkflowDiagramMetadata.NODE_OPENABLE] === true
+                ? [nodeOpenToggle(String((parent as any).id), false, String((parent as any).args?.[WorkflowDiagramMetadata.ENTITY_NAME] ?? ''),
+                    6 + NODE_OPEN_TOGGLE_RADIUS_PX, height / 2)]
+                : [])
         );
     }
 

@@ -44,6 +44,7 @@ import { convertToGModelRoot } from './gmodel-convert';
 import { applyPersistedEdgeRoutes } from '../routing/persisted-edge-routes';
 import { relativeToParent, restoreGroupGeometry } from './group-geometry';
 import { withBoundaryBusPositions } from './boundary-bus-positions';
+import { withOpenNodePositions } from '../model/open-nodes';
 import { PERF_ENABLED, perfNow, GraphLoadPerf, nextBuildCount } from './graph-load-perf';
 import { getGraphDiagnosticsCollection } from './graph-diagnostics';
 import {
@@ -544,6 +545,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         // the whole diagram for want of a saved place.
         if (loadedLayoutPositions) {
             loadedLayoutPositions = withBoundaryBusPositions((diagramModel as any).graph, loadedLayoutPositions);
+            loadedLayoutPositions = withOpenNodePositions((diagramModel as any).graph, loadedLayoutPositions);
         }
         (diagramModel as any).workflowName = workflowName;
         (diagramModel as any).documentUri = sourceUri;
