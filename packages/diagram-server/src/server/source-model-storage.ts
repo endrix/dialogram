@@ -374,15 +374,17 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
     }
 
     /**
-     * Build the model again from the document it was last built from, with
-     * the layout file as it now stands. `false` when there is none yet.
+     * Build the model again from the document it was last built from. The
+     * positions and routes are `current`'s, the ones the diagram has now,
+     * where given, and the layout file's otherwise; which bundles are open is
+     * always the file's. `false` when there is no document yet.
      */
-    async rebuildFromLastDocument(): Promise<boolean> {
+    async rebuildFromLastDocument(current?: { positions: Map<string, { x: number; y: number }>; routes: Map<string, { x: number; y: number }[]> }): Promise<boolean> {
         const last = this.lastDocument;
         if (!last) {
             return false;
         }
-        await this.finishLoadFromDoc(last.doc, last.sourceUri, last.filePath, last.opts);
+        await this.finishLoadFromDoc(last.doc, last.sourceUri, last.filePath, last.opts, undefined, current);
         return true;
     }
 
@@ -450,7 +452,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         sourceUri: string,
         filePath: string,
         opts: Record<string, unknown>,
-        perf?: GraphLoadPerf
+        perf?: GraphLoadPerf,
+        current?: { positions: Map<string, { x: number; y: number }>; routes: Map<string, { x: number; y: number }[]> }
     ): Promise<void> {
         const workflowRelationshipInfo = await this.getWorkflowRelationshipInfo(filePath);
         perf?.mark('relInfo');
@@ -505,8 +508,15 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 fallbackLayout = { ...fallbackLayout, networkId: viewKey(fallbackLayout.networkId, view) };
             }
         }
-        let loadedLayoutPositions = await this.layoutPersistence.loadLayout(workflowFilePath, networkId);
-        let edgeRoutes = await this.layoutPersistence.loadEdgeRoutes(workflowFilePath, networkId);
+        // A rebuild keeps the diagram as it is now: a move undone in memory, or
+        // one the layout file could not take, is not the file's.
+        const fromCurrent = current !== undefined && current.positions.size > 0;
+        let loadedLayoutPositions = fromCurrent
+            ? new Map(current!.positions)
+            : await this.layoutPersistence.loadLayout(workflowFilePath, networkId);
+        let edgeRoutes = fromCurrent
+            ? (current!.routes.size > 0 ? new Map(current!.routes) : undefined)
+            : await this.layoutPersistence.loadEdgeRoutes(workflowFilePath, networkId);
         if (!loadedLayoutPositions && fallbackLayout) {
             loadedLayoutPositions = await this.layoutPersistence.loadLayout(fallbackLayout.filePath, fallbackLayout.networkId);
             edgeRoutes = await this.layoutPersistence.loadEdgeRoutes(fallbackLayout.filePath, fallbackLayout.networkId);
@@ -621,7 +631,10 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         // Advance the agent auto-layout reload generation: a marked agent structural edit becomes
         // consumable only on a submit that follows THIS reload (the one carrying the new node/edge),
         // never on the premature post-operation submit that runs on the pre-reload model.
-        this.agentEditSignal?.noteSourceReloaded();
+        // A rebuild is not a reload: the source it would confirm has not been read.
+        if (!current) {
+            this.agentEditSignal?.noteSourceReloaded();
+        }
 
         this.modelState.set(WORKFLOW_NETWORK_MODEL_KEY, diagramModel as any);
 
@@ -724,7 +737,16 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             restoreGroupGeometry(gmodelRoot as any, edgeRoutes);
         }
         if (hasPersistedLayout && edgeRoutes && edgeRoutes.size > 0) {
-            applyPersistedEdgeRoutes(gmodelRoot, edgeRoutes);
+            // An edge the saved routes do not cover would be drawn straight,
+            // port to port: one added since the layout was saved, or one drawn
+            // differently since (a bundle closed into a bus). Routed once the
+            // client has measured the diagram; see the submission handler.
+            const unroutedEdgeIds = applyPersistedEdgeRoutes(gmodelRoot, edgeRoutes);
+            const meta = this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as Record<string, unknown> | undefined;
+            if (meta && unroutedEdgeIds.length > 0) {
+                meta['unroutedEdgeIds'] = unroutedEdgeIds;
+                this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, meta);
+            }
         }
 
         await this.applyViewerOverlayToEdges(

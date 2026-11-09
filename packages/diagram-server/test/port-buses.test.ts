@@ -11,6 +11,9 @@ import { GraphGModelSource, type PyGraphDocument, type PyGraphEdge, type PyGraph
 import { bundlePorts, portBusStateOf } from '../src/model/port-bundles';
 import { LayoutPersistenceService } from '../src/services/layout-persistence-service';
 import { TogglePortBusCommand, WorkflowTogglePortBusOperationHandler } from '../src/operations/toggle-port-bus-handler';
+import { applyPersistedEdgeRoutes } from '../src/routing/persisted-edge-routes';
+import { convertToGModelRoot } from '../src/server/gmodel-convert';
+import { GModelIndex } from '@eclipse-glsp/server';
 
 // The shape hdl-sidecar sends for a producer and a consumer joined by one
 // valid/ready channel (its `handshake` golden, cut down): `ready` runs
@@ -171,15 +174,18 @@ describe('the layout file', () => {
         }
     }
 
+    const open = (entries: Record<string, string[]>) => new Map(Object.entries(entries).map(([k, v]) => [k, new Set(v)]));
+
     it('keeps the open bundles beside the positions, and a save of positions keeps them', () => {
         return withService(async (service, file) => {
             await service.saveLayoutImmediate(file, 'top', new Map([['u_prod', { x: 1, y: 2 }]]));
-            await service.setPortBusExpanded(file, 'top', 'u_prod', 'out', true);
-            await service.setPortBusExpanded(file, 'top', 'u_cons', 's', true);
+            await service.savePortBuses(file, 'top', open({ u_prod: ['out'] }));
+            // A node not named keeps its list.
+            await service.savePortBuses(file, 'top', open({ u_cons: ['s'] }));
             await service.saveLayoutImmediate(file, 'top', new Map([['u_prod', { x: 5, y: 6 }]]));
 
-            const open = await service.loadPortBuses(file, 'top');
-            expect(open && Object.fromEntries([...open].map(([k, v]) => [k, [...v]]))).toEqual({ u_prod: ['out'], u_cons: ['s'] });
+            const saved = await service.loadPortBuses(file, 'top');
+            expect(saved && Object.fromEntries([...saved].map(([k, v]) => [k, [...v]]))).toEqual({ u_prod: ['out'], u_cons: ['s'] });
             expect(await service.loadLayout(file, 'top')).toEqual(new Map([['u_prod', { x: 5, y: 6 }]]));
         });
     });
@@ -187,34 +193,102 @@ describe('the layout file', () => {
     it('remembers closing the last bundle as a choice, and is still no layout without positions', () => {
         return withService(async (service, file) => {
             expect(await service.loadPortBuses(file, 'top')).toBeUndefined();
-            await service.setPortBusExpanded(file, 'top', 'u_prod', 'out', true);
-            await service.setPortBusExpanded(file, 'top', 'u_prod', 'out', false);
+            await service.savePortBuses(file, 'top', open({ u_prod: ['out'] }));
+            await service.savePortBuses(file, 'top', open({ u_prod: [] }));
             expect(await service.loadPortBuses(file, 'top')).toEqual(new Map());
             // A nested view that only opened a bundle still takes its fallback's positions.
             expect(await service.loadLayout(file, 'top')).toBeUndefined();
         });
     });
+
+    it('writes a save of positions and a save of bundles one after the other, losing neither', () => {
+        return withService(async (service, file) => {
+            await Promise.all([
+                service.saveLayoutImmediate(file, 'top', new Map([['u_prod', { x: 1, y: 2 }]])),
+                service.savePortBuses(file, 'top', open({ u_prod: ['out'] })),
+                service.saveLayoutImmediate(file, 'top', new Map([['u_prod', { x: 3, y: 4 }]]))
+            ]);
+            expect(await service.loadLayout(file, 'top')).toEqual(new Map([['u_prod', { x: 3, y: 4 }]]));
+            expect(await service.loadPortBuses(file, 'top')).toEqual(open({ u_prod: ['out'] }));
+        });
+    });
+
+    it('still holds the choice for the session when the file cannot be written', () => {
+        return withService(async (service, file) => {
+            // `.layout` taken by a file: the directory cannot be made.
+            await fs.writeFile(path.join(path.dirname(file), '.layout'), '');
+            await service.savePortBuses(file, 'top', open({ u_prod: ['out'] }));
+            expect(await service.loadPortBuses(file, 'top')).toEqual(open({ u_prod: ['out'] }));
+        });
+    });
+});
+
+describe('a saved layout without a route for an edge', () => {
+    it('names the edges it has no route for, so they are routed rather than drawn straight', () => {
+        const root: any = convertToGModelRoot(new GraphGModelSource().transform(doc) as any);
+        const index = new GModelIndex();
+        index.indexRoot(root);
+        const q: any = index.find(`edge:port:${C}:q->port:wf:output:q:in`);
+        const signature = `${q.args['wf:from']}|${q.args['wf:outPort']}|boundary|${q.args['wf:inPort']}`;
+        // Saved before buses: the member edges' routes, and q's.
+        const unrouted = applyPersistedEdgeRoutes(root, new Map([
+            [signature, [{ x: 0, y: 0 }, { x: 10, y: 0 }]],
+            ['u_prod|out_data|u_cons|s_data', [{ x: 0, y: 0 }, { x: 10, y: 0 }]]
+        ]));
+        expect(unrouted).toContain('bus:bus:node:scope:root:u_prod:out->bus:node:scope:root:u_cons:s');
+        expect(unrouted).not.toContain(q.id);
+    });
 });
 
 describe('the toggle', () => {
-    it('undoes by closing what it opened', async () => {
-        const calls: boolean[] = [];
-        const command = new TogglePortBusCommand(async open => { calls.push(open); }, true);
+    it('undoes by closing what it opened, and drops the history before it once', async () => {
+        const calls: string[] = [];
+        const command = new TogglePortBusCommand(async open => { calls.push(String(open)); }, true, () => calls.push('flush'));
         await command.execute();
         await command.undo();
         await command.redo();
-        expect(calls).toEqual([true, false, true]);
+        expect(calls).toEqual(['flush', 'true', 'false', 'true']);
     });
 
-    it('saves the bundle, rebuilds the model, then reroutes the node’s edges', async () => {
-        const steps: string[] = [];
+    /** A handler over the model `open` draws, its collaborators recording what they are asked. */
+    function handlerOver(openNow: Record<string, string[]>, steps: string[]): WorkflowTogglePortBusOperationHandler {
+        const root: any = convertToGModelRoot(new GraphGModelSource().transform(doc, {
+            portBuses: portBusStateOf(new Map(Object.entries(openNow).map(([k, v]) => [k, new Set(v)])))
+        }) as any);
+        const index = new GModelIndex();
+        index.indexRoot(root);
         const handler = new WorkflowTogglePortBusOperationHandler();
+        (handler as any).modelState = { root, index, get: () => ({ documentUri: 'file:///w/top.sv', workflowName: 'top' }) };
         (handler as any).layoutPersistence = {
-            setPortBusExpanded: async (...args: unknown[]) => { steps.push(`save ${JSON.stringify(args)}`); }
+            savePortBuses: async (file: string, id: string, byNode: Map<string, Set<string>>) => {
+                steps.push(`save ${file} ${id} ${JSON.stringify(Object.fromEntries([...byNode].map(([k, v]) => [k, [...v].sort()])))}`);
+            }
         };
-        (handler as any).sourceModelStorage = { rebuildFromLastDocument: async () => { steps.push('rebuild'); return true; } };
+        (handler as any).sourceModelStorage = {
+            rebuildFromLastDocument: async (current: any) => { steps.push(`rebuild at ${JSON.stringify(Object.fromEntries(current.positions))}`); return true; }
+        };
         (handler as any).rerouteHandler = { runReroute: async (op: any) => { steps.push(`reroute ${op.elementIds}`); } };
-        await handler.apply({ layout: { filePath: '/w/top.sv', networkId: 'top' }, nodeId: 'u_prod', nodeKey: 'u_prod', group: 'out' }, true);
-        expect(steps).toEqual(['save ["/w/top.sv","top","u_prod","out",true]', 'rebuild', 'reroute u_prod']);
+        return handler;
+    }
+
+    it('saves every bundle the view shows open, with the one change, then rebuilds where things are and reroutes the node', async () => {
+        const steps: string[] = [];
+        // `s` shows open, inherited from the fallback; opening `out` must keep it.
+        const handler = handlerOver({ u_cons: ['s'] }, steps);
+        // Where the diagram has it now, not where the file last saw it.
+        (handler as any).modelState.index.find('u_prod').position = { x: 7, y: 8 };
+        const target = handler.targetOf('u_prod_bus_out');
+        expect(target).toEqual({ layout: { filePath: '/w/top.sv', networkId: 'top' }, nodeId: 'u_prod', nodeKey: 'u_prod', group: 'out' });
+        await handler.apply(target!, true);
+        expect(steps[0]).toBe('save /w/top.sv top {"u_prod":["out"],"u_cons":["s"]}');
+        expect(steps[1]).toContain('"u_prod":{"x":7,"y":8}');
+        expect(steps[2]).toBe('reroute u_prod');
+    });
+
+    it('closing an inherited bundle closes that one alone', async () => {
+        const steps: string[] = [];
+        const handler = handlerOver({ u_prod: ['out'], u_cons: ['s'] }, steps);
+        await handler.apply(handler.targetOf('u_cons_bus_s')!, false);
+        expect(steps[0]).toBe('save /w/top.sv top {"u_prod":["out"],"u_cons":[]}');
     });
 });

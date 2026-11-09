@@ -208,6 +208,17 @@ export class LayoutPersistenceService {
         }
     >();
     private saveDebounceMs: number;
+    /**
+     * The write in progress to each layout file. Every save reads the file to
+     * merge into it; two at once would each write what the other replaced.
+     */
+    private writes = new Map<string, Promise<void>>();
+    /**
+     * Which bundles are open, per layout file and network, when the file could
+     * not take it (a read-only directory, persistence switched off): the
+     * reader's choice still holds for the session.
+     */
+    private unsavedPortBuses = new Map<string, Record<string, string[]>>();
 
     // Can be disabled for debugging/benchmarks.
     private readonly disablePersistence = process.env.WORKFLOW_DIAGRAM_DISABLE_PERSISTENCE === '1';
@@ -455,7 +466,29 @@ export class LayoutPersistenceService {
         await this.doSave(layoutPath, networkId, positions, edgeRoutes);
     }
 
-    private async doSave(
+    /** Run `write` once every write to `layoutPath` started before it has finished. */
+    private serialized(layoutPath: string, write: () => Promise<void>): Promise<void> {
+        const previous = this.writes.get(layoutPath) ?? Promise.resolve();
+        const next = previous.then(write, write);
+        this.writes.set(layoutPath, next);
+        void next.finally(() => {
+            if (this.writes.get(layoutPath) === next) {
+                this.writes.delete(layoutPath);
+            }
+        });
+        return next;
+    }
+
+    private doSave(
+        layoutPath: string,
+        networkId: string,
+        positions: Map<string, NodePosition>,
+        edgeRoutes?: Map<string, NodePosition[]>
+    ): Promise<void> {
+        return this.serialized(layoutPath, () => this.writeLayout(layoutPath, networkId, positions, edgeRoutes));
+    }
+
+    private async writeLayout(
         layoutPath: string,
         networkId: string,
         positions: Map<string, NodePosition>,
@@ -539,11 +572,11 @@ export class LayoutPersistenceService {
      * is a choice: every bundle closed.
      */
     async loadPortBuses(workflowFilePath: string, networkId: string): Promise<Map<string, Set<string>> | undefined> {
-        if (this.disablePersistence) {
+        const unsaved = this.unsavedPortBuses.get(`${this.getLayoutFilePath(workflowFilePath)}\u0000${networkId}`);
+        if (!unsaved && this.disablePersistence) {
             return undefined;
         }
-        const snapshot = await this.loadLayoutSnapshot(workflowFilePath, networkId);
-        const portBuses = snapshot?.portBuses;
+        const portBuses = unsaved ?? (await this.loadLayoutSnapshot(workflowFilePath, networkId))?.portBuses;
         if (!portBuses) {
             return undefined;
         }
@@ -551,23 +584,37 @@ export class LayoutPersistenceService {
     }
 
     /**
-     * Open or close one bundle, written at once.
+     * Save which bundles are open, for the nodes `byNode` names: each node's
+     * list is replaced by its set, and nodes it does not name keep theirs.
+     * The caller passes every node the view shows, so a nested view that was
+     * showing its fallback's choice saves that choice as its own, with the
+     * one change, rather than losing it.
      *
-     * A save still waiting on its debounce is written first: it reads the
-     * file to merge into, and run after this one it would merge into what
-     * this one replaced.
+     * A save of positions still waiting on its debounce is written first:
+     * written after, it would merge into what this one replaced.
      */
-    async setPortBusExpanded(
+    async savePortBuses(
         workflowFilePath: string,
         networkId: string,
-        nodeKey: string,
-        group: string,
-        expanded: boolean
+        byNode: ReadonlyMap<string, ReadonlySet<string>>
     ): Promise<void> {
+        const layoutPath = this.getLayoutFilePath(workflowFilePath);
+        const unsavedKey = `${layoutPath}\u0000${networkId}`;
+        const merge = (existing: Record<string, string[]> | undefined): Record<string, string[]> => {
+            const portBuses: Record<string, string[]> = { ...(existing ?? {}) };
+            for (const [nodeKey, groups] of byNode) {
+                if (groups.size > 0) {
+                    portBuses[nodeKey] = [...groups].sort();
+                } else {
+                    delete portBuses[nodeKey];
+                }
+            }
+            return portBuses;
+        };
         if (this.disablePersistence) {
+            this.unsavedPortBuses.set(unsavedKey, merge(this.unsavedPortBuses.get(unsavedKey)));
             return;
         }
-        const layoutPath = this.getLayoutFilePath(workflowFilePath);
         const pending = this.pendingSaves.get(layoutPath);
         if (pending) {
             clearTimeout(pending.timeout);
@@ -575,29 +622,22 @@ export class LayoutPersistenceService {
             await this.doSave(layoutPath, pending.networkId, pending.positions, pending.edgeRoutes);
         }
 
-        const existing = await this.readAnyLayoutFile(workflowFilePath);
-        const layouts = existing ? this.normalizeLayoutsFromFile(existing) : {};
-        const snapshot: LayoutSnapshot = layouts[networkId] ?? { nodes: {} };
-        const portBuses: Record<string, string[]> = { ...(snapshot.portBuses ?? {}) };
-        const groups = new Set(portBuses[nodeKey] ?? []);
-        if (expanded) {
-            groups.add(group);
-        } else {
-            groups.delete(group);
-        }
-        if (groups.size > 0) {
-            portBuses[nodeKey] = [...groups].sort();
-        } else {
-            delete portBuses[nodeKey];
-        }
-        layouts[networkId] = { ...snapshot, portBuses };
-        const content: LayoutFileContent = { version: LAYOUT_VERSION, layouts };
-        try {
-            await fs.mkdir(path.dirname(layoutPath), { recursive: true });
-            await fs.writeFile(layoutPath, JSON.stringify(content, null, 2), 'utf-8');
-        } catch (error) {
-            console.error(`Failed to save layout file: ${layoutPath}`, error);
-        }
+        await this.serialized(layoutPath, async () => {
+            const existing = await this.readAnyLayoutFile(workflowFilePath);
+            const layouts = existing ? this.normalizeLayoutsFromFile(existing) : {};
+            const snapshot: LayoutSnapshot = layouts[networkId] ?? { nodes: {} };
+            const portBuses = merge(this.unsavedPortBuses.get(unsavedKey) ?? snapshot.portBuses);
+            layouts[networkId] = { ...snapshot, portBuses };
+            const content: LayoutFileContent = { version: LAYOUT_VERSION, layouts };
+            try {
+                await fs.mkdir(path.dirname(layoutPath), { recursive: true });
+                await fs.writeFile(layoutPath, JSON.stringify(content, null, 2), 'utf-8');
+                this.unsavedPortBuses.delete(unsavedKey);
+            } catch (error) {
+                console.error(`Failed to save layout file: ${layoutPath}`, error);
+                this.unsavedPortBuses.set(unsavedKey, portBuses);
+            }
+        });
     }
 
     /**

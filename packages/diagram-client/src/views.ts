@@ -1036,9 +1036,11 @@ export class WorkflowInputPortView extends ShapeView {
                 'data-cal-port-id': port.id,
                 'data-cal-port-direction': 'input'
             }
-        }, 
-            ...context.renderChildren(port),
-            ...children
+        },
+            // The label after the hit area: a bus port's toggle sits in the
+            // label, inside the hit area's reach, and must be on top of it.
+            ...children,
+            ...context.renderChildren(port)
         );
     }
 }
@@ -1116,9 +1118,11 @@ export class WorkflowOutputPortView extends ShapeView {
                 'data-cal-port-id': port.id,
                 'data-cal-port-direction': 'output'
             }
-        }, 
-            ...context.renderChildren(port),
-            ...children
+        },
+            // The label after the hit area, as for an input: a bus port's
+            // toggle must be on top of it.
+            ...children,
+            ...context.renderChildren(port)
         );
     }
 }

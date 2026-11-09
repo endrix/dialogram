@@ -102,6 +102,11 @@ function parseArgs(argv) {
         console.error('usage: render.mjs <doc.json | -> [--out x.svg] [--layout default|untangled|free-ports] [--elk k=v] [--all-layouts] [--families f.json] [--css s.css] [--png]');
         process.exit(2);
     }
+    for (const entry of repeated.open) {
+        if (entry !== '*' && !(entry.lastIndexOf(':') > 0)) {
+            throw new Error(`--open expects <node>:<bundle>, <node>:* or *, got '${entry}'`);
+        }
+    }
     const elk = {};
     for (const pair of repeated.elk) {
         const at = pair.indexOf('=');

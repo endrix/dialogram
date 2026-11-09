@@ -246,6 +246,33 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             }
         }
 
+        // 1c) Route the edges a saved layout had no route for (`unroutedEdgeIds`,
+        // noted on load). The bootstrap above runs only when NO route was
+        // saved; with some saved, an edge added since, or drawn differently
+        // since (a bundle closed into a bus), would stay a straight line from
+        // port to port. Those still without a route are routed, once.
+        const unroutedEdgeIds = layoutMeta?.unroutedEdgeIds;
+        if (layoutMeta && unroutedEdgeIds && unroutedEdgeIds.length > 0 && layoutMeta.hasPersistedLayout && layoutMeta.hasClientBounds) {
+            layoutMeta.unroutedEdgeIds = undefined;
+            modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
+            const stillUnrouted = unroutedEdgeIds.filter(id => {
+                const edge: any = modelState.index.find(id);
+                return edge && !(Array.isArray(edge.routingPoints) && edge.routingPoints.length >= 2);
+            });
+            if (stillUnrouted.length > 0) {
+                try {
+                    await this.rerouteHandler.runReroute({
+                        kind: WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND,
+                        isOperation: true,
+                        elementIds: stillUnrouted,
+                        source: 'changeBounds'
+                    });
+                } catch (error) {
+                    console.warn('[WorkflowModelSubmissionHandler] Routing unrouted edges failed:', error);
+                }
+            }
+        }
+
         // 2) Legacy automatic mode (kept for completeness; currently layoutKind is MANUAL).
         if (diagramConfiguration.layoutKind === ServerLayoutKind.AUTOMATIC && layoutEngine) {
             try {

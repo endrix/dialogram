@@ -7,18 +7,21 @@
  *
  * Opening a bundle changes which ports the node has and which edges join
  * them, so the model is built again, from the document it was last built from
- * (the producer is not asked for the graph again), and the node's edges are
- * rerouted: its ports moved, and the routes saved for them no longer start
- * where they are.
+ * (the producer is not asked for the graph again) and with the positions and
+ * routes the diagram has now (not the ones last saved, which an undone move
+ * or an unwritable layout file would make different), and the node's edges
+ * are rerouted: its ports moved.
  */
+import type { Operation } from '@eclipse-glsp/protocol';
 import {
+    CommandStack,
+    GModelElement,
     ModelState,
     OperationHandler,
     SourceModelStorage,
     type Command,
     type MaybePromise
 } from '@eclipse-glsp/server';
-import type { Operation } from '@eclipse-glsp/protocol';
 import { inject, injectable } from 'inversify';
 import {
     TogglePortBusOperation,
@@ -26,16 +29,22 @@ import {
     WorkflowDiagramMetadata
 } from '@dialogram/shared';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
-import { movableNodeIdFor, nodeLayoutKeyOf } from '../server/layout-snapshot';
+import { collectEdgeRoutes, collectNodePositions, movableNodeIdFor, nodeLayoutKeyOf, type Point } from '../server/layout-snapshot';
 import { layoutTargetOf, type LayoutTarget } from '../server/layout-target';
 import {
     WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND,
     WorkflowRerouteEdgesAvoidOverlapsOperationHandler
 } from './reroute-edges-avoid-overlaps-handler';
 
+/** The layout a rebuild starts from instead of the saved one. */
+export interface CurrentLayout {
+    positions: Map<string, Point>;
+    routes: Map<string, Point[]>;
+}
+
 /** A storage that can build the model again without asking the producer. */
 interface RebuildingStorage {
-    rebuildFromLastDocument(): Promise<boolean>;
+    rebuildFromLastDocument(layout?: CurrentLayout): Promise<boolean>;
 }
 
 function canRebuild(storage: unknown): storage is RebuildingStorage {
@@ -54,15 +63,18 @@ export interface PortBusTarget {
 
 /**
  * Undo closes what the toggle opened, and redo opens it again: each is the
- * same write and rebuild with the other answer.
+ * same write and rebuild with the other answer. `beforeExecute` runs on the
+ * first execution only.
  */
 export class TogglePortBusCommand implements Command {
     constructor(
         private readonly apply: (expanded: boolean) => Promise<void>,
-        private readonly expanded: boolean
+        private readonly expanded: boolean,
+        private readonly beforeExecute?: () => void
     ) {}
 
     execute(): Promise<void> {
+        this.beforeExecute?.();
         return this.apply(this.expanded);
     }
 
@@ -71,7 +83,7 @@ export class TogglePortBusCommand implements Command {
     }
 
     redo(): Promise<void> {
-        return this.execute();
+        return this.apply(this.expanded);
     }
 }
 
@@ -91,6 +103,9 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
     @inject(WorkflowRerouteEdgesAvoidOverlapsOperationHandler)
     protected rerouteHandler!: WorkflowRerouteEdgesAvoidOverlapsOperationHandler;
 
+    @inject(CommandStack)
+    protected commandStack!: CommandStack;
+
     override createCommand(operation: Operation): MaybePromise<Command | undefined> {
         if (!TogglePortBusOperation.is(operation)) {
             return undefined;
@@ -101,7 +116,11 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
         }
         const port: any = this.modelState.index.find(operation.portId);
         const expanded = port?.args?.[WorkflowDiagramMetadata.PORT_BUS_EXPANDED] === true;
-        return new TogglePortBusCommand(open => this.apply(target, open), !expanded);
+        // The commands before this one recorded their changes as patches to
+        // the model as it was; the rebuilt model has other ports and edges, and
+        // a patch undone against it could land on the wrong element. A source
+        // reload drops them for the same reason.
+        return new TogglePortBusCommand(open => this.apply(target, open), !expanded, () => this.commandStack.flush());
     }
 
     /** The bundle a bus port stands for, or nothing when the id names no bus. */
@@ -120,10 +139,55 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
         return { layout: layoutTargetOf(diagramModel), nodeId, nodeKey, group };
     }
 
+    /**
+     * The bundles open in the model as it is drawn, for every node that has
+     * one, an empty set for a node whose bundles are all closed. What the view
+     * shows may be its fallback's choice; saving all of it keeps that.
+     */
+    openBundles(): Map<string, Set<string>> {
+        const open = new Map<string, Set<string>>();
+        const visit = (element: GModelElement): void => {
+            const args = (element as any).args as Record<string, unknown> | undefined;
+            const group = args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP];
+            if (typeof group === 'string') {
+                const nodeId = movableNodeIdFor(this.modelState.index, element.id);
+                const nodeKey = nodeId ? nodeLayoutKeyOf(this.modelState.index.find(nodeId)) : undefined;
+                if (nodeKey) {
+                    const groups = open.get(nodeKey) ?? new Set<string>();
+                    if (args?.[WorkflowDiagramMetadata.PORT_BUS_EXPANDED] === true) {
+                        groups.add(group);
+                    }
+                    open.set(nodeKey, groups);
+                }
+            }
+            for (const child of element.children ?? []) {
+                visit(child);
+            }
+        };
+        visit(this.modelState.root);
+        return open;
+    }
+
     async apply(target: PortBusTarget, expanded: boolean): Promise<void> {
         const { layout, nodeId, nodeKey, group } = target;
-        await this.layoutPersistence.setPortBusExpanded(layout.filePath, layout.networkId, nodeKey, group, expanded);
-        if (!canRebuild(this.sourceModelStorage) || !(await this.sourceModelStorage.rebuildFromLastDocument())) {
+        const open = this.openBundles();
+        const groups = open.get(nodeKey) ?? new Set<string>();
+        if (expanded) {
+            groups.add(group);
+        } else {
+            groups.delete(group);
+        }
+        open.set(nodeKey, groups);
+        await this.layoutPersistence.savePortBuses(layout.filePath, layout.networkId, open);
+
+        if (!canRebuild(this.sourceModelStorage)) {
+            return;
+        }
+        const current: CurrentLayout = {
+            positions: collectNodePositions(this.modelState.root),
+            routes: collectEdgeRoutes(this.modelState.root)
+        };
+        if (!(await this.sourceModelStorage.rebuildFromLastDocument(current))) {
             return;
         }
         await this.rerouteHandler.runReroute({

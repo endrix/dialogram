@@ -13,6 +13,7 @@ import { WorkflowDiagramTypes, WorkflowDiagramMetadata } from '@dialogram/shared
 import { navigatesInPlace, WorkflowNavigationUi } from './navigation-ui';
 import { clientBehavior } from './profile';
 import { openTargetAction } from './open-target';
+import { portBusToggleOf } from './port-bus-toggle';
 import {
     buildCrossFileNavigationTarget,
     GRAPH_SOURCE_URI_ARG,
@@ -144,7 +145,11 @@ export class WorkflowNetworkNavigationMouseListener extends MouseListener implem
     @inject(WorkflowNavigationUi)
     protected readonly workflowNavUi!: WorkflowNavigationUi;
 
-    override doubleClick(target: GModelElement, _event: MouseEvent): (Action | Promise<Action>)[] {
+    override doubleClick(target: GModelElement, event: MouseEvent): (Action | Promise<Action>)[] {
+        // A double-click on a bus toggle is two toggles, not a request to open the node.
+        if (portBusToggleOf(event)) {
+            return [];
+        }
         // A node that stands for a file opens it, whatever else it could do
         // (see open-target.ts); the viewer listener stands back for it.
         const openFile = openTargetAction(target);

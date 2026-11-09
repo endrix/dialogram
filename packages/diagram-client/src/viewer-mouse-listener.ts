@@ -12,6 +12,7 @@ import { inject, injectable, multiInject, optional } from 'inversify';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { NodeOpener } from './node-opener';
 import { lastPerKey } from './contributions';
+import { portBusToggleOf } from './port-bus-toggle';
 
 const SHOW_OPTIONS_ARG = 'jsonOpenerOptions';
 const NAVIGATE_PREFER_DEFINITION_ARG = 'wf:navigatePreferDefinition';
@@ -170,7 +171,11 @@ export class ViewerMouseListener extends MouseListener implements Ranked {
         return lastPerKey(this.contributedOpeners, opener => opener.id);
     }
 
-    override doubleClick(target: GModelElement, _event: MouseEvent): (Action | Promise<Action>)[] {
+    override doubleClick(target: GModelElement, event: MouseEvent): (Action | Promise<Action>)[] {
+        // A double-click on a bus toggle is two toggles, not a request to open the node.
+        if (portBusToggleOf(event)) {
+            return [];
+        }
         const node = findContainingEntityNode(target);
         if (!node) {
             return [];

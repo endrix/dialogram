@@ -48,4 +48,22 @@ describe('the bus toggle', () => {
         expect(css).toMatch(/\.port-bus-toggle \{[^}]*pointer-events: all/);
         expect(module).toMatch(/bindAsService\(context, TYPES\.MouseListener, PortBusToggleMouseListener\)/);
     });
+
+    it('is on top of the port’s hit area: both port views draw the label after it', () => {
+        const here = path.dirname(fileURLToPath(import.meta.url));
+        const views = readFileSync(path.resolve(here, '../src/views.ts'), 'utf8');
+        for (const view of ['WorkflowInputPortView', 'WorkflowOutputPortView']) {
+            const body = views.slice(views.indexOf(`export class ${view}`));
+            const end = body.indexOf('\n}\n');
+            expect(body.slice(0, end)).toMatch(/\.\.\.children,\s*\.\.\.context\.renderChildren\(port\)/);
+        }
+    });
+
+    it('does not open the node when double-clicked', () => {
+        const here = path.dirname(fileURLToPath(import.meta.url));
+        for (const file of ['network-navigation-mouse-listener.ts', 'viewer-mouse-listener.ts']) {
+            const source = readFileSync(path.resolve(here, '../src', file), 'utf8');
+            expect(source, file).toMatch(/override doubleClick\(target: GModelElement, event: MouseEvent\)[^{]*\{[^}]*if \(portBusToggleOf\(event\)\) \{\s*return \[\];/);
+        }
+    });
 });

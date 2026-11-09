@@ -85,9 +85,19 @@ it no longer has.
   A bundle of one stays a port, a bundle whose members sit on both sides
   becomes a bus on each, and the diagram's own boundary ports are not
   bundled. Opening or closing one is the `dialogram.togglePortBus`
-  operation, bound in read-only sessions too: it rebuilds the model from
-  the document it was last built from, without asking the producer again,
-  and reroutes the node's edges.
+  operation, bound in read-only sessions too: it saves every bundle the view
+  shows open (a nested view keeps what it took from its fallback), rebuilds
+  the model from the document it was last built from and the positions the
+  diagram has now, without asking the producer again, and reroutes the
+  node's edges. Undo closes what it opened; the history before a toggle is
+  dropped, as a source reload drops it. When the layout file cannot be
+  written, the choice still holds for the session.
+
+- **Edges a saved layout has no route for are routed on open.** With some
+  routes saved, an edge added since, or drawn differently since (a bundle
+  closed into a bus, on a layout saved before buses), was drawn straight
+  from port to port until the next reroute. They are routed once the client
+  has measured the diagram, and saved.
 
 - **What a double-click on a node opens is a contribution point:
   `NodeOpener`** (exported). An opener answers before the platform's own
