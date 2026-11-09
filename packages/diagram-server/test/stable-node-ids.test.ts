@@ -3,12 +3,14 @@
  * producer's id where it does not: the same expression on two ports is two
  * nodes with one label, and two elements with one id is a model the client
  * refuses whole (the sparc64soc `tlu`, `sparc_exu_div` and `eth_miim` units
- * drew nothing).
+ * drew nothing). A port's id is its node's and its name, under the same rule
+ * among the ports of one node (`fpu_div_frac_dp`, `Top/W1` and 15 more drew
+ * nothing).
  */
 import { describe, expect, it } from 'vitest';
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument, type PyGraphNode } from '../src/model/graph-gmodel-source';
-import { stableNodeIds } from '../src/model/stable-ids';
+import { stableNodeIds, stablePortNames } from '../src/model/stable-ids';
 import { portBusStateOf } from '../src/model/port-bundles';
 
 const expr = (id: string): PyGraphNode => ({
@@ -96,5 +98,79 @@ describe('node ids', () => {
             .children.find((c: any) => c.args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP] === 'a')
             .args[WorkflowDiagramMetadata.PORT_BUS_EXPANDED];
         expect([expanded('dup'), expanded('second')]).toEqual([false, true]);
+    });
+});
+
+describe('port ids', () => {
+    // `{div_lead0[5:0], div_lead0[5:0]}` into a flop: one net read twice.
+    const twice: PyGraphNode = {
+        id: 'node:scope:root:regs.din', kind: 'logic', label: '{ div_lead0[5:0], div_lead0[5:0] }', scope: 'root',
+        ports: [
+            { id: 'port:node:scope:root:regs.din:out', name: 'din', direction: 'out' },
+            { id: 'port:node:scope:root:regs.din:in:0', name: 'div_lead0[5:0]', direction: 'in' },
+            { id: 'port:node:scope:root:regs.din:in:1', name: 'div_lead0[5:0]', direction: 'in' }
+        ]
+    };
+    // `.fp_rdy(fp_rdy != 8'h00)`: the expression reads the net its port is named after.
+    const self: PyGraphNode = {
+        id: 'node:scope:root:u.fp_rdy', kind: 'logic', label: "fp_rdy!=8'h00", scope: 'root',
+        ports: [
+            { id: 'port:node:scope:root:u.fp_rdy:out', name: 'fp_rdy', direction: 'out' },
+            { id: 'port:node:scope:root:u.fp_rdy:in:0', name: 'fp_rdy', direction: 'in' }
+        ]
+    };
+    const source = (name: string, port: string): PyGraphNode => ({
+        id: `node:scope:root:${name}`, kind: 'wf-input', label: name, scope: 'root',
+        ports: [{ id: port, name, direction: 'out' }]
+    });
+    const shared: PyGraphDocument = {
+        version: '1',
+        graph: {
+            id: 'top',
+            nodes: [source('div_lead0', 'p:lead0'), source('fp_rdy', 'p:rdy'), twice, self],
+            edges: [
+                { id: 'e0', from: 'p:lead0', to: 'port:node:scope:root:regs.din:in:0', scope: 'root' },
+                { id: 'e1', from: 'p:lead0', to: 'port:node:scope:root:regs.din:in:1', scope: 'root' },
+                { id: 'e2', from: 'p:rdy', to: 'port:node:scope:root:u.fp_rdy:in:0', scope: 'root' }
+            ]
+        }
+    };
+
+    it('are the name for the first output that carries it, numbered for the others', () => {
+        expect([...stablePortNames(twice.ports).values()]).toEqual(['din', 'div_lead0[5:0]', 'div_lead0[5:0]#1']);
+        expect([...stablePortNames(self.ports).values()]).toEqual(['fp_rdy', 'fp_rdy#1']);
+        // The output keeps its name wherever the producer lists it.
+        expect([...stablePortNames([...self.ports].reverse()).values()]).toEqual(['fp_rdy#1', 'fp_rdy']);
+    });
+
+    it('never number a port into a name another port on the node has', () => {
+        const names = stablePortNames([
+            { id: 'a', name: 'x', direction: 'in' },
+            { id: 'b', name: 'x', direction: 'in' },
+            { id: 'c', name: 'x#1', direction: 'in' }
+        ]);
+        expect([...names.values()]).toEqual(['x', 'x#2', 'x#1']);
+    });
+
+    it('are the name as written where it is the node’s only one', () => {
+        const names = stablePortNames([{ id: 'a', name: ' clk', direction: 'in' }, { id: 'b', name: 'q', direction: 'out' }]);
+        expect([...names.values()]).toEqual([' clk', 'q']);
+    });
+
+    it('are unique across the model, and each edge reaches the port it was drawn to', () => {
+        const graph: any = new GraphGModelSource().transform(shared).graph;
+        const all = ids(graph);
+        expect(new Set(all).size).toBe(all.length);
+        const edges = graph.children.filter((c: any) => typeof c.sourceId === 'string');
+        expect(edges.map((e: any) => e.targetId)).toEqual([
+            '{ div_lead0[5:0], div_lead0[5:0] }_port_div_lead0[5:0]',
+            '{ div_lead0[5:0], div_lead0[5:0] }_port_div_lead0[5:0]#1',
+            "fp_rdy!=8'h00_port_fp_rdy#1"
+        ]);
+        // Both ports still read as the net they carry.
+        const node = graph.children.find((c: any) => c.id === '{ div_lead0[5:0], div_lead0[5:0] }');
+        const shown = node.children.filter((c: any) => c.type?.startsWith('port'))
+            .map((p: any) => p.args[WorkflowDiagramMetadata.PORT_NAME]);
+        expect(shown).toEqual(['div_lead0[5:0]', 'div_lead0[5:0]', 'din']);
     });
 });

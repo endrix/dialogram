@@ -386,6 +386,17 @@ it no longer has.
   (`model/stable-ids.ts`). An edge's From and To show the nodes' names, not
   their ids.
 
+- **A diagram whose node has two ports of one name draws.** A port's id was
+  its node's id and its name, and a name can repeat on one node: a
+  concatenation reading one net twice (`{lead0, lead0}`), an expression
+  reading the net its port is named after (`.rdy(rdy != 0)`), an assignment
+  reading its own target (`q = rst ? d : q`). The client refused the whole
+  model; 17 of 253 sparc64soc modules drew nothing, the top level `W1`,
+  `lsu`, `sparc_ifu` and `fpu_div_frac_dp` among them. Where a name repeats,
+  the first output keeps it (the first input, when none is an output) and the
+  others number it, `div_lead0[5:0]#1`; a name no other port on the node has
+  keeps the id it had (`stablePortNames` in `model/stable-ids.ts`).
+
 - **The selection trace follows a model rebuilt under the same selection.**
   Its classes were worked out once, on the model the selection was made on,
   and put back by id on every model after: elements a rebuild added (the

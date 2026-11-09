@@ -15,8 +15,14 @@
  * node's saved position), and every later one takes the producer's id,
  * unique by contract. A label that is the id another node ends up with, or is
  * blank, is not used either.
+ *
+ * A port's id is its node's id and its name, and a name can repeat on one
+ * node too: a concatenation reading one net twice (`{lead0, lead0}`), an
+ * expression reading the net its port is named after (`.rdy(rdy != 0)`), an
+ * assignment reading its own target (`q = rst ? d : q`). There the first
+ * output keeps the name and the others number it (`stablePortNames`).
  */
-import type { PyGraphNode } from './graph-gmodel-source';
+import type { PyGraphNode, PyGraphPort } from './graph-gmodel-source';
 
 /** The model id of each node, by the producer's id. Every node has one. */
 export type StableNodeIds = ReadonlyMap<string, string>;
@@ -61,4 +67,41 @@ export function stableNodeIds(nodes: readonly PyGraphNode[]): StableNodeIds {
 /** A node's model id. */
 export function stableNodeId(ids: StableNodeIds, node: PyGraphNode): string {
     return ids.get(node.id) ?? node.id;
+}
+
+/**
+ * The name each port of one node is addressed by in its model id
+ * (`<node id>_port_<name>`), by the producer's port id. A port's own name,
+ * as written, where no other port on the node has it. Where several do, the
+ * first output keeps it (the first input, when none of them is an output),
+ * so the end most wires leave from keeps its id whatever order the producer
+ * lists the ports in; the others take it with a number (`din#1`), never a
+ * name a port on the node has.
+ */
+export function stablePortNames(ports: readonly PyGraphPort[]): ReadonlyMap<string, string> {
+    const nameOf = (port: PyGraphPort): string => port.name ?? 'Port';
+    const names = new Set(ports.map(nameOf));
+    const keys = new Map<string, string>();
+    if (names.size === ports.length) {
+        for (const port of ports) {
+            keys.set(port.id, nameOf(port));
+        }
+        return keys;
+    }
+    const used = new Set<string>();
+    const settled = new Map<string, string>();
+    const outputsFirst = [...ports.filter(p => p.direction === 'out'), ...ports.filter(p => p.direction !== 'out')];
+    for (const port of outputsFirst) {
+        const name = nameOf(port);
+        let key = name;
+        for (let k = 1; used.has(key) || (key !== name && names.has(key)); k++) {
+            key = `${name}#${k}`;
+        }
+        used.add(key);
+        settled.set(port.id, key);
+    }
+    for (const port of ports) {
+        keys.set(port.id, settled.get(port.id)!);
+    }
+    return keys;
 }

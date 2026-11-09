@@ -6,7 +6,7 @@ import { findFeedbackEdges } from './feedback-edges';
 import { groupLayoutOptions, splitEdgesAtGroups } from './group-edges';
 import { URI } from 'vscode-uri';
 import { boundaryMargin, bundlePorts, type PortBus, type PortBusState } from './port-bundles';
-import { stableNodeId as stableNodeIdOf, stableNodeIds } from './stable-ids';
+import { stableNodeId as stableNodeIdOf, stableNodeIds, stablePortNames } from './stable-ids';
 
 export type PyGraphPort = {
     id: string;
@@ -632,10 +632,14 @@ export class GraphGModelSource {
                     'wf:footerTypeLabel': typeLabel
                 };
             }
+            // Two ports of one node can share a name (stable-ids.ts).
+            const portNames = stablePortNames(node.ports.filter(p => !p.bus));
             const mkPort = (port: PyGraphPort, side: PortSide, idx: number): GPort => {
                 // A bus is not one of the node's ports, and a member may be
                 // named exactly like its bundle: the ids must not meet.
-                const portId = port.bus ? `${stableNodeId}_bus_${port.bus.key}` : `${stableNodeId}_port_${port.name}`;
+                const portId = port.bus
+                    ? `${stableNodeId}_bus_${port.bus.key}`
+                    : `${stableNodeId}_port_${portNames.get(port.id)!}`;
                 const direction: 'input' | 'output' = port.direction === 'out' ? 'output' : 'input';
                 const east = side === 'EAST';
                 // A port sits centred on the node's border, as a group frame's
