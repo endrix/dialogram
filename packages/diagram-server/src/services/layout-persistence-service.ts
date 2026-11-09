@@ -34,13 +34,41 @@ export interface LayoutFileContent {
     layouts?: Record<string, {
         nodes: Record<string, NodePosition>;
         edges?: Record<string, NodePosition[]>;
+        portBuses?: Record<string, string[]>;
     }>;
 }
 
 type LayoutSnapshot = {
     nodes: Record<string, NodePosition>;
     edges?: Record<string, NodePosition[]>;
+    /**
+     * The bundles the reader has opened, by node layout key. A bundle not
+     * listed is drawn closed, as one port: how every bundle first opens.
+     */
+    portBuses?: Record<string, string[]>;
 };
+
+/**
+ * Open bundles by node, each list sorted and without repeats. An empty record
+ * is kept: it says this view has its own choice, every bundle closed, and is
+ * not to take a fallback's.
+ */
+function normalizePortBuses(raw: unknown): Record<string, string[]> | undefined {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return undefined;
+    }
+    const out: Record<string, string[]> = {};
+    for (const [nodeKey, groups] of Object.entries(raw as Record<string, unknown>)) {
+        if (nodeKey.trim() === '' || !Array.isArray(groups)) {
+            continue;
+        }
+        const names = [...new Set(groups.filter((g): g is string => typeof g === 'string' && g.trim() !== ''))].sort();
+        if (names.length > 0) {
+            out[nodeKey] = names;
+        }
+    }
+    return out;
+}
 
 function simplifyRoutePoints(points: NodePosition[]): NodePosition[] {
     if (!Array.isArray(points) || points.length <= 1) {
@@ -213,7 +241,8 @@ export class LayoutPersistenceService {
                 edges = out;
             }
         }
-        return { nodes, ...(edges ? { edges } : {}) };
+        const portBuses = normalizePortBuses(r.portBuses);
+        return { nodes, ...(edges ? { edges } : {}), ...(portBuses ? { portBuses } : {}) };
     }
 
     private normalizeLayoutsFromFile(data: LayoutFileContent): Record<string, LayoutSnapshot> {
@@ -307,7 +336,9 @@ export class LayoutPersistenceService {
         }
 
         const snapshot = await this.loadLayoutSnapshot(workflowFilePath, networkId);
-        if (!snapshot) {
+        // No positions is no layout, even where the view has saved which
+        // bundles are open: a nested view then still takes its fallback's.
+        if (!snapshot || Object.keys(snapshot.nodes).length === 0) {
             return undefined;
         }
 
@@ -477,11 +508,15 @@ export class LayoutPersistenceService {
             edges = preservedEdges;
         }
 
+        // Which bundles are open is saved on its own (`setPortBusExpanded`);
+        // a save of positions keeps it as it stands.
+        const portBuses = existingLayouts[networkId]?.portBuses;
         const mergedLayouts: Record<string, LayoutSnapshot> = {
             ...existingLayouts,
             [networkId]: {
                 nodes,
-                ...(edges ? { edges } : {})
+                ...(edges ? { edges } : {}),
+                ...(portBuses ? { portBuses } : {})
             }
         };
 
@@ -490,6 +525,73 @@ export class LayoutPersistenceService {
             layouts: mergedLayouts
         };
 
+        try {
+            await fs.mkdir(path.dirname(layoutPath), { recursive: true });
+            await fs.writeFile(layoutPath, JSON.stringify(content, null, 2), 'utf-8');
+        } catch (error) {
+            console.error(`Failed to save layout file: ${layoutPath}`, error);
+        }
+    }
+
+    /**
+     * The bundles the reader has opened in a network, by node layout key, or
+     * `undefined` when the view has never opened or closed one. An empty map
+     * is a choice: every bundle closed.
+     */
+    async loadPortBuses(workflowFilePath: string, networkId: string): Promise<Map<string, Set<string>> | undefined> {
+        if (this.disablePersistence) {
+            return undefined;
+        }
+        const snapshot = await this.loadLayoutSnapshot(workflowFilePath, networkId);
+        const portBuses = snapshot?.portBuses;
+        if (!portBuses) {
+            return undefined;
+        }
+        return new Map(Object.entries(portBuses).map(([nodeKey, groups]) => [nodeKey, new Set(groups)]));
+    }
+
+    /**
+     * Open or close one bundle, written at once.
+     *
+     * A save still waiting on its debounce is written first: it reads the
+     * file to merge into, and run after this one it would merge into what
+     * this one replaced.
+     */
+    async setPortBusExpanded(
+        workflowFilePath: string,
+        networkId: string,
+        nodeKey: string,
+        group: string,
+        expanded: boolean
+    ): Promise<void> {
+        if (this.disablePersistence) {
+            return;
+        }
+        const layoutPath = this.getLayoutFilePath(workflowFilePath);
+        const pending = this.pendingSaves.get(layoutPath);
+        if (pending) {
+            clearTimeout(pending.timeout);
+            this.pendingSaves.delete(layoutPath);
+            await this.doSave(layoutPath, pending.networkId, pending.positions, pending.edgeRoutes);
+        }
+
+        const existing = await this.readAnyLayoutFile(workflowFilePath);
+        const layouts = existing ? this.normalizeLayoutsFromFile(existing) : {};
+        const snapshot: LayoutSnapshot = layouts[networkId] ?? { nodes: {} };
+        const portBuses: Record<string, string[]> = { ...(snapshot.portBuses ?? {}) };
+        const groups = new Set(portBuses[nodeKey] ?? []);
+        if (expanded) {
+            groups.add(group);
+        } else {
+            groups.delete(group);
+        }
+        if (groups.size > 0) {
+            portBuses[nodeKey] = [...groups].sort();
+        } else {
+            delete portBuses[nodeKey];
+        }
+        layouts[networkId] = { ...snapshot, portBuses };
+        const content: LayoutFileContent = { version: LAYOUT_VERSION, layouts };
         try {
             await fs.mkdir(path.dirname(layoutPath), { recursive: true });
             await fs.writeFile(layoutPath, JSON.stringify(content, null, 2), 'utf-8');

@@ -72,6 +72,23 @@ it no longer has.
 
 ### Added
 
+- **Port bundles are drawn as buses.** The ports of one bundle (a producer's
+  `port.group`: a channel's payload with its `valid` and `ready`) are drawn
+  as one port named after the bundle, and every connection between two
+  buses as one wider edge. A toggle in front of the name opens the bundle:
+  its row stays as a header and its members are drawn under it. The edge
+  stays one bus edge, drawn from the open header, until both ends are open;
+  then the connections are drawn member to member as the producer sent
+  them. Every bundle starts closed, and which ones are open is saved in the
+  layout file beside the positions (`portBuses`, by node). Any producer that
+  sends `group` gets it; today that is hdl-sidecar, so sv-ide and vhdl-ide.
+  A bundle of one stays a port, a bundle whose members sit on both sides
+  becomes a bus on each, and the diagram's own boundary ports are not
+  bundled. Opening or closing one is the `dialogram.togglePortBus`
+  operation, bound in read-only sessions too: it rebuilds the model from
+  the document it was last built from, without asking the producer again,
+  and reroutes the node's edges.
+
 - **What a double-click on a node opens is a contribution point:
   `NodeOpener`** (exported). An opener answers before the platform's own
   definition navigation, or leaves the node to it; one per `id`, the last
@@ -375,6 +392,10 @@ it no longer has.
   longer compiles: drop the line (the chat tools are always on).
 
 ### Tooling
+
+- `scripts/render-svg --open <node:bundle>` draws a bundle open (repeatable;
+  `<node>:*` opens all of a node's, `*` every one), so each state of a bus
+  can be rendered and looked at headlessly.
 
 - `scripts/render-svg --select <id>` selects an element (the diagram's id or
   the producer's) as a click would, so a selection trace can be rendered and

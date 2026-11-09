@@ -30,6 +30,23 @@ interface Config {
     families?: unknown[];
     layout?: 'default' | 'untangled' | 'free-ports';
     elk?: Record<string, string>;
+    /** Open bundles, `<node>:<bundle>`; `<node>:*` opens all of a node's and `*` every one. */
+    open?: string[];
+}
+
+/** The bundles `--open` names, as the layout file would. */
+function openBuses(open: readonly string[] = []): { isExpanded(nodeKey: string, group: string): boolean } {
+    return {
+        isExpanded: (nodeKey, group) => open.some(entry => {
+            if (entry === '*') {
+                return true;
+            }
+            const at = entry.lastIndexOf(':');
+            const node = entry.slice(0, at);
+            const bundle = entry.slice(at + 1);
+            return node === nodeKey && (bundle === '*' || bundle === group);
+        })
+    };
 }
 
 /** The graph options of each layout the editor's Layout menu offers, from the menu's own table. */
@@ -64,7 +81,7 @@ async function main(): Promise<void> {
     const config = JSON.parse(readFileSync(process.argv[2], 'utf8')) as Config;
     const doc = JSON.parse(readFileSync(config.doc, 'utf8'));
     const started = Date.now();
-    const transformed = new GraphGModelSource({ nodeFamilies: config.families ?? [] } as any).transform(doc);
+    const transformed = new GraphGModelSource({ nodeFamilies: config.families ?? [] } as any).transform(doc, { portBuses: openBuses(config.open) });
     const root: any = convertToGModelRoot(transformed as any);
     const layout = LAYOUTS[config.layout ?? 'default'];
     if (!layout) {

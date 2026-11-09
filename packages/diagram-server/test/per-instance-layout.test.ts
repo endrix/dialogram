@@ -65,7 +65,8 @@ async function loadNested(nestedNavigation: 'in-place' | 'new-editor', saved: Re
             const nodes = saved[key(file, id)];
             return nodes ? new Map(nodes.map(n => [n, { x: 1, y: 1 }])) : undefined;
         },
-        loadEdgeRoutes: async () => undefined
+        loadEdgeRoutes: async () => undefined,
+        loadPortBuses: async () => undefined
     };
 
     const doc = { version: '1', graph: { id: 'wf:block', nodes: [], edges: [] } };

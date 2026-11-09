@@ -35,6 +35,8 @@
  *                           --behavior '{"selectionTrace":true}' its path is drawn
  *   --chrome <path>         Chrome/Chromium binary (default: $CHROME or google-chrome)
  *   --keep                  keep the intermediate schema, bundle and page
+ *   --open <node:bundle>    draw a bundle open, its members under its header (repeatable;
+ *                           `<node>:*` opens all of a node's, `*` every bundle)
  */
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -78,7 +80,7 @@ function inlineJson(text) {
 
 function parseArgs(argv) {
     const positional = [];
-    const repeated = { elk: [], css: [], select: [] };
+    const repeated = { elk: [], css: [], select: [], open: [] };
     const single = {};
     const flags = new Set();
     for (let i = 0; i < argv.length; i++) {
@@ -119,6 +121,7 @@ function parseArgs(argv) {
         behavior: single.behavior ? JSON.parse(single.behavior) : {},
         states: single.states ? readStates(single.states) : [],
         select: repeated.select,
+        open: repeated.open,
         // The client draws a family's colour and icon from its own copy of the
         // families (`clientBehavior.nodeFamilies`), as the webview gets them
         // from the profile; the server copy only classifies the nodes.
@@ -233,7 +236,7 @@ function rasterise(chrome, svgPath) {
 async function renderOne(args, workDir, schemaBuilder, bundleDir, docPath, layout, out) {
     const schemaPath = path.join(workDir, `schema-${layout}.json`);
     const configPath = path.join(workDir, `config-${layout}.json`);
-    fs.writeFileSync(configPath, JSON.stringify({ doc: docPath, out: schemaPath, families: args.families, layout, elk: args.elk }));
+    fs.writeFileSync(configPath, JSON.stringify({ doc: docPath, out: schemaPath, families: args.families, layout, elk: args.elk, open: args.open }));
     process.stdout.write(`· ${layout}: `);
     const build = spawnSync(process.execPath, [schemaBuilder, configPath], { encoding: 'utf8', cwd: REPO });
     if (build.status !== 0) {

@@ -280,7 +280,8 @@ def child():
         };
         storage.layoutPersistence = {
             loadLayout: async () => undefined,
-            loadEdgeRoutes: async () => undefined
+            loadEdgeRoutes: async () => undefined,
+            loadPortBuses: async () => undefined
         };
         storage.applyViewerOverlayToEdges = async () => undefined;
         storage.applyAgentContextToNodes = async () => undefined;

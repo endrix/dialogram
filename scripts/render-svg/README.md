@@ -27,6 +27,7 @@ node scripts/render-svg/render.mjs - --elk elk.direction=DOWN < doc.json        
 | `--theme <dark\|light>` | The editor colours the page is drawn in (default dark) |
 | `--states <path.json>` | Node states to draw (`ExecutionNodeState[]`, `[{ nodeId, status }]`), as a status source publishes them, through the client's own painter. A `nodeId` is the producer's id or the diagram's; ids this view does not have are skipped (a project's states fit any of its documents); `idle` draws nothing |
 | `--select <id>` | Select an element, as a click would; repeatable. The id is the diagram's or the producer's (`wf:graphNodeId`). The selection listeners see it, so with `--behavior '{"selectionTrace":true}'` the element's path is drawn (upstream, downstream, the rest faded) |
+| `--open <node:bundle>` | Draw a port bundle open, its members under its header, as the toggle would; repeatable. `<node>:*` opens all of a node's bundles and `*` every one; without it every bundle is drawn closed, as one port |
 | `--chrome <path>` | Chrome or Chromium (default `$CHROME` or `google-chrome`) |
 | `--keep` | Keep the schema, bundles and page in the work directory |
 
