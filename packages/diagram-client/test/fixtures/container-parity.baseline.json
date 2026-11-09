@@ -97,31 +97,6 @@
         "to": "ViewportPreservingSetModelCommand"
     },
     {
-        "id": "Symbol(dialogram.AnnotationEditor)",
-        "op": "bind",
-        "to": "const:ToolAnnotationEditor"
-    },
-    {
-        "id": "Symbol(dialogram.AnnotationEditor)",
-        "op": "bind",
-        "to": "const:AgentAnnotationEditor"
-    },
-    {
-        "id": "Symbol(dialogram.AnnotationTemplate)",
-        "op": "bind",
-        "to": "const:ToolAnnotationTemplate"
-    },
-    {
-        "id": "Symbol(dialogram.AnnotationTemplate)",
-        "op": "bind",
-        "to": "const:ViewerAnnotationTemplate"
-    },
-    {
-        "id": "Symbol(dialogram.NodeSectionContribution)",
-        "op": "bind",
-        "to": "const:AgentNodeSections"
-    },
-    {
         "id": "Symbol(stub.ICopyPasteHandler)",
         "op": "bind",
         "scope": "singleton",

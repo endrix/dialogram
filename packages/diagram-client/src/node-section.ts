@@ -47,7 +47,7 @@ export interface NodeSectionHost {
 }
 
 export interface NodeSectionContribution {
-    /** What the contribution is, for a later binding to replace it: the stock one is `'agent'`. */
+    /** What the contribution is, for a later binding to replace it (the agent sections are `'agent'`). */
     readonly id: string;
 
     /** Once, when the panel starts. */

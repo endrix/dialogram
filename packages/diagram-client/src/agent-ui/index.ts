@@ -2,11 +2,10 @@
  * The agent workflow UI: the `@tool` and `@agent` annotation editors, the agent
  * sections of a node's panel, and the wizard's `@tool` and `@viewer` templates.
  *
- * `agentUiModule` binds all of it. A product's own webview bundle passes it to
- * `startStockDiagram({ features: [agentUiModule] })` (imported by path,
- * `@dialogram/diagram-client/agent-ui/index`); the stock feature module binds
- * the same today, and each contribution point keeps the last binding per
- * name or id, so binding it twice draws everything once.
+ * `agentUiModule` binds all of it. The stock bundle does not load it: a
+ * product's own webview bundle passes it to
+ * `startStockDiagram({ features: [agentUiModule] })`, imported by path as
+ * `@dialogram/diagram-client/agent-ui/index`.
  */
 import { ContainerModule, type interfaces } from 'inversify';
 import { AnnotationEditor } from '../annotation-editor';

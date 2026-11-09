@@ -96,6 +96,16 @@ platform API version.
 
 ### Changed
 
+- **The stock bundle no longer loads the agent workflow UI.** The `@tool` and
+  `@agent` annotation editors, the agent sections of a node's panel (Skill
+  row, Agent Tools, live Agent Context) and the wizard's `@tool` and
+  `@viewer` templates were wfpy's, yet sv, vhdl, ndf and calpy showed them
+  too. They are `agentUiModule`, which wfpy-ide's own webview bundle loads
+  (endrix/wfpy-ide#24). The stock bundle is 141 KB smaller. **Ship after
+  wfpy-ide#24, in the release that bumps `DIALOGRAM_API_VERSION` to 0.9**, so
+  a wfpy-ide still at 0.8 (and still on the stock bundle) fails its version
+  check instead of losing its agent UI.
+
 - **Breaking for a profile that relied on the defaults: the Entities palette,
   navigation and the source MIME type are the product's.** The tool-palette
   provider no longer hard-codes wfpy's five rows (Task, Tool, Agent, Viewer,

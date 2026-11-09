@@ -16,7 +16,7 @@ class TestWizard extends WorkflowEditAnnotationsActionHandler {
     readonly dispatched: any[] = [];
     constructor(node: any) {
         super();
-        // What the stock feature module binds.
+        // What `agentUiModule` binds.
         (this as any).contributedTemplates = stockAnnotationTemplates();
         (this as any).editorContext = { modelRoot: rootOf(node) };
         (this as any).actionDispatcher = { dispatch: async (a: unknown) => { this.dispatched.push(a); } };

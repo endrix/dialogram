@@ -13,7 +13,6 @@ import { ContainerModule } from 'inversify';
 import { ChangeBoundsTool, TYPES, bindAsService, configureActionHandler } from '@eclipse-glsp/client';
 import { MoveAction } from '@eclipse-glsp/sprotty';
 import { PropertyPanel } from './property-panel';
-import { bindAgentUi } from './agent-ui';
 import { ChatPanel } from './chat-panel-integrated';
 import { clientBehavior } from './profile';
 import { WorkflowNavigationUi } from './navigation-ui';
@@ -72,11 +71,9 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     bind(PropertyPanel).toSelf().inSingletonScope();
     bind(TYPES.ISelectionListener).toService(PropertyPanel);
     bind(TYPES.IGModelRootListener).toService(PropertyPanel);
-    // The agent workflow UI (agent-ui/): the panel's `@tool` and `@agent`
-    // editors, the agent sections of a node's panel (Basic Info's Skill row,
-    // Agent Tools, the live Agent Context) and the wizard's `@tool` and
-    // `@viewer` templates. A product's module binds its own the same way.
-    bindAgentUi(bind);
+    // No annotation editors, node sections or wizard templates of its own: a
+    // product binds those in its feature module. The agent workflow UI is
+    // `agentUiModule` (agent-ui/), which a product's own bundle loads.
 
     // The hierarchy outline, fed by the root model's `wf:hierarchy`. Shown only
     // when the product navigates nested workflows in place and the model

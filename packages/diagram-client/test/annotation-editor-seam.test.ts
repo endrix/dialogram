@@ -12,6 +12,7 @@ import { ChangeBoundsTool, TYPES } from '@eclipse-glsp/client';
 import { AnnotationEditor, type AnnotationEditorContext } from '../src/annotation-editor';
 import { PropertyPanel } from '../src/property-panel';
 import { workflowFeaturesModule } from '../src/stock-features.module';
+import { agentUiModule } from '../src/agent-ui';
 import { installPage, taskNode } from './agent-ui/harness';
 import { TestPanel, button, card, resetAgentUi, rootOf, section, tick } from './agent-ui/panel';
 
@@ -179,23 +180,24 @@ describe('the editors the panel is given', () => {
 
     const names = (panel: PropertyPanel) => (panel as any).annotationEditors().map((e: AnnotationEditor) => e.annotationName);
 
-    it('are the stock @tool and @agent editors, in that order', () => {
-        expect(names(stockContainer().get(PropertyPanel))).toEqual(['tool', 'agent']);
+    it('are none in the stock diagram', () => {
+        expect(names(stockContainer().get(PropertyPanel))).toEqual([]);
     });
 
-    it('include a product’s, after the stock ones', () => {
+    it('are the agent UI’s @tool and @agent when a bundle loads it, then another module’s', () => {
         const product = new ContainerModule(bind => {
             bind(AnnotationEditor).toConstantValue(probeEditor());
         });
-        expect(names(stockContainer(product).get(PropertyPanel))).toEqual(['tool', 'agent', 'probe']);
+        expect(names(stockContainer(agentUiModule).get(PropertyPanel))).toEqual(['tool', 'agent']);
+        expect(names(stockContainer(agentUiModule, product).get(PropertyPanel))).toEqual(['tool', 'agent', 'probe']);
     });
 
-    it('take a product’s editor in place of the stock one for its annotation', () => {
+    it('take a later module’s editor in place of an earlier one’s for its annotation', () => {
         const mine = probeEditor([], 'agent');
         const product = new ContainerModule(bind => {
             bind(AnnotationEditor).toConstantValue(mine);
         });
-        const editors = (stockContainer(product).get(PropertyPanel) as any).annotationEditors();
+        const editors = (stockContainer(agentUiModule, product).get(PropertyPanel) as any).annotationEditors();
         expect(editors.map((e: AnnotationEditor) => e.annotationName)).toEqual(['tool', 'agent']);
         expect(editors[1]).toBe(mine);
     });

@@ -9,7 +9,7 @@ import { Container, ContainerModule } from 'inversify';
 import { ChangeBoundsTool, EditorContextService, TYPES } from '@eclipse-glsp/client';
 import { AnnotationTemplate, type AnnotationTemplateContext } from '../src/annotation-template';
 import { WorkflowEditAnnotationsActionHandler } from '../src/editing-action-handlers';
-import { stockAnnotationTemplates } from '../src/agent-ui';
+import { agentUiModule, stockAnnotationTemplates } from '../src/agent-ui';
 import { workflowFeaturesModule } from '../src/stock-features.module';
 import { ui, installPage, taskNode } from './agent-ui/harness';
 import { resetAgentUi, rootOf } from './agent-ui/panel';
@@ -149,12 +149,16 @@ describe('the templates the wizard is given', () => {
 
     const names = (h: any) => h.annotationTemplates().map((t: AnnotationTemplate) => t.annotationName);
 
-    it('are the stock @tool and @viewer, then a product’s', () => {
+    it('are none in the stock diagram', () => {
+        expect(names(container().resolve(WorkflowEditAnnotationsActionHandler))).toEqual([]);
+    });
+
+    it('are the agent UI’s @tool and @viewer when a bundle loads it, then another module’s', () => {
         const product = new ContainerModule(bind => {
             bind(AnnotationTemplate).toConstantValue(probe('retry', '@retry'));
         });
-        expect(names(container().resolve(WorkflowEditAnnotationsActionHandler))).toEqual(['tool', 'viewer']);
-        expect(names(container(product).resolve(WorkflowEditAnnotationsActionHandler))).toEqual(['tool', 'viewer', 'retry']);
+        expect(names(container(agentUiModule).resolve(WorkflowEditAnnotationsActionHandler))).toEqual(['tool', 'viewer']);
+        expect(names(container(agentUiModule, product).resolve(WorkflowEditAnnotationsActionHandler))).toEqual(['tool', 'viewer', 'retry']);
     });
 
     it('are none when nothing is bound', () => {

@@ -35,7 +35,7 @@ export class TestPanel extends PropertyPanel {
 
     constructor() {
         super();
-        // What the stock feature module binds.
+        // What `agentUiModule` binds.
         (this as any).contributedAnnotationEditors = stockAnnotationEditors();
         (this as any).contributedNodeSections = stockNodeSections();
         (this as any).actionDispatcher = {
