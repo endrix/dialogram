@@ -300,6 +300,8 @@ export namespace WorkflowDiagramMetadata {
      * members' node ids, in order (port-bundles.ts).
      */
     export const BOUNDARY_BUS_MEMBERS = 'wf:busMembers';
+    /** The producer's `meta` of a node, as it sent it. */
+    export const NODE_META = 'wf:nodeMeta';
     /** On a node holding a graph of its own: it can be opened in place (node-open.ts). */
     export const NODE_OPENABLE = 'wf:openable';
     /** On the frame an open node is drawn as: the node's key, to close it by. */

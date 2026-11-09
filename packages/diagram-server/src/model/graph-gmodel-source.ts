@@ -295,8 +295,10 @@ export class GraphGModelSource {
             // register): its pins in the symbol's order, its size the symbol's.
             // A node with badges stays a box: they are drawn in the header a
             // symbol has none of.
+            // Nor does a node that opens: its toggle is in the header too.
             const symbolKind = node.kind !== 'if' && node.kind !== 'loop' && SymbolGeometry.isKind(node.meta?.['symbol'])
                 && !(Array.isArray(node.meta?.['badges']) && (node.meta['badges'] as unknown[]).length > 0)
+                && !innerGraphOf(node)
                 ? node.meta['symbol'] as SymbolKind
                 : undefined;
             const bySymbolPin = (ps: PyGraphPort[]): PyGraphPort[] => symbolKind
@@ -395,7 +397,7 @@ export class GraphGModelSource {
             if (node.meta) {
                 gnode.args = {
                     ...(gnode.args ?? {}),
-                    'wf:nodeMeta': node.meta
+                    [WorkflowDiagramMetadata.NODE_META]: node.meta
                 };
                 // A parameterized network/actor instance carries its factory function
                 // name; surface it so definition-parameter edits target the factory

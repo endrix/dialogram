@@ -16,6 +16,7 @@ import { collectEdgeRoutes, collectNodePositions } from '../server/layout-snapsh
 import { layoutTargetOf, type LayoutTarget } from '../server/layout-target';
 import { openFrameId } from '../model/open-nodes';
 import {
+    inverse,
     TogglePortBusCommand,
     WorkflowTogglePortBusOperationHandler,
     type CurrentLayout,
@@ -30,10 +31,6 @@ export interface NodeOpenTarget {
     nodeKey: string;
     /** The producer's id of the node: its frame's id is made from it. */
     producerId: string;
-}
-
-function inverse(moves: NodeMoves): NodeMoves {
-    return new Map([...moves].map(([id, move]) => [id, { from: move.to, to: move.from }]));
 }
 
 /** What opening each node moved, per diagram session: closing it moves that back. */
@@ -126,15 +123,17 @@ export class WorkflowToggleNodeOpenOperationHandler extends WorkflowTogglePortBu
         if (!before) {
             return new Map();
         }
-        // The node's saved bundles stay as they are; only its own entry changes.
-        const saved = await this.layoutPersistence.loadPortBuses(layout.filePath, layout.networkId);
-        const groups = new Set(saved?.get(nodeKey) ?? []);
+        // Saved as a bus toggle saves: every node the view shows, so a view
+        // showing its fallback's choice keeps it, with this one change.
+        const shownOpen = this.openBundles();
+        const groups = shownOpen.get(nodeKey) ?? new Set<string>();
         if (open) {
             groups.add(ToggleNodeOpenOperation.OPEN);
         } else {
             groups.delete(ToggleNodeOpenOperation.OPEN);
         }
-        await this.layoutPersistence.savePortBuses(layout.filePath, layout.networkId, new Map([[nodeKey, groups]]));
+        shownOpen.set(nodeKey, groups);
+        await this.layoutPersistence.savePortBuses(layout.filePath, layout.networkId, shownOpen);
 
         const storage = this.sourceModelStorage as unknown as { rebuildFromLastDocument?: (layout?: CurrentLayout) => Promise<boolean> };
         if (typeof storage.rebuildFromLastDocument !== 'function') {
@@ -161,8 +160,12 @@ export class WorkflowToggleNodeOpenOperationHandler extends WorkflowTogglePortBu
         if (moves) {
             made = this.replay(moves);
         } else if (open) {
-            // The frame stands where the node stood, taller: the nodes stacked
-            // under it move down by the difference.
+            // The frame stands where the node stood, taller: fitted to what it
+            // holds, the nodes stacked under it move down by the difference.
+            const members = (after.children ?? []).filter((child: any) => String(child.type).startsWith('node:'));
+            if (members.length > 0) {
+                this.refitGroupsAround([String(members[0].id)]);
+            }
             const heights = new Map(oldHeights);
             heights.delete(String(before.id));
             if (typeof oldHeight === 'number') {

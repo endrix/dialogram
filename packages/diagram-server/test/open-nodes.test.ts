@@ -169,7 +169,6 @@ function diagram(positions: Record<string, Point>) {
         get: () => ({ documentUri: 'file:///w/proc.sv', workflowName: 'live' })
     };
     (handler as any).layoutPersistence = {
-        loadPortBuses: async () => open,
         savePortBuses: async (_file: string, _id: string, byNode: Map<string, Set<string>>) => {
             for (const [key, groups] of byNode) {
                 open.set(key, new Set(groups));
@@ -184,7 +183,7 @@ function diagram(positions: Record<string, Point>) {
     const command = (elementId: string): TogglePortBusCommand =>
         handler.createCommand(ToggleNodeOpenOperation.create({ nodeId: elementId })) as TogglePortBusCommand;
     const find = (id: string): any => state.index!.find(id);
-    return { at, command, find, open: () => open };
+    return { at, command, find, open: () => open, handlerState: (handler as any).modelState };
 }
 
 describe('opening a node in place', () => {
@@ -216,5 +215,73 @@ describe('opening a node in place', () => {
         await close.execute();
         expect(d.at(KEY)).toEqual({ x: 200, y: 100 });
         expect(under).toEqual({ x: 200, y: 300 });
+    });
+});
+
+describe('a node opened in place, in the corners', () => {
+    it('keeps a wire from its output back into its own input, inside its frame', () => {
+        const looped: PyGraphDocument = {
+            ...doc,
+            graph: { ...doc.graph, edges: [...doc.graph.edges, { id: 'e:loop', from: `${P}:q`, to: `${P}:b`, scope: 'root' }] }
+        };
+        const opened = openNodes(looped, openState(true), stableNodeIds(looped.graph.nodes));
+        const loop = opened.graph.edges.filter(e => e.id.startsWith('e:loop'));
+        expect(loop.map(e => `${e.from} -> ${e.to}`)).toEqual([`${P}/cell:reg:q -> ${P}/cell:and:b`]);
+        expect(loop[0].scope).toBe(`open:${P}`);
+    });
+
+    it('starts a wire through it where the wire into it started, never at the node itself', () => {
+        const withNodes: PyGraphDocument = {
+            ...doc,
+            graph: {
+                ...doc.graph,
+                edges: doc.graph.edges.map(e => (e.id === 'e:t' ? { ...e, fromNode: P } : e)) as any
+            }
+        };
+        const opened = openNodes(withNodes, openState(true), stableNodeIds(withNodes.graph.nodes));
+        const through: any = opened.graph.edges.find(e => e.from === 'b:a:a' && e.to === 'b:t:t');
+        expect(through.fromNode).toBeUndefined();
+    });
+
+    it('gives an inner node another id when an outer node’s id is its', () => {
+        const clash: PyGraphNode = { id: 'other', kind: 'logic', label: `${P}/cell:and`, scope: 'root', ports: [] };
+        const both: PyGraphDocument = { ...doc, graph: { ...doc.graph, nodes: [...doc.graph.nodes, clash] } };
+        const graph: any = new GraphGModelSource().transform(both, { portBuses: openState(true) }).graph;
+        const ids: string[] = [];
+        const walk = (e: any) => { ids.push(e.id); (e.children ?? []).forEach(walk); };
+        walk(graph);
+        expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it('drops a closed node’s members’ places by its inner graph, not by their names', () => {
+        const graph: any = new GraphGModelSource().transform(doc, { portBuses: openState(false) }).graph;
+        const at = withOpenNodePositions(graph, new Map([
+            [`${P}/cell:reg`, { x: 1, y: 1 }],
+            [`${P}/unrelated`, { x: 2, y: 2 }]
+        ]));
+        expect(at.has(`${P}/cell:reg`)).toBe(false);
+        expect(at.has(`${P}/unrelated`)).toBe(true);
+    });
+
+    it('stays a box when it is also a symbol: its toggle is in the header', () => {
+        const symbolic: PyGraphDocument = {
+            ...doc,
+            graph: { ...doc.graph, nodes: doc.graph.nodes.map(n => (n.id === P ? { ...n, meta: { ...n.meta, symbol: 'and' } } : n)) }
+        };
+        const graph: any = new GraphGModelSource().transform(symbolic, { portBuses: openState(false) }).graph;
+        const node = graph.children.find((c: any) => c.args?.[WorkflowDiagramMetadata.GRAPH_NODE_ID] === P);
+        expect(node.args[WorkflowDiagramMetadata.SYMBOL]).toBeUndefined();
+        expect(node.args[WorkflowDiagramMetadata.NODE_OPENABLE]).toBe(true);
+    });
+});
+
+describe('a bus toggle beside an open node', () => {
+    it('saves the node open, as the view shows it', async () => {
+        const d = diagram({ a: { x: 0, y: 100 }, b: { x: 0, y: 160 }, q: { x: 600, y: 100 }, t: { x: 600, y: 160 }, [KEY]: { x: 200, y: 100 } });
+        await d.command(KEY).execute();
+        const { WorkflowTogglePortBusOperationHandler } = await import('../src/operations/toggle-port-bus-handler');
+        const bus = new WorkflowTogglePortBusOperationHandler();
+        (bus as any).modelState = (d as any).handlerState;
+        expect(bus.openBundles().get(KEY)?.has(ToggleNodeOpenOperation.OPEN)).toBe(true);
     });
 });

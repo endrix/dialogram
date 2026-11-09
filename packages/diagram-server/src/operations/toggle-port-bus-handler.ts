@@ -26,6 +26,7 @@ import {
 import { inject, injectable } from 'inversify';
 import {
     BoundaryPortGeometry,
+    ToggleNodeOpenOperation,
     TogglePortBusOperation,
     WORKFLOW_NETWORK_MODEL_KEY,
     WorkflowDiagramConstants,
@@ -77,7 +78,7 @@ export interface NodeMove {
 /** The nodes a toggle moved, by id. */
 export type NodeMoves = Map<string, NodeMove>;
 
-function inverse(moves: NodeMoves): NodeMoves {
+export function inverse(moves: NodeMoves): NodeMoves {
     return new Map([...moves].map(([id, move]) => [id, { from: move.to, to: move.from }]));
 }
 
@@ -193,13 +194,24 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
 
     /**
      * The bundles open in the model as it is drawn, for every node that has
-     * one, an empty set for a node whose bundles are all closed. What the view
-     * shows may be its fallback's choice; saving all of it keeps that.
+     * one, an empty set for a node whose bundles are all closed; and the
+     * nodes that open in place, the open ones (drawn as their frames) listed
+     * under `ToggleNodeOpenOperation.OPEN`. What the view shows may be its
+     * fallback's choice; saving all of it keeps that.
      */
     openBundles(): Map<string, Set<string>> {
         const open = new Map<string, Set<string>>();
         const visit = (element: GModelElement): void => {
             const args = (element as any).args as Record<string, unknown> | undefined;
+            const openKey = args?.[WorkflowDiagramMetadata.OPEN_NODE_KEY];
+            if (typeof openKey === 'string') {
+                open.set(openKey, (open.get(openKey) ?? new Set<string>()).add(ToggleNodeOpenOperation.OPEN));
+            } else if (args?.[WorkflowDiagramMetadata.NODE_OPENABLE] === true) {
+                const key = nodeLayoutKeyOf(element);
+                if (key && !open.has(key)) {
+                    open.set(key, new Set<string>());
+                }
+            }
             const group = args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP];
             if (typeof group === 'string') {
                 const nodeId = movableNodeIdFor(this.modelState.index, element.id);

@@ -59,13 +59,23 @@ export function openNodes(doc: PyGraphDocument, state: PortBusState | undefined,
     }
     let edges: PyGraphEdge[] = doc.graph.edges;
     let nodes: PyGraphNode[] = doc.graph.nodes;
+    // An inner node keeps the producer's id unless an outer node's id is it.
+    const taken = new Set(doc.graph.nodes.map(node => stableNodeId(ids, node)));
     const subgraphs: PyGraphScope[] = (doc.graph.subgraphs ?? []).map(scope => ({ ...scope }));
     for (const node of opened) {
         const inner = innerGraphOf(node)!;
         const scopeId = openScopeId(node.id);
         const own = new Map(node.ports.map(port => [port.id, port]));
+        const cells = inner.nodes.map(cell => {
+            let id = cell.id;
+            while (taken.has(id)) {
+                id = `${id}~`;
+            }
+            taken.add(id);
+            return { ...cell, id, scope: scopeId };
+        });
         const nodeOfPin = new Map<string, string>();
-        for (const cell of inner.nodes) {
+        for (const cell of cells) {
             for (const port of cell.ports ?? []) {
                 nodeOfPin.set(port.id, cell.id);
             }
@@ -75,14 +85,15 @@ export function openNodes(doc: PyGraphDocument, state: PortBusState | undefined,
         const outOf = new Map<string, string[]>();    // own output -> the inner pin driving it
         const through = new Map<string, string[]>();  // own input -> own outputs
         const innerEdges: PyGraphEdge[] = [];
+        // Edges naming a pin no inner node has are no edges: a wire to nothing.
         inner.edges.forEach((edge, k) => {
             const fromOwn = own.has(edge.from);
             const toOwn = own.has(edge.to);
             if (fromOwn && toOwn) {
                 through.set(edge.from, [...(through.get(edge.from) ?? []), edge.to]);
-            } else if (fromOwn) {
+            } else if (fromOwn && nodeOfPin.has(edge.to)) {
                 into.set(edge.from, [...(into.get(edge.from) ?? []), edge.to]);
-            } else if (toOwn) {
+            } else if (toOwn && nodeOfPin.has(edge.from)) {
                 outOf.set(edge.to, [...(outOf.get(edge.to) ?? []), edge.from]);
             } else if (nodeOfPin.has(edge.from) && nodeOfPin.has(edge.to)) {
                 // Widths stay on the pins, as on every other wire.
@@ -107,23 +118,32 @@ export function openNodes(doc: PyGraphDocument, state: PortBusState | undefined,
                 outbound.set(edge.from, [...(outbound.get(edge.from) ?? []), edge]);
                 (outOf.get(edge.from) ?? []).forEach((pin, k) =>
                     carried.push(withEnd(edge, `${edge.id}<${k}`, { from: pin, fromNode: nodeOfPin.get(pin) })));
+            } else {
+                // From the node back into itself (an output read by its own
+                // input): inside the frame, from the pin driving the output to
+                // each pin the input feeds.
+                let k = 0;
+                for (const driver of outOf.get(edge.from) ?? []) {
+                    for (const fed of into.get(edge.to) ?? []) {
+                        innerEdges.push(withEnd(edge, `${edge.id}@${k++}`, {
+                            from: driver, fromNode: nodeOfPin.get(driver), to: fed, toNode: nodeOfPin.get(fed), scope: scopeId
+                        }));
+                    }
+                }
             }
-            // An edge from the node to itself stays inside it.
         }
         for (const [input, outputs] of through) {
             for (const a of inbound.get(input) ?? []) {
                 for (const output of outputs) {
                     for (const b of outbound.get(output) ?? []) {
-                        carried.push({ ...b, id: `${a.id}>${b.id}`, from: a.from, ...fromNodeOf(a) });
+                        // Through the node: from where `a` starts to where `b` ends.
+                        carried.push(withEnd(b, `${a.id}>${b.id}`, { from: a.from, fromNode: fromNodeOf(a) }));
                     }
                 }
             }
         }
         edges = [...kept, ...carried, ...innerEdges];
-        nodes = [
-            ...nodes.filter(other => other !== node),
-            ...inner.nodes.map(cell => ({ ...cell, scope: scopeId }))
-        ];
+        nodes = [...nodes.filter(other => other !== node), ...cells];
         const parent = subgraphs.find(scope => scope.id === node.scope);
         if (parent) {
             parent.children = [...(parent.children ?? []), scopeId];
@@ -133,7 +153,7 @@ export function openNodes(doc: PyGraphDocument, state: PortBusState | undefined,
             kind: 'group',
             label: node.label,
             parent: parent ? parent.id : (node.scope ?? null),
-            nodes: inner.nodes.map(cell => cell.id),
+            nodes: cells.map(cell => cell.id),
             edges: innerEdges.map(edge => edge.id),
             openNodeKey: stableNodeId(ids, node)
         });
@@ -151,9 +171,9 @@ function withEnd(edge: PyGraphEdge, id: string, end: Record<string, unknown>): P
     return out as PyGraphEdge;
 }
 
-function fromNodeOf(edge: PyGraphEdge): Record<string, unknown> {
-    const fromNode = (edge as Record<string, unknown>)['fromNode'];
-    return fromNode === undefined ? {} : { fromNode };
+/** The node an edge starts at, when the producer says (`fromNode`; an end given or dropped with it). */
+function fromNodeOf(edge: PyGraphEdge): unknown {
+    return (edge as Record<string, unknown>)['fromNode'];
 }
 
 type Point = { x: number; y: number };
@@ -226,9 +246,10 @@ export function withOpenNodePositions(graph: unknown, positions: Map<string, Poi
                 writable().set(nodeKey, { ...frameAt });
             }
             // Closed, its frame and members are not drawn.
-            const memberPrefix = `${producerId}/`;
-            for (const key of positions.keys()) {
-                if (key === frameKey || key.startsWith(memberPrefix)) {
+            const meta = args[WorkflowDiagramMetadata.NODE_META] as PyGraphNode['meta'];
+            const members = new Set(innerGraphOf({ meta })?.nodes.map(member => member.id) ?? []);
+            for (const key of [frameKey, ...members]) {
+                if (positions.has(key)) {
                     writable().delete(key);
                 }
             }
