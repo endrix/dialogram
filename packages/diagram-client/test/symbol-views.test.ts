@@ -2,6 +2,9 @@
  * A symbol's body and its stubs (symbol-views.ts): every pin's stub ends on
  * the body's back where the server put the pin, an OR's on its curve.
  */
+import { readFileSync } from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { SymbolGeometry } from '@dialogram/shared';
 import { renderSymbolBody, symbolPath, symbolPinsOf } from '../src/symbol-views';
@@ -45,7 +48,23 @@ describe('symbol views', () => {
             { type: 'port:output', position: { x: 45.5, y: 20 }, size: { width: 9, height: 7 } },
             { type: 'comp:header', position: { x: 0, y: 0 } }
         ], 50);
-        expect(pins).toEqual({ west: [13.5], east: [23.5] });
+        // The wires end on the ports' outer rims, half a box outside the node.
+        expect(pins).toEqual({ west: [13.5], east: [23.5], reach: { west: -4.5, east: 54.5 } });
+        expect(symbolPinsOf([], 50).reach).toEqual({ west: 0, east: 50 });
+    });
+
+    it('run each stub out to where its wire ends, so the wire goes on into the symbol unbroken', () => {
+        const size = SymbolGeometry.size('register', 2, 1);
+        const pins = { west: [10, 20], east: [15], reach: { west: -4.5, east: size.width + 4.5 } };
+        const stubs = (renderSymbolBody('register', size, pins) as unknown as Drawn[])
+            .filter(n => n.props?.class?.['symbol-stub']).map(n => n.props.attrs);
+        expect(stubs.filter(a => a.x1 === -4.5).map(a => a.y1)).toEqual([10, 20]);
+        expect(stubs.filter(a => a.x2 === size.width + 4.5).map(a => a.y1)).toEqual([15]);
+        // As wide as a wire: the same variable the edges are drawn with.
+        const here = path.dirname(fileURLToPath(import.meta.url));
+        const css = readFileSync(path.resolve(here, '../src/diagram-client.css'), 'utf8');
+        expect(css).toMatch(/\.symbol-node \.symbol-stub \{[^}]*stroke-width: var\(--workflow-edge-width, 3\.5px\)/);
+        expect(css).toMatch(/\.workflow-edge \.edge-line \{[^}]*stroke-width: var\(--workflow-edge-width, 3\.5px\)/);
     });
 
     it('show an operator’s glyph and a register’s name', () => {

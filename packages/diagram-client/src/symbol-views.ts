@@ -16,12 +16,20 @@ import type { VNode } from 'snabbdom';
 export interface SymbolPins {
     west: number[];
     east: number[];
+    /**
+     * Where a wire ends on each side, in the node's x: the outer rim of the
+     * ports' boxes, which sit across the node's border (`0` and the width
+     * when it has none). The stubs run out to it, so a wire runs on into the
+     * symbol without a break.
+     */
+    reach?: { west: number; east: number };
 }
 
-/** The y of each pin of a node's children, by side: the middle of each port's box. */
+/** The y of each pin of a node's children, by side: the middle of each port's box; and how far out the wires end. */
 export function symbolPinsOf(children: readonly unknown[], width: number): SymbolPins {
     const west: number[] = [];
     const east: number[] = [];
+    const reach = { west: 0, east: width };
     for (const child of children) {
         const c = child as { type?: string; position?: { x: number; y: number }; size?: { width: number; height: number } };
         if (typeof c.type !== 'string' || !c.type.startsWith('port') || !c.position) {
@@ -30,9 +38,15 @@ export function symbolPinsOf(children: readonly unknown[], width: number): Symbo
         const h = c.size?.height ?? 0;
         const w = c.size?.width ?? 0;
         const y = c.position.y + h / 2;
-        (c.position.x + w / 2 < width / 2 ? west : east).push(y);
+        if (c.position.x + w / 2 < width / 2) {
+            west.push(y);
+            reach.west = Math.min(reach.west, c.position.x);
+        } else {
+            east.push(y);
+            reach.east = Math.max(reach.east, c.position.x + w);
+        }
     }
-    return { west, east };
+    return { west, east, reach };
 }
 
 /** The body's outline, for the kinds drawn as one closed shape. */
@@ -102,16 +116,20 @@ export function renderSymbolBody(
             attrs: { d: `M ${stub} ${y - 5} L ${stub + 7} ${y} L ${stub} ${y + 5}` }
         }));
     }
+    // The stubs are the wires' last stretch, drawn as wide as a wire and out
+    // to where it ends, so it runs into the symbol unbroken.
+    const west = pins.reach?.west ?? 0;
+    const east = pins.reach?.east ?? width;
     for (const y of pins.west) {
         out.push(svg('line', {
             class: { 'symbol-stub': true },
-            attrs: { x1: 0, y1: y, x2: SymbolGeometry.backX(kind, height, y), y2: y }
+            attrs: { x1: west, y1: y, x2: SymbolGeometry.backX(kind, height, y), y2: y }
         }));
     }
     for (const y of pins.east) {
         out.push(svg('line', {
             class: { 'symbol-stub': true },
-            attrs: { x1: SymbolGeometry.frontX(kind, width, height, y), y1: y, x2: width, y2: y }
+            attrs: { x1: SymbolGeometry.frontX(kind, width, height, y), y1: y, x2: east, y2: y }
         }));
     }
     if (kind === 'operator' && operator) {
