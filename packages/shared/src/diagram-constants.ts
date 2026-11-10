@@ -32,11 +32,13 @@ export const WorkflowDiagramConstants = {
     // computing node width.
     PORT_LABEL_PADDING_PX: 8,
 
-    // A bus port is a larger dot than a port, with its toggle (+ or −) inside;
-    // its box is the dot, square, centred on the node's border like every
-    // port's, and its name keeps a small inset. A member of an open bus keeps
-    // a slot for its rail, so its name sits under the bundle's, one step in.
-    PORT_BUS_DOT_RADIUS_PX: 6,
+    // A bus port is a dot about a port's own size, with its toggle (+ or −)
+    // inside: 10px across, the smallest that keeps the mark legible at 100%
+    // (at 9 its arms blur into the ring). Its box is the dot, square, centred
+    // on the node's border like every port's, and its name keeps a small
+    // inset. A member of an open bus keeps a slot for its rail, so its name
+    // sits under the bundle's, one step in.
+    PORT_BUS_DOT_RADIUS_PX: 5,
     PORT_BUS_LABEL_INSET_PX: 2,
     PORT_BUS_RAIL_SLOT_PX: 12,
 
