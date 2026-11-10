@@ -913,13 +913,15 @@ body.vscode-high-contrast-light .node-center-image-light {
     stroke-linecap: round;
 }
 
-/* A pin's stub is the last stretch of the wire it takes: as wide as a wire
-   and in its colour, out to where the wire ends (symbol-views.ts). */
+/* A pin's stub carries the wire on into the symbol: as wide as a wire, out
+   to where it begins (symbol-views.ts). Square ends, so it meets the wire
+   flush and leaves an input's arrowhead its point. It is the symbol's, in
+   the symbol's colour: a selected wire's ends at the pin. */
 .symbol-node .symbol-stub {
     fill: none;
     stroke: var(--vscode-foreground, #cccccc);
     stroke-width: var(--workflow-edge-width, 3.5px);
-    stroke-linecap: round;
+    stroke-linecap: butt;
 }
 
 .symbol-node.selected .symbol-body {

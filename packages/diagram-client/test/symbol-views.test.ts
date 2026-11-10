@@ -48,22 +48,32 @@ describe('symbol views', () => {
             { type: 'port:output', position: { x: 45.5, y: 20 }, size: { width: 9, height: 7 } },
             { type: 'comp:header', position: { x: 0, y: 0 } }
         ], 50);
-        // The wires end on the ports' outer rims, half a box outside the node.
-        expect(pins).toEqual({ west: [13.5], east: [23.5], reach: { west: -4.5, east: 54.5 } });
-        expect(symbolPinsOf([], 50).reach).toEqual({ west: 0, east: 50 });
+        // An output's wire begins on its port's outer rim, half a box outside the node.
+        expect(pins).toEqual({ west: [13.5], east: [23.5], eastEnds: [54.5] });
+        // Each by its own port: a wider one (a bus's) moves no other.
+        expect(symbolPinsOf([
+            { type: 'port:output', position: { x: 45.5, y: 0 }, size: { width: 9, height: 7 } },
+            { type: 'port:output', position: { x: 45, y: 20 }, size: { width: 10, height: 10 } }
+        ], 50).eastEnds).toEqual([54.5, 55]);
     });
 
-    it('run each stub out to where its wire ends, so the wire goes on into the symbol unbroken', () => {
+    it('carry each wire on into the symbol: an output’s out to where its wire begins, an input’s from the border its arrow points at', () => {
         const size = SymbolGeometry.size('register', 2, 1);
-        const pins = { west: [10, 20], east: [15], reach: { west: -4.5, east: size.width + 4.5 } };
+        const pins = { west: [10, 20], east: [15], eastEnds: [size.width + 4.5] };
         const stubs = (renderSymbolBody('register', size, pins) as unknown as Drawn[])
             .filter(n => n.props?.class?.['symbol-stub']).map(n => n.props.attrs);
-        expect(stubs.filter(a => a.x1 === -4.5).map(a => a.y1)).toEqual([10, 20]);
+        expect(stubs.filter(a => a.x1 === 0).map(a => a.y1)).toEqual([10, 20]);
         expect(stubs.filter(a => a.x2 === size.width + 4.5).map(a => a.y1)).toEqual([15]);
+        // Without the ends, at the border.
+        const bare = (renderSymbolBody('register', size, { west: [], east: [15] }) as unknown as Drawn[])
+            .filter(n => n.props?.class?.['symbol-stub']).map(n => n.props.attrs);
+        expect(bare[0].x2).toBe(size.width);
         // As wide as a wire: the same variable the edges are drawn with.
         const here = path.dirname(fileURLToPath(import.meta.url));
         const css = readFileSync(path.resolve(here, '../src/diagram-client.css'), 'utf8');
         expect(css).toMatch(/\.symbol-node \.symbol-stub \{[^}]*stroke-width: var\(--workflow-edge-width, 3\.5px\)/);
+        // Square ends: a round cap would cover an input arrow's point.
+        expect(css).toMatch(/\.symbol-node \.symbol-stub \{[^}]*stroke-linecap: butt/);
         expect(css).toMatch(/\.workflow-edge \.edge-line \{[^}]*stroke-width: var\(--workflow-edge-width, 3\.5px\)/);
     });
 
