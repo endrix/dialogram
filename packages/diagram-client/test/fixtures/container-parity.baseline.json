@@ -411,5 +411,21 @@
         "impl": "NodeOpenToggleMouseListener",
         "op": "bindAsService",
         "service": "Symbol(stub.MouseListener)"
+    },
+    {
+        "id": "ToggleAnchor",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "id": "Symbol(stub.IGModelRootListener)",
+        "op": "bind",
+        "to": "service:ToggleAnchor"
+    },
+    {
+        "id": "FeedbackAwareUpdateModelCommand",
+        "op": "bind",
+        "to": "AnchoredUpdateModelCommand"
     }
 ]

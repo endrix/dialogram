@@ -5,8 +5,9 @@
  */
 import { Ranked } from '@eclipse-glsp/client';
 import { Action, GModelElement, MouseListener } from '@eclipse-glsp/sprotty';
-import { injectable } from 'inversify';
+import { inject, injectable, optional } from 'inversify';
 import { TogglePortBusOperation } from '@dialogram/shared';
+import { ToggleAnchor } from './toggle-anchor';
 
 /** The attribute the port view puts on a bus port's dot: the port's id. */
 export const PORT_BUS_TOGGLE_ATTR = 'data-port-bus-toggle';
@@ -50,7 +51,13 @@ export class PortBusToggleMouseListener extends MouseListener implements Ranked 
     // Ahead of the tools, so the press is a toggle and not the start of a drag.
     rank = 9;
 
-    override mouseDown(_target: GModelElement, event: MouseEvent): (Action | Promise<Action>)[] {
-        return pressToggle(event, PORT_BUS_TOGGLE_ATTR, portId => TogglePortBusOperation.create({ portId }));
+    /** Keeps the bus where it was on screen once the view is laid out again. */
+    @inject(ToggleAnchor) @optional() protected readonly anchor?: ToggleAnchor;
+
+    override mouseDown(target: GModelElement, event: MouseEvent): (Action | Promise<Action>)[] {
+        return pressToggle(event, PORT_BUS_TOGGLE_ATTR, portId => {
+            this.anchor?.remember(target.root, portId);
+            return TogglePortBusOperation.create({ portId });
+        });
     }
 }

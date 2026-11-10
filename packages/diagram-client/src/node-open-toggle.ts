@@ -6,10 +6,11 @@
  */
 import { Ranked, svg } from '@eclipse-glsp/client';
 import { Action, GModelElement, MouseListener } from '@eclipse-glsp/sprotty';
-import { injectable } from 'inversify';
+import { inject, injectable, optional } from 'inversify';
 import type { VNode } from 'snabbdom';
 import { ToggleNodeOpenOperation } from '@dialogram/shared';
 import { pressToggle, toggleTargetOf } from './port-bus-toggle';
+import { ToggleAnchor } from './toggle-anchor';
 
 /** The attribute a header's toggle carries: the id of the node, or of the frame, it toggles. */
 export const NODE_OPEN_TOGGLE_ATTR = 'data-node-open-toggle';
@@ -42,7 +43,13 @@ export class NodeOpenToggleMouseListener extends MouseListener implements Ranked
     // Ahead of the tools, so the press is a toggle and not the start of a drag.
     rank = 9;
 
-    override mouseDown(_target: GModelElement, event: MouseEvent): (Action | Promise<Action>)[] {
-        return pressToggle(event, NODE_OPEN_TOGGLE_ATTR, nodeId => ToggleNodeOpenOperation.create({ nodeId }));
+    /** Keeps the node, or its frame, where it was on screen once the view is laid out again. */
+    @inject(ToggleAnchor) @optional() protected readonly anchor?: ToggleAnchor;
+
+    override mouseDown(target: GModelElement, event: MouseEvent): (Action | Promise<Action>)[] {
+        return pressToggle(event, NODE_OPEN_TOGGLE_ATTR, nodeId => {
+            this.anchor?.remember(target.root, nodeId);
+            return ToggleNodeOpenOperation.create({ nodeId });
+        });
     }
 }

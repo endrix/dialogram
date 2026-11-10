@@ -209,6 +209,12 @@ export interface SidecarProfileInput {
      * own.
      */
     defaultLayout?: 'untangled' | 'free-ports';
+    /**
+     * What opening or closing a bus, or a node in place, does to the rest of
+     * the view: `relayout` (the default) lays it all out again, `make-room`
+     * keeps every node and pushes down the ones under the toggled one.
+     */
+    toggleLayout?: 'relayout' | 'make-room';
 
     // Chat edit backend.
     exportOp?: string;
@@ -755,7 +761,8 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
             entityPaletteItems: input.entityPaletteItems,
             nodeFamilies: input.nodeFamilies,
             nestedNavigation: input.clientBehavior?.nestedNavigation,
-            defaultLayout: input.defaultLayout
+            defaultLayout: input.defaultLayout,
+            toggleLayout: input.toggleLayout
         },
         watch: { globs: input.watchGlobs ?? sourceExtensions.map(ext => `**/*${ext}`) },
         // No provider at all for a product that resolves nothing itself: the
