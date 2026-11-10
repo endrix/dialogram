@@ -435,13 +435,6 @@ const INDEX_LABEL_GAP_PX = 6;
 const indexShifts = new WeakMap<object, Map<string, number>>();
 
 /**
- * How much further along its wire an edge's slice label at one end goes:
- * the widths of the slice labels of the edges before it at the same port
- * end, the one with the highest bits first (a concatenation reads from its
- * top bits), the producer's order where the bits are not plain numbers. Only
- * slices (`EDGE_SLICE`) are lined up; any other index stays where it was.
- */
-/**
  * What an edge end's index is written as: the producer's own text when it gave
  * one (`EDGE_FROM_INDEX_LABEL`, VHDL's `(7 downto 4)`), else `[index]`.
  */
@@ -454,6 +447,13 @@ export function indexLabelText(args: Record<string, unknown> | undefined, end: '
     return typeof index === 'string' && index !== '' ? `[${index}]` : undefined;
 }
 
+/**
+ * How much further along its wire an edge's slice label at one end goes:
+ * the widths of the slice labels of the edges before it at the same port
+ * end, the one with the highest bits first (a concatenation reads from its
+ * top bits), the producer's order where the bits are not plain numbers. Only
+ * slices (`EDGE_SLICE`) are lined up; any other index stays where it was.
+ */
 export function indexLabelShift(edge: unknown, end: 'from' | 'to'): number {
     const key = end === 'from' ? WorkflowDiagramMetadata.EDGE_FROM_INDEX : WorkflowDiagramMetadata.EDGE_TO_INDEX;
     const args = (edge as any)?.args;

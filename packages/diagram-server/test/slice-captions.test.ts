@@ -55,6 +55,25 @@ describe('a sliced wire across a group frame', () => {
         // A number is a slice too.
         expect(labelled[0].args[WorkflowDiagramMetadata.EDGE_TO_INDEX]).toBe('3');
     });
+
+    it('keeps the bits as written only on that piece too', () => {
+        const grouped: PyGraphDocument = {
+            version: '1',
+            graph: {
+                id: 'top',
+                nodes: [node('src', [['q', 'out']]), { ...node('dst', [['din', 'in']]), scope: 'g' }],
+                edges: [{ id: 'e1', from: 'src:q', to: 'dst:din', scope: 'root', meta: { signal: 'q', toSlice: '3', toSliceLabel: '(3)' } }],
+                subgraphs: [{ id: 'root', kind: 'root', parent: null }, { id: 'g', kind: 'group', parent: 'root', nodes: ['dst'] }]
+            }
+        };
+        const graph: any = new GraphGModelSource().transform(grouped).graph;
+        const edges: any[] = [];
+        const walk = (e: any) => { if (typeof e.sourceId === 'string') { edges.push(e); } (e.children ?? []).forEach(walk); };
+        walk(graph);
+        const labelled = edges.filter(e => e.args?.[WorkflowDiagramMetadata.EDGE_TO_INDEX_LABEL] !== undefined);
+        expect(labelled).toHaveLength(1);
+        expect(labelled[0].args[WorkflowDiagramMetadata.EDGE_TO_INDEX]).toBe('3');
+    });
 });
 
 describe('the bits as the producer writes them', () => {
