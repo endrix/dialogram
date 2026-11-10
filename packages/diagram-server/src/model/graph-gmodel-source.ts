@@ -1096,6 +1096,15 @@ export class GraphGModelSource {
             if (fromSlice || toSlice) {
                 (gedge.args as Record<string, unknown>)[WorkflowDiagramMetadata.EDGE_SLICE] = true;
             }
+            // As the producer's language writes the bits (VHDL's `(7 downto 4)`).
+            const fromSliceLabel = fromSlice ? sliceText(edgeMeta?.['fromSliceLabel']) : undefined;
+            const toSliceLabel = toSlice ? sliceText(edgeMeta?.['toSliceLabel']) : undefined;
+            if (fromSliceLabel) {
+                (gedge.args as Record<string, unknown>)[WorkflowDiagramMetadata.EDGE_FROM_INDEX_LABEL] = fromSliceLabel;
+            }
+            if (toSliceLabel) {
+                (gedge.args as Record<string, unknown>)[WorkflowDiagramMetadata.EDGE_TO_INDEX_LABEL] = toSliceLabel;
+            }
             // Producer-declared feedback. Recorded per edge here; whether the
             // document uses declared or derived feedback is decided once, for
             // the whole graph, in `markFeedbackEdges`.
