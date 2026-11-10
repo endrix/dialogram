@@ -57,7 +57,21 @@ export interface StorageRuntimeOptions {
      * graph options still win over them.
      */
     defaultLayout?: DefaultLayout;
+    /**
+     * What opening or closing a bus, or a node in place, does to the rest of
+     * the view (toggle-port-bus-handler.ts). Absent or `relayout`, the whole
+     * view is laid out again, as Layout Diagram lays it out (with
+     * {@link defaultLayout}): the node changed size and which ports it has,
+     * and a layout made for the old one no longer fits. `make-room` keeps
+     * every node where it is and moves the ones stacked under the toggled
+     * node by what it grew. Either way, undo and redo put back the layout
+     * the view had.
+     */
+    toggleLayout?: ToggleLayout;
 }
+
+/** What a bus or node toggle does to the rest of the view. */
+export type ToggleLayout = 'relayout' | 'make-room';
 
 /** A layout a product can make its default, beside Layout Diagram's own. */
 export type DefaultLayout = 'untangled' | 'free-ports';

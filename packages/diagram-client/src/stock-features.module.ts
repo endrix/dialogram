@@ -21,6 +21,7 @@ import { ViewerMouseListener } from './viewer-mouse-listener';
 import { EdgeOpenMouseListener } from './edge-open-mouse-listener';
 import { PortBusToggleMouseListener } from './port-bus-toggle';
 import { NodeOpenToggleMouseListener } from './node-open-toggle';
+import { ToggleAnchor } from './toggle-anchor';
 import { WhitespaceRootPropertiesMouseListener } from './whitespace-root-properties-mouse-listener';
 import { WorkflowElkLiveDragRouter } from './elk-live-drag-router';
 import { WorkflowChangeBoundsTool } from './change-bounds-drag-threshold';
@@ -124,6 +125,10 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     bindAsService(context, TYPES.MouseListener, EdgeOpenMouseListener);
 
     // The toggle in front of a bus port's name opens or closes its bundle.
+    // The view is laid out again for it, scrolled so the toggled node stays
+    // where it was on screen.
+    bind(ToggleAnchor).toSelf().inSingletonScope();
+    bind(TYPES.IGModelRootListener).toService(ToggleAnchor);
     bindAsService(context, TYPES.MouseListener, PortBusToggleMouseListener);
     bindAsService(context, TYPES.MouseListener, NodeOpenToggleMouseListener);
 

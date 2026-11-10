@@ -253,6 +253,18 @@ it no longer has.
 
 ### Changed
 
+- **Opening or closing a bus, or a node in place, lays the view out
+  again.** The node changes size and which ports it has, and a layout made
+  for the old one no longer fits: pushing the nodes under it down and
+  rerouting their edges left the rest of the view crossed and crowded. The
+  whole view is now laid out as Layout Diagram lays it out (with the
+  product's `defaultLayout`), and scrolled so the bus or node pressed stays
+  where it was on screen (`ToggleAnchor`). Undo and redo put back the layout
+  the view had before and after the toggle, exactly, without laying it out
+  again. A product that wants the old behaviour sets `toggleLayout:
+  'make-room'` (`StorageRuntimeOptions`, the extension API and the sidecar
+  profile).
+
 - **A bus's toggle is a smaller dot.** The `+`/`−` dot of a bus port, and
   the one beside a bundle of the unit's ports, is 10px across instead of
   12px (`PORT_BUS_DOT_RADIUS_PX` 6 → 5), about the size of a port's own dot,

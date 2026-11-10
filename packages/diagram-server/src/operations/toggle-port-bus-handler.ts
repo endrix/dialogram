@@ -10,8 +10,10 @@
  * (the producer is not asked for the graph again) and with the positions and
  * routes the diagram has now (not the ones last saved, which an undone move
  * or an unwritable layout file would make different). The node is taller or
- * shorter for it, so the nodes stacked under it move with its bottom edge
- * (make-room.ts), and its edges and theirs are rerouted.
+ * shorter for it, and has other ports, so the whole view is laid out again,
+ * as Layout Diagram lays it out; or, where the product asks for it
+ * (`StorageRuntimeOptions.toggleLayout`), the nodes stacked under it move
+ * with its bottom edge (make-room.ts), and its edges and theirs are rerouted.
  */
 import type { Operation } from '@eclipse-glsp/protocol';
 import {
@@ -23,18 +25,30 @@ import {
     type Command,
     type MaybePromise
 } from '@eclipse-glsp/server';
-import { inject, injectable } from 'inversify';
+import { inject, injectable, optional } from 'inversify';
 import {
     BoundaryPortGeometry,
     ToggleNodeOpenOperation,
     TogglePortBusOperation,
+    WORKFLOW_LAYOUT_PERSISTENCE_KEY,
     WORKFLOW_NETWORK_MODEL_KEY,
     WorkflowDiagramConstants,
     WorkflowDiagramMetadata,
     WorkflowDiagramTypes
 } from '@dialogram/shared';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
-import { collectEdgeRoutes, collectNodePositions, isMovableNode, movableNodeIdFor, nodeLayoutKeyOf, type Point } from '../server/layout-snapshot';
+import {
+    collectEdgeRoutes,
+    collectNodePositions,
+    isMovableNode,
+    movableNodeIdFor,
+    nodeLayoutKeyOf,
+    persistLayout,
+    type LayoutPersistenceMeta,
+    type Point
+} from '../server/layout-snapshot';
+import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from '../server/storage-runtime-options';
+import { WORKFLOW_LAYOUT_BOUNDARY_FLOW_OPERATION_KIND, WorkflowLayoutBoundaryFlowOperationHandler } from './layout-boundary-flow-handler';
 import { makeRoom, type Box } from './make-room';
 import { boundaryBusMembersOf } from '../server/boundary-bus-positions';
 import { groupSizeAroundMembers } from '../server/group-geometry';
@@ -94,32 +108,39 @@ function overlaps(a: Box, b: Box): boolean {
 
 /**
  * Undo closes what the toggle opened, and redo opens it again: each is the
- * same write and rebuild with the other answer. The nodes the toggle moved
- * are moved back exactly by undo and again by redo, never worked out anew:
- * what a growth pushed cannot be read back off the layout. `beforeExecute`
- * runs on the first execution only.
+ * same write and rebuild with the other answer. What the toggle did to the
+ * layout is put back exactly by undo and done again by redo, never worked
+ * out anew: a toggle that lays the view out again keeps the layout before
+ * and after it (`snapshot`), one that makes room the nodes it moved (what a
+ * growth pushed cannot be read back off the layout). `beforeExecute` runs on
+ * the first execution only.
  */
 export class TogglePortBusCommand implements Command {
     private moves: NodeMoves = new Map();
+    private before?: CurrentLayout;
+    private after?: CurrentLayout;
 
     constructor(
-        private readonly apply: (expanded: boolean, moves?: NodeMoves) => Promise<NodeMoves | void>,
+        private readonly apply: (expanded: boolean, moves?: NodeMoves, layout?: CurrentLayout) => Promise<NodeMoves | void>,
         private readonly expanded: boolean,
-        private readonly beforeExecute?: () => void
+        private readonly beforeExecute?: () => void,
+        private readonly snapshot?: () => CurrentLayout | undefined
     ) {}
 
     async execute(): Promise<void> {
         this.beforeExecute?.();
+        this.before = this.snapshot?.();
         const made = await this.apply(this.expanded);
         this.moves = made instanceof Map ? made : new Map();
+        this.after = this.before ? this.snapshot?.() : undefined;
     }
 
     async undo(): Promise<void> {
-        await this.apply(!this.expanded, inverse(this.moves));
+        await this.apply(!this.expanded, inverse(this.moves), this.before);
     }
 
     async redo(): Promise<void> {
-        await this.apply(this.expanded, this.moves);
+        await this.apply(this.expanded, this.moves, this.after);
     }
 }
 
@@ -154,6 +175,46 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
     @inject(CommandStack)
     protected commandStack!: CommandStack;
 
+    @inject(WorkflowLayoutBoundaryFlowOperationHandler)
+    @optional()
+    protected layoutHandler?: WorkflowLayoutBoundaryFlowOperationHandler;
+
+    @inject(STORAGE_RUNTIME_OPTIONS)
+    @optional()
+    protected storageOptions?: StorageRuntimeOptions;
+
+    /** Whether a toggle lays the whole view out again, rather than making room (`StorageRuntimeOptions.toggleLayout`). */
+    relaysOut(): boolean {
+        return this.layoutHandler !== undefined && this.storageOptions?.toggleLayout !== 'make-room';
+    }
+
+    /** The positions and routes drawn now, kept by a toggle that lays the view out again. */
+    layoutSnapshot(): CurrentLayout | undefined {
+        return this.relaysOut()
+            ? { positions: collectNodePositions(this.modelState.root), routes: collectEdgeRoutes(this.modelState.root) }
+            : undefined;
+    }
+
+    /**
+     * After a rebuild: the whole view laid out again, as Layout Diagram lays
+     * it out, or, given the layout it had (an undo, a redo), that one kept;
+     * saved either way. The view counts as laid out, so the bounds round trip
+     * that follows neither lays it out again nor parks the nodes it did not
+     * have before (a bundle's boundary members, a frame's) below the rest.
+     */
+    async layOut(restored: boolean): Promise<void> {
+        if (restored) {
+            await persistLayout(this.modelState, this.layoutPersistence, { layoutPerformed: true });
+        } else {
+            await this.layoutHandler!.runLayout({ kind: WORKFLOW_LAYOUT_BOUNDARY_FLOW_OPERATION_KIND, isOperation: true });
+        }
+        const meta = this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as LayoutPersistenceMeta | undefined;
+        if (meta) {
+            meta.didInitialLayout = true;
+            this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, meta);
+        }
+    }
+
     override createCommand(operation: Operation): MaybePromise<Command | undefined> {
         if (!TogglePortBusOperation.is(operation)) {
             return undefined;
@@ -168,12 +229,12 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
         // the model as it was; the rebuilt model has other ports and edges, and
         // a patch undone against it could land on the wrong element. They are
         // dropped, unless every one is a toggle: a toggle records no patch.
-        return new TogglePortBusCommand((open, moves) => this.apply(target, open, moves), !expanded, () => {
+        return new TogglePortBusCommand((open, moves, restore) => this.apply(target, open, moves, restore), !expanded, () => {
             const commands = (this.commandStack as unknown as { commands?: unknown[] }).commands;
             if (!Array.isArray(commands) || !commands.every(command => command instanceof TogglePortBusCommand)) {
                 this.commandStack.flush();
             }
-        });
+        }, () => this.layoutSnapshot());
     }
 
     /** The bundle a bus port stands for, or nothing when the id names no bus. */
@@ -240,13 +301,16 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
     }
 
     /**
-     * Open or close the bundle, rebuild, and move the nodes around it: `moves`
-     * when given (an undo or a redo), else, opening, the column the growth
+     * Open or close the bundle, rebuild, and lay out what is around it. With
+     * `restore` (an undo or a redo of a toggle that laid the view out again),
+     * the view is built with that layout; else, laying the view out again,
+     * it is laid out whole (`layOut`). Making room instead: `moves` when
+     * given (an undo or a redo), else, opening, the column the growth
      * pushes, and closing, what this session's opening of it moved. Moves
      * are replayed only onto a layout they still fit (see `replay`). Returns
      * the moves made.
      */
-    async apply(target: PortBusTarget, expanded: boolean, moves?: NodeMoves): Promise<NodeMoves> {
+    async apply(target: PortBusTarget, expanded: boolean, moves?: NodeMoves, restore?: CurrentLayout): Promise<NodeMoves> {
         const { layout, nodeId, nodeKey, group } = target;
         // An undo or redo that arrives after the editor showed another view
         // in place: what is drawn is not the view the toggle was made in, and
@@ -280,6 +344,12 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
             positions: collectNodePositions(this.modelState.root),
             routes: collectEdgeRoutes(this.modelState.root)
         };
+        if (restore || this.relaysOut()) {
+            if (await this.sourceModelStorage.rebuildFromLastDocument(restore ?? current)) {
+                await this.layOut(restore !== undefined);
+            }
+            return new Map();
+        }
         const oldHeights = this.heightsUpFrom(nodeId);
         // A bundle of the unit's ports opens into boundary nodes of their own:
         // the rebuild puts them in the rows under the bus (boundary-bus-positions.ts),

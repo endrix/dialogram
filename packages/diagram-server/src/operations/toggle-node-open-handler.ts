@@ -4,7 +4,9 @@
  * As a bus toggle (toggle-port-bus-handler.ts), whose machinery this uses:
  * the choice is saved in the layout file, with the node's open bundles under
  * the name `ToggleNodeOpenOperation.OPEN`; the model is built again from the
- * document it was last built from, with the positions drawn now; opened, the
+ * document it was last built from, with the positions drawn now, and the
+ * whole view is laid out again; undo and redo put back the layout it had.
+ * Making room instead (`StorageRuntimeOptions.toggleLayout`): opened, the
  * frame takes the node's place and the nodes stacked under it move down for
  * its height; closed, they move back; undo and redo replay the moves.
  */
@@ -49,12 +51,12 @@ export class WorkflowToggleNodeOpenOperationHandler extends WorkflowTogglePortBu
             return undefined;
         }
         const open = this.isOpen(target);
-        return new TogglePortBusCommand((wanted, moves) => this.applyOpen(target, wanted, moves), !open, () => {
+        return new TogglePortBusCommand((wanted, moves, restore) => this.applyOpen(target, wanted, moves, restore), !open, () => {
             const commands = (this.commandStack as unknown as { commands?: unknown[] }).commands;
             if (!Array.isArray(commands) || !commands.every(command => command instanceof TogglePortBusCommand)) {
                 this.commandStack.flush();
             }
-        });
+        }, () => this.layoutSnapshot());
     }
 
     /** The node a toggle names, closed (the node) or open (its frame). */
@@ -112,8 +114,12 @@ export class WorkflowToggleNodeOpenOperationHandler extends WorkflowTogglePortBu
         return found;
     }
 
-    /** Open or close the node, rebuild, and move the nodes around it. The moves made. */
-    async applyOpen(target: NodeOpenTarget, open: boolean, moves?: NodeMoves): Promise<NodeMoves> {
+    /**
+     * Open or close the node, rebuild, and lay out what is around it: as a
+     * bus toggle does (`apply`), with `restore` and `moves` alike. The moves
+     * made.
+     */
+    async applyOpen(target: NodeOpenTarget, open: boolean, moves?: NodeMoves, restore?: CurrentLayout): Promise<NodeMoves> {
         const { layout, nodeKey } = target;
         const diagramModel = this.modelState.get(WORKFLOW_NETWORK_MODEL_KEY) as any;
         const shown = diagramModel ? layoutTargetOf(diagramModel) : undefined;
@@ -148,6 +154,12 @@ export class WorkflowToggleNodeOpenOperationHandler extends WorkflowTogglePortBu
             positions: collectNodePositions(this.modelState.root),
             routes: collectEdgeRoutes(this.modelState.root)
         };
+        if (restore || this.relaysOut()) {
+            if (await storage.rebuildFromLastDocument(restore ?? current)) {
+                await this.layOut(restore !== undefined);
+            }
+            return new Map();
+        }
         const oldHeights = this.heightsUpFrom(String(before.id));
         const oldHeight = before.size?.height;
         const rooms = roomMade.get(this.modelState) ?? new Map<string, NodeMoves>();

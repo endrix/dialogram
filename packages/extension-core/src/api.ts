@@ -88,6 +88,11 @@ export interface DiagramStorageOptions {
    *  Ports instead of Layout Diagram's own (diagram-server
    *  `layout-tuned-handler.ts`). */
   defaultLayout?: 'untangled' | 'free-ports';
+  /** What opening or closing a bus, or a node in place, does to the rest of
+   *  the view: lay it all out again (`relayout`, the default) or keep every
+   *  node and push down the ones under it (`make-room`) (diagram-server
+   *  `toggle-port-bus-handler.ts`). */
+  toggleLayout?: 'relayout' | 'make-room';
 }
 
 /**
