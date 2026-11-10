@@ -19,7 +19,6 @@ import {
     DefaultTypes,
     GIssueMarker,
     GGraph,
-    GGraphView,
     GLabelView
 } from '@eclipse-glsp/client';
 import { WorkflowDiagramTypes } from '@dialogram/shared';
@@ -59,6 +58,7 @@ import {
     HeaderCompartmentView
 } from './views';
 import { WorkflowIssueMarkerView } from './issue-marker-view';
+import { DetailGraphView } from './detail-graph-view';
 
 /**
  * Stock workflow-specific model elements and views. Registers nothing neutral —
@@ -68,8 +68,10 @@ export const workflowViewsModule = new ContainerModule((bind, unbind, isBound, r
     const context = { bind, unbind, isBound, rebind };
 
     // Configure graph
-    // Use GGraphView (not plain SGraphView) so gridModule can render the grid background.
-    configureModelElement(context, WorkflowDiagramTypes.GRAPH, GGraph, GGraphView);
+    // GLSP's GGraphView (not plain SGraphView) so gridModule can render the
+    // grid background, marked with the level of detail of the zoom
+    // (zoom-detail.ts): how much text the nodes draw.
+    configureModelElement(context, WorkflowDiagramTypes.GRAPH, GGraph, DetailGraphView);
 
     // Configure node types
     configureModelElement(context, WorkflowDiagramTypes.NODE_ACTOR, ActorNode, ActorNodeView);

@@ -72,6 +72,19 @@ it no longer has.
 
 ### Added
 
+- **The text comes in with the zoom.** Zoomed out below 50%, the nodes
+  draw no text: their boxes, ports and wires, and a group frame its title.
+  From 50% each node's name is drawn (its header, a boundary's name, a
+  symbol's caption and operator), and the labels a run puts on edges; from
+  80%, everything, the ports' names, the type under a node, its badges and
+  the bits a wire carries. The diagram's svg carries `detail-far`,
+  `detail-mid` or `detail-near` (`DetailGraphView`, `zoom-detail.ts`) and
+  the stylesheet hides the rest with `display: none`, so the browser
+  neither lays out nor paints it on an overview. Only the diagram on
+  screen: the hidden render the client measures sizes in draws everything,
+  and an SVG export lifts the class while it copies, so a file always
+  carries all the text.
+
 - **Any symbol can have a caption.** A producer can name what is written
   under a symbol node (`meta.caption`), as hdl-sidecar now does for an
   instance of a library cell it draws as a register or a mux (the

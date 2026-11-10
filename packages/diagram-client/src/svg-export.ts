@@ -16,6 +16,8 @@
  * image viewer, Inkscape or a diff.
  */
 
+import { withFullDetail } from './zoom-detail';
+
 /**
  * Properties that decide how an SVG element looks. Copied from the computed style.
  *
@@ -520,6 +522,11 @@ export function renderedDiagram(): { svgRoot: SVGSVGElement; graph: SVGGraphicsE
  * mlir-viewer, whose export is one node at the zoom it was looked at.
  */
 export function extractSvg(el: SVGGraphicsElement, label: string, atScaleOne = true): ExtractedSvg | undefined {
+    // A file has no zoom: it carries all the text, whatever the view draws now.
+    return withFullDetail(el.ownerSVGElement, () => extractDrawn(el, label, atScaleOne));
+}
+
+function extractDrawn(el: SVGGraphicsElement, label: string, atScaleOne: boolean): ExtractedSvg | undefined {
     const svgRoot = el.ownerSVGElement;
     if (!svgRoot) {
         return undefined;

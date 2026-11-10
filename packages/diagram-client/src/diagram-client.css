@@ -3446,3 +3446,34 @@ details[open] > summary .agent-chat-expand-arrow {
     stroke-opacity: 0.6;
     pointer-events: none;
 }
+
+/* Level of detail (zoom-detail.ts): how much text the diagram draws at the
+   zoom it is looked at. The root svg carries `detail-far`, `detail-mid` or
+   `detail-near`; only the diagram on screen does, so the hidden render the
+   client measures in, and an export, draw everything.
+
+   Far: no text on the nodes. A group frame keeps its title. */
+.detail-far .header-label,
+.detail-far .sprotty-label,
+.detail-far .boundary-name,
+.detail-far .structure-if-header,
+.detail-far .structure-foreach-header,
+.detail-far .symbol-operator,
+.detail-far .edge-open-label,
+.detail-far .edge-queue-label,
+.detail-far .edge-carried-label,
+/* Far and mid: a node's name only. The ports' names, the type under a node
+   (but a symbol's caption, which is its name), its badges, how many a port
+   takes, the bits a wire carries. */
+.detail-far .port-label,
+.detail-far .type-footer-label,
+.detail-far .header-badge,
+.detail-far .multiplicity-badge,
+.detail-far .cal-edge-index-label,
+.detail-mid .port-label,
+.detail-mid .type-footer-label:not(.symbol-caption),
+.detail-mid .header-badge,
+.detail-mid .multiplicity-badge,
+.detail-mid .cal-edge-index-label {
+    display: none;
+}

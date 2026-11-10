@@ -226,7 +226,7 @@
         "model": "GGraph",
         "op": "modelElement",
         "typeId": "graph",
-        "view": "GGraphView"
+        "view": "DetailGraphView"
     },
     {
         "model": "GIssueMarker",
