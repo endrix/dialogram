@@ -61,9 +61,11 @@ describe('the text each level hides', () => {
     const block = css.slice(css.indexOf('/* Level of detail (zoom-detail.ts)'));
     // The classes a level hides outright: a compound selector (`.header-label.label-type`,
     // `:not(...)`) hides only some of them, and is not counted.
+    const rules = (level: keyof typeof DETAIL_CLASSES) =>
+        [...block.matchAll(new RegExp(`\\.${DETAIL_CLASSES[level]} ([a-z]*)\\.([a-z-]+)([.:][^\\s,{]*)?`, 'g'))]
+            .map(m => ({ element: m[1], name: m[2], compound: !!m[3] }));
     const hiddenAt = (level: keyof typeof DETAIL_CLASSES): Set<string> =>
-        new Set([...block.matchAll(new RegExp(`\\.${DETAIL_CLASSES[level]} \\.([a-z-]+)([.:][^\\s,{]*)?`, 'g'))]
-            .filter(m => !m[2]).map(m => m[1]));
+        new Set(rules(level).filter(rule => !rule.compound).map(rule => rule.name));
     const far = hiddenAt('far');
     const mid = hiddenAt('mid');
 
@@ -99,8 +101,24 @@ describe('the text each level hides', () => {
         }
         // A symbol's caption is its name: the type-footer rule spares it; a
         // structure's condition line is detail, its name is not.
-        expect(block).toMatch(/\.detail-mid \.type-footer-label:not\(\.symbol-caption\)/);
-        expect(block).toMatch(/\.detail-mid \.header-label\.label-type/);
+        expect(block).toMatch(/\.detail-mid text\.type-footer-label:not\(\.symbol-caption\)/);
+        expect(block).toMatch(/\.detail-mid text\.header-label\.label-type/);
+    });
+
+    it('names the element each rule hides, so no node is hidden for a class of the same name', () => {
+        // A node's own group carries `symbol-<kind>` (an operator symbol is
+        // `symbol-operator`, the class of its operator's text) and a label's
+        // group its model's classes (`port-label`): an unqualified rule hid
+        // whole nodes far out.
+        expect(source('views.ts')).toMatch(/\[`symbol-\$\{symbol\}`\]: true/);
+        for (const level of ['far', 'mid'] as const) {
+            for (const rule of rules(level)) {
+                const product = Object.values(ZOOM_TEXT_CLASSES).includes(rule.name as never);
+                expect(product || rule.element === 'text' || rule.element === 'g', `.${DETAIL_CLASSES[level]} ${rule.element}.${rule.name}`).toBe(true);
+            }
+        }
+        const groups = [...rules('far'), ...rules('mid')].filter(rule => rule.element === 'g').map(rule => rule.name);
+        expect(new Set(groups)).toEqual(new Set(['edge-open-button', 'edge-queue-badge', 'header-badge']));
     });
 
     it('takes the classes a product tags its own text with', () => {

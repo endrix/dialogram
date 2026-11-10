@@ -3454,35 +3454,40 @@ details[open] > summary .agent-chat-expand-arrow {
    its own views draw `zoom-name` (drawn from the middle level) or
    `zoom-detail` (drawn only close in).
 
+   Every rule names the element it hides, `text` or the `g` of a pill: a
+   node's own group carries classes of the same names (an operator symbol is
+   `symbol-operator`, a label's group its model's `port-label`), and an
+   unqualified rule hid whole nodes.
+
    Far: no text on the nodes, nor the pills a run puts on edges (whole, or
    they would be empty). A group frame keeps its title. */
-.detail-far .header-label,
-.detail-far .sprotty-label,
-.detail-far .boundary-name,
-.detail-far .structure-if-header,
-.detail-far .structure-foreach-header,
-.detail-far .symbol-operator,
-.detail-far .edge-open-button,
-.detail-far .edge-queue-badge,
+.detail-far text.header-label,
+.detail-far text.sprotty-label,
+.detail-far text.boundary-name,
+.detail-far text.structure-if-header,
+.detail-far text.structure-foreach-header,
+.detail-far text.symbol-operator,
+.detail-far g.edge-open-button,
+.detail-far g.edge-queue-badge,
 .detail-far .zoom-name,
 /* Far and mid: a node's name only. The ports' names, the type under a node
    (but a symbol's caption, which is its name) and a structure's condition
    line, its badges, how many a port takes, what a wire carries and its
    bits. */
-.detail-far .port-label,
-.detail-far .type-footer-label,
-.detail-far .header-badge,
-.detail-far .multiplicity-badge,
-.detail-far .edge-carried-label,
-.detail-far .cal-edge-index-label,
+.detail-far text.port-label,
+.detail-far text.type-footer-label,
+.detail-far g.header-badge,
+.detail-far text.multiplicity-badge,
+.detail-far text.edge-carried-label,
+.detail-far text.cal-edge-index-label,
 .detail-far .zoom-detail,
-.detail-mid .port-label,
-.detail-mid .type-footer-label:not(.symbol-caption),
-.detail-mid .header-label.label-type,
-.detail-mid .header-badge,
-.detail-mid .multiplicity-badge,
-.detail-mid .edge-carried-label,
-.detail-mid .cal-edge-index-label,
+.detail-mid text.port-label,
+.detail-mid text.type-footer-label:not(.symbol-caption),
+.detail-mid text.header-label.label-type,
+.detail-mid g.header-badge,
+.detail-mid text.multiplicity-badge,
+.detail-mid text.edge-carried-label,
+.detail-mid text.cal-edge-index-label,
 .detail-mid .zoom-detail {
     display: none;
 }
