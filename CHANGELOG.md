@@ -253,6 +253,12 @@ it no longer has.
 
 ### Changed
 
+- **A bus's toggle is a smaller dot.** The `+`/`−` dot of a bus port, and
+  the one beside a bundle of the unit's ports, is 10px across instead of
+  12px (`PORT_BUS_DOT_RADIUS_PX` 6 → 5), about the size of a port's own dot,
+  so it no longer stands out from the node's other ports. Its box, and so
+  where its edges end, shrinks with it.
+
 - **Ports are dots.** A node's port is drawn as a circle on the node's
   edge, ringed in the editor's background so the edge running into it stays
   apart from it, as a group frame's dots are, instead of a rounded square
