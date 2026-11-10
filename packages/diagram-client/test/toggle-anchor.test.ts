@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { TogglePortBusOperation, ToggleNodeOpenOperation, WorkflowDiagramMetadata } from '@dialogram/shared';
 import { ViewportAnimation } from '@eclipse-glsp/sprotty';
 import { ToggleAnchor, absolutePosition, anchoredScroll, toggledIn } from '../src/toggle-anchor';
-import { AnchoredUpdateModelCommand } from '../src/anchored-update-model-command';
+import { AnchoredUpdateModelCommand, carryAcross } from '../src/anchored-update-model-command';
 import { PORT_BUS_TOGGLE_ATTR, PortBusToggleMouseListener } from '../src/port-bus-toggle';
 import { NODE_OPEN_TOGGLE_ATTR, NodeOpenToggleMouseListener } from '../src/node-open-toggle';
 
@@ -73,26 +73,52 @@ describe('keeping a toggled node where it was on screen', () => {
         // Panned since the press: the model drawn now says where the bus is, and the view's scroll.
         const drawn = root({ x: 100, y: 40 }, false, { x: 50, y: 50 });
         expect(a.take(root({ x: 100, y: 40 }, false), drawn)).toBeUndefined();
-        expect(a.take(root({ x: 400, y: 40 }, true), drawn)).toEqual({ x: 350, y: 50 });
+        expect(a.take(root({ x: 400, y: 40 }, true), drawn)).toEqual({
+            scroll: { x: 350, y: 50 }, from: { x: 195, y: 70 }, to: { x: 495, y: 70 }, pressed: 'u_prod_bus_m', id: 'u_prod_bus_m'
+        });
         expect(a.take(root({ x: 900, y: 40 }, false), drawn)).toBeUndefined();
     });
 
     it('scrolls in the animation that moves the nodes, or at once when the update is not animated', () => {
-        const anchored = { x: 350, y: 50 };
+        const scroll = { x: 350, y: 50 };
+        const anchored = { scroll, from: { x: 0, y: 0 }, to: { x: 175, y: 25 }, pressed: 'p', id: 'p' };
         const command: any = new AnchoredUpdateModelCommand({ kind: 'updateModel', animate: false } as any);
         command.anchor = { take: () => anchored };
         const newRoot: any = { id: 'graph', type: 'graph', scroll: { x: 0, y: 0 }, zoom: 2 };
         expect(command.performUpdate({ id: 'graph', type: 'graph', scroll: { x: 0, y: 0 }, zoom: 2 }, newRoot, {})).toBe(newRoot);
-        expect(newRoot.scroll).toEqual(anchored);
+        expect(newRoot.scroll).toEqual(scroll);
 
         const animated: any = new AnchoredUpdateModelCommand({ kind: 'updateModel' } as any);
         animated.anchored = anchored;
         const viewport: any = { scroll: { x: 0, y: 0 }, zoom: 2 };
-        const animations = animated.createAnimations({ fades: [] }, viewport, { duration: 250, syncer: {} });
+        const data: any = { fades: [] };
+        const animations = animated.createAnimations(data, viewport, { duration: 250, syncer: {} });
+        // The bus pressed is the bus drawn: the update's own moves carry it, nothing is added.
+        expect(data.moves).toBeUndefined();
         const pan = animations.find((x: unknown) => x instanceof ViewportAnimation);
         expect(pan).toBeDefined();
-        expect(pan.newViewport).toEqual({ scroll: anchored, zoom: 2 });
+        expect(pan.newViewport).toEqual({ scroll, zoom: 2 });
         expect(pan.oldViewport).toEqual({ scroll: { x: 0, y: 0 }, zoom: 2 });
+    });
+
+    it('slides the frame a node opened into from where the node was, and the node fading out to where the frame goes', () => {
+        // In a group that the layout moves from (100, 0) to (300, 0).
+        const graph: any = { id: 'graph', children: [] };
+        const group: any = { id: 'g', parent: graph, position: { x: 100, y: 0 }, children: [] };
+        const frame: any = { id: 'scope:open:p', parent: group, position: { x: 50, y: 400 } };
+        const node: any = { id: 'p', parent: group, position: { x: 50, y: 20 } };
+        group.children.push(frame, node);
+        const byId = new Map([[graph.id, graph], [group.id, group], [frame.id, frame], [node.id, node]]);
+        graph.index = { getById: (id: string) => byId.get(id) };
+        // The group stands at its old place, its move to come.
+        const data: any = { fades: [], moves: [{ element: group, fromPosition: { x: 100, y: 0 }, toPosition: { x: 300, y: 0 } }] };
+        const from = { x: 150, y: 20 };
+        const to = { x: 350, y: 400 };
+        carryAcross(data, graph, { scroll: { x: 0, y: 0 }, from, to, pressed: 'p', id: 'scope:open:p' });
+        const move = (element: unknown) => data.moves.find((m: any) => m.element === element);
+        expect(move(frame)).toEqual({ element: frame, fromPosition: { x: 50, y: 20 }, toPosition: { x: 50, y: 400 } });
+        expect(frame.position).toEqual({ x: 50, y: 20 });
+        expect(move(node)).toEqual({ element: node, fromPosition: { x: 50, y: 20 }, toPosition: { x: 50, y: 400 } });
     });
 
     it('follows a node into the frame it opened into, and a frame back into its node', () => {

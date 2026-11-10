@@ -22,6 +22,18 @@ export type Point = { x: number; y: number };
 /** How long a press waits for the model it asked for. A large view takes a while to lay out. */
 export const TOGGLE_ANCHOR_TIMEOUT_MS = 60_000;
 
+/** What a toggle's answer does to the view: where the element pressed was and goes, and the scroll that keeps it still. */
+export interface Anchored {
+    /** The view's scroll that keeps it where it was on screen. */
+    scroll: Point;
+    /** Where it was and where it goes, in diagram coordinates. */
+    from: Point;
+    to: Point;
+    /** The element pressed, and the one it is now: another when a node opened into its frame or a frame closed. */
+    pressed: string;
+    id: string;
+}
+
 /** A toggle pressed: the element it names, where it was, and what it was. */
 interface Pending {
     id: string;
@@ -117,7 +129,7 @@ export class ToggleAnchor {
      * drawn now, when there is one; else the press's own record is the
      * place, and `newRoot`'s scroll the view's.
      */
-    take(newRoot: any, oldRoot?: any): Point | undefined {
+    take(newRoot: any, oldRoot?: any): Anchored | undefined {
         const pending = this.pending;
         if (!pending) {
             return undefined;
@@ -143,12 +155,12 @@ export class ToggleAnchor {
         if (Math.abs(to.x - from.x) < 0.5 && Math.abs(to.y - from.y) < 0.5) {
             return undefined;
         }
-        return anchoredScroll(scroll, from, to);
+        return { scroll: anchoredScroll(scroll, from, to), from, to, pressed: pending.id, id: String(element.id) };
     }
 
     /** A model that came whole (`SetModelAction`): scrolled once it is drawn. An update has been taken already. */
     modelRootChanged(root: any): void {
-        const next = this.take(root);
+        const next = this.take(root)?.scroll;
         const zoom = root?.zoom;
         if (!next || typeof zoom !== 'number') {
             return;
