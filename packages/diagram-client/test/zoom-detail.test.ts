@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { DETAIL_CLASSES, DETAIL_ZOOM, NAME_ZOOM, detailLevel, markDetail, withFullDetail } from '../src/zoom-detail';
+import { DETAIL_CLASSES, DETAIL_ZOOM, NAME_ZOOM, ZOOM_TEXT_CLASSES, detailLevel, markDetail, withFullDetail } from '../src/zoom-detail';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const source = (name: string): string => readFileSync(path.resolve(here, '../src', name), 'utf8');
@@ -59,8 +59,11 @@ describe('the level of detail', () => {
 describe('the text each level hides', () => {
     const css = source('diagram-client.css');
     const block = css.slice(css.indexOf('/* Level of detail (zoom-detail.ts)'));
+    // The classes a level hides outright: a compound selector (`.header-label.label-type`,
+    // `:not(...)`) hides only some of them, and is not counted.
     const hiddenAt = (level: keyof typeof DETAIL_CLASSES): Set<string> =>
-        new Set([...block.matchAll(new RegExp(`\\.${DETAIL_CLASSES[level]} \\.([a-z-]+)`, 'g'))].map(m => m[1]));
+        new Set([...block.matchAll(new RegExp(`\\.${DETAIL_CLASSES[level]} \\.([a-z-]+)([.:][^\\s,{]*)?`, 'g'))]
+            .filter(m => !m[2]).map(m => m[1]));
     const far = hiddenAt('far');
     const mid = hiddenAt('mid');
 
@@ -72,7 +75,11 @@ describe('the text each level hides', () => {
     // A group's frame keeps its title far out: the structure of the view.
     const ALWAYS = new Set(['group-label']);
     // Text hidden with the group it is drawn in.
-    const INSIDE: Record<string, string> = { 'header-badge-text': 'header-badge' };
+    const INSIDE: Record<string, string> = {
+        'header-badge-text': 'header-badge',
+        'edge-open-label': 'edge-open-button',
+        'edge-queue-label': 'edge-queue-badge'
+    };
 
     it('far out: every text a node draws, and nothing a frame needs', () => {
         expect(drawn.length).toBeGreaterThan(10);
@@ -84,14 +91,23 @@ describe('the text each level hides', () => {
     });
 
     it('in between: the ports’ names and the rest, but not a node’s name', () => {
-        for (const detail of ['port-label', 'type-footer-label', 'header-badge', 'multiplicity-badge', 'cal-edge-index-label']) {
+        for (const detail of ['port-label', 'header-badge', 'multiplicity-badge', 'edge-carried-label', 'cal-edge-index-label', 'zoom-detail']) {
             expect(mid.has(detail), detail).toBe(true);
         }
-        for (const name of ['header-label', 'sprotty-label', 'boundary-name', 'symbol-operator', 'symbol-caption', 'edge-queue-label']) {
+        for (const name of ['header-label', 'sprotty-label', 'boundary-name', 'symbol-operator', 'symbol-caption', 'edge-queue-badge', 'zoom-name']) {
             expect(mid.has(name), name).toBe(false);
         }
-        // A symbol's caption is its name: the type-footer rule spares it.
+        // A symbol's caption is its name: the type-footer rule spares it; a
+        // structure's condition line is detail, its name is not.
         expect(block).toMatch(/\.detail-mid \.type-footer-label:not\(\.symbol-caption\)/);
+        expect(block).toMatch(/\.detail-mid \.header-label\.label-type/);
+    });
+
+    it('takes the classes a product tags its own text with', () => {
+        expect(far.has(ZOOM_TEXT_CLASSES.name)).toBe(true);
+        expect(far.has(ZOOM_TEXT_CLASSES.detail)).toBe(true);
+        expect(mid.has(ZOOM_TEXT_CLASSES.detail)).toBe(true);
+        expect(mid.has(ZOOM_TEXT_CLASSES.name)).toBe(false);
     });
 
     it('is decided by the root view the stock diagram draws its graph with', () => {

@@ -9,10 +9,14 @@
  *   ports and wires (a group's frame keeps its title, the structure of the
  *   view);
  * - `mid`, up to {@link DETAIL_ZOOM}: each node's name (its header, a
- *   boundary's name, a symbol's caption and operator) and the labels a run
- *   puts on the edges;
+ *   boundary's name, a symbol's caption and operator) and the pills a run
+ *   puts on the edges (a queue's depth, the open button);
  * - `near`, from {@link DETAIL_ZOOM}: everything, the ports' names, the type
- *   under a node, its badges, the bits a wire carries.
+ *   under a node and a structure's condition line, its badges, what a wire
+ *   carries and its bits.
+ *
+ * Text a product's own views draw is tagged {@link ZOOM_TEXT_CLASSES}: a
+ * name `zoom-name`, a detail `zoom-detail`.
  *
  * The root says which (`detail-far`, `detail-mid`, `detail-near` on the
  * diagram's svg, from `DetailGraphView`) and the stylesheet hides the rest
@@ -30,6 +34,17 @@ export const NAME_ZOOM = 0.5;
 export const DETAIL_ZOOM = 0.8;
 
 export type DetailLevel = 'far' | 'mid' | 'near';
+
+/**
+ * The classes a product puts on text its own views draw: `name`, drawn from
+ * {@link NAME_ZOOM} (what a node is called); `detail`, drawn only from
+ * {@link DETAIL_ZOOM} (an expression, a reset value, anything a reader
+ * zooms in for).
+ */
+export const ZOOM_TEXT_CLASSES = {
+    name: 'zoom-name',
+    detail: 'zoom-detail'
+} as const;
 
 /** The classes the diagram's svg carries, one per level. */
 export const DETAIL_CLASSES: Readonly<Record<DetailLevel, string>> = {

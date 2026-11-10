@@ -119,3 +119,6 @@ export {
 } from './profile';
 export { renderMarkdownSafe, renderDocumentMarkdownSafe, looksLikeMarkdown } from './markdown';
 export { isBlock, looksLikeDiff, parseEmbedded, formatAgentOutputs } from './agent-outputs';
+// How much text the diagram draws at a zoom, and the classes a product's own
+// text is tagged with to follow it (zoom-detail.ts).
+export { DETAIL_ZOOM, NAME_ZOOM, ZOOM_TEXT_CLASSES, detailLevel, type DetailLevel } from './zoom-detail';
