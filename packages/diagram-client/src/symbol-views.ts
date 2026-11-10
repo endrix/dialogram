@@ -16,12 +16,20 @@ import type { VNode } from 'snabbdom';
 export interface SymbolPins {
     west: number[];
     east: number[];
+    /**
+     * Where each output's wire begins, in the node's x, beside `east`: the
+     * outer rim of its port's box, which sits across the node's border. Its
+     * stub runs out to it, so the wire leaves the symbol without a break.
+     * An input's needs none: the wire's arrowhead reaches the border.
+     */
+    eastEnds?: number[];
 }
 
-/** The y of each pin of a node's children, by side: the middle of each port's box. */
+/** The y of each pin of a node's children, by side: the middle of each port's box; and where each output's wire begins. */
 export function symbolPinsOf(children: readonly unknown[], width: number): SymbolPins {
     const west: number[] = [];
     const east: number[] = [];
+    const eastEnds: number[] = [];
     for (const child of children) {
         const c = child as { type?: string; position?: { x: number; y: number }; size?: { width: number; height: number } };
         if (typeof c.type !== 'string' || !c.type.startsWith('port') || !c.position) {
@@ -30,9 +38,14 @@ export function symbolPinsOf(children: readonly unknown[], width: number): Symbo
         const h = c.size?.height ?? 0;
         const w = c.size?.width ?? 0;
         const y = c.position.y + h / 2;
-        (c.position.x + w / 2 < width / 2 ? west : east).push(y);
+        if (c.position.x + w / 2 < width / 2) {
+            west.push(y);
+        } else {
+            east.push(y);
+            eastEnds.push(Math.max(width, c.position.x + w));
+        }
     }
-    return { west, east };
+    return { west, east, eastEnds };
 }
 
 /** The body's outline, for the kinds drawn as one closed shape. */
@@ -102,18 +115,22 @@ export function renderSymbolBody(
             attrs: { d: `M ${stub} ${y - 5} L ${stub + 7} ${y} L ${stub} ${y + 5}` }
         }));
     }
+    // The stubs carry the wires on into the symbol, as wide as a wire. An
+    // input's starts at the border, where the wire's arrowhead points (its
+    // tip is drawn 4px past the end of the line, onto the border); an
+    // output's runs out to where its wire begins, the port's outer rim.
     for (const y of pins.west) {
         out.push(svg('line', {
             class: { 'symbol-stub': true },
             attrs: { x1: 0, y1: y, x2: SymbolGeometry.backX(kind, height, y), y2: y }
         }));
     }
-    for (const y of pins.east) {
+    pins.east.forEach((y, k) => {
         out.push(svg('line', {
             class: { 'symbol-stub': true },
-            attrs: { x1: SymbolGeometry.frontX(kind, width, height, y), y1: y, x2: width, y2: y }
+            attrs: { x1: SymbolGeometry.frontX(kind, width, height, y), y1: y, x2: pins.eastEnds?.[k] ?? width, y2: y }
         }));
-    }
+    });
     if (kind === 'operator' && operator) {
         out.push(svg('text', {
             class: { 'symbol-operator': true },

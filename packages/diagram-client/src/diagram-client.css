@@ -906,12 +906,22 @@ body.vscode-high-contrast-light .node-center-image-light {
     stroke-linejoin: round;
 }
 
-.symbol-node .symbol-line,
-.symbol-node .symbol-stub {
+.symbol-node .symbol-line {
     fill: none;
     stroke: var(--vscode-foreground, #cccccc);
     stroke-width: 1.5px;
     stroke-linecap: round;
+}
+
+/* A pin's stub carries the wire on into the symbol: as wide as a wire, out
+   to where it begins (symbol-views.ts). Square ends, so it meets the wire
+   flush and leaves an input's arrowhead its point. It is the symbol's, in
+   the symbol's colour: a selected wire's ends at the pin. */
+.symbol-node .symbol-stub {
+    fill: none;
+    stroke: var(--vscode-foreground, #cccccc);
+    stroke-width: var(--workflow-edge-width, 3.5px);
+    stroke-linecap: butt;
 }
 
 .symbol-node.selected .symbol-body {
@@ -1016,9 +1026,12 @@ body.vscode-high-contrast-light .node-center-image-light {
     color: var(--vscode-foreground, #cccccc);
 }
 
+/* A wire's width is `--workflow-edge-width` (3.5px): a product sets it to
+   draw wires otherwise, and a symbol's pin stubs, the wires' last stretch,
+   follow it. */
 .workflow-edge .edge-line {
     stroke: currentColor;
-    stroke-width: 3.5px;
+    stroke-width: var(--workflow-edge-width, 3.5px);
     /* Continuous solid line (not dashed); rounded joins for smooth corners. */
     stroke-dasharray: none;
     stroke-linecap: round;
@@ -1033,17 +1046,17 @@ body.vscode-high-contrast-light .node-center-image-light {
 
 .workflow-edge.edge-has-last-token:not(.selected):not(.hover) {
     color: var(--workflow-edge-last-token, #2aa198);
-    stroke-width: 3.5px;
+    stroke-width: var(--workflow-edge-width, 3.5px);
 }
 
 .workflow-edge.selected {
     color: var(--vscode-focusBorder, #007fd4);
-    stroke-width: 3.5px;
+    stroke-width: var(--workflow-edge-width, 3.5px);
 }
 
 .workflow-edge.hover {
     color: var(--vscode-list-highlightForeground, #18a3ff);
-    stroke-width: 3.5px;
+    stroke-width: var(--workflow-edge-width, 3.5px);
 }
 
 /* The base GLSP rules `.sprotty-edge.selected path` and `.sprotty-edge.mouseover:not(.selected)
@@ -1054,7 +1067,7 @@ body.vscode-high-contrast-light .node-center-image-light {
 .workflow-edge.selected .edge-line,
 .workflow-edge.hover:not(.selected) .edge-line,
 .workflow-edge.mouseover:not(.selected) .edge-line {
-    stroke-width: 3.5px;
+    stroke-width: var(--workflow-edge-width, 3.5px);
 }
 
 .workflow-edge .edge-arrow {

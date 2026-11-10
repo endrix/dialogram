@@ -269,6 +269,17 @@ it no longer has.
 
 ### Changed
 
+- **A symbol's pins are drawn as wide as the wires.** The short stub from
+  a gate's, operator's or register's body to each pin was a 1.5px line
+  stopping at the node's edge, half a port short of where the wire ends:
+  a thick wire narrowed into a thin one with a gap on the way out. The
+  stubs are now as wide as a wire, with square ends: an input's from the
+  border its wire's arrowhead points at, an output's out to its port's
+  outer rim, where its wire begins (`SymbolPins.eastEnds`), so the wire
+  goes on into the symbol unbroken. They stay the symbol's colour. A
+  wire's width is one variable, `--workflow-edge-width` (3.5px), which the
+  edges and the stubs both read.
+
 - **Opening or closing a bus, or a node in place, lays the view out
   again.** The node changes size and which ports it has, and a layout made
   for the old one no longer fits: pushing the nodes under it down and
