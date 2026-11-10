@@ -471,6 +471,13 @@ it no longer has.
 
 ### Fixed
 
+- **Zoomed out, an operator symbol no longer disappears.** The rules that
+  hide text by zoom named classes alone, and a node's own group carries
+  classes of the same names: an operator symbol's is `symbol-operator`,
+  the class of its operator's text, so the whole node was hidden below
+  50%. Every rule now names the element it hides (`text`, or the `g` of a
+  badge or an edge's pill), and a test keeps it so.
+
 - **A product's node families reach the editor.** A sidecar profile's
   `nodeFamilies` went to the server, which classes the nodes, but not to
   the client, which draws a family's mark and colour from
