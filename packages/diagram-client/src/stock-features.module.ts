@@ -10,7 +10,7 @@
  * the neutral base and (optionally) the stock views by `createDiagramContainer`.
  */
 import { ContainerModule } from 'inversify';
-import { ChangeBoundsTool, TYPES, bindAsService, configureActionHandler } from '@eclipse-glsp/client';
+import { ChangeBoundsTool, FeedbackAwareUpdateModelCommand, TYPES, bindAsService, configureActionHandler } from '@eclipse-glsp/client';
 import { MoveAction } from '@eclipse-glsp/sprotty';
 import { PropertyPanel } from './property-panel';
 import { ChatPanel } from './chat-panel-integrated';
@@ -22,6 +22,7 @@ import { EdgeOpenMouseListener } from './edge-open-mouse-listener';
 import { PortBusToggleMouseListener } from './port-bus-toggle';
 import { NodeOpenToggleMouseListener } from './node-open-toggle';
 import { ToggleAnchor } from './toggle-anchor';
+import { AnchoredUpdateModelCommand } from './anchored-update-model-command';
 import { WhitespaceRootPropertiesMouseListener } from './whitespace-root-properties-mouse-listener';
 import { WorkflowElkLiveDragRouter } from './elk-live-drag-router';
 import { WorkflowChangeBoundsTool } from './change-bounds-drag-threshold';
@@ -129,6 +130,14 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     // where it was on screen.
     bind(ToggleAnchor).toSelf().inSingletonScope();
     bind(TYPES.IGModelRootListener).toService(ToggleAnchor);
+    // GLSP's update command, bound by its default module. A container built
+    // without GLSP's defaults (a module test) has no update to replace, and
+    // the binding there is never asked for.
+    if (isBound(FeedbackAwareUpdateModelCommand)) {
+        rebind(FeedbackAwareUpdateModelCommand).to(AnchoredUpdateModelCommand);
+    } else {
+        bind(FeedbackAwareUpdateModelCommand).to(AnchoredUpdateModelCommand);
+    }
     bindAsService(context, TYPES.MouseListener, PortBusToggleMouseListener);
     bindAsService(context, TYPES.MouseListener, NodeOpenToggleMouseListener);
 

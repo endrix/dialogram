@@ -6,13 +6,18 @@
  * anywhere in the diagram. When the new model comes in, the view is scrolled
  * by however far the toggle moved: it stands where it stood, under the
  * pointer that pressed it, and the rest of the diagram moves around it.
+ *
+ * The update that carries the new model moves the nodes in an animation; the
+ * scroll is a step of the same animation (`AnchoredUpdateModelCommand`), so
+ * the node pressed stays still while the rest slides. A model that comes as a
+ * whole new one (`SetModelAction`) is scrolled after it is drawn.
  */
 import { inject, injectable } from 'inversify';
 import { TYPES, type IActionDispatcher } from '@eclipse-glsp/client';
 import { SetViewportAction } from '@eclipse-glsp/protocol';
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
 
-type Point = { x: number; y: number };
+export type Point = { x: number; y: number };
 
 /** How long a press waits for the model it asked for. A large view takes a while to lay out. */
 export const TOGGLE_ANCHOR_TIMEOUT_MS = 60_000;
@@ -104,32 +109,50 @@ export class ToggleAnchor {
         };
     }
 
-    modelRootChanged(root: any): void {
+    /**
+     * The scroll that keeps the element pressed where it is on screen, when
+     * `newRoot` is the model the toggle asked for (the bus opened or closed,
+     * the node opened into its frame or closed back); nothing otherwise, nor
+     * when it did not move. Taking it ends the wait. `oldRoot` is the model
+     * drawn now, when there is one; else the press's own record is the
+     * place, and `newRoot`'s scroll the view's.
+     */
+    take(newRoot: any, oldRoot?: any): Point | undefined {
         const pending = this.pending;
         if (!pending) {
-            return;
+            return undefined;
         }
         if (Date.now() - pending.since > TOGGLE_ANCHOR_TIMEOUT_MS) {
             this.pending = undefined;
-            return;
+            return undefined;
         }
-        const element = toggledIn(root, pending);
+        const element = toggledIn(newRoot, pending);
         // Not the model the toggle asked for yet (a status update, a run):
         // keep waiting for the one where the bus or the node changed.
         if (!element || stateOf(element) === pending.state) {
-            return;
+            return undefined;
         }
         this.pending = undefined;
-        const scroll = root?.scroll;
-        const zoom = root?.zoom;
-        if (!scroll || typeof zoom !== 'number') {
-            return;
+        const scroll = (oldRoot ?? newRoot)?.scroll;
+        if (!scroll) {
+            return undefined;
         }
+        const before = oldRoot?.index?.getById?.(pending.id);
+        const from = before ? absolutePosition(before) : pending.at;
         const to = absolutePosition(element);
-        if (Math.abs(to.x - pending.at.x) < 0.5 && Math.abs(to.y - pending.at.y) < 0.5) {
+        if (Math.abs(to.x - from.x) < 0.5 && Math.abs(to.y - from.y) < 0.5) {
+            return undefined;
+        }
+        return anchoredScroll(scroll, from, to);
+    }
+
+    /** A model that came whole (`SetModelAction`): scrolled once it is drawn. An update has been taken already. */
+    modelRootChanged(root: any): void {
+        const next = this.take(root);
+        const zoom = root?.zoom;
+        if (!next || typeof zoom !== 'number') {
             return;
         }
-        const next = anchoredScroll(scroll, pending.at, to);
         // After the view has rendered the new model.
         setTimeout(() => {
             void this.dispatcher.dispatch(SetViewportAction.create(root.id, { scroll: next, zoom }, { animate: true }) as never);

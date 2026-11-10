@@ -197,22 +197,37 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
 
     /**
      * After a rebuild: the whole view laid out again, as Layout Diagram lays
-     * it out, or, given the layout it had (an undo, a redo), that one kept;
-     * saved either way. The view counts as laid out, so the bounds round trip
-     * that follows neither lays it out again nor parks the nodes it did not
-     * have before (a bundle's boundary members, a frame's) below the rest.
+     * it out, or, given the layout it had (an undo, a redo), that one kept,
+     * if it still fits the model: a node it does not place (a source edit
+     * since, a filter changed) and the view is laid out instead. Saved either
+     * way. The view counts as laid out, so the bounds round trip that follows
+     * neither lays it out again nor parks the nodes it did not have before (a
+     * bundle's boundary members, a frame's) below the rest.
+     *
+     * `false` when the layout failed (ELK refused, timed out): it cleared the
+     * routes first, so the caller builds the view again and makes room.
      */
-    async layOut(restored: boolean): Promise<void> {
-        if (restored) {
+    async layOut(restored: boolean): Promise<boolean> {
+        const meta = (): LayoutPersistenceMeta | undefined =>
+            this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as LayoutPersistenceMeta | undefined;
+        const before = meta();
+        const fits = before === undefined || (before.hasPersistedLayout && (before.unpositionedNodeCount ?? 0) === 0);
+        if (restored && fits) {
             await persistLayout(this.modelState, this.layoutPersistence, { layoutPerformed: true });
         } else {
-            await this.layoutHandler!.runLayout({ kind: WORKFLOW_LAYOUT_BOUNDARY_FLOW_OPERATION_KIND, isOperation: true });
+            try {
+                await this.layoutHandler!.runLayout({ kind: WORKFLOW_LAYOUT_BOUNDARY_FLOW_OPERATION_KIND, isOperation: true });
+            } catch (error) {
+                console.error('[dialogram] the layout after a toggle failed; making room instead:', error);
+                return false;
+            }
         }
-        const meta = this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as LayoutPersistenceMeta | undefined;
-        if (meta) {
-            meta.didInitialLayout = true;
-            this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, meta);
+        const after = meta();
+        if (after) {
+            after.didInitialLayout = true;
+            this.modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, after);
         }
+        return true;
     }
 
     override createCommand(operation: Operation): MaybePromise<Command | undefined> {
@@ -344,12 +359,6 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
             positions: collectNodePositions(this.modelState.root),
             routes: collectEdgeRoutes(this.modelState.root)
         };
-        if (restore || this.relaysOut()) {
-            if (await this.sourceModelStorage.rebuildFromLastDocument(restore ?? current)) {
-                await this.layOut(restore !== undefined);
-            }
-            return new Map();
-        }
         const oldHeights = this.heightsUpFrom(nodeId);
         // A bundle of the unit's ports opens into boundary nodes of their own:
         // the rebuild puts them in the rows under the bus (boundary-bus-positions.ts),
@@ -359,7 +368,16 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
         const boundaryMembers = boundaryBusMembersOf(this.modelState.index.find(nodeId));
         const rooms = roomMade.get(this.modelState) ?? new Map<string, NodeMoves>();
         roomMade.set(this.modelState, rooms);
-        if (!(await this.sourceModelStorage.rebuildFromLastDocument(current))) {
+        if (restore || this.relaysOut()) {
+            if (!(await this.sourceModelStorage.rebuildFromLastDocument(restore ?? current))) {
+                return new Map();
+            }
+            if (await this.layOut(restore !== undefined)) {
+                return new Map();
+            }
+            // The layout failed: built again, with the routes it cleared, and room made.
+        }
+        if (!(await this.sourceModelStorage.rebuildFromLastDocument(restore ?? current))) {
             return new Map();
         }
         const key = bundleKey(target);

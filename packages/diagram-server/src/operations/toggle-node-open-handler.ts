@@ -154,17 +154,20 @@ export class WorkflowToggleNodeOpenOperationHandler extends WorkflowTogglePortBu
             positions: collectNodePositions(this.modelState.root),
             routes: collectEdgeRoutes(this.modelState.root)
         };
-        if (restore || this.relaysOut()) {
-            if (await storage.rebuildFromLastDocument(restore ?? current)) {
-                await this.layOut(restore !== undefined);
-            }
-            return new Map();
-        }
         const oldHeights = this.heightsUpFrom(String(before.id));
         const oldHeight = before.size?.height;
         const rooms = roomMade.get(this.modelState) ?? new Map<string, NodeMoves>();
         roomMade.set(this.modelState, rooms);
-        if (!(await storage.rebuildFromLastDocument(current))) {
+        if (restore || this.relaysOut()) {
+            if (!(await storage.rebuildFromLastDocument(restore ?? current))) {
+                return new Map();
+            }
+            if (await this.layOut(restore !== undefined)) {
+                return new Map();
+            }
+            // The layout failed: built again, with the routes it cleared, and room made.
+        }
+        if (!(await storage.rebuildFromLastDocument(restore ?? current))) {
             return new Map();
         }
         const after = this.elementOf(target);

@@ -137,18 +137,34 @@ function diagram<H extends WorkflowTogglePortBusOperationHandler>(
             saved.push(new Map(at));
         }
     };
+    // As the storage's rebuild: the layout meta made anew, judging the
+    // positions it was given against the nodes the model has.
     (handler as any).sourceModelStorage = {
         rebuildFromLastDocument: async (current: any) => {
             rebuilds.push(new Map(current.positions));
             build(current.positions);
+            let unpositioned = 0;
+            const count = (element: any): void => {
+                const key = typeof element.type === 'string' && element.type.startsWith('node:') ? nodeLayoutKeyOf(element) : undefined;
+                if (key && !current.positions.has(key)) {
+                    unpositioned++;
+                }
+                (element.children ?? []).forEach(count);
+            };
+            count(state.root);
+            Object.assign(shared, { hasPersistedLayout: unpositioned === 0, unpositionedNodeCount: unpositioned, didInitialLayout: false });
             return true;
         }
     };
     const layouts: unknown[] = [];
+    let failing = false;
     // A layout: every top-level node 1000 to the right.
     (handler as any).layoutHandler = {
         runLayout: async (operation: unknown) => {
             layouts.push(operation);
+            if (failing) {
+                throw new Error('elk timed out');
+            }
             for (const child of state.root.children ?? []) {
                 if (isMovableNode(child) && child.position) {
                     child.position = { x: child.position.x + 1000, y: child.position.y };
@@ -162,11 +178,12 @@ function diagram<H extends WorkflowTogglePortBusOperationHandler>(
     (handler as any).storageOptions = options;
     const at = (id: string): Point | undefined => collectNodePositions(state.root).get(id);
     const find = (id: string): any => state.index!.find(id);
-    return { handler, at, find, layouts, rebuilds, saved, rerouted, shared, open: () => open };
+    const failLayout = (): void => { failing = true; };
+    return { handler, at, find, layouts, rebuilds, saved, rerouted, shared, failLayout, open: () => open };
 }
 
-const busDiagram = (options?: StorageRuntimeOptions) => {
-    const d = diagram(busDoc, new WorkflowTogglePortBusOperationHandler(), {
+const busDiagram = (options?: StorageRuntimeOptions, doc: PyGraphDocument = busDoc) => {
+    const d = diagram(doc, new WorkflowTogglePortBusOperationHandler(), {
         u_prod: { x: 0, y: 0 }, u_cons: { x: 0, y: 200 }, u_x: { x: 300, y: 0 }
     }, options);
     const command = (): TogglePortBusCommand =>
@@ -219,6 +236,34 @@ describe('a bus toggle lays the whole view out again', () => {
         expect({ cons: d.at('u_cons'), x: d.at('u_x'), prod: d.at('u_prod') }).toEqual(laidOut);
         expect(d.saved.at(-1)?.get('u_cons')).toEqual(laidOut.cons);
         expect(d.layouts).toHaveLength(1);
+    });
+
+    it('undo lays the view out instead when the layout it had no longer places every node', async () => {
+        // A source edit after the toggle adds a node the layout before it never had.
+        const doc = structuredClone(busDoc);
+        const d = busDiagram(undefined, doc);
+        const toggle = d.command();
+        await toggle.execute();
+        doc.graph.nodes.push(simple('u_new'));
+        await toggle.undo();
+        expect(d.expanded()).toBe(false);
+        expect(d.layouts).toHaveLength(2);
+        expect(d.shared.didInitialLayout).toBe(true);
+    });
+
+    it('a layout that fails leaves the view built again, with room made, and nothing thrown', async () => {
+        const d = busDiagram();
+        d.failLayout();
+        const under = { x: 0, y: d.find('u_prod').size.height + 20 };
+        d.find('u_cons').position = { ...under };
+        await d.command().execute();
+        expect(d.expanded()).toBe(true);
+        expect(d.layouts).toHaveLength(1);
+        // Built again from the positions drawn before, and the column under the bus pushed.
+        expect(d.rebuilds).toHaveLength(2);
+        expect(d.at('u_x')).toEqual({ x: 300, y: 0 });
+        expect(d.at('u_cons')!.y).toBeGreaterThan(under.y);
+        expect(d.rerouted).toHaveLength(1);
     });
 
     it('a product that asks to make room keeps every node and pushes the ones under it', async () => {

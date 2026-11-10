@@ -5,7 +5,9 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { TogglePortBusOperation, ToggleNodeOpenOperation, WorkflowDiagramMetadata } from '@dialogram/shared';
+import { ViewportAnimation } from '@eclipse-glsp/sprotty';
 import { ToggleAnchor, absolutePosition, anchoredScroll, toggledIn } from '../src/toggle-anchor';
+import { AnchoredUpdateModelCommand } from '../src/anchored-update-model-command';
 import { PORT_BUS_TOGGLE_ATTR, PortBusToggleMouseListener } from '../src/port-bus-toggle';
 import { NODE_OPEN_TOGGLE_ATTR, NodeOpenToggleMouseListener } from '../src/node-open-toggle';
 
@@ -63,6 +65,34 @@ describe('keeping a toggled node where it was on screen', () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+
+    it('measures from the model drawn now when it has one, and waits for the toggle’s answer', () => {
+        const { anchor: a } = anchor();
+        a.remember(root({ x: 100, y: 40 }, false), 'u_prod_bus_m');
+        // Panned since the press: the model drawn now says where the bus is, and the view's scroll.
+        const drawn = root({ x: 100, y: 40 }, false, { x: 50, y: 50 });
+        expect(a.take(root({ x: 100, y: 40 }, false), drawn)).toBeUndefined();
+        expect(a.take(root({ x: 400, y: 40 }, true), drawn)).toEqual({ x: 350, y: 50 });
+        expect(a.take(root({ x: 900, y: 40 }, false), drawn)).toBeUndefined();
+    });
+
+    it('scrolls in the animation that moves the nodes, or at once when the update is not animated', () => {
+        const anchored = { x: 350, y: 50 };
+        const command: any = new AnchoredUpdateModelCommand({ kind: 'updateModel', animate: false } as any);
+        command.anchor = { take: () => anchored };
+        const newRoot: any = { id: 'graph', type: 'graph', scroll: { x: 0, y: 0 }, zoom: 2 };
+        expect(command.performUpdate({ id: 'graph', type: 'graph', scroll: { x: 0, y: 0 }, zoom: 2 }, newRoot, {})).toBe(newRoot);
+        expect(newRoot.scroll).toEqual(anchored);
+
+        const animated: any = new AnchoredUpdateModelCommand({ kind: 'updateModel' } as any);
+        animated.anchored = anchored;
+        const viewport: any = { scroll: { x: 0, y: 0 }, zoom: 2 };
+        const animations = animated.createAnimations({ fades: [] }, viewport, { duration: 250, syncer: {} });
+        const pan = animations.find((x: unknown) => x instanceof ViewportAnimation);
+        expect(pan).toBeDefined();
+        expect(pan.newViewport).toEqual({ scroll: anchored, zoom: 2 });
+        expect(pan.oldViewport).toEqual({ scroll: { x: 0, y: 0 }, zoom: 2 });
     });
 
     it('follows a node into the frame it opened into, and a frame back into its node', () => {

@@ -163,6 +163,23 @@ export class GIssueMarker {}
 export class GRoutingHandle {}
 export class SetModelCommand {}
 export class FeedbackAwareSetModelCommand {}
+/** Sprotty's update, unanimated: the new root keeps the old one's viewport; no animations of its own. */
+export class FeedbackAwareUpdateModelCommand {
+    constructor(public action: unknown) {}
+    protected performUpdate(oldRoot: any, newRoot: any, _context: unknown): any {
+        if (oldRoot?.scroll && newRoot?.scroll) {
+            newRoot.scroll = oldRoot.scroll;
+            newRoot.zoom = oldRoot.zoom;
+        }
+        return newRoot;
+    }
+    protected createAnimations(_data: unknown, _root: unknown, _context: unknown): any[] {
+        return [];
+    }
+}
+export class ViewportAnimation {
+    constructor(public element: unknown, public oldViewport: unknown, public newViewport: unknown, public context: unknown) {}
+}
 
 // GLSP view base classes (extended by ./views / ./issue-marker-view).
 export class ShapeView {}

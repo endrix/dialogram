@@ -422,5 +422,10 @@
         "id": "Symbol(stub.IGModelRootListener)",
         "op": "bind",
         "to": "service:ToggleAnchor"
+    },
+    {
+        "id": "FeedbackAwareUpdateModelCommand",
+        "op": "bind",
+        "to": "AnchoredUpdateModelCommand"
     }
 ]
