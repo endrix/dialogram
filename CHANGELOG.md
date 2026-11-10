@@ -72,6 +72,14 @@ it no longer has.
 
 ### Added
 
+- **A wire's bits as the producer's language writes them.** A producer can
+  give the bits of a port a wire is in its own syntax beside the bits
+  themselves (`fromSliceLabel`/`toSliceLabel` with `fromSlice`/`toSlice`:
+  VHDL's `(7 downto 4)`, `(0 to 3)`), drawn as they are instead of `[7:4]`
+  (`EDGE_FROM_INDEX_LABEL`, `EDGE_TO_INDEX_LABEL`, `indexLabelText`). Wires
+  meeting one port are still ordered by their bits, and spaced by the text
+  drawn. hdl-sidecar gives it for VHDL units.
+
 - **The text comes in with the zoom.** Zoomed out below 50%, the nodes
   draw no text: their boxes, ports and wires, and a group frame its title.
   From 50% each node's name is drawn (its header, a boundary's name, a

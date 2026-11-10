@@ -48,3 +48,25 @@ describe('index labels sharing a port end', () => {
         expect(pointAlongRoute(route, 'end', 500, 0)).toEqual({ x: 0, y: 0 });
     });
 });
+
+describe('the bits as the producer writes them', () => {
+    it('are drawn as written, and take the room they need beside the others', async () => {
+        const { indexLabelText, indexLabelShift } = await import('../src/views');
+        const { WorkflowDiagramMetadata: M } = await import('@dialogram/shared');
+        expect(indexLabelText({ [M.EDGE_TO_INDEX]: '7:4', [M.EDGE_TO_INDEX_LABEL]: '(7 downto 4)' }, 'to')).toBe('(7 downto 4)');
+        expect(indexLabelText({ [M.EDGE_TO_INDEX]: '7:4' }, 'to')).toBe('[7:4]');
+        expect(indexLabelText({}, 'from')).toBeUndefined();
+        // Ordered by the bits; spaced by the text drawn.
+        const edge = (id: string, bits: string, label?: string) =>
+            ({ id, args: { [M.EDGE_TO_INDEX]: bits, [M.EDGE_SLICE]: true, ...(label ? { [M.EDGE_TO_INDEX_LABEL]: label } : {}) } });
+        const hi = edge('hi', '7:4', '(7 downto 4)'), lo = edge('lo', '3:0', '(3 downto 0)');
+        const short = edge('hi2', '7:4'), short2 = edge('lo2', '3:0');
+        for (const [a, b] of [[hi, lo], [short, short2]]) {
+            const port = { incomingEdges: [a, b] };
+            (a as any).target = port;
+            (b as any).target = port;
+        }
+        expect(indexLabelShift(hi, 'to')).toBe(0);
+        expect(indexLabelShift(lo, 'to')).toBeGreaterThan(indexLabelShift(short2, 'to'));
+    });
+});

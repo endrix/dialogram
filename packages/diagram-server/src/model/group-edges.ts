@@ -218,9 +218,11 @@ function piece(edge: GEdge, id: string, sourceId: string, targetId: string, segm
 function keepEndIndices(args: Record<string, unknown>, atSource: boolean, atTarget: boolean): void {
     if (!atSource) {
         delete args[WorkflowDiagramMetadata.EDGE_FROM_INDEX];
+        delete args[WorkflowDiagramMetadata.EDGE_FROM_INDEX_LABEL];
     }
     if (!atTarget) {
         delete args[WorkflowDiagramMetadata.EDGE_TO_INDEX];
+        delete args[WorkflowDiagramMetadata.EDGE_TO_INDEX_LABEL];
     }
     if (args[WorkflowDiagramMetadata.EDGE_FROM_INDEX] === undefined && args[WorkflowDiagramMetadata.EDGE_TO_INDEX] === undefined) {
         delete args[WorkflowDiagramMetadata.EDGE_SLICE];
@@ -232,6 +234,7 @@ const ONE_EDGE_ARGS = [
     'wf:from', 'wf:to', 'wf:outPort', 'wf:inPort',
     // One edge's bits, not the shared wire's.
     WorkflowDiagramMetadata.EDGE_FROM_INDEX, WorkflowDiagramMetadata.EDGE_TO_INDEX, WorkflowDiagramMetadata.EDGE_SLICE,
+    WorkflowDiagramMetadata.EDGE_FROM_INDEX_LABEL, WorkflowDiagramMetadata.EDGE_TO_INDEX_LABEL,
     WorkflowDiagramMetadata.SOURCE_PORT_NAME, WorkflowDiagramMetadata.TARGET_PORT_NAME,
     WorkflowDiagramMetadata.SOURCE_RANGE, WorkflowDiagramMetadata.REFERENCED_SOURCE_RANGE,
     WorkflowDiagramMetadata.REFERENCED_URI

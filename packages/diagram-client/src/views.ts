@@ -435,6 +435,19 @@ const INDEX_LABEL_GAP_PX = 6;
 const indexShifts = new WeakMap<object, Map<string, number>>();
 
 /**
+ * What an edge end's index is written as: the producer's own text when it gave
+ * one (`EDGE_FROM_INDEX_LABEL`, VHDL's `(7 downto 4)`), else `[index]`.
+ */
+export function indexLabelText(args: Record<string, unknown> | undefined, end: 'from' | 'to'): string | undefined {
+    const index = args?.[end === 'from' ? WorkflowDiagramMetadata.EDGE_FROM_INDEX : WorkflowDiagramMetadata.EDGE_TO_INDEX];
+    const label = args?.[end === 'from' ? WorkflowDiagramMetadata.EDGE_FROM_INDEX_LABEL : WorkflowDiagramMetadata.EDGE_TO_INDEX_LABEL];
+    if (typeof label === 'string' && label !== '') {
+        return label;
+    }
+    return typeof index === 'string' && index !== '' ? `[${index}]` : undefined;
+}
+
+/**
  * How much further along its wire an edge's slice label at one end goes:
  * the widths of the slice labels of the edges before it at the same port
  * end, the one with the highest bits first (a concatenation reads from its
@@ -473,7 +486,7 @@ export function indexLabelShift(edge: unknown, end: 'from' | 'to'): number {
         let shift = 0;
         for (const { e } of siblings) {
             cache.set(cacheKey(String(e.id)), shift);
-            shift += (String(e.args[key]).length + 2) * INDEX_LABEL_CHAR_PX + INDEX_LABEL_GAP_PX;
+            shift += (indexLabelText(e.args, end) ?? '').length * INDEX_LABEL_CHAR_PX + INDEX_LABEL_GAP_PX;
         }
         cache.set(done, 0);
     }
@@ -1676,8 +1689,8 @@ export class WorkflowEdgeView extends PolylineEdgeView {
         const endSeg = hasEndpoints ? normalizedSegments[normalizedSegments.length - 1] : undefined;
         const endPrev = hasEndpoints ? normalizedSegments[normalizedSegments.length - 2] : undefined;
 
-        const fromIndexLabel = fromIndex ? `[${fromIndex}]` : undefined;
-        const toIndexLabel = toIndex ? `[${toIndex}]` : undefined;
+        const fromIndexLabel = fromIndex ? indexLabelText(edgeArgs, 'from') : undefined;
+        const toIndexLabel = toIndex ? indexLabelText(edgeArgs, 'to') : undefined;
 
         // Wires meeting one port end often share their last stretch: their
         // labels go one after another along it, highest bits nearest the port.

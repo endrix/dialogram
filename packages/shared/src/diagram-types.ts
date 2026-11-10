@@ -339,6 +339,14 @@ export namespace WorkflowDiagramMetadata {
     export const EDGE_TO_INDEX = 'cal:toIndex';
     /** The edge's indices are the bits of a port it is (a producer's `fromSlice`/`toSlice`): always written. */
     export const EDGE_SLICE = 'wf:slice';
+    /**
+     * The bits written as the producer's language writes them (a producer's
+     * `fromSliceLabel`/`toSliceLabel`: VHDL's `(7 downto 4)`), drawn as they
+     * are instead of `[7:4]`. The index stays the bits, by which wires meeting
+     * one port are ordered.
+     */
+    export const EDGE_FROM_INDEX_LABEL = 'wf:fromIndexLabel';
+    export const EDGE_TO_INDEX_LABEL = 'wf:toIndexLabel';
 
     /** Marks an edge as derived (not in the source), hence read-only. */
     export const IS_VIRTUAL = 'cal:isVirtual';
