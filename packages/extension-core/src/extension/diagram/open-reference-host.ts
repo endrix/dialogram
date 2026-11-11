@@ -4,6 +4,7 @@
  */
 import * as vscode from 'vscode';
 import { parseReference, resolveReferencePath, symbolLine, type ReferenceFileSystem } from './open-reference';
+import { inPlace } from './open-in-place';
 
 const workspaceFileSystem: ReferenceFileSystem = {
     async exists(file) {
@@ -59,10 +60,10 @@ export async function openReference(href: string, baseUri: string | undefined): 
     const line = reference.line ?? (reference.symbol ? symbolLine(document.getText(), reference.symbol) : undefined);
     const start = line ? Math.min(line, document.lineCount) - 1 : undefined;
     const end = reference.endLine ? Math.min(reference.endLine, document.lineCount) - 1 : start;
-    await vscode.window.showTextDocument(document, {
+    await vscode.window.showTextDocument(document, inPlace(document.uri, 'text', {
         preview: false,
         ...(start !== undefined && end !== undefined
             ? { selection: new vscode.Range(start, 0, end, document.lineAt(end).text.length) }
             : {})
-    });
+    }));
 }

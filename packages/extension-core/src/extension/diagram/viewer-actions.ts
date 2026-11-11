@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { openColumnFor, openWithArguments } from './open-in-place';
 
 const LIVE_PREVIEW_AT_FILE_COMMAND = 'livePreview.start.preview.atFile';
 const LIVE_PREVIEW_AT_FILE_STRING_COMMAND = 'livePreview.start.preview.atFileString';
@@ -67,6 +68,7 @@ export async function executeViewerCommand(
     }
 
     try {
+        // In the active group, as it was: the command acts on the active editor.
         await vscode.commands.executeCommand('vscode.open', targetUri, {
             preview: true,
             preserveFocus: true
@@ -96,7 +98,8 @@ export async function executeViewerReveal(targetUri: vscode.Uri): Promise<void> 
 
 export async function executeViewerOpen(targetUri: vscode.Uri, viewType: unknown): Promise<void> {
     if (typeof viewType !== 'string' || viewType === '' || viewType === 'default') {
-        await vscode.commands.executeCommand('vscode.open', targetUri);
+        const column = openColumnFor(targetUri, { default: true });
+        await vscode.commands.executeCommand('vscode.open', ...(column === undefined ? [targetUri] : [targetUri, { viewColumn: column }]));
         return;
     }
 
@@ -107,7 +110,7 @@ export async function executeViewerOpen(targetUri: vscode.Uri, viewType: unknown
     }
 
     try {
-        await vscode.commands.executeCommand('vscode.openWith', targetUri, viewType);
+        await vscode.commands.executeCommand('vscode.openWith', ...openWithArguments(targetUri, viewType));
         return;
     } catch {
         await executeViewerCommand(viewType, targetUri, [targetUri]);
