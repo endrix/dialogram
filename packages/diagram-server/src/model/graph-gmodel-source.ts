@@ -148,18 +148,24 @@ function isEdge(element: GModelElement): element is GEdge {
 function markFeedbackEdges(children: GModelElement[]): void {
     /** endpoint id → owning node id, for every port under every node. */
     const ownerByEndpoint = new Map<string, string>();
-    const indexPorts = (element: GModelElement, owner: string | undefined): void => {
+    /** The endpoints on a node of the unit's boundary. */
+    const onBoundary = new Set<string>();
+    const indexPorts = (element: GModelElement, owner: string | undefined, boundary: boolean): void => {
         const isNode = !isEdge(element) && element.type !== WorkflowDiagramTypes.GRAPH;
         const nodeId = isNode ? element.id : owner;
+        const isBoundary = isNode ? BOUNDARY_NODE_TYPES.has(element.type) : boundary;
         if (owner !== undefined) {
             ownerByEndpoint.set(element.id, owner);
+            if (boundary) {
+                onBoundary.add(element.id);
+            }
         }
         for (const child of element.children ?? []) {
-            indexPorts(child, nodeId);
+            indexPorts(child, nodeId, isBoundary);
         }
     };
     for (const child of children) {
-        indexPorts(child, undefined);
+        indexPorts(child, undefined, false);
     }
 
     const edges = children.filter(isEdge);
@@ -189,7 +195,7 @@ function markFeedbackEdges(children: GModelElement[]): void {
         // An endpoint nothing claims is its own node: a boundary port hangs off
         // the graph itself, and calling two of them the same node would invent
         // a loop.
-        : findFeedbackEdges(edges, id => ownerByEndpoint.get(id) ?? id);
+        : findFeedbackEdges(edges.map(edge => asLoopEdge(edge, onBoundary)), ownerOfLoopEnd(ownerByEndpoint));
     for (const edge of edges) {
         if (!feedback.has(edge.id)) {
             continue;
@@ -197,6 +203,41 @@ function markFeedbackEdges(children: GModelElement[]): void {
         edge.cssClasses = [...(edge.cssClasses ?? []), WorkflowDiagramCss.EDGE_FEEDBACK];
         edge.args = { ...(edge.args ?? {}), [WorkflowDiagramMetadata.IS_FEEDBACK]: true };
     }
+}
+
+/** The node types of the unit's boundary: its ports, one by one or as a bus. */
+const BOUNDARY_NODE_TYPES: ReadonlySet<string> = new Set([
+    WorkflowDiagramTypes.NODE_BOUNDARY_INPUT,
+    WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT
+]);
+
+/** What an end on the unit's boundary is suffixed with: one node for what enters it, one for what leaves. */
+const INTO_BOUNDARY = '\u0000in';
+const OUT_OF_BOUNDARY = '\u0000out';
+
+/**
+ * An edge as the loop finder sees it. The unit's boundary is the world
+ * outside it, so what enters a boundary node and what leaves it are two
+ * nodes there: a closed bus of the unit's ports that a `ready` runs into and
+ * a `valid` runs out of closes no loop, as its members do not once it is
+ * open.
+ */
+export function asLoopEdge(edge: GEdge, onBoundary: ReadonlySet<string>): GEdge {
+    const out = onBoundary.has(edge.sourceId);
+    const into = onBoundary.has(edge.targetId);
+    return out || into
+        ? { ...edge, sourceId: out ? edge.sourceId + OUT_OF_BOUNDARY : edge.sourceId, targetId: into ? edge.targetId + INTO_BOUNDARY : edge.targetId }
+        : edge;
+}
+
+/** The node an end of {@link asLoopEdge}'s belongs to: its port's, split at the boundary. */
+export function ownerOfLoopEnd(ownerByEndpoint: ReadonlyMap<string, string>): (id: string) => string {
+    return id => {
+        const suffix = id.endsWith(INTO_BOUNDARY) ? INTO_BOUNDARY : id.endsWith(OUT_OF_BOUNDARY) ? OUT_OF_BOUNDARY : '';
+        const endpoint = suffix ? id.slice(0, -suffix.length) : id;
+        // An endpoint nothing claims is its own node.
+        return (ownerByEndpoint.get(endpoint) ?? endpoint) + suffix;
+    };
 }
 
 function normalizeNavigationFileUri(value: string | undefined): string | undefined {

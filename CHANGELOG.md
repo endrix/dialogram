@@ -490,6 +490,14 @@ it no longer has.
 
 ### Fixed
 
+- **A wire into a closed bus of the unit's ports runs the way it does.** A
+  bundle of the unit's ports that mixes directions (a handshake's `data` and
+  `valid` in, its `ready` and `space` out) is drawn as an input, and every
+  edge at it ran the bus's way: closed, `ins_ready <= not Full` was drawn
+  as an arrow from the bus into the inverter's output. An edge whose wires
+  all run one way now runs that way, as it does once the bus is open; the
+  bus's arrow still decides an edge whose wires run both ways.
+
 - **Zoomed out, an operator symbol no longer disappears.** The rules that
   hide text by zoom named classes alone, and a node's own group carries
   classes of the same names: an operator symbol's is `symbol-operator`,
