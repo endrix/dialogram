@@ -176,6 +176,7 @@ describe('the launcher, after its review', () => {
         expect(resolveProgram('data', undefined, env)).toBeUndefined();      // not executable
         expect(resolveProgram('absent', undefined, env)).toBeUndefined();
         expect(resolveProgram('./run.sh', '/run/out', env)).toBe('/run/out/run.sh');
+        expect(path.isAbsolute(resolveProgram('viewer', undefined, { PATH: path.relative(process.cwd(), bin) }) ?? '')).toBe(true);
         expect(resolveProgram('/usr/bin/klayout', undefined, env)).toBe('/usr/bin/klayout');
     });
 
@@ -213,6 +214,9 @@ describe('the launcher, after its review', () => {
         expect(await start('/tmp/klayout', layout, '/ws')).toBe(false);
         expect(asked).toHaveLength(7);
         expect(consentKey(klayout, layout, '/ws')).toBe(JSON.stringify(['/ws', klayout, ['-nn']]));
+        // A working directory a setting names is part of it.
+        expect(consentKey(klayout, layout, '/ws', '/ws/flow')).not.toBe(consentKey(klayout, layout, '/ws'));
+        expect(await allowedToStart(klayout, layout, '/ws', 'the line', memory, ask, '/elsewhere')).toBe(false);
     });
 
     it('removes the output folders of launches long over, and no others', () => {

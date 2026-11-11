@@ -246,7 +246,7 @@ export function resolveProgram(
     const extensions = platform === 'win32' ? ['', ...(env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';')] : [''];
     for (const folder of (env.PATH ?? env.Path ?? '').split(path.delimiter).filter(Boolean)) {
         for (const extension of extensions) {
-            const candidate = path.join(folder, program + extension);
+            const candidate = path.resolve(folder, program + extension);
             try {
                 if (fs.statSync(candidate).isFile()) {
                     fs.accessSync(candidate, fs.constants.X_OK);
@@ -267,9 +267,11 @@ export function resolveProgram(
  * may not: `-r script.rb` is asked about even after `-nn layout.gds` was
  * always allowed.
  */
-export function consentKey(program: string, args: readonly string[], workspaceFolder: string | undefined): string {
+export function consentKey(program: string, args: readonly string[], workspaceFolder: string | undefined, cwd?: string): string {
     const fixed = args.filter(word => word.startsWith('-') || !path.isAbsolute(word));
-    return JSON.stringify([workspaceFolder ?? '', program, fixed]);
+    // Where it starts is the workspace's to set, and part of what was agreed
+    // to when a setting names it; the first file's folder changes run by run.
+    return JSON.stringify([workspaceFolder ?? '', program, fixed, ...(cwd ? [cwd] : [])]);
 }
 
 /**
@@ -283,9 +285,10 @@ export async function allowedToStart(
     workspaceFolder: string | undefined,
     commandLine: string,
     memory: ProgramMemory | undefined,
-    ask: (message: string, detail: string, ...items: string[]) => PromiseLike<string | undefined>
+    ask: (message: string, detail: string, ...items: string[]) => PromiseLike<string | undefined>,
+    configuredCwd?: string
 ): Promise<boolean> {
-    const key = consentKey(program, args, workspaceFolder);
+    const key = consentKey(program, args, workspaceFolder, configuredCwd);
     const allowed = memory?.get<string[]>(ALLOWED_PROGRAMS_KEY, []) ?? [];
     if (allowed.includes(key)) {
         return true;
@@ -431,7 +434,8 @@ async function launch(
 
     const ask = (message: string, detail: string, ...items: string[]): PromiseLike<string | undefined> =>
         vscode.window.showWarningMessage(message, { modal: true, detail }, ...items);
-    if (!(await allowedToStart(program, args, folder?.uri.fsPath, commandLine, memory, ask))) {
+    const shown = cwd ? `${commandLine}\n\nin ${cwd}` : commandLine;
+    if (!(await allowedToStart(program, args, folder?.uri.fsPath, shown, memory, ask, configuredDir))) {
         return;
     }
 
