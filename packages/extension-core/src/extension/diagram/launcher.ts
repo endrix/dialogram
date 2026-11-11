@@ -18,15 +18,16 @@
  * launch with a message saying which.
  *
  * The program starts in `<settingsNamespace>.launcher.workingDirectory` when
- * that is set (absolute, or relative to the first workspace folder), else in
+ * that is set (absolute, or relative to the workspace folder of the first file), else in
  * the folder of the first file it is given: a program that resolves relative
  * paths in its own configuration needs the former. Every launch's command
  * line, and the program's output, goes to the profile's Launcher output
  * channel. It runs only in a trusted workspace.
  *
- * The program is named by a file of the workspace, so the first time one is
- * started the user is shown the command line and asked; "always" is kept for
- * that program on this machine. The program outlives the window: its output
+ * The program is named by a file of the workspace, so the user is shown the
+ * command line and asked before it starts; "always" is kept for that binary
+ * (its absolute path, found on the PATH here), with those options, in that
+ * workspace folder: other options, or another repository, ask again. The program outlives the window: its output
  * goes to a file the channel follows, not to a pipe that would end with the
  * extension host and take the program with it.
  */
@@ -67,7 +68,7 @@ export function launcherWords(args: readonly unknown[]): string[] {
                 words.push(value);
             } else if (/[*?]/.test(value)) {
                 // A pattern on a `{uri}`: a `?` is its wildcard, not a URI's query.
-                words.push(decodeURIComponent(value.slice('file://'.length)));
+                words.push(fileUriPatternPath(value));
             } else {
                 words.push(vscode.Uri.parse(value).fsPath);
             }
@@ -77,6 +78,12 @@ export function launcherWords(args: readonly unknown[]): string[] {
     };
     args.forEach(add);
     return words;
+}
+
+/** The path of a `file://` word that is a pattern: decoded, a drive's (`/c:/run/*`) as Windows writes it. */
+export function fileUriPatternPath(value: string): string {
+    const raw = decodeURIComponent(value.slice('file://'.length));
+    return /^\/[A-Za-z]:/.test(raw) ? raw.slice(1).replace(/\//g, '\\') : raw;
 }
 
 /** A program's arguments with options as they are, patterns replaced by their matches, paths checked. */
@@ -219,28 +226,103 @@ export const START = 'Start';
 export const ALWAYS = 'Always Start';
 
 /**
- * Whether the user lets `program` start: yes when they said "always" for it
- * before, else asked, with the command line in front of them.
+ * The file a program word names: a path as it is (a relative one from `cwd`),
+ * a bare name where the PATH has it. `undefined` when the PATH has none: the
+ * binary is found here, once, so what the user is asked about is what starts
+ * (a name looked up again in the program's folder could be another file).
+ */
+export function resolveProgram(
+    program: string,
+    cwd: string | undefined,
+    env: NodeJS.ProcessEnv = process.env,
+    platform: NodeJS.Platform = process.platform
+): string | undefined {
+    if (path.isAbsolute(program)) {
+        return program;
+    }
+    if (program.includes('/') || program.includes(path.sep)) {
+        return path.resolve(cwd ?? process.cwd(), program);
+    }
+    const extensions = platform === 'win32' ? ['', ...(env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';')] : [''];
+    for (const folder of (env.PATH ?? env.Path ?? '').split(path.delimiter).filter(Boolean)) {
+        for (const extension of extensions) {
+            const candidate = path.join(folder, program + extension);
+            try {
+                if (fs.statSync(candidate).isFile()) {
+                    fs.accessSync(candidate, fs.constants.X_OK);
+                    return candidate;
+                }
+            } catch {
+                // not here, or not a program
+            }
+        }
+    }
+    return undefined;
+}
+
+/**
+ * What an "always" covers: this binary, in this workspace folder, with these
+ * options. The files it is given may differ from one launch to the next (a
+ * run's outputs); an option, or a word that is no existing absolute path,
+ * may not: `-r script.rb` is asked about even after `-nn layout.gds` was
+ * always allowed.
+ */
+export function consentKey(program: string, args: readonly string[], workspaceFolder: string | undefined): string {
+    const fixed = args.filter(word => word.startsWith('-') || !path.isAbsolute(word));
+    return JSON.stringify([workspaceFolder ?? '', program, fixed]);
+}
+
+/**
+ * Whether the user lets `program` (an absolute path) start on `args`: yes
+ * when they said "always" for this {@link consentKey} before, else asked,
+ * with the command line in front of them.
  */
 export async function allowedToStart(
     program: string,
+    args: readonly string[],
+    workspaceFolder: string | undefined,
     commandLine: string,
     memory: ProgramMemory | undefined,
     ask: (message: string, detail: string, ...items: string[]) => PromiseLike<string | undefined>
 ): Promise<boolean> {
+    const key = consentKey(program, args, workspaceFolder);
     const allowed = memory?.get<string[]>(ALLOWED_PROGRAMS_KEY, []) ?? [];
-    if (allowed.includes(program)) {
+    if (allowed.includes(key)) {
         return true;
     }
-    const always = `${ALWAYS} ${path.basename(program)}`;
+    const always = `${ALWAYS} ${path.basename(program)} Like This`;
     const choice = await ask(
         `Start ${path.basename(program)}?`,
-        `A workflow in this workspace asks to run:\n\n${commandLine}`,
+        `A workflow in this workspace asks to run:\n\n${commandLine}\n\n"${always}" covers ${program} with these options in this workspace folder.`,
         START, ...(memory ? [always] : []));
     if (choice === always && memory) {
-        await memory.update(ALLOWED_PROGRAMS_KEY, [...allowed, program]);
+        await memory.update(ALLOWED_PROGRAMS_KEY, [...allowed, key]);
     }
     return choice === START || choice === always;
+}
+
+/** How long a launch's output folder is kept once nothing can still be following it. */
+const STALE_LOG_MS = 7 * 24 * 3600 * 1000;
+
+/** Removes the output folders of launches whose window is long gone (the program outlived it, by design). */
+export function removeStaleLogs(now = Date.now(), tmp = os.tmpdir()): void {
+    try {
+        for (const name of fs.readdirSync(tmp)) {
+            if (!name.startsWith('dialogram-launcher-')) {
+                continue;
+            }
+            const folder = path.join(tmp, name);
+            try {
+                if (now - fs.statSync(path.join(folder, 'output.log')).mtimeMs > STALE_LOG_MS) {
+                    fs.rmSync(folder, { recursive: true, force: true });
+                }
+            } catch {
+                // no log in it, or not ours to remove
+            }
+        }
+    } catch {
+        // no temporary folder to look in
+    }
 }
 
 /**
@@ -256,6 +338,9 @@ export function startDetached(program: string, args: readonly string[], cwd: str
         const child = childProcess.spawn(program, [...args], { cwd, detached: true, stdio: ['ignore', fd, fd] });
         child.unref();
         return { child, log };
+    } catch (error) {
+        fs.rmSync(path.dirname(log), { recursive: true, force: true });
+        throw error;
     } finally {
         fs.closeSync(fd);
     }
@@ -274,8 +359,9 @@ export function followFile(file: string, sink: (text: string) => void, everyMs =
             const fd = fs.openSync(file, 'r');
             try {
                 const buffer = Buffer.alloc(size - offset);
-                offset += fs.readSync(fd, buffer, 0, buffer.length, offset);
-                sink(decoder.write(buffer));
+                const got = fs.readSync(fd, buffer, 0, buffer.length, offset);
+                offset += got;
+                sink(decoder.write(buffer.subarray(0, got)));
             } finally {
                 fs.closeSync(fd);
             }
@@ -293,6 +379,7 @@ export function followFile(file: string, sink: (text: string) => void, everyMs =
 /** Registers `commandId` as the profile's launcher. `memory` keeps the programs always allowed. */
 export function registerLauncher(commandId: string, profile: DiagramProfile, memory?: ProgramMemory): vscode.Disposable {
     const output = vscode.window.createOutputChannel(`${profile.displayName} Launcher`);
+    removeStaleLogs();
     const command = vscode.commands.registerCommand(commandId, async (...args: unknown[]) => {
         try {
             await launch(launcherWords(args), profile, output, commandId, memory);
@@ -319,11 +406,7 @@ async function launch(
     if (vscode.workspace.isTrusted === false) {
         throw new Error('it starts programs only in a trusted workspace.');
     }
-    const [program, ...rest] = words;
-    const wrong = notAProgram(program);
-    if (wrong) {
-        throw new Error(wrong);
-    }
+    const [named, ...rest] = words;
     // The workspace folder of the first file named, for its settings and for
     // what is relative: the first folder when no file says.
     const firstFile = rest.find(word => !word.startsWith('-') && path.isAbsolute(word));
@@ -335,11 +418,20 @@ async function launch(
     const configuredDir = launcherWorkingDirectory(configured, [], folder?.uri.fsPath);
     const args = expandLauncherArguments(rest, configuredDir ?? folder?.uri.fsPath);
     const cwd = configuredDir ?? launcherWorkingDirectory(undefined, args, folder?.uri.fsPath);
+    // The binary, found once: what is asked about is what starts.
+    const program = resolveProgram(named, cwd);
+    if (!program) {
+        throw new Error(`${named} is not on the PATH.`);
+    }
+    const wrong = notAProgram(program);
+    if (wrong) {
+        throw new Error(wrong);
+    }
     const commandLine = [program, ...args].map(quoteWord).join(' ');
 
     const ask = (message: string, detail: string, ...items: string[]): PromiseLike<string | undefined> =>
         vscode.window.showWarningMessage(message, { modal: true, detail }, ...items);
-    if (!(await allowedToStart(program, commandLine, memory, ask))) {
+    if (!(await allowedToStart(program, args, folder?.uri.fsPath, commandLine, memory, ask))) {
         return;
     }
 
@@ -356,7 +448,11 @@ async function launch(
     const stop = followFile(log, say);
     const finish = (): void => {
         stop();
-        fs.rmSync(path.dirname(log), { recursive: true, force: true });
+        try {
+            fs.rmSync(path.dirname(log), { recursive: true, force: true });
+        } catch {
+            // still held (a grandchild writing to it): left for removeStaleLogs
+        }
     };
     child.on('error', error => {
         finish();

@@ -8,14 +8,18 @@ import {
     ALWAYS,
     START,
     allowedToStart,
+    consentKey,
     expandLauncherArguments,
     expandPathPattern,
+    fileUriPatternPath,
     followFile,
     launcherWords,
     launcherWorkingDirectory,
     notAProgram,
     patternSegments,
     quoteWord,
+    removeStaleLogs,
+    resolveProgram,
     startDetached,
     type ProgramMemory
 } from '../src/extension/diagram/launcher';
@@ -145,6 +149,8 @@ describe('the launcher, after its review', () => {
 
     it('keeps a pattern’s ? when the path comes as a file URI', () => {
         expect(launcherWords([`file://${token}/results/p/d/base/final.gd?`])).toEqual([`${token}/results/p/d/base/final.gd?`]);
+        expect(fileUriPatternPath('file:///c%3A/run/out/*/final.gds')).toBe('c:\\run\\out\\*\\final.gds');
+        expect(fileUriPatternPath('file:///run/my%20out/*.gds')).toBe('/run/my out/*.gds');
     });
 
     it('refuses a file that is not a program, the token a viewer with no args hands it', () => {
@@ -160,24 +166,67 @@ describe('the launcher, after its review', () => {
         expect(() => launcherWorkingDirectory('flow', [], undefined)).toThrow(/there is none/);
     });
 
-    it('asks before a program starts, with its command line, and remembers "always" for that program', async () => {
+    it('finds the binary a name means on the PATH, once, and a relative path from where it starts', () => {
+        const bin = path.join(root, 'bin');
+        fs.mkdirSync(bin, { recursive: true });
+        fs.writeFileSync(path.join(bin, 'viewer'), '#!/bin/sh\n', { mode: 0o755 });
+        fs.writeFileSync(path.join(bin, 'data'), 'x', { mode: 0o644 });
+        const env = { PATH: `${path.join(root, 'nowhere')}${path.delimiter}${bin}` };
+        expect(resolveProgram('viewer', undefined, env)).toBe(path.join(bin, 'viewer'));
+        expect(resolveProgram('data', undefined, env)).toBeUndefined();      // not executable
+        expect(resolveProgram('absent', undefined, env)).toBeUndefined();
+        expect(resolveProgram('./run.sh', '/run/out', env)).toBe('/run/out/run.sh');
+        expect(resolveProgram('/usr/bin/klayout', undefined, env)).toBe('/usr/bin/klayout');
+    });
+
+    it('asks before a program starts, and "always" covers that binary, those options, that folder', async () => {
         const store: Record<string, unknown> = {};
         const memory: ProgramMemory = {
             get: <T>(key: string, fallback: T) => (store[key] as T) ?? fallback,
             update: async (key, value) => { store[key] = value; }
         };
         const asked: string[][] = [];
-        const answers: (string | undefined)[] = [undefined, START, `${ALWAYS} klayout`];
-        const ask = async (message: string, detail: string, ...items: string[]) => { asked.push([message, detail, ...items]); return answers.shift(); };
-        expect(await allowedToStart('/usr/bin/klayout', 'klayout -nn x.gds', memory, ask)).toBe(false);  // dismissed
-        expect(asked[0]).toEqual(['Start klayout?', 'A workflow in this workspace asks to run:\n\nklayout -nn x.gds', START, `${ALWAYS} klayout`]);
-        expect(await allowedToStart('/usr/bin/klayout', 'c', memory, ask)).toBe(true);   // once
-        expect(store[ALLOWED_PROGRAMS_KEY]).toBeUndefined();
-        expect(await allowedToStart('/usr/bin/klayout', 'c', memory, ask)).toBe(true);   // always
-        expect(store[ALLOWED_PROGRAMS_KEY]).toEqual(['/usr/bin/klayout']);
-        expect(await allowedToStart('/usr/bin/klayout', 'c', memory, ask)).toBe(true);
-        expect(asked).toHaveLength(3);                                                    // not asked again
-        expect(await allowedToStart('/tmp/other', 'c', memory, async () => undefined)).toBe(false);
+        let answer: string | undefined;
+        const ask = async (message: string, detail: string, ...items: string[]) => { asked.push([message, detail, ...items]); return answer; };
+        const klayout = '/usr/bin/klayout';
+        const always = `${ALWAYS} klayout Like This`;
+        const layout = ['-nn', path.join(token, 'results/p/d/base/final.gds')];
+        const start = (program: string, args: string[], folder: string | undefined) => allowedToStart(program, args, folder, 'the line', memory, ask);
+
+        expect(await start(klayout, layout, '/ws')).toBe(false);  // dismissed
+        expect(asked[0][0]).toBe('Start klayout?');
+        expect(asked[0][1]).toContain('the line');
+        expect(asked[0].slice(2)).toEqual([START, always]);
+        answer = START;
+        expect(await start(klayout, layout, '/ws')).toBe(true);
+        expect(store[ALLOWED_PROGRAMS_KEY]).toBeUndefined();     // once is not always
+        answer = always;
+        expect(await start(klayout, layout, '/ws')).toBe(true);
+        answer = undefined;
+        // The same binary and options on another of the run's files: not asked.
+        expect(await start(klayout, ['-nn', path.join(token, 'results/p/d/base/final.def')], '/ws')).toBe(true);
+        expect(asked).toHaveLength(3);
+        // Another option, a script by a relative name, another folder, another binary: asked.
+        expect(await start(klayout, ['-r', path.join(token, 'results/p/d/base/final.gds')], '/ws')).toBe(false);
+        expect(await start(klayout, ['-nn', 'evil.rb'], '/ws')).toBe(false);
+        expect(await start(klayout, layout, '/other-repo')).toBe(false);
+        expect(await start('/tmp/klayout', layout, '/ws')).toBe(false);
+        expect(asked).toHaveLength(7);
+        expect(consentKey(klayout, layout, '/ws')).toBe(JSON.stringify(['/ws', klayout, ['-nn']]));
+    });
+
+    it('removes the output folders of launches long over, and no others', () => {
+        const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'launcher-tmp-'));
+        for (const name of ['dialogram-launcher-old', 'dialogram-launcher-new', 'someone-elses']) {
+            fs.mkdirSync(path.join(tmp, name));
+            fs.writeFileSync(path.join(tmp, name, 'output.log'), '');
+        }
+        const eightDays = 8 * 24 * 3600 * 1000;
+        fs.utimesSync(path.join(tmp, 'dialogram-launcher-old', 'output.log'), new Date(Date.now() - eightDays), new Date(Date.now() - eightDays));
+        fs.utimesSync(path.join(tmp, 'someone-elses', 'output.log'), new Date(Date.now() - eightDays), new Date(Date.now() - eightDays));
+        removeStaleLogs(Date.now(), tmp);
+        expect(fs.readdirSync(tmp).sort()).toEqual(['dialogram-launcher-new', 'someone-elses']);
+        fs.rmSync(tmp, { recursive: true, force: true });
     });
 
     it('starts a program that outlives the process that started it, and follows its output', async () => {

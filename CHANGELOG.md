@@ -84,8 +84,9 @@ it no longer has.
   `<settingsNamespace>.launcher.workingDirectory` when set, else in its first
   file's folder; each launch's command line and output go to the profile's
   Launcher output channel. It runs only in a trusted workspace, and the
-  first time a program is started the user is shown the command line and
-  asked ("always" is remembered for that program on the machine). The
+  user is shown the command line and asked before a program starts
+  ("always" covers that binary, found on the PATH once, with those options,
+  in that workspace folder). The
   program outlives the window that started it. A product has the launcher
   by naming the command; none is derived
   (`extension-core/src/extension/diagram/launcher.ts`).
