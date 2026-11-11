@@ -1432,7 +1432,7 @@ function registerCalDiagramCommands(
     // Command: the launcher, which starts an external program on a viewer's
     // arguments, for outputs with no editor in VS Code.
     if (profile.commands.launch) {
-        context.subscriptions.push(registerLauncher(profile.commands.launch, profile));
+        context.subscriptions.push(registerLauncher(profile.commands.launch, profile, context.globalState));
     }
 
     // Command: Toggle grid background (client-side CSS class) for manual layout polish.

@@ -378,14 +378,18 @@ export function resolveSidecarCommandIds(
         getAgentToolConfig: glsp('getAgentToolConfig'),
         sidecarEdit: `${input.sidecarOperationPrefix}.sidecar.edit`,
         sidecarSend: `${input.sidecarOperationPrefix}.sidecar.send`,
-        createNewContainer: glsp('createNewContainer'),
-        launch: glsp('launch')
+        createNewContainer: glsp('createNewContainer')
     };
     // Only the ids the platform registers come through: a deprecated id a
     // product still spells, or a key it made up, stays out of the profile.
     const resolved: Record<string, string> = {};
     for (const [field, derivedId] of Object.entries(derived)) {
         resolved[field] = nonBlank(given[field as keyof SidecarProfileCommandIds]) ?? derivedId;
+    }
+    // The launcher starts programs: a product has it by naming it, never by default.
+    const launch = nonBlank(given.launch);
+    if (launch) {
+        resolved.launch = launch;
     }
     return resolved as unknown as SidecarProfileCommandIds;
 }

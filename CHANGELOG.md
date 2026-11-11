@@ -74,8 +74,8 @@ it no longer has.
 
 - **The launcher.** Some outputs have no editor in VS Code: a chip layout
   opens in KLayout, not in a tab. A profile's new `launch` command
-  (`DiagramCommandIds.launch`, derived as `<client>.glsp.launch` for sidecar
-  profiles) starts an external program in its own window on the arguments a
+  (`DiagramCommandIds.launch`, named by the product: `workflow.glsp.launch`
+  in wfpy-ide) starts an external program in its own window on the arguments a
   viewer gives it: the program first, then its options as they are, and
   path patterns (`{path}/results/*/*/*/6_final.gds`) replaced by the files
   they match, so a viewer's fixed arguments can name the files inside a
@@ -83,7 +83,11 @@ it no longer has.
   exist, stops the launch with a message saying which. The program starts in
   `<settingsNamespace>.launcher.workingDirectory` when set, else in its first
   file's folder; each launch's command line and output go to the profile's
-  Launcher output channel. It runs only in a trusted workspace
+  Launcher output channel. It runs only in a trusted workspace, and the
+  first time a program is started the user is shown the command line and
+  asked ("always" is remembered for that program on the machine). The
+  program outlives the window that started it. A product has the launcher
+  by naming the command; none is derived
   (`extension-core/src/extension/diagram/launcher.ts`).
 
 - **A wire's bits as the producer's language writes them.** A producer can

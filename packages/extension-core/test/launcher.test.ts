@@ -4,11 +4,20 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
+    ALLOWED_PROGRAMS_KEY,
+    ALWAYS,
+    START,
+    allowedToStart,
     expandLauncherArguments,
     expandPathPattern,
+    followFile,
     launcherWords,
     launcherWorkingDirectory,
-    quoteWord
+    notAProgram,
+    patternSegments,
+    quoteWord,
+    startDetached,
+    type ProgramMemory
 } from '../src/extension/diagram/launcher';
 
 // A folder token the way a run leaves one: the files a viewer names sit a
@@ -119,5 +128,71 @@ describe('quoteWord', () => {
         expect(quoteWord('/a/b-c.gds')).toBe('/a/b-c.gds');
         expect(quoteWord('a b')).toBe(`'a b'`);
         expect(quoteWord(`it's`)).toBe(`'it'\\''s'`);
+    });
+});
+
+describe('the launcher, after its review', () => {
+    it('splits a Windows path under its root, a drive or a share', () => {
+        expect(patternSegments('C:\\run\\out\\*\\x.gds', path.win32)).toEqual({ root: 'C:\\', segments: ['run', 'out', '*', 'x.gds'] });
+        expect(patternSegments('\\\\host\\share\\out\\*.gds', path.win32)).toEqual({ root: '\\\\host\\share\\', segments: ['out', '*.gds'] });
+        expect(patternSegments('/run/out/*/x.gds', path.posix)).toEqual({ root: '/', segments: ['run', 'out', '*', 'x.gds'] });
+    });
+
+    it('reads a relative pattern from where the program starts', () => {
+        expect(expandPathPattern('results/*/*/*/final.gds', token)).toEqual([path.join(token, 'results/p/d/base/final.gds')]);
+        expect(expandLauncherArguments(['results/*/*/*/final.gds'], token)).toEqual([path.join(token, 'results/p/d/base/final.gds')]);
+    });
+
+    it('keeps a pattern’s ? when the path comes as a file URI', () => {
+        expect(launcherWords([`file://${token}/results/p/d/base/final.gd?`])).toEqual([`${token}/results/p/d/base/final.gd?`]);
+    });
+
+    it('refuses a file that is not a program, the token a viewer with no args hands it', () => {
+        const data = path.join(token, 'results/p/d/base/final.gds');
+        expect(notAProgram(data)).toMatch(/is not a program/);
+        expect(notAProgram(token)).toMatch(/is a folder/);
+        expect(notAProgram(process.execPath)).toBeUndefined();
+        expect(notAProgram('klayout')).toBeUndefined();
+    });
+
+    it('says a working directory relative to a workspace folder has none to be relative to', () => {
+        expect(() => launcherWorkingDirectory('${workspaceFolder}/flow', [], undefined)).toThrow(/there is none/);
+        expect(() => launcherWorkingDirectory('flow', [], undefined)).toThrow(/there is none/);
+    });
+
+    it('asks before a program starts, with its command line, and remembers "always" for that program', async () => {
+        const store: Record<string, unknown> = {};
+        const memory: ProgramMemory = {
+            get: <T>(key: string, fallback: T) => (store[key] as T) ?? fallback,
+            update: async (key, value) => { store[key] = value; }
+        };
+        const asked: string[][] = [];
+        const answers: (string | undefined)[] = [undefined, START, `${ALWAYS} klayout`];
+        const ask = async (message: string, detail: string, ...items: string[]) => { asked.push([message, detail, ...items]); return answers.shift(); };
+        expect(await allowedToStart('/usr/bin/klayout', 'klayout -nn x.gds', memory, ask)).toBe(false);  // dismissed
+        expect(asked[0]).toEqual(['Start klayout?', 'A workflow in this workspace asks to run:\n\nklayout -nn x.gds', START, `${ALWAYS} klayout`]);
+        expect(await allowedToStart('/usr/bin/klayout', 'c', memory, ask)).toBe(true);   // once
+        expect(store[ALLOWED_PROGRAMS_KEY]).toBeUndefined();
+        expect(await allowedToStart('/usr/bin/klayout', 'c', memory, ask)).toBe(true);   // always
+        expect(store[ALLOWED_PROGRAMS_KEY]).toEqual(['/usr/bin/klayout']);
+        expect(await allowedToStart('/usr/bin/klayout', 'c', memory, ask)).toBe(true);
+        expect(asked).toHaveLength(3);                                                    // not asked again
+        expect(await allowedToStart('/tmp/other', 'c', memory, async () => undefined)).toBe(false);
+    });
+
+    it('starts a program that outlives the process that started it, and follows its output', async () => {
+        const marker = path.join(root, 'outlived.txt');
+        const script = "process.stdout.write('first\\n'); setTimeout(() => { process.stdout.write('héllo later\\n'); require('fs').writeFileSync(process.argv[1], 'done'); }, 300);";
+        const { child, log } = startDetached(process.execPath, ['-e', script, marker], root);
+        const seen: string[] = [];
+        const stop = followFile(log, text => seen.push(text), 50);
+        await new Promise<void>(resolve => child.on('exit', () => resolve()));
+        stop();
+        expect(seen.join('')).toBe('first\nhéllo later\n');
+        expect(fs.readFileSync(marker, 'utf8')).toBe('done');
+        // Its output is a file, not a pipe into this process: nothing to break when this one ends.
+        expect(child.stdout).toBeNull();
+        expect(child.stderr).toBeNull();
+        fs.rmSync(path.dirname(log), { recursive: true, force: true });
     });
 });

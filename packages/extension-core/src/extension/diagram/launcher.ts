@@ -23,16 +23,30 @@
  * paths in its own configuration needs the former. Every launch's command
  * line, and the program's output, goes to the profile's Launcher output
  * channel. It runs only in a trusted workspace.
+ *
+ * The program is named by a file of the workspace, so the first time one is
+ * started the user is shown the command line and asked; "always" is kept for
+ * that program on this machine. The program outlives the window: its output
+ * goes to a file the channel follows, not to a pipe that would end with the
+ * extension host and take the program with it.
  */
 
 import * as vscode from 'vscode';
 import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 import type { DiagramProfile } from '../../api';
 
 /** A launch whose program exits with an error within this time failed, and says so. */
 const EARLY_EXIT_MS = 5000;
+
+/** How many folders a pattern may read before it is given up as too wide (a wildcard at every level from the root). */
+const PATTERN_FOLDER_BUDGET = 20000;
+
+/** Where the programs a user said "always" to are kept (a machine's, not a workspace's). */
+export const ALLOWED_PROGRAMS_KEY = 'dialogram.launcher.allowedPrograms';
 
 /** The setting, under the profile's namespace, naming the folder programs start in. */
 export const LAUNCHER_WORKING_DIRECTORY_SETTING = 'launcher.workingDirectory';
@@ -49,7 +63,14 @@ export function launcherWords(args: readonly unknown[]): string[] {
         } else if (value instanceof vscode.Uri) {
             words.push(value.fsPath);
         } else if (typeof value === 'string') {
-            words.push(value.startsWith('file://') ? vscode.Uri.parse(value).fsPath : value);
+            if (!value.startsWith('file://')) {
+                words.push(value);
+            } else if (/[*?]/.test(value)) {
+                // A pattern on a `{uri}`: a `?` is its wildcard, not a URI's query.
+                words.push(decodeURIComponent(value.slice('file://'.length)));
+            } else {
+                words.push(vscode.Uri.parse(value).fsPath);
+            }
         } else {
             throw new Error(`cannot pass a ${typeof value} to a program: ${JSON.stringify(value)}`);
         }
@@ -59,13 +80,13 @@ export function launcherWords(args: readonly unknown[]): string[] {
 }
 
 /** A program's arguments with options as they are, patterns replaced by their matches, paths checked. */
-export function expandLauncherArguments(words: readonly string[]): string[] {
+export function expandLauncherArguments(words: readonly string[], base?: string): string[] {
     const expanded: string[] = [];
     for (const word of words) {
         if (word.startsWith('-')) {
             expanded.push(word);
         } else if (/[*?]/.test(word)) {
-            const matches = expandPathPattern(word);
+            const matches = expandPathPattern(word, base);
             if (matches.length === 0) {
                 throw new Error(`nothing matches ${word}`);
             }
@@ -86,16 +107,20 @@ export function expandLauncherArguments(words: readonly string[]): string[] {
  * a wildcard does not match a name starting with a dot unless the segment
  * starts with one.
  */
-export function expandPathPattern(pattern: string): string[] {
-    const absolute = path.resolve(pattern);
-    const segments = absolute.split(path.sep).filter(segment => segment !== '');
-    let paths = [path.parse(absolute).root];
+export function expandPathPattern(pattern: string, base?: string): string[] {
+    // A relative pattern is the launch's: from where the program starts.
+    const { root, segments } = patternSegments(path.resolve(base ?? process.cwd(), pattern));
+    let paths = [root];
+    let read = 0;
     for (const segment of segments) {
         const next: string[] = [];
         if (/[*?]/.test(segment)) {
             const regex = segmentRegex(segment);
             for (const base of paths) {
                 let names: string[];
+                if (++read > PATTERN_FOLDER_BUDGET) {
+                    throw new Error(`${pattern} is too wide: it reads more than ${PATTERN_FOLDER_BUDGET} folders`);
+                }
                 try {
                     names = fs.readdirSync(base);
                 } catch {
@@ -120,6 +145,15 @@ export function expandPathPattern(pattern: string): string[] {
     return paths;
 }
 
+/**
+ * An absolute path as its root and the names under it: the root is not one of
+ * the names (`C:\\run\\*` is `C:\\` and `run`, `*`; a share's root is the share).
+ */
+export function patternSegments(absolute: string, pathApi: typeof path = path): { root: string; segments: string[] } {
+    const root = pathApi.parse(absolute).root;
+    return { root, segments: pathApi.relative(root, absolute).split(pathApi.sep).filter(segment => segment !== '') };
+}
+
 function segmentRegex(segment: string): RegExp {
     const body = segment
         .replace(/[.+^${}()|[\]\\]/g, '\\$&')
@@ -140,6 +174,9 @@ export function launcherWorkingDirectory(
     workspaceFolder: string | undefined
 ): string | undefined {
     if (configured && configured.trim() !== '') {
+        if (workspaceFolder === undefined && (configured.includes('${workspaceFolder}') || !path.isAbsolute(configured))) {
+            throw new Error(`the launcher's working directory ${configured} is relative to a workspace folder, and there is none`);
+        }
         const base = workspaceFolder ?? '';
         const dir = path.resolve(base, configured.replace(/\$\{workspaceFolder\}/g, base));
         if (!fs.existsSync(dir)) {
@@ -156,12 +193,109 @@ export function quoteWord(word: string): string {
     return /^[\w@%+=:,./-]+$/.test(word) ? word : `'${word.replace(/'/g, `'\\''`)}'`;
 }
 
-/** Registers `commandId` as the profile's launcher. */
-export function registerLauncher(commandId: string, profile: DiagramProfile): vscode.Disposable {
-    const output = vscode.window.createOutputChannel(`${profile.displayName} Launcher`);
-    const command = vscode.commands.registerCommand(commandId, (...args: unknown[]) => {
+/** Why `program` cannot be one: an existing file that is not executable (a viewer with no args hands the launcher its token). */
+export function notAProgram(program: string): string | undefined {
+    if (!path.isAbsolute(program) || !fs.existsSync(program)) {
+        return undefined;  // a name on the PATH, or nothing: the spawn says
+    }
+    try {
+        if (fs.statSync(program).isDirectory()) {
+            return `${program} is a folder, not a program`;
+        }
+        fs.accessSync(program, fs.constants.X_OK);
+        return undefined;
+    } catch {
+        return `${program} is not a program: a viewer's args start with the program to run`;
+    }
+}
+
+/** What remembers the programs a user always allows: an extension's `globalState`. */
+export interface ProgramMemory {
+    get<T>(key: string, fallback: T): T;
+    update(key: string, value: unknown): PromiseLike<void>;
+}
+
+export const START = 'Start';
+export const ALWAYS = 'Always Start';
+
+/**
+ * Whether the user lets `program` start: yes when they said "always" for it
+ * before, else asked, with the command line in front of them.
+ */
+export async function allowedToStart(
+    program: string,
+    commandLine: string,
+    memory: ProgramMemory | undefined,
+    ask: (message: string, detail: string, ...items: string[]) => PromiseLike<string | undefined>
+): Promise<boolean> {
+    const allowed = memory?.get<string[]>(ALLOWED_PROGRAMS_KEY, []) ?? [];
+    if (allowed.includes(program)) {
+        return true;
+    }
+    const always = `${ALWAYS} ${path.basename(program)}`;
+    const choice = await ask(
+        `Start ${path.basename(program)}?`,
+        `A workflow in this workspace asks to run:\n\n${commandLine}`,
+        START, ...(memory ? [always] : []));
+    if (choice === always && memory) {
+        await memory.update(ALLOWED_PROGRAMS_KEY, [...allowed, program]);
+    }
+    return choice === START || choice === always;
+}
+
+/**
+ * Start `program` on its own: detached, its output in a file under the
+ * system's temporary folder, so it lives on when the window that started it
+ * closes (a pipe into the extension host would break then, and the program's
+ * next line of output would end it).
+ */
+export function startDetached(program: string, args: readonly string[], cwd: string | undefined): { child: childProcess.ChildProcess; log: string } {
+    const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dialogram-launcher-')), 'output.log');
+    const fd = fs.openSync(log, 'a');
+    try {
+        const child = childProcess.spawn(program, [...args], { cwd, detached: true, stdio: ['ignore', fd, fd] });
+        child.unref();
+        return { child, log };
+    } finally {
+        fs.closeSync(fd);
+    }
+}
+
+/** Follows a growing file, handing what was added to `sink`; the returned function reads the rest and stops. */
+export function followFile(file: string, sink: (text: string) => void, everyMs = 400): () => void {
+    const decoder = new StringDecoder('utf8');
+    let offset = 0;
+    const read = (): void => {
         try {
-            launch(launcherWords(args), profile, output, commandId);
+            const size = fs.statSync(file).size;
+            if (size <= offset) {
+                return;
+            }
+            const fd = fs.openSync(file, 'r');
+            try {
+                const buffer = Buffer.alloc(size - offset);
+                offset += fs.readSync(fd, buffer, 0, buffer.length, offset);
+                sink(decoder.write(buffer));
+            } finally {
+                fs.closeSync(fd);
+            }
+        } catch {
+            // gone, or the channel is: nothing to follow
+        }
+    };
+    const timer = setInterval(read, everyMs);
+    return () => {
+        clearInterval(timer);
+        read();
+    };
+}
+
+/** Registers `commandId` as the profile's launcher. `memory` keeps the programs always allowed. */
+export function registerLauncher(commandId: string, profile: DiagramProfile, memory?: ProgramMemory): vscode.Disposable {
+    const output = vscode.window.createOutputChannel(`${profile.displayName} Launcher`);
+    const command = vscode.commands.registerCommand(commandId, async (...args: unknown[]) => {
+        try {
+            await launch(launcherWords(args), profile, output, commandId, memory);
         } catch (error) {
             // Said here rather than thrown: a viewer's failing command is
             // retried after its token is opened in the editor, which a
@@ -172,7 +306,13 @@ export function registerLauncher(commandId: string, profile: DiagramProfile): vs
     return vscode.Disposable.from(command, output);
 }
 
-function launch(words: readonly string[], profile: DiagramProfile, output: vscode.OutputChannel, commandId: string): void {
+async function launch(
+    words: readonly string[],
+    profile: DiagramProfile,
+    output: vscode.OutputChannel,
+    commandId: string,
+    memory: ProgramMemory | undefined
+): Promise<void> {
     if (words.length === 0) {
         throw new Error(`${commandId} needs a program and its arguments, as a viewer gives them: ["program", "argument", ...].`);
     }
@@ -180,22 +320,51 @@ function launch(words: readonly string[], profile: DiagramProfile, output: vscod
         throw new Error('it starts programs only in a trusted workspace.');
     }
     const [program, ...rest] = words;
-    const args = expandLauncherArguments(rest);
+    const wrong = notAProgram(program);
+    if (wrong) {
+        throw new Error(wrong);
+    }
+    // The workspace folder of the first file named, for its settings and for
+    // what is relative: the first folder when no file says.
+    const firstFile = rest.find(word => !word.startsWith('-') && path.isAbsolute(word));
+    const folder = (firstFile ? vscode.workspace.getWorkspaceFolder(vscode.Uri.file(firstFile)) : undefined)
+        ?? vscode.workspace.workspaceFolders?.[0];
     const configured = vscode.workspace
-        .getConfiguration(profile.settingsNamespace)
+        .getConfiguration(profile.settingsNamespace, folder?.uri)
         .get<string>(LAUNCHER_WORKING_DIRECTORY_SETTING);
-    const cwd = launcherWorkingDirectory(configured, args, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
+    const configuredDir = launcherWorkingDirectory(configured, [], folder?.uri.fsPath);
+    const args = expandLauncherArguments(rest, configuredDir ?? folder?.uri.fsPath);
+    const cwd = configuredDir ?? launcherWorkingDirectory(undefined, args, folder?.uri.fsPath);
+    const commandLine = [program, ...args].map(quoteWord).join(' ');
 
-    output.appendLine(`$ ${[program, ...args].map(quoteWord).join(' ')}${cwd ? `   (in ${cwd})` : ''}`);
+    const ask = (message: string, detail: string, ...items: string[]): PromiseLike<string | undefined> =>
+        vscode.window.showWarningMessage(message, { modal: true, detail }, ...items);
+    if (!(await allowedToStart(program, commandLine, memory, ask))) {
+        return;
+    }
+
+    const say = (text: string): void => {
+        try {
+            output.append(text);
+        } catch {
+            // the channel went with the window
+        }
+    };
+    say(`$ ${commandLine}${cwd ? `   (in ${cwd})` : ''}\n`);
     const started = Date.now();
-    const child = childProcess.spawn(program, args, { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
-    child.stdout?.on('data', (data: Buffer) => output.append(data.toString()));
-    child.stderr?.on('data', (data: Buffer) => output.append(data.toString()));
+    const { child, log } = startDetached(program, args, cwd);
+    const stop = followFile(log, say);
+    const finish = (): void => {
+        stop();
+        fs.rmSync(path.dirname(log), { recursive: true, force: true });
+    };
     child.on('error', error => {
+        finish();
         void vscode.window.showErrorMessage(`Launcher: ${program} did not start (${error.message}).`);
     });
     child.on('exit', (code, signal) => {
-        output.appendLine(`${program} (pid ${child.pid}) exited: ${signal ?? code}`);
+        finish();
+        say(`${program} (pid ${child.pid}) exited: ${signal ?? code}\n`);
         if (code && Date.now() - started < EARLY_EXIT_MS) {
             void vscode.window.showErrorMessage(`Launcher: ${program} exited with code ${code}.`, 'Show Output')
                 .then(choice => {
@@ -205,5 +374,4 @@ function launch(words: readonly string[], profile: DiagramProfile, output: vscod
                 });
         }
     });
-    child.unref();
 }
