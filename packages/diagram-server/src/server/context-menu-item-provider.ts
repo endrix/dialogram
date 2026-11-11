@@ -79,8 +79,6 @@ export function goToErrorAction(rootArgs: Args | undefined): { kind: string; tra
     }
     return { kind: GO_TO_ERROR_KIND, trail, nodeName: (errorPath as string[])[errorPath.length - 1] };
 }
-const RESET_EDGE_ROUTES_KIND = 'dialogram.resetEdgeRoutes';
-const REROUTE_EDGES_AVOID_OVERLAPS_KIND = 'dialogram.rerouteEdgesAvoidOverlaps';
 const LAYOUT_BOUNDARY_FLOW_KIND = 'dialogram.layoutBoundaryFlow';
 const LAYOUT_SERPENTINE_MESH_KIND = 'dialogram.layoutSerpentineMesh';
 const LAYOUT_UNTANGLED_KIND = 'dialogram.layoutUntangled';
@@ -454,36 +452,6 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
                 actions: [
                     {
                         kind: 'dialogram.duplicate',
-                        isOperation: true,
-                        elementIds: selectedElementIds
-                    } as any
-                ]
-            });
-        }
-
-        // Selection-scoped actions (no auto-layout entries on node/edge right-click)
-        if (selectedElementIds.length > 0) {
-            items.push({
-                id: 'dialogram.rerouteEdgesSelectionAvoidOverlaps',
-                label: 'Reroute Edges (Avoid Overlaps, Keep Nodes)',
-                sortString: 'g1.1',
-                actions: [
-                    {
-                        kind: REROUTE_EDGES_AVOID_OVERLAPS_KIND,
-                        isOperation: true,
-                        elementIds: selectedElementIds
-                    } as any
-                ]
-            });
-
-            // The plain variant: drop the routes and let the layout draw them anew.
-            items.push({
-                id: 'dialogram.rerouteEdgesSelection',
-                label: 'Reroute Edges (Clear Routes Only)',
-                sortString: 'g1.3',
-                actions: [
-                    {
-                        kind: RESET_EDGE_ROUTES_KIND,
                         isOperation: true,
                         elementIds: selectedElementIds
                     } as any
