@@ -183,7 +183,8 @@ export function boundaryMargin(node: Pick<PyGraphNode, 'kind' | 'meta'>): PortSi
  * Members are grouped by bundle and margin, so a `ready` output the producer
  * placed beside its inputs is in their bus, and by scope, so two units shown
  * in place each have their own. The bus node is an input when most of its
- * members are, and its edges run the way its arrow points.
+ * members are; an edge at it runs the way its wires do, and the way its
+ * arrow points where they run both ways.
  */
 function bundleBoundaries(
     nodes: PyGraphNode[],
@@ -348,21 +349,24 @@ function mergeBusEdges(edges: readonly PyGraphEdge[], memberOf: ReadonlyMap<stri
 
 /**
  * One edge for connections that now join the same two ports. It runs the way
- * most of them run (data and `valid` outvote `ready`), the first one breaking
- * a tie, or the way a bundle of the unit's ports at either end points, and
- * keeps the facts its members agree on.
+ * its wires run when they all run one way: a `ready` driven into an input
+ * bundle of the unit's ports runs into it, as it does once the bundle is
+ * open. Where they run both ways, the way a bundle of the unit's ports at
+ * either end points, else the way most of them run (data and `valid` outvote
+ * `ready`), the first one breaking a tie. It keeps the facts its members
+ * agree on.
  */
 function busEdge(members: readonly PyGraphEdge[], runs: ReadonlyMap<string, 'out' | 'in'>): PyGraphEdge {
     const first = members[0];
-    // At a bundle of the unit's ports the bus's arrow decides.
-    const against = (from: string, to: string): boolean => runs.get(from) === 'in' || runs.get(to) === 'out';
     if (members.length === 1) {
-        return against(first.from, first.to) ? { ...first, from: first.to, to: first.from } : first;
+        return first;
     }
     const forward = members.filter(e => e.from === first.from).length;
     const reversed = members.length - forward;
     let [from, to] = reversed > forward ? [first.to, first.from] : [first.from, first.to];
-    if (against(from, to)) {
+    // Both ways, at a bundle of the unit's ports: the bus's arrow decides.
+    const against = (a: string, b: string): boolean => runs.get(a) === 'in' || runs.get(b) === 'out';
+    if (forward > 0 && reversed > 0 && against(from, to)) {
         [from, to] = [to, from];
     }
     return {

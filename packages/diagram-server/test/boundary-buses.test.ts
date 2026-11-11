@@ -267,9 +267,10 @@ describe('a bus edge at a bundle of the unit’s ports', () => {
         ports: [port('a', 'in'), port('b', 'out'), port('c', 'out')]
     };
 
-    it('runs the way the bus’s arrow points, whichever way most of its wires run', () => {
-        // Two inputs and two outputs in the west margin: an input bus. Only one
-        // input is connected and both outputs are, so most wires run into it.
+    it('runs the way its wires run when they all run one way, into an input bus too', () => {
+        // Two inputs and two outputs in the west margin: an input bus. The
+        // outputs (a `ready`, a `space`) are driven from separate ports: each
+        // edge runs into the bus, as it does into its member once open.
         const nodes = [input('x_a', 'x'), input('x_n', 'x'), output('x_b', 'x', 'west'), output('x_c', 'x', 'west'), sink];
         const edges = [
             edge('port:wf:input:x_a:out', `port:${U}:a`),
@@ -278,7 +279,32 @@ describe('a bus edge at a bundle of the unit’s ports', () => {
         ];
         const children = graph(nodes, edges);
         expect(nodeOf(children, 'bus:wf:west:x').type).toBe(WorkflowDiagramTypes.NODE_BOUNDARY_INPUT);
-        expect(edgesOf(children).map(e => e.sourceId)).toEqual(['bus:wf:west:x_port_x', 'bus:wf:west:x_port_x', 'bus:wf:west:x_port_x']);
+        expect(edgesOf(children).map(e => [e.sourceId, e.targetId])).toEqual([
+            ['bus:wf:west:x_port_x', 'u_prod_port_a'],
+            ['u_prod_port_b', 'bus:wf:west:x_port_x'],
+            ['u_prod_port_c', 'bus:wf:west:x_port_x']
+        ]);
+    });
+
+    it('runs the way the bus’s arrow points where its wires run both ways', () => {
+        // One instance bundle answering the input bus: its `ready` runs against
+        // the data and `valid`, and is one edge with them, out of the bus,
+        // even where the `ready` side outnumbers the rest.
+        const answering: PyGraphNode = {
+            id: U, kind: 'instance', label: 'u_prod', scope: 'root',
+            ports: [port('y_a', 'in', 'y'), port('y_b', 'out', 'y', 'west'), port('y_c', 'out', 'y', 'west')]
+        };
+        const nodes = [input('x_a', 'x'), input('x_n', 'x'), output('x_b', 'x', 'west'), output('x_c', 'x', 'west'), answering];
+        const edges = [
+            edge('port:wf:input:x_a:out', `port:${U}:y_a`),
+            edge(`port:${U}:y_b`, 'port:wf:output:x_b:in'),
+            edge(`port:${U}:y_c`, 'port:wf:output:x_c:in')
+        ];
+        const children = graph(nodes, edges);
+        expect(nodeOf(children, 'bus:wf:west:x').type).toBe(WorkflowDiagramTypes.NODE_BOUNDARY_INPUT);
+        const [bus] = edgesOf(children);
+        expect(edgesOf(children)).toHaveLength(1);
+        expect(bus.sourceId).toBe('bus:wf:west:x_port_x');
     });
 
     it('is not drawn from a member to another member of the same closed bus', () => {
