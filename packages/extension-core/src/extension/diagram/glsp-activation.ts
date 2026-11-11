@@ -41,7 +41,7 @@ import { composeStorageRuntimeOptions } from './profile-storage-options';
 import { composeElkServerOptions } from './profile-elk-server-options';
 import { openReference } from './open-reference-host';
 import { type DiagramChatConfirm, type DiagramChatConfirmAnswer, type DiagramChatTask, type DiagramProfile, type DiagramRunAnswer, type DiagramRunHost, type DiagramRunQuestion } from '../../api';
-import { inPlace, openColumnFor } from './open-in-place';
+import { inPlace, openColumnFor, openWithArguments } from './open-in-place';
 
 // Define the diagram type constant locally to avoid import
 const WORKFLOW_DIAGRAM_TYPE = 'cal-network-diagram';
@@ -621,8 +621,8 @@ export async function activateGlspIntegration(
                     }
 
                     // Default open
-                    void vscode.commands.executeCommand('vscode.open', targetUri,
-                        inPlace(targetUri, { default: true, exceptViewType: profile.customEditorViewType }, {}));
+                    const openIn = openColumnFor(targetUri, { default: true, exceptViewType: profile.customEditorViewType });
+                    void vscode.commands.executeCommand('vscode.open', ...(openIn === undefined ? [targetUri] : [targetUri, { viewColumn: openIn }]));
                     callback(message, false);
                     return;
                 }
@@ -720,8 +720,7 @@ export async function activateGlspIntegration(
                         }
 
                         // A diagram of that file already open in another group is the one shown.
-                        await vscode.commands.executeCommand('vscode.openWith', targetUri, profile.customEditorViewType,
-                            openColumnFor(targetUri, { viewType: profile.customEditorViewType }));
+                        await vscode.commands.executeCommand('vscode.openWith', ...openWithArguments(targetUri, profile.customEditorViewType));
 
                         // Ensure cross-file drill-down is applied even when the target diagram
                         // editor already exists and does not emit a fresh initial request.

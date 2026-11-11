@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { inPlace, openColumnFor } from './open-in-place';
+import { inPlace, openColumnFor, openWithArguments } from './open-in-place';
 
 const LIVE_PREVIEW_AT_FILE_COMMAND = 'livePreview.start.preview.atFile';
 const LIVE_PREVIEW_AT_FILE_STRING_COMMAND = 'livePreview.start.preview.atFileString';
@@ -68,7 +68,7 @@ export async function executeViewerCommand(
     }
 
     try {
-        await vscode.commands.executeCommand('vscode.open', targetUri, inPlace<vscode.TextDocumentShowOptions>(targetUri, { default: true }, {
+        await vscode.commands.executeCommand('vscode.open', targetUri, inPlace(targetUri, { default: true }, {
             preview: true,
             preserveFocus: true
         }));
@@ -97,7 +97,8 @@ export async function executeViewerReveal(targetUri: vscode.Uri): Promise<void> 
 
 export async function executeViewerOpen(targetUri: vscode.Uri, viewType: unknown): Promise<void> {
     if (typeof viewType !== 'string' || viewType === '' || viewType === 'default') {
-        await vscode.commands.executeCommand('vscode.open', targetUri, inPlace(targetUri, { default: true }, {}));
+        const column = openColumnFor(targetUri, { default: true });
+        await vscode.commands.executeCommand('vscode.open', ...(column === undefined ? [targetUri] : [targetUri, { viewColumn: column }]));
         return;
     }
 
@@ -108,7 +109,7 @@ export async function executeViewerOpen(targetUri: vscode.Uri, viewType: unknown
     }
 
     try {
-        await vscode.commands.executeCommand('vscode.openWith', targetUri, viewType, openColumnFor(targetUri, { viewType }));
+        await vscode.commands.executeCommand('vscode.openWith', ...openWithArguments(targetUri, viewType));
         return;
     } catch {
         await executeViewerCommand(viewType, targetUri, [targetUri]);

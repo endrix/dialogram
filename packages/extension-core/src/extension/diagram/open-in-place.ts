@@ -56,10 +56,16 @@ export function openColumnFor(
 }
 
 /** `options` with the column the file is already open in, unless the caller named one. */
-export function inPlace<T extends { viewColumn?: vscode.ViewColumn }>(uri: vscode.Uri, kind: OpenKind, options: T): T {
+export function inPlace(uri: vscode.Uri, kind: OpenKind, options: vscode.TextDocumentShowOptions): vscode.TextDocumentShowOptions {
     if (options.viewColumn !== undefined) {
         return options;
     }
     const viewColumn = openColumnFor(uri, kind);
     return viewColumn === undefined ? options : { ...options, viewColumn };
+}
+
+/** The arguments of `vscode.openWith` for a custom editor: with the column the file is open in it, when it is. */
+export function openWithArguments(uri: vscode.Uri, viewType: string): [vscode.Uri, string] | [vscode.Uri, string, vscode.ViewColumn] {
+    const viewColumn = openColumnFor(uri, { viewType });
+    return viewColumn === undefined ? [uri, viewType] : [uri, viewType, viewColumn];
 }
