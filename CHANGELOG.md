@@ -72,6 +72,14 @@ it no longer has.
 
 ### Added
 
+- **An open reveals the editor a file already has.** A double-click on a
+  node (its source, a viewer's file, a reference) opened in the diagram's
+  group even when the file was open in the group beside it, as a second
+  editor. An open now looks at the open tabs first
+  (`extension-core/src/extension/diagram/open-in-place.ts`) and shows the
+  file where it is, in the kind of editor asked for: the diagram of a file
+  is not its text, and a diff is no file's editor.
+
 - **The launcher.** Some outputs have no editor in VS Code: a chip layout
   opens in KLayout, not in a tab. A profile's new `launch` command
   (`DiagramCommandIds.launch`, named by the product: `workflow.glsp.launch`

@@ -41,6 +41,7 @@ import { composeStorageRuntimeOptions } from './profile-storage-options';
 import { composeElkServerOptions } from './profile-elk-server-options';
 import { openReference } from './open-reference-host';
 import { type DiagramChatConfirm, type DiagramChatConfirmAnswer, type DiagramChatTask, type DiagramProfile, type DiagramRunAnswer, type DiagramRunHost, type DiagramRunQuestion } from '../../api';
+import { inPlace, openColumnFor } from './open-in-place';
 
 // Define the diagram type constant locally to avoid import
 const WORKFLOW_DIAGRAM_TYPE = 'cal-network-diagram';
@@ -524,7 +525,7 @@ export async function activateGlspIntegration(
                             preserveFocus: typeof showOptionsFromArgs?.preserveFocus === 'boolean' ? showOptionsFromArgs.preserveFocus : false
                         };
 
-                        void vscode.window.showTextDocument(finalUri, showOptions);
+                        void vscode.window.showTextDocument(finalUri, inPlace(finalUri, 'text', showOptions));
                     })();
 
                     callback(message, false);
@@ -620,7 +621,8 @@ export async function activateGlspIntegration(
                     }
 
                     // Default open
-                    void vscode.commands.executeCommand('vscode.open', targetUri);
+                    void vscode.commands.executeCommand('vscode.open', targetUri,
+                        inPlace(targetUri, { default: true, exceptViewType: profile.customEditorViewType }, {}));
                     callback(message, false);
                     return;
                 }
@@ -685,10 +687,10 @@ export async function activateGlspIntegration(
                         const useGraphFallback = openDecision === 'graph-fallback';
 
                         if (openDecision === 'text-fallback') {
-                            await vscode.window.showTextDocument(targetUri, {
+                            await vscode.window.showTextDocument(targetUri, inPlace(targetUri, 'text', {
                                 preview: true,
                                 preserveFocus: false
-                            });
+                            }));
                             return;
                         }
 
@@ -717,7 +719,9 @@ export async function activateGlspIntegration(
                             });
                         }
 
-                        await vscode.commands.executeCommand('vscode.openWith', targetUri, profile.customEditorViewType);
+                        // A diagram of that file already open in another group is the one shown.
+                        await vscode.commands.executeCommand('vscode.openWith', targetUri, profile.customEditorViewType,
+                            openColumnFor(targetUri, { viewType: profile.customEditorViewType }));
 
                         // Ensure cross-file drill-down is applied even when the target diagram
                         // editor already exists and does not emit a fresh initial request.

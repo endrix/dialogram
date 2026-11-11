@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { inPlace, openColumnFor } from './open-in-place';
 
 const LIVE_PREVIEW_AT_FILE_COMMAND = 'livePreview.start.preview.atFile';
 const LIVE_PREVIEW_AT_FILE_STRING_COMMAND = 'livePreview.start.preview.atFileString';
@@ -67,10 +68,10 @@ export async function executeViewerCommand(
     }
 
     try {
-        await vscode.commands.executeCommand('vscode.open', targetUri, {
+        await vscode.commands.executeCommand('vscode.open', targetUri, inPlace<vscode.TextDocumentShowOptions>(targetUri, { default: true }, {
             preview: true,
             preserveFocus: true
-        });
+        }));
     } catch {
         // Ignore pre-open failures; the command retry may still succeed.
     }
@@ -96,7 +97,7 @@ export async function executeViewerReveal(targetUri: vscode.Uri): Promise<void> 
 
 export async function executeViewerOpen(targetUri: vscode.Uri, viewType: unknown): Promise<void> {
     if (typeof viewType !== 'string' || viewType === '' || viewType === 'default') {
-        await vscode.commands.executeCommand('vscode.open', targetUri);
+        await vscode.commands.executeCommand('vscode.open', targetUri, inPlace(targetUri, { default: true }, {}));
         return;
     }
 
@@ -107,7 +108,7 @@ export async function executeViewerOpen(targetUri: vscode.Uri, viewType: unknown
     }
 
     try {
-        await vscode.commands.executeCommand('vscode.openWith', targetUri, viewType);
+        await vscode.commands.executeCommand('vscode.openWith', targetUri, viewType, openColumnFor(targetUri, { viewType }));
         return;
     } catch {
         await executeViewerCommand(viewType, targetUri, [targetUri]);

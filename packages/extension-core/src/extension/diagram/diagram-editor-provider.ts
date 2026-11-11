@@ -15,6 +15,7 @@ import { type DiagramClientBehavior, type DiagramProfile } from '../../api';
 import { listAcpConnectors, workspaceDirFor } from '../chat/acp-connectors';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
 import { matchesSourceExtension, sourceWatchGlobs } from './source-extensions';
+import { inPlace } from './open-in-place';
 
 const RUN_ID_ARG = 'wf:runId';
 
@@ -1122,7 +1123,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         const selection = range
             ? new vscode.Range(range.startLine, range.startColumn ?? 0, range.startLine, range.startColumn ?? 0)
             : undefined;
-        await vscode.window.showTextDocument(uri, { selection, preserveFocus: false });
+        await vscode.window.showTextDocument(uri, inPlace(uri, 'text', { selection, preserveFocus: false }));
     }
 
     /**
