@@ -34,4 +34,10 @@ export interface DiagramCommandIds {
     /** @deprecated Nothing registers or runs it; accepted and ignored. */
     chatAddViewerTask?: string;
     createNewContainer: string;
+    /**
+     * The launcher: starts an external program on the arguments a viewer
+     * gives it, for outputs with no editor in VS Code. A profile without it
+     * has no launcher.
+     */
+    launch?: string;
 }

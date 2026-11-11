@@ -58,6 +58,10 @@ describe('resolveSidecarCommandIds', () => {
             sidecarSend: 'sv.sidecar.send',
             createNewContainer: 'sv.glsp.createNewContainer'
         });
+        // The launcher is a product's by its saying so.
+        expect(resolveSidecarCommandIds({ key: 'sv', sidecarOperationPrefix: 'sv' })).not.toHaveProperty('launch');
+        expect(resolveSidecarCommandIds({ key: 'wf', sidecarOperationPrefix: 'wf', commands: { launch: 'workflow.glsp.launch' } }).launch)
+            .toBe('workflow.glsp.launch');
     });
 
     it('takes the GLSP client name for the diagram commands and the operation prefix for the sidecar ones', () => {

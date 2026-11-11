@@ -386,6 +386,11 @@ export function resolveSidecarCommandIds(
     for (const [field, derivedId] of Object.entries(derived)) {
         resolved[field] = nonBlank(given[field as keyof SidecarProfileCommandIds]) ?? derivedId;
     }
+    // The launcher starts programs: a product has it by naming it, never by default.
+    const launch = nonBlank(given.launch);
+    if (launch) {
+        resolved.launch = launch;
+    }
     return resolved as unknown as SidecarProfileCommandIds;
 }
 
