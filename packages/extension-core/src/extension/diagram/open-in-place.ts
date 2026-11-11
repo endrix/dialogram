@@ -13,6 +13,18 @@ import * as vscode from 'vscode';
  */
 export type OpenKind = 'text' | { default: true; exceptViewType?: string } | { viewType: string };
 
+/**
+ * The view types of the diagram editors in this window. A default open never
+ * takes one for the file's editor: `vscode.open` on a source file gives its
+ * text, and the diagram of that file open elsewhere is another thing.
+ */
+const diagramViewTypes = new Set<string>();
+
+/** Tells the opens which custom editor is a diagram (each profile's, at activation). */
+export function registerDiagramViewType(viewType: string): void {
+    diagramViewTypes.add(viewType);
+}
+
 interface TabLike { input?: unknown }
 interface GroupLike { viewColumn: vscode.ViewColumn; tabs: readonly TabLike[] }
 
@@ -34,7 +46,7 @@ function shows(input: unknown, uri: vscode.Uri, kind: OpenKind): boolean {
     if ('viewType' in kind) {
         return custom && viewType === kind.viewType;
     }
-    return !custom || viewType !== kind.exceptViewType;
+    return !custom || (viewType !== kind.exceptViewType && !diagramViewTypes.has(viewType as string));
 }
 
 /**

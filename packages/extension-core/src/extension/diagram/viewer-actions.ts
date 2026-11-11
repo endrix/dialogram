@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { inPlace, openColumnFor, openWithArguments } from './open-in-place';
+import { openColumnFor, openWithArguments } from './open-in-place';
 
 const LIVE_PREVIEW_AT_FILE_COMMAND = 'livePreview.start.preview.atFile';
 const LIVE_PREVIEW_AT_FILE_STRING_COMMAND = 'livePreview.start.preview.atFileString';
@@ -68,10 +68,11 @@ export async function executeViewerCommand(
     }
 
     try {
-        await vscode.commands.executeCommand('vscode.open', targetUri, inPlace(targetUri, { default: true }, {
+        // In the active group, as it was: the command acts on the active editor.
+        await vscode.commands.executeCommand('vscode.open', targetUri, {
             preview: true,
             preserveFocus: true
-        }));
+        });
     } catch {
         // Ignore pre-open failures; the command retry may still succeed.
     }

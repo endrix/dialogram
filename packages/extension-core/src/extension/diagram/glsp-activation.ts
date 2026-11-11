@@ -41,7 +41,7 @@ import { composeStorageRuntimeOptions } from './profile-storage-options';
 import { composeElkServerOptions } from './profile-elk-server-options';
 import { openReference } from './open-reference-host';
 import { type DiagramChatConfirm, type DiagramChatConfirmAnswer, type DiagramChatTask, type DiagramProfile, type DiagramRunAnswer, type DiagramRunHost, type DiagramRunQuestion } from '../../api';
-import { inPlace, openColumnFor, openWithArguments } from './open-in-place';
+import { inPlace, openColumnFor, openWithArguments, registerDiagramViewType } from './open-in-place';
 
 // Define the diagram type constant locally to avoid import
 const WORKFLOW_DIAGRAM_TYPE = 'cal-network-diagram';
@@ -1206,10 +1206,10 @@ function registerCalDiagramCommands(
                 ? await profile.canOpenSource(sourceUri, { requestedName: requestedNetwork })
                 : undefined;
             if (decideDiagramOpen(canOpen, false) === 'text-fallback') {
-                await vscode.window.showTextDocument(sourceUri, {
+                await vscode.window.showTextDocument(sourceUri, inPlace(sourceUri, 'text', {
                     preview: true,
                     preserveFocus: false
-                });
+                }));
                 return;
             }
             // Whether a diagram for this file is already on screen, asked
@@ -1434,6 +1434,7 @@ function registerCalDiagramCommands(
 
     // Command: the launcher, which starts an external program on a viewer's
     // arguments, for outputs with no editor in VS Code.
+    registerDiagramViewType(profile.customEditorViewType);
     if (profile.commands.launch) {
         context.subscriptions.push(registerLauncher(profile.commands.launch, profile, context.globalState));
     }
