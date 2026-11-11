@@ -66,7 +66,8 @@ interface MemberInfo {
     expanded: boolean;
     /**
      * A bundle of the unit's ports is drawn as an input or an output, its arrow
-     * pointing one way: its edges run that way, `out` from it, `in` into it.
+     * pointing one way, `out` from it, `in` into it: an edge at it whose wires
+     * run both ways runs that way (one that runs one way keeps it).
      */
     runs?: 'out' | 'in';
 }

@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { GModelIndex } from '@eclipse-glsp/server';
-import { BoundaryPortGeometry, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { BoundaryPortGeometry, WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument, type PyGraphEdge, type PyGraphNode } from '../src/model/graph-gmodel-source';
 import { portBusStateOf } from '../src/model/port-bundles';
 import { convertToGModelRoot } from '../src/server/gmodel-convert';
@@ -284,6 +284,36 @@ describe('a bus edge at a bundle of the unit’s ports', () => {
             ['u_prod_port_b', 'bus:wf:west:x_port_x'],
             ['u_prod_port_c', 'bus:wf:west:x_port_x']
         ]);
+    });
+
+    it('closes no loop through a closed bus of the unit’s ports, as its members do not open', () => {
+        // A `valid` out of the input bus into the instance, its `ready` back
+        // into the bus: the outside world in between, not a feedback loop.
+        const nodes = [input('x_a', 'x'), input('x_n', 'x'), output('x_b', 'x', 'west'), output('x_c', 'x', 'west'), sink];
+        const edges = [edge('port:wf:input:x_a:out', `port:${U}:a`), edge(`port:${U}:b`, 'port:wf:output:x_b:in')];
+        const feedback = (children: any[]) => edgesOf(children).filter(e => (e.cssClasses ?? []).includes(WorkflowDiagramCss.EDGE_FEEDBACK));
+        expect(edgesOf(graph(nodes, edges)).map(e => [e.sourceId, e.targetId])).toEqual([
+            ['bus:wf:west:x_port_x', 'u_prod_port_a'],
+            ['u_prod_port_b', 'bus:wf:west:x_port_x']
+        ]);
+        expect(feedback(graph(nodes, edges))).toEqual([]);
+        // A loop inside the unit is still one, past the boundary.
+        const looping: PyGraphNode = { ...sink, ports: [...sink.ports, port('fb_in', 'in')] };
+        const loopEdges = [...edges, edge(`port:${U}:c`, `port:${U}:fb_in`)];
+        expect(feedback(graph([...nodes.slice(0, 4), looping], loopEdges)).map(e => e.sourceId)).toEqual(['u_prod_port_c']);
+    });
+
+    it('runs the way its wires run when several of them run one way', () => {
+        // Two outputs of one instance bundle into the input bus's two outputs:
+        // one edge of two wires, into the bus.
+        const driving: PyGraphNode = {
+            id: U, kind: 'instance', label: 'u_prod', scope: 'root',
+            ports: [port('y_b', 'out', 'y'), port('y_c', 'out', 'y')]
+        };
+        const nodes = [input('x_a', 'x'), input('x_n', 'x'), output('x_b', 'x', 'west'), output('x_c', 'x', 'west'), driving];
+        const edges = [edge(`port:${U}:y_b`, 'port:wf:output:x_b:in'), edge(`port:${U}:y_c`, 'port:wf:output:x_c:in')];
+        const children = graph(nodes, edges);
+        expect(edgesOf(children).map(e => [e.sourceId, e.targetId])).toEqual([['u_prod_bus_y', 'bus:wf:west:x_port_x']]);
     });
 
     it('runs the way the bus’s arrow points where its wires run both ways', () => {
