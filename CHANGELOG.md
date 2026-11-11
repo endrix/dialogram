@@ -15,6 +15,11 @@ it no longer has.
 
 ### Removed
 
+- **The two Reroute Edges entries of the context menu** ("Avoid Overlaps,
+  Keep Nodes" and "Clear Routes Only", on a selection). Edges are routed by
+  the layout and rerouted when a node moves or opens; the entries did
+  neither well. The operations stay, for the moves and layouts that use
+  them.
 - **The `@viewer` double-click in the stock bundle.** Opening, diffing,
   opening with an editor or running a command on a `@viewer` task's last
   tokens, or opening the path it declares, is wfpy-ide's `NodeOpener` in its
