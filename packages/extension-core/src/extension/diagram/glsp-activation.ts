@@ -34,6 +34,7 @@ import { readRequestedNetworkName, resolveDiagramOpenTarget, type DiagramOpenTar
 import { matchesSourceExtension, sourceFileNoun } from './source-extensions';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
 import { executeViewerCommand, executeViewerOpen, executeViewerReveal } from './viewer-actions';
+import { registerLauncher } from './launcher';
 import { decideDiagramOpen } from './diagram-open-decision';
 import { readMcpServerUrl } from './mcp-server-url';
 import { composeStorageRuntimeOptions } from './profile-storage-options';
@@ -1427,6 +1428,12 @@ function registerCalDiagramCommands(
             editorProvider.postToWebview(uri.toString(), { type: 'dialogram.svg.extract' });
         })
     );
+
+    // Command: the launcher, which starts an external program on a viewer's
+    // arguments, for outputs with no editor in VS Code.
+    if (profile.commands.launch) {
+        context.subscriptions.push(registerLauncher(profile.commands.launch, profile));
+    }
 
     // Command: Toggle grid background (client-side CSS class) for manual layout polish.
     context.subscriptions.push(

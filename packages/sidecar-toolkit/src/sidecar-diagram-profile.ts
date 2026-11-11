@@ -378,7 +378,8 @@ export function resolveSidecarCommandIds(
         getAgentToolConfig: glsp('getAgentToolConfig'),
         sidecarEdit: `${input.sidecarOperationPrefix}.sidecar.edit`,
         sidecarSend: `${input.sidecarOperationPrefix}.sidecar.send`,
-        createNewContainer: glsp('createNewContainer')
+        createNewContainer: glsp('createNewContainer'),
+        launch: glsp('launch')
     };
     // Only the ids the platform registers come through: a deprecated id a
     // product still spells, or a key it made up, stays out of the profile.

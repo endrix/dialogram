@@ -56,7 +56,8 @@ describe('resolveSidecarCommandIds', () => {
             getAgentToolConfig: 'sv.glsp.getAgentToolConfig',
             sidecarEdit: 'sv.sidecar.edit',
             sidecarSend: 'sv.sidecar.send',
-            createNewContainer: 'sv.glsp.createNewContainer'
+            createNewContainer: 'sv.glsp.createNewContainer',
+            launch: 'sv.glsp.launch'
         });
     });
 
