@@ -633,7 +633,9 @@ export class GraphGModelSource {
                             start: { line: Math.max(0, referencedSourceMeta.line - 1), character: 0 },
                             end: { line: Math.max(0, referencedSourceMeta.line - 1), character: 0 }
                         },
-                        [WorkflowDiagramMetadata.REFERENCED_URI]: referencedSourceMetaFile
+                        [WorkflowDiagramMetadata.REFERENCED_URI]: referencedSourceMetaFile,
+                        // The producer's own answer to "where is this defined".
+                        [WorkflowDiagramMetadata.REFERENCED_IS_DEFINITION]: true
                     };
                 }
                 // Where a person wrote this, when the file on screen is not

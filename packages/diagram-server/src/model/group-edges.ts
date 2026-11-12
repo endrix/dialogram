@@ -237,7 +237,7 @@ const ONE_EDGE_ARGS = [
     WorkflowDiagramMetadata.EDGE_FROM_INDEX_LABEL, WorkflowDiagramMetadata.EDGE_TO_INDEX_LABEL,
     WorkflowDiagramMetadata.SOURCE_PORT_NAME, WorkflowDiagramMetadata.TARGET_PORT_NAME,
     WorkflowDiagramMetadata.SOURCE_RANGE, WorkflowDiagramMetadata.REFERENCED_SOURCE_RANGE,
-    WorkflowDiagramMetadata.REFERENCED_URI
+    WorkflowDiagramMetadata.REFERENCED_URI, WorkflowDiagramMetadata.REFERENCED_IS_DEFINITION
 ];
 
 /**

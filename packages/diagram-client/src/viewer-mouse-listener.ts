@@ -19,6 +19,8 @@ const NAVIGATE_PREFER_DEFINITION_ARG = 'wf:navigatePreferDefinition';
 const NAVIGATE_SOURCE_URI_ARG = 'wf:navigateSourceUri';
 const NAVIGATE_SOURCE_RANGE_ARG = 'wf:navigateSourceRange';
 const NAVIGATE_SYMBOL_ARG = 'wf:navigateSymbol';
+// The target is the definition itself, named by the producer: the host opens it as it is.
+const NAVIGATE_TARGET_IS_DEFINITION_ARG = 'wf:navigateTargetIsDefinition';
 
 type SerializedPosition = { line: number; character: number };
 type SerializedRange = { start: SerializedPosition; end: SerializedPosition };
@@ -67,17 +69,18 @@ function findSourceRange(element: GModelElement | undefined): SerializedRange | 
     return undefined;
 }
 
-function findDefinitionTarget(element: GModelElement | undefined): { uri: string; range?: SerializedRange } | undefined {
+function findDefinitionTarget(element: GModelElement | undefined): { uri: string; range?: SerializedRange; isDefinition?: boolean } | undefined {
     let current: GModelElement | undefined = element;
     while (current) {
         const args = (current as unknown as { args?: Args }).args;
         const referencedUri = args?.[WorkflowDiagramMetadata.REFERENCED_URI];
         if (typeof referencedUri === 'string') {
             const referencedRange = args?.[WorkflowDiagramMetadata.REFERENCED_SOURCE_RANGE];
+            const isDefinition = args?.[WorkflowDiagramMetadata.REFERENCED_IS_DEFINITION] === true ? { isDefinition: true } : {};
             if (isSerializedRange(referencedRange)) {
-                return { uri: referencedUri, range: referencedRange };
+                return { uri: referencedUri, range: referencedRange, ...isDefinition };
             }
-            return { uri: referencedUri };
+            return { uri: referencedUri, ...isDefinition };
         }
         current = (current as unknown as { parent?: GModelElement }).parent;
     }
@@ -111,7 +114,7 @@ function findNavigationSymbol(element: GModelElement | undefined): string | unde
     return undefined;
 }
 
-function buildDefinitionNavigationAction(
+export function buildDefinitionNavigationAction(
     element: GModelElement,
     sourceUri: string | undefined
 ): ReturnType<typeof NavigateToExternalTargetAction.create> | undefined {
@@ -134,6 +137,7 @@ function buildDefinitionNavigationAction(
                 preserveFocus: false
             }),
             [NAVIGATE_PREFER_DEFINITION_ARG]: true,
+            ...(defTarget?.isDefinition ? { [NAVIGATE_TARGET_IS_DEFINITION_ARG]: true } : {}),
             ...(sourceUri ? { [NAVIGATE_SOURCE_URI_ARG]: sourceUri } : {}),
             ...(fallbackRange ? { [NAVIGATE_SOURCE_RANGE_ARG]: JSON.stringify(fallbackRange) } : {}),
             ...(symbolHint ? { [NAVIGATE_SYMBOL_ARG]: symbolHint } : {})

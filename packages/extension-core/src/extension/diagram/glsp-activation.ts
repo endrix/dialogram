@@ -42,6 +42,7 @@ import { composeElkServerOptions } from './profile-elk-server-options';
 import { openReference } from './open-reference-host';
 import { type DiagramChatConfirm, type DiagramChatConfirmAnswer, type DiagramChatTask, type DiagramProfile, type DiagramRunAnswer, type DiagramRunHost, type DiagramRunQuestion } from '../../api';
 import { inPlace, openColumnFor, openWithArguments, registerDiagramViewType } from './open-in-place';
+import { producerNamedDefinition } from './producer-definition';
 
 // Define the diagram type constant locally to avoid import
 const WORKFLOW_DIAGRAM_TYPE = 'cal-network-diagram';
@@ -492,7 +493,14 @@ export async function activateGlspIntegration(
                             ? showOptionsFromArgs?.selection
                             : undefined;
 
-                        if (sourceUriRaw !== '') {
+                        // The producer resolved the name itself: its answer is
+                        // the definition, and the language tooling (configured,
+                        // maybe, for another interpreter or other import roots)
+                        // is not asked for a second opinion. Unless the file is
+                        // gone, when asking is all that is left.
+                        const producerNamedIt = await producerNamedDefinition(
+                            args as Record<string, unknown> | undefined, fallbackTargetUri, uri => vscode.workspace.fs.stat(uri));
+                        if (sourceUriRaw !== '' && !producerNamedIt) {
                             try {
                                 const sourceUri = parseExternalTargetUri(sourceUriRaw);
                                 if (!sourceUri) {
