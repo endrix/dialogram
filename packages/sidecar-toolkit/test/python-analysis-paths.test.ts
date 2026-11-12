@@ -31,6 +31,15 @@ describe('the entries added to a folder\'s extraPaths', () => {
         expect(extraPathsToAdd({ folder: FOLDER, existing, environment, sameInterpreter: false })).toEqual(['/opt/wfpy/src']);
     });
 
+    it('take a folder opened through a link, and a drive letter of another case, as the folder', () => {
+        const linked = { roots: ['/real/project', '/real/project/flows'], libraryPaths: [] };
+        expect(extraPathsToAdd({ folder: '/w/link', folderRealPath: '/real/project', existing: ['flows/sub'], environment: linked, sameInterpreter: true }))
+            .toEqual(['flows']);
+        const windows = { roots: ['C:/proj', 'C:/proj/flows', 'C:/proj/Lib'], libraryPaths: [] };
+        expect(extraPathsToAdd({ folder: 'c:/proj', existing: ['FLOWS'], environment: windows, sameInterpreter: true, platform: 'win32' }))
+            .toEqual(['Lib']);
+    });
+
     it('add a path once that the interpreter names twice', () => {
         const twice = { ...environment, roots: ['/w/shared', '/w/shared/'], libraryPaths: ['/w/shared'] };
         expect(extraPathsToAdd({ folder: FOLDER, existing: [], environment: twice, sameInterpreter: false })).toEqual(['/w/shared']);
@@ -63,7 +72,7 @@ function host(over: Partial<PythonAnalysisHost> = {}) {
         environmentOf: async () => { state.asked += 1; return environment; },
         selectedPrefix: async () => '/w/project/.venv',
         pyrightConfigPaths: async () => undefined,
-        pyprojectConfiguresPyright: async () => false,
+        pyprojectSetsExtraPaths: async () => false,
         extraPaths: () => state.extraPaths,
         writeExtraPaths: async (_folder, paths) => { state.writes.push(paths); state.extraPaths = paths; },
         notifyAdded: (_folder, added) => { state.added.push(added); },
@@ -89,12 +98,14 @@ describe('a source file whose diagram is opened', () => {
         expect(state.added).toHaveLength(1);
     });
 
-    it('gets the installed packages too when the editor has another interpreter, or says none', async () => {
-        for (const selectedPrefix of [async () => '/usr', async () => undefined]) {
-            const { state, paths } = host({ selectedPrefix });
-            await paths.consider(`${FOLDER}/flows/main.py`);
-            expect(state.writes[0]).toEqual(['kept', 'flows', '/w/shared', '.venv/lib/python3.14/site-packages', '/opt/wfpy/src']);
-        }
+    it('gets the installed packages too when the editor is known to have another interpreter', async () => {
+        const other = host({ selectedPrefix: async () => '/usr' });
+        await other.paths.consider(`${FOLDER}/flows/main.py`);
+        expect(other.state.writes[0]).toEqual(['kept', 'flows', '/w/shared', '.venv/lib/python3.14/site-packages', '/opt/wfpy/src']);
+        // Not told which (the Python extension still starting): the roots only.
+        const unknown = host({ selectedPrefix: async () => undefined });
+        await unknown.paths.consider(`${FOLDER}/flows/main.py`);
+        expect(unknown.state.writes[0]).toEqual(['kept', 'flows', '/w/shared']);
     });
 
     it('is left alone outside a folder, with the setting off, or with no language server: the sidecar is not asked', async () => {
@@ -108,10 +119,15 @@ describe('a source file whose diagram is opened', () => {
         expect([state.asked, state.writes.length]).toEqual([0, 0]);
     });
 
-    it('is left alone when the sidecar has no answer', async () => {
-        const { state, paths } = host({ environmentOf: async () => undefined });
+    it('is left alone when the sidecar has no answer, and asked again the next time it is opened', async () => {
+        let answers = false;
+        const { state, paths } = host({ environmentOf: async () => { state.asked += 1; return answers ? environment : undefined; } });
         await paths.consider(`${FOLDER}/flows/main.py`);
         expect(state.writes).toEqual([]);
+        answers = true;
+        await paths.consider(`${FOLDER}/flows/main.py`);
+        expect(state.asked).toBe(2);
+        expect(state.writes).toHaveLength(1);
     });
 
     it('leaves a pyrightconfig.json to its author, who is told once what it lacks', async () => {
@@ -128,8 +144,8 @@ describe('a source file whose diagram is opened', () => {
         }
     });
 
-    it('leaves a folder whose pyproject.toml configures Pyright', async () => {
-        const { state, paths } = host({ pyprojectConfiguresPyright: async () => true });
+    it('leaves a folder whose pyproject.toml sets the paths', async () => {
+        const { state, paths } = host({ pyprojectSetsExtraPaths: async () => true });
         await paths.consider(`${FOLDER}/flows/main.py`);
         expect(state.writes).toEqual([]);
         expect(state.logs.join()).toContain('pyproject.toml');

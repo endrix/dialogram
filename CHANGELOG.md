@@ -94,12 +94,14 @@ it no longer has.
   `pythonEnvironment` op: the file's import roots, and the folders its
   installed packages come from). What the editor lacks is added to
   `python.analysis.extraPaths` of the file's workspace folder: the roots
-  always, the installed packages only when the Python extension has another
-  interpreter selected. Paths are added, never removed; a folder with a
-  `pyrightconfig.json` is not written to (its author is told what it lacks),
-  nor one whose `pyproject.toml` configures Pyright; a sidecar that does not
-  advertise the op is not asked. The named setting (default `true`, declared
-  by the product) turns it off, as does **Don't Add Them** on the notice.
+  always, the installed packages only when the Python extension is known to
+  have another interpreter selected. Paths are added, never removed; a folder
+  whose `pyrightconfig.json` sets `extraPaths` is not written to (its author
+  is told what it lacks), nor one whose `pyproject.toml` sets them; a sidecar
+  that does not advertise the op is not asked. The named setting (default
+  `true`, declared by the product) turns it off, as does **Stop Adding
+  Paths** on the notice. The folder's effective list is what is extended, so
+  entries set at user or workspace level are copied into the folder's.
 - **An open reveals the editor a file already has.** A double-click on a
   node (its source, a viewer's file, a reference) opened in the diagram's
   group even when the file was open in the group beside it, as a second

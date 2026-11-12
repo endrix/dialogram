@@ -5,6 +5,7 @@
  * transport.
  */
 import * as vscode from 'vscode';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getSidecarCapabilities } from './sidecar-capabilities.js';
 import { invokeSidecarOp } from './sidecar-graph-export.js';
@@ -49,7 +50,16 @@ function vscodeHost(config: PythonAnalysisPathsConfig, log: (message: string) =>
     return {
         folderOf(file) {
             const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(file));
-            return folder && folder.uri.scheme === 'file' ? { path: folder.uri.fsPath, name: folder.name } : undefined;
+            if (!folder || folder.uri.scheme !== 'file') {
+                return undefined;
+            }
+            let realPath: string | undefined;
+            try {
+                realPath = fs.realpathSync.native(folder.uri.fsPath);
+            } catch {
+                realPath = undefined;
+            }
+            return { path: folder.uri.fsPath, name: folder.name, ...(realPath ? { realPath } : {}) };
         },
         enabled: file => vscode.workspace.getConfiguration(config.settingsNamespace, vscode.Uri.file(file)).get<boolean>(config.settingKey, true) !== false,
         languageServerInstalled: () => vscode.extensions.getExtension(LANGUAGE_SERVER_EXTENSION) !== undefined,
@@ -87,16 +97,17 @@ function vscodeHost(config: PythonAnalysisPathsConfig, log: (message: string) =>
                 return undefined;
             }
             try {
+                // Without the key the file leaves the paths to the setting.
                 const paths = (JSON.parse(text) as { extraPaths?: unknown })?.extraPaths;
-                return Array.isArray(paths) ? paths.filter((entry): entry is string => typeof entry === 'string') : [];
+                return Array.isArray(paths) ? paths.filter((entry): entry is string => typeof entry === 'string') : undefined;
             } catch {
                 // Comments or trailing commas: Pyright reads it, this does not try to.
                 return 'unreadable';
             }
         },
-        async pyprojectConfiguresPyright(folder) {
+        async pyprojectSetsExtraPaths(folder) {
             const text = await readText(path.join(folder.path, 'pyproject.toml'));
-            return text !== undefined && /^\s*\[tool\.pyright[\].]/m.test(text);
+            return text !== undefined && /^\s*\[\s*tool\s*\.\s*"?pyright"?\s*[\].]/m.test(text) && /^\s*extraPaths\s*=/m.test(text);
         },
         extraPaths(folder) {
             const value = vscode.workspace.getConfiguration(EXTRA_PATHS_SECTION, folderUri(folder)).get<unknown>(EXTRA_PATHS_KEY);
@@ -108,12 +119,12 @@ function vscodeHost(config: PythonAnalysisPathsConfig, log: (message: string) =>
         },
         notifyAdded(folder, added, stop) {
             const what = added.length === 1 ? `an import path (${added[0]})` : `${added.length} import paths`;
-            const off = "Don't Add Them";
+            const off = 'Stop Adding Paths';
             void vscode.window.showInformationMessage(
                 `${config.displayName} added ${what} to ${EXTRA_PATHS_SECTION}.${EXTRA_PATHS_KEY} of ${folder.name}, from the interpreter that runs its sidecar, `
                 + 'so the editor resolves the imports the diagram is drawn from.',
                 off
-            ).then(choice => (choice === off ? stop() : undefined), () => undefined);
+            ).then(choice => (choice === off ? stop() : undefined)).then(undefined, error => log(`python analysis paths: ${String(error)}`));
         },
         notifyLacking(folder, lacking) {
             const copy = 'Copy Paths';
@@ -121,7 +132,8 @@ function vscodeHost(config: PythonAnalysisPathsConfig, log: (message: string) =>
                 `${config.displayName}: the pyrightconfig.json of ${folder.name} sets the editor's import paths, and lacks ${lacking.length === 1 ? 'one' : lacking.length} `
                 + `the sidecar's interpreter imports from: ${lacking.join(', ')}.`,
                 copy
-            ).then(choice => (choice === copy ? vscode.env.clipboard.writeText(JSON.stringify(lacking, undefined, 4)) : undefined), () => undefined);
+            ).then(choice => (choice === copy ? vscode.env.clipboard.writeText(JSON.stringify(lacking, undefined, 4)) : undefined))
+                .then(undefined, error => log(`python analysis paths: ${String(error)}`));
         },
         async disable(folder) {
             await vscode.workspace.getConfiguration(config.settingsNamespace, folderUri(folder))
