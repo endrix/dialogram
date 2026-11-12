@@ -442,6 +442,9 @@ export namespace WorkflowDiagramMetadata {
     /** On a member of a group: the row the producer puts it in (`meta.row`),
      *  the first row on top. On the group: its members are laid out in rows. */
     export const GROUP_ROW = 'wf:groupRow';
+    /** On a group: where the producer pins it (`pin: 'top'`), out of the flow
+     *  of the diagram: in a band above everything else. */
+    export const GROUP_PIN = 'wf:groupPin';
 }
 
 /**

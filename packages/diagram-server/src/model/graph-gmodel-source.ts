@@ -65,6 +65,10 @@ export type PyGraphScope = {
     label?: string;
     parent?: string | null;
     controlNodeId?: string | null;
+    /** `'top'` pins a `group` scope above the rest of the diagram, out of its
+     *  flow: what belongs to the whole picture rather than to a place in it
+     *  (a legend, the variables a state machine works on). */
+    pin?: string;
     /** The platform's: the key of the open node this group stands for (open-nodes.ts). */
     openNodeKey?: string;
     /** The platform's: that node's open bundles, kept while it is open and they are not drawn. */
@@ -1368,6 +1372,7 @@ export class GraphGModelSource {
                 'wf:scopeId': scope.id,
                 [WorkflowDiagramMetadata.STRUCTURE_KIND]: 'group',
                 [WorkflowDiagramMetadata.GROUP_LABEL]: label,
+                ...(scope.pin === 'top' ? { [WorkflowDiagramMetadata.GROUP_PIN]: 'top' } : {}),
                 ...(scope.openNodeKey ? { [WorkflowDiagramMetadata.OPEN_NODE_KEY]: scope.openNodeKey } : {}),
                 ...(scope.openNodeBundles ? { [WorkflowDiagramMetadata.OPEN_NODE_BUNDLES]: scope.openNodeBundles } : {})
             }
