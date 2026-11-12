@@ -24,6 +24,8 @@ type NavigationCrumb = {
     /** The crumb is a view of the workflow other than its structure. */
     view?: string;
     viewLabel?: string;
+    /** The view is of the instance the crumb was reached through, not of the definition its file holds. */
+    viewOf?: 'instance';
 };
 
 /** What a crumb says: the instance or workflow, then the view when it is one. */
@@ -727,11 +729,16 @@ export class WorkflowNavigationUi {
         workflowName: string,
         workflowInstanceName: string | undefined,
         view: string,
-        viewLabel: string | undefined
+        viewLabel: string | undefined,
+        viewOf?: 'instance'
     ): RequestModelAction {
         const currentSourceUri = this.editorContext.sourceUri;
+        // The crumb keeps what the view is of, so that coming back to it by
+        // the trail asks for the same thing the node did.
         const trail = this.buildNavigationTrail(currentSourceUri, targetSourceUri, workflowName, workflowInstanceName)
-            .map((crumb, index, all) => (index === all.length - 1 ? { ...crumb, view, ...(viewLabel ? { viewLabel } : {}) } : crumb));
+            .map((crumb, index, all) => (index === all.length - 1
+                ? { ...crumb, view, ...(viewLabel ? { viewLabel } : {}), ...(viewOf ? { viewOf } : {}) }
+                : crumb));
         this.noteNavigate(targetSourceUri, workflowName, trail);
         return this.requestModel(targetSourceUri, workflowName, undefined, trail);
     }
@@ -1177,12 +1184,13 @@ export class WorkflowNavigationUi {
                 : '';
             const view = typeof (item as any)?.view === 'string' ? (item as any).view.trim() : '';
             const viewLabel = typeof (item as any)?.viewLabel === 'string' ? (item as any).viewLabel.trim() : '';
+            const viewOf = (item as any)?.viewOf === 'instance' ? { viewOf: 'instance' as const } : {};
             if (sourceUri !== '' && workflowName !== '') {
                 out.push({
                     sourceUri,
                     workflowName,
                     ...(workflowInstanceName !== '' ? { workflowInstanceName } : {}),
-                    ...(view !== '' ? { view, ...(viewLabel !== '' ? { viewLabel } : {}) } : {})
+                    ...(view !== '' ? { view, ...(viewLabel !== '' ? { viewLabel } : {}), ...viewOf } : {})
                 });
             }
         }
@@ -1214,7 +1222,11 @@ export class WorkflowNavigationUi {
                     ? { workflowInstanceName: entry.workflowInstanceName.trim() }
                     : {}),
                 ...(typeof entry.view === 'string' && entry.view.trim() !== ''
-                    ? { view: entry.view.trim(), ...(entry.viewLabel?.trim() ? { viewLabel: entry.viewLabel.trim() } : {}) }
+                    ? {
+                        view: entry.view.trim(),
+                        ...(entry.viewLabel?.trim() ? { viewLabel: entry.viewLabel.trim() } : {}),
+                        ...(entry.viewOf === 'instance' ? { viewOf: 'instance' as const } : {})
+                    }
                     : {})
             };
             const prev = normalized[normalized.length - 1];

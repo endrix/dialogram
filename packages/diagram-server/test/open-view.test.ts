@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { WorkflowContextMenuItemProvider } from '../src/server/context-menu-item-provider';
 import { GraphGModelSource } from '../src/model/graph-gmodel-source';
-import { parseViewsMeta } from '../src/server/graph-load-request-options';
+import { parseNavigationTrailArg, parseViewsMeta, viewIsOfInstance } from '../src/server/graph-load-request-options';
 
 const SHOWN = 'file:///w/top.vhd';
 const VIEWS = [{ id: 'synth', label: 'Synthesis View' }];
@@ -47,6 +47,15 @@ describe('a view of a node’s unit', () => {
         }]);
     });
 
+    it('says so when the view is of the instance, not of the definition its file holds', () => {
+        const ofInstance = { ...node, args: { ...node.args, [WorkflowDiagramMetadata.VIEWS]: [{ id: 'inside', label: 'Inside', of: 'instance' }] } };
+        const item = provider(root, ofInstance).getItems(['n'], { x: 0, y: 0 }).find((i: any) => i.id === 'dialogram.openView.inside');
+        expect(item.actions).toEqual([{
+            kind: 'dialogram.openView', view: 'inside', label: 'Inside',
+            uri: 'file:///w/adder.vhd', workflowName: 'adder', workflowInstanceName: 'u_add', viewOf: 'instance'
+        }]);
+    });
+
     it('is not offered on a node whose unit has none', () => {
         const plain = { ...node, args: { ...node.args, [WorkflowDiagramMetadata.VIEWS]: undefined } };
         const ids = provider(root, plain).getItems(['n'], { x: 0, y: 0 }).map((i: any) => i.id);
@@ -69,6 +78,9 @@ describe('a view of the unit shown', () => {
 describe('the document’s meta.views', () => {
     it('reaches the node as wf:views, labels defaulting to the id', () => {
         expect(parseViewsMeta([{ id: 'synth' }, { id: '' }, 'x'])).toEqual([{ id: 'synth', label: 'synth' }]);
+        // What a view is of: the instance when the producer says so, else nothing said.
+        expect(parseViewsMeta([{ id: 'a', of: 'instance' }, { id: 'b', of: 'definition' }, { id: 'c', of: true }]))
+            .toEqual([{ id: 'a', label: 'a', of: 'instance' }, { id: 'b', label: 'b' }, { id: 'c', label: 'c' }]);
         expect(parseViewsMeta([])).toBeUndefined();
         const doc: any = {
             version: '1.1',
@@ -82,5 +94,31 @@ describe('the document’s meta.views', () => {
         const model: any = new GraphGModelSource(undefined).transform(doc);
         const find = (el: any): any => el?.args?.[WorkflowDiagramMetadata.VIEWS] ? el : (el?.children ?? []).map(find).find(Boolean);
         expect(find(model.graph ?? model)?.args[WorkflowDiagramMetadata.VIEWS]).toEqual(VIEWS);
+    });
+});
+
+describe('a view of the instance, on the trail', () => {
+    const trail = (last: Record<string, unknown>) => JSON.stringify([
+        { sourceUri: 'file:///w/top.py', workflowName: 'top' },
+        { sourceUri: 'file:///w/unit.py', workflowName: 'Unit', workflowInstanceName: 'u1', view: 'inside', ...last }
+    ]);
+
+    it('is kept on its crumb, and on no crumb that is not a view', () => {
+        expect(parseNavigationTrailArg(trail({ viewOf: 'instance' }))[1]).toEqual({
+            sourceUri: 'file:///w/unit.py', workflowName: 'Unit', workflowInstanceName: 'u1', view: 'inside', viewOf: 'instance'
+        });
+        expect(parseNavigationTrailArg(trail({ viewOf: 'definition' }))[1].viewOf).toBeUndefined();
+        expect(parseNavigationTrailArg(trail({ view: '', viewOf: 'instance' }))[1].viewOf).toBeUndefined();
+    });
+
+    it('is what the request asks for when the last crumb is that view, reached through an instance', () => {
+        const opts = (last: Record<string, unknown>, view: unknown = 'inside') => ({ 'wf:view': view, 'wf:navTrail': trail(last) });
+        expect(viewIsOfInstance(opts({ viewOf: 'instance' }))).toBe(true);
+        expect(viewIsOfInstance(opts({}))).toBe(false);
+        expect(viewIsOfInstance(opts({ viewOf: 'instance' }, 'synthesis'))).toBe(false);
+        // No view asked for at all (an explicit `undefined` would take the default above).
+        expect(viewIsOfInstance(opts({ viewOf: 'instance' }, null))).toBe(false);
+        expect(viewIsOfInstance(opts({ viewOf: 'instance', workflowInstanceName: ' ' }))).toBe(false);
+        expect(viewIsOfInstance({})).toBe(false);
     });
 });

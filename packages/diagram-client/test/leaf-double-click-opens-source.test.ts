@@ -97,6 +97,22 @@ describe('double-click on a node that is not a network instance', () => {
         }]);
     });
 
+    it('says so when the view is of the instance, and only then', () => {
+        behavior({});
+        const node = (views: unknown) => leafNode({
+            [WorkflowDiagramMetadata.REFERENCED_URI]: LEAF_URI,
+            [WorkflowDiagramMetadata.REFERENCED_ENTITY_NAME]: 'adder',
+            [WorkflowDiagramMetadata.VIEWS]: views,
+            'wf:entityInstanceName': 'u_add'
+        });
+        expect(doubleClick(node([{ id: 'inside', label: 'Inside', of: 'instance' }]))).toEqual([{
+            kind: 'dialogram.openView', view: 'inside', label: 'Inside', uri: LEAF_URI, workflowName: 'adder',
+            workflowInstanceName: 'u_add', viewOf: 'instance'
+        }]);
+        expect(doubleClick(node([{ id: 'inside', of: 'definition' }]))[0].viewOf).toBeUndefined();
+        expect(doubleClick(node([{ id: 'inside' }]))[0].viewOf).toBeUndefined();
+    });
+
     it('opens a view without the source flag', () => {
         behavior({});
         const node = leafNode({

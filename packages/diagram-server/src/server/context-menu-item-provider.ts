@@ -407,7 +407,8 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
                         label: view.label,
                         uri: referencedUri,
                         workflowName: displayNameFromQualifiedName(referencedName.trim()),
-                        ...(typeof instanceName === 'string' && instanceName.trim() !== '' ? { workflowInstanceName: instanceName.trim() } : {})
+                        ...(typeof instanceName === 'string' && instanceName.trim() !== '' ? { workflowInstanceName: instanceName.trim() } : {}),
+                        ...(view.of === 'instance' ? { viewOf: 'instance' } : {})
                     } as any]
                 }));
             }

@@ -132,6 +132,16 @@ it no longer has.
   colours it with `.workflow-node-group .group-initial-mark { color: … }`.
   It takes 24 px of the title's room, and a frame is not made wider for its
   title: a long title in a narrow frame runs past it sooner.
+- **A view can be of the instance, not of the definition.** A producer marks
+  a view it offers on a node with `of: 'instance'` (`meta.views`:
+  `[{ id, label, of? }]`). By name, a file answers for the definition it
+  holds under that name; for a unit made per instance (by a factory, with
+  the instance's parameters) that is another one. A view so marked is asked
+  of the editor's root, by the path of instances that leads to the node
+  (`rootNetwork` and `instancePath`, with `view`), as a drill-down into a
+  nested unit already falls back to; its file is asked by name only when the
+  root has no answer. The mark stays on the view's crumb, so the trail leads
+  back to the same view. A view without it is asked as before.
 - **Lines of text in a node, read close in.** A producer puts lines of text
   in a node with `meta.lines` (`[{ text, kind? }]`, or plain strings; six at
   most, each cut at 48 characters): what a reader zooms in for and the

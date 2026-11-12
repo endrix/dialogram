@@ -27,6 +27,7 @@ import {
     normalizeGraphLoadErrors,
     parseStringListArg,
     shouldRetryTrailFallback,
+    viewIsOfInstance,
     VIEW_ARG,
     parseViewArg
 } from '@dialogram/diagram-server/server/graph-load-request-options';
@@ -123,9 +124,29 @@ export class SidecarModelSource implements DiagramModelSource {
             : sourceUri;
         const graphFilePath = URI.parse(graphSourceUri).fsPath;
 
-        let sidecarResult: { graph?: Record<string, unknown>; error?: string; warning?: string } =
-            await this.tryLoadGraphFromSidecar(graphFilePath, opts);
-        if (!sidecarResult.graph || shouldRetryTrailFallback(sidecarResult, opts)) {
+        // A view of the instance it was reached through is asked of the root,
+        // by the path of instances: by name, the file answers for the
+        // definition it holds under that name, which for a unit made per
+        // instance is another one. Only when the root has no answer is the
+        // file asked, as for any view.
+        const viaInstance = viewIsOfInstance(opts) ? deriveTrailFallback(sourceUri, opts) : undefined;
+        let sidecarResult: { graph?: Record<string, unknown>; error?: string; warning?: string } | undefined;
+        if (viaInstance) {
+            const instanceOpts = {
+                ...opts,
+                [GRAPH_SOURCE_URI_ARG]: viaInstance.graphSourceUri,
+                [ROOT_WORKFLOW_ARG]: viaInstance.rootWorkflowName,
+                [INSTANCE_PATH_ARG]: viaInstance.instancePath
+            };
+            const answered = await this.tryLoadGraphFromSidecar(URI.parse(viaInstance.graphSourceUri).fsPath, instanceOpts);
+            if (answered.graph) {
+                sidecarResult = answered;
+                resolvedOpts = instanceOpts;
+            }
+        }
+        sidecarResult ??= await this.tryLoadGraphFromSidecar(graphFilePath, opts);
+        // The same question is not asked twice: the path of instances was the first.
+        if (!viaInstance && (!sidecarResult.graph || shouldRetryTrailFallback(sidecarResult, opts))) {
             const retry = deriveTrailFallback(sourceUri, opts);
             if (retry) {
                 const retryOpts = {
