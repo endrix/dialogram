@@ -1,5 +1,5 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
-import { parseBadgesMeta, parseFactsMeta, parseViewsMeta, type UnitBadge } from '../server/graph-load-request-options';
+import { parseBadgesMeta, parseFactsMeta, parseLinesMeta, parseViewsMeta, textColumns, type UnitBadge } from '../server/graph-load-request-options';
 import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, type PortSide, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
@@ -425,6 +425,17 @@ export class GraphGModelSource {
             const footerReserve = footerTypeLabel && !symbolKind
                 ? WorkflowDiagramConstants.NODE_FOOTER_LABEL_HEIGHT_PX
                 : 0;
+            // The lines a producer puts in the node: bands across the bottom
+            // of its body, which grows by them. A symbol has no body for
+            // them; an `if` or a loop is a frame around what it holds, sized
+            // by that and drawn by a view of its own.
+            const framed = node.kind === 'if' || node.kind === 'loop';
+            const lines = symbolKind || framed ? [] : parseLinesMeta(node.meta?.['lines']);
+            const linesHeight = lines.length * WorkflowDiagramConstants.NODE_LINE_HEIGHT_PX;
+            // The font is fixed-width: a line is as wide as its columns.
+            const lineColumnWidth = this.estimateLabelSize('x', WorkflowDiagramConstants.NODE_LINE_FONT_SIZE_PX).width;
+            const linesWidth = lines.length === 0 ? 0 : 2 * WorkflowDiagramConstants.NODE_LINE_PADDING_PX
+                + lineColumnWidth * Math.max(...lines.map(line => textColumns(line.text)));
             const pinNameWidth = (ps: PyGraphPort[]): number => Math.max(0, ...ps.map(p =>
                 this.estimateLabelSize(p.pins?.[0] ?? p.name, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX).width));
             // Under a symbol, its caption: a register's name; any symbol's the
@@ -437,8 +448,10 @@ export class GraphGModelSource {
                     symbolKind === 'register' ? SymbolGeometry.registerBodyWidth(pinNameWidth(rowInputs), pinNameWidth(outputs)) : undefined,
                     captioned)
                 : {
-                    width: Math.max(defaultWidth, labelRequiredWidth, headerLabelW),
-                    height: Math.max(minHeight, requiredHeight) + footerReserve
+                    width: Math.max(defaultWidth, labelRequiredWidth, headerLabelW, linesWidth),
+                    // The lines are under what the node is without them, so
+                    // its ports and its family's mark keep their room.
+                    height: Math.max(minHeight, requiredHeight) + linesHeight + footerReserve
                 };
             const gnode: GNode = {
                 id: stableNodeId,
@@ -459,6 +472,9 @@ export class GraphGModelSource {
                     'wf:scope': node.scope
                 }
             };
+            if (lines.length > 0) {
+                gnode.args![WorkflowDiagramMetadata.NODE_LINES] = lines;
+            }
             // What the node is one drawing of, for the client to outline the others.
             const sameAs = node.meta?.['sameAs'];
             if (typeof sameAs === 'string' && sameAs.trim() !== '') {
@@ -1587,7 +1603,6 @@ export class GraphGModelSource {
         }
         return classes;
     }
-
 
     /**
      * A styling hook derived from a producer-supplied word.

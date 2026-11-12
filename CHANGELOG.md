@@ -121,6 +121,23 @@ it no longer has.
   what the links lead to is not faded, and an edge on the trace, selected
   or in error is not dimmed. A node's `meta.sameAs` names what it is one
   drawing of: selecting it outlines the other nodes that draw the same.
+- **Lines of text in a node, read close in.** A producer puts lines of text
+  in a node with `meta.lines` (`[{ text, kind? }]`, or plain strings; six at
+  most, each cut at 48 characters): what a reader zooms in for and the
+  property panel is too far away for, such as the condition a step waits on
+  or what it takes and gives. Each line is a band across the bottom of the
+  node's body, which is taller by them and as wide as the longest. The band
+  is always drawn and carries `node-line-<kind>` for a product to colour, so
+  which nodes have a line of a kind is seen at any zoom; its text is detail
+  (`zoom-detail`), drawn only close in. The cut is by character and counts a
+  wide one (East Asian, an emoji) as two columns of the fixed-width font the
+  lines are set in; control characters and marks that turn the direction of
+  the text are taken out. A symbol takes none, nor does an `if`, a loop or a
+  port of the unit. The members of a row of a group now stand on one line
+  along their tops, where a node with lines beside one without would have
+  been centred on it. A diagram laid out before its nodes had lines keeps
+  its saved places: a node grows downward where it stands, until the next
+  layout.
   as if they were not there, and the band clears its highest route as well as
   its highest node. A pinned group that an edge crosses or ends at stays in
   the flow, since its edges need it there; a group nested in another is not

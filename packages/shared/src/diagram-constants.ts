@@ -58,6 +58,17 @@ export const WorkflowDiagramConstants = {
     NODE_FOOTER_LABEL_GAP_PX: 4,
     NODE_FOOTER_LABEL_HEIGHT_PX: 14,
 
+    /** The lines of text a producer puts in a node (`meta.lines`): each a band
+     *  across the bottom of its body. */
+    NODE_LINE_HEIGHT_PX: 16,
+    NODE_LINE_FONT_SIZE_PX: 10,
+    NODE_LINE_PADDING_PX: 6,
+    /** The most of a line that is drawn, in columns of its fixed-width font
+     *  (a wide character takes two): the rest is for the property panel. */
+    NODE_LINE_MAX_CHARS: 48,
+    /** The most lines a node draws. */
+    NODE_LINE_MAX_COUNT: 6,
+
     // Group containers (a producer's `group` scopes), drawn as a nested
     // region: a header band carrying the label on top, the members laid out
     // below it. The server pads the layout by these,

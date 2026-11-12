@@ -1447,6 +1447,27 @@ body.vscode-high-contrast-light .node-center-image-light {
     font-style: italic;
 }
 
+/* The lines a producer puts in a node (`meta.lines`): bands across the bottom
+   of its body. A band is quiet here; a product colours the kinds it knows
+   (`path.node-line-<kind>`, `text.node-line-text.node-line-<kind>`). The text
+   is `zoom-detail`: drawn only close in. */
+.sprotty path.node-line {
+    fill: var(--vscode-editor-foreground, #cccccc);
+    fill-opacity: 0.06;
+    stroke: none;
+    pointer-events: none;
+}
+
+/* `text-anchor` here and not only as an attribute: `.sprotty text` centres
+   every text, and a rule outranks an attribute. */
+.sprotty text.node-line-text {
+    fill: var(--vscode-descriptionForeground, #8b8b8b);
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 10px;
+    text-anchor: start;
+    pointer-events: none;
+}
+
 .workflow-label.label-badge {
     fill: var(--vscode-badge-foreground, #ffffff);
     font-size: 10px;

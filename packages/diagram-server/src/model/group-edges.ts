@@ -459,7 +459,11 @@ export function arrangeGroupRows(children: GModelElement[]): void {
         for (const member of members) {
             member.layoutOptions = {
                 ...(member.layoutOptions ?? {}),
-                'elk.partitioning.partition': String(rowOf(member) ?? last)
+                'elk.partitioning.partition': String(rowOf(member) ?? last),
+                // The members of a row stand on one line along their tops,
+                // whatever their heights (a node with lines of text beside
+                // one without): the layout would centre them on each other.
+                'elk.alignment': 'TOP'
             };
         }
     };
