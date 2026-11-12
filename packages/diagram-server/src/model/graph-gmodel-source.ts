@@ -70,7 +70,8 @@ export type PyGraphScope = {
     row?: number;
     /** `'top'` pins a `group` scope above the rest of the diagram, out of its
      *  flow: what belongs to the whole picture rather than to a place in it
-     *  (a legend, the variables a state machine works on). */
+     *  (a legend, the variables a state machine works on). For a group of
+     *  the root: one nested in another group stays where it is. */
     pin?: string;
     /** The platform's: the key of the open node this group stands for (open-nodes.ts). */
     openNodeKey?: string;
@@ -1020,6 +1021,9 @@ export class GraphGModelSource {
                 const group = groupNodes.get(scope.id)!;
                 const parent = parentOf(scope);
                 if (parent && parent !== group) {
+                    // Only a group of the root is pinned: the band is above
+                    // the whole diagram, not above the inside of a group.
+                    delete group.args?.[WorkflowDiagramMetadata.GROUP_PIN];
                     parent.children!.push(group);
                 } else {
                     children.push(group);
