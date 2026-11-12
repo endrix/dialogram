@@ -110,7 +110,14 @@ it no longer has.
   it, `meta.bidirectional` an arrowhead at both ends. A link leaves a node
   by the side facing the other end, or by the side across when a neighbour
   of the node's own frame is in the way; links sharing a side are spread
-  along it so they do not cross. A node's `meta.sameAs` names what it is one
+  along it in the order of the directions they lead in, so they fan out
+  without crossing, and two links between the same two nodes run side by
+  side. Where the platform draws a node as something else the link ends
+  there: at the frame of a node opened in place, at the bus a port of the
+  unit is folded into; no bus counts a link among its wires, and a link
+  between a frame and what is in it is none. With the selection's trace on,
+  what the links lead to is not faded, and an edge on the trace, selected
+  or in error is not dimmed. A node's `meta.sameAs` names what it is one
   drawing of: selecting it outlines the other nodes that draw the same.
   as if they were not there, and the band clears its highest route as well as
   its highest node. A pinned group that an edge crosses or ends at stays in
