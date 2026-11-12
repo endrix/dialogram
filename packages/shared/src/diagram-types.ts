@@ -439,9 +439,12 @@ export namespace WorkflowDiagramMetadata {
     /** On a group with a loop: what the edges it stands for said (their
      *  captions, their error messages), one line each, for the loop's tooltip. */
     export const GROUP_LOOP_NOTES = 'wf:groupLoopNotes';
-    /** On a member of a group: the row the producer puts it in (`meta.row`),
-     *  the first row on top. On the group: its members are laid out in rows. */
+    /** On a member of a group, a node or a group nested in it: the row the
+     *  producer puts it in (a node's `meta.row`, a scope's `row`), the first
+     *  row on top. */
     export const GROUP_ROW = 'wf:groupRow';
+    /** On a group: its members are laid out in rows (`GROUP_ROW`). */
+    export const GROUP_ROWS = 'wf:groupRows';
 }
 
 /**
