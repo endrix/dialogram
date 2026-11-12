@@ -84,6 +84,18 @@ describe('a producer’s group scopes', () => {
         expect(byId(root, 'scope:scope:state')?.args?.[WorkflowDiagramMetadata.GROUP_LABEL]).toBe('');
     });
 
+    it('marks the group the producer says the flow starts in, and no other', () => {
+        const root = transform(docWith([
+            { id: 'scope:idle', kind: 'group', label: 'idle', nodes: ['node:a'], start: true },
+            { id: 'scope:run', kind: 'group', label: 'run', nodes: ['node:b'] },
+            { id: 'scope:off', kind: 'group', label: 'off', nodes: ['node:c'], start: false }
+        ]));
+
+        expect(byId(root, 'scope:scope:idle')?.args?.[WorkflowDiagramMetadata.GROUP_START]).toBe(true);
+        expect(byId(root, 'scope:scope:run')?.args?.[WorkflowDiagramMetadata.GROUP_START]).toBeUndefined();
+        expect(byId(root, 'scope:scope:off')?.args?.[WorkflowDiagramMetadata.GROUP_START]).toBeUndefined();
+    });
+
     it('nests a group inside its parent group', () => {
         const root = transform(docWith([
             { id: 'scope:outer', kind: 'group', label: 'Outer', nodes: ['node:a'] },

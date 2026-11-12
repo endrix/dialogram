@@ -112,6 +112,12 @@ it no longer has.
   of the node's own frame is in the way; links sharing a side are spread
   along it so they do not cross. A node's `meta.sameAs` names what it is one
   drawing of: selecting it outlines the other nodes that draw the same.
+- **A group can be marked as where the flow starts.** A producer marks a
+  group with `start: true` on its scope: the initial state of a state
+  machine, the first stage of a pipeline. Its title gets a filled dot before
+  it, as a statechart marks its initial state (`group-start-mark`, for a
+  product to colour). A group with no title has no band for it and draws
+  none.
 - **Lines of text in a node, read close in.** A producer puts lines of text
   in a node with `meta.lines` (`[{ text, kind? }]`, or plain strings; six at
   most, each cut at 48 characters): what a reader zooms in for and the

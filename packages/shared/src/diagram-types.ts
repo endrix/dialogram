@@ -448,6 +448,9 @@ export namespace WorkflowDiagramMetadata {
     /** On a group: where the producer pins it (`pin: 'top'`), out of the flow
      *  of the diagram: in a band above everything else. */
     export const GROUP_PIN = 'wf:groupPin';
+    /** On a group: the producer marks it as where the diagram's flow starts
+     *  (`start` on its scope): the initial state of a state machine. */
+    export const GROUP_START = 'wf:groupStart';
     /** On a node: the lines of text a producer puts in it (`NodeLine[]`, from
      *  `meta.lines`): bands across the bottom of its body, their text drawn
      *  only close in. */

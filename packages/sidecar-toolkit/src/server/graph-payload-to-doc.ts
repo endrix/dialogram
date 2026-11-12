@@ -189,6 +189,8 @@ export function graphPayloadToDoc(graphPayload: Record<string, unknown>): GraphD
             row: typeof scope.row === 'number' ? scope.row : undefined,
             // A group kept out of the diagram's flow, in a band above it.
             pin: typeof scope.pin === 'string' ? scope.pin : undefined,
+            // A group marked as where the diagram's flow starts.
+            start: scope.start === true ? true : undefined,
             parent: typeof scope.parent === 'string' ? scope.parent : undefined,
             controlNodeId: typeof scope.controlNodeId === 'string' ? scope.controlNodeId : undefined,
             children: Array.isArray(scope.children) ? scope.children.map((v: any) => String(v)) : undefined,

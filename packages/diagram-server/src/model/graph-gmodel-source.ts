@@ -72,6 +72,10 @@ export type PyGraphScope = {
      *  flow: what belongs to the whole picture rather than to a place in it
      *  (a legend, the variables a state machine works on). */
     pin?: string;
+    /** Marks a `group` scope as where the diagram's flow starts: the initial
+     *  state of a state machine, the first stage of a pipeline. Its title
+     *  gets the mark a statechart gives its initial state. */
+    start?: boolean;
     /** The platform's: the key of the open node this group stands for (open-nodes.ts). */
     openNodeKey?: string;
     /** The platform's: that node's open bundles, kept while it is open and they are not drawn. */
@@ -1429,6 +1433,7 @@ export class GraphGModelSource {
                 // The row this group sits in, inside a group laid out in rows.
                 ...(isGroupRow(scope.row) ? { [WorkflowDiagramMetadata.GROUP_ROW]: scope.row } : {}),
                 ...(scope.pin === 'top' ? { [WorkflowDiagramMetadata.GROUP_PIN]: 'top' } : {}),
+                ...(scope.start === true ? { [WorkflowDiagramMetadata.GROUP_START]: true } : {}),
                 ...(scope.openNodeKey ? { [WorkflowDiagramMetadata.OPEN_NODE_KEY]: scope.openNodeKey } : {}),
                 ...(scope.openNodeBundles ? { [WorkflowDiagramMetadata.OPEN_NODE_BUNDLES]: scope.openNodeBundles } : {})
             }
