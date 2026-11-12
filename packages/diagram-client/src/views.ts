@@ -47,6 +47,7 @@ import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagr
 import { renderSymbolBody, symbolPinsOf } from './symbol-views';
 import { NODE_OPEN_TOGGLE_RADIUS_PX, nodeOpenToggle } from './node-open-toggle';
 import { nodeLinesHeight, nodeLinesOf, renderNodeLines } from './node-lines';
+import { GROUP_INITIAL_MARK_ROOM_PX, groupInitialMark, isGroupInitial } from './group-initial-mark';
 import { WorkflowDiagramConstants, estimatePortLabelSize } from '@dialogram/shared';
 
 /** Walk to the model root; the drag-active window is tracked per root. */
@@ -383,6 +384,11 @@ export class GroupNodeView extends ShapeView {
         const titled = label !== '' || openNode;
         const header = Math.min(WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX, height);
         const radius = 6;
+        // Where the title starts: after the toggle of an open node's frame.
+        const titleX = openNode ? 10 + 2 * NODE_OPEN_TOGGLE_RADIUS_PX + 6 : 10;
+        // Where the flow starts: a mark before the title, or alone in the
+        // room a frame with no title keeps for a header.
+        const initial = isGroupInitial(node as any);
         const children = ((node as any).children ?? []) as Array<{ type?: string }>;
         const isEdgeChild = (child: { type?: string }): boolean =>
             typeof child.type === 'string' && child.type.startsWith('edge:');
@@ -418,11 +424,12 @@ export class GroupNodeView extends ShapeView {
             ...(loop ? [groupLoop(width, height, (node as any).args?.[WorkflowDiagramMetadata.GROUP_LOOP_NOTES])] : []),
             // The frame of an open node: a `−` before the title closes it.
             ...(openNode ? [nodeOpenToggle(String(node.id), true, label, 10 + NODE_OPEN_TOGGLE_RADIUS_PX, header / 2)] : []),
+            ...(initial ? [groupInitialMark(titleX, header / 2)] : []),
             ...(label
                 ? [svg('text', {
                     class: { 'group-label': true },
                     attrs: {
-                        x: openNode ? 10 + 2 * NODE_OPEN_TOGGLE_RADIUS_PX + 6 : 10,
+                        x: titleX + (initial ? GROUP_INITIAL_MARK_ROOM_PX : 0),
                         y: header / 2,
                         'text-anchor': 'start',
                         'dominant-baseline': 'central'

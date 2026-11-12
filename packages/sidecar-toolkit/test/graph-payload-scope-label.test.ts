@@ -55,6 +55,25 @@ describe('graph payload scopes', () => {
         expect(byId.get('scope:state:run').pin).toBeUndefined();
         expect(byId.get('scope:odd').pin).toBeUndefined();
     });
+
+    it('passes a scope\'s mark as the initial one through to the document, and only a true one', () => {
+        const doc = new SidecarModelSource(CFG).graphPayloadToDoc({
+            network: 'top',
+            nodes: [],
+            edges: [],
+            scopes: [
+                { id: 'scope:state:idle', kind: 'group', label: 'idle', initial: true },
+                { id: 'scope:state:run', kind: 'group', label: 'run' },
+                { id: 'scope:state:off', kind: 'group', label: 'off', initial: false },
+                { id: 'scope:odd', kind: 'group', initial: 'yes' }
+            ]
+        }) as any;
+        const byId = new Map<string, any>(doc.graph.subgraphs.map((scope: any) => [scope.id, scope]));
+        expect(byId.get('scope:state:idle').initial).toBe(true);
+        expect(byId.get('scope:state:run').initial).toBeUndefined();
+        expect(byId.get('scope:state:off').initial).toBeUndefined();
+        expect(byId.get('scope:odd').initial).toBeUndefined();
+    });
 });
 
 describe('graph payload links drawn on selection', () => {
