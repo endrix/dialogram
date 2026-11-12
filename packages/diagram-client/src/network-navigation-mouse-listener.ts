@@ -109,7 +109,8 @@ export function openLeaf(target: GModelElement): Action[] {
                     ...(typeof first.label === 'string' ? { label: first.label } : {}),
                     uri,
                     workflowName: displayNameFromQualifiedName(referencedName.trim()),
-                    ...(typeof instanceName === 'string' && instanceName.trim() !== '' ? { workflowInstanceName: instanceName.trim() } : {})
+                    ...(typeof instanceName === 'string' && instanceName.trim() !== '' ? { workflowInstanceName: instanceName.trim() } : {}),
+                    ...(first.of === 'instance' ? { viewOf: 'instance' } : {})
                 } as Action];
             }
             if (clientBehavior().doubleClickOpensSource !== true) {

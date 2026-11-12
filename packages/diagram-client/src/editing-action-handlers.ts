@@ -91,6 +91,8 @@ export namespace WorkflowOpenViewAction {
         workflowName: string;
         /** The instance the view is reached through, when through a node. */
         workflowInstanceName?: string;
+        /** `'instance'`: the view is of that instance, not of the definition the file holds (`wf:views`' `of`). */
+        viewOf?: 'instance';
     }
 
     export function is(action: unknown): action is Action {
@@ -947,7 +949,10 @@ export class WorkflowOpenViewActionHandler implements IActionHandler {
             return;
         }
         void this.actionDispatcher.dispatch(
-            this.navigationUi.requestView(action.uri, action.workflowName, action.workflowInstanceName, action.view, action.label) as never
+            this.navigationUi.requestView(
+                action.uri, action.workflowName, action.workflowInstanceName, action.view, action.label,
+                action.viewOf === 'instance' ? 'instance' : undefined
+            ) as never
         );
     }
 }

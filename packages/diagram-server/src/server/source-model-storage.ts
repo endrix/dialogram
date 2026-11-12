@@ -55,6 +55,7 @@ import {
     VIEW_ARG,
     parseViewArg,
     parseViewsMeta,
+    withTrailView,
     ROOT_WORKFLOW_ARG,
     INSTANCE_PATH_ARG,
     parseNavigationTrailArg as sharedParseNavigationTrailArg,
@@ -348,7 +349,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
     }
 
     private async loadSourceModelDocument(action: RequestModelAction, sourceUri: string): Promise<void> {
-        const opts = action.options ?? {};
+        // A refresh by the host names no view: the trail's last crumb does.
+        const opts = withTrailView(sourceUri, action.options ?? {});
         const workflowFilePath = URI.parse(sourceUri).fsPath;
         const perf = new GraphLoadPerf(path.basename(workflowFilePath));
         // Acquisition (graph-acquisition strategy, model-source attempt + breadcrumb retry, CLI spawn,

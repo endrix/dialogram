@@ -27,6 +27,7 @@ import {
     normalizeGraphLoadErrors,
     parseStringListArg,
     shouldRetryTrailFallback,
+    viewIsOfInstance,
     VIEW_ARG,
     parseViewArg
 } from '@dialogram/diagram-server/server/graph-load-request-options';
@@ -123,17 +124,58 @@ export class SidecarModelSource implements DiagramModelSource {
             : sourceUri;
         const graphFilePath = URI.parse(graphSourceUri).fsPath;
 
-        let sidecarResult: { graph?: Record<string, unknown>; error?: string; warning?: string } =
-            await this.tryLoadGraphFromSidecar(graphFilePath, opts);
-        if (!sidecarResult.graph || shouldRetryTrailFallback(sidecarResult, opts)) {
+        // A view of the instance it was reached through is asked of the root,
+        // by the path of instances: by name, the file answers for the
+        // definition it holds under that name, which for a unit made per
+        // instance is another one. Only when the root has no answer is the
+        // file asked, as for any view.
+        /** The request that asks the root, by the path of instances, for what `opts` asks a file by name. */
+        const ofRoot = (via: { graphSourceUri: string; rootWorkflowName: string; instancePath: string[] }): Record<string, unknown> => ({
+            ...opts,
+            [GRAPH_SOURCE_URI_ARG]: via.graphSourceUri,
+            [ROOT_WORKFLOW_ARG]: via.rootWorkflowName,
+            [INSTANCE_PATH_ARG]: via.instancePath
+        });
+        const viaInstance = viewIsOfInstance(opts) ? deriveTrailFallback(sourceUri, opts) : undefined;
+        let sidecarResult: { graph?: Record<string, unknown>; error?: string; warning?: string } | undefined;
+        if (viaInstance) {
+            const instanceOpts = ofRoot(viaInstance);
+            const answered = await this.tryLoadGraphFromSidecar(URI.parse(viaInstance.graphSourceUri).fsPath, instanceOpts);
+            if (answered.graph) {
+                sidecarResult = answered;
+                resolvedOpts = instanceOpts;
+            } else {
+                // The file is asked next. Whatever it says, the reader is
+                // told that the root had no answer, and why: what the file
+                // shows is the definition's, not this instance's.
+                const whyNot = answered.error ?? 'the root gave no graph';
+                const byName = await this.tryLoadGraphFromSidecar(graphFilePath, opts);
+                sidecarResult = byName.graph
+                    ? {
+                        ...byName,
+                        graph: {
+                            ...byName.graph,
+                            errors: [
+                                ...normalizeGraphLoadErrors(byName.graph.errors),
+                                {
+                                    message: `This is the view of the definition in ${workflowFilePath}, not of the instance `
+                                        + `${viaInstance.instancePath.join(' / ')}: ${whyNot}`,
+                                    severity: 'warning',
+                                    code: 'view_of_definition',
+                                    file: workflowFilePath
+                                }
+                            ]
+                        }
+                    }
+                    : { ...byName, error: `${byName.error ?? 'no graph'} (asked of the instance first: ${whyNot})` };
+            }
+        }
+        sidecarResult ??= await this.tryLoadGraphFromSidecar(graphFilePath, opts);
+        // The same question is not asked twice: the path of instances was the first.
+        if (!viaInstance && (!sidecarResult.graph || shouldRetryTrailFallback(sidecarResult, opts))) {
             const retry = deriveTrailFallback(sourceUri, opts);
             if (retry) {
-                const retryOpts = {
-                    ...opts,
-                    [GRAPH_SOURCE_URI_ARG]: retry.graphSourceUri,
-                    [ROOT_WORKFLOW_ARG]: retry.rootWorkflowName,
-                    [INSTANCE_PATH_ARG]: retry.instancePath
-                };
+                const retryOpts = ofRoot(retry);
                 const retriedResult = await this.tryLoadGraphFromSidecar(URI.parse(retry.graphSourceUri).fsPath, retryOpts);
                 // Preserve the original partial graph if retry fails to produce a graph.
                 if (retriedResult.graph || !sidecarResult.graph) {

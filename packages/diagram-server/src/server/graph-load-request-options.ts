@@ -32,12 +32,27 @@ export interface NavigationTrailEntry {
     /** The crumb is a view of the workflow other than its structure. */
     view?: string;
     viewLabel?: string;
+    /** The view is of the instance the crumb was reached through (`UnitView.of`). */
+    viewOf?: 'instance';
 }
 
 /** One view a producer offers of a unit, as `meta.views` lists it. */
 export interface UnitView {
     id: string;
     label: string;
+    /**
+     * `'instance'`: the view is of this instance, not of the definition its
+     * file holds under that name. For a unit made per instance (by a factory,
+     * with the instance's parameters) the two differ, and the file cannot
+     * answer for the instance: the view is asked of the root, by the path of
+     * instances that leads to it, as a drill-down into a nested unit is.
+     *
+     * It is said of a view a node offers (a view of the unit shown, offered
+     * on the canvas, is reached through no node), and it is acted on by a
+     * model source that can ask a root by a path of instances: one that
+     * cannot asks by name, as before.
+     */
+    of?: 'instance';
 }
 
 /** The view id on a request option or root arg, or nothing. */
@@ -45,7 +60,7 @@ export function parseViewArg(raw: unknown): string | undefined {
     return typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : undefined;
 }
 
-/** `meta.views` as the producer wrote it: `[{ id, label }]`, else nothing. */
+/** `meta.views` as the producer wrote it: `[{ id, label, of? }]`, else nothing. */
 export function parseViewsMeta(raw: unknown): UnitView[] | undefined {
     if (!Array.isArray(raw)) {
         return undefined;
@@ -57,7 +72,7 @@ export function parseViewsMeta(raw: unknown): UnitView[] | undefined {
             continue;
         }
         const label = typeof item?.label === 'string' && item.label.trim() !== '' ? item.label.trim() : id;
-        out.push({ id, label });
+        out.push({ id, label, ...(item?.of === 'instance' ? { of: 'instance' as const } : {}) });
     }
     return out.length > 0 ? out : undefined;
 }
@@ -239,12 +254,13 @@ export function parseNavigationTrailArg(raw: unknown): NavigationTrailEntry[] {
                 : '';
             const view = typeof item?.view === 'string' ? item.view.trim() : '';
             const viewLabel = typeof item?.viewLabel === 'string' ? item.viewLabel.trim() : '';
+            const viewOf = item?.viewOf === 'instance' ? { viewOf: 'instance' as const } : {};
             if (sourceUri !== '' && workflowName !== '') {
                 out.push({
                     sourceUri: normalizeSourceUriKey(sourceUri),
                     workflowName,
                     ...(workflowInstanceName !== '' ? { workflowInstanceName } : {}),
-                    ...(view !== '' ? { view, ...(viewLabel !== '' ? { viewLabel } : {}) } : {})
+                    ...(view !== '' ? { view, ...(viewLabel !== '' ? { viewLabel } : {}), ...viewOf } : {})
                 });
             }
         }
@@ -298,6 +314,50 @@ export function normalizeGraphLoadErrors(raw: unknown): NormalizedGraphLoadError
             };
         })
         .filter((entry): entry is NormalizedGraphLoadError => entry !== undefined);
+}
+
+/**
+ * Whether the view a request asks for is of the instance it was reached
+ * through (the trail's last crumb says so, and it is that view): such a view
+ * is asked of the root first, by the instance path (`deriveTrailFallback`).
+ *
+ * Only when the trail is whole: every crumb under the root reached through
+ * an instance. As a last resort after a load that failed, a path with a step
+ * missing does no harm; asked first, it would lead to another instance, or
+ * to one of the same name higher up, and that answer would be shown.
+ */
+export function viewIsOfInstance(opts: Record<string, unknown>): boolean {
+    const view = parseViewArg(opts[VIEW_ARG]);
+    const trail = parseNavigationTrailArg(opts[NAV_TRAIL_ARG]);
+    const last = trail[trail.length - 1];
+    return view !== undefined && trail.length >= 2 && last.view === view && last.viewOf === 'instance'
+        && trail.slice(1).every(crumb => typeof crumb.workflowInstanceName === 'string' && crumb.workflowInstanceName.trim() !== '');
+}
+
+/**
+ * A request's options with the view its trail ends at, when the request
+ * names none and is for that crumb's unit.
+ *
+ * The client names the view of the trail's last crumb on every request it
+ * makes. The host does not: a refresh (a keystroke, a save, a run) repeats
+ * the file, the name and the trail, and would bring back the unit's
+ * structure under a breadcrumb that still says the view. The trail is what
+ * says where the reader is, so it settles what is shown.
+ */
+export function withTrailView(sourceUri: string, opts: Record<string, unknown>): Record<string, unknown> {
+    if (parseViewArg(opts[VIEW_ARG]) !== undefined) {
+        return opts;
+    }
+    const trail = parseNavigationTrailArg(opts[NAV_TRAIL_ARG]);
+    const last = trail[trail.length - 1];
+    if (!last?.view || last.sourceUri !== normalizeSourceUriKey(sourceUri)) {
+        return opts;
+    }
+    const asked = typeof opts.networkName === 'string' ? opts.networkName.trim() : '';
+    if (asked !== '' && asked !== last.workflowName) {
+        return opts;
+    }
+    return { ...opts, [VIEW_ARG]: last.view };
 }
 
 /**

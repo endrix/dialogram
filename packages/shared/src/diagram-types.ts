@@ -141,8 +141,9 @@ export namespace WorkflowDiagramMetadata {
     export const IS_READ_ONLY = 'cal:readOnly';
     export const IS_NETWORK_INSTANCE = 'cal:isNetworkInstance';
     /** The views the producer offers of the unit behind a node besides its
-     *  structure, `[{ id, label }]` as it listed them on `meta.views` (a leaf's
-     *  synthesis, say). On the root: the views of the unit shown. */
+     *  structure, `[{ id, label, of? }]` as it listed them on `meta.views` (a
+     *  leaf's synthesis, say; `of: 'instance'` for a view of this instance and
+     *  not of the definition). On the root: the views of the unit shown. */
     export const VIEWS = 'wf:views';
     /**
      * Labelled values a producer states about the unit behind a node, as it
