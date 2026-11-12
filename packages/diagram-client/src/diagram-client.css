@@ -1238,11 +1238,23 @@ body.vscode-high-contrast-light .node-center-image-light {
     text-transform: uppercase;
 }
 
-/* The mark of the group where the diagram's flow starts: a filled dot before
-   its title, as a statechart marks its initial state. */
-.workflow-node-group .group-start-mark {
-    fill: var(--vscode-foreground, #cccccc);
+/* The mark of the group the diagram's flow starts in: a filled dot and a
+   short arrow before its title, as a statechart marks its initial state. */
+.workflow-node-group .group-initial-mark {
+    color: var(--vscode-foreground, #cccccc);
+    pointer-events: all;
+}
+
+.workflow-node-group .group-initial-mark .group-initial-dot {
+    fill: currentColor;
     stroke: none;
+}
+
+.workflow-node-group .group-initial-mark .group-initial-arrow {
+    fill: currentColor;
+    stroke: currentColor;
+    stroke-width: 1.5px;
+    stroke-linejoin: round;
 }
 
 /* Where an edge crosses a group's frame. */

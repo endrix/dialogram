@@ -86,14 +86,17 @@ describe('a producer’s group scopes', () => {
 
     it('marks the group the producer says the flow starts in, and no other', () => {
         const root = transform(docWith([
-            { id: 'scope:idle', kind: 'group', label: 'idle', nodes: ['node:a'], start: true },
+            { id: 'scope:idle', kind: 'group', label: 'idle', nodes: ['node:a'], initial: true },
             { id: 'scope:run', kind: 'group', label: 'run', nodes: ['node:b'] },
-            { id: 'scope:off', kind: 'group', label: 'off', nodes: ['node:c'], start: false }
+            { id: 'scope:off', kind: 'group', label: 'off', nodes: ['node:c'], initial: false },
+            // Only a plain `true` counts.
+            { id: 'scope:odd', kind: 'group', label: 'odd', initial: 'true' as unknown as boolean }
         ]));
 
-        expect(byId(root, 'scope:scope:idle')?.args?.[WorkflowDiagramMetadata.GROUP_START]).toBe(true);
-        expect(byId(root, 'scope:scope:run')?.args?.[WorkflowDiagramMetadata.GROUP_START]).toBeUndefined();
-        expect(byId(root, 'scope:scope:off')?.args?.[WorkflowDiagramMetadata.GROUP_START]).toBeUndefined();
+        expect(byId(root, 'scope:scope:idle')?.args?.[WorkflowDiagramMetadata.GROUP_INITIAL]).toBe(true);
+        for (const id of ['scope:scope:run', 'scope:scope:off', 'scope:scope:odd']) {
+            expect(byId(root, id)?.args?.[WorkflowDiagramMetadata.GROUP_INITIAL], id).toBeUndefined();
+        }
     });
 
     it('nests a group inside its parent group', () => {

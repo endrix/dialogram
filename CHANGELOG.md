@@ -121,12 +121,15 @@ it no longer has.
   what the links lead to is not faded, and an edge on the trace, selected
   or in error is not dimmed. A node's `meta.sameAs` names what it is one
   drawing of: selecting it outlines the other nodes that draw the same.
-- **A group can be marked as where the flow starts.** A producer marks a
-  group with `start: true` on its scope: the initial state of a state
-  machine, the first stage of a pipeline. Its title gets a filled dot before
-  it, as a statechart marks its initial state (`group-start-mark`, for a
-  product to colour). A group with no title has no band for it and draws
-  none.
+- **A group can be marked as the one the flow starts in.** A producer marks
+  a group with `initial: true` on its scope: the initial state of a state
+  machine, the first stage of a pipeline. Its frame gets a filled dot and a
+  short arrow before its title, as a statechart marks its initial state; a
+  group with no title has the mark alone, in the room it keeps for a header.
+  The mark says what the group is: the layout does not move it. A product
+  colours it with `.workflow-node-group .group-initial-mark { color: … }`.
+  It takes 24 px of the title's room, and a frame is not made wider for its
+  title: a long title in a narrow frame runs past it sooner.
 - **Lines of text in a node, read close in.** A producer puts lines of text
   in a node with `meta.lines` (`[{ text, kind? }]`, or plain strings; six at
   most, each cut at 48 characters): what a reader zooms in for and the

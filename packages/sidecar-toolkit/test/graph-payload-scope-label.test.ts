@@ -56,23 +56,23 @@ describe('graph payload scopes', () => {
         expect(byId.get('scope:odd').pin).toBeUndefined();
     });
 
-    it('passes a scope\'s start mark through to the document, and only a true one', () => {
+    it('passes a scope\'s mark as the initial one through to the document, and only a true one', () => {
         const doc = new SidecarModelSource(CFG).graphPayloadToDoc({
             network: 'top',
             nodes: [],
             edges: [],
             scopes: [
-                { id: 'scope:state:idle', kind: 'group', label: 'idle', start: true },
+                { id: 'scope:state:idle', kind: 'group', label: 'idle', initial: true },
                 { id: 'scope:state:run', kind: 'group', label: 'run' },
-                { id: 'scope:state:off', kind: 'group', label: 'off', start: false },
-                { id: 'scope:odd', kind: 'group', start: 'yes' }
+                { id: 'scope:state:off', kind: 'group', label: 'off', initial: false },
+                { id: 'scope:odd', kind: 'group', initial: 'yes' }
             ]
         }) as any;
         const byId = new Map<string, any>(doc.graph.subgraphs.map((scope: any) => [scope.id, scope]));
-        expect(byId.get('scope:state:idle').start).toBe(true);
-        expect(byId.get('scope:state:run').start).toBeUndefined();
-        expect(byId.get('scope:state:off').start).toBeUndefined();
-        expect(byId.get('scope:odd').start).toBeUndefined();
+        expect(byId.get('scope:state:idle').initial).toBe(true);
+        expect(byId.get('scope:state:run').initial).toBeUndefined();
+        expect(byId.get('scope:state:off').initial).toBeUndefined();
+        expect(byId.get('scope:odd').initial).toBeUndefined();
     });
 });
 
