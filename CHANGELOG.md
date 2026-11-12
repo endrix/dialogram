@@ -112,6 +112,15 @@ it no longer has.
   of the node's own frame is in the way; links sharing a side are spread
   along it so they do not cross. A node's `meta.sameAs` names what it is one
   drawing of: selecting it outlines the other nodes that draw the same.
+- **Lines of text in a node, read close in.** A producer puts lines of text
+  in a node with `meta.lines` (`[{ text, kind? }]`, or plain strings; six at
+  most, each cut at 48 characters): what a reader zooms in for and the
+  property panel is too far away for, such as the condition a step waits on
+  or what it takes and gives. Each line is a band across the bottom of the
+  node's body, which is taller by them and as wide as the longest. The band
+  is always drawn and carries `node-line-<kind>` for a product to colour, so
+  which nodes have a line of a kind is seen at any zoom; its text is detail
+  (`zoom-detail`), drawn only close in. A symbol takes none.
 - **A group can be laid out in rows.** A producer puts the members of a
   group in rows with `meta.row` on a node, or `row` on a group nested in it
   (a whole number from zero, the first row on top): the actions of a state

@@ -46,6 +46,7 @@ import { isEdgeHiddenForDrag, isIncidentEdgeInActiveDrag, routeReachesPorts } fr
 import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide } from '@dialogram/shared';
 import { renderSymbolBody, symbolPinsOf } from './symbol-views';
 import { NODE_OPEN_TOGGLE_RADIUS_PX, nodeOpenToggle } from './node-open-toggle';
+import { nodeLinesHeight, nodeLinesOf, renderNodeLines } from './node-lines';
 import { WorkflowDiagramConstants, estimatePortLabelSize } from '@dialogram/shared';
 
 /** Walk to the model root; the drag-active window is tracked per root. */
@@ -819,6 +820,9 @@ function renderEntityNode(
         );
     }
     const { height: bodyHeight, footerLabel } = getNodeBody(node as any, { width, height });
+    const lines = nodeLinesOf(node as any);
+    // The body above the lines: where the family's mark is centred.
+    const openHeight = bodyHeight - nodeLinesHeight(lines);
     const footerLabelNode = footerLabel
         ? svg('text', {
             class: { 'type-footer-label': true },
@@ -855,8 +859,9 @@ function renderEntityNode(
         }),
         // Above the body so the travelling head is not painted over by it.
         ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
-        ...(family?.icon ? [renderNodeCenterIcon(family, width, bodyHeight)] : []),
-        ...(family?.image ? renderNodeCenterImage(family, width, bodyHeight) : []),
+        ...(family?.icon ? [renderNodeCenterIcon(family, width, openHeight)] : []),
+        ...(family?.image ? renderNodeCenterImage(family, width, openHeight) : []),
+        ...renderNodeLines(lines, width, bodyHeight),
         ...context.renderChildren(node),
         ...(footerLabelNode ? [footerLabelNode] : [])
     );

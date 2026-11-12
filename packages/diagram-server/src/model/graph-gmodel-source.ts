@@ -1,6 +1,6 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
 import { parseBadgesMeta, parseFactsMeta, parseViewsMeta, type UnitBadge } from '../server/graph-load-request-options';
-import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, type PortSide, type SelectionLink, type SymbolKind } from '@dialogram/shared';
+import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, type PortSide, type NodeLine, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
 import { arrangeGroupRows, groupLayoutOptions, isGroupRow, splitEdgesAtGroups } from './group-edges';
@@ -417,6 +417,12 @@ export class GraphGModelSource {
             const footerReserve = footerTypeLabel && !symbolKind
                 ? WorkflowDiagramConstants.NODE_FOOTER_LABEL_HEIGHT_PX
                 : 0;
+            // The lines a producer puts in the node: bands across the bottom
+            // of its body, which grows by them. A symbol has no body for them.
+            const lines = symbolKind ? [] : this.nodeLines(node.meta?.['lines']);
+            const linesHeight = lines.length * WorkflowDiagramConstants.NODE_LINE_HEIGHT_PX;
+            const linesWidth = lines.length === 0 ? 0 : 2 * WorkflowDiagramConstants.NODE_LINE_PADDING_PX + Math.max(...lines.map(line =>
+                this.estimateLabelSize(line.text, WorkflowDiagramConstants.NODE_LINE_FONT_SIZE_PX).width));
             const pinNameWidth = (ps: PyGraphPort[]): number => Math.max(0, ...ps.map(p =>
                 this.estimateLabelSize(p.pins?.[0] ?? p.name, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX).width));
             // Under a symbol, its caption: a register's name; any symbol's the
@@ -429,8 +435,10 @@ export class GraphGModelSource {
                     symbolKind === 'register' ? SymbolGeometry.registerBodyWidth(pinNameWidth(rowInputs), pinNameWidth(outputs)) : undefined,
                     captioned)
                 : {
-                    width: Math.max(defaultWidth, labelRequiredWidth, headerLabelW),
-                    height: Math.max(minHeight, requiredHeight) + footerReserve
+                    width: Math.max(defaultWidth, labelRequiredWidth, headerLabelW, linesWidth),
+                    // The lines are under what the node is without them, so
+                    // its ports and its family's mark keep their room.
+                    height: Math.max(minHeight, requiredHeight) + linesHeight + footerReserve
                 };
             const gnode: GNode = {
                 id: stableNodeId,
@@ -451,6 +459,9 @@ export class GraphGModelSource {
                     'wf:scope': node.scope
                 }
             };
+            if (lines.length > 0) {
+                gnode.args![WorkflowDiagramMetadata.NODE_LINES] = lines;
+            }
             // What the node is one drawing of, for the client to outline the others.
             const sameAs = node.meta?.['sameAs'];
             if (typeof sameAs === 'string' && sameAs.trim() !== '') {
@@ -1554,6 +1565,35 @@ export class GraphGModelSource {
      * heard of. The pattern check is what keeps it from being an injection: the
      * value is interpolated into a class name, so it has to look like one.
      */
+    /**
+     * The lines a producer puts in a node (`meta.lines`): each its text, cut
+     * to what a node can hold, and its kind when that is a class name. A
+     * string is a line of no kind. Anything else is passed over.
+     */
+    private nodeLines(raw: unknown): NodeLine[] {
+        if (!Array.isArray(raw)) {
+            return [];
+        }
+        const max = WorkflowDiagramConstants.NODE_LINE_MAX_CHARS;
+        const out: NodeLine[] = [];
+        for (const item of raw) {
+            const text = typeof item === 'string' ? item : (item as { text?: unknown } | null)?.text;
+            if (typeof text !== 'string' || text.trim() === '') {
+                continue;
+            }
+            const whole = text.trim().replace(/\s+/g, ' ');
+            const kind = typeof item === 'object' && item ? (item as { kind?: unknown }).kind : undefined;
+            out.push({
+                text: whole.length > max ? `${whole.slice(0, max - 1)}…` : whole,
+                ...(typeof kind === 'string' && this.derivedCssClass('', kind) ? { kind } : {})
+            });
+            if (out.length === WorkflowDiagramConstants.NODE_LINE_MAX_COUNT) {
+                break;
+            }
+        }
+        return out;
+    }
+
     private derivedCssClass(prefix: string, value: string | undefined, suffix = ''): string | undefined {
         if (typeof value !== 'string' || !/^[a-z][a-z0-9-]*$/.test(value)) {
             return undefined;

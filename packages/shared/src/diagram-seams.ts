@@ -332,3 +332,15 @@ export interface SelectionLink {
     /** Both ways at once (read and written): an arrowhead at each end. */
     bidirectional?: boolean;
 }
+
+/**
+ * A line of text in a node, under its header and ports: what a reader zooms
+ * in for (a condition, what goes in and out). Each line is a band across the
+ * node; the band is always drawn, the text only close in, so a kind of line
+ * a product colours is seen from afar and read from near.
+ */
+export interface NodeLine {
+    text: string;
+    /** What kind of line, for the product's stylesheet: `node-line-<kind>`. */
+    kind?: string;
+}

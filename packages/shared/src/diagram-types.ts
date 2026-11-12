@@ -448,6 +448,10 @@ export namespace WorkflowDiagramMetadata {
     /** On a group: where the producer pins it (`pin: 'top'`), out of the flow
      *  of the diagram: in a band above everything else. */
     export const GROUP_PIN = 'wf:groupPin';
+    /** On a node: the lines of text a producer puts in it (`NodeLine[]`, from
+     *  `meta.lines`): bands across the bottom of its body, their text drawn
+     *  only close in. */
+    export const NODE_LINES = 'wf:nodeLines';
     /** On the root: the links drawn only while one of their ends is selected
      *  (`SelectionLink[]`, from the edges a producer marks `meta.onSelection`). */
     export const SELECTION_LINKS = 'wf:selectionLinks';
