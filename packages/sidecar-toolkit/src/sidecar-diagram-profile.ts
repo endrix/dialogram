@@ -37,6 +37,7 @@ import {
 import { createSidecarEditBackend } from './chat-edit-backend.js';
 import { createPythonNavigationProvider } from './python-navigation.js';
 import { registerSidecarCommands } from './sidecar-commands.js';
+import { registerPythonAnalysisPaths } from './python-analysis-paths-host.js';
 import { registerNewSourceFileCommand } from './new-source-file-command.js';
 import { createCliStatusSource, type SidecarStatusSourceInput } from './cli-status-source.js';
 import {
@@ -266,6 +267,16 @@ export interface SidecarProfileInput {
      * them. A Python product names `'python'`.
      */
     navigation?: 'python' | 'none';
+
+    /**
+     * A Python product whose sidecar answers `pythonEnvironment`: the boolean
+     * setting, under `settingsNamespace`, that lets the import paths of the
+     * sidecar's interpreter be added to the Python language server's
+     * (`python.analysis.extraPaths` of the workspace folder) when a diagram is
+     * opened. The product declares the setting, default `true`. Absent:
+     * nothing is asked and nothing written.
+     */
+    pythonAnalysisPathsSettingKey?: string;
 
     /**
      * Whether a loaded document's own `errors` go to the Problems panel with
@@ -716,6 +727,17 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
                 sourceFileExtension: primarySourceExtension,
                 sourceFileExtensions: sourceExtensions
             });
+            const analysisPathsSettingKey = nonBlank(input.pythonAnalysisPathsSettingKey);
+            if (analysisPathsSettingKey) {
+                registerPythonAnalysisPaths(context, {
+                    displayName: input.displayName,
+                    customEditorViewType: input.customEditorViewType,
+                    settingsNamespace: input.settingsNamespace,
+                    settingKey: analysisPathsSettingKey,
+                    sidecarOperationPrefix: input.sidecarOperationPrefix,
+                    sidecarCommand: resolveSidecarCommand
+                });
+            }
         }
         registerNewSourceFileCommand(context, input.commands.createNewContainer, input.customEditorViewType, {
             label: input.newContainer.label,

@@ -77,6 +77,29 @@ it no longer has.
 
 ### Added
 
+- **A definition the producer named is opened as it is.** A node whose
+  producer resolved its type itself (`meta.referencedSource`: a sidecar that
+  imported the module, a compiler that elaborated the design) carries
+  `cal:referencedIsDefinition`, and "go to definition" on it (the
+  double-click, **Go to Source**) opens that file and line without asking
+  the host's navigation provider. With `navigation: 'python'` the provider
+  asked Pylance first and took its answer over the producer's: a language
+  server configured for another interpreter, or with other import roots,
+  could open another declaration of the same name, with no sign that it had.
+  The provider is still asked for a node whose producer gave only where it
+  is written, and when the named file is gone.
+- **The Python language server's import paths, from the sidecar.** A profile
+  that names `pythonAnalysisPathsSettingKey` has its sidecar asked, when a
+  diagram is opened, where its interpreter imports the file from (the
+  `pythonEnvironment` op: the file's import roots, and the folders its
+  installed packages come from). What the editor lacks is added to
+  `python.analysis.extraPaths` of the file's workspace folder: the roots
+  always, the installed packages only when the Python extension has another
+  interpreter selected. Paths are added, never removed; a folder with a
+  `pyrightconfig.json` is not written to (its author is told what it lacks),
+  nor one whose `pyproject.toml` configures Pyright; a sidecar that does not
+  advertise the op is not asked. The named setting (default `true`, declared
+  by the product) turns it off, as does **Don't Add Them** on the notice.
 - **An open reveals the editor a file already has.** A double-click on a
   node (its source, a viewer's file, a reference) opened in the diagram's
   group even when the file was open in the group beside it, as a second

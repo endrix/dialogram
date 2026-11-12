@@ -253,6 +253,21 @@ export namespace WorkflowDiagramMetadata {
     // this range points into that referenced document.
     export const REFERENCED_SOURCE_RANGE = 'cal:referencedSourceRange';
 
+    /**
+     * `REFERENCED_URI` and its range are the element's DEFINITION, named by
+     * the producer: where the class or function it instantiates is declared,
+     * in whichever file the producer found it.
+     *
+     * Without it the referenced target may be only the place the element is
+     * written in the file on screen, and "go to definition" asks the host's
+     * language tooling to find the definition from there. A producer that
+     * resolved the name itself (it imported the module, or elaborated the
+     * design) knows the answer for certain, and the language tooling may be
+     * configured for another interpreter or other import roots: so when this
+     * is set the target is opened as it is and nothing else is asked.
+     */
+    export const REFERENCED_IS_DEFINITION = 'cal:referencedIsDefinition';
+
     // Source navigation metadata
     // Range is serialized as { start: { line, character }, end: { line, character } }
     // using 0-based line/character positions.

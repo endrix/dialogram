@@ -21,6 +21,8 @@ const NAVIGATE_PREFER_DEFINITION_ARG = 'wf:navigatePreferDefinition';
 const NAVIGATE_SOURCE_URI_ARG = 'wf:navigateSourceUri';
 const NAVIGATE_SOURCE_RANGE_ARG = 'wf:navigateSourceRange';
 const NAVIGATE_SYMBOL_ARG = 'wf:navigateSymbol';
+// The target is the definition itself, named by the producer: the host opens it as it is.
+const NAVIGATE_TARGET_IS_DEFINITION_ARG = 'wf:navigateTargetIsDefinition';
 
 import { VIEW_ARG, parseViewArg, parseViewsMeta } from './graph-load-request-options';
 
@@ -92,6 +94,8 @@ type SerializedRange = { start: SerializedPosition; end: SerializedPosition };
 type NavigationTarget = {
     uri: string;
     range?: SerializedRange;
+    /** The producer named this as the element's definition (`REFERENCED_IS_DEFINITION`). */
+    isDefinition?: boolean;
 };
 
 function isSerializedPosition(value: unknown): value is SerializedPosition {
@@ -131,10 +135,11 @@ function sourceTargetFromElement(element: unknown, fallbackSourceUri: string): N
         const referencedUri = args?.[WorkflowDiagramMetadata.REFERENCED_URI];
         const referencedRange = args?.[WorkflowDiagramMetadata.REFERENCED_SOURCE_RANGE];
         if (typeof referencedUri === 'string') {
+            const isDefinition = args?.[WorkflowDiagramMetadata.REFERENCED_IS_DEFINITION] === true ? { isDefinition: true } : {};
             if (isSerializedRange(referencedRange)) {
-                return { uri: referencedUri, range: referencedRange };
+                return { uri: referencedUri, range: referencedRange, ...isDefinition };
             }
-            return { uri: referencedUri };
+            return { uri: referencedUri, ...isDefinition };
         }
 
         const range = args?.[WorkflowDiagramMetadata.SOURCE_RANGE];
@@ -230,6 +235,7 @@ function toNavigateAction(
             ...(preferSourceUri
                 ? {
                     [NAVIGATE_PREFER_DEFINITION_ARG]: true,
+                    ...(target.isDefinition ? { [NAVIGATE_TARGET_IS_DEFINITION_ARG]: true } : {}),
                     [NAVIGATE_SOURCE_URI_ARG]: preferSourceUri,
                     ...(preferSourceRange ? { [NAVIGATE_SOURCE_RANGE_ARG]: JSON.stringify(preferSourceRange) } : {}),
                     ...(symbol ? { [NAVIGATE_SYMBOL_ARG]: symbol } : {})
