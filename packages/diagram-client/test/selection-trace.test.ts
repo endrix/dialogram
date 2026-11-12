@@ -214,6 +214,29 @@ describe('nested groups', () => {
         expect(result.focus).not.toContain('a->c');
     });
 
+    it('reaches a group an edge ends at, and leaves what that group holds as it is', () => {
+        // x -> A (the group), A -> B (group to group), b1 -> c: edges that end at a frame, not at a member.
+        const toGroup = (from: string, to: string): El => ({
+            id: `${from}=>${to}`, type: WorkflowDiagramTypes.EDGE_CONNECTION,
+            sourceId: from.startsWith('g') ? from : `${from}.out`, targetId: to
+        });
+        const root = model(node('x'), group('gA', node('a1')), group('gB', node('b1')), node('c'), node('far'),
+            toGroup('x', 'gA'), toGroup('gA', 'gB'), edge('b1', 'c'));
+        const selected = trace(root, 'x');
+        // The group is on the path, as a node an edge ends at is.
+        expect(selected.result.downstream.has('gA')).toBe(true);
+        expect(selected.result.downstream.has('x=>gA')).toBe(true);
+        // What it holds is neither on the path nor faded.
+        expect(selected.classes.a1).toEqual([TraceCss.SCOPE]);
+        expect(selected.classes.far).toEqual([TraceCss.FADED]);
+
+        // The edge itself, selected: its two ends are x and the group.
+        const edgeSelected = trace(root, 'x=>gA');
+        expect(sorted(edgeSelected.result.upstream)).toEqual(['x']);
+        expect(sorted(edgeSelected.result.downstream)).toEqual(['gA']);
+        expect(edgeSelected.classes.a1).toEqual([TraceCss.SCOPE]);
+    });
+
     it('a selected container draws what feeds it and what it feeds, and leaves what it holds alone', () => {
         const root = model(node('x'), group('G', node('g1'), node('g2')), node('y'), node('far'),
             edge('x', 'g1'), edge('g1', 'g2'), edge('g2', 'y'), edge('y', 'far'));

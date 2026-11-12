@@ -211,14 +211,47 @@ describe('an edge that ends at a group itself', () => {
         expect(find(root, 'scope:scope:B::in::b1_port_in')?.args?.[WorkflowDiagramMetadata.GROUP_END]).toBeUndefined();
     });
 
-    it('leaves from one place on the other side when it starts at a group', () => {
+    it('leaves from one place on the other side when it starts at a group, with every other edge that starts there', () => {
         const root = transform(document([
-            { id: 'e:A->x', from: 'scope:A', to: 'port:node:x:in', scope: 'scope:root' }
+            { id: 'e:A->x', from: 'scope:A', to: 'port:node:x:in', scope: 'scope:root' },
+            { id: 'e:A->B', from: 'scope:A', to: 'scope:B', scope: 'scope:root' }
         ] as any));
         const start = find(root, endOf('scope:A', 'out'));
         expect(start?.args?.[WorkflowDiagramMetadata.PORT_SIDE]).toBe('EAST');
         expect(start?.args?.[WorkflowDiagramMetadata.GROUP_END]).toBe(true);
         expect([find(root, 'e:A->x')?.sourceId, find(root, 'e:A->x')?.targetId]).toEqual([start!.id, 'x_port_in']);
+        // Group to group: from the one place on A to the one place on B.
+        expect([find(root, 'e:A->B')?.sourceId, find(root, 'e:A->B')?.targetId]).toEqual([start!.id, endOf('scope:B', 'in')]);
+        expect(portsOf(find(root, 'scope:scope:A')).filter(p => p.args?.[WorkflowDiagramMetadata.GROUP_END])).toHaveLength(1);
+        // The dot stays where a line starts; it goes only where an arrowhead meets the frame.
+        expect(start?.cssClasses).not.toContain('workflow-group-end-port');
+        expect(find(root, endOf('scope:B', 'in'))?.cssClasses).toContain('workflow-group-end-port');
+    });
+
+    it('loops whichever way the edge runs: from the group to a member, and from the group to itself', () => {
+        const root = transform(document([
+            { id: 'e:B->b1', from: 'scope:B', to: 'port:node:b1:in', scope: 'scope:root' },
+            { id: 'e:A->A', from: 'scope:A', to: 'scope:A', scope: 'scope:root' }
+        ] as any));
+        for (const [edgeId, group] of [['e:B->b1', 'scope:scope:B'], ['e:A->A', 'scope:scope:A']]) {
+            expect(find(root, edgeId), edgeId).toBeUndefined();
+            expect(find(root, group)?.args?.[WorkflowDiagramMetadata.GROUP_LOOP], group).toBe(true);
+            expect(portsOf(find(root, group)).filter(p => p.args?.[WorkflowDiagramMetadata.GROUP_END]), group).toHaveLength(0);
+        }
+    });
+
+    it('keeps on the loop what the edges it stands for said: a caption, an error', () => {
+        const root = transform(document([
+            { ...toGroup('a1', 'scope:A'), meta: { label: 'retry', isErrored: true, errorMessage: 'never taken' } },
+            { ...toGroup('a2', 'scope:A'), meta: { label: 'retry' } }
+        ] as any));
+        const group = find(root, 'scope:scope:A');
+        expect(group?.args?.[WorkflowDiagramMetadata.GROUP_LOOP_NOTES]).toEqual(['retry', 'never taken']);
+        expect(group?.cssClasses).toContain('workflow-group-loop-error');
+        // A loop with nothing wrong is drawn as any edge.
+        const clean = transform(document([toGroup('a1', 'scope:A')] as any));
+        expect(find(clean, 'scope:scope:A')?.cssClasses).not.toContain('workflow-group-loop-error');
+        expect(find(clean, 'scope:scope:A')?.args?.[WorkflowDiagramMetadata.GROUP_LOOP_NOTES]).toEqual([]);
     });
 
     it('draws an edge between a group and what it holds as the loop of the group, not as a line', () => {
@@ -350,6 +383,20 @@ describe('a group laid out on its own', () => {
         const looped = await laidOut(document([toGroup('a1', 'scope:A')] as any));
         expect(looped.byId.get('e:a1->scope:A')).toBeUndefined();
         expect((looped.byId.get('scope:scope:A') as any).args[WorkflowDiagramMetadata.GROUP_LOOP]).toBe(true);
-        expect(root).toBeDefined();
+        expect(root.children.length).toBeGreaterThan(0);
+    });
+
+    it('gives a group that holds nothing room for its title and for the edges that end at it', async () => {
+        const doc = document([toGroup('x', 'scope:E')] as any, [
+            { id: 'scope:A', kind: 'group', label: 'A', nodes: ['node:a1', 'node:a2', 'node:b1'] },
+            { id: 'scope:E', kind: 'group', label: 'Waiting for input' }
+        ]);
+        const { byId } = await laidOut(doc);
+        const empty = byId.get('scope:scope:E') as GNode;
+        expect(empty.size.width).toBeGreaterThanOrEqual(WorkflowDiagramConstants.GROUP_MIN_WIDTH_PX);
+        expect(empty.size.height).toBeGreaterThanOrEqual(WorkflowDiagramConstants.GROUP_MIN_HEIGHT_PX);
+        const end = byId.get(endOf('scope:E', 'in')) as GPort;
+        expect(end.position.y + end.size.height / 2).toBeGreaterThanOrEqual(WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX);
+        expect(end.position.y + end.size.height / 2).toBeLessThanOrEqual(empty.size.height);
     });
 });

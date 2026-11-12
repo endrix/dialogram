@@ -91,7 +91,10 @@ export function groupSizeAroundMembers(group: GNode): Size {
     // The layout insets the members from the left by the padding, and further
     // when edges enter on that side; the right inset mirrors it.
     const inset = Number.isFinite(left) ? Math.max(pad, left) : pad;
-    return { width: Math.max(right + inset, 2 * pad), height: Math.max(bottom + pad, header + 2 * pad) };
+    return {
+        width: Math.max(right + inset, 2 * pad, WorkflowDiagramConstants.GROUP_MIN_WIDTH_PX),
+        height: Math.max(bottom + pad, header + 2 * pad, WorkflowDiagramConstants.GROUP_MIN_HEIGHT_PX)
+    };
 }
 
 /**
@@ -124,6 +127,7 @@ export function restoreGroupGeometry(root: GModelRoot, routes?: Map<string, Poin
 
     const portSize = WorkflowDiagramConstants.GROUP_BOUNDARY_PORT_SIZE_PX;
     const header = WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX;
+    const pad = WorkflowDiagramConstants.GROUP_PADDING_PX;
     for (const group of groups) {
         const origin = absolutePosition(group);
         const crossings: Array<{ port: GPort; size: Size; entering: boolean; at?: Point; inner?: GModelElement }> = [];
@@ -162,6 +166,13 @@ export function restoreGroupGeometry(root: GModelRoot, routes?: Map<string, Poin
         for (const crossing of crossings) {
             if (!crossing.entering && crossing.at) {
                 size.width = Math.max(size.width, crossing.at.x - origin.x - crossing.size.width / 2);
+            }
+            // A port the layout put below the members (one where edges end at
+            // the group has no member to be level with) is part of the frame:
+            // the frame reaches down past it, with the padding it has below a
+            // member, so the port stays where its route meets it.
+            if (crossing.at) {
+                size.height = Math.max(size.height, crossing.at.y - origin.y + crossing.size.height / 2 + pad);
             }
         }
         group.size = size;

@@ -1256,6 +1256,11 @@ body.vscode-high-contrast-light .node-center-image-light {
     color: var(--vscode-foreground, #cccccc);
 }
 
+/* A loop that stands for an edge in error is drawn as that edge would be. */
+.workflow-node-group.workflow-group-loop-error > .group-loop {
+    color: var(--vscode-editorError-foreground, #f14c4c);
+}
+
 .workflow-node-group .group-loop-line {
     fill: none;
     stroke: currentColor;

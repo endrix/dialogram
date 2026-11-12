@@ -68,9 +68,11 @@ function absolute(element: any): Point {
 const fresh = (): GGraph => convertToGModelRoot(new GraphGModelSource().transform(DOC) as any) as unknown as GGraph;
 
 describe('reopening a saved layout with groups', () => {
-    it('puts the members back inside their groups and rebuilds each frame as the layout left it', async () => {
-        // Lay out, then save as every handler saves: absolute positions by key, absolute routes by edge id.
-        const laid = fresh();
+    /** Lay `doc` out, save it as every handler saves, and reopen it as the loader does. */
+    async function roundTrip(doc: PyGraphDocument): Promise<{ laidIndex: Map<string, any>; reopenedIndex: Map<string, any> }> {
+        const make = (): GGraph => convertToGModelRoot(new GraphGModelSource().transform(doc) as any) as unknown as GGraph;
+        // Lay out, then save: absolute positions by key, absolute routes by edge id.
+        const laid = make();
         const laidIndex = index(laid);
         const modelState: any = { root: laid, index: { get: (id: string) => laidIndex.get(id), findByClass: (id: string) => laidIndex.get(id) } };
         await new WorkflowElkLayoutEngine(() => new (ELK as any)({ algorithms: ['layered'] }), new DefaultElementFilter(), new WorkflowLayoutConfigurator(), modelState).layout();
@@ -86,7 +88,7 @@ describe('reopening a saved layout with groups', () => {
         }
 
         // Reopen: the loader's walk, then the group geometry, before the routes are snapped.
-        const reopened = fresh();
+        const reopened = make();
         const apply = (element: any, parentOrigin: Point): void => {
             let origin = { x: parentOrigin.x + (element.position?.x ?? 0), y: parentOrigin.y + (element.position?.y ?? 0) };
             const key = element.args?.[WorkflowDiagramMetadata.AST_PATH] ?? element.id;
@@ -100,14 +102,19 @@ describe('reopening a saved layout with groups', () => {
         };
         apply(reopened, { x: 0, y: 0 });
         restoreGroupGeometry(reopened as any, routes);
+        return { laidIndex, reopenedIndex: index(reopened) };
+    }
 
-        const reopenedIndex = index(reopened);
+    /**
+     * Every node back where it was, every frame the size it was (its height
+     * within `heightSlack`), every boundary port where its route met the frame.
+     */
+    function expectAsLaidOut(laidIndex: Map<string, any>, reopenedIndex: Map<string, any>, heightSlack = 2): void {
         for (const [id, before] of laidIndex) {
             const after = reopenedIndex.get(id);
             if (!(before instanceof GNode) || before instanceof GPort) {
                 continue;
             }
-            // Every node is back where it was, groups and members alike.
             expect(absolute(after), id).toEqual(absolute(before));
             if (before.type === WorkflowDiagramTypes.NODE_GROUP) {
                 // The frame hugs its members as the layout did. The width is
@@ -115,16 +122,55 @@ describe('reopening a saved layout with groups', () => {
                 // the right inset mirrors the left one, which ELK makes a few
                 // pixels narrower when a port sits on the left only.
                 expect(Math.abs(after.size.width - before.size.width), `${id} width`).toBeLessThanOrEqual(5);
-                expect(Math.abs(after.size.height - before.size.height), `${id} height`).toBeLessThanOrEqual(2);
+                expect(Math.abs(after.size.height - before.size.height), `${id} height`).toBeLessThanOrEqual(heightSlack);
             }
         }
-        // Every boundary port is back on its frame, where its route crossed it.
         const ports = [...laidIndex.values()].filter(e => e.type === WorkflowDiagramTypes.PORT_GROUP_BOUNDARY);
         expect(ports.length).toBeGreaterThan(0);
         for (const before of ports) {
             const after = reopenedIndex.get(before.id);
             expect(Math.abs(absolute(after).x - absolute(before).x), `${before.id} x`).toBeLessThanOrEqual(2);
             expect(Math.abs(absolute(after).y - absolute(before).y), `${before.id} y`).toBeLessThanOrEqual(1);
+        }
+    }
+
+    it('puts the members back inside their groups and rebuilds each frame as the layout left it', async () => {
+        const { laidIndex, reopenedIndex } = await roundTrip(DOC);
+        expectAsLaidOut(laidIndex, reopenedIndex);
+    });
+
+    it('rebuilds a frame that edges end at, down to the port the layout put below its members', async () => {
+        // A holds a1. Edges cross A's frame to a1 on both sides, and edges end
+        // at A and start from it: the layout gives those their own place on
+        // each side, under the crossing ones and so below the member.
+        const doc: PyGraphDocument = {
+            version: '1',
+            graph: {
+                id: 'root',
+                nodes: ['a1', 'w', 'x'].map(node),
+                edges: [
+                    edge('w', 'a1'),
+                    edge('a1', 'x'),
+                    { id: 'e:w->A', from: 'port:node:w:out', to: 'scope:A', scope: 'scope:root' },
+                    { id: 'e:A->x', from: 'scope:A', to: 'port:node:x:in', scope: 'scope:root' },
+                    { id: 'e:a1->A', from: 'port:node:a1:out', to: 'scope:A', scope: 'scope:root' }
+                ],
+                subgraphs: [{ id: 'scope:A', kind: 'group', label: 'A', nodes: ['node:a1'] }]
+            }
+        };
+        const { laidIndex, reopenedIndex } = await roundTrip(doc);
+        // The ports are exactly where the routes meet them, which is what
+        // keeps the edges straight. How much room the layout leaves under the
+        // lowest port is its own business: the frame is rebuilt with the
+        // padding it has under a member, a few pixels less.
+        expectAsLaidOut(laidIndex, reopenedIndex, 8);
+        const group = reopenedIndex.get('scope:scope:A') as GNode;
+        const member = reopenedIndex.get('a1') as GNode;
+        for (const id of ['scope:scope:A::in::scope:scope:A', 'scope:scope:A::out::scope:scope:A']) {
+            const port = reopenedIndex.get(id) as GPort;
+            // Below the member, and inside the frame.
+            expect(port.position.y, id).toBeGreaterThan(member.position.y + member.size.height);
+            expect(port.position.y + port.size.height, id).toBeLessThan(group.size.height);
         }
     });
 

@@ -55,13 +55,18 @@ describe('the group container', () => {
     it('draws one loop on the frame of a group marked with one, over the border', () => {
         const view = /export class GroupNodeView[\s\S]*?\n}\n/.exec(VIEWS)?.[0] ?? '';
         expect(view).toContain('WorkflowDiagramMetadata.GROUP_LOOP');
-        expect(view.indexOf('groupLoop(width, height)')).toBeGreaterThan(view.indexOf("'group-frame': true"));
+        expect(view.indexOf('groupLoop(width, height,')).toBeGreaterThan(view.indexOf("'group-frame': true"));
         const loop = /function groupLoop[\s\S]*?\n}\n/.exec(VIEWS)?.[0] ?? '';
         expect(loop).toContain('WorkflowDiagramConstants.GROUP_LOOP_RADIUS_PX');
         expect(loop).toContain("'group-loop-line': true");
         expect(loop).toContain("'group-loop-arrow': true");
         expect(CSS).toMatch(/\.workflow-node-group \.group-loop-line\s*\{[^}]*stroke:\s*currentColor/);
         expect(CSS).toMatch(/\.workflow-node-group \.group-loop-arrow\s*\{[^}]*fill:\s*currentColor/);
+        // What the edges it stands for said is its tooltip, and an error among them its colour.
+        expect(view).toContain('WorkflowDiagramMetadata.GROUP_LOOP_NOTES');
+        expect(loop).toMatch(/svg\('title', \{\}, lines\.join/);
+        expect(WorkflowDiagramCss.GROUP_LOOP_ERROR).toBe('workflow-group-loop-error');
+        expect(CSS).toMatch(/\.workflow-node-group\.workflow-group-loop-error > \.group-loop\s*\{[^}]*editorError/);
     });
 
     it('draws no header band on a group that has no title', () => {
