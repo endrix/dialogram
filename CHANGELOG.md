@@ -77,6 +77,16 @@ it no longer has.
 
 ### Added
 
+- **An edge can end at a group.** An edge whose end names a group's scope
+  (`to: 'scope:run'`) ends on the group's frame instead of at a member: a
+  transition into a state, where the state is a group of what can happen in
+  it. Every edge that ends at a group arrives at one place on its frame, on
+  the left, and keeps its arrowhead; an edge that starts at a group leaves
+  from one place on the right. An edge between a group and something inside
+  it is not drawn as a line: the group gets one loop on its frame for all of
+  them. A group whose label is empty has no title and no header band, and a
+  scope's `label` now reaches the document from a sidecar's export (it was
+  dropped, so a sidecar's groups were titled by their ids).
 - **A definition the producer named is opened as it is.** A node whose
   producer resolved its type itself (`meta.referencedSource`: a sidecar that
   imported the module, a compiler that elaborated the design) carries

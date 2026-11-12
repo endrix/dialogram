@@ -139,7 +139,18 @@ export function restoreGroupGeometry(root: GModelRoot, routes?: Map<string, Poin
             // side, the right edge on the right.
             const inside = edges.find(edge => (entering ? edge.sourceId : edge.targetId) === port.id);
             const route = inside ? routes?.get(inside.id) : undefined;
-            const at = route && route.length > 0 ? (entering ? route[0] : route[route.length - 1]) : undefined;
+            let at = route && route.length > 0 ? (entering ? route[0] : route[route.length - 1]) : undefined;
+            if (!inside) {
+                // Where edges end at the group itself there is no piece inside:
+                // the port is where an edge outside the group reaches it.
+                for (const edge of edges) {
+                    const outside = (entering ? edge.targetId : edge.sourceId) === port.id ? routes?.get(edge.id) : undefined;
+                    if (outside && outside.length > 0) {
+                        at = entering ? outside[outside.length - 1] : outside[0];
+                        break;
+                    }
+                }
+            }
             const inner = inside ? byId.get(entering ? inside.targetId : inside.sourceId) : undefined;
             crossings.push({ port, size, entering, at, inner });
         }

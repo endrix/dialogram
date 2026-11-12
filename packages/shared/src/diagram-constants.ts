@@ -67,4 +67,6 @@ export const WorkflowDiagramConstants = {
     GROUP_PADDING_PX: 14,
     /** The point on a group's frame an edge passes through on its way in or out. */
     GROUP_BOUNDARY_PORT_SIZE_PX: 8,
+    /** The loop on a group's frame (edges between the group and its own members). */
+    GROUP_LOOP_RADIUS_PX: 14,
 } as const;

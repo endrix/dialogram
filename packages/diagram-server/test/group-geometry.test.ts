@@ -145,6 +145,25 @@ describe('reopening a saved layout with groups', () => {
         expect(port.position.y + port.size.height / 2).toBe(60 + memberPort.position.y + memberPort.size.height / 2);
     });
 
+    it('puts the place where edges end at a group back where the edge outside reaches it', () => {
+        const doc: PyGraphDocument = {
+            ...DOC,
+            graph: { ...DOC.graph, edges: [...DOC.graph.edges, { id: 'e:x->B', from: 'port:node:x:out', to: 'scope:B', scope: 'scope:root' }] }
+        };
+        const model = convertToGModelRoot(new GraphGModelSource().transform(doc) as any) as unknown as GGraph;
+        const byId = index(model);
+        const group = byId.get('scope:scope:B') as GNode;
+        const member = byId.get('b1') as GNode;
+        group.position = { x: 100, y: 50 };
+        member.position = { x: 14, y: 40 };
+        member.size = { width: 120, height: 74 };
+        // The edge from x ends at (100, 130): on the left frame line, 80 down the group.
+        restoreGroupGeometry(model as any, new Map([['e:x->B', [{ x: 20, y: 130 }, { x: 100, y: 130 }]]]));
+        const end = byId.get('scope:scope:B::in::scope:scope:B') as GPort;
+        expect(end.position.x).toBe(-end.size.width / 2);
+        expect(end.position.y + end.size.height / 2).toBe(80);
+    });
+
     it('converts an absolute saved position into one relative to the parent', () => {
         expect(relativeToParent({ x: 1139, y: 119 }, { x: 1118, y: 93 })).toEqual({ x: 21, y: 26 });
         expect(relativeToParent({ x: 40, y: 30 }, { x: 0, y: 0 })).toEqual({ x: 40, y: 30 });

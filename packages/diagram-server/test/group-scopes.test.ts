@@ -75,6 +75,15 @@ describe('a producer’s group scopes', () => {
         expect(members(group)).toEqual(['b']);
     });
 
+    it('gives a group whose label is empty no title, rather than naming it by its id', () => {
+        const root = transform(docWith(
+            [{ id: 'scope:state', kind: 'group', label: '  ' }],
+            { b: 'scope:state' }
+        ));
+
+        expect(byId(root, 'scope:scope:state')?.args?.[WorkflowDiagramMetadata.GROUP_LABEL]).toBe('');
+    });
+
     it('nests a group inside its parent group', () => {
         const root = transform(docWith([
             { id: 'scope:outer', kind: 'group', label: 'Outer', nodes: ['node:a'] },

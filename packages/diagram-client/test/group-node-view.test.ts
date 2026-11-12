@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { WorkflowDiagramTypes } from '@dialogram/shared';
+import { WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const read = (file: string): string => readFileSync(path.resolve(here, '../src', file), 'utf8');
@@ -41,6 +41,33 @@ describe('the group container', () => {
     it('draws a piece of an edge that stops on a frame without an arrowhead', () => {
         const rule = /function endsAtBoundaryPort[\s\S]*?\n}\n/.exec(VIEWS)?.[0] ?? '';
         expect(rule).toContain('WorkflowDiagramTypes.PORT_GROUP_BOUNDARY');
+    });
+
+    it('keeps the arrowhead of an edge that ends at the group itself', () => {
+        const rule = /function endsAtBoundaryPort[\s\S]*?\n}\n/.exec(VIEWS)?.[0] ?? '';
+        expect(rule).toMatch(/return target\.args\?\.\[WorkflowDiagramMetadata\.GROUP_END\] !== true/);
+        expect(WorkflowDiagramMetadata.GROUP_END).toBe('wf:groupEnd');
+        // No dot where the arrowhead meets the frame.
+        expect(WorkflowDiagramCss.GROUP_END_PORT).toBe('workflow-group-end-port');
+        expect(CSS).toMatch(/\.workflow-group-end-port \.group-boundary-dot\s*\{[^}]*display:\s*none/);
+    });
+
+    it('draws one loop on the frame of a group marked with one, over the border', () => {
+        const view = /export class GroupNodeView[\s\S]*?\n}\n/.exec(VIEWS)?.[0] ?? '';
+        expect(view).toContain('WorkflowDiagramMetadata.GROUP_LOOP');
+        expect(view.indexOf('groupLoop(width, height)')).toBeGreaterThan(view.indexOf("'group-frame': true"));
+        const loop = /function groupLoop[\s\S]*?\n}\n/.exec(VIEWS)?.[0] ?? '';
+        expect(loop).toContain('WorkflowDiagramConstants.GROUP_LOOP_RADIUS_PX');
+        expect(loop).toContain("'group-loop-line': true");
+        expect(loop).toContain("'group-loop-arrow': true");
+        expect(CSS).toMatch(/\.workflow-node-group \.group-loop-line\s*\{[^}]*stroke:\s*currentColor/);
+        expect(CSS).toMatch(/\.workflow-node-group \.group-loop-arrow\s*\{[^}]*fill:\s*currentColor/);
+    });
+
+    it('draws no header band on a group that has no title', () => {
+        const view = /export class GroupNodeView[\s\S]*?\n}\n/.exec(VIEWS)?.[0] ?? '';
+        expect(view).toMatch(/const titled = label !== '' \|\| openNode;/);
+        expect(view).toMatch(/\.\.\.\(titled\s*\? \[svg\('path', \{\s*class: \{ 'group-header': true \}/);
     });
 
     it('styles the body as a tint the edges show through, and the header, border, label and port dot', () => {

@@ -100,6 +100,8 @@ export namespace WorkflowDiagramCss {
     /** A symbol pin's name, shown on a register only. */
     export const SYMBOL_PIN_LABEL_HIDDEN = 'symbol-pin-label-hidden';
     export const GROUP_BOUNDARY_PORT = 'workflow-group-boundary-port';
+    /** A boundary port where edges end at the group itself: no dot, the arrowhead meets the frame. */
+    export const GROUP_END_PORT = 'workflow-group-end-port';
     export const NODE_BOUNDARY = 'workflow-node-boundary';
     export const NODE_BOUNDARY_INPUT = 'workflow-node-boundary-input';
     export const NODE_BOUNDARY_OUTPUT = 'workflow-node-boundary-output';
@@ -424,6 +426,12 @@ export namespace WorkflowDiagramMetadata {
     /** Which piece: `source` (inside the source's groups), `middle` (between
      *  the outermost frames), or `target`. */
     export const EDGE_SEGMENT = 'wf:edgeSegment';
+    /** On a port of a group's frame: an edge ends (or starts) here, at the
+     *  frame itself, instead of crossing it to a member. */
+    export const GROUP_END = 'wf:groupEnd';
+    /** On a group: it has edges between itself and its own members, drawn as
+     *  one loop on the frame. */
+    export const GROUP_LOOP = 'wf:groupLoop';
 }
 
 /**

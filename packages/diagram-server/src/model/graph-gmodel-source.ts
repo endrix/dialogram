@@ -1015,13 +1015,17 @@ export class GraphGModelSource {
             }
         }
 
+        // An edge may name a group as an end: it ends on the group's frame
+        // (`group-edges.ts` gives it a place there).
+        const groupEnd = (raw: string): string | undefined =>
+            groupScopes.some(scope => scope.id === raw) ? `scope:${raw}` : undefined;
         for (const edge of doc.graph.edges) {
             const scope = scopeById.get(edge.scope);
             const branch = this.scopeLabel(scope?.kind ?? '');
             const controlNodeId = scope?.controlNodeId ?? undefined;
 
-            let sourceId = portIdMap.get(edge.from) ?? this._edgePortId(edge.from);
-            let targetId = portIdMap.get(edge.to) ?? this._edgePortId(edge.to);
+            let sourceId = portIdMap.get(edge.from) ?? groupEnd(edge.from) ?? this._edgePortId(edge.from);
+            let targetId = portIdMap.get(edge.to) ?? groupEnd(edge.to) ?? this._edgePortId(edge.to);
 
             const rawEdgeInfo = this.parseEdgeEndpoints(edge);
             // Boundary ports are addressed through node-based IDs in the IR, which makes
@@ -1342,7 +1346,10 @@ export class GraphGModelSource {
         removedNodeIds: Set<string>
     ): GNode {
         const nodeId = `scope:${scope.id}`;
-        const label = typeof scope.label === 'string' && scope.label.trim() !== ''
+        // A label the producer gave is the label, an empty one included: a
+        // frame with no title. Only a scope with no label at all is named by
+        // its id.
+        const label = typeof scope.label === 'string'
             ? scope.label.trim()
             : (scope.id.split(':').pop() || scope.id);
         const node: GNode = {

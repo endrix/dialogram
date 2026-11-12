@@ -180,6 +180,80 @@ describe('cutting edges at group frames', () => {
     });
 });
 
+// ── Edges that end at a group itself ────────────────────────────────────────
+
+/** An edge from `from`'s output to (or from) a group, named by its scope id. */
+function toGroup(from: string, scopeId: string) {
+    return { id: `e:${from}->${scopeId}`, from: `port:node:${from}:out`, to: scopeId, scope: 'scope:root' };
+}
+
+const endOf = (group: string, direction: 'in' | 'out'): string => `scope:${group}::${direction}::scope:${group}`;
+
+describe('an edge that ends at a group itself', () => {
+    it('arrives at one place on the frame, with every other edge that ends there', () => {
+        const root = transform(document([toGroup('x', 'scope:B'), toGroup('a1', 'scope:B')] as any));
+        const end = find(root, endOf('scope:B', 'in'));
+        expect(end?.type).toBe(WorkflowDiagramTypes.PORT_GROUP_BOUNDARY);
+        expect(end?.args?.[WorkflowDiagramMetadata.GROUP_END]).toBe(true);
+        expect(end?.args?.[WorkflowDiagramMetadata.PORT_SIDE]).toBe('WEST');
+        expect(end?.cssClasses).toContain('workflow-group-end-port');
+        // From the root: the edge itself, retargeted. Nothing is drawn inside B for it.
+        const fromRoot = find(root, 'e:x->scope:B');
+        expect([fromRoot?.sourceId, fromRoot?.targetId]).toEqual(['x_port_out', end!.id]);
+        expect(find(root, `${end!.id}::piece`)).toBeUndefined();
+        // From a member of A: out through A's frame, then to the same place on B.
+        const out = 'scope:scope:A::out::a1_port_out';
+        const fromA = find(root, 'e:a1->scope:B');
+        expect([fromA?.sourceId, fromA?.targetId]).toEqual([out, end!.id]);
+        expect(find(root, `${out}::piece`)?.targetId).toBe(out);
+        expect(portsOf(find(root, 'scope:scope:B')).filter(p => p.args?.[WorkflowDiagramMetadata.GROUP_END])).toHaveLength(1);
+        // A port edges cross to reach a member is not such a place.
+        expect(find(root, 'scope:scope:B::in::b1_port_in')?.args?.[WorkflowDiagramMetadata.GROUP_END]).toBeUndefined();
+    });
+
+    it('leaves from one place on the other side when it starts at a group', () => {
+        const root = transform(document([
+            { id: 'e:A->x', from: 'scope:A', to: 'port:node:x:in', scope: 'scope:root' }
+        ] as any));
+        const start = find(root, endOf('scope:A', 'out'));
+        expect(start?.args?.[WorkflowDiagramMetadata.PORT_SIDE]).toBe('EAST');
+        expect(start?.args?.[WorkflowDiagramMetadata.GROUP_END]).toBe(true);
+        expect([find(root, 'e:A->x')?.sourceId, find(root, 'e:A->x')?.targetId]).toEqual([start!.id, 'x_port_in']);
+    });
+
+    it('draws an edge between a group and what it holds as the loop of the group, not as a line', () => {
+        const root = transform(document([toGroup('a1', 'scope:A'), toGroup('a2', 'scope:A')] as any));
+        expect(find(root, 'e:a1->scope:A')).toBeUndefined();
+        expect(find(root, 'e:a2->scope:A')).toBeUndefined();
+        expect(find(root, 'scope:scope:A')?.args?.[WorkflowDiagramMetadata.GROUP_LOOP]).toBe(true);
+        expect(find(root, 'scope:scope:B')?.args?.[WorkflowDiagramMetadata.GROUP_LOOP]).toBeUndefined();
+        // No place on the frame is made for an edge that is not drawn.
+        expect(find(root, endOf('scope:A', 'in'))).toBeUndefined();
+        // The edges that were there stay.
+        expect(find(root, 'e:a1->a2:depends-on')).toBeDefined();
+    });
+
+    it('loops on the outer group when a member of a nested group ends at it, and crosses the outer frame to end at the inner one', () => {
+        const nested: PyGraphScope[] = [
+            { id: 'scope:A', kind: 'group', label: 'A', nodes: ['node:a1', 'node:a2'] },
+            { id: 'scope:Inner', kind: 'group', label: 'Inner', parent: 'scope:A', nodes: ['node:b1'] }
+        ];
+        const root = transform(document([toGroup('b1', 'scope:A'), toGroup('x', 'scope:Inner')] as any, nested));
+        expect(find(root, 'scope:scope:A')?.args?.[WorkflowDiagramMetadata.GROUP_LOOP]).toBe(true);
+        expect(find(root, 'e:b1->scope:A')).toBeUndefined();
+        // x (root) -> Inner: through A's frame, a piece inside A to the place on Inner.
+        const end = endOf('scope:Inner', 'in');
+        const through = `scope:scope:A::in::${end}`;
+        expect([find(root, 'e:x->scope:Inner')?.sourceId, find(root, 'e:x->scope:Inner')?.targetId]).toEqual(['x_port_out', through]);
+        expect([find(root, `${through}::piece`)?.sourceId, find(root, `${through}::piece`)?.targetId]).toEqual([through, end]);
+    });
+
+    it('names a group by the id of its scope, and leaves an end that names nothing as it was', () => {
+        const root = transform(document([toGroup('x', 'scope:Nowhere')] as any));
+        expect(find(root, 'e:x->scope:Nowhere')?.targetId).toBe('scope_Nowhere');
+    });
+});
+
 // ── The layout ──────────────────────────────────────────────────────────────
 
 type Point = { x: number; y: number };
@@ -254,5 +328,28 @@ describe('a group laid out on its own', () => {
                 expect(Math.abs(end.y - (box.y + box.h / 2)), `${piece.id} at ${portId}`).toBeLessThanOrEqual(1);
             }
         }
+    });
+
+    it('puts the place where edges end on the frame line, and brings each edge to it', async () => {
+        const { root, byId } = await laidOut(document([toGroup('x', 'scope:B'), toGroup('a1', 'scope:B')] as any));
+        const end = byId.get(endOf('scope:B', 'in')) as GPort;
+        const group = byId.get('scope:scope:B') as GNode;
+        const centre = { x: end.position.x + end.size.width / 2, y: end.position.y + end.size.height / 2 };
+        expect(Math.abs(centre.x)).toBeLessThanOrEqual(1);
+        expect(centre.y).toBeGreaterThanOrEqual(WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX);
+        expect(centre.y).toBeLessThanOrEqual(group.size.height);
+        const box = { ...absolute(end), w: end.size.width, h: end.size.height };
+        for (const id of ['e:x->scope:B', 'e:a1->scope:B']) {
+            const points = (byId.get(id) as any).routingPoints as Point[];
+            const last = points[points.length - 1];
+            expect(last.x, id).toBeGreaterThanOrEqual(box.x - 1);
+            expect(last.x, id).toBeLessThanOrEqual(box.x + box.w + 1);
+            expect(Math.abs(last.y - (box.y + box.h / 2)), id).toBeLessThanOrEqual(1);
+        }
+        // The loop's edges are gone from the model the layout sees.
+        const looped = await laidOut(document([toGroup('a1', 'scope:A')] as any));
+        expect(looped.byId.get('e:a1->scope:A')).toBeUndefined();
+        expect((looped.byId.get('scope:scope:A') as any).args[WorkflowDiagramMetadata.GROUP_LOOP]).toBe(true);
+        expect(root).toBeDefined();
     });
 });
