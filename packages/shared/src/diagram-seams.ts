@@ -313,3 +313,22 @@ export interface ExecutionOverlayActionPayload {
     /** Opaque consumer-defined stream events (e.g. agent token stream). */
     events?: unknown[];
 }
+
+/**
+ * A link between two nodes that is drawn only while one of them is selected:
+ * what a node uses, when there is too much of it to draw all at once (the
+ * state an action reads, the ports it takes tokens from). A producer marks an
+ * edge `meta.onSelection`; such an edge takes no part in the layout and is no
+ * element of the model. `from` and `to` are the ids of the model's nodes.
+ */
+export interface SelectionLink {
+    id: string;
+    from: string;
+    to: string;
+    /** What kind of link, for the product's stylesheet: `selection-link-<role>`. */
+    role?: string;
+    /** A word or two drawn on the link. */
+    label?: string;
+    /** Both ways at once (read and written): an arrowhead at each end. */
+    bidirectional?: boolean;
+}

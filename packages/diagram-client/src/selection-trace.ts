@@ -41,6 +41,7 @@ import { FeedbackCommand, IFeedbackActionDispatcher, ISelectionListener, TYPES }
 import type { Action, CommandExecutionContext, Disposable, GModelRoot } from '@eclipse-glsp/sprotty';
 import { inject, injectable, optional } from 'inversify';
 import { clientBehavior } from './profile';
+import { linksOfSelection } from './selection-links';
 
 /** A model element as far as tracing goes. */
 export interface TraceElement {
@@ -53,6 +54,7 @@ export interface TraceElement {
     /** Where the element is drawn, relative to the element that holds it. */
     position?: { x: number; y: number };
     size?: { width: number; height: number };
+    args?: Record<string, unknown>;
 }
 
 /** One step along an edge: the port at its other end, and the edge. */
@@ -425,6 +427,25 @@ function withHeld(graph: TraceGraph, trace: Trace): Trace {
 }
 
 /**
+ * What the selection's links lead to, and the other drawings of what is
+ * selected (selection-links.ts), are read with the selection: they are left
+ * as they are, not faded as nodes off the trace are.
+ */
+export function withLinked(root: TraceElement, selected: readonly string[], trace: Trace): Trace {
+    const { ends, same } = linksOfSelection(root, new Set(selected));
+    if (ends.size === 0 && same.size === 0) {
+        return trace;
+    }
+    return { ...trace, scope: new Set([...trace.scope, ...ends, ...same]) };
+}
+
+/** The trace of `selected` on `root`, with what its links lead to. */
+function traceOf(root: TraceElement, graph: TraceGraph, selected: readonly string[]): Trace | undefined {
+    const trace = computeTrace(graph, selected);
+    return trace && withLinked(root, selected, trace);
+}
+
+/**
  * The classes a trace puts on each element. Every leaf node and edge off the
  * trace fades. A container never does: its opacity would multiply into every
  * node it holds, traced or not.
@@ -480,7 +501,7 @@ export namespace SelectionTraceFeedbackAction {
 /** The classes the trace of `selected` puts on `root` as it is now; empty when nothing selected is there. */
 export function traceClassesOf(root: TraceElement, selected: readonly string[]): Record<string, string[]> {
     const graph = buildTraceGraph(root);
-    const trace = computeTrace(graph, selected);
+    const trace = traceOf(root, graph, selected);
     return trace ? traceClasses(graph, trace) : {};
 }
 
@@ -570,7 +591,7 @@ export class SelectionTraceListener implements ISelectionListener {
         let classes: Record<string, string[]> | undefined;
         if (clientBehavior().selectionTrace === true && selectedElements.length > 0) {
             const graph = buildTraceGraph(root as unknown as TraceElement);
-            const trace = computeTrace(graph, selectedElements);
+            const trace = traceOf(root as unknown as TraceElement, graph, selectedElements);
             classes = trace ? traceClasses(graph, trace) : undefined;
         }
         const key = classes ? JSON.stringify(classes) : '';

@@ -56,3 +56,32 @@ describe('graph payload scopes', () => {
         expect(byId.get('scope:odd').pin).toBeUndefined();
     });
 });
+
+describe('graph payload links drawn on selection', () => {
+    it('keeps an edge\'s mark and what it says, its ends naming nodes, and a node\'s `sameAs`', () => {
+        const doc = new SidecarModelSource(CFG).graphPayloadToDoc({
+            network: 'top',
+            nodes: [
+                { id: 'a:run:step', kind: 'action', label: 'step', scope: 'scope:root', ports: [], metadata: { sameAs: 'step' } },
+                { id: 'v:count', kind: 'state', label: 'count', scope: 'scope:root', ports: [] }
+            ],
+            edges: [{
+                id: 'l:write',
+                // An end names a node: there is no port for it.
+                from: { nodeId: 'a:run:step', portId: 'a:run:step' },
+                to: { nodeId: 'v:count', portId: 'v:count' },
+                scope: 'scope:root',
+                metadata: { onSelection: true, role: 'write', label: '×1', bidirectional: true }
+            }],
+            scopes: [{ id: 'scope:root', kind: 'network' }]
+        }) as any;
+        expect(doc.graph.edges).toEqual([expect.objectContaining({
+            id: 'l:write',
+            from: 'a:run:step',
+            to: 'v:count',
+            meta: { onSelection: true, role: 'write', label: '×1', bidirectional: true }
+        })]);
+        const step = doc.graph.nodes.find((node: any) => node.id === 'a:run:step');
+        expect(step.meta.sameAs).toBe('step');
+    });
+});

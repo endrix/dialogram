@@ -1,13 +1,13 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
 import { parseBadgesMeta, parseFactsMeta, parseViewsMeta, type UnitBadge } from '../server/graph-load-request-options';
-import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, type PortSide, type SymbolKind } from '@dialogram/shared';
+import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, type PortSide, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
 import { arrangeGroupRows, groupLayoutOptions, isGroupRow, splitEdgesAtGroups } from './group-edges';
 import { URI } from 'vscode-uri';
 import { boundaryMargin, bundlePorts, type PortBus, type PortBusState } from './port-bundles';
 import { stableNodeId as stableNodeIdOf, stableNodeIds, stablePortNames } from './stable-ids';
-import { canOpen, openNodes } from './open-nodes';
+import { canOpen, openNodes, openScopeId } from './open-nodes';
 
 /** What an openable node's header toggle takes from its start: its ring and a gap. */
 const OPEN_TOGGLE_ROOM_PX = 20;
@@ -291,6 +291,13 @@ export class GraphGModelSource {
         // The network is named by the producer's nodes: a bus bundling the
         // unit's ports is named after the bundle.
         const producerNodes = doc.graph.nodes;
+        // An edge marked `onSelection` is no edge of the diagram (see below):
+        // it is taken out before the document is rewritten, so that no bus
+        // takes it for one of its wires, and its ends are found afterwards.
+        const linkEdges = doc.graph.edges.filter(edge => edge.meta?.['onSelection'] === true);
+        if (linkEdges.length > 0) {
+            doc = { ...doc, graph: { ...doc.graph, edges: doc.graph.edges.filter(edge => edge.meta?.['onSelection'] !== true) } };
+        }
         // A node the reader opened is drawn as the group of what it holds
         // (open-nodes.ts); its inner nodes keep the producer's ids.
         doc = openNodes(doc, options?.portBuses, stableIds);
@@ -452,6 +459,11 @@ export class GraphGModelSource {
                     'wf:scope': node.scope
                 }
             };
+            // What the node is one drawing of, for the client to outline the others.
+            const sameAs = node.meta?.['sameAs'];
+            if (typeof sameAs === 'string' && sameAs.trim() !== '') {
+                gnode.args![WorkflowDiagramMetadata.SAME_AS] = sameAs.trim();
+            }
             // The row a producer puts a member of a group in.
             const row = node.meta?.['row'];
             if (isGroupRow(row)) {
@@ -996,10 +1008,14 @@ export class GraphGModelSource {
         // only in its label; the control-flow containers above keep their own
         // kinds and never come through here.
         const groupScopes = (doc.graph.subgraphs ?? []).filter(scope => scope.kind === 'group' && !scope.controlNodeId);
+        /** The group frames, by their id in the model. */
+        const groupNodeByModelId = new Map<string, GNode>();
         if (groupScopes.length > 0) {
             const groupNodes = new Map<string, GNode>();
             for (const scope of groupScopes) {
-                groupNodes.set(scope.id, this.createGroupNode(scope, scopeNodes, irNodeToStableId, nodeMap, removedNodeIds));
+                const group = this.createGroupNode(scope, scopeNodes, irNodeToStableId, nodeMap, removedNodeIds);
+                groupNodes.set(scope.id, group);
+                groupNodeByModelId.set(group.id, group);
             }
             // A group whose parent chain leads back to itself has no parent
             // worth the name; it sits at the root, as a group with no parent
@@ -1035,6 +1051,64 @@ export class GraphGModelSource {
         // (`group-edges.ts` gives it a place there).
         const groupEnd = (raw: string): string | undefined =>
             groupScopes.some(scope => scope.id === raw) ? `scope:${raw}` : undefined;
+        // An edge marked `onSelection` is no edge of the diagram: it is drawn
+        // by the client, between two nodes, only while one of them is
+        // selected. It takes no part in the layout and crosses no frame. Its
+        // ends name nodes; a port names its node, a group scope its group.
+        // The node is the producer's: where the platform draws it as
+        // something else, the link ends there (the frame of a node opened in
+        // place, the bus a port of the unit is folded into).
+        const selectionLinks: SelectionLink[] = [];
+        if (linkEdges.length > 0) {
+            const producerNodeOfPort = new Map<string, PyGraphNode>();
+            const producerNodeById = new Map<string, PyGraphNode>();
+            for (const node of producerNodes) {
+                producerNodeById.set(node.id, node);
+                for (const port of node.ports ?? []) {
+                    producerNodeOfPort.set(port.id, node);
+                }
+            }
+            const busOfMember = new Map<string, string>();
+            for (const node of doc.graph.nodes) {
+                const members = node.meta?.['busMembers'];
+                for (const member of Array.isArray(members) ? members : []) {
+                    busOfMember.set(String(member), node.id);
+                }
+            }
+            const linkEnd = (raw: string): string | undefined => {
+                const node = producerNodeById.get(raw) ?? producerNodeOfPort.get(raw);
+                if (!node) {
+                    return groupEnd(raw);
+                }
+                return irNodeToStableId.get(node.id)
+                    ?? groupEnd(openScopeId(node.id))
+                    ?? irNodeToStableId.get(busOfMember.get(stableNodeIdOf(stableIds, node)) ?? '');
+            };
+            // A frame and what is in it are not two ends: an edge between
+            // them is the frame's loop, and a link would run through the node.
+            const holds = (holder: string, id: string): boolean => {
+                const inside = (element: GModelElement | undefined): boolean =>
+                    (element?.children ?? []).some(child => child.id === id || inside(child));
+                return inside(groupNodeByModelId.get(holder));
+            };
+            for (const edge of linkEdges) {
+                const from = linkEnd(edge.from);
+                const to = linkEnd(edge.to);
+                if (!from || !to || from === to || holds(from, to) || holds(to, from)) {
+                    continue;
+                }
+                const role = edge.meta!['role'];
+                const label = edge.meta!['label'];
+                selectionLinks.push({
+                    id: edge.id,
+                    from,
+                    to,
+                    ...(typeof role === 'string' && this.derivedCssClass('', role) ? { role } : {}),
+                    ...(typeof label === 'string' && label.trim() !== '' ? { label: label.trim() } : {}),
+                    ...(edge.meta!['bidirectional'] === true ? { bidirectional: true } : {})
+                });
+            }
+        }
         for (const edge of doc.graph.edges) {
             const scope = scopeById.get(edge.scope);
             const branch = this.scopeLabel(scope?.kind ?? '');
@@ -1238,6 +1312,9 @@ export class GraphGModelSource {
         const networkParameters = doc.graph.meta?.['parameters'];
         if (networkParameters !== undefined) {
             graphArgs[WorkflowDiagramMetadata.NETWORK_PARAMETERS] = networkParameters;
+        }
+        if (selectionLinks.length > 0) {
+            graphArgs[WorkflowDiagramMetadata.SELECTION_LINKS] = selectionLinks;
         }
         // The facts of the unit shown, for the root's own panel.
         const graphFacts = parseFactsMeta(doc.graph.meta?.['facts']);

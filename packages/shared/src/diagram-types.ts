@@ -448,6 +448,12 @@ export namespace WorkflowDiagramMetadata {
     /** On a group: where the producer pins it (`pin: 'top'`), out of the flow
      *  of the diagram: in a band above everything else. */
     export const GROUP_PIN = 'wf:groupPin';
+    /** On the root: the links drawn only while one of their ends is selected
+     *  (`SelectionLink[]`, from the edges a producer marks `meta.onSelection`). */
+    export const SELECTION_LINKS = 'wf:selectionLinks';
+    /** On a node: the thing it is one drawing of (`meta.sameAs`). Selecting a
+     *  node outlines the others that draw the same thing. */
+    export const SAME_AS = 'wf:sameAs';
 }
 
 /**
