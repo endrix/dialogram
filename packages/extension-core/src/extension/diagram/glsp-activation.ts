@@ -114,6 +114,10 @@ type NavigationTrailEntry = {
     sourceUri?: string;
     workflowName?: string;
     workflowInstanceName?: string;
+    /** A crumb that is a view of the unit: kept, so a trail rewritten here still says it. */
+    view?: string;
+    viewLabel?: string;
+    viewOf?: 'instance';
 };
 
 
@@ -140,11 +144,20 @@ function parseNavigationTrail(raw: unknown): NavigationTrailEntry[] {
             const workflowInstanceName = typeof (entry as NavigationTrailEntry & { workflowInstanceName?: string }).workflowInstanceName === 'string'
                 ? (entry as NavigationTrailEntry & { workflowInstanceName?: string }).workflowInstanceName
                 : undefined;
+            const view = typeof (entry as NavigationTrailEntry).view === 'string' ? (entry as NavigationTrailEntry).view : undefined;
+            const viewLabel = typeof (entry as NavigationTrailEntry).viewLabel === 'string' ? (entry as NavigationTrailEntry).viewLabel : undefined;
             if (sourceUri || workflowName) {
                 out.push({
                     sourceUri,
                     workflowName,
-                    ...(workflowInstanceName ? { workflowInstanceName } : {})
+                    ...(workflowInstanceName ? { workflowInstanceName } : {}),
+                    ...(view
+                        ? {
+                            view,
+                            ...(viewLabel ? { viewLabel } : {}),
+                            ...((entry as NavigationTrailEntry).viewOf === 'instance' ? { viewOf: 'instance' as const } : {})
+                        }
+                        : {})
                 });
             }
         }

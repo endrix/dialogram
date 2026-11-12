@@ -10,7 +10,8 @@ import { describe, expect, it } from 'vitest';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { WorkflowContextMenuItemProvider } from '../src/server/context-menu-item-provider';
 import { GraphGModelSource } from '../src/model/graph-gmodel-source';
-import { parseNavigationTrailArg, parseViewsMeta, viewIsOfInstance } from '../src/server/graph-load-request-options';
+import { parseNavigationTrailArg, parseViewsMeta, viewIsOfInstance, withTrailView } from '../src/server/graph-load-request-options';
+import { GraphGModelSource } from '../src/model/graph-gmodel-source';
 
 const SHOWN = 'file:///w/top.vhd';
 const VIEWS = [{ id: 'synth', label: 'Synthesis View' }];
@@ -120,5 +121,54 @@ describe('a view of the instance, on the trail', () => {
         expect(viewIsOfInstance(opts({ viewOf: 'instance' }, null))).toBe(false);
         expect(viewIsOfInstance(opts({ viewOf: 'instance', workflowInstanceName: ' ' }))).toBe(false);
         expect(viewIsOfInstance({})).toBe(false);
+    });
+
+    it('needs a whole trail: every crumb under the root reached through an instance', () => {
+        const through = (middle: Record<string, unknown>) => ({
+            'wf:view': 'inside',
+            'wf:navTrail': JSON.stringify([
+                { sourceUri: 'file:///w/top.py', workflowName: 'top' },
+                { sourceUri: 'file:///w/mid.py', workflowName: 'mid', ...middle },
+                { sourceUri: 'file:///w/unit.py', workflowName: 'Unit', workflowInstanceName: 'u1', view: 'inside', viewOf: 'instance' }
+            ])
+        });
+        expect(viewIsOfInstance(through({ workflowInstanceName: 'm1' }))).toBe(true);
+        // The middle unit was shown by name: the path would skip it.
+        expect(viewIsOfInstance(through({}))).toBe(false);
+        // A crumb alone has no root to be asked of.
+        expect(viewIsOfInstance({
+            'wf:view': 'inside',
+            'wf:navTrail': JSON.stringify([{ sourceUri: 'file:///w/unit.py', workflowName: 'Unit', workflowInstanceName: 'u1', view: 'inside', viewOf: 'instance' }])
+        })).toBe(false);
+    });
+
+    it('settles the view of a request that names none, when the request is for the last crumb’s unit', () => {
+        const refresh = { networkName: 'Unit', 'wf:navTrail': trail({ viewOf: 'instance' }) };
+        expect(withTrailView('file:///w/unit.py', refresh)).toEqual({ ...refresh, 'wf:view': 'inside' });
+        // No name at all is the crumb's unit too.
+        expect(withTrailView('file:///w/unit.py', { 'wf:navTrail': trail({}) })['wf:view']).toBe('inside');
+        // A view the request names is the request's; another file, another name, or a crumb that is no view, leave it be.
+        const named = { ...refresh, 'wf:view': 'synthesis' };
+        expect(withTrailView('file:///w/unit.py', named)).toBe(named);
+        expect(withTrailView('file:///w/other.py', refresh)).toBe(refresh);
+        expect(withTrailView('file:///w/unit.py', { ...refresh, networkName: 'Other' })['wf:view']).toBeUndefined();
+        expect(withTrailView('file:///w/unit.py', { networkName: 'Unit', 'wf:navTrail': trail({ view: '' }) })['wf:view']).toBeUndefined();
+        expect(withTrailView('file:///w/unit.py', {})).toEqual({});
+    });
+
+    it('reaches a node’s arguments from the document, with what it is of', () => {
+        const graph: any = new GraphGModelSource().transform({
+            version: '1',
+            graph: {
+                id: 'root',
+                nodes: [{
+                    id: 'node:u1', kind: 'actor', label: 'u1', scope: 'scope:root', ports: [],
+                    meta: { referencedEntityName: 'Unit', views: [{ id: 'inside', label: 'Inside', of: 'instance' }, { id: 'synth' }] }
+                }],
+                edges: []
+            }
+        }).graph;
+        expect(graph.children.find((child: any) => child.id === 'u1').args[WorkflowDiagramMetadata.VIEWS])
+            .toEqual([{ id: 'inside', label: 'Inside', of: 'instance' }, { id: 'synth', label: 'synth' }]);
     });
 });

@@ -40,6 +40,25 @@ describe('a view of the instance it is reached through', () => {
         ]);
     });
 
+    it('ends a trail that leads to it through every instance on the way: the editor’s own stack', () => {
+        // The editor's document is the root; a nested unit was drilled into before.
+        const NESTED = 'file:///w/motion.py';
+        const ui = navigation();
+        ui.stacksBySourceUri.set(ROOT, [
+            { sourceUri: ROOT, workflowName: 'decoder' },
+            { sourceUri: NESTED, workflowName: 'motion', workflowInstanceName: 'motion_Y' }
+        ]);
+        const action = ui.requestView(UNIT, 'Interpolation', 'interpolation', 'actor', 'Actor', 'instance');
+
+        expect(trailOf(action)).toEqual([
+            { sourceUri: ROOT, workflowName: 'decoder' },
+            { sourceUri: NESTED, workflowName: 'motion', workflowInstanceName: 'motion_Y' },
+            { sourceUri: UNIT, workflowName: 'Interpolation', workflowInstanceName: 'interpolation', view: 'actor', viewLabel: 'Actor', viewOf: 'instance' }
+        ]);
+        // And the stack the next request starts from is that trail, the mark with it.
+        expect(ui.stacksBySourceUri.get(UNIT).at(-1)).toMatchObject({ view: 'actor', viewOf: 'instance' });
+    });
+
     it('is not marked on the crumb of a view of the definition', () => {
         (globalThis as any).__calDiagramContext = { workflowName: 'decoder' };
         const action = navigation().requestView(UNIT, 'Interpolation', 'interpolation', 'synthesis', undefined);

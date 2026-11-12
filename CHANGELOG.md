@@ -140,8 +140,13 @@ it no longer has.
   of the editor's root, by the path of instances that leads to the node
   (`rootNetwork` and `instancePath`, with `view`), as a drill-down into a
   nested unit already falls back to; its file is asked by name only when the
-  root has no answer. The mark stays on the view's crumb, so the trail leads
-  back to the same view. A view without it is asked as before.
+  root has no answer, and the reader is then told that what is shown is the
+  definition's (a warning, with the root's reason). The mark stays on the
+  view's crumb, so the trail leads back to the same view; it is acted on
+  only for a trail that reaches the node through an instance at every step.
+  It is said of a view a node offers, and acted on by the model source that
+  asks a sidecar for its graph: a product whose graph comes from a CLI's
+  plan asks by name, as before, as does any view without the mark.
 - **Lines of text in a node, read close in.** A producer puts lines of text
   in a node with `meta.lines` (`[{ text, kind? }]`, or plain strings; six at
   most, each cut at 48 characters): what a reader zooms in for and the
@@ -644,6 +649,13 @@ it no longer has.
 
 ### Fixed
 
+- **A view no longer falls back to the structure on a refresh.** The host's
+  refresh (a keystroke or a save in any source file, a run) repeats the
+  file, the name and the trail of what is shown, and named no view: a
+  synthesis view, or any other, was replaced by the unit's structure under a
+  breadcrumb that still said the view. The view is now taken from the
+  trail's last crumb when the request names none and is for that crumb's
+  unit.
 - **A wire into a closed bus of the unit's ports runs the way it does.** A
   bundle of the unit's ports that mixes directions (a handshake's `data` and
   `valid` in, its `ready` and `space` out) is drawn as an input, and every
