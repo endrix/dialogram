@@ -18,8 +18,9 @@
  * otherwise. Where a neighbour in the node's own frame is in the way on that
  * side (the row above, in a frame of rows), it takes the side across instead,
  * so it runs beside the neighbours and not over them. The links that share a
- * side are spread along it, in the order of what they lead to, so they fan
- * out and do not cross each other at the node.
+ * side are spread along it in the order of the directions they lead in, as
+ * seen from the node, so they fan out and do not cross each other; two links
+ * between the same two nodes run side by side.
  *
  * The drawing goes into the root's svg, inside the group the viewport
  * transforms, after everything else: on top, in the diagram's coordinates.
@@ -113,7 +114,24 @@ function onSide(box: Box, side: Side, share: number): Point {
     }
 }
 
-const vertical = (side: Side): boolean => side === 'top' || side === 'bottom';
+/**
+ * Where `other` lies as seen from `box`, as an angle that grows along `side`
+ * the way a place on it does (`onSide`: left to right, top to bottom): a
+ * turn around the box that starts straight behind the side. Links leaving
+ * one side in the order of this angle fan out without crossing.
+ */
+function bearing(box: Box, side: Side, other: Box): number {
+    const dx = (other.x + other.width / 2) - (box.x + box.width / 2);
+    const dy = (other.y + other.height / 2) - (box.y + box.height / 2);
+    const angle = side === 'left' ? Math.atan2(-dy, dx)
+        : side === 'right' ? Math.atan2(-dy, -dx)
+            : side === 'top' ? Math.atan2(-dx, dy)
+                : Math.atan2(-dx, -dy);
+    return angle < 0 ? angle + 2 * Math.PI : angle;
+}
+
+/** A place along a side grows the way a turn around the box does on its left and bottom, against it on its top and right. */
+const withTheTurn = (side: Side): boolean => side === 'left' || side === 'bottom';
 
 export interface DrawnLink {
     link: SelectionLink;
@@ -146,22 +164,41 @@ export function placeLinks(
             toSide: linkSide(toBox, fromBox, neighboursOf(link.to))
         });
     }
-    // node id + side -> the links at it, with where each leads across the side.
-    const atSide = new Map<string, Array<{ id: string; across: number }>>();
-    const note = (node: string, side: Side, id: string, other: Box): void => {
-        const across = vertical(side) ? other.x + other.width / 2 : other.y + other.height / 2;
+    // node id + side -> the links at it, each with the direction it leads in.
+    interface AtSide { id: string; other: string; bearing: number; reach: number }
+    const atSide = new Map<string, { node: string; side: Side; links: AtSide[] }>();
+    const note = (node: string, side: Side, box: Box, id: string, other: string, otherBox: Box): void => {
         const key = `${node}\u0000${side}`;
-        atSide.set(key, [...(atSide.get(key) ?? []), { id, across }]);
+        let entry = atSide.get(key);
+        if (!entry) {
+            atSide.set(key, entry = { node, side, links: [] });
+        }
+        const reach = Math.abs((otherBox.x + otherBox.width / 2) - (box.x + box.width / 2))
+            + Math.abs((otherBox.y + otherBox.height / 2) - (box.y + box.height / 2));
+        entry.links.push({ id, other, bearing: bearing(box, side, otherBox), reach });
     };
     for (const each of sided) {
-        note(each.link.from, each.fromSide, each.link.id, each.toBox);
-        note(each.link.to, each.toSide, each.link.id, each.fromBox);
+        note(each.link.from, each.fromSide, each.fromBox, each.link.id, each.link.to, each.toBox);
+        note(each.link.to, each.toSide, each.toBox, each.link.id, each.link.from, each.fromBox);
     }
-    const share = (node: string, side: Side, id: string): number => {
-        const all = [...(atSide.get(`${node}\u0000${side}`) ?? [])].sort((a, b) => a.across - b.across || a.id.localeCompare(b.id));
-        const index = all.findIndex(entry => entry.id === id);
-        return (index + 1) / (all.length + 1);
-    };
+    // Each side sorted once: a link's share of it is its place in that order.
+    const shareOf = new Map<string, number>();
+    for (const [key, { node, side, links: here }] of atSide) {
+        here.sort((a, b) => {
+            if (Math.abs(a.bearing - b.bearing) > 1e-9) {
+                return a.bearing - b.bearing;
+            }
+            if (a.other !== b.other) {
+                return a.reach - b.reach || a.id.localeCompare(b.id);
+            }
+            // Two links between the same two nodes: one order around this
+            // node, the other way around that one, so they run side by side.
+            const turn = (node < a.other ? 1 : -1) * (withTheTurn(side) ? 1 : -1);
+            return turn * a.id.localeCompare(b.id);
+        });
+        here.forEach((entry, index) => shareOf.set(`${key}\u0000${entry.id}`, (index + 1) / (here.length + 1)));
+    }
+    const share = (node: string, side: Side, id: string): number => shareOf.get(`${node}\u0000${side}\u0000${id}`) ?? 0.5;
     return sided.map(each => ({
         link: each.link,
         from: onSide(each.fromBox, each.fromSide, share(each.link.from, each.fromSide, each.link.id)),
@@ -222,57 +259,94 @@ export interface LinksOfSelection {
     same: Set<string>;
 }
 
-/** What the selection brings up: its links, their other ends, and the other drawings of the same thing. */
-export function linksOfSelection(root: LinkElement, byId: Map<string, LinkElement> = indexOf(root)): LinksOfSelection {
-    const selected = new Set<string>();
-    const things = new Set<string>();
-    for (const element of byId.values()) {
-        if (element.selected === true) {
-            selected.add(element.id);
-            const thing = element.args?.[WorkflowDiagramMetadata.SAME_AS];
-            if (typeof thing === 'string') {
-                things.add(thing);
-            }
+const NOTHING: LinksOfSelection = { links: [], ends: new Set(), same: new Set() };
+
+/**
+ * Whether a model has anything a selection could bring up: a link, or a
+ * node that is one drawing of something. Asked on every frame of a pan or a
+ * zoom, so it is kept with the model, which is the same object until the
+ * server sends another.
+ */
+const bringsUp = new WeakMap<object, boolean>();
+function canBringUp(root: LinkElement): boolean {
+    let known = bringsUp.get(root);
+    if (known === undefined) {
+        const draws = (element: LinkElement): boolean =>
+            typeof element.args?.[WorkflowDiagramMetadata.SAME_AS] === 'string' || (element.children ?? []).some(draws);
+        known = selectionLinksOf(root).length > 0 || draws(root);
+        bringsUp.set(root, known);
+    }
+    return known;
+}
+
+/**
+ * What a selection brings up: its links, their other ends, and the other
+ * drawings of the same thing. The selection is `selected` when given (the
+ * ids a selection listener is told), else the elements marked selected.
+ */
+export function linksOfSelection(root: LinkElement, selected?: ReadonlySet<string>): LinksOfSelection {
+    if (!canBringUp(root)) {
+        return NOTHING;
+    }
+    // One walk: who is selected, and who draws what.
+    const chosen = new Set<string>();
+    const drawings: Array<{ id: string; thing: string }> = [];
+    const visit = (element: LinkElement): void => {
+        if (selected ? selected.has(element.id) : element.selected === true) {
+            chosen.add(element.id);
         }
+        const thing = element.args?.[WorkflowDiagramMetadata.SAME_AS];
+        if (typeof thing === 'string') {
+            drawings.push({ id: element.id, thing });
+        }
+        for (const child of element.children ?? []) {
+            visit(child);
+        }
+    };
+    visit(root);
+    if (chosen.size === 0) {
+        return NOTHING;
     }
     const out: LinksOfSelection = { links: [], ends: new Set(), same: new Set() };
-    if (selected.size === 0) {
-        return out;
-    }
     for (const link of selectionLinksOf(root)) {
-        if (selected.has(link.from) || selected.has(link.to)) {
+        if (chosen.has(link.from) || chosen.has(link.to)) {
             out.links.push(link);
             for (const end of [link.from, link.to]) {
-                if (!selected.has(end)) {
+                if (!chosen.has(end)) {
                     out.ends.add(end);
                 }
             }
         }
     }
-    if (things.size > 0) {
-        for (const element of byId.values()) {
-            const thing = element.args?.[WorkflowDiagramMetadata.SAME_AS];
-            if (typeof thing === 'string' && things.has(thing) && !selected.has(element.id)) {
-                out.same.add(element.id);
-            }
+    const things = new Set(drawings.filter(drawing => chosen.has(drawing.id)).map(drawing => drawing.thing));
+    for (const drawing of drawings) {
+        if (things.has(drawing.thing) && !chosen.has(drawing.id)) {
+            out.same.add(drawing.id);
         }
     }
     return out;
 }
 
+/** The drawing for the selection, and how many links are in it. */
+export interface SelectionOverlay {
+    vnode: VNode;
+    links: number;
+}
+
 /** The drawing for the selection: the links, and the outlines of what they lead to; nothing when there is none. */
-export function renderSelectionLinks(root: LinkElement): VNode | undefined {
-    if (selectionLinksOf(root).length === 0 && !hasSameAs(root)) {
-        return undefined;
-    }
-    const byId = indexOf(root);
-    const { links, ends, same } = linksOfSelection(root, byId);
+export function selectionOverlay(root: LinkElement): SelectionOverlay | undefined {
+    const { links, ends, same } = linksOfSelection(root);
     if (links.length === 0 && same.size === 0) {
         return undefined;
     }
+    const byId = indexOf(root);
+    const boxes = new Map<string, Box | undefined>();
     const boxOf = (id: string): Box | undefined => {
-        const element = byId.get(id);
-        return element ? absoluteBox(element) : undefined;
+        if (!boxes.has(id)) {
+            const element = byId.get(id);
+            boxes.set(id, element ? absoluteBox(element) : undefined);
+        }
+        return boxes.get(id);
     };
     const outline = (id: string, cssClass: string): VNode | undefined => {
         const box = boxOf(id);
@@ -281,19 +355,25 @@ export function renderSelectionLinks(root: LinkElement): VNode | undefined {
             attrs: { x: box.x - 3, y: box.y - 3, width: box.width + 6, height: box.height + 6, rx: 5, ry: 5 }
         });
     };
-    // The other nodes of a node's own frame: what a link should not run over on its way out.
+    // The other nodes of a node's own frame: what a link should not run over
+    // on its way out. Found once a node, however many links end at it.
+    const neighbours = new Map<string, Box[]>();
     const neighboursOf = (id: string): Box[] => {
-        const element = byId.get(id);
-        const frame = element?.parent;
-        if (!element || !frame?.parent) {
-            return [];
+        let found = neighbours.get(id);
+        if (!found) {
+            const element = byId.get(id);
+            const frame = element?.parent;
+            found = !element || !frame?.parent
+                ? []
+                : (frame.children ?? [])
+                    .filter(child => child !== element && typeof child.type === 'string' && child.type.startsWith('node'))
+                    .map(absoluteBox);
+            neighbours.set(id, found);
         }
-        return (frame.children ?? [])
-            .filter(child => child !== element && typeof child.type === 'string' && child.type.startsWith('node'))
-            .map(absoluteBox);
+        return found;
     };
     const drawn = placeLinks(links, boxOf, neighboursOf);
-    return svg('g', { class: { 'selection-links': true } },
+    const vnode = svg('g', { class: { 'selection-links': true } },
         ...[...same].map(id => outline(id, 'selection-link-same')).filter((node): node is VNode => !!node),
         ...[...ends].map(id => outline(id, 'selection-link-end')).filter((node): node is VNode => !!node),
         ...drawn.map(each => svg('g', {
@@ -312,12 +392,12 @@ export function renderSelectionLinks(root: LinkElement): VNode | undefined {
                 : [])
         ))
     );
+    return { vnode, links: drawn.length };
 }
 
-function hasSameAs(root: LinkElement): boolean {
-    const visit = (element: LinkElement): boolean =>
-        typeof element.args?.[WorkflowDiagramMetadata.SAME_AS] === 'string' || (element.children ?? []).some(visit);
-    return visit(root);
+/** The drawing for the selection, as `selectionOverlay` makes it. */
+export function renderSelectionLinks(root: LinkElement): VNode | undefined {
+    return selectionOverlay(root)?.vnode;
 }
 
 /**
@@ -330,16 +410,19 @@ export function withSelectionLinks(vnode: VNode | undefined, root: LinkElement |
     if (!vnode || !root || targetKind !== 'main') {
         return vnode;
     }
-    const overlay = renderSelectionLinks(root);
+    const overlay = selectionOverlay(root);
     if (!overlay) {
         return vnode;
     }
     const viewport = (vnode.children ?? []).find((child): child is VNode => typeof child === 'object' && child.sel === 'g');
     if (viewport) {
-        viewport.children = [...(viewport.children ?? []), overlay];
-        // The diagram's own edges step back while the links are read.
-        const data = (vnode.data ??= {});
-        data.class = { ...(data.class ?? {}), 'selection-links-shown': true };
+        viewport.children = [...(viewport.children ?? []), overlay.vnode];
+        // The diagram's own edges step back while links are read; outlines
+        // alone (the other drawings of what is selected) cover no edge.
+        if (overlay.links > 0) {
+            const data = (vnode.data ??= {});
+            data.class = { ...(data.class ?? {}), 'selection-links-shown': true };
+        }
     }
     return vnode;
 }

@@ -99,6 +99,26 @@ describe('a group pinned to the top', () => {
         expect(group('scope:scope:notes').args[WorkflowDiagramMetadata.GROUP_PIN]).toBeUndefined();
     });
 
+    it('is a group of the root: one nested in another group is not pinned, and stays inside it', async () => {
+        const scopes: PyGraphScope[] = [
+            { id: 'scope:legend', kind: 'group', label: 'Legend' },
+            { id: 'scope:notes', kind: 'group', label: 'Notes', pin: 'top', parent: 'scope:legend' }
+        ];
+        const children = new GraphGModelSource().transform(document(scopes)).graph.children as any[];
+        const legend = children.find(child => child.id === 'scope:scope:legend');
+        const notes = legend.children.find((child: any) => child.id === 'scope:scope:notes');
+        expect(notes.args[WorkflowDiagramMetadata.GROUP_PIN]).toBeUndefined();
+
+        const byId = await laidOut(document(scopes));
+        const outer = byId.get('scope:scope:legend') as GNode;
+        const inner = byId.get('scope:scope:notes') as GNode;
+        // Inside its parent's frame, relative to it.
+        expect(inner.position.x).toBeGreaterThanOrEqual(0);
+        expect(inner.position.y).toBeGreaterThanOrEqual(0);
+        expect(inner.position.x + inner.size.width).toBeLessThanOrEqual(outer.size.width);
+        expect(inner.position.y + inner.size.height).toBeLessThanOrEqual(outer.size.height);
+    });
+
     it('sits in a band above the rest, the first on top, its left edge on the diagram’s', async () => {
         const byId = await laidOut(document(PINNED));
         const legend = byId.get('scope:scope:legend') as GNode;
@@ -118,6 +138,41 @@ describe('a group pinned to the top', () => {
         expect(v1.position.x + v1.size.width).toBeLessThanOrEqual(v2.position.x);
         expect(v2.position.x + v2.size.width).toBeLessThanOrEqual(legend.size.width);
         expect(v1.position.y).toBeGreaterThanOrEqual(WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX);
+    });
+
+    it('clears a route that runs above the top row, not only the nodes', async () => {
+        // A cycle with several ports a node: the layout takes edges back over the top row.
+        const ports = (name: string) => [0, 1, 2].flatMap(k => [
+            { id: `port:node:${name}:in${k}`, name: `in${k}`, direction: 'in' as const },
+            { id: `port:node:${name}:out${k}`, name: `out${k}`, direction: 'out' as const }
+        ]);
+        const wire = (from: string, to: string) => ({ id: `e:${from}->${to}`, from: `port:node:${from}`, to: `port:node:${to}`, scope: 'scope:root' });
+        const flow = ['n0', 'n1', 'n2', 'n3', 'n4'];
+        const doc: PyGraphDocument = {
+            version: '1',
+            graph: {
+                id: 'root',
+                nodes: [
+                    ...flow.map(name => ({ id: `node:${name}`, kind: 'actor', label: name, scope: 'scope:root', ports: ports(name) })),
+                    ...Array.from({ length: 8 }, (_, k) => node(`v${k}`, 'scope:legend', 0))
+                ] as any,
+                edges: [
+                    wire('n1:out1', 'n2:in2'), wire('n4:out2', 'n1:in0'), wire('n3:out0', 'n1:in1'), wire('n2:out2', 'n4:in2'),
+                    wire('n2:out0', 'n3:in0'), wire('n1:out1', 'n4:in1'), wire('n1:out2', 'n0:in0')
+                ],
+                subgraphs: [{ id: 'scope:legend', kind: 'group', label: 'Legend', pin: 'top' }]
+            }
+        };
+        const byId = await laidOut(doc);
+        const legend = byId.get('scope:scope:legend') as GNode;
+        const nodesTop = Math.min(...flow.map(name => (byId.get(name) as GNode).position.y));
+        const routes = [...byId.values()].filter(element => element instanceof GEdge)
+            .flatMap(element => ((element as any).routingPoints ?? []) as Point[]);
+        const routesTop = Math.min(...routes.map(point => point.y));
+        // The case this test is for: a route above every node.
+        expect(routesTop).toBeLessThan(nodesTop);
+        expect(legend.position.y + legend.size.height).toBe(routesTop - WorkflowDiagramConstants.GROUP_PIN_GAP_PX);
+        expect(legend.position.x).toBe(Math.min(...flow.map(name => (byId.get(name) as GNode).position.x)));
     });
 
     it('leaves the rest laid out as if it were not there', async () => {
