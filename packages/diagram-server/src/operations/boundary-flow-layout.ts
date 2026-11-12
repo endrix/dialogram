@@ -64,13 +64,19 @@ export function applyBoundaryFlowLayerConstraints(
             return;
         }
 
-        if (isTaskNode(element)) {
+        // A member of a group laid out in rows is placed by its row, which a
+        // layer constraint would contradict.
+        const inRows = (element as any).layoutOptions?.['elk.partitioning.partition'] !== undefined;
+        if (isTaskNode(element) && !inRows) {
             const nodeId = String(element.id);
             if (!hasSelection || selectedMovableNodeIds.has(nodeId)) {
                 const hasInput = nodeHasPortDirection(element, 'input');
                 const hasOutput = nodeHasPortDirection(element, 'output');
 
-                if (!hasInput || !hasOutput) {
+                // One-sided: only inputs, or only outputs. A node with no port
+                // at all is neither a source nor a sink, and stays where the
+                // layout puts it.
+                if (hasInput !== hasOutput) {
                     const previousLayoutOptions = (element as any).layoutOptions as Record<string, unknown> | undefined;
                     previousLayoutOptionsByNodeId.set(nodeId, previousLayoutOptions ? { ...previousLayoutOptions } : undefined);
 

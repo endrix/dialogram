@@ -30,6 +30,7 @@ function gportSide(port: GPort): PortSide {
 }
 import { snapRouteEndpoints } from '../routing/persisted-edge-routes';
 import { FAST_LAYOUT_OPTIONS, countLayoutElements, layoutTierFor, type LayoutGraphSize, type LayoutTier } from './layout-configurator';
+import { isRowsLayout } from '../model/group-edges';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -356,15 +357,18 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
     }
     
     /**
-     * Recursively apply RIGHT direction to all nodes in the hierarchy.
+     * Recursively apply RIGHT direction to all nodes in the hierarchy, except
+     * a group laid out in rows, which runs downward: its layers are the rows.
      */
     private applyDirectionToChildren(node: ElkNode): void {
         if (node.children) {
             for (const child of node.children) {
-                child.layoutOptions = {
-                    ...child.layoutOptions,
-                    'elk.direction': 'RIGHT'
-                };
+                if (!isRowsLayout(child.layoutOptions)) {
+                    child.layoutOptions = {
+                        ...child.layoutOptions,
+                        'elk.direction': 'RIGHT'
+                    };
+                }
                 this.applyDirectionToChildren(child);
             }
         }

@@ -339,7 +339,7 @@ function addBoundaryPort(group: GNode, direction: Direction, portId: string, end
  * and the edges that cross the frame enter and leave through boundary ports on
  * its sides (`group-edges.ts`), kept below the header.
  */
-export function groupLayoutOptions(): Record<string, string> {
+export function groupLayoutOptions(rows = false): Record<string, string> {
     const header = WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX;
     const pad = WorkflowDiagramConstants.GROUP_PADDING_PX;
     return {
@@ -353,6 +353,30 @@ export function groupLayoutOptions(): Record<string, string> {
         'elk.spacing.nodeNode': '30',
         'elk.spacing.edgeNode': '20',
         'elk.spacing.portPort': '8',
-        'elk.layered.spacing.nodeNodeBetweenLayers': '40'
+        'elk.layered.spacing.nodeNodeBetweenLayers': '40',
+        ...(rows ? GROUP_ROWS_LAYOUT : {})
     };
+}
+
+/**
+ * A group whose members carry a row (`GROUP_ROW`): the members of a row side
+ * by side in the order the producer gave them, the rows one under another.
+ * The layers of a layout that runs downward are rows, and a member's row is
+ * its partition, which the layering keeps in order.
+ */
+const GROUP_ROWS_LAYOUT: Record<string, string> = {
+    'elk.direction': 'DOWN',
+    'elk.partitioning.activate': 'true',
+    // Members with nothing between them are still one layout: on their own
+    // each would be a component, packed wherever it fits.
+    'elk.separateConnectedComponents': 'false',
+    'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+    'elk.layered.crossingMinimization.forceNodeModelOrder': 'true',
+    'elk.spacing.nodeNode': '16',
+    'elk.layered.spacing.nodeNodeBetweenLayers': '16'
+};
+
+/** Whether a group's layout options are the rows' (`groupLayoutOptions(true)`). */
+export function isRowsLayout(options: Record<string, unknown> | undefined): boolean {
+    return options?.['elk.partitioning.activate'] === 'true';
 }

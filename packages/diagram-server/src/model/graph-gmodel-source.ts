@@ -444,6 +444,11 @@ export class GraphGModelSource {
                     'wf:scope': node.scope
                 }
             };
+            // The row a producer puts a member of a group in.
+            const row = node.meta?.['row'];
+            if (typeof row === 'number' && Number.isInteger(row) && row >= 0) {
+                gnode.args![WorkflowDiagramMetadata.GROUP_ROW] = row;
+            }
             if (node.meta) {
                 gnode.args = {
                     ...(gnode.args ?? {}),
@@ -1387,6 +1392,24 @@ export class GraphGModelSource {
             }
             node.children!.push(member);
             removedNodeIds.add(stableId);
+        }
+        // Members that carry a row are laid out in rows: each row a partition
+        // of the group's layout, a member with no row after the last one.
+        const rowOf = (member: GModelElement): number | undefined => {
+            const row = (member.args as Record<string, unknown> | undefined)?.[WorkflowDiagramMetadata.GROUP_ROW];
+            return typeof row === 'number' ? row : undefined;
+        };
+        const rows = node.children!.map(rowOf).filter((row): row is number => row !== undefined);
+        if (rows.length > 0) {
+            const last = Math.max(...rows) + 1;
+            node.layoutOptions = groupLayoutOptions(true);
+            node.args![WorkflowDiagramMetadata.GROUP_ROW] = true;
+            for (const member of node.children!) {
+                (member as GNode).layoutOptions = {
+                    ...((member as GNode).layoutOptions ?? {}),
+                    'elk.partitioning.partition': String(rowOf(member) ?? last)
+                };
+            }
         }
         return node;
     }

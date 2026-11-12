@@ -87,6 +87,14 @@ it no longer has.
   them. A group whose label is empty has no title and no header band, and a
   scope's `label` now reaches the document from a sidecar's export (it was
   dropped, so a sidecar's groups were titled by their ids).
+- **A group can be laid out in rows.** A producer puts the members of a
+  group in rows with `meta.row` (a whole number from zero, the first row on
+  top): the actions of a state by the order they are tried in, say. The
+  members of a row sit side by side in the order the producer gave them, the
+  rows one under another; a member with no row comes after the last. The
+  group is laid out downward with one partition per row. The pass that pins
+  sources and sinks to the outer layers on opening leaves a row's members
+  alone, and no longer pins a node that has no port at all (it is neither).
 - **A definition the producer named is opened as it is.** A node whose
   producer resolved its type itself (`meta.referencedSource`: a sidecar that
   imported the module, a compiler that elaborated the design) carries

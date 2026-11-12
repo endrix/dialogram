@@ -432,6 +432,9 @@ export namespace WorkflowDiagramMetadata {
     /** On a group: it has edges between itself and its own members, drawn as
      *  one loop on the frame. */
     export const GROUP_LOOP = 'wf:groupLoop';
+    /** On a member of a group: the row the producer puts it in (`meta.row`),
+     *  the first row on top. On the group: its members are laid out in rows. */
+    export const GROUP_ROW = 'wf:groupRow';
 }
 
 /**
