@@ -84,17 +84,6 @@ it no longer has.
   the left, and keeps its arrowhead; an edge that starts at a group leaves
   from one place on the right. An edge between a group and something inside
   it is not drawn as a line: the group gets one loop on its frame for all of
-  them. A group whose label is empty has no title and no header band, and a
-  scope's `label` now reaches the document from a sidecar's export (it was
-  dropped, so a sidecar's groups were titled by their ids).
-- **A group can be laid out in rows.** A producer puts the members of a
-  group in rows with `meta.row` (a whole number from zero, the first row on
-  top): the actions of a state by the order they are tried in, say. The
-  members of a row sit side by side in the order the producer gave them, the
-  rows one under another; a member with no row comes after the last. The
-  group is laid out downward with one partition per row. The pass that pins
-  sources and sinks to the outer layers on opening leaves a row's members
-  alone, and no longer pins a node that has no port at all (it is neither).
   them, which keeps their captions and errors as its tooltip and is drawn in
   the error colour when one of them is in error. A group whose label is empty
   has no title and no header band, a group that holds nothing keeps room for
@@ -109,6 +98,17 @@ it no longer has.
   the first on top, their left edges on the diagram's; the rest is laid out
   as if they were not there. A pinned group that an edge crosses or ends at
   stays in the flow, since its edges need it there.
+- **A group can be laid out in rows.** A producer puts the members of a
+  group in rows with `meta.row` on a node, or `row` on a group nested in it
+  (a whole number from zero, the first row on top): the actions of a state
+  by the order they are tried in, say. The members of a row sit side by side
+  in the order the producer gave them, the rows one under another; a member
+  with no row comes after the last, and a member opened in place keeps its
+  row. Rows are for members that relate only to what is outside their group:
+  a group with an edge between two of its own members is laid out by its
+  edges, as before. The pass that pins sources and sinks to the outer layers
+  on opening leaves a row's members alone, and no longer pins a node that
+  has no port at all (it is neither).
 - **A definition the producer named is opened as it is.** A node whose
   producer resolved its type itself (`meta.referencedSource`: a sidecar that
   imported the module, a compiler that elaborated the design) carries

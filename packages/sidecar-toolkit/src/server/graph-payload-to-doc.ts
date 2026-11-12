@@ -185,6 +185,8 @@ export function graphPayloadToDoc(graphPayload: Record<string, unknown>): GraphD
             kind: String(scope.kind ?? 'network'),
             // What a group's frame is titled; an empty one is a frame with no title.
             label: typeof scope.label === 'string' ? scope.label : undefined,
+            // The row of a group nested in a group laid out in rows.
+            row: typeof scope.row === 'number' ? scope.row : undefined,
             // A group kept out of the diagram's flow, in a band above it.
             pin: typeof scope.pin === 'string' ? scope.pin : undefined,
             parent: typeof scope.parent === 'string' ? scope.parent : undefined,
