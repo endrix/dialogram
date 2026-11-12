@@ -1245,6 +1245,34 @@ body.vscode-high-contrast-light .node-center-image-light {
     stroke-width: 1px;
 }
 
+/* Where an edge ends at the group itself: its arrowhead meets the frame. */
+.workflow-group-end-port .group-boundary-dot {
+    display: none;
+}
+
+/* What happens in a group and stays in it: one loop on the frame, drawn as
+   an edge is. */
+.workflow-node-group .group-loop {
+    color: var(--vscode-foreground, #cccccc);
+}
+
+/* A loop that stands for an edge in error is drawn as that edge would be. */
+.workflow-node-group.workflow-group-loop-error > .group-loop {
+    color: var(--vscode-editorError-foreground, #f14c4c);
+}
+
+.workflow-node-group .group-loop-line {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: var(--workflow-edge-width, 3.5px);
+    stroke-linecap: butt;
+}
+
+.workflow-node-group .group-loop-arrow {
+    fill: currentColor;
+    stroke: none;
+}
+
 /* ============================================
    Selection trace (`clientBehavior.selectionTrace`, selection-trace.ts):
    what leads to the selection in one colour, what it leads to in another,

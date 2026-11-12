@@ -377,6 +377,9 @@ export class GroupNodeView extends ShapeView {
         const raw = (node as any).args?.[WorkflowDiagramMetadata.GROUP_LABEL];
         const label = typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : '';
         const openNode = typeof (node as any).args?.[WorkflowDiagramMetadata.OPEN_NODE_KEY] === 'string';
+        const loop = (node as any).args?.[WorkflowDiagramMetadata.GROUP_LOOP] === true;
+        // A frame with no title has no band to put one in.
+        const titled = label !== '' || openNode;
         const header = Math.min(WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX, height);
         const radius = 6;
         const children = ((node as any).children ?? []) as Array<{ type?: string }>;
@@ -401,14 +404,17 @@ export class GroupNodeView extends ShapeView {
                 attrs: { x: 0, y: 0, width, height, rx: radius, ry: radius }
             }),
             ...children.filter(isEdgeChild).map(child => context.renderElement(child as any)),
-            svg('path', {
-                class: { 'group-header': true },
-                attrs: { d: roundedTopPath(width, header, radius) }
-            }),
+            ...(titled
+                ? [svg('path', {
+                    class: { 'group-header': true },
+                    attrs: { d: roundedTopPath(width, header, radius) }
+                })]
+                : []),
             svg('rect', {
                 class: { 'group-frame': true },
                 attrs: { x: 0, y: 0, width, height, rx: radius, ry: radius }
             }),
+            ...(loop ? [groupLoop(width, height, (node as any).args?.[WorkflowDiagramMetadata.GROUP_LOOP_NOTES])] : []),
             // The frame of an open node: a `−` before the title closes it.
             ...(openNode ? [nodeOpenToggle(String(node.id), true, label, 10 + NODE_OPEN_TOGGLE_RADIUS_PX, header / 2)] : []),
             ...(label
@@ -425,6 +431,29 @@ export class GroupNodeView extends ShapeView {
             ...children.filter(child => !isEdgeChild(child)).map(child => context.renderElement(child as any))
         );
     }
+}
+
+/**
+ * The loop on a group's frame: what happens in the group and stays in it. An
+ * arc around the bottom right corner, leaving by the right side and coming
+ * back in through the bottom, with an arrowhead where it returns.
+ */
+function groupLoop(width: number, height: number, notes?: unknown): VNode {
+    const r = WorkflowDiagramConstants.GROUP_LOOP_RADIUS_PX;
+    const tip = { x: width - r, y: height };
+    // What the edges it stands for said: they are not drawn, so this is where it shows.
+    const lines = Array.isArray(notes) ? notes.filter((note): note is string => typeof note === 'string') : [];
+    return svg('g', { class: { 'group-loop': true } },
+        ...(lines.length > 0 ? [svg('title', {}, lines.join('\n'))] : []),
+        svg('path', {
+            class: { 'group-loop-line': true },
+            attrs: { d: `M${width},${height - r} A${r} ${r} 0 1 1 ${tip.x},${tip.y + 5}` }
+        }),
+        svg('path', {
+            class: { 'group-loop-arrow': true },
+            attrs: { d: `M${tip.x},${tip.y} L${tip.x - 4.5},${tip.y + 8} L${tip.x + 4.5},${tip.y + 8} Z` }
+        })
+    );
 }
 
 /** Roughly how wide an index label (`[7:4]`) is drawn. */
@@ -884,8 +913,10 @@ function isBidirectionalEdge(edge: Readonly<SEdgeImpl>): boolean {
 function endsAtBoundaryPort(edge: Readonly<SEdgeImpl>): boolean {
     // A piece of an edge split at a group's frame: the edge carries on past
     // the frame, so the arrowhead belongs to the last piece only.
-    if ((edge as any).target?.type === WorkflowDiagramTypes.PORT_GROUP_BOUNDARY) {
-        return true;
+    // An edge that ends at the group itself goes no further: it has its arrowhead.
+    const target = (edge as any).target;
+    if (target?.type === WorkflowDiagramTypes.PORT_GROUP_BOUNDARY) {
+        return target.args?.[WorkflowDiagramMetadata.GROUP_END] !== true;
     }
     let element: any = (edge as any).target;
     while (element) {

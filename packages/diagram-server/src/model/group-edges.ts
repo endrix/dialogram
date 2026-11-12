@@ -34,6 +34,17 @@
  * in the right group from its endpoints (see `findCommonAncestor`), and the
  * routes stay in absolute coordinates, which is what saving, restoring and
  * rerouting a route all assume. A model with no group is left untouched.
+ *
+ * An edge may also end at a group itself rather than at one of its members:
+ * a transition into a state, where the state is a group of what can happen in
+ * it. It arrives at one place on the frame (`GROUP_END`), shared by every edge
+ * that ends there, and keeps its arrowhead; an edge that starts at a group
+ * leaves from one place on the other side. An edge between a group and
+ * something inside it goes nowhere the frame does not already hold, so it is
+ * not drawn as a line: the group is marked (`GROUP_LOOP`) and the client draws
+ * one loop on its frame for all of them. What those edges said (a caption, an
+ * error) stays with the loop (`GROUP_LOOP_NOTES`, `GROUP_LOOP_ERROR`); the
+ * edges themselves are no longer elements, so they cannot be selected.
  */
 import { WorkflowDiagramConstants, WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import type { GEdge, GModelElement, GNode, GPort } from './graph-gmodel-source';
@@ -78,6 +89,8 @@ export function splitEdgesAtGroups(children: GModelElement[]): void {
     const parentOfGroup = new Map<string, GNode | undefined>();
     /** port id -> the node that owns it. */
     const ownerOfPort = new Map<string, string>();
+    /** group id -> the group. */
+    const groupById = new Map<string, GNode>();
     let hasGroup = false;
 
     // Ports belong to the nearest node above them; a node inside another node
@@ -100,6 +113,7 @@ export function splitEdgesAtGroups(children: GModelElement[]): void {
         for (const element of elements ?? []) {
             if (element.type === WorkflowDiagramTypes.NODE_GROUP) {
                 hasGroup = true;
+                groupById.set(element.id, element as GNode);
                 parentOfGroup.set(element.id, group);
                 groupOfNode.set(element.id, group);
                 walk(element.children, element as GNode);
@@ -149,31 +163,65 @@ export function splitEdgesAtGroups(children: GModelElement[]): void {
         return portId;
     };
 
+    /** The place on `group`'s frame where the edges that end at the group itself arrive (`in`) or leave (`out`). */
+    const frameEnd = (group: GNode, direction: Direction): string => {
+        const portId = groupBoundaryPortId(group.id, direction, group.id);
+        if (!ports.has(portId)) {
+            ports.set(portId, addBoundaryPort(group, direction, portId, true));
+        }
+        return portId;
+    };
+
+    const looped = new Set<GEdge>();
     for (const edge of children.filter(isEdge)) {
         const sourceNode = endpointNode(edge.sourceId);
         const targetNode = endpointNode(edge.targetId);
         if (!sourceNode || !targetNode) {
             continue;
         }
+        // An end that is a group itself, not a port of one of its members.
+        const sourceGroup = groupById.get(edge.sourceId);
+        const targetGroup = groupById.get(edge.targetId);
         const sourceGroups = groupsAround(sourceNode);
         const targetGroups = groupsAround(targetNode);
-        if (sourceGroups.length === 0 && targetGroups.length === 0) {
+        // Between a group and something inside it (or itself): the group's loop.
+        const holds = (group: GNode | undefined, otherNode: string, others: GNode[]): boolean =>
+            group !== undefined && (otherNode === group.id || others.includes(group));
+        const loopOn = holds(targetGroup, sourceNode, sourceGroups)
+            ? targetGroup
+            : holds(sourceGroup, targetNode, targetGroups) ? sourceGroup : undefined;
+        if (loopOn) {
+            const notes = [edge.args?.[WorkflowDiagramMetadata.EDGE_LABEL], edge.args?.['wf:errorMessage']]
+                .filter((note): note is string => typeof note === 'string' && note.trim() !== '');
+            const before = loopOn.args?.[WorkflowDiagramMetadata.GROUP_LOOP_NOTES];
+            loopOn.args = {
+                ...(loopOn.args ?? {}),
+                [WorkflowDiagramMetadata.GROUP_LOOP]: true,
+                [WorkflowDiagramMetadata.GROUP_LOOP_NOTES]: [...new Set([...(Array.isArray(before) ? before : []), ...notes])]
+            };
+            if (edge.cssClasses?.includes(WorkflowDiagramCss.EDGE_ERROR) && !loopOn.cssClasses?.includes(WorkflowDiagramCss.GROUP_LOOP_ERROR)) {
+                loopOn.cssClasses = [...(loopOn.cssClasses ?? []), WorkflowDiagramCss.GROUP_LOOP_ERROR];
+            }
+            looped.add(edge);
+            continue;
+        }
+        if (sourceGroups.length === 0 && targetGroups.length === 0 && !sourceGroup && !targetGroup) {
             continue;
         }
         const targetIds = new Set(targetGroups.map(group => group.id));
         const common = sourceGroups.find(group => targetIds.has(group.id));
         const sourceSide = common ? sourceGroups.slice(0, sourceGroups.indexOf(common)) : sourceGroups;
         const targetSide = common ? targetGroups.slice(0, targetGroups.indexOf(common)) : targetGroups;
-        if (sourceSide.length === 0 && targetSide.length === 0) {
+        if (sourceSide.length === 0 && targetSide.length === 0 && !sourceGroup && !targetGroup) {
             // Both ends in the same group: one piece, laid out inside it.
             continue;
         }
 
-        let from = edge.sourceId;
+        let from = sourceGroup ? frameEnd(sourceGroup, 'out') : edge.sourceId;
         for (const group of sourceSide) {
             from = crossing(group, 'out', from, edge);
         }
-        let to = edge.targetId;
+        let to = targetGroup ? frameEnd(targetGroup, 'in') : edge.targetId;
         for (const group of targetSide) {
             to = crossing(group, 'in', to, edge);
         }
@@ -187,6 +235,11 @@ export function splitEdgesAtGroups(children: GModelElement[]): void {
         edge.sourceId = from;
         edge.targetId = to;
         edge.args = args;
+    }
+    if (looped.size > 0) {
+        const kept = children.filter(child => !looped.has(child as GEdge));
+        children.length = 0;
+        children.push(...kept);
     }
     children.push(...pieces.values());
 }
@@ -265,15 +318,18 @@ function share(existing: GEdge, edge: GEdge): void {
 /**
  * The port `portId` on `group`'s frame: on the left for edges coming in, on the
  * right for edges going out, centred on the frame line. ELK chooses where along
- * the side, below the header band.
+ * the side, below the header band. `end` marks the place where edges end at
+ * the group itself (or start from it) instead of crossing its frame. Where
+ * they arrive the arrowhead meets the frame and there is no dot; where they
+ * start the dot stays, as the start of the line.
  */
-function addBoundaryPort(group: GNode, direction: Direction, portId: string): GPort {
+function addBoundaryPort(group: GNode, direction: Direction, portId: string, end = false): GPort {
     const size = WorkflowDiagramConstants.GROUP_BOUNDARY_PORT_SIZE_PX;
     const side = direction === 'in' ? 'WEST' : 'EAST';
     const port: GPort = {
         id: portId,
         type: WorkflowDiagramTypes.PORT_GROUP_BOUNDARY,
-        cssClasses: [WorkflowDiagramCss.GROUP_BOUNDARY_PORT],
+        cssClasses: [WorkflowDiagramCss.GROUP_BOUNDARY_PORT, ...(end && direction === 'in' ? [WorkflowDiagramCss.GROUP_END_PORT] : [])],
         position: { x: 0, y: 0 },
         size: { width: size, height: size },
         layoutOptions: {
@@ -282,7 +338,8 @@ function addBoundaryPort(group: GNode, direction: Direction, portId: string): GP
         },
         args: {
             [WorkflowDiagramMetadata.PORT_DIRECTION]: direction === 'in' ? 'input' : 'output',
-            [WorkflowDiagramMetadata.PORT_SIDE]: side
+            [WorkflowDiagramMetadata.PORT_SIDE]: side,
+            ...(end ? { [WorkflowDiagramMetadata.GROUP_END]: true } : {})
         }
     };
     group.children = [...(group.children ?? []), port];
@@ -304,6 +361,9 @@ export function groupLayoutOptions(): Record<string, string> {
         'elk.direction': 'RIGHT',
         'elk.hierarchyHandling': 'SEPARATE_CHILDREN',
         'elk.nodeSize.constraints': 'MINIMUM_SIZE',
+        // A group that holds nothing is still a frame with a title, and
+        // edges may end at it.
+        'elk.nodeSize.minimum': `(${WorkflowDiagramConstants.GROUP_MIN_WIDTH_PX},${WorkflowDiagramConstants.GROUP_MIN_HEIGHT_PX})`,
         'elk.padding': `[top=${header + pad},left=${pad},bottom=${pad},right=${pad}]`,
         'elk.portConstraints': 'FIXED_SIDE',
         'elk.spacing.portsSurrounding': `[top=${header + pad / 2},left=0,bottom=${pad / 2},right=0]`,

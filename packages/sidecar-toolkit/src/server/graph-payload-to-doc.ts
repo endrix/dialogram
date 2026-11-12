@@ -183,6 +183,8 @@ export function graphPayloadToDoc(graphPayload: Record<string, unknown>): GraphD
         .map((scope: any) => ({
             id: String(scope.id ?? ''),
             kind: String(scope.kind ?? 'network'),
+            // What a group's frame is titled; an empty one is a frame with no title.
+            label: typeof scope.label === 'string' ? scope.label : undefined,
             parent: typeof scope.parent === 'string' ? scope.parent : undefined,
             controlNodeId: typeof scope.controlNodeId === 'string' ? scope.controlNodeId : undefined,
             children: Array.isArray(scope.children) ? scope.children.map((v: any) => String(v)) : undefined,

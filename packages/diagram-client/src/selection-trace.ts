@@ -36,7 +36,7 @@
  * (execution-states.ts): the dispatcher puts them back on every model the
  * server sends, so a relayout or an edit does not wipe the trace.
  */
-import { WorkflowDiagramTypes } from '@dialogram/shared';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { FeedbackCommand, IFeedbackActionDispatcher, ISelectionListener, TYPES } from '@eclipse-glsp/client';
 import type { Action, CommandExecutionContext, Disposable, GModelRoot } from '@eclipse-glsp/sprotty';
 import { inject, injectable, optional } from 'inversify';
@@ -165,7 +165,11 @@ export function buildTraceGraph(root: TraceElement): TraceGraph {
             if (node !== undefined) {
                 graph.ownerOf.set(element.id, node);
                 push(graph.portsOf, node, element.id);
-                if (element.type === WorkflowDiagramTypes.PORT_GROUP_BOUNDARY || groups.has(node)) {
+                // A port on a frame is passed through, on the way to a member.
+                // Not the one where edges end at the group itself: that is
+                // the group's own, and reaching it is reaching the group.
+                const endsAtGroup = (element as { args?: Record<string, unknown> }).args?.[WorkflowDiagramMetadata.GROUP_END] === true;
+                if ((element.type === WorkflowDiagramTypes.PORT_GROUP_BOUNDARY || groups.has(node)) && !endsAtGroup) {
                     graph.passThrough.add(element.id);
                 }
             }
@@ -388,14 +392,36 @@ function traceContainer(graph: TraceGraph, container: string): Trace {
 export function computeTrace(graph: TraceGraph, selected: readonly string[]): Trace | undefined {
     for (const id of selected) {
         if (graph.edges.has(id)) {
-            return traceEdge(graph, id);
+            return withHeld(graph, traceEdge(graph, id));
         }
         const node = graph.parentOf.has(id) ? id : graph.ownerOf.get(id);
         if (node !== undefined && graph.parentOf.has(node)) {
-            return graph.containers.has(node) ? traceContainer(graph, node) : traceNode(graph, node);
+            return withHeld(graph, graph.containers.has(node) ? traceContainer(graph, node) : traceNode(graph, node));
         }
     }
     return undefined;
+}
+
+/**
+ * A container on a trace (an edge ends at it, or starts from it) is reached
+ * whole: what it holds is left as it is, not faded as nodes off the trace are.
+ */
+function withHeld(graph: TraceGraph, trace: Trace): Trace {
+    const reached = [...trace.upstream, ...trace.downstream].filter(id => graph.containers.has(id));
+    if (reached.length === 0) {
+        return trace;
+    }
+    const on = new Set(reached);
+    const scope = new Set(trace.scope);
+    for (const node of graph.parentOf.keys()) {
+        for (let parent = graph.parentOf.get(node); parent !== undefined; parent = graph.parentOf.get(parent)) {
+            if (on.has(parent)) {
+                scope.add(node);
+                break;
+            }
+        }
+    }
+    return { ...trace, scope };
 }
 
 /**

@@ -91,7 +91,10 @@ export function groupSizeAroundMembers(group: GNode): Size {
     // The layout insets the members from the left by the padding, and further
     // when edges enter on that side; the right inset mirrors it.
     const inset = Number.isFinite(left) ? Math.max(pad, left) : pad;
-    return { width: Math.max(right + inset, 2 * pad), height: Math.max(bottom + pad, header + 2 * pad) };
+    return {
+        width: Math.max(right + inset, 2 * pad, WorkflowDiagramConstants.GROUP_MIN_WIDTH_PX),
+        height: Math.max(bottom + pad, header + 2 * pad, WorkflowDiagramConstants.GROUP_MIN_HEIGHT_PX)
+    };
 }
 
 /**
@@ -124,6 +127,7 @@ export function restoreGroupGeometry(root: GModelRoot, routes?: Map<string, Poin
 
     const portSize = WorkflowDiagramConstants.GROUP_BOUNDARY_PORT_SIZE_PX;
     const header = WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX;
+    const pad = WorkflowDiagramConstants.GROUP_PADDING_PX;
     for (const group of groups) {
         const origin = absolutePosition(group);
         const crossings: Array<{ port: GPort; size: Size; entering: boolean; at?: Point; inner?: GModelElement }> = [];
@@ -139,7 +143,18 @@ export function restoreGroupGeometry(root: GModelRoot, routes?: Map<string, Poin
             // side, the right edge on the right.
             const inside = edges.find(edge => (entering ? edge.sourceId : edge.targetId) === port.id);
             const route = inside ? routes?.get(inside.id) : undefined;
-            const at = route && route.length > 0 ? (entering ? route[0] : route[route.length - 1]) : undefined;
+            let at = route && route.length > 0 ? (entering ? route[0] : route[route.length - 1]) : undefined;
+            if (!inside) {
+                // Where edges end at the group itself there is no piece inside:
+                // the port is where an edge outside the group reaches it.
+                for (const edge of edges) {
+                    const outside = (entering ? edge.targetId : edge.sourceId) === port.id ? routes?.get(edge.id) : undefined;
+                    if (outside && outside.length > 0) {
+                        at = entering ? outside[outside.length - 1] : outside[0];
+                        break;
+                    }
+                }
+            }
             const inner = inside ? byId.get(entering ? inside.targetId : inside.sourceId) : undefined;
             crossings.push({ port, size, entering, at, inner });
         }
@@ -151,6 +166,13 @@ export function restoreGroupGeometry(root: GModelRoot, routes?: Map<string, Poin
         for (const crossing of crossings) {
             if (!crossing.entering && crossing.at) {
                 size.width = Math.max(size.width, crossing.at.x - origin.x - crossing.size.width / 2);
+            }
+            // A port the layout put below the members (one where edges end at
+            // the group has no member to be level with) is part of the frame:
+            // the frame reaches down past it, with the padding it has below a
+            // member, so the port stays where its route meets it.
+            if (crossing.at) {
+                size.height = Math.max(size.height, crossing.at.y - origin.y + crossing.size.height / 2 + pad);
             }
         }
         group.size = size;
