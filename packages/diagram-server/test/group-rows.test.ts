@@ -11,8 +11,11 @@ import { describe, expect, it } from 'vitest';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import { GGraph, GNode } from '@eclipse-glsp/server';
 import { DefaultElementFilter } from '@eclipse-glsp/layout-elk';
-import { WorkflowDiagramMetadata } from '@dialogram/shared';
+import { ToggleNodeOpenOperation, WorkflowDiagramMetadata } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument } from '../src/model/graph-gmodel-source';
+import { openNodes } from '../src/model/open-nodes';
+import { portBusStateOf } from '../src/model/port-bundles';
+import { stableNodeIds } from '../src/model/stable-ids';
 import { applyBoundaryFlowLayerConstraints } from '../src/operations/boundary-flow-layout';
 import { WorkflowElkLayoutEngine } from '../src/server/elk-layout-engine';
 import { WorkflowLayoutConfigurator } from '../src/server/layout-configurator';
@@ -81,7 +84,7 @@ describe('a group whose members carry a row', () => {
     it('is laid out downward, each row a partition, and says so', () => {
         const root = transform(document());
         const group = find(root, 'scope:scope:S')!;
-        expect(group.args?.[WorkflowDiagramMetadata.GROUP_ROW]).toBe(true);
+        expect(group.args?.[WorkflowDiagramMetadata.GROUP_ROWS]).toBe(true);
         expect(group.layoutOptions).toMatchObject({
             'elk.direction': 'DOWN',
             'elk.partitioning.activate': 'true',
@@ -99,7 +102,7 @@ describe('a group whose members carry a row', () => {
     it('leaves a group with no rows as it was', () => {
         const root = transform(document());
         const group = find(root, 'scope:scope:T')!;
-        expect(group.args?.[WorkflowDiagramMetadata.GROUP_ROW]).toBeUndefined();
+        expect(group.args?.[WorkflowDiagramMetadata.GROUP_ROWS]).toBeUndefined();
         expect(group.layoutOptions?.['elk.direction']).toBe('RIGHT');
         expect(group.layoutOptions?.['elk.partitioning.activate']).toBeUndefined();
         expect(find(root, 't1')!.layoutOptions?.['elk.partitioning.partition']).toBeUndefined();
@@ -110,13 +113,63 @@ describe('a group whose members carry a row', () => {
             member('none', 'scope:S'),
             member('negative', 'scope:S', -1),
             member('half', 'scope:S', 1.5),
-            member('text', 'scope:S', '1')
+            member('text', 'scope:S', '1'),
+            // More rows than a layout can count: no row at all.
+            member('absurd', 'scope:S', 3000000000)
         ]));
-        for (const name of ['none', 'negative', 'half', 'text']) {
+        for (const name of ['none', 'negative', 'half', 'text', 'absurd']) {
             const node = find(root, name)!;
             expect(node.args?.[WorkflowDiagramMetadata.GROUP_ROW], name).toBeUndefined();
             expect(node.layoutOptions?.['elk.partitioning.partition'], name).toBe('3');
         }
+    });
+
+    it('keeps the plain layout when two of its members have an edge between them', () => {
+        // Rows are for members that relate only to the outside: an edge
+        // between two of them would split a row, or run through the members
+        // between its ends.
+        const doc = document();
+        doc.graph.edges.push({ id: 'e:left->right', from: 'port:node:left:out', to: 'port:node:right:in', scope: 'scope:root' } as any);
+        (doc.graph.nodes.find(n => n.id === 'node:right') as any).ports.push({ id: 'port:node:right:in', name: 'in', direction: 'in' });
+        const root = transform(doc);
+        const group = find(root, 'scope:scope:S')!;
+        expect(group.args?.[WorkflowDiagramMetadata.GROUP_ROWS]).toBeUndefined();
+        expect(group.layoutOptions?.['elk.direction']).toBe('RIGHT');
+        expect(group.layoutOptions?.['elk.partitioning.activate']).toBeUndefined();
+        for (const name of ['first', 'left', 'right', 'last']) {
+            expect(find(root, name)!.layoutOptions?.['elk.partitioning.partition'], name).toBeUndefined();
+            // What the producer said stays on the member.
+            expect(typeof find(root, name)!.args?.[WorkflowDiagramMetadata.GROUP_ROW], name).toBe('number');
+        }
+        // An edge from a member out of the group, or to the group itself, is no such edge: T's neighbour S above had four.
+    });
+
+    it('gives a group nested in it a row as it gives a node one: its own, or after the last', () => {
+        const doc = document();
+        doc.graph.nodes.push(member('in1', 'scope:N1') as any, member('in2', 'scope:N2') as any);
+        doc.graph.subgraphs!.push(
+            { id: 'scope:N1', kind: 'group', label: 'N1', parent: 'scope:S', row: 1 },
+            { id: 'scope:N2', kind: 'group', label: 'N2', parent: 'scope:S' });
+        const root = transform(doc);
+        expect(find(root, 'scope:scope:S')!.args?.[WorkflowDiagramMetadata.GROUP_ROWS]).toBe(true);
+        const nested = find(root, 'scope:scope:N1')!;
+        expect(nested.args?.[WorkflowDiagramMetadata.GROUP_ROW]).toBe(1);
+        expect(nested.layoutOptions?.['elk.partitioning.partition']).toBe('1');
+        // Still a group of its own inside: laid out as groups are, not in rows.
+        expect(nested.layoutOptions?.['elk.hierarchyHandling']).toBe('SEPARATE_CHILDREN');
+        expect(nested.args?.[WorkflowDiagramMetadata.GROUP_ROWS]).toBeUndefined();
+        expect(find(root, 'scope:scope:N2')!.layoutOptions?.['elk.partitioning.partition']).toBe('3');
+    });
+
+    it('keeps the row of a member opened in place on the frame it becomes', () => {
+        const doc = document();
+        const last = doc.graph.nodes.find(n => n.id === 'node:last') as any;
+        last.meta = { row: 2, inner: { nodes: [{ id: 'node:last/cell', kind: 'actor', label: 'cell', ports: [] }], edges: [] } };
+        const ids = stableNodeIds(doc.graph.nodes);
+        const opened = openNodes(doc, portBusStateOf(new Map([['last', new Set([ToggleNodeOpenOperation.OPEN])]])), ids);
+        const frame = opened.graph.subgraphs!.find(scope => scope.openNodeKey === 'last');
+        expect(frame?.row).toBe(2);
+        expect(frame?.parent).toBe('scope:S');
     });
 
     it('is not given a layer by the pass that pins sources and sinks, and neither is a node with no port', () => {

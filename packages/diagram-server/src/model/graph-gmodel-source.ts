@@ -3,7 +3,7 @@ import { parseBadgesMeta, parseFactsMeta, parseViewsMeta, type UnitBadge } from 
 import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, type PortSide, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
-import { groupLayoutOptions, splitEdgesAtGroups } from './group-edges';
+import { arrangeGroupRows, groupLayoutOptions, isGroupRow, splitEdgesAtGroups } from './group-edges';
 import { URI } from 'vscode-uri';
 import { boundaryMargin, bundlePorts, type PortBus, type PortBusState } from './port-bundles';
 import { stableNodeId as stableNodeIdOf, stableNodeIds, stablePortNames } from './stable-ids';
@@ -65,6 +65,9 @@ export type PyGraphScope = {
     label?: string;
     parent?: string | null;
     controlNodeId?: string | null;
+    /** The row of a `group` scope nested in a group laid out in rows, as a
+     *  node's `meta.row`: a whole number from zero, the first row on top. */
+    row?: number;
     /** `'top'` pins a `group` scope above the rest of the diagram, out of its
      *  flow: what belongs to the whole picture rather than to a place in it
      *  (a legend, the variables a state machine works on). */
@@ -455,7 +458,7 @@ export class GraphGModelSource {
             }
             // The row a producer puts a member of a group in.
             const row = node.meta?.['row'];
-            if (typeof row === 'number' && Number.isInteger(row) && row >= 0) {
+            if (isGroupRow(row)) {
                 gnode.args![WorkflowDiagramMetadata.GROUP_ROW] = row;
             }
             if (node.meta) {
@@ -1235,6 +1238,8 @@ export class GraphGModelSource {
         // feedback marking, which the pieces inherit, and once the members sit
         // inside their groups, which decides what each edge crosses.
         splitEdgesAtGroups(children);
+        // Once the groups are nested and the edges cut: which groups lay out in rows.
+        arrangeGroupRows(children);
 
         // Edges first, so nodes and ports paint over them.
         //
@@ -1410,6 +1415,8 @@ export class GraphGModelSource {
                 'wf:scopeId': scope.id,
                 [WorkflowDiagramMetadata.STRUCTURE_KIND]: 'group',
                 [WorkflowDiagramMetadata.GROUP_LABEL]: label,
+                // The row this group sits in, inside a group laid out in rows.
+                ...(isGroupRow(scope.row) ? { [WorkflowDiagramMetadata.GROUP_ROW]: scope.row } : {}),
                 ...(scope.pin === 'top' ? { [WorkflowDiagramMetadata.GROUP_PIN]: 'top' } : {}),
                 ...(scope.openNodeKey ? { [WorkflowDiagramMetadata.OPEN_NODE_KEY]: scope.openNodeKey } : {}),
                 ...(scope.openNodeBundles ? { [WorkflowDiagramMetadata.OPEN_NODE_BUNDLES]: scope.openNodeBundles } : {})
@@ -1435,24 +1442,6 @@ export class GraphGModelSource {
             }
             node.children!.push(member);
             removedNodeIds.add(stableId);
-        }
-        // Members that carry a row are laid out in rows: each row a partition
-        // of the group's layout, a member with no row after the last one.
-        const rowOf = (member: GModelElement): number | undefined => {
-            const row = (member.args as Record<string, unknown> | undefined)?.[WorkflowDiagramMetadata.GROUP_ROW];
-            return typeof row === 'number' ? row : undefined;
-        };
-        const rows = node.children!.map(rowOf).filter((row): row is number => row !== undefined);
-        if (rows.length > 0) {
-            const last = Math.max(...rows) + 1;
-            node.layoutOptions = groupLayoutOptions(true);
-            node.args![WorkflowDiagramMetadata.GROUP_ROW] = true;
-            for (const member of node.children!) {
-                (member as GNode).layoutOptions = {
-                    ...((member as GNode).layoutOptions ?? {}),
-                    'elk.partitioning.partition': String(rowOf(member) ?? last)
-                };
-            }
         }
         return node;
     }

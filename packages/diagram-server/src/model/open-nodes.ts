@@ -213,6 +213,8 @@ export function openNodes(doc: PyGraphDocument, state: PortBusState | undefined,
             nodes: inside.cells.map(cell => cell.id),
             edges: inside.edges.map(edge => edge.id),
             openNodeKey: stableNodeId(ids, node),
+            // Opened in a group laid out in rows, its frame keeps its row.
+            ...(typeof node.meta?.['row'] === 'number' ? { row: node.meta['row'] } : {}),
             ...(bundles.length ? { openNodeBundles: bundles } : {})
         });
     }
