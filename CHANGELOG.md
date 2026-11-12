@@ -120,7 +120,8 @@ it no longer has.
   between a frame and what is in it is none. With the selection's trace on,
   what the links lead to is not faded, and an edge on the trace, selected
   or in error is not dimmed. The word on a link sits at the middle of its
-  curve. A node's `meta.sameAs` names what it is one
+  curve, or a little along it where another link's word is already there.
+  A node's `meta.sameAs` names what it is one
   drawing of: selecting it outlines the other nodes that draw the same.
 - **A group can be marked as the one the flow starts in.** A producer marks
   a group with `initial: true` on its scope: the initial state of a state
