@@ -59,6 +59,22 @@ describe('the lines of a node', () => {
         expect(attrsOf(last).d).not.toContain(`,${92} `);
     });
 
+    it('round a single line, which is the first band and the last', () => {
+        const [band, text, ...rest] = renderNodeLines([{ text: 'only' }], 140, 76);
+
+        expect(rest).toEqual([]);
+        expect(attrsOf(band).d.startsWith(`M1,${76 - LINE} H139`)).toBe(true);
+        expect(attrsOf(band).d.match(/A/g)).toHaveLength(2);
+        expect(attrsOf(text).y).toBe(76 - LINE / 2);
+    });
+
+    it('give a line of no kind no class of a kind', () => {
+        const [band, text] = renderNodeLines([{ text: 'plain' }], 140, 76);
+
+        expect(Object.keys(classesOf(band))).toEqual(['node-line']);
+        expect(Object.keys(classesOf(text)).sort()).toEqual(['node-line-text', 'zoom-detail']);
+    });
+
     it('draw the band always and the text only close in', () => {
         const [band, text] = renderNodeLines([{ text: 'x > 3', kind: 'guard' }], 140, 76);
 

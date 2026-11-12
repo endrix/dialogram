@@ -9,6 +9,9 @@
 import { describe, expect, it } from 'vitest';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument } from '../src/model/graph-gmodel-source';
+import { openFrameId } from '../src/model/open-nodes';
+import { portBusStateOf } from '../src/model/port-bundles';
+import { ToggleNodeOpenOperation } from '@dialogram/shared';
 
 function node(name: string, scope = 'scope:root', meta?: Record<string, unknown>) {
     return {
@@ -95,6 +98,108 @@ describe('an edge drawn only on selection', () => {
     it('leaves a root with no such edge without the argument', () => {
         const plain = new GraphGModelSource().transform(document([]));
         expect((plain.graph as any).args?.[WorkflowDiagramMetadata.SELECTION_LINKS]).toBeUndefined();
+    });
+});
+
+describe('a link whose end the platform draws as something else', () => {
+    const linksOf = (graph: any): any[] => graph.args?.[WorkflowDiagramMetadata.SELECTION_LINKS] ?? [];
+    const idsOf = (graph: any): string[] => all(graph.children as Element[]).map(element => element.id);
+
+    it('ends at the bus a port of the unit is folded into, named by its node or by its port', () => {
+        const boundary = (name: string) => ({
+            id: `wf:${name}`, kind: 'wf-input', label: name, scope: 'scope:root',
+            ports: [{ id: `wf:${name}:p`, name, direction: 'out' as const, group: 'cpx' }],
+            meta: { networkBoundary: true }
+        });
+        const doc: PyGraphDocument = {
+            version: '1',
+            graph: {
+                id: 'root',
+                nodes: [boundary('vld'), boundary('data'), node('act')] as any,
+                edges: [onSelection('l:node', 'wf:vld', 'node:act'), onSelection('l:port', 'wf:data:p', 'node:act')] as any,
+                subgraphs: []
+            }
+        };
+        const graph: any = new GraphGModelSource().transform(doc).graph;
+        const links = linksOf(graph);
+        // Closed, the two ports are one bus node: both links end there.
+        expect(links.map(link => link.id)).toEqual(['l:node', 'l:port']);
+        expect(links[0].from).toBe(links[1].from);
+        expect(idsOf(graph)).toContain(links[0].from);
+        expect(links[0].from).not.toBe('act');
+        expect(links.every(link => link.to === 'act')).toBe(true);
+    });
+
+    it('ends at the frame of a node opened in place, and at the node while it is closed', () => {
+        const big = {
+            ...node('big'),
+            meta: {
+                inner: {
+                    nodes: [{ id: 'cell', kind: 'actor', label: 'cell', ports: [{ id: 'cell:a', name: 'a', direction: 'in' }] }],
+                    edges: [{ from: 'port:node:big:in', to: 'cell:a' }]
+                }
+            }
+        };
+        const doc: PyGraphDocument = {
+            version: '1',
+            graph: {
+                id: 'root',
+                nodes: [big, node('act')] as any,
+                edges: [onSelection('l:node', 'node:act', 'node:big'), onSelection('l:port', 'node:act', 'port:node:big:in')] as any,
+                subgraphs: []
+            }
+        };
+        const closed: any = new GraphGModelSource().transform(doc).graph;
+        expect(linksOf(closed).map(link => link.to)).toEqual(['big', 'big']);
+
+        const open = portBusStateOf(new Map([['big', new Set([ToggleNodeOpenOperation.OPEN])]]));
+        const opened: any = new GraphGModelSource().transform(doc, { portBuses: open }).graph;
+        const frame = openFrameId('node:big');
+        expect(idsOf(opened)).toContain(frame);
+        expect(idsOf(opened)).not.toContain('big');
+        expect(linksOf(opened).map(link => [link.id, link.from, link.to])).toEqual([['l:node', 'act', frame], ['l:port', 'act', frame]]);
+    });
+
+    it('is not taken for a wire of a bus: the bus edge counts its own wires only', () => {
+        const side = (name: string, direction: 'in' | 'out') => ({
+            id: `node:${name}`, kind: 'actor', label: name, scope: 'scope:root',
+            ports: [1, 2].map(k => ({ id: `${name}:p${k}`, name: `p${k}`, direction, group: 'bus' }))
+        });
+        const doc = (edges: unknown[]): PyGraphDocument => ({
+            version: '1',
+            graph: { id: 'root', nodes: [side('a', 'out'), side('b', 'in')] as any, edges: edges as any, subgraphs: [] }
+        });
+        const wire = { id: 'e1', from: 'a:p1', to: 'b:p1', scope: 'scope:root' };
+        const edgesOf = (graph: any): Element[] => all(graph.children as Element[]).filter(element => element.type.startsWith('edge'));
+        const strip = (edges: Element[]) => JSON.stringify(edges.map(edge => ({ id: edge.id, args: edge.args })));
+
+        const alone: any = new GraphGModelSource().transform(doc([wire])).graph;
+        const withLink: any = new GraphGModelSource().transform(doc([wire, onSelection('l:ports', 'a:p2', 'b:p2')])).graph;
+        // The diagram's edges are what they are without the link.
+        expect(strip(edgesOf(withLink))).toBe(strip(edgesOf(alone)));
+        expect(linksOf(withLink)).toEqual([{ id: 'l:ports', from: 'a', to: 'b' }]);
+    });
+
+    it('is no link between a frame and what is in it, however deep', () => {
+        const doc: PyGraphDocument = {
+            version: '1',
+            graph: {
+                id: 'root',
+                nodes: [node('act', 'scope:inner'), node('x')] as any,
+                edges: [
+                    onSelection('l:own', 'node:act', 'scope:inner'),
+                    onSelection('l:outer', 'scope:outer', 'node:act'),
+                    onSelection('l:nested', 'scope:inner', 'scope:outer'),
+                    onSelection('l:other', 'node:x', 'scope:inner')
+                ] as any,
+                subgraphs: [
+                    { id: 'scope:outer', kind: 'group', label: 'outer' },
+                    { id: 'scope:inner', kind: 'group', label: 'inner', parent: 'scope:outer' }
+                ]
+            }
+        };
+        const graph: any = new GraphGModelSource().transform(doc).graph;
+        expect(linksOf(graph)).toEqual([{ id: 'l:other', from: 'x', to: 'scope:scope:inner' }]);
     });
 });
 

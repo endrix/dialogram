@@ -227,6 +227,20 @@ describe('the layout of a group in rows', () => {
         }
     });
 
+    it('stands the members of a row on one line along their tops, whatever their heights', async () => {
+        const doc = document();
+        // `left` and `right` share a row; `left` is taller by two lines of text.
+        const left = (doc.graph.nodes as any[]).find(node => node.id === 'node:left');
+        left.meta = { ...left.meta, lines: ['x > 3', 'In → Out'] };
+        const byId = await laidOut(doc);
+        const at = (name: string): GNode => byId.get(name) as GNode;
+        expect(at('left').size.height).toBeGreaterThan(at('right').size.height);
+        expect(at('left').position.y).toBe(at('right').position.y);
+        // The next row is under the taller of the two.
+        expect(at('left').position.y + at('left').size.height).toBeLessThanOrEqual(at('last').position.y);
+        expect(byId.get('left').layoutOptions['elk.alignment']).toBe('TOP');
+    });
+
     it('keeps a row together when its members have nothing between them and nothing leaving', async () => {
         const doc = document();
         doc.graph.edges = [];

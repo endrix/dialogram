@@ -1317,8 +1317,10 @@ body.vscode-high-contrast-light .node-center-image-light {
     stroke-linejoin: round;
 }
 
-/* While links are shown, the diagram's own edges step back. */
-.selection-links-shown .sprotty-edge,
+/* While links are shown, the diagram's own edges step back. Not an edge
+   that is itself being read: one selected, one in error, one on the
+   selection's trace (which fades the rest by its own rule, further down). */
+.selection-links-shown .sprotty-edge:not(.selected):not(.cal-edge-error):not(.wf-trace-focus):not(.wf-trace-upstream):not(.wf-trace-downstream),
 .selection-links-shown .workflow-node-group .group-loop {
     opacity: 0.3;
 }

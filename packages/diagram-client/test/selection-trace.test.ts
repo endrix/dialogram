@@ -24,7 +24,7 @@
  */
 import 'reflect-metadata';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { WorkflowDiagramTypes } from '@dialogram/shared';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { splitEdgesAtGroups } from '../../diagram-server/src/model/group-edges';
 import {
     applyTraceClasses,
@@ -34,6 +34,7 @@ import {
     SelectionTraceFeedbackCommand,
     SelectionTraceListener,
     traceClasses,
+    traceClassesOf,
     TraceCss,
     type TraceElement
 } from '../src/selection-trace';
@@ -250,6 +251,37 @@ describe('nested groups', () => {
         expect(classes.far).toEqual([TraceCss.FADED]);
         expect(result.upstream).not.toContain('g1');
         expect(result.downstream).not.toContain('g2');
+    });
+});
+
+describe('a trace beside the selection’s links', () => {
+    // a -> b on the diagram; v and w are joined to a only by links drawn on
+    // selection; a2 is another drawing of what a draws; z is none of these.
+    const linked = (): El => {
+        const same = { [WorkflowDiagramMetadata.SAME_AS]: 'the-action' };
+        const root = model({ ...node('a'), args: same }, node('b'), node('v'), node('w'), { ...node('a2'), args: same }, node('z'), edge('a', 'b'));
+        root.args = { [WorkflowDiagramMetadata.SELECTION_LINKS]: [{ id: 'l1', from: 'v', to: 'a' }, { id: 'l2', from: 'a', to: 'w' }, { id: 'l3', from: 'z', to: 'b' }] };
+        return root;
+    };
+
+    it('leaves what the links lead to, and the other drawings of the selection, unfaded', () => {
+        const classes = traceClassesOf(linked(), ['a']);
+        expect(classes['b']).toEqual([TraceCss.DOWNSTREAM]);
+        for (const id of ['v', 'w', 'a2']) {
+            expect(classes[id], id).toEqual([TraceCss.SCOPE]);
+        }
+        // Neither on the path nor at the end of a link of the selection.
+        expect(classes['z']).toEqual([TraceCss.FADED]);
+    });
+
+    it('fades them as any node off the path when the selection has no link to them', () => {
+        const classes = traceClassesOf(linked(), ['b']);
+        expect(classes['a']).toEqual([TraceCss.UPSTREAM]);
+        // z is at the other end of b's link; v, w and a2 are not b's.
+        expect(classes['z']).toEqual([TraceCss.SCOPE]);
+        for (const id of ['v', 'w', 'a2']) {
+            expect(classes[id], id).toEqual([TraceCss.FADED]);
+        }
     });
 });
 

@@ -9,6 +9,7 @@
  */
 
 // The source-URI key, shared with the host and the toolkit (see `uri-keys.ts`).
+import { WorkflowDiagramConstants, type NodeLine } from '@dialogram/shared';
 import { normalizeSourceUriKey } from './uri-keys';
 export { normalizeSourceUriKey };
 
@@ -125,6 +126,89 @@ export function parseBadgesMeta(raw: unknown): UnitBadge[] | undefined {
         out.push({ text: text.trim(), tone: resolved });
     }
     return out.length > 0 ? out : undefined;
+}
+
+/** A class name a producer may give: lower case, digits and dashes, a letter first. */
+const CLASS_NAME = /^[a-z][a-z0-9-]*$/;
+
+/**
+ * What must not reach a line of text in a node: control characters (raw in
+ * an exported SVG they make it no XML), the marks that turn the direction
+ * of the text after them, and the spaces of no width.
+ */
+const NOT_FOR_A_LINE = /[\u0000-\u001f\u007f-\u009f\u200b\u2028\u2029\u202a-\u202e\u2060\u2066-\u2069\ufeff]/g;
+
+/** Whether a character takes two columns of a fixed-width font: East Asian wide and fullwidth forms, emoji. */
+function isWide(codePoint: number): boolean {
+    return (codePoint >= 0x1100 && codePoint <= 0x115f)
+        || (codePoint >= 0x2e80 && codePoint <= 0xa4cf)
+        || (codePoint >= 0xac00 && codePoint <= 0xd7a3)
+        || (codePoint >= 0xf900 && codePoint <= 0xfaff)
+        || (codePoint >= 0xfe30 && codePoint <= 0xfe4f)
+        || (codePoint >= 0xff00 && codePoint <= 0xff60)
+        || (codePoint >= 0xffe0 && codePoint <= 0xffe6)
+        || (codePoint >= 0x1f300 && codePoint <= 0x1faff)
+        || (codePoint >= 0x20000 && codePoint <= 0x3fffd);
+}
+
+/** The columns a text takes in a fixed-width font: two for a wide character, one for any other. */
+export function textColumns(text: string): number {
+    let columns = 0;
+    for (const char of text) {
+        columns += isWide(char.codePointAt(0)!) ? 2 : 1;
+    }
+    return columns;
+}
+
+/** `text` cut to `max` columns, an ellipsis in the place of what is cut. By character, never through one. */
+function cutToColumns(text: string, max: number): string {
+    if (textColumns(text) <= max) {
+        return text;
+    }
+    let out = '';
+    let columns = 0;
+    for (const char of text) {
+        const width = isWide(char.codePointAt(0)!) ? 2 : 1;
+        if (columns + width > max - 1) {
+            break;
+        }
+        out += char;
+        columns += width;
+    }
+    return `${out.trimEnd()}…`;
+}
+
+/**
+ * `meta.lines` as the producer wrote it: `[{ text, kind? }]`, a plain string
+ * being a line of no kind; nothing for anything else. A line's text is on
+ * one line, its spaces single, cut to what a node should hold
+ * (`NODE_LINE_MAX_CHARS` columns); a kind that is no class name is dropped,
+ * the line kept. No more than `NODE_LINE_MAX_COUNT` lines.
+ */
+export function parseLinesMeta(raw: unknown): NodeLine[] {
+    if (!Array.isArray(raw)) {
+        return [];
+    }
+    const out: NodeLine[] = [];
+    for (const item of raw) {
+        const text = typeof item === 'string' ? item : (item as { text?: unknown } | null)?.text;
+        if (typeof text !== 'string') {
+            continue;
+        }
+        const whole = text.replace(NOT_FOR_A_LINE, ' ').replace(/\s+/g, ' ').trim();
+        if (whole === '') {
+            continue;
+        }
+        const kind = item && typeof item === 'object' ? (item as { kind?: unknown }).kind : undefined;
+        out.push({
+            text: cutToColumns(whole, WorkflowDiagramConstants.NODE_LINE_MAX_CHARS),
+            ...(typeof kind === 'string' && CLASS_NAME.test(kind) ? { kind } : {})
+        });
+        if (out.length === WorkflowDiagramConstants.NODE_LINE_MAX_COUNT) {
+            break;
+        }
+    }
+    return out;
 }
 
 export interface NormalizedGraphLoadError {

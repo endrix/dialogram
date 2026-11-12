@@ -1,13 +1,13 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
-import { parseBadgesMeta, parseFactsMeta, parseViewsMeta, type UnitBadge } from '../server/graph-load-request-options';
-import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, type PortSide, type NodeLine, type SelectionLink, type SymbolKind } from '@dialogram/shared';
+import { parseBadgesMeta, parseFactsMeta, parseLinesMeta, parseViewsMeta, textColumns, type UnitBadge } from '../server/graph-load-request-options';
+import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, type PortSide, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
 import { arrangeGroupRows, groupLayoutOptions, isGroupRow, splitEdgesAtGroups } from './group-edges';
 import { URI } from 'vscode-uri';
 import { boundaryMargin, bundlePorts, type PortBus, type PortBusState } from './port-bundles';
 import { stableNodeId as stableNodeIdOf, stableNodeIds, stablePortNames } from './stable-ids';
-import { canOpen, openNodes } from './open-nodes';
+import { canOpen, openNodes, openScopeId } from './open-nodes';
 
 /** What an openable node's header toggle takes from its start: its ring and a gap. */
 const OPEN_TOGGLE_ROOM_PX = 20;
@@ -70,7 +70,8 @@ export type PyGraphScope = {
     row?: number;
     /** `'top'` pins a `group` scope above the rest of the diagram, out of its
      *  flow: what belongs to the whole picture rather than to a place in it
-     *  (a legend, the variables a state machine works on). */
+     *  (a legend, the variables a state machine works on). For a group of
+     *  the root: one nested in another group stays where it is. */
     pin?: string;
     /** Marks a `group` scope as where the diagram's flow starts: the initial
      *  state of a state machine, the first stage of a pipeline. Its title
@@ -294,6 +295,13 @@ export class GraphGModelSource {
         // The network is named by the producer's nodes: a bus bundling the
         // unit's ports is named after the bundle.
         const producerNodes = doc.graph.nodes;
+        // An edge marked `onSelection` is no edge of the diagram (see below):
+        // it is taken out before the document is rewritten, so that no bus
+        // takes it for one of its wires, and its ends are found afterwards.
+        const linkEdges = doc.graph.edges.filter(edge => edge.meta?.['onSelection'] === true);
+        if (linkEdges.length > 0) {
+            doc = { ...doc, graph: { ...doc.graph, edges: doc.graph.edges.filter(edge => edge.meta?.['onSelection'] !== true) } };
+        }
         // A node the reader opened is drawn as the group of what it holds
         // (open-nodes.ts); its inner nodes keep the producer's ids.
         doc = openNodes(doc, options?.portBuses, stableIds);
@@ -422,11 +430,16 @@ export class GraphGModelSource {
                 ? WorkflowDiagramConstants.NODE_FOOTER_LABEL_HEIGHT_PX
                 : 0;
             // The lines a producer puts in the node: bands across the bottom
-            // of its body, which grows by them. A symbol has no body for them.
-            const lines = symbolKind ? [] : this.nodeLines(node.meta?.['lines']);
+            // of its body, which grows by them. A symbol has no body for
+            // them; an `if` or a loop is a frame around what it holds, sized
+            // by that and drawn by a view of its own.
+            const framed = node.kind === 'if' || node.kind === 'loop';
+            const lines = symbolKind || framed ? [] : parseLinesMeta(node.meta?.['lines']);
             const linesHeight = lines.length * WorkflowDiagramConstants.NODE_LINE_HEIGHT_PX;
-            const linesWidth = lines.length === 0 ? 0 : 2 * WorkflowDiagramConstants.NODE_LINE_PADDING_PX + Math.max(...lines.map(line =>
-                this.estimateLabelSize(line.text, WorkflowDiagramConstants.NODE_LINE_FONT_SIZE_PX).width));
+            // The font is fixed-width: a line is as wide as its columns.
+            const lineColumnWidth = this.estimateLabelSize('x', WorkflowDiagramConstants.NODE_LINE_FONT_SIZE_PX).width;
+            const linesWidth = lines.length === 0 ? 0 : 2 * WorkflowDiagramConstants.NODE_LINE_PADDING_PX
+                + lineColumnWidth * Math.max(...lines.map(line => textColumns(line.text)));
             const pinNameWidth = (ps: PyGraphPort[]): number => Math.max(0, ...ps.map(p =>
                 this.estimateLabelSize(p.pins?.[0] ?? p.name, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX).width));
             // Under a symbol, its caption: a register's name; any symbol's the
@@ -1015,10 +1028,14 @@ export class GraphGModelSource {
         // only in its label; the control-flow containers above keep their own
         // kinds and never come through here.
         const groupScopes = (doc.graph.subgraphs ?? []).filter(scope => scope.kind === 'group' && !scope.controlNodeId);
+        /** The group frames, by their id in the model. */
+        const groupNodeByModelId = new Map<string, GNode>();
         if (groupScopes.length > 0) {
             const groupNodes = new Map<string, GNode>();
             for (const scope of groupScopes) {
-                groupNodes.set(scope.id, this.createGroupNode(scope, scopeNodes, irNodeToStableId, nodeMap, removedNodeIds));
+                const group = this.createGroupNode(scope, scopeNodes, irNodeToStableId, nodeMap, removedNodeIds);
+                groupNodes.set(scope.id, group);
+                groupNodeByModelId.set(group.id, group);
             }
             // A group whose parent chain leads back to itself has no parent
             // worth the name; it sits at the root, as a group with no parent
@@ -1040,6 +1057,9 @@ export class GraphGModelSource {
                 const group = groupNodes.get(scope.id)!;
                 const parent = parentOf(scope);
                 if (parent && parent !== group) {
+                    // Only a group of the root is pinned: the band is above
+                    // the whole diagram, not above the inside of a group.
+                    delete group.args?.[WorkflowDiagramMetadata.GROUP_PIN];
                     parent.children!.push(group);
                 } else {
                     children.push(group);
@@ -1055,33 +1075,61 @@ export class GraphGModelSource {
         // by the client, between two nodes, only while one of them is
         // selected. It takes no part in the layout and crosses no frame. Its
         // ends name nodes; a port names its node, a group scope its group.
+        // The node is the producer's: where the platform draws it as
+        // something else, the link ends there (the frame of a node opened in
+        // place, the bus a port of the unit is folded into).
         const selectionLinks: SelectionLink[] = [];
-        const nodeOfPort = new Map<string, string>();
-        for (const node of doc.graph.nodes) {
-            for (const port of node.ports ?? []) {
-                nodeOfPort.set(port.id, node.id);
+        if (linkEdges.length > 0) {
+            const producerNodeOfPort = new Map<string, PyGraphNode>();
+            const producerNodeById = new Map<string, PyGraphNode>();
+            for (const node of producerNodes) {
+                producerNodeById.set(node.id, node);
+                for (const port of node.ports ?? []) {
+                    producerNodeOfPort.set(port.id, node);
+                }
             }
-        }
-        const linkEnd = (raw: string): string | undefined =>
-            irNodeToStableId.get(raw) ?? irNodeToStableId.get(nodeOfPort.get(raw) ?? '') ?? groupEnd(raw);
-        for (const edge of doc.graph.edges) {
-            if (edge.meta?.['onSelection'] === true) {
+            const busOfMember = new Map<string, string>();
+            for (const node of doc.graph.nodes) {
+                const members = node.meta?.['busMembers'];
+                for (const member of Array.isArray(members) ? members : []) {
+                    busOfMember.set(String(member), node.id);
+                }
+            }
+            const linkEnd = (raw: string): string | undefined => {
+                const node = producerNodeById.get(raw) ?? producerNodeOfPort.get(raw);
+                if (!node) {
+                    return groupEnd(raw);
+                }
+                return irNodeToStableId.get(node.id)
+                    ?? groupEnd(openScopeId(node.id))
+                    ?? irNodeToStableId.get(busOfMember.get(stableNodeIdOf(stableIds, node)) ?? '');
+            };
+            // A frame and what is in it are not two ends: an edge between
+            // them is the frame's loop, and a link would run through the node.
+            const holds = (holder: string, id: string): boolean => {
+                const inside = (element: GModelElement | undefined): boolean =>
+                    (element?.children ?? []).some(child => child.id === id || inside(child));
+                return inside(groupNodeByModelId.get(holder));
+            };
+            for (const edge of linkEdges) {
                 const from = linkEnd(edge.from);
                 const to = linkEnd(edge.to);
-                if (from && to && from !== to) {
-                    const role = edge.meta['role'];
-                    const label = edge.meta['label'];
-                    selectionLinks.push({
-                        id: edge.id,
-                        from,
-                        to,
-                        ...(typeof role === 'string' && this.derivedCssClass('', role) ? { role } : {}),
-                        ...(typeof label === 'string' && label.trim() !== '' ? { label: label.trim() } : {}),
-                        ...(edge.meta['bidirectional'] === true ? { bidirectional: true } : {})
-                    });
+                if (!from || !to || from === to || holds(from, to) || holds(to, from)) {
+                    continue;
                 }
-                continue;
+                const role = edge.meta!['role'];
+                const label = edge.meta!['label'];
+                selectionLinks.push({
+                    id: edge.id,
+                    from,
+                    to,
+                    ...(typeof role === 'string' && this.derivedCssClass('', role) ? { role } : {}),
+                    ...(typeof label === 'string' && label.trim() !== '' ? { label: label.trim() } : {}),
+                    ...(edge.meta!['bidirectional'] === true ? { bidirectional: true } : {})
+                });
             }
+        }
+        for (const edge of doc.graph.edges) {
             const scope = scopeById.get(edge.scope);
             const branch = this.scopeLabel(scope?.kind ?? '');
             const controlNodeId = scope?.controlNodeId ?? undefined;
@@ -1561,7 +1609,6 @@ export class GraphGModelSource {
         return classes;
     }
 
-
     /**
      * A styling hook derived from a producer-supplied word.
      *
@@ -1570,35 +1617,6 @@ export class GraphGModelSource {
      * heard of. The pattern check is what keeps it from being an injection: the
      * value is interpolated into a class name, so it has to look like one.
      */
-    /**
-     * The lines a producer puts in a node (`meta.lines`): each its text, cut
-     * to what a node can hold, and its kind when that is a class name. A
-     * string is a line of no kind. Anything else is passed over.
-     */
-    private nodeLines(raw: unknown): NodeLine[] {
-        if (!Array.isArray(raw)) {
-            return [];
-        }
-        const max = WorkflowDiagramConstants.NODE_LINE_MAX_CHARS;
-        const out: NodeLine[] = [];
-        for (const item of raw) {
-            const text = typeof item === 'string' ? item : (item as { text?: unknown } | null)?.text;
-            if (typeof text !== 'string' || text.trim() === '') {
-                continue;
-            }
-            const whole = text.trim().replace(/\s+/g, ' ');
-            const kind = typeof item === 'object' && item ? (item as { kind?: unknown }).kind : undefined;
-            out.push({
-                text: whole.length > max ? `${whole.slice(0, max - 1)}…` : whole,
-                ...(typeof kind === 'string' && this.derivedCssClass('', kind) ? { kind } : {})
-            });
-            if (out.length === WorkflowDiagramConstants.NODE_LINE_MAX_COUNT) {
-                break;
-            }
-        }
-        return out;
-    }
-
     private derivedCssClass(prefix: string, value: string | undefined, suffix = ''): string | undefined {
         if (typeof value !== 'string' || !/^[a-z][a-z0-9-]*$/.test(value)) {
             return undefined;

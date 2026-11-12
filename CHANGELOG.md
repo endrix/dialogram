@@ -96,8 +96,10 @@ it no longer has.
   a place in its flow (a legend, the variables a state machine works on).
   Pinned groups are laid out apart and stacked in a band above the diagram,
   the first on top, their left edges on the diagram's; the rest is laid out
-  as if they were not there. A pinned group that an edge crosses or ends at
-  stays in the flow, since its edges need it there.
+  as if they were not there, and the band clears its highest route as well as
+  its highest node. A pinned group that an edge crosses or ends at stays in
+  the flow, since its edges need it there; a group nested in another is not
+  pinned.
 - **Links drawn only on selection.** An edge a producer marks
   `meta.onSelection` is no edge of the diagram: it takes no part in the
   layout, crosses no frame, and is not drawn until one of its ends is
@@ -110,7 +112,14 @@ it no longer has.
   it, `meta.bidirectional` an arrowhead at both ends. A link leaves a node
   by the side facing the other end, or by the side across when a neighbour
   of the node's own frame is in the way; links sharing a side are spread
-  along it so they do not cross. A node's `meta.sameAs` names what it is one
+  along it in the order of the directions they lead in, so they fan out
+  without crossing, and two links between the same two nodes run side by
+  side. Where the platform draws a node as something else the link ends
+  there: at the frame of a node opened in place, at the bus a port of the
+  unit is folded into; no bus counts a link among its wires, and a link
+  between a frame and what is in it is none. With the selection's trace on,
+  what the links lead to is not faded, and an edge on the trace, selected
+  or in error is not dimmed. A node's `meta.sameAs` names what it is one
   drawing of: selecting it outlines the other nodes that draw the same.
 - **A group can be marked as where the flow starts.** A producer marks a
   group with `start: true` on its scope: the initial state of a state
@@ -126,7 +135,19 @@ it no longer has.
   node's body, which is taller by them and as wide as the longest. The band
   is always drawn and carries `node-line-<kind>` for a product to colour, so
   which nodes have a line of a kind is seen at any zoom; its text is detail
-  (`zoom-detail`), drawn only close in. A symbol takes none.
+  (`zoom-detail`), drawn only close in. The cut is by character and counts a
+  wide one (East Asian, an emoji) as two columns of the fixed-width font the
+  lines are set in; control characters and marks that turn the direction of
+  the text are taken out. A symbol takes none, nor does an `if`, a loop or a
+  port of the unit. The members of a row of a group now stand on one line
+  along their tops, where a node with lines beside one without would have
+  been centred on it. A diagram laid out before its nodes had lines keeps
+  its saved places: a node grows downward where it stands, until the next
+  layout.
+  as if they were not there, and the band clears its highest route as well as
+  its highest node. A pinned group that an edge crosses or ends at stays in
+  the flow, since its edges need it there; a group nested in another is not
+  pinned.
 - **A group can be laid out in rows.** A producer puts the members of a
   group in rows with `meta.row` on a node, or `row` on a group nested in it
   (a whole number from zero, the first row on top): the actions of a state

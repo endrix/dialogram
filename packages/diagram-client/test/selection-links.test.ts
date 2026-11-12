@@ -9,8 +9,9 @@
  *  - the other nodes that draw what a selected node draws are marked too;
  *  - a link leaves a node by the side that faces the other end, or by the side
  *    across when a neighbour of the node's own frame is in the way;
- *  - links sharing a side are spread along it in the order of where they
- *    lead, so none crosses another at the node;
+ *  - links sharing a side are spread along it in the order of the directions
+ *    they lead in, so none crosses another, also when what they lead to is
+ *    all in one row; two links between the same two nodes run side by side;
  *  - the drawing goes into the group the viewport transforms, on screen only,
  *    and says on the svg that links are shown.
  */
@@ -50,6 +51,44 @@ function root(links: unknown, ...children: El[]): El {
 }
 
 const link = (from: string, to: string, extra: Partial<SelectionLink> = {}): SelectionLink => ({ id: `${from}->${to}`, from, to, ...extra });
+
+/** A link's curve as points along it, from the path the client draws. */
+function curveOf(path: string, steps = 48): Array<{ x: number; y: number }> {
+    const [x0, y0, x1, y1, x2, y2, x3, y3] = path.match(/-?\d+(\.\d+)?(e-?\d+)?/g)!.map(Number);
+    return Array.from({ length: steps + 1 }, (_, i) => {
+        const t = i / steps;
+        const u = 1 - t;
+        return {
+            x: u * u * u * x0 + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3,
+            y: u * u * u * y0 + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3
+        };
+    });
+}
+
+/** How many pairs of the drawn links cross each other. */
+function crossings(drawn: ReturnType<typeof placeLinks>): number {
+    const curves = drawn.map(each => curveOf(linkPath(each)));
+    const turn = (a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }): number =>
+        Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+    const cross = (p: typeof curves[number], q: typeof curves[number]): boolean => {
+        for (let i = 0; i + 1 < p.length; i++) {
+            for (let j = 0; j + 1 < q.length; j++) {
+                if (turn(p[i], p[i + 1], q[j]) * turn(p[i], p[i + 1], q[j + 1]) < 0
+                    && turn(q[j], q[j + 1], p[i]) * turn(q[j], q[j + 1], p[i + 1]) < 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    let count = 0;
+    for (let a = 0; a < curves.length; a++) {
+        for (let b = a + 1; b < curves.length; b++) {
+            count += cross(curves[a], curves[b]) ? 1 : 0;
+        }
+    }
+    return count;
+}
 const box = (x: number, y: number, width = 100, height = 40): Box => ({ x, y, width, height });
 
 /** A drawn node's classes: under `data` in the browser, under `props` where the helper runs without its runtime. */
@@ -103,6 +142,12 @@ describe('what a selection brings up', () => {
         expect(linksOfSelection(model(['other'])).links).toEqual([]);
     });
 
+    it('takes the selection as ids when it is told them, whatever the elements say', () => {
+        const told = linksOfSelection(model(['other']), new Set(['var']));
+        expect(told.links.map(l => l.id)).toEqual(['var->act1', 'var->act2']);
+        expect(linksOfSelection(model(['var']), new Set()).links).toEqual([]);
+    });
+
     it('does not count a selected node as the other end of its own link', () => {
         const found = linksOfSelection(model(['var', 'act1']));
         expect([...found.ends].sort()).toEqual(['act2', 'port']);
@@ -116,6 +161,11 @@ describe('what a selection brings up', () => {
             node('s2.other', 300, 100, { args: { [WorkflowDiagramMetadata.SAME_AS]: 'other' } }));
         const found = linksOfSelection(drawnTwice);
         expect([...found.same]).toEqual(['s2.done']);
+        // Outlines alone cover no edge: the diagram's edges do not step back.
+        const svgNode: any = { sel: 'svg', data: {}, children: [{ sel: 'g', data: {}, children: [] }] };
+        const out = withSelectionLinks(svgNode, drawnTwice, 'main') as any;
+        expect(out.children[0].children).toHaveLength(1);
+        expect(out.data.class?.['selection-links-shown']).toBeUndefined();
         // Drawn even with no link at all: the outline is what there is to show.
         const drawn = renderSelectionLinks(drawnTwice);
         expect(withClass(drawn, 'selection-link-same')).toHaveLength(1);
@@ -161,6 +211,57 @@ describe('where links start and end', () => {
             expect(each.to.y).toBe(40);
             // One link at that side: in its middle.
             expect(each.to.x).toBe(boxes[each.link.to].x + 50);
+        }
+    });
+
+    it('fans out to a row of nodes without crossing, by whichever side it leaves', () => {
+        // The variables of a state machine: one row, far above, to the left
+        // of the action. Ids out of order on purpose: the order is not theirs.
+        const row: Record<string, Box> = { 'v:c': box(-900, 0), 'v:a': box(-700, 0), 'v:d': box(-500, 0), 'v:b': box(-300, 0), 'v:e': box(-100, 0) };
+        const act = box(200, 1200);
+        const boxes: Record<string, Box> = { act, ...row };
+        const links = Object.keys(row).map(id => link('act', id));
+        // Nothing in the way: out of its top.
+        const free = placeLinks(links, id => boxes[id]);
+        expect(new Set(free.map(each => each.fromSide))).toEqual(new Set(['top']));
+        expect(crossings(free)).toBe(0);
+        // A row of its own frame above it: out of its left side, where every
+        // variable is at the same height. They still do not cross.
+        const blocked = placeLinks(links, id => boxes[id], id => (id === 'act' ? [box(200, 1100)] : []));
+        expect(new Set(blocked.map(each => each.fromSide))).toEqual(new Set(['left']));
+        expect(crossings(blocked)).toBe(0);
+        // The nearest variable leaves lowest: the fan opens upward and outward.
+        const startY = Object.fromEntries(blocked.map(each => [each.link.to, each.from.y]));
+        expect(startY['v:e']).toBeLessThan(startY['v:b']);
+        expect(startY['v:b']).toBeLessThan(startY['v:c']);
+    });
+
+    it('fans out all around a node without crossing', () => {
+        const centre = box(0, 0);
+        const boxes: Record<string, Box> = { centre };
+        for (let k = 0; k < 16; k++) {
+            const angle = (2 * Math.PI * k) / 16 + 0.1;
+            boxes[`n${(k * 7) % 16}`] = box(Math.round(700 * Math.cos(angle)), Math.round(500 * Math.sin(angle)));
+        }
+        const drawn = placeLinks(Object.keys(boxes).filter(id => id !== 'centre').map(id => link('centre', id)), id => boxes[id]);
+        expect(drawn).toHaveLength(16);
+        expect(crossings(drawn)).toBe(0);
+    });
+
+    it('runs two links between the same two nodes side by side', () => {
+        const pair = [link('var', 'act', { id: 'read' }), link('act', 'var', { id: 'write' })];
+        // Above each other; beside each other; and around a corner (out of
+        // the action's left side, into the variable's bottom).
+        const above = placeLinks(pair, id => (id === 'act' ? box(0, 400) : box(0, 0)));
+        const beside = placeLinks(pair, id => (id === 'act' ? box(600, 0) : box(0, 0)));
+        const corner = placeLinks(pair, id => (id === 'act' ? box(400, 600) : box(0, 0)), id => (id === 'act' ? [box(400, 500)] : []));
+        expect(corner.map(each => [each.fromSide, each.toSide])).toEqual([['bottom', 'left'], ['left', 'bottom']]);
+        for (const drawn of [above, beside, corner]) {
+            expect(drawn).toHaveLength(2);
+            expect(crossings(drawn)).toBe(0);
+            // Two places on each side, not one on top of the other.
+            expect(drawn[0].from).not.toEqual(drawn[1].to);
+            expect(drawn[0].to).not.toEqual(drawn[1].from);
         }
     });
 
