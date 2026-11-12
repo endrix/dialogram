@@ -1764,6 +1764,11 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         // the producer's ids), so the id is only the fallback.
         const parsePortId = (id: string) => {
             const port = this.lastRoot?.index?.getById?.(id) as PropertyElement | undefined;
+            // An edge that ends at a group itself: the group, by its title.
+            if (port?.args?.[WorkflowDiagramMetadata.GROUP_END] === true) {
+                const title = readStringArg(port.parent?.args, WorkflowDiagramMetadata.GROUP_LABEL);
+                return { node: title || 'group', port: 'frame' };
+            }
             const portName = readStringArg(port?.args, WorkflowDiagramMetadata.PORT_NAME);
             const nodeName = readStringArg(port?.parent?.args, WorkflowDiagramMetadata.ENTITY_NAME);
             if (portName && nodeName) {

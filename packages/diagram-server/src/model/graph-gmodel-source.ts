@@ -1098,7 +1098,7 @@ export class GraphGModelSource {
             }
             const edgeMeta = edge.meta;
             if (edgeMeta && edgeMeta['isErrored'] === true) {
-                gedge.cssClasses = [...(gedge.cssClasses ?? []), 'cal-edge-error'];
+                gedge.cssClasses = [...(gedge.cssClasses ?? []), WorkflowDiagramCss.EDGE_ERROR];
                 (gedge.args as Record<string, unknown>)[WorkflowDiagramMetadata.IS_ERRORED] = true;
                 const edgeErrorMessage = edgeMeta['errorMessage'];
                 if (typeof edgeErrorMessage === 'string' && edgeErrorMessage.trim() !== '') {

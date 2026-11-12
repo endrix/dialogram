@@ -42,7 +42,9 @@
  * leaves from one place on the other side. An edge between a group and
  * something inside it goes nowhere the frame does not already hold, so it is
  * not drawn as a line: the group is marked (`GROUP_LOOP`) and the client draws
- * one loop on its frame for all of them.
+ * one loop on its frame for all of them. What those edges said (a caption, an
+ * error) stays with the loop (`GROUP_LOOP_NOTES`, `GROUP_LOOP_ERROR`); the
+ * edges themselves are no longer elements, so they cannot be selected.
  */
 import { WorkflowDiagramConstants, WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import type { GEdge, GModelElement, GNode, GPort } from './graph-gmodel-source';
@@ -189,7 +191,17 @@ export function splitEdgesAtGroups(children: GModelElement[]): void {
             ? targetGroup
             : holds(sourceGroup, targetNode, targetGroups) ? sourceGroup : undefined;
         if (loopOn) {
-            loopOn.args = { ...(loopOn.args ?? {}), [WorkflowDiagramMetadata.GROUP_LOOP]: true };
+            const notes = [edge.args?.[WorkflowDiagramMetadata.EDGE_LABEL], edge.args?.['wf:errorMessage']]
+                .filter((note): note is string => typeof note === 'string' && note.trim() !== '');
+            const before = loopOn.args?.[WorkflowDiagramMetadata.GROUP_LOOP_NOTES];
+            loopOn.args = {
+                ...(loopOn.args ?? {}),
+                [WorkflowDiagramMetadata.GROUP_LOOP]: true,
+                [WorkflowDiagramMetadata.GROUP_LOOP_NOTES]: [...new Set([...(Array.isArray(before) ? before : []), ...notes])]
+            };
+            if (edge.cssClasses?.includes(WorkflowDiagramCss.EDGE_ERROR) && !loopOn.cssClasses?.includes(WorkflowDiagramCss.GROUP_LOOP_ERROR)) {
+                loopOn.cssClasses = [...(loopOn.cssClasses ?? []), WorkflowDiagramCss.GROUP_LOOP_ERROR];
+            }
             looped.add(edge);
             continue;
         }
@@ -307,7 +319,9 @@ function share(existing: GEdge, edge: GEdge): void {
  * The port `portId` on `group`'s frame: on the left for edges coming in, on the
  * right for edges going out, centred on the frame line. ELK chooses where along
  * the side, below the header band. `end` marks the place where edges end at
- * the group itself (or start from it) instead of crossing its frame.
+ * the group itself (or start from it) instead of crossing its frame. Where
+ * they arrive the arrowhead meets the frame and there is no dot; where they
+ * start the dot stays, as the start of the line.
  */
 function addBoundaryPort(group: GNode, direction: Direction, portId: string, end = false): GPort {
     const size = WorkflowDiagramConstants.GROUP_BOUNDARY_PORT_SIZE_PX;
@@ -315,7 +329,7 @@ function addBoundaryPort(group: GNode, direction: Direction, portId: string, end
     const port: GPort = {
         id: portId,
         type: WorkflowDiagramTypes.PORT_GROUP_BOUNDARY,
-        cssClasses: [WorkflowDiagramCss.GROUP_BOUNDARY_PORT, ...(end ? [WorkflowDiagramCss.GROUP_END_PORT] : [])],
+        cssClasses: [WorkflowDiagramCss.GROUP_BOUNDARY_PORT, ...(end && direction === 'in' ? [WorkflowDiagramCss.GROUP_END_PORT] : [])],
         position: { x: 0, y: 0 },
         size: { width: size, height: size },
         layoutOptions: {
@@ -347,6 +361,9 @@ export function groupLayoutOptions(rows = false): Record<string, string> {
         'elk.direction': 'RIGHT',
         'elk.hierarchyHandling': 'SEPARATE_CHILDREN',
         'elk.nodeSize.constraints': 'MINIMUM_SIZE',
+        // A group that holds nothing is still a frame with a title, and
+        // edges may end at it.
+        'elk.nodeSize.minimum': `(${WorkflowDiagramConstants.GROUP_MIN_WIDTH_PX},${WorkflowDiagramConstants.GROUP_MIN_HEIGHT_PX})`,
         'elk.padding': `[top=${header + pad},left=${pad},bottom=${pad},right=${pad}]`,
         'elk.portConstraints': 'FIXED_SIDE',
         'elk.spacing.portsSurrounding': `[top=${header + pad / 2},left=0,bottom=${pad / 2},right=0]`,

@@ -95,6 +95,13 @@ it no longer has.
   group is laid out downward with one partition per row. The pass that pins
   sources and sinks to the outer layers on opening leaves a row's members
   alone, and no longer pins a node that has no port at all (it is neither).
+  them, which keeps their captions and errors as its tooltip and is drawn in
+  the error colour when one of them is in error. A group whose label is empty
+  has no title and no header band, a group that holds nothing keeps room for
+  its title (140 × 66 at least), and a scope's `label` now reaches the
+  document from a sidecar's export (it was dropped, so a sidecar's groups
+  were titled by their ids). The selection trace counts a group an edge ends
+  at as on the path and leaves what it holds unfaded.
 - **A definition the producer named is opened as it is.** A node whose
   producer resolved its type itself (`meta.referencedSource`: a sidecar that
   imported the module, a compiler that elaborated the design) carries
