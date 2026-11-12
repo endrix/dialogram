@@ -353,7 +353,7 @@ function addBoundaryPort(group: GNode, direction: Direction, portId: string, end
  * and the edges that cross the frame enter and leave through boundary ports on
  * its sides (`group-edges.ts`), kept below the header.
  */
-export function groupLayoutOptions(): Record<string, string> {
+export function groupLayoutOptions(rows = false): Record<string, string> {
     const header = WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX;
     const pad = WorkflowDiagramConstants.GROUP_PADDING_PX;
     return {
@@ -370,6 +370,102 @@ export function groupLayoutOptions(): Record<string, string> {
         'elk.spacing.nodeNode': '30',
         'elk.spacing.edgeNode': '20',
         'elk.spacing.portPort': '8',
-        'elk.layered.spacing.nodeNodeBetweenLayers': '40'
+        'elk.layered.spacing.nodeNodeBetweenLayers': '40',
+        ...(rows ? GROUP_ROWS_LAYOUT : {})
     };
+}
+
+/**
+ * A group whose members carry a row (`GROUP_ROW`): the members of a row side
+ * by side in the order the producer gave them, the rows one under another.
+ * The layers of a layout that runs downward are rows, and a member's row is
+ * its partition, which the layering keeps in order.
+ */
+const GROUP_ROWS_LAYOUT: Record<string, string> = {
+    'elk.direction': 'DOWN',
+    'elk.partitioning.activate': 'true',
+    // Members with nothing between them are still one layout: on their own
+    // each would be a component, packed wherever it fits.
+    'elk.separateConnectedComponents': 'false',
+    'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+    'elk.layered.crossingMinimization.forceNodeModelOrder': 'true',
+    'elk.spacing.nodeNode': '16',
+    'elk.layered.spacing.nodeNodeBetweenLayers': '16'
+};
+
+/** Whether a group's layout options are the rows' (`groupLayoutOptions(true)`). */
+export function isRowsLayout(options: Record<string, unknown> | undefined): boolean {
+    return options?.['elk.partitioning.activate'] === 'true';
+}
+
+/** The most rows a group is laid out in: a partition is a 32-bit number to the layout. */
+const MAX_GROUP_ROW = 100000;
+
+/** Whether `value` is a row a producer may give: a whole number from zero, not absurdly large. */
+export function isGroupRow(value: unknown): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= MAX_GROUP_ROW;
+}
+
+/**
+ * Lay out in rows every group whose members carry a row (`GROUP_ROW`, on a
+ * node or on a group nested in it): each row a partition of the group's
+ * layout, a member with no row after the last one. Run once the groups are
+ * nested and the edges cut, since both decide it:
+ *
+ * - a nested group is a member, and has a row as a node has;
+ * - a group with an edge between two of its own members keeps the plain
+ *   layout. Rows are for members that relate only to what is outside the
+ *   group (the actions of a state, each leading to another state). With an
+ *   edge between two of them the layering puts the edge's ends in different
+ *   layers, which splits a row, and keeping the producer's order within a
+ *   row sends the edge through the members between its ends.
+ */
+export function arrangeGroupRows(children: GModelElement[]): void {
+    const edges = children.filter(isEdge);
+    const visit = (group: GNode): void => {
+        const members = (group.children ?? []).filter(isNode) as GNode[];
+        for (const member of members) {
+            if (member.type === WorkflowDiagramTypes.NODE_GROUP) {
+                visit(member);
+            }
+        }
+        const rowOf = (member: GNode): number | undefined => {
+            const row = member.args?.[WorkflowDiagramMetadata.GROUP_ROW];
+            return isGroupRow(row) ? row : undefined;
+        };
+        const rows = members.map(rowOf).filter((row): row is number => row !== undefined);
+        if (rows.length === 0) {
+            return;
+        }
+        // Everything a member holds (its ports, what is nested in it) -> the member.
+        const memberOf = new Map<string, string>();
+        const claim = (element: GModelElement, member: string): void => {
+            memberOf.set(element.id, member);
+            for (const child of element.children ?? []) {
+                claim(child, member);
+            }
+        };
+        members.forEach(member => claim(member, member.id));
+        const betweenMembers = edges.some(edge => {
+            const [from, to] = [memberOf.get(edge.sourceId), memberOf.get(edge.targetId)];
+            return from !== undefined && to !== undefined && from !== to;
+        });
+        if (betweenMembers) {
+            return;
+        }
+        const last = Math.max(...rows) + 1;
+        group.layoutOptions = groupLayoutOptions(true);
+        group.args = { ...(group.args ?? {}), [WorkflowDiagramMetadata.GROUP_ROWS]: true };
+        for (const member of members) {
+            member.layoutOptions = {
+                ...(member.layoutOptions ?? {}),
+                'elk.partitioning.partition': String(rowOf(member) ?? last)
+            };
+        }
+    };
+    for (const child of children) {
+        if (child.type === WorkflowDiagramTypes.NODE_GROUP) {
+            visit(child as GNode);
+        }
+    }
 }

@@ -3,7 +3,7 @@ import { parseBadgesMeta, parseFactsMeta, parseViewsMeta, type UnitBadge } from 
 import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, type PortSide, type SymbolKind } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
-import { groupLayoutOptions, splitEdgesAtGroups } from './group-edges';
+import { arrangeGroupRows, groupLayoutOptions, isGroupRow, splitEdgesAtGroups } from './group-edges';
 import { URI } from 'vscode-uri';
 import { boundaryMargin, bundlePorts, type PortBus, type PortBusState } from './port-bundles';
 import { stableNodeId as stableNodeIdOf, stableNodeIds, stablePortNames } from './stable-ids';
@@ -65,6 +65,9 @@ export type PyGraphScope = {
     label?: string;
     parent?: string | null;
     controlNodeId?: string | null;
+    /** The row of a `group` scope nested in a group laid out in rows, as a
+     *  node's `meta.row`: a whole number from zero, the first row on top. */
+    row?: number;
     /** The platform's: the key of the open node this group stands for (open-nodes.ts). */
     openNodeKey?: string;
     /** The platform's: that node's open bundles, kept while it is open and they are not drawn. */
@@ -444,6 +447,11 @@ export class GraphGModelSource {
                     'wf:scope': node.scope
                 }
             };
+            // The row a producer puts a member of a group in.
+            const row = node.meta?.['row'];
+            if (isGroupRow(row)) {
+                gnode.args![WorkflowDiagramMetadata.GROUP_ROW] = row;
+            }
             if (node.meta) {
                 gnode.args = {
                     ...(gnode.args ?? {}),
@@ -1191,6 +1199,8 @@ export class GraphGModelSource {
         // feedback marking, which the pieces inherit, and once the members sit
         // inside their groups, which decides what each edge crosses.
         splitEdgesAtGroups(children);
+        // Once the groups are nested and the edges cut: which groups lay out in rows.
+        arrangeGroupRows(children);
 
         // Edges first, so nodes and ports paint over them.
         //
@@ -1363,6 +1373,8 @@ export class GraphGModelSource {
                 'wf:scopeId': scope.id,
                 [WorkflowDiagramMetadata.STRUCTURE_KIND]: 'group',
                 [WorkflowDiagramMetadata.GROUP_LABEL]: label,
+                // The row this group sits in, inside a group laid out in rows.
+                ...(isGroupRow(scope.row) ? { [WorkflowDiagramMetadata.GROUP_ROW]: scope.row } : {}),
                 ...(scope.openNodeKey ? { [WorkflowDiagramMetadata.OPEN_NODE_KEY]: scope.openNodeKey } : {}),
                 ...(scope.openNodeBundles ? { [WorkflowDiagramMetadata.OPEN_NODE_BUNDLES]: scope.openNodeBundles } : {})
             }
