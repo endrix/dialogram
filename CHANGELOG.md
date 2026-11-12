@@ -109,6 +109,20 @@ it no longer has.
   the first on top, their left edges on the diagram's; the rest is laid out
   as if they were not there. A pinned group that an edge crosses or ends at
   stays in the flow, since its edges need it there.
+- **Links drawn only on selection.** An edge a producer marks
+  `meta.onSelection` is no edge of the diagram: it takes no part in the
+  layout, crosses no frame, and is not drawn until one of its ends is
+  selected. Then every such link of the selected node appears over the
+  diagram, the node at its other end outlined, the diagram's own edges faded
+  behind. For relations too many to draw at once: the state an action reads,
+  the actions that take a token from a port. Its ends name nodes (a port
+  names its node, a group scope its group); `meta.role` gives it the class
+  `selection-link-<role>` for a product to colour, `meta.label` a word on
+  it, `meta.bidirectional` an arrowhead at both ends. A link leaves a node
+  by the side facing the other end, or by the side across when a neighbour
+  of the node's own frame is in the way; links sharing a side are spread
+  along it so they do not cross. A node's `meta.sameAs` names what it is one
+  drawing of: selecting it outlines the other nodes that draw the same.
 - **A definition the producer named is opened as it is.** A node whose
   producer resolved its type itself (`meta.referencedSource`: a sidecar that
   imported the module, a compiler that elaborated the design) carries

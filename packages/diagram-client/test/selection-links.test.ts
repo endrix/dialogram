@@ -1,0 +1,228 @@
+/**
+ * Links drawn only while one of their ends is selected (selection-links.ts).
+ *
+ * Pinned here:
+ *
+ *  - the links are data on the root, not elements; a malformed one is passed over;
+ *  - nothing selected draws nothing; a selected node brings up every link it
+ *    is an end of, and the nodes at their other ends;
+ *  - the other nodes that draw what a selected node draws are marked too;
+ *  - a link leaves a node by the side that faces the other end, or by the side
+ *    across when a neighbour of the node's own frame is in the way;
+ *  - links sharing a side are spread along it in the order of where they
+ *    lead, so none crosses another at the node;
+ *  - the drawing goes into the group the viewport transforms, on screen only,
+ *    and says on the svg that links are shown.
+ */
+import 'reflect-metadata';
+import { describe, expect, it } from 'vitest';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes, type SelectionLink } from '@dialogram/shared';
+import {
+    absoluteBox,
+    linkPath,
+    linkSide,
+    linksOfSelection,
+    placeLinks,
+    renderSelectionLinks,
+    selectionLinksOf,
+    withSelectionLinks,
+    type Box,
+    type LinkElement
+} from '../src/selection-links';
+
+type El = LinkElement & { children?: El[] };
+
+function node(id: string, x: number, y: number, extra: Partial<El> = {}): El {
+    return { id, type: WorkflowDiagramTypes.NODE_ACTOR, position: { x, y }, size: { width: 100, height: 40 }, ...extra };
+}
+
+/** A root holding `children`, each child knowing its parent, as the client's model does. */
+function root(links: unknown, ...children: El[]): El {
+    const model: El = { id: 'root', type: WorkflowDiagramTypes.GRAPH, args: { [WorkflowDiagramMetadata.SELECTION_LINKS]: links }, children };
+    const adopt = (parent: El): void => {
+        for (const child of parent.children ?? []) {
+            (child as { parent?: El }).parent = parent;
+            adopt(child);
+        }
+    };
+    adopt(model);
+    return model;
+}
+
+const link = (from: string, to: string, extra: Partial<SelectionLink> = {}): SelectionLink => ({ id: `${from}->${to}`, from, to, ...extra });
+const box = (x: number, y: number, width = 100, height = 40): Box => ({ x, y, width, height });
+
+/** A drawn node's classes: under `data` in the browser, under `props` where the helper runs without its runtime. */
+const classesOf = (vnode: any): Record<string, boolean> => vnode?.data?.class ?? vnode?.props?.class ?? {};
+
+/** Every vnode under `vnode` whose classes include `name`. */
+function withClass(vnode: any, name: string): any[] {
+    const out: any[] = [];
+    const visit = (each: any): void => {
+        if (!each || typeof each !== 'object') {
+            return;
+        }
+        if (classesOf(each)[name]) {
+            out.push(each);
+        }
+        (each.children ?? []).forEach(visit);
+    };
+    visit(vnode);
+    return out;
+}
+
+describe('the links of a root', () => {
+    it('are read from its arguments, a malformed one passed over', () => {
+        const model = root([link('a', 'b'), { id: 'x', from: 'a' }, 'nonsense', null], node('a', 0, 0), node('b', 300, 0));
+        expect(selectionLinksOf(model).map(l => l.id)).toEqual(['a->b']);
+        expect(selectionLinksOf(root(undefined))).toEqual([]);
+        expect(selectionLinksOf(root({ not: 'a list' }))).toEqual([]);
+    });
+});
+
+describe('what a selection brings up', () => {
+    const links = [link('var', 'act1'), link('act1', 'port'), link('var', 'act2')];
+    const model = (selected: string[]): El => root(links,
+        ...['var', 'act1', 'act2', 'port', 'other'].map((id, i) => node(id, i * 200, 0, { selected: selected.includes(id) })));
+
+    it('is nothing when nothing is selected', () => {
+        const found = linksOfSelection(model([]));
+        expect(found.links).toEqual([]);
+        expect(renderSelectionLinks(model([]))).toBeUndefined();
+    });
+
+    it('is every link the selected node is an end of, and the nodes at their other ends', () => {
+        const found = linksOfSelection(model(['act1']));
+        expect(found.links.map(l => l.id)).toEqual(['var->act1', 'act1->port']);
+        expect([...found.ends].sort()).toEqual(['port', 'var']);
+        // From the other side: a variable brings up everything that uses it.
+        const fromVariable = linksOfSelection(model(['var']));
+        expect(fromVariable.links.map(l => l.id)).toEqual(['var->act1', 'var->act2']);
+        expect([...fromVariable.ends].sort()).toEqual(['act1', 'act2']);
+        // A node no link names brings up nothing.
+        expect(linksOfSelection(model(['other'])).links).toEqual([]);
+    });
+
+    it('does not count a selected node as the other end of its own link', () => {
+        const found = linksOfSelection(model(['var', 'act1']));
+        expect([...found.ends].sort()).toEqual(['act2', 'port']);
+    });
+
+    it('marks the other nodes that draw what the selected node draws', () => {
+        const same = { [WorkflowDiagramMetadata.SAME_AS]: 'done' };
+        const drawnTwice = root([],
+            node('s1.done', 0, 0, { args: same, selected: true }),
+            node('s2.done', 300, 0, { args: same }),
+            node('s2.other', 300, 100, { args: { [WorkflowDiagramMetadata.SAME_AS]: 'other' } }));
+        const found = linksOfSelection(drawnTwice);
+        expect([...found.same]).toEqual(['s2.done']);
+        // Drawn even with no link at all: the outline is what there is to show.
+        const drawn = renderSelectionLinks(drawnTwice);
+        expect(withClass(drawn, 'selection-link-same')).toHaveLength(1);
+        expect(withClass(drawn, 'selection-link')).toHaveLength(0);
+    });
+});
+
+describe('the side a link leaves a node by', () => {
+    it('faces the other end: top or bottom when they are above each other, a side when beside', () => {
+        expect(linkSide(box(0, 300), box(0, 0))).toBe('top');
+        expect(linkSide(box(0, 0), box(0, 300))).toBe('bottom');
+        expect(linkSide(box(0, 0), box(600, 0))).toBe('right');
+        expect(linkSide(box(600, 0), box(0, 0))).toBe('left');
+        // Boxes are wider than tall: a diagonal counts as above.
+        expect(linkSide(box(0, 300), box(300, 0))).toBe('top');
+    });
+
+    it('is the side across when a neighbour of the node’s frame is in the way', () => {
+        const third = box(0, 200);
+        const rowsAbove = [box(0, 0), box(0, 100)];
+        // The other end is up and to the left: over the rows above, were it not for them.
+        expect(linkSide(third, box(-400, -300), rowsAbove)).toBe('left');
+        expect(linkSide(third, box(400, -300), rowsAbove)).toBe('right');
+        // A neighbour in the same row does not block the way up.
+        expect(linkSide(third, box(-400, -300), [box(-150, 200)])).toBe('top');
+        // In the way on both: the facing side, as with no neighbour at all.
+        expect(linkSide(third, box(-400, -300), [...rowsAbove, box(-150, 200)])).toBe('top');
+    });
+});
+
+describe('where links start and end', () => {
+    it('spreads the links that share a side in the order of where they lead, so none crosses another', () => {
+        const boxes: Record<string, Box> = { act: box(200, 400), left: box(0, 0), middle: box(200, 0), right: box(400, 0) };
+        // Given out of order on purpose.
+        const drawn = placeLinks([link('act', 'right'), link('act', 'left'), link('act', 'middle')], id => boxes[id]);
+        const startX = Object.fromEntries(drawn.map(d => [d.link.to, d.from.x]));
+        expect(startX.left).toBeLessThan(startX.middle);
+        expect(startX.middle).toBeLessThan(startX.right);
+        for (const each of drawn) {
+            expect(each.fromSide).toBe('top');
+            expect(each.from.y).toBe(400);
+            expect(each.toSide).toBe('bottom');
+            expect(each.to.y).toBe(40);
+            // One link at that side: in its middle.
+            expect(each.to.x).toBe(boxes[each.link.to].x + 50);
+        }
+    });
+
+    it('passes over a link whose end is not in the model', () => {
+        expect(placeLinks([link('a', 'gone')], id => (id === 'a' ? box(0, 0) : undefined))).toEqual([]);
+    });
+
+    it('draws a curve that leaves and arrives straight out of its sides', () => {
+        const [drawn] = placeLinks([link('a', 'b')], id => (id === 'a' ? box(0, 0) : box(0, 300)));
+        const path = linkPath(drawn);
+        // From the middle of a's bottom to the middle of b's top, pulled down and up.
+        expect(path.startsWith('M50,40 C50,')).toBe(true);
+        expect(path.endsWith(' 50,300')).toBe(true);
+    });
+
+    it('places an element through the elements that hold it, not counting the root', () => {
+        const inner = node('inner', 10, 20);
+        const model = root([], { id: 'frame', type: WorkflowDiagramTypes.NODE_GROUP, position: { x: 100, y: 200 }, size: { width: 300, height: 300 }, children: [inner] });
+        (model as any).position = { x: 999, y: 999 };
+        expect(absoluteBox(model.children![0].children![0])).toEqual({ x: 110, y: 220, width: 100, height: 40 });
+    });
+});
+
+describe('the drawing', () => {
+    const model = (): El => root(
+        [link('var', 'act', { role: 'read', label: 'reads' }), link('act', 'port', { role: 'token', bidirectional: true })],
+        node('var', 0, 0), node('act', 0, 300, { selected: true }), node('port', 600, 300));
+    const svgOf = (): any => ({ sel: 'svg', data: { class: { 'sprotty-graph': true } }, children: [{ sel: 'g', data: {}, children: [{ sel: 'g', data: {}, children: [] }] }] });
+
+    it('has a line and an arrowhead per link, its kind as a class, its word, and an outline per other end', () => {
+        const drawn = renderSelectionLinks(model());
+        expect(withClass(drawn, 'selection-link')).toHaveLength(2);
+        expect(withClass(drawn, 'selection-link-read')).toHaveLength(1);
+        expect(withClass(drawn, 'selection-link-token')).toHaveLength(1);
+        expect(withClass(drawn, 'selection-link-line')).toHaveLength(2);
+        // One arrowhead where a link arrives; one more at its start when it runs both ways.
+        expect(withClass(drawn, 'selection-link-arrow')).toHaveLength(3);
+        const labels = withClass(drawn, 'selection-link-label');
+        expect(labels.map(label => label.children?.[0]?.text ?? label.children?.[0] ?? label.text)).toEqual(['reads']);
+        // The word is detail: hidden when zoomed out.
+        expect(classesOf(labels[0])['zoom-detail']).toBe(true);
+        expect(withClass(drawn, 'selection-link-end')).toHaveLength(2);
+    });
+
+    it('goes into the group the viewport transforms, after everything else, and says so on the svg', () => {
+        const vnode = svgOf();
+        const out = withSelectionLinks(vnode, model(), 'main') as any;
+        const viewport = out.children[0];
+        expect(viewport.children).toHaveLength(2);
+        expect(classesOf(viewport.children[1])['selection-links']).toBe(true);
+        expect(out.data.class['selection-links-shown']).toBe(true);
+        expect(out.data.class['sprotty-graph']).toBe(true);
+    });
+
+    it('is left out of the hidden render, and of a diagram with nothing to draw', () => {
+        const hidden = withSelectionLinks(svgOf(), model(), 'hidden') as any;
+        expect(hidden.children[0].children).toHaveLength(1);
+        expect(hidden.data.class['selection-links-shown']).toBeUndefined();
+        const nothingSelected = model();
+        nothingSelected.children![1].selected = false;
+        const plain = withSelectionLinks(svgOf(), nothingSelected, 'main') as any;
+        expect(plain.children[0].children).toHaveLength(1);
+        expect(plain.data.class['selection-links-shown']).toBeUndefined();
+    });
+});

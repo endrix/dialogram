@@ -1,6 +1,6 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
 import { parseBadgesMeta, parseFactsMeta, parseViewsMeta, type UnitBadge } from '../server/graph-load-request-options';
-import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, type PortSide, type SymbolKind } from '@dialogram/shared';
+import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, type PortSide, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
 import { groupLayoutOptions, splitEdgesAtGroups } from './group-edges';
@@ -448,6 +448,11 @@ export class GraphGModelSource {
                     'wf:scope': node.scope
                 }
             };
+            // What the node is one drawing of, for the client to outline the others.
+            const sameAs = node.meta?.['sameAs'];
+            if (typeof sameAs === 'string' && sameAs.trim() !== '') {
+                gnode.args![WorkflowDiagramMetadata.SAME_AS] = sameAs.trim();
+            }
             // The row a producer puts a member of a group in.
             const row = node.meta?.['row'];
             if (typeof row === 'number' && Number.isInteger(row) && row >= 0) {
@@ -1028,7 +1033,37 @@ export class GraphGModelSource {
         // (`group-edges.ts` gives it a place there).
         const groupEnd = (raw: string): string | undefined =>
             groupScopes.some(scope => scope.id === raw) ? `scope:${raw}` : undefined;
+        // An edge marked `onSelection` is no edge of the diagram: it is drawn
+        // by the client, between two nodes, only while one of them is
+        // selected. It takes no part in the layout and crosses no frame. Its
+        // ends name nodes; a port names its node, a group scope its group.
+        const selectionLinks: SelectionLink[] = [];
+        const nodeOfPort = new Map<string, string>();
+        for (const node of doc.graph.nodes) {
+            for (const port of node.ports ?? []) {
+                nodeOfPort.set(port.id, node.id);
+            }
+        }
+        const linkEnd = (raw: string): string | undefined =>
+            irNodeToStableId.get(raw) ?? irNodeToStableId.get(nodeOfPort.get(raw) ?? '') ?? groupEnd(raw);
         for (const edge of doc.graph.edges) {
+            if (edge.meta?.['onSelection'] === true) {
+                const from = linkEnd(edge.from);
+                const to = linkEnd(edge.to);
+                if (from && to && from !== to) {
+                    const role = edge.meta['role'];
+                    const label = edge.meta['label'];
+                    selectionLinks.push({
+                        id: edge.id,
+                        from,
+                        to,
+                        ...(typeof role === 'string' && this.derivedCssClass('', role) ? { role } : {}),
+                        ...(typeof label === 'string' && label.trim() !== '' ? { label: label.trim() } : {}),
+                        ...(edge.meta['bidirectional'] === true ? { bidirectional: true } : {})
+                    });
+                }
+                continue;
+            }
             const scope = scopeById.get(edge.scope);
             const branch = this.scopeLabel(scope?.kind ?? '');
             const controlNodeId = scope?.controlNodeId ?? undefined;
@@ -1229,6 +1264,9 @@ export class GraphGModelSource {
         const networkParameters = doc.graph.meta?.['parameters'];
         if (networkParameters !== undefined) {
             graphArgs[WorkflowDiagramMetadata.NETWORK_PARAMETERS] = networkParameters;
+        }
+        if (selectionLinks.length > 0) {
+            graphArgs[WorkflowDiagramMetadata.SELECTION_LINKS] = selectionLinks;
         }
         // The facts of the unit shown, for the root's own panel.
         const graphFacts = parseFactsMeta(doc.graph.meta?.['facts']);
