@@ -218,12 +218,63 @@ function outOf(point: Point, side: Side, by: number): Point {
     }
 }
 
+/** The two points that pull a link's curve: straight out of its first side, straight into its second. */
+function pulls(drawn: DrawnLink): [Point, Point] {
+    const reach = Math.max(24, (Math.abs(drawn.to.x - drawn.from.x) + Math.abs(drawn.to.y - drawn.from.y)) / 3);
+    return [outOf(drawn.from, drawn.fromSide, reach), outOf(drawn.to, drawn.toSide, reach)];
+}
+
 /** The curve of a link: out of its first side, into its second, straight at both. */
 export function linkPath(drawn: DrawnLink): string {
-    const reach = Math.max(24, (Math.abs(drawn.to.x - drawn.from.x) + Math.abs(drawn.to.y - drawn.from.y)) / 3);
-    const c1 = outOf(drawn.from, drawn.fromSide, reach);
-    const c2 = outOf(drawn.to, drawn.toSide, reach);
+    const [c1, c2] = pulls(drawn);
     return `M${drawn.from.x},${drawn.from.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${drawn.to.x},${drawn.to.y}`;
+}
+
+/** The point of a link's curve at `t`, from its start (0) to its end (1). */
+export function linkPoint(drawn: DrawnLink, t: number): Point {
+    const [c1, c2] = pulls(drawn);
+    const u = 1 - t;
+    const [a, b, c, d] = [u * u * u, 3 * u * u * t, 3 * u * t * t, t * t * t];
+    return {
+        x: a * drawn.from.x + b * c1.x + c * c2.x + d * drawn.to.x,
+        y: a * drawn.from.y + b * c1.y + c * c2.y + d * drawn.to.y
+    };
+}
+
+/**
+ * The middle of a link's curve: where its word goes. Not the middle of the
+ * straight line between its ends, which a curve that leaves by a side and
+ * arrives from below runs well clear of.
+ */
+export function linkMiddle(drawn: DrawnLink): Point {
+    return linkPoint(drawn, 0.5);
+}
+
+/** Two words nearer than this, centre to centre, read as one. */
+const LABEL_CLEARANCE_PX = 14;
+/** Where along its curve a word goes: the middle, or failing that a place to either side of it. */
+const LABEL_PLACES = [0.5, 0.38, 0.62, 0.26, 0.74];
+
+/**
+ * Where the word of each labelled link goes, by link id: the middle of its
+ * curve, or, where the word of a link placed before it is already there
+ * (two links that leave a node side by side still run together halfway),
+ * the first place along the curve that is clear. The middle when none is.
+ */
+export function placeLabels(drawn: readonly DrawnLink[]): Map<string, Point> {
+    const placed: Point[] = [];
+    const out = new Map<string, Point>();
+    for (const each of drawn) {
+        if (!each.link.label) {
+            continue;
+        }
+        const clear = (point: Point): boolean =>
+            placed.every(other => Math.hypot(point.x - other.x, point.y - other.y) >= LABEL_CLEARANCE_PX);
+        const at = LABEL_PLACES.map(t => linkPoint(each, t)).find(clear) ?? linkMiddle(each);
+        placed.push(at);
+        out.set(each.link.id, at);
+    }
+    return out;
 }
 
 /** An arrowhead at `at`, pointing into the node through `side`. */
@@ -373,6 +424,7 @@ export function selectionOverlay(root: LinkElement): SelectionOverlay | undefine
         return found;
     };
     const drawn = placeLinks(links, boxOf, neighboursOf);
+    const labelAt = placeLabels(drawn);
     const vnode = svg('g', { class: { 'selection-links': true } },
         ...[...same].map(id => outline(id, 'selection-link-same')).filter((node): node is VNode => !!node),
         ...[...ends].map(id => outline(id, 'selection-link-end')).filter((node): node is VNode => !!node),
@@ -387,7 +439,7 @@ export function selectionOverlay(root: LinkElement): SelectionOverlay | undefine
             ...(each.link.label
                 ? [svg('text', {
                     class: { 'selection-link-label': true, [ZOOM_TEXT_CLASSES.detail]: true },
-                    attrs: { x: (each.from.x + each.to.x) / 2, y: (each.from.y + each.to.y) / 2, 'text-anchor': 'middle', 'dominant-baseline': 'central' }
+                    attrs: { ...(labelAt.get(each.link.id) ?? linkMiddle(each)), 'text-anchor': 'middle', 'dominant-baseline': 'central' }
                 }, each.link.label)]
                 : [])
         ))
