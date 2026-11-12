@@ -112,6 +112,10 @@ it no longer has.
   of the node's own frame is in the way; links sharing a side are spread
   along it so they do not cross. A node's `meta.sameAs` names what it is one
   drawing of: selecting it outlines the other nodes that draw the same.
+  as if they were not there, and the band clears its highest route as well as
+  its highest node. A pinned group that an edge crosses or ends at stays in
+  the flow, since its edges need it there; a group nested in another is not
+  pinned.
 - **A group can be laid out in rows.** A producer puts the members of a
   group in rows with `meta.row` on a node, or `row` on a group nested in it
   (a whole number from zero, the first row on top): the actions of a state

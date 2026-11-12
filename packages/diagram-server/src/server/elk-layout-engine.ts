@@ -392,6 +392,10 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
      * Lay each pinned group out (its inside, and so its size), then stack them
      * above the laid-out diagram, the first on top, their left edges on the
      * diagram's. Routes of edges inside a pinned group move with it.
+     *
+     * The diagram's top is its highest node or its highest route, whichever
+     * is higher: the layout runs an edge that goes back over the top row, and
+     * a band placed from the nodes alone would sit on it.
      */
     private async layoutPinnedGroups(root: GGraph, pinned: ElkNode[]): Promise<void> {
         const band = (await (this as any).elk.layout({
@@ -404,7 +408,8 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
             this.applyLayoutWithOffset(child, { x: 0, y: 0 });
         }
 
-        // The diagram under the band: every other node of the root.
+        // The diagram under the band: every other node of the root, and the
+        // routes of its edges (absolute, like the root's nodes).
         let left = Number.POSITIVE_INFINITY;
         let top = Number.POSITIVE_INFINITY;
         for (const child of root.children) {
@@ -416,6 +421,20 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         if (!Number.isFinite(left)) {
             left = 0;
             top = 0;
+        }
+        const insidePinned = new Set<string>();
+        for (const id of pinnedIds) {
+            this.collectIds(this.modelState.index.get(id), insidePinned);
+        }
+        for (const edge of this.findChildren(this.modelState.root, GEdge)) {
+            if (insidePinned.has(edge.sourceId) && insidePinned.has(edge.targetId)) {
+                continue;
+            }
+            for (const point of Array.isArray(edge.routingPoints) ? edge.routingPoints : []) {
+                if (Number.isFinite(point?.y)) {
+                    top = Math.min(top, point.y);
+                }
+            }
         }
         const gap = WorkflowDiagramConstants.GROUP_PIN_GAP_PX;
         let bottom = top - gap;
@@ -438,19 +457,23 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         if (by.x === 0 && by.y === 0) {
             return;
         }
-        const inside = new Set<string>();
-        const collect = (element: any): void => {
-            inside.add(element.id);
-            for (const child of element.children ?? []) {
-                collect(child);
-            }
-        };
-        collect(group);
+        const inside = this.collectIds(group, new Set<string>());
         for (const edge of this.findChildren(this.modelState.root, GEdge)) {
             if (inside.has(edge.sourceId) && inside.has(edge.targetId) && Array.isArray(edge.routingPoints)) {
                 edge.routingPoints = edge.routingPoints.map(point => ({ x: point.x + by.x, y: point.y + by.y }));
             }
         }
+    }
+
+    /** The ids of `element` and of everything under it, added to `into`. */
+    private collectIds(element: any, into: Set<string>): Set<string> {
+        if (element && typeof element.id === 'string') {
+            into.add(element.id);
+            for (const child of element.children ?? []) {
+                this.collectIds(child, into);
+            }
+        }
+        return into;
     }
 
     /**
