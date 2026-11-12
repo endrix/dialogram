@@ -218,12 +218,29 @@ function outOf(point: Point, side: Side, by: number): Point {
     }
 }
 
+/** The two points that pull a link's curve: straight out of its first side, straight into its second. */
+function pulls(drawn: DrawnLink): [Point, Point] {
+    const reach = Math.max(24, (Math.abs(drawn.to.x - drawn.from.x) + Math.abs(drawn.to.y - drawn.from.y)) / 3);
+    return [outOf(drawn.from, drawn.fromSide, reach), outOf(drawn.to, drawn.toSide, reach)];
+}
+
 /** The curve of a link: out of its first side, into its second, straight at both. */
 export function linkPath(drawn: DrawnLink): string {
-    const reach = Math.max(24, (Math.abs(drawn.to.x - drawn.from.x) + Math.abs(drawn.to.y - drawn.from.y)) / 3);
-    const c1 = outOf(drawn.from, drawn.fromSide, reach);
-    const c2 = outOf(drawn.to, drawn.toSide, reach);
+    const [c1, c2] = pulls(drawn);
     return `M${drawn.from.x},${drawn.from.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${drawn.to.x},${drawn.to.y}`;
+}
+
+/**
+ * The middle of a link's curve: where its word goes. Not the middle of the
+ * straight line between its ends, which a curve that leaves by a side and
+ * arrives from below runs well clear of.
+ */
+export function linkMiddle(drawn: DrawnLink): Point {
+    const [c1, c2] = pulls(drawn);
+    return {
+        x: (drawn.from.x + 3 * c1.x + 3 * c2.x + drawn.to.x) / 8,
+        y: (drawn.from.y + 3 * c1.y + 3 * c2.y + drawn.to.y) / 8
+    };
 }
 
 /** An arrowhead at `at`, pointing into the node through `side`. */
@@ -387,7 +404,7 @@ export function selectionOverlay(root: LinkElement): SelectionOverlay | undefine
             ...(each.link.label
                 ? [svg('text', {
                     class: { 'selection-link-label': true, [ZOOM_TEXT_CLASSES.detail]: true },
-                    attrs: { x: (each.from.x + each.to.x) / 2, y: (each.from.y + each.to.y) / 2, 'text-anchor': 'middle', 'dominant-baseline': 'central' }
+                    attrs: { ...linkMiddle(each), 'text-anchor': 'middle', 'dominant-baseline': 'central' }
                 }, each.link.label)]
                 : [])
         ))

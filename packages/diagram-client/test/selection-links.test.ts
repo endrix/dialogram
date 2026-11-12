@@ -20,6 +20,7 @@ import { describe, expect, it } from 'vitest';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes, type SelectionLink } from '@dialogram/shared';
 import {
     absoluteBox,
+    linkMiddle,
     linkPath,
     linkSide,
     linksOfSelection,
@@ -277,6 +278,22 @@ describe('where links start and end', () => {
         expect(path.endsWith(' 50,300')).toBe(true);
     });
 
+    it('puts a link’s word on its curve, not on the straight line between its ends', () => {
+        // Out of a's right side, into b's bottom: the curve bows out to the lower right.
+        const [bowed] = placeLinks([link('a', 'b')], id => (id === 'a' ? box(0, 300) : box(400, 0)), id => (id === 'a' ? [box(0, 200)] : []));
+        expect([bowed.fromSide, bowed.toSide]).toEqual(['right', 'bottom']);
+        const middle = linkMiddle(bowed);
+        const onCurve = curveOf(linkPath(bowed))[24];
+        expect(middle.x).toBeCloseTo(onCurve.x, 6);
+        expect(middle.y).toBeCloseTo(onCurve.y, 6);
+        // Well off the chord's middle, where the word used to hang in the air.
+        const chord = { x: (bowed.from.x + bowed.to.x) / 2, y: (bowed.from.y + bowed.to.y) / 2 };
+        expect(Math.hypot(middle.x - chord.x, middle.y - chord.y)).toBeGreaterThan(40);
+        // A straight link's middle is the middle of its line.
+        const [straight] = placeLinks([link('a', 'b')], id => (id === 'a' ? box(0, 0) : box(0, 300)));
+        expect(linkMiddle(straight)).toEqual({ x: 50, y: 170 });
+    });
+
     it('places an element through the elements that hold it, not counting the root', () => {
         const inner = node('inner', 10, 20);
         const model = root([], { id: 'frame', type: WorkflowDiagramTypes.NODE_GROUP, position: { x: 100, y: 200 }, size: { width: 300, height: 300 }, children: [inner] });
@@ -300,6 +317,10 @@ describe('the drawing', () => {
         // One arrowhead where a link arrives; one more at its start when it runs both ways.
         expect(withClass(drawn, 'selection-link-arrow')).toHaveLength(3);
         const labels = withClass(drawn, 'selection-link-label');
+        // The word is at the middle of its link's curve.
+        const [reads] = placeLinks([link('var', 'act')], id => (id === 'var' ? box(0, 0) : box(0, 300)));
+        const labelAt = labels[0].data?.attrs ?? labels[0].props?.attrs;
+        expect({ x: labelAt.x, y: labelAt.y }).toEqual(linkMiddle(reads));
         expect(labels.map(label => label.children?.[0]?.text ?? label.children?.[0] ?? label.text)).toEqual(['reads']);
         // The word is detail: hidden when zoomed out.
         expect(classesOf(labels[0])['zoom-detail']).toBe(true);

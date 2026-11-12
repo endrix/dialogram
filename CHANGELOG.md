@@ -119,7 +119,8 @@ it no longer has.
   unit is folded into; no bus counts a link among its wires, and a link
   between a frame and what is in it is none. With the selection's trace on,
   what the links lead to is not faded, and an edge on the trace, selected
-  or in error is not dimmed. A node's `meta.sameAs` names what it is one
+  or in error is not dimmed. The word on a link sits at the middle of its
+  curve. A node's `meta.sameAs` names what it is one
   drawing of: selecting it outlines the other nodes that draw the same.
 - **Lines of text in a node, read close in.** A producer puts lines of text
   in a node with `meta.lines` (`[{ text, kind? }]`, or plain strings; six at
