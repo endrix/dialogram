@@ -91,6 +91,15 @@ it no longer has.
   document from a sidecar's export (it was dropped, so a sidecar's groups
   were titled by their ids). The selection trace counts a group an edge ends
   at as on the path and leaves what it holds unfaded.
+- **A group can be pinned to the top.** A producer pins a group with
+  `pin: 'top'` on its scope: what belongs to the whole picture rather than to
+  a place in its flow (a legend, the variables a state machine works on).
+  Pinned groups are laid out apart and stacked in a band above the diagram,
+  the first on top, their left edges on the diagram's; the rest is laid out
+  as if they were not there, and the band clears its highest route as well as
+  its highest node. A pinned group that an edge crosses or ends at stays in
+  the flow, since its edges need it there; a group nested in another is not
+  pinned.
 - **A group can be laid out in rows.** A producer puts the members of a
   group in rows with `meta.row` on a node, or `row` on a group nested in it
   (a whole number from zero, the first row on top): the actions of a state

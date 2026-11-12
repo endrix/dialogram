@@ -180,8 +180,15 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
                 void this.dumpElkInputGraph(elkGraph);
             }
 
+            // Groups pinned to the top are no part of the diagram's flow: they
+            // are laid out apart, then put in a band above what the layout made.
+            const pinned = this.takePinnedGroups(root, elkGraph);
+
             const result = (await (this as any).elk.layout(elkGraph)) as ElkNode;
             this.applyLayout(result);
+            if (pinned.length > 0) {
+                await this.layoutPinnedGroups(root, pinned);
+            }
 
             // The fast tier skips crossing minimisation: say so in the diagram's
             // status line, since the result looks nothing like a usual layout.
@@ -356,6 +363,119 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         return elkGraph;
     }
     
+    /**
+     * The root's groups pinned to the top (`GROUP_PIN`), taken out of the
+     * graph the layout is about to see, in document order. A group an edge
+     * crosses or ends at stays in the flow: its edges need it there.
+     */
+    private takePinnedGroups(root: GGraph, elkGraph: ElkNode): ElkNode[] {
+        const pinnedIds = new Set<string>();
+        for (const child of root.children) {
+            if (child.type !== WorkflowDiagramTypes.NODE_GROUP
+                || (child as any).args?.[WorkflowDiagramMetadata.GROUP_PIN] !== 'top') {
+                continue;
+            }
+            const crossed = ((child as any).children ?? []).some((inner: any) => inner.type === WorkflowDiagramTypes.PORT_GROUP_BOUNDARY);
+            if (!crossed) {
+                pinnedIds.add(child.id);
+            }
+        }
+        if (pinnedIds.size === 0 || !elkGraph.children) {
+            return [];
+        }
+        const pinned = elkGraph.children.filter(node => pinnedIds.has(node.id));
+        elkGraph.children = elkGraph.children.filter(node => !pinnedIds.has(node.id));
+        return pinned;
+    }
+
+    /**
+     * Lay each pinned group out (its inside, and so its size), then stack them
+     * above the laid-out diagram, the first on top, their left edges on the
+     * diagram's. Routes of edges inside a pinned group move with it.
+     *
+     * The diagram's top is its highest node or its highest route, whichever
+     * is higher: the layout runs an edge that goes back over the top row, and
+     * a band placed from the nodes alone would sit on it.
+     */
+    private async layoutPinnedGroups(root: GGraph, pinned: ElkNode[]): Promise<void> {
+        const band = (await (this as any).elk.layout({
+            id: `${root.id}::pinned`,
+            layoutOptions: { 'elk.algorithm': 'layered', 'elk.direction': 'DOWN' },
+            children: pinned
+        })) as ElkNode;
+        const pinnedIds = new Set(pinned.map(node => node.id));
+        for (const child of band.children ?? []) {
+            this.applyLayoutWithOffset(child, { x: 0, y: 0 });
+        }
+
+        // The diagram under the band: every other node of the root, and the
+        // routes of its edges (absolute, like the root's nodes).
+        let left = Number.POSITIVE_INFINITY;
+        let top = Number.POSITIVE_INFINITY;
+        for (const child of root.children) {
+            if (child instanceof GNode && !pinnedIds.has(child.id)) {
+                left = Math.min(left, child.position?.x ?? 0);
+                top = Math.min(top, child.position?.y ?? 0);
+            }
+        }
+        if (!Number.isFinite(left)) {
+            left = 0;
+            top = 0;
+        }
+        const insidePinned = new Set<string>();
+        for (const id of pinnedIds) {
+            this.collectIds(this.modelState.index.get(id), insidePinned);
+        }
+        for (const edge of this.findChildren(this.modelState.root, GEdge)) {
+            if (insidePinned.has(edge.sourceId) && insidePinned.has(edge.targetId)) {
+                continue;
+            }
+            for (const point of Array.isArray(edge.routingPoints) ? edge.routingPoints : []) {
+                if (Number.isFinite(point?.y)) {
+                    top = Math.min(top, point.y);
+                }
+            }
+        }
+        const gap = WorkflowDiagramConstants.GROUP_PIN_GAP_PX;
+        let bottom = top - gap;
+        // From the last up, so that the first ends on top.
+        for (const node of [...pinned].reverse()) {
+            const group = this.modelState.index.get(node.id);
+            if (!(group instanceof GNode)) {
+                continue;
+            }
+            const from = { x: group.position?.x ?? 0, y: group.position?.y ?? 0 };
+            const to = { x: left, y: bottom - (group.size?.height ?? 0) };
+            group.position = to;
+            this.moveRoutesInside(group, { x: to.x - from.x, y: to.y - from.y });
+            bottom = to.y - gap;
+        }
+    }
+
+    /** Move the routes of the edges that run inside `group` by `by`: routes are absolute. */
+    private moveRoutesInside(group: GNode, by: Point): void {
+        if (by.x === 0 && by.y === 0) {
+            return;
+        }
+        const inside = this.collectIds(group, new Set<string>());
+        for (const edge of this.findChildren(this.modelState.root, GEdge)) {
+            if (inside.has(edge.sourceId) && inside.has(edge.targetId) && Array.isArray(edge.routingPoints)) {
+                edge.routingPoints = edge.routingPoints.map(point => ({ x: point.x + by.x, y: point.y + by.y }));
+            }
+        }
+    }
+
+    /** The ids of `element` and of everything under it, added to `into`. */
+    private collectIds(element: any, into: Set<string>): Set<string> {
+        if (element && typeof element.id === 'string') {
+            into.add(element.id);
+            for (const child of element.children ?? []) {
+                this.collectIds(child, into);
+            }
+        }
+        return into;
+    }
+
     /**
      * Recursively apply RIGHT direction to all nodes in the hierarchy, except
      * a group laid out in rows, which runs downward: its layers are the rows.

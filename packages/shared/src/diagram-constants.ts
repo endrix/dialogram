@@ -69,6 +69,8 @@ export const WorkflowDiagramConstants = {
     GROUP_BOUNDARY_PORT_SIZE_PX: 8,
     /** The loop on a group's frame (edges between the group and its own members). */
     GROUP_LOOP_RADIUS_PX: 14,
+    /** Between the band of pinned groups and the diagram under it, and between two pinned groups. */
+    GROUP_PIN_GAP_PX: 40,
     /** The least a group is drawn at: one that holds nothing still has a title to show and edges to end at. */
     GROUP_MIN_WIDTH_PX: 140,
     GROUP_MIN_HEIGHT_PX: 66,

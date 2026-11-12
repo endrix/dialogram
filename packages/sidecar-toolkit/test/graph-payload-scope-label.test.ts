@@ -38,4 +38,21 @@ describe('graph payload scopes', () => {
         // A label of the wrong type is dropped, not passed along.
         expect(byId.get('scope:odd').label).toBeUndefined();
     });
+
+    it('passes a scope\'s pin through to the document', () => {
+        const doc = new SidecarModelSource(CFG).graphPayloadToDoc({
+            network: 'top',
+            nodes: [],
+            edges: [],
+            scopes: [
+                { id: 'scope:variables', kind: 'group', label: 'state', pin: 'top' },
+                { id: 'scope:state:run', kind: 'group', label: 'run' },
+                { id: 'scope:odd', kind: 'group', pin: 1 }
+            ]
+        }) as any;
+        const byId = new Map<string, any>(doc.graph.subgraphs.map((scope: any) => [scope.id, scope]));
+        expect(byId.get('scope:variables').pin).toBe('top');
+        expect(byId.get('scope:state:run').pin).toBeUndefined();
+        expect(byId.get('scope:odd').pin).toBeUndefined();
+    });
 });
