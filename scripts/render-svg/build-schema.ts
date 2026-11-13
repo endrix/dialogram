@@ -92,7 +92,7 @@ async function main(): Promise<void> {
     const byId = index(root);
     const modelState: any = { root, index: { get: (id: string) => byId.get(id), findByClass: (id: string) => byId.get(id) } };
     await new WorkflowElkLayoutEngine(
-        () => new (ELK as any)({ algorithms: ['layered'] }),
+        () => new (ELK as any)({ algorithms: ['layered', 'stress'] }),
         new DefaultElementFilter(),
         new WorkflowLayoutConfigurator(),
         modelState

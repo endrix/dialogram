@@ -24,3 +24,28 @@ export * from './port-bus';
 export * from './port-label-geometry';
 export * from './symbol-geometry';
 export * from './node-open';
+export * from './transition-label';
+// The shapes of an automaton's transitions; `Box` and `Point` under names
+// that say whose they are.
+export {
+    leaveState,
+    transitionBetween,
+    transitionStub,
+    transitionLoop,
+    loopDirection,
+    curveAt,
+    boxesCrossed,
+    transitionAround,
+    labelCandidates,
+    labelBlockAt,
+    overlapArea,
+    placeLabelBlocks,
+    labelLineBox,
+    unionBox,
+    type Box as GeometryBox,
+    type Point as GeometryPoint,
+    type TransitionShape,
+    type LabelCandidate,
+    type LabelBlock
+} from './transition-geometry';
+export * from './automaton-geometry';

@@ -1059,6 +1059,119 @@ body.vscode-high-contrast-light .node-center-image-light {
     stroke-width: var(--workflow-edge-width, 3.5px);
 }
 
+/*
+ * An automaton: states and the transitions between them (automaton-views.ts).
+ * A state is a node and a transition is an edge, so selection, hover and
+ * read-only are the stock rules above; what is here is their shape.
+ */
+/* A state has no header to tell it from the canvas by: its outline does. */
+.workflow-node.state-node:not(.selected, .hover) {
+    stroke: color-mix(in srgb, var(--vscode-editor-foreground, #cccccc) 50%, transparent);
+    stroke-width: 1.2px;
+}
+
+.workflow-node.state-node .state-name {
+    fill: var(--vscode-editor-foreground, #ffffff);
+    stroke: none;
+    font-size: 12px;
+    font-weight: 600;
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+    user-select: none;
+}
+
+.workflow-node.state-node .state-initial-mark {
+    color: var(--vscode-foreground, #cccccc);
+}
+
+.workflow-node.state-node .state-initial-dot {
+    fill: currentColor;
+    stroke: none;
+}
+
+.workflow-node.state-node .state-initial-arrow {
+    fill: currentColor;
+    stroke: currentColor;
+    stroke-width: 1.5px;
+    stroke-linejoin: round;
+}
+
+/* A transition's line is lighter than a wire's: an automaton has many, and
+   they curve. A product sets `--workflow-transition-width` to draw it otherwise. */
+.workflow-edge.transition-edge .edge-line,
+.workflow-edge.transition-edge.selected .edge-line,
+.workflow-edge.transition-edge.hover:not(.selected) .edge-line {
+    stroke-width: var(--workflow-transition-width, 1.6px);
+}
+
+/* What the pointer finds of a line: wider than what is drawn. */
+.workflow-edge.transition-edge .transition-reach {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 12px;
+    pointer-events: stroke;
+}
+
+.workflow-edge.transition-edge .transition-label {
+    cursor: pointer;
+}
+
+.workflow-edge.transition-edge .transition-label-box {
+    fill: var(--vscode-editor-background, #1e1e1e);
+    fill-opacity: 0.85;
+    stroke: transparent;
+    stroke-width: 1px;
+}
+
+.workflow-edge.transition-edge.hover .transition-label-box {
+    stroke: var(--vscode-list-highlightForeground, #18a3ff);
+}
+
+.workflow-edge.transition-edge.selected .transition-label-box {
+    fill: color-mix(in srgb, var(--vscode-editor-background, #1e1e1e) 82%, var(--vscode-focusBorder, #007fd4) 18%);
+    fill-opacity: 1;
+    stroke: var(--vscode-focusBorder, #007fd4);
+}
+
+.workflow-edge.transition-edge .transition-label-text {
+    fill: var(--vscode-foreground, #cccccc);
+    stroke: none;
+    font-size: 11px;
+    font-weight: 600;
+    text-anchor: start;
+    dominant-baseline: central;
+    pointer-events: none;
+    user-select: none;
+}
+
+.workflow-edge.transition-edge .transition-order {
+    fill: var(--vscode-badge-background, #4d4d4d);
+    stroke: none;
+}
+
+.workflow-edge.transition-edge .transition-order-text {
+    fill: var(--vscode-badge-foreground, #ffffff);
+    stroke: none;
+    font-size: 9px;
+    font-weight: 700;
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+    user-select: none;
+}
+
+.workflow-edge.transition-edge .transition-condition {
+    fill: var(--vscode-charts-yellow, #cca700);
+    font-size: 9px;
+}
+
+/* What a transition's action takes and gives, after its label: quieter. */
+.workflow-edge.transition-edge .transition-tokens {
+    fill: var(--vscode-descriptionForeground, #8b8b8b);
+    font-weight: 400;
+}
+
 /* The base GLSP rules `.sprotty-edge.selected path` and `.sprotty-edge.mouseover:not(.selected)
    path` force 2px on the line with a higher specificity than `.workflow-edge .edge-line` (3.5px),
    so selecting or hovering an edge would shrink it. Re-assert the default edge-line width (with
@@ -1485,6 +1598,44 @@ body.vscode-high-contrast-light .node-center-image-light {
     font-size: 10px;
     text-anchor: start;
     pointer-events: none;
+}
+
+/* A member of a list (`list` on its group's scope): one row of a table, its
+   name and its lines in columns of the editor's fixed-width font; a product
+   colours the kinds of line it knows (`text.list-row-cell-<kind>`). The
+   rows stand on each other: their outlines are the table's lines, square,
+   with no shadow to fall on the row beneath. */
+.workflow-node.list-row .node-body {
+    filter: none;
+}
+
+.workflow-node.list-row:not(.selected) {
+    stroke: color-mix(in srgb, var(--sprotty-border) 60%, transparent);
+}
+
+.sprotty text.list-row-text {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 11px;
+    text-anchor: start;
+    dominant-baseline: central;
+    stroke: none;
+    pointer-events: none;
+    user-select: none;
+}
+
+.sprotty text.list-row-name {
+    fill: var(--vscode-foreground, #cccccc);
+}
+
+.sprotty text.list-row-cell {
+    fill: var(--vscode-descriptionForeground, #8b8b8b);
+}
+
+/* The family's band (palette-icons.ts writes one rule a family, which this
+   one, weaker, gives way to); a row in no family has a quiet one. */
+.list-row-mark {
+    fill: var(--vscode-descriptionForeground, #8b8b8b);
+    stroke: none;
 }
 
 .workflow-label.label-badge {
@@ -3628,4 +3779,50 @@ details[open] > summary .agent-chat-expand-arrow {
 .detail-mid text.cal-edge-index-label,
 .detail-mid .zoom-detail {
     display: none;
+}
+
+/* A state that stands for a run of states: its name on top, then the
+   actions taken along the run, one per line (automaton-compress.ts). */
+.workflow-node.state-node .state-steps-rule {
+    stroke: color-mix(in srgb, var(--vscode-editor-foreground, #cccccc) 25%, transparent);
+    stroke-width: 1px;
+}
+
+.workflow-node.state-node .state-step {
+    fill: var(--vscode-descriptionForeground, #a0a0a0);
+    stroke: none;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 11px;
+    text-anchor: start;
+    dominant-baseline: central;
+    pointer-events: none;
+    user-select: none;
+}
+
+/* A way into a state entered from many: a short arrow at its source and the
+   state's name at its end; the whole way, dashed, while it or that state is picked. */
+.workflow-edge.transition-edge .transition-stub-chip-box {
+    fill: var(--vscode-editor-background, #1e1e1e);
+    stroke: color-mix(in srgb, var(--vscode-editor-foreground, #cccccc) 45%, transparent);
+    stroke-width: 1px;
+    stroke-dasharray: 3 2;
+}
+
+.workflow-edge.transition-edge .transition-stub-chip-text {
+    fill: var(--vscode-descriptionForeground, #a0a0a0);
+    stroke: none;
+    font-size: 10px;
+    font-weight: 600;
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+    user-select: none;
+}
+
+.workflow-edge.transition-edge .transition-stub-way {
+    stroke: var(--vscode-focusBorder, #007fd4);
+    stroke-width: 1.2px;
+    stroke-dasharray: 5 4;
+    opacity: 0.8;
+    pointer-events: none;
 }

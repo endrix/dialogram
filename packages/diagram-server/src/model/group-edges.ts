@@ -393,6 +393,17 @@ const GROUP_ROWS_LAYOUT: Record<string, string> = {
     'elk.layered.spacing.nodeNodeBetweenLayers': '16'
 };
 
+/**
+ * A list (`GROUP_LIST`): its members are rows of the same width, one under
+ * another with nothing between them, so that their outlines draw the lines
+ * of a table; the frame holds them close.
+ */
+const GROUP_LIST_LAYOUT: Record<string, string> = {
+    'elk.spacing.nodeNode': '0',
+    'elk.layered.spacing.nodeNodeBetweenLayers': '0',
+    'elk.padding': `[top=${WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX + 8},left=8,bottom=8,right=8]`
+};
+
 /** Whether a group's layout options are the rows' (`groupLayoutOptions(true)`). */
 export function isRowsLayout(options: Record<string, unknown> | undefined): boolean {
     return options?.['elk.partitioning.activate'] === 'true';
@@ -429,8 +440,10 @@ export function arrangeGroupRows(children: GModelElement[]): void {
                 visit(member);
             }
         }
+        // A list's members are a row each, in the order the producer gave them.
+        const list = group.args?.[WorkflowDiagramMetadata.GROUP_LIST] === true;
         const rowOf = (member: GNode): number | undefined => {
-            const row = member.args?.[WorkflowDiagramMetadata.GROUP_ROW];
+            const row = list ? members.indexOf(member) : member.args?.[WorkflowDiagramMetadata.GROUP_ROW];
             return isGroupRow(row) ? row : undefined;
         };
         const rows = members.map(rowOf).filter((row): row is number => row !== undefined);
@@ -454,7 +467,7 @@ export function arrangeGroupRows(children: GModelElement[]): void {
             return;
         }
         const last = Math.max(...rows) + 1;
-        group.layoutOptions = groupLayoutOptions(true);
+        group.layoutOptions = { ...groupLayoutOptions(true), ...(list ? GROUP_LIST_LAYOUT : {}) };
         group.args = { ...(group.args ?? {}), [WorkflowDiagramMetadata.GROUP_ROWS]: true };
         for (const member of members) {
             member.layoutOptions = {

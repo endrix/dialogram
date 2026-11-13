@@ -77,6 +77,37 @@ it no longer has.
 
 ### Added
 
+- **An automaton.** A node of kind `state` is a state (`node:state`), a pill
+  as wide as its name, the initial one marked; an edge from a state to a
+  state is a transition (`edge:transition`), labelled with its label, its
+  place in the order its state tries it in (`meta.order`), a mark where it
+  has a guard (`meta.condition`) and, after the mark, the tokens it takes
+  and gives (`meta.tokens`, `In×384 → Out`). Most automata are laid out in
+  layers from the top down, the initial state first, so they read the way
+  they run; a hub (one state in two thirds of the pairs of states with a
+  transition between them, next to four others at least) is placed by
+  stress, round that state, up to 16 states. A transition has no route: the
+  client draws it from its states' places (a curve bowed when both ways
+  exist and bent round the states in its way, a loop into the widest gap,
+  the labels of the whole automaton placed together), and the server lays
+  out with the same arithmetic, now in `@dialogram/shared`, so what goes
+  round the automaton keeps clear of its loops and labels. A large
+  automaton is made small: a run of three states or more with one way in
+  and one way out is one state listing its steps (`+` unfolds it, `−` on its
+  first state folds it again), and the ways into a state entered from five
+  or more are short arrows ending in its name. Round it, the unit's ports
+  in columns close beside what is drawn, and the groups pinned to it. A link
+  drawn on selection may end at a transition, anchored at its label.
+- **A group can be pinned on the left, and be a list.** `pin: 'left'` puts
+  a pinned group in a column on the left of the diagram, the first on top.
+  `list: true` on a group's scope draws its members as the rows of a table
+  instead of cards: a row each, its name then its `meta.lines` in columns
+  the list's rows share, in the editor's fixed-width font, its family's
+  colour down its left edge; a line's `kind` is the class
+  `list-row-cell-<kind>` for a product to colour. A row is an element as a
+  card is (selected, opened at its source, the end of a link, which leaves
+  it by a side). Beside an automaton, a list much taller than it goes on in
+  a second column.
 - **An edge can end at a group.** An edge whose end names a group's scope
   (`to: 'scope:run'`) ends on the group's frame instead of at a member: a
   transition into a state, where the state is a group of what can happen in

@@ -12,7 +12,7 @@ import {
 import { inject, injectable } from 'inversify';
 
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
-import { WorkflowDiagramConstants, portSide } from '@dialogram/shared';
+import { WorkflowDiagramConstants, WorkflowDiagramTypes, portSide } from '@dialogram/shared';
 import { GModelSerializer } from '@eclipse-glsp/server';
 import { persistLayout } from '../server/layout-snapshot';
 
@@ -183,7 +183,11 @@ export class WorkflowChangeRoutingPointsOperationHandler extends OperationHandle
 
     private applyRoutingPoints(entry: ElementAndRoutingPoints): boolean {
         const edge = this.modelState.index.findByClass(entry.elementId, GEdge);
-        if (!edge) {
+        // A transition of an automaton has no route: the client draws it from
+        // its states' places. Taken, the route the client sends with a moved
+        // state would be saved with the positions on disk, the moved state's
+        // old one among them.
+        if (!edge || edge.type === WorkflowDiagramTypes.EDGE_TRANSITION) {
             return false;
         }
 

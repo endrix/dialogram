@@ -348,6 +348,15 @@ describe('where links start and end', () => {
         (model as any).position = { x: 999, y: 999 };
         expect(absoluteBox(model.children![0].children![0])).toEqual({ x: 110, y: 220, width: 100, height: 40 });
     });
+
+    it('starts at the box an element names as its anchor, where it has one: a transition’s label', () => {
+        const transition = { id: 't', type: 'edge:transition', linkAnchor: { x: 40, y: 50, width: 60, height: 16 } } as any;
+        const model = root([], transition);
+        expect(absoluteBox(model.children![0])).toEqual({ x: 40, y: 50, width: 60, height: 16 });
+        // A copy: what the links do with it is not done to the element.
+        absoluteBox(model.children![0]).x = 0;
+        expect(transition.linkAnchor.x).toBe(40);
+    });
 });
 
 describe('the drawing', () => {
