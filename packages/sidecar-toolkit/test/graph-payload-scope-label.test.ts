@@ -56,6 +56,23 @@ describe('graph payload scopes', () => {
         expect(byId.get('scope:odd').pin).toBeUndefined();
     });
 
+    it('passes a scope\'s mark as a list through to the document, and only a true one', () => {
+        const doc = new SidecarModelSource(CFG).graphPayloadToDoc({
+            network: 'top',
+            nodes: [],
+            edges: [],
+            scopes: [
+                { id: 'scope:variables', kind: 'group', label: 'variables', pin: 'left', list: true },
+                { id: 'scope:functions', kind: 'group', label: 'functions', list: 'yes' },
+                { id: 'scope:state:run', kind: 'group', label: 'run' }
+            ]
+        }) as any;
+        const byId = new Map<string, any>(doc.graph.subgraphs.map((scope: any) => [scope.id, scope]));
+        expect(byId.get('scope:variables')).toMatchObject({ pin: 'left', list: true });
+        expect(byId.get('scope:functions').list).toBeUndefined();
+        expect(byId.get('scope:state:run').list).toBeUndefined();
+    });
+
     it('passes a scope\'s mark as the initial one through to the document, and only a true one', () => {
         const doc = new SidecarModelSource(CFG).graphPayloadToDoc({
             network: 'top',

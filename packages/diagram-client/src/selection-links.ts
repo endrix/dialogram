@@ -413,7 +413,10 @@ export function selectionOverlay(root: LinkElement): SelectionOverlay | undefine
         });
     };
     // The other nodes of a node's own frame: what a link should not run over
-    // on its way out. Found once a node, however many links end at it.
+    // on its way out. Found once a node, however many links end at it. A row
+    // of a list is left by its sides only: it has rows above and below it,
+    // or the frame's title and edge, and a link out of its top or bottom
+    // would run along the table.
     const neighbours = new Map<string, Box[]>();
     const neighboursOf = (id: string): Box[] => {
         let found = neighbours.get(id);
@@ -425,6 +428,10 @@ export function selectionOverlay(root: LinkElement): SelectionOverlay | undefine
                 : (frame.children ?? [])
                     .filter(child => child !== element && typeof child.type === 'string' && child.type.startsWith('node'))
                     .map(absoluteBox);
+            if (element?.args?.[WorkflowDiagramMetadata.LIST_ROW]) {
+                const box = absoluteBox(element);
+                found = [...found, { ...box, y: box.y - box.height }, { ...box, y: box.y + box.height }];
+            }
             neighbours.set(id, found);
         }
         return found;

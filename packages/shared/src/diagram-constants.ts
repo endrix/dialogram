@@ -69,6 +69,18 @@ export const WorkflowDiagramConstants = {
     /** The most lines a node draws. */
     NODE_LINE_MAX_COUNT: 6,
 
+    /** A member of a list (a group whose scope says `list`): one row of
+     *  text, its name, its first line and its type in columns of a
+     *  fixed-width font, under the row before it. */
+    LIST_ROW_HEIGHT_PX: 20,
+    LIST_ROW_FONT_SIZE_PX: 11,
+    /** Inside a row, before its first column and after its last. */
+    LIST_ROW_PADDING_PX: 8,
+    /** Between two columns of a list. */
+    LIST_ROW_COLUMN_GAP_PX: 14,
+    /** The family's mark: a band down the row's left edge. */
+    LIST_ROW_MARK_PX: 3,
+
     // Group containers (a producer's `group` scopes), drawn as a nested
     // region: a header band carrying the label on top, the members laid out
     // below it. The server pads the layout by these,
@@ -104,6 +116,8 @@ export const WorkflowDiagramConstants = {
     TRANSITION_CONDITION_MARK_PX: 8,
     /** Between the parts of a label, and between a label and its line. */
     TRANSITION_LABEL_GAP_PX: 5,
+    /** Between what takes a transition (its label, its mark) and the tokens it takes and gives. */
+    TRANSITION_TOKENS_GAP_PX: 8,
     /** A state that stands for a run of states: one line per step under its name. */
     STATE_STEP_HEIGHT_PX: 17,
     STATE_STEP_FONT_SIZE_PX: 11,

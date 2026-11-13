@@ -47,6 +47,7 @@ import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagr
 import { renderSymbolBody, symbolPinsOf } from './symbol-views';
 import { NODE_OPEN_TOGGLE_RADIUS_PX, nodeOpenToggle } from './node-open-toggle';
 import { nodeLinesHeight, nodeLinesOf, renderNodeLines } from './node-lines';
+import { listRowOf, renderListRow } from './list-row-view';
 import { GROUP_INITIAL_MARK_ROOM_PX, groupInitialMark, isGroupInitial } from './group-initial-mark';
 import { WorkflowDiagramConstants, estimatePortLabelSize } from '@dialogram/shared';
 
@@ -802,6 +803,11 @@ function renderEntityNode(
     // A node in a product's family wears its mark; a subgraph as an actor does.
     const defAnnotations = ((node as any).args?.[WorkflowDiagramMetadata.ENTITY_DEFINITION_ANNOTATIONS] as NodeAnnotations | undefined) ?? [];
     const family = resolveNodeFamily(defAnnotations, clientBehavior().nodeFamilies ?? []);
+    // A member of a list: one row of a table (list-row-view.ts).
+    const listRow = listRowOf(node as any);
+    if (listRow) {
+        return renderListRow(node as any, listRow, { width, height }, rootClasses(family), context);
+    }
     // A node the producer draws as a symbol (a gate, a mux, a register): its
     // shape instead of the box, no family mark over it (symbol-views.ts).
     const symbol = (node as any).args?.[WorkflowDiagramMetadata.SYMBOL];

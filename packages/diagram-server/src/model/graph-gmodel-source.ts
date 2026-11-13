@@ -9,6 +9,7 @@ import { boundaryMargin, bundlePorts, type PortBus, type PortBusState } from './
 import { stableNodeId as stableNodeIdOf, stableNodeIds, stablePortNames } from './stable-ids';
 import { canOpen, openNodes, openScopeId } from './open-nodes';
 import { compressAutomaton } from './automaton-compress';
+import { listColumns, listRowOf, type ListColumns, type ListMember } from './list-rows';
 
 /** What an openable node's header toggle takes from its start: its ring and a gap. */
 const OPEN_TOGGLE_ROOM_PX = 20;
@@ -71,9 +72,14 @@ export type PyGraphScope = {
     row?: number;
     /** `'top'` pins a `group` scope above the rest of the diagram, out of its
      *  flow: what belongs to the whole picture rather than to a place in it
-     *  (a legend, the variables a state machine works on). For a group of
-     *  the root: one nested in another group stays where it is. */
+     *  (a legend, the variables a state machine works on); `'left'` pins it
+     *  in a column on the left of the diagram. For a group of the root: one
+     *  nested in another group stays where it is. */
     pin?: string;
+    /** A `group` scope whose members are the rows of a list, one under
+     *  another, each its name and its lines in columns the rows share
+     *  (list-rows.ts), instead of cards side by side. */
+    list?: boolean;
     /** Marks a `group` scope as the one the diagram's flow starts in: the
      *  initial state of a state machine, the first stage of a pipeline. Its
      *  frame gets the mark a statechart gives its initial state, before its
@@ -297,6 +303,11 @@ function stateSizeOf(node: PyGraphNode): { width: number; height: number } {
         : size;
 }
 
+/** What of a producer's node its row in a list is made of. */
+function listMemberOf(node: PyGraphNode): ListMember {
+    return { label: node.label, lines: parseLinesMeta(node.meta?.['lines']) };
+}
+
 export class GraphGModelSource {
     /**
      * @param storageOptions the product's runtime options; only the node
@@ -353,6 +364,15 @@ export class GraphGModelSource {
         for (const scope of doc.graph.subgraphs ?? []) {
             scopeMeta.set(scope.id, scope);
             scopeById.set(scope.id, scope);
+        }
+        // The columns each list's rows share, from all its members.
+        const listColumnsOf = new Map<string, ListColumns>();
+        const rowColumn = this.estimateLabelSize('x', WorkflowDiagramConstants.LIST_ROW_FONT_SIZE_PX).width;
+        for (const scope of doc.graph.subgraphs ?? []) {
+            if (scope.kind === 'group' && scope.list === true) {
+                const members = doc.graph.nodes.filter(node => node.scope === scope.id).map(listMemberOf);
+                listColumnsOf.set(scope.id, listColumns(members, textColumns, rowColumn));
+            }
         }
 
         for (const node of producerNodes) {
@@ -497,6 +517,11 @@ export class GraphGModelSource {
             // A state of an automaton is its name in a pill: no header, no
             // ports, no lines; what it has to say is in its transitions.
             const isState = node.kind === 'state';
+            // A member of a list is one row: no header, no lines under it, no
+            // type under it; its name and its lines in the list's columns
+            // (list-rows.ts).
+            const columns = !isState && maxPorts === 0 && !symbolKind && !framed ? listColumnsOf.get(node.scope) : undefined;
+            const listRow = columns ? listRowOf(listMemberOf(node), columns) : undefined;
             const gnode: GNode = {
                 id: stableNodeId,
                 type: this.nodeType(node),
@@ -505,7 +530,7 @@ export class GraphGModelSource {
                 layoutOptions: {
                     'elk.portConstraints': 'FIXED_POS'
                 },
-                size: isState ? stateSizeOf(node) : size,
+                size: isState ? stateSizeOf(node) : columns ? { width: columns.width, height: WorkflowDiagramConstants.LIST_ROW_HEIGHT_PX } : size,
                 args: {
                     [WorkflowDiagramMetadata.AST_PATH]: stableNodeId,
                     [WorkflowDiagramMetadata.ENTITY_NAME]: node.label,
@@ -516,7 +541,9 @@ export class GraphGModelSource {
                     'wf:scope': node.scope
                 }
             };
-            if (lines.length > 0 && !isState) {
+            if (listRow) {
+                gnode.args![WorkflowDiagramMetadata.LIST_ROW] = listRow as any;
+            } else if (lines.length > 0 && !isState) {
                 gnode.args![WorkflowDiagramMetadata.NODE_LINES] = lines;
             }
             if (isState && node.meta?.['initial'] === true) {
@@ -822,7 +849,7 @@ export class GraphGModelSource {
                     ...(typeof node.meta?.['operator'] === 'string' ? { [WorkflowDiagramMetadata.SYMBOL_OPERATOR]: node.meta['operator'] } : {}),
                     ...(symbolCaption !== undefined ? { [WorkflowDiagramMetadata.SYMBOL_CAPTION]: symbolCaption } : {})
                 };
-            } else if (!isState) {
+            } else if (!isState && !listRow) {
                 gnode.children!.push(this.createHeaderCompartment(headerLabelId, node.label, subtitle, headerClasses, unitBadges));
             }
             if (unitBadges.length > 0) {
@@ -831,7 +858,7 @@ export class GraphGModelSource {
                     [WorkflowDiagramMetadata.BADGES]: unitBadges as any
                 };
             }
-            const typeLabel = symbolKind ? undefined : footerTypeLabel;
+            const typeLabel = symbolKind || listRow ? undefined : footerTypeLabel;
             if (typeLabel) {
                 gnode.args = {
                     ...(gnode.args ?? {}),
@@ -1586,7 +1613,8 @@ export class GraphGModelSource {
                 [WorkflowDiagramMetadata.GROUP_LABEL]: label,
                 // The row this group sits in, inside a group laid out in rows.
                 ...(isGroupRow(scope.row) ? { [WorkflowDiagramMetadata.GROUP_ROW]: scope.row } : {}),
-                ...(scope.pin === 'top' ? { [WorkflowDiagramMetadata.GROUP_PIN]: 'top' } : {}),
+                ...(scope.pin === 'top' || scope.pin === 'left' ? { [WorkflowDiagramMetadata.GROUP_PIN]: scope.pin } : {}),
+                ...(scope.list === true ? { [WorkflowDiagramMetadata.GROUP_LIST]: true } : {}),
                 ...(scope.initial === true ? { [WorkflowDiagramMetadata.GROUP_INITIAL]: true } : {}),
                 ...(scope.openNodeKey ? { [WorkflowDiagramMetadata.OPEN_NODE_KEY]: scope.openNodeKey } : {}),
                 ...(scope.openNodeBundles ? { [WorkflowDiagramMetadata.OPEN_NODE_BUNDLES]: scope.openNodeBundles } : {})
@@ -2022,7 +2050,11 @@ export class GraphGModelSource {
         if (hasCondition) {
             args[WorkflowDiagramMetadata.TRANSITION_CONDITION] = (condition as string).trim();
         }
-        args[WorkflowDiagramMetadata.TRANSITION_LABEL_WIDTH] = transitionLabelWidth(label, hasOrder, hasCondition);
+        const tokens = typeof edge.meta?.['tokens'] === 'string' ? (edge.meta['tokens'] as string).trim() : '';
+        if (tokens !== '') {
+            args[WorkflowDiagramMetadata.TRANSITION_TOKENS] = tokens;
+        }
+        args[WorkflowDiagramMetadata.TRANSITION_LABEL_WIDTH] = transitionLabelWidth(label, hasOrder, hasCondition, tokens);
         if (edge.meta?.['stub'] === true) {
             args[WorkflowDiagramMetadata.TRANSITION_STUB] = true;
         }

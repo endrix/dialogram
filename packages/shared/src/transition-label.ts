@@ -1,9 +1,10 @@
 /**
  * The label of a transition of an automaton, as the server sizes it and the
  * client draws it: an order badge when the transition has a place in its
- * state's order, the text, and a mark when it has a condition.
+ * state's order, the text, a mark when it has a condition, and the tokens its
+ * action takes and gives, as the producer writes them, when it says.
  *
- *     (2) row_col ◆
+ *     (2) row_col ◆ In×384 → Out
  *
  * The server knows no font, so the text's width is an estimate, as a node's
  * name's is; the mark is drawn where the text ends, whatever its real width.
@@ -19,10 +20,12 @@ export function transitionLabelTextX(hasOrder: boolean): number {
 }
 
 /** How wide a label is taken to be. */
-export function transitionLabelWidth(text: string, hasOrder: boolean, hasCondition: boolean): number {
-    const textWidth = Math.ceil(text.length * WorkflowDiagramConstants.TRANSITION_LABEL_FONT_SIZE_PX * CHAR_WIDTH);
-    const mark = hasCondition ? WorkflowDiagramConstants.TRANSITION_LABEL_GAP_PX + WorkflowDiagramConstants.TRANSITION_CONDITION_MARK_PX : 0;
-    return transitionLabelTextX(hasOrder) + textWidth + mark;
+export function transitionLabelWidth(text: string, hasOrder: boolean, hasCondition: boolean, tokens = ''): number {
+    const k = WorkflowDiagramConstants;
+    const textWidth = Math.ceil(text.length * k.TRANSITION_LABEL_FONT_SIZE_PX * CHAR_WIDTH);
+    const mark = hasCondition ? k.TRANSITION_LABEL_GAP_PX + k.TRANSITION_CONDITION_MARK_PX : 0;
+    const said = tokens === '' ? 0 : k.TRANSITION_TOKENS_GAP_PX + Math.ceil(tokens.length * k.TRANSITION_LABEL_FONT_SIZE_PX * CHAR_WIDTH);
+    return transitionLabelTextX(hasOrder) + textWidth + mark + said;
 }
 
 /** How wide a state is drawn for its name. */

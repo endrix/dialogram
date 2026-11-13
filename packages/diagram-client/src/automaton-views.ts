@@ -28,26 +28,26 @@ import {
     type IView,
     type IViewArgs
 } from '@eclipse-glsp/client';
-import { WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, stateStepText, stubChipWidth, transitionLabelTextX, type StateStep } from '@dialogram/shared';
+import {
+    INITIAL_MARK,
+    WorkflowDiagramConstants,
+    WorkflowDiagramMetadata,
+    WorkflowDiagramTypes,
+    automatonGeometry,
+    initialMarkDirection,
+    initialMarkOf,
+    stateStepText,
+    transitionLabelTextX,
+    type AutomatonGeometry,
+    type GeometryTransition,
+    type StateStep,
+    type TransitionDrawing
+} from '@dialogram/shared';
 import { injectable } from 'inversify';
 import type { VNode } from 'snabbdom';
 import { WorkflowEdge, WorkflowNode } from './model';
 import { nodeOpenToggle } from './node-open-toggle';
-import {
-    labelCandidates,
-    labelLineBox,
-    leaveState,
-    loopDirection,
-    placeLabelBlocks,
-    transitionAround,
-    transitionBetween,
-    transitionLoop,
-    transitionStub,
-    unionBox,
-    type Box,
-    type Point,
-    type TransitionShape
-} from './transition-geometry';
+import { leaveState, unionBox, type Box, type Point } from './transition-geometry';
 
 /** A state of an automaton. */
 export class StateNode extends WorkflowNode {
@@ -107,14 +107,9 @@ function isTransition(element: unknown): element is SEdgeImpl {
     return (element as { type?: string } | undefined)?.type === WorkflowDiagramTypes.EDGE_TRANSITION;
 }
 
-/** The transitions of the diagram an edge is in. */
-function transitionsOf(edge: SEdgeImpl): SEdgeImpl[] {
-    return (edge.root?.children ?? []).filter(isTransition);
-}
-
-function orderOf(edge: SEdgeImpl): number {
+function orderOf(edge: SEdgeImpl): number | undefined {
     const order = (edge as unknown as { args?: Record<string, unknown> }).args?.[WorkflowDiagramMetadata.TRANSITION_ORDER];
-    return typeof order === 'number' ? order : Number.MAX_SAFE_INTEGER;
+    return typeof order === 'number' ? order : undefined;
 }
 
 /** Whether a transition is drawn as a stub at its source (a way into a hub). */
@@ -132,46 +127,20 @@ function labelWidthOf(edge: SEdgeImpl): number {
     return typeof width === 'number' && Number.isFinite(width) ? width : 0;
 }
 
-/**
- * Where the transitions of a state that are no loops and no stubs lead: the
- * other states' centres. (A stub goes where there is room, see below.)
- */
-function neighboursOf(stateId: string, transitions: readonly SEdgeImpl[]): Point[] {
-    const others: Point[] = [];
-    for (const transition of transitions) {
-        if (transition.sourceId === transition.targetId || isStub(transition)) {
-            continue;
-        }
-        const far = transition.sourceId === stateId ? transition.target : transition.targetId === stateId ? transition.source : undefined;
-        const box = boxOf(far);
-        if (box) {
-            others.push(centreOf(box));
-        }
-    }
-    return others;
-}
-
-export interface TransitionDrawing {
-    shape: TransitionShape;
-    /** Where the transition's label is. */
-    label: Box;
-    /** Whether it is the first of the transitions that share its line: the one that draws it. */
-    first: boolean;
-    /** A stub's: the chip at its end and the name of the state it leads to, and the curve it stands for. */
-    chip?: { box: Box; name: string; way: TransitionShape };
-}
+export type { TransitionDrawing };
 
 /** What is drawn of an automaton, and the states' places it was worked out for. */
-interface AutomatonDrawing {
+interface AutomatonDrawing extends AutomatonGeometry {
     key: string;
-    transitions: Map<string, TransitionDrawing>;
-    /** Per state, the directions its loop and its stubs leave in, which its initial mark keeps clear of. */
-    away: Map<string, Point[]>;
+    states: Map<string, Box>;
+    transitionsIn: GeometryTransition[];
 }
 
 /**
  * Worked out once per root and per places of its states: every transition's
- * view asks for its own, and the blocks of labels are placed all together.
+ * view asks for its own, and the blocks of labels are placed all together
+ * (automaton-geometry.ts in the shared package, which the server lays out
+ * with too).
  */
 const drawings = new WeakMap<object, AutomatonDrawing>();
 
@@ -195,88 +164,16 @@ function automatonDrawing(root: { children?: readonly unknown[] }): AutomatonDra
     if (cached?.key === key) {
         return cached;
     }
-
-    // The lines: the transitions between the same two states, the same way,
-    // in the order their state tries them, then as the document has them.
-    const lines = new Map<string, Array<{ edge: SEdgeImpl; index: number }>>();
-    all.forEach((edge, index) => {
-        const line = `${edge.sourceId}\u0000${edge.targetId}`;
-        lines.set(line, [...(lines.get(line) ?? []), { edge, index }]);
-    });
-    const drawn: Array<{ members: SEdgeImpl[]; shape: TransitionShape; widths: number[]; loop: boolean; bowed: boolean; chip?: TransitionDrawing['chip'] }> = [];
-    const away = new Map<string, Point[]>();
-    const stubs: SEdgeImpl[][] = [];
-    for (const entries of lines.values()) {
-        const members = entries.sort((a, b) => orderOf(a.edge) - orderOf(b.edge) || a.index - b.index).map(entry => entry.edge);
-        const { sourceId, targetId } = members[0];
-        const source = states.get(sourceId);
-        const target = states.get(targetId);
-        if (!source || !target) {
-            continue;
-        }
-        const loop = sourceId === targetId;
-        if (!loop && isStub(members[0])) {
-            stubs.push(members);
-            continue;
-        }
-        const bowed = !loop && lines.has(`${targetId}\u0000${sourceId}`) && !isStub(lines.get(`${targetId}\u0000${sourceId}`)![0].edge);
-        let shape: TransitionShape;
-        if (loop) {
-            const direction = loopDirection(centreOf(source), neighboursOf(sourceId, all));
-            away.set(sourceId, [direction]);
-            shape = transitionLoop(source, direction);
-        } else {
-            // Round the states in its way.
-            const others = [...states].filter(([id]) => id !== sourceId && id !== targetId).map(([, box]) => box);
-            shape = transitionAround(source, target, bowed, others);
-        }
-        drawn.push({ members, shape, widths: members.map(labelWidthOf), loop, bowed });
-    }
-    // A stub leaves its state into the widest room left by the state's other
-    // lines, its loop and the stubs placed before it: it names where it goes,
-    // so it need not point there, and pointing there laid it on the curve
-    // that comes from there more often than not.
-    const k = WorkflowDiagramConstants;
-    for (const members of stubs.sort((a, b) => a[0].sourceId.localeCompare(b[0].sourceId) || nameOf(a[0].target).localeCompare(nameOf(b[0].target)))) {
-        const { sourceId, targetId } = members[0];
-        const source = states.get(sourceId)!;
-        const target = states.get(targetId)!;
-        const centre = centreOf(source);
-        const taken = [
-            ...neighboursOf(sourceId, all),
-            ...(away.get(sourceId) ?? []).map(d => ({ x: centre.x + d.x * 100, y: centre.y + d.y * 100 }))
-        ];
-        const direction = loopDirection(centre, taken);
-        away.set(sourceId, [...(away.get(sourceId) ?? []), direction]);
-        const name = nameOf(members[0].target);
-        const stub = transitionStub(source, { x: centre.x + direction.x * 100, y: centre.y + direction.y * 100 },
-            stubChipWidth(name), k.TRANSITION_STUB_CHIP_HEIGHT_PX, k.TRANSITION_STUB_PX);
-        drawn.push({ members, shape: stub, widths: members.map(labelWidthOf), loop: false, bowed: false, chip: { box: stub.chip, name, way: transitionBetween(source, target, false) } });
-    }
-
-    const lineHeight = WorkflowDiagramConstants.TRANSITION_LABEL_HEIGHT_PX;
-    const blocks = placeLabelBlocks(
-        drawn.map(line => ({
-            candidates: labelCandidates(line.shape, line.loop, line.bowed),
-            width: Math.max(0, ...line.widths),
-            height: lineHeight * line.members.length
-        })),
-        // A stub's chip is in the way of labels as a state is.
-        [...states.values(), ...drawn.flatMap(line => (line.chip ? [line.chip.box] : []))],
-        drawn.map(line => line.shape.controls)
-    );
-    const transitions = new Map<string, TransitionDrawing>();
-    drawn.forEach((line, k) => {
-        line.members.forEach((edge, position) => {
-            transitions.set(edge.id, {
-                shape: line.shape,
-                label: labelLineBox(blocks[k], line.widths, lineHeight, position),
-                first: position === 0,
-                ...(line.chip ? { chip: line.chip } : {})
-            });
-        });
-    });
-    const result = { key, transitions, away };
+    const transitionsIn: GeometryTransition[] = all.map(edge => ({
+        id: edge.id,
+        sourceId: edge.sourceId,
+        targetId: edge.targetId,
+        order: orderOf(edge),
+        stub: isStub(edge),
+        labelWidth: labelWidthOf(edge),
+        targetName: nameOf(edge.target)
+    }));
+    const result: AutomatonDrawing = { key, states, transitionsIn, ...automatonGeometry(states, transitionsIn) };
     drawings.set(root, result);
     return result;
 }
@@ -287,39 +184,11 @@ export function transitionDrawing(edge: SEdgeImpl): TransitionDrawing | undefine
     return root ? automatonDrawing(root).transitions.get(edge.id) : undefined;
 }
 
-/** How many directions around a state its initial mark is tried in. */
-const MARK_DIRECTIONS = 16;
-
-/**
- * The direction a state's initial mark comes from: of the directions around
- * it, the one furthest from where its transitions leave and from its loop.
- * West when nothing is in the way, as a statechart draws it, and the first
- * found going round from there when several are as free.
- */
-export function initialMarkDirection(state: Point, neighbours: readonly Point[], loop: Point | undefined): Point {
-    const taken = neighbours.map(other => Math.atan2(other.y - state.y, other.x - state.x));
-    if (loop) {
-        taken.push(Math.atan2(loop.y, loop.x));
-    }
-    const clearance = (angle: number): number => Math.min(Math.PI, ...taken.map(other => {
-        const apart = Math.abs(angle - other) % (2 * Math.PI);
-        return Math.min(apart, 2 * Math.PI - apart);
-    }));
-    let best = Math.PI;
-    for (let k = 1; k < MARK_DIRECTIONS; k++) {
-        const angle = Math.PI + k * 2 * Math.PI / MARK_DIRECTIONS;
-        if (clearance(angle) > clearance(best) + 1e-6) {
-            best = angle;
-        }
-    }
-    return { x: Math.cos(best), y: Math.sin(best) };
-}
+export { initialMarkDirection };
 
 /** The mark of the state an automaton starts in: a dot and an arrow into the state, from `direction`. */
 function initialMark(state: Box, direction: Point): VNode {
-    const DOT = 4.5;
-    const SHAFT = 16;
-    const HEAD = 7;
+    const { DOT, SHAFT, HEAD } = INITIAL_MARK;
     // Where the arrow ends, on the state's outline, in the state's own coordinates.
     const centre = centreOf(state);
     const at = leaveState(state, { x: centre.x + direction.x * 100, y: centre.y + direction.y * 100 }, 1);
@@ -335,13 +204,13 @@ function initialMark(state: Box, direction: Point): VNode {
     ) as VNode;
 }
 
-/** Where a state's initial mark comes from, given the diagram's transitions. */
-function initialMarkFor(state: Box, stateId: string, transitions: readonly SEdgeImpl[], root: unknown): Point {
-    const centre = centreOf(state);
-    // Its loop and its stubs are in the way as its lines are.
-    const away = (root ? automatonDrawing(root as { children?: readonly unknown[] }).away.get(stateId) : undefined) ?? [];
-    const neighbours = [...neighboursOf(stateId, transitions), ...away.map(d => ({ x: centre.x + d.x * 100, y: centre.y + d.y * 100 }))];
-    return initialMarkDirection(centre, neighbours, undefined);
+/** Where a state's initial mark comes from: clear of its lines, its loop and its stubs. */
+function initialMarkFor(stateId: string, root: unknown): Point | undefined {
+    if (!root) {
+        return undefined;
+    }
+    const drawing = automatonDrawing(root as { children?: readonly unknown[] });
+    return drawing.states.has(stateId) ? initialMarkOf(stateId, drawing.states, drawing.transitionsIn, drawing) : undefined;
 }
 
 @injectable()
@@ -354,7 +223,6 @@ export class StateNodeView extends ShapeView {
         const args = node.args ?? {};
         const name = args[WorkflowDiagramMetadata.ENTITY_NAME];
         const initial = args[WorkflowDiagramMetadata.STATE_INITIAL] === true;
-        const transitions = (node.root?.children ?? []).filter(isTransition);
         const box = boxOf(node);
         const steps = stepsOfState(node);
         const k = WorkflowDiagramConstants;
@@ -377,7 +245,7 @@ export class StateNodeView extends ShapeView {
             attrs: { transform: `translate(${node.position.x}, ${node.position.y})` }
         },
             svg('rect', { class: { 'node-body': true }, attrs: { x: 0, y: 0, width, height, rx: radius, ry: radius } }),
-            ...(initial && box ? [initialMark(box, initialMarkFor(box, node.id, transitions, node.root))] : []),
+            ...(initial && box ? [initialMark(box, initialMarkFor(node.id, node.root) ?? { x: -1, y: 0 })] : []),
             svg('text', { class: { 'state-name': true }, attrs: { x: (width - toggleRoom) / 2, y: top } }, label),
             ...(run
                 ? [nodeOpenToggle(node.id, runOpen, label, width - toggleRoom / 2 - 2, top,
@@ -412,6 +280,7 @@ export class TransitionEdgeView implements IView {
         const order = args[WorkflowDiagramMetadata.TRANSITION_ORDER];
         const hasOrder = typeof order === 'number';
         const condition = args[WorkflowDiagramMetadata.TRANSITION_CONDITION];
+        const tokens = typeof args[WorkflowDiagramMetadata.TRANSITION_TOKENS] === 'string' ? args[WorkflowDiagramMetadata.TRANSITION_TOKENS] as string : undefined;
         const middle = label.height / 2;
         const badge = WorkflowDiagramConstants.TRANSITION_ORDER_BADGE_PX;
         // The line is the first's; another draws it over the first while it is picked.
@@ -450,7 +319,10 @@ export class TransitionEdgeView implements IView {
                 ...stubParts,
                 ...line,
                 svg('g', { class: { 'transition-label': true }, attrs: { transform: `translate(${label.x}, ${label.y})` } },
-                    svg('title', {}, typeof condition === 'string' ? `${text}, when ${condition}` : text),
+                    svg('title', {}, [
+                        typeof condition === 'string' ? `${text}, when ${condition}` : text,
+                        ...(tokens ? [tokens] : [])
+                    ].join('\n')),
                     svg('rect', { class: { 'transition-label-box': true }, attrs: { x: -4, y: 0, width: label.width + 8, height: label.height, rx: 4, ry: 4 } }),
                     ...(hasOrder
                         ? [
@@ -458,10 +330,11 @@ export class TransitionEdgeView implements IView {
                             svg('text', { class: { 'transition-order-text': true }, attrs: { x: badge / 2, y: middle } }, String(order))
                         ]
                         : []),
-                    // The condition's mark follows the label in the same text, so it sits where the label ends in any font.
+                    // The condition's mark and the tokens follow the label in the same text, so they sit where the label ends in any font.
                     svg('text', { class: { 'transition-label-text': true }, attrs: { x: transitionLabelTextX(hasOrder), y: middle } },
                         text,
-                        ...(typeof condition === 'string' ? [svg('tspan', { class: { 'transition-condition': true }, attrs: { dx: 4 } }, '◆')] : []))
+                        ...(typeof condition === 'string' ? [svg('tspan', { class: { 'transition-condition': true }, attrs: { dx: 4 } }, '◆')] : []),
+                        ...(tokens ? [svg('tspan', { class: { 'transition-tokens': true }, attrs: { dx: WorkflowDiagramConstants.TRANSITION_TOKENS_GAP_PX } }, tokens)] : []))
                 )
             )
         ) as VNode;

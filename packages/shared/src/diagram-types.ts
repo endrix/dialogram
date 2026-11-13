@@ -463,6 +463,11 @@ export namespace WorkflowDiagramMetadata {
     /** On a group: where the producer pins it (`pin: 'top'`), out of the flow
      *  of the diagram: in a band above everything else. */
     export const GROUP_PIN = 'wf:groupPin';
+    /** On a group: its members are the rows of a list (`list` on its scope),
+     *  one under another, each drawn as one row of text (`LIST_ROW`). */
+    export const GROUP_LIST = 'wf:groupList';
+    /** On a member of a list: what its row shows after its name (`ListRow`). */
+    export const LIST_ROW = 'wf:listRow';
     /** On a group: the producer marks it as the one the diagram's flow starts
      *  in (`initial` on its scope): the initial state of a state machine. Not
      *  the pair of `GROUP_END`, which is where an edge meets a frame. */
@@ -489,6 +494,9 @@ export namespace WorkflowDiagramMetadata {
     /** On a transition: the condition it is taken under, as the producer
      *  writes it (`meta.condition` of the edge). */
     export const TRANSITION_CONDITION = 'wf:transitionCondition';
+    /** On a transition: the tokens its action takes and gives, as the
+     *  producer writes them (`meta.tokens` of the edge): `In×384 → Out`. */
+    export const TRANSITION_TOKENS = 'wf:transitionTokens';
     /**
      * On a state: the steps of the run of states it stands for. A run of
      * states each with one way in and one way out (a sequence a program goes

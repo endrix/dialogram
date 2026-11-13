@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import ELK from 'elkjs/lib/elk.bundled.js';
-import { GGraph, GNode } from '@eclipse-glsp/server';
+import { GEdge, GGraph, GNode } from '@eclipse-glsp/server';
 import { DefaultElementFilter } from '@eclipse-glsp/layout-elk';
 import { WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument } from '../src/model/graph-gmodel-source';
@@ -18,7 +18,7 @@ import { foldId } from '../src/model/automaton-compress';
 import { convertToGModelRoot } from '../src/server/gmodel-convert';
 import { WorkflowElkLayoutEngine } from '../src/server/elk-layout-engine';
 import { WorkflowLayoutConfigurator } from '../src/server/layout-configurator';
-import { AUTOMATON_MARGIN_PX } from '../src/server/automaton-layout';
+import { PORT_COLUMN_GAP_PX, automatonDrawingBox } from '../src/server/automaton-layout';
 
 const state = (name: string, meta: Record<string, unknown> = {}): any =>
     ({ id: `state:${name}`, kind: 'state', label: name, scope: 'scope:root', ports: [], meta });
@@ -147,16 +147,29 @@ describe('what goes round an automaton', () => {
         right: node.position!.x + node.size!.width, bottom: node.position!.y + node.size!.height
     });
 
-    it('puts the inputs left of the states and the outputs right, clear of what stands out of them', async () => {
+    /** What the client draws of the automaton: its states, curves, loops, labels and initial mark. */
+    const drawnOf = (root: GGraph) => {
+        const drawn = automatonDrawingBox(
+            (root.children ?? []).filter((c): c is GNode => c instanceof GNode && c.type === WorkflowDiagramTypes.NODE_STATE) as any[],
+            (root.children ?? []).filter(c => c instanceof GEdge && c.type === WorkflowDiagramTypes.EDGE_TRANSITION) as any[]
+        )!;
+        return { left: drawn.x, top: drawn.y, right: drawn.x + drawn.width, bottom: drawn.y + drawn.height };
+    };
+
+    it('puts the inputs left of the states and the outputs right, a gap from what stands out of them', async () => {
         const root = await place();
         const nodes = (root.children ?? []).filter((c): c is GNode => c instanceof GNode);
         const states = nodes.filter(n => n.type === WorkflowDiagramTypes.NODE_STATE).map(box);
         const input = box(nodes.find(n => n.type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT)!);
         const output = box(nodes.find(n => n.type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT)!);
-        const left = Math.min(...states.map(s => s.left));
-        const right = Math.max(...states.map(s => s.right));
-        expect(left - input.right).toBeGreaterThanOrEqual(AUTOMATON_MARGIN_PX);
-        expect(output.left - right).toBeGreaterThanOrEqual(AUTOMATON_MARGIN_PX);
+        const drawn = drawnOf(root);
+        // The loop of `read` and the labels stand out of the states.
+        expect(drawn.left).toBeLessThan(Math.min(...states.map(s => s.left)));
+        // Beside the drawing, not further: a port is where the tokens of the transitions next to it go.
+        expect(drawn.left - input.right).toBeGreaterThanOrEqual(PORT_COLUMN_GAP_PX - 1);
+        expect(drawn.left - input.right).toBeLessThanOrEqual(PORT_COLUMN_GAP_PX + 1);
+        expect(output.left - drawn.right).toBeGreaterThanOrEqual(PORT_COLUMN_GAP_PX - 1);
+        expect(output.left - drawn.right).toBeLessThanOrEqual(PORT_COLUMN_GAP_PX + 1);
         // Level with the states, and on the canvas.
         const middle = (input.top + input.bottom) / 2;
         expect(middle).toBeGreaterThanOrEqual(Math.min(...states.map(s => s.top)));
@@ -167,8 +180,7 @@ describe('what goes round an automaton', () => {
     it('stacks the declarations above, as far up as an automaton’s labels and loops stand', async () => {
         const root = await place();
         const nodes = (root.children ?? []).filter((c): c is GNode => c instanceof GNode);
-        const states = nodes.filter(n => n.type === WorkflowDiagramTypes.NODE_STATE).map(box);
         const band = box(nodes.find(n => n.type === WorkflowDiagramTypes.NODE_GROUP)!);
-        expect(Math.min(...states.map(s => s.top)) - band.bottom).toBeGreaterThanOrEqual(AUTOMATON_MARGIN_PX);
+        expect(drawnOf(root).top - band.bottom).toBeGreaterThanOrEqual(WorkflowDiagramConstants.GROUP_PIN_GAP_PX - 1);
     });
 });

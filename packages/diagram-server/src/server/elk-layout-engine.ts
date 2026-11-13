@@ -17,7 +17,7 @@ import { ElkExtendedEdge, ElkNode, ElkPort, ElkShape } from 'elkjs';
 import { injectable } from 'inversify';
 import { WorkflowDiagramTypes, WORKFLOW_LAYOUT_PERSISTENCE_KEY } from '@dialogram/shared';
 import { WorkflowDiagramConstants, WorkflowDiagramMetadata, portRowOffset, portSide, type PortSide } from '@dialogram/shared';
-import { AUTOMATON_MARGIN_PX, automatonElkGraph, automatonPlaces, isStateType, transitionLabelWidthOf } from './automaton-layout';
+import { AUTOMATON_MARGIN_PX, PORT_COLUMN_GAP_PX, automatonDrawingBox, automatonElkGraph, automatonPlaces, isStateType, transitionLabelWidthOf } from './automaton-layout';
 
 /** Which side of its node a GPort sits on: the producer's placement, else its direction or type. */
 function gportSide(port: GPort): PortSide {
@@ -70,6 +70,20 @@ export const FLOW_PRIORITY = '10';
  * - Ports use FIXED_SIDE constraint so ELK respects input/output sides while
  *   allowing vertical repositioning.
  */
+interface Box { x: number; y: number; width: number; height: number }
+
+/** The box around `boxes`; none around none. */
+function boxAround(boxes: readonly Box[]): Box | undefined {
+    if (boxes.length === 0) {
+        return undefined;
+    }
+    const left = Math.min(...boxes.map(b => b.x));
+    const top = Math.min(...boxes.map(b => b.y));
+    const right = Math.max(...boxes.map(b => b.x + b.width));
+    const bottom = Math.max(...boxes.map(b => b.y + b.height));
+    return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
 @injectable()
 export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
 
@@ -152,9 +166,13 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
                 (this as any).idToElkElement = new Map();
                 const pinned = this.takePinnedGroups(root, (this as any).transformToElk(root) as ElkNode);
                 await this.placeAutomaton(root, states);
-                this.placeUnitPortsBeside(root, states);
+                // What the client will draw, loops and labels included: what
+                // the ports and the pinned frames keep clear of.
+                const transitions = root.children.filter((child): child is GEdge => child instanceof GEdge && child.type === WorkflowDiagramTypes.EDGE_TRANSITION);
+                const drawn = automatonDrawingBox(states, transitions);
+                const around = this.placeUnitPortsBeside(root, states, drawn);
                 if (pinned.length > 0) {
-                    await this.layoutPinnedGroups(root, pinned, AUTOMATON_MARGIN_PX);
+                    await this.layoutPinnedGroups(root, pinned, WorkflowDiagramConstants.GROUP_PIN_GAP_PX, around);
                 }
                 return root;
             }
@@ -226,9 +244,14 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
     private automatonStates(root: GGraph): GNode[] | undefined {
         const nodes = root.children.filter((child): child is GNode => child instanceof GNode);
         const states = nodes.filter(node => isStateType(node.type));
-        const around = (node: GNode): boolean => this.isUnitPort(node)
-            || (node.type === WorkflowDiagramTypes.NODE_GROUP && (node as any).args?.[WorkflowDiagramMetadata.GROUP_PIN] === 'top');
+        const around = (node: GNode): boolean => this.isUnitPort(node) || this.isPinned(node);
         return states.length > 0 && nodes.every(node => isStateType(node.type) || around(node)) ? states : undefined;
+    }
+
+    /** A group pinned out of the diagram's flow: above it (`top`) or on its left (`left`). */
+    private isPinned(node: GModelElement): boolean {
+        const pin = (node as any).args?.[WorkflowDiagramMetadata.GROUP_PIN];
+        return node.type === WorkflowDiagramTypes.NODE_GROUP && (pin === 'top' || pin === 'left');
     }
 
     private isUnitPort(node: GNode): boolean {
@@ -238,30 +261,32 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
     /**
      * The unit's own ports beside its automaton, as a network's are beside
      * it: the inputs in a column on the left, the outputs on the right, in
-     * the order the document has them, centred on the states' height.
+     * the order the document has them, centred on the states' height, each
+     * column a gap away from what is drawn of the automaton (`drawn`: its
+     * loops and labels too). Answers what the automaton and its ports cover.
      */
-    private placeUnitPortsBeside(root: GGraph, states: GNode[]): void {
+    private placeUnitPortsBeside(root: GGraph, states: GNode[], drawn: Box | undefined): Box | undefined {
         const ports = root.children.filter((child): child is GNode => child instanceof GNode && this.isUnitPort(child));
-        if (ports.length === 0) {
-            return;
+        const statesBox = boxAround(states.map(state => ({
+            x: state.position?.x ?? 0, y: state.position?.y ?? 0, width: state.size?.width ?? 0, height: state.size?.height ?? 0
+        })));
+        const box = drawn ?? statesBox;
+        if (ports.length === 0 || !box || !statesBox) {
+            return box;
         }
-        const left = Math.min(...states.map(state => state.position?.x ?? 0));
-        const right = Math.max(...states.map(state => (state.position?.x ?? 0) + (state.size?.width ?? 0)));
-        const top = Math.min(...states.map(state => state.position?.y ?? 0));
-        const bottom = Math.max(...states.map(state => (state.position?.y ?? 0) + (state.size?.height ?? 0)));
-        // Clear of the labels and loops that stand out of the states' box.
-        const GAP = AUTOMATON_MARGIN_PX + 30;
+        const GAP = PORT_COLUMN_GAP_PX;
         const BETWEEN = 28;
+        const middle = statesBox.y + statesBox.height / 2;
         const column = (side: GNode[], x: (port: GNode) => number): void => {
             const height = side.reduce((sum, port) => sum + (port.size?.height ?? 0), 0) + BETWEEN * Math.max(0, side.length - 1);
-            let y = (top + bottom) / 2 - height / 2;
+            let y = middle - height / 2;
             for (const port of side) {
                 port.position = { x: Math.round(x(port)), y: Math.round(y) };
                 y += (port.size?.height ?? 0) + BETWEEN;
             }
         };
-        column(ports.filter(port => port.type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT), port => left - GAP - (port.size?.width ?? 0));
-        column(ports.filter(port => port.type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT), () => right + GAP);
+        column(ports.filter(port => port.type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT), port => box.x - GAP - (port.size?.width ?? 0));
+        column(ports.filter(port => port.type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT), () => box.x + box.width + GAP);
         // Nothing left of the margin: move everything right when an input went there.
         const leftmost = Math.min(...[...states, ...ports].map(node => node.position?.x ?? 0));
         const shift = AUTOMATON_MARGIN_PX - leftmost;
@@ -270,6 +295,10 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
                 node.position = { x: (node.position?.x ?? 0) + shift, y: node.position?.y ?? 0 };
             }
         }
+        const moved = { ...box, x: box.x + Math.max(0, shift) };
+        return boxAround([moved, ...ports.map(port => ({
+            x: port.position?.x ?? 0, y: port.position?.y ?? 0, width: port.size?.width ?? 0, height: port.size?.height ?? 0
+        }))]);
     }
 
     /** Give the states of an automaton their places. Its transitions have no route to make. */
@@ -285,7 +314,12 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         // eslint-disable-next-line no-console
         console.log(`[dialogram perf] layout ${this.networkName(root)}: automaton states=${states.length} transitions=${transitions.length}`);
         const laidOut = (await (this as any).elk.layout(automatonElkGraph(
-            states.map(state => ({ id: state.id, width: state.size.width, height: state.size.height })),
+            states.map(state => ({
+                id: state.id,
+                width: state.size.width,
+                height: state.size.height,
+                initial: (state.args as Record<string, unknown> | undefined)?.[WorkflowDiagramMetadata.STATE_INITIAL] === true
+            })),
             transitions
         ))) as ElkNode;
         const places = automatonPlaces(laidOut);
@@ -466,8 +500,7 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
     private takePinnedGroups(root: GGraph, elkGraph: ElkNode): ElkNode[] {
         const pinnedIds = new Set<string>();
         for (const child of root.children) {
-            if (child.type !== WorkflowDiagramTypes.NODE_GROUP
-                || (child as any).args?.[WorkflowDiagramMetadata.GROUP_PIN] !== 'top') {
+            if (!this.isPinned(child)) {
                 continue;
             }
             const crossed = ((child as any).children ?? []).some((inner: any) => inner.type === WorkflowDiagramTypes.PORT_GROUP_BOUNDARY);
@@ -484,18 +517,24 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
     }
 
     /**
-     * Lay each pinned group out (its inside, and so its size), then stack them
-     * above the laid-out diagram, the first on top, their left edges on the
-     * diagram's. Routes of edges inside a pinned group move with it.
+     * Lay each pinned group out (its inside, and so its size), then put them
+     * round the laid-out diagram: those pinned to the top stacked above it,
+     * the first on top, their left edges on the diagram's; those pinned to
+     * the left in a column on its left, the first on top, their tops from
+     * the diagram's. Routes of edges inside a pinned group move with it.
      *
-     * The diagram's top is its highest node or its highest route, whichever
-     * is higher: the layout runs an edge that goes back over the top row, and
-     * a band placed from the nodes alone would sit on it. `clearance` is the
-     * room between the diagram's top and the band: an automaton's transitions
-     * have no route, their loops and labels stand above its top states.
+     * The diagram is what `around` says it covers, when the caller knows
+     * (an automaton: its loops and labels stand out of its states). Else its
+     * top is its highest node or its highest route, whichever is higher: the
+     * layout runs an edge that goes back over the top row, and a band placed
+     * from the nodes alone would sit on it. `clearance` is the room between
+     * the diagram and the band or the column.
      */
     private async layoutPinnedGroups(root: GGraph, pinned: ElkNode[],
-        clearance: number = WorkflowDiagramConstants.GROUP_PIN_GAP_PX): Promise<void> {
+        clearance: number = WorkflowDiagramConstants.GROUP_PIN_GAP_PX, around?: Box): Promise<void> {
+        if (around) {
+            this.wrapLists(pinned, around.height);
+        }
         const band = (await (this as any).elk.layout({
             id: `${root.id}::pinned`,
             layoutOptions: { 'elk.algorithm': 'layered', 'elk.direction': 'DOWN' },
@@ -506,47 +545,87 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
             this.applyLayoutWithOffset(child, { x: 0, y: 0 });
         }
 
-        // The diagram under the band: every other node of the root, and the
-        // routes of its edges (absolute, like the root's nodes).
-        let left = Number.POSITIVE_INFINITY;
-        let top = Number.POSITIVE_INFINITY;
-        for (const child of root.children) {
-            if (child instanceof GNode && !pinnedIds.has(child.id)) {
-                left = Math.min(left, child.position?.x ?? 0);
-                top = Math.min(top, child.position?.y ?? 0);
+        let left = around?.x ?? Number.POSITIVE_INFINITY;
+        let top = around?.y ?? Number.POSITIVE_INFINITY;
+        if (!around) {
+            // The diagram beside the band: every other node of the root, and
+            // the routes of its edges (absolute, like the root's nodes).
+            for (const child of root.children) {
+                if (child instanceof GNode && !pinnedIds.has(child.id)) {
+                    left = Math.min(left, child.position?.x ?? 0);
+                    top = Math.min(top, child.position?.y ?? 0);
+                }
             }
-        }
-        if (!Number.isFinite(left)) {
-            left = 0;
-            top = 0;
-        }
-        const insidePinned = new Set<string>();
-        for (const id of pinnedIds) {
-            this.collectIds(this.modelState.index.get(id), insidePinned);
-        }
-        for (const edge of this.findChildren(this.modelState.root, GEdge)) {
-            if (insidePinned.has(edge.sourceId) && insidePinned.has(edge.targetId)) {
-                continue;
+            if (!Number.isFinite(left)) {
+                left = 0;
+                top = 0;
             }
-            for (const point of Array.isArray(edge.routingPoints) ? edge.routingPoints : []) {
-                if (Number.isFinite(point?.y)) {
-                    top = Math.min(top, point.y);
+            const insidePinned = new Set<string>();
+            for (const id of pinnedIds) {
+                this.collectIds(this.modelState.index.get(id), insidePinned);
+            }
+            for (const edge of this.findChildren(this.modelState.root, GEdge)) {
+                if (insidePinned.has(edge.sourceId) && insidePinned.has(edge.targetId)) {
+                    continue;
+                }
+                for (const point of Array.isArray(edge.routingPoints) ? edge.routingPoints : []) {
+                    if (Number.isFinite(point?.y)) {
+                        top = Math.min(top, point.y);
+                    }
                 }
             }
         }
         const gap = WorkflowDiagramConstants.GROUP_PIN_GAP_PX;
-        let bottom = top - clearance;
-        // From the last up, so that the first ends on top.
-        for (const node of [...pinned].reverse()) {
-            const group = this.modelState.index.get(node.id);
-            if (!(group instanceof GNode)) {
-                continue;
-            }
+        const groups = pinned
+            .map(node => this.modelState.index.get(node.id))
+            .filter((group): group is GNode => group instanceof GNode);
+        const place = (group: GNode, to: Point): void => {
             const from = { x: group.position?.x ?? 0, y: group.position?.y ?? 0 };
-            const to = { x: left, y: bottom - (group.size?.height ?? 0) };
             group.position = to;
             this.moveRoutesInside(group, { x: to.x - from.x, y: to.y - from.y });
-            bottom = to.y - gap;
+        };
+        const pinOf = (group: GNode): unknown => (group as any).args?.[WorkflowDiagramMetadata.GROUP_PIN];
+        // Above: from the last up, so that the first ends on top.
+        let bottom = top - clearance;
+        for (const group of groups.filter(g => pinOf(g) === 'top').reverse()) {
+            place(group, { x: left, y: bottom - (group.size?.height ?? 0) });
+            bottom = (group.position?.y ?? 0) - gap;
+        }
+        // On the left: from the first down, the column as wide as its widest.
+        const column = groups.filter(g => pinOf(g) === 'left');
+        const width = Math.max(0, ...column.map(group => group.size?.width ?? 0));
+        let y = top;
+        for (const group of column) {
+            place(group, { x: left - clearance - width, y });
+            y += (group.size?.height ?? 0) + gap;
+        }
+    }
+
+    /**
+     * A list pinned on the left that is much taller than the diagram beside
+     * it goes on in a second column, and a third, as a page of a table does:
+     * its rows in columns of as many rows each, the first column the first
+     * rows, so that it is about as tall as the diagram and does not make the
+     * whole drawing as tall as itself.
+     */
+    private wrapLists(pinned: ElkNode[], height: number): void {
+        const k = WorkflowDiagramConstants;
+        const room = Math.max(8 * k.LIST_ROW_HEIGHT_PX, height - k.GROUP_HEADER_HEIGHT_PX - 16);
+        for (const node of pinned) {
+            const group = this.modelState.index.get(node.id) as GNode | undefined;
+            const args = (group as any)?.args as Record<string, unknown> | undefined;
+            const rows = node.children ?? [];
+            if (args?.[WorkflowDiagramMetadata.GROUP_LIST] !== true || args?.[WorkflowDiagramMetadata.GROUP_PIN] !== 'left'
+                || rows.length * k.LIST_ROW_HEIGHT_PX <= room * 1.25) {
+                continue;
+            }
+            const columns = Math.ceil(rows.length * k.LIST_ROW_HEIGHT_PX / room);
+            const perColumn = Math.ceil(rows.length / columns);
+            // A row of the layout holds the n-th row of every column, in order.
+            rows.forEach((row, index) => {
+                row.layoutOptions = { ...(row.layoutOptions ?? {}), 'elk.partitioning.partition': String(index % perColumn) };
+            });
+            node.layoutOptions = { ...(node.layoutOptions ?? {}), 'elk.spacing.nodeNode': '16' };
         }
     }
 

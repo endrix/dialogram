@@ -1166,6 +1166,12 @@ body.vscode-high-contrast-light .node-center-image-light {
     font-size: 9px;
 }
 
+/* What a transition's action takes and gives, after its label: quieter. */
+.workflow-edge.transition-edge .transition-tokens {
+    fill: var(--vscode-descriptionForeground, #8b8b8b);
+    font-weight: 400;
+}
+
 /* The base GLSP rules `.sprotty-edge.selected path` and `.sprotty-edge.mouseover:not(.selected)
    path` force 2px on the line with a higher specificity than `.workflow-edge .edge-line` (3.5px),
    so selecting or hovering an edge would shrink it. Re-assert the default edge-line width (with
@@ -1592,6 +1598,44 @@ body.vscode-high-contrast-light .node-center-image-light {
     font-size: 10px;
     text-anchor: start;
     pointer-events: none;
+}
+
+/* A member of a list (`list` on its group's scope): one row of a table, its
+   name and its lines in columns of the editor's fixed-width font; a product
+   colours the kinds of line it knows (`text.list-row-cell-<kind>`). The
+   rows stand on each other: their outlines are the table's lines, square,
+   with no shadow to fall on the row beneath. */
+.workflow-node.list-row .node-body {
+    filter: none;
+}
+
+.workflow-node.list-row:not(.selected) {
+    stroke: color-mix(in srgb, var(--sprotty-border) 60%, transparent);
+}
+
+.sprotty text.list-row-text {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 11px;
+    text-anchor: start;
+    dominant-baseline: central;
+    stroke: none;
+    pointer-events: none;
+    user-select: none;
+}
+
+.sprotty text.list-row-name {
+    fill: var(--vscode-foreground, #cccccc);
+}
+
+.sprotty text.list-row-cell {
+    fill: var(--vscode-descriptionForeground, #8b8b8b);
+}
+
+/* The family's band (palette-icons.ts writes one rule a family, which this
+   one, weaker, gives way to); a row in no family has a quiet one. */
+.list-row-mark {
+    fill: var(--vscode-descriptionForeground, #8b8b8b);
+    stroke: none;
 }
 
 .workflow-label.label-badge {

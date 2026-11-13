@@ -163,13 +163,16 @@ describe('a state entered from many', () => {
 });
 
 describe('a large automaton', () => {
-    it('is placed in layers from the top down, a small one by stress', () => {
+    it('is placed in layers from the top down, a hub too; a small hub by stress', () => {
         const states = Array.from({ length: LAYERED_MIN_STATES }, (_, k) => ({ id: `s${k}`, width: 60, height: 36 }));
         const chain = states.slice(1).map((s, k) => ({ sourceId: states[k].id, targetId: s.id, labelWidth: 30 }));
         const big = automatonElkGraph(states, chain);
         expect(big.layoutOptions?.['elk.algorithm']).toBe('layered');
         expect(big.layoutOptions?.['elk.direction']).toBe('DOWN');
         expect(big.edges).toHaveLength(chain.length);
-        expect(automatonElkGraph(states.slice(0, 3), chain.slice(0, 2)).layoutOptions?.['elk.algorithm']).toBe('stress');
+        // A star is a hub, but a large one: stress would stretch it across the page.
+        const star = states.slice(1).map(s => ({ sourceId: states[0].id, targetId: s.id, labelWidth: 30 }));
+        expect(automatonElkGraph(states, star).layoutOptions?.['elk.algorithm']).toBe('layered');
+        expect(automatonElkGraph(states.slice(0, 5), star.slice(0, 4)).layoutOptions?.['elk.algorithm']).toBe('stress');
     });
 });
