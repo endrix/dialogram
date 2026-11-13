@@ -184,7 +184,7 @@ function renderRunRing(width: number, height: number): VNode {
 }
 
 /** Internals reached by the family, mark and ring tests; not part of the module's surface. */
-export const __testables = { resolveNodeFamily, renderRunRing, renderNodeCenterImage, RUN_RING_BLEED_PX };
+export const __testables = { resolveNodeFamily, renderRunRing, renderNodeCenterImage, markFits, RUN_RING_BLEED_PX };
 
 /**
  * Draw a family's own full-colour mark centred in the node body, where an icon
@@ -223,6 +223,11 @@ function renderNodeCenterImage(
         place(image.dark, 'dark'),
         ...(hasLight ? [place(image.light!, 'light')] : [])
     )];
+}
+
+/** Whether a family's mark fits in a body `openHeight` tall above its lines, under the header. */
+function markFits(openHeight: number): boolean {
+    return openHeight - HEADER_HEIGHT >= NODE_ICON_SIZE / 2;
 }
 
 /**
@@ -866,8 +871,10 @@ function renderEntityNode(
         }),
         // Above the body so the travelling head is not painted over by it.
         ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
-        ...(family?.icon ? [renderNodeCenterIcon(family, width, openHeight)] : []),
-        ...(family?.image ? renderNodeCenterImage(family, width, openHeight) : []),
+        // The mark only where the body above the lines has room for it: a
+        // node that is its header and its lines has none.
+        ...(family?.icon && markFits(openHeight) ? [renderNodeCenterIcon(family, width, openHeight)] : []),
+        ...(family?.image && markFits(openHeight) ? renderNodeCenterImage(family, width, openHeight) : []),
         ...renderNodeLines(lines, width, bodyHeight),
         ...context.renderChildren(node),
         ...(footerLabelNode ? [footerLabelNode] : [])

@@ -169,4 +169,12 @@ describe('a family drawn with its own mark', () => {
         expect(classesOf(group)).not.toContain('has-light');
         expect((group.children as any[]).map(hrefOf)).toEqual([DARK]);
     });
+
+    it('is drawn only where the body above the lines has room for it: a card that is its header and its lines has none', () => {
+        const { markFits } = __testables;
+        // A node with ports: its body under the header.
+        expect(markFits(60)).toBe(true);
+        // A card: the header, then its lines.
+        expect(markFits(24)).toBe(false);
+    });
 });

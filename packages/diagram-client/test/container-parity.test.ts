@@ -36,7 +36,8 @@
  * toggle's (opens a node holding a graph of its own in place), and the toggle anchor (keeps
  * the toggled node where it was on screen once the view is laid out again, bound to itself
  * and as a model-root listener, with GLSP's update command rebound to the
- * `AnchoredUpdateModelCommand` that scrolls in the update's own animation) — plus two
+ * `AnchoredUpdateModelCommand` that scrolls in the update's own animation), and an
+ * automaton's state and transition (`node:state`, `edge:transition`) — plus two
  * changes: the graph is drawn by `DetailGraphView` (GLSP's `GGraphView`, its svg marked with the
  * level of detail of the zoom, zoom-detail.ts), and `label:boundary:type` is bound to
  * the non-editable `BoundaryLabel`, because editing it renamed the port.

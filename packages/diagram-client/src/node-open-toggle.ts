@@ -18,15 +18,15 @@ export const NODE_OPEN_TOGGLE_ATTR = 'data-node-open-toggle';
 /** Radius of the toggle's ring. */
 export const NODE_OPEN_TOGGLE_RADIUS_PX = 6;
 
-/** The toggle, centred at (cx, cy): `+` to open, `−` to close. */
-export function nodeOpenToggle(elementId: string, open: boolean, label: string, cx: number, cy: number): VNode {
+/** The toggle, centred at (cx, cy): `+` to open, `−` to close; `title` says what it does when the default does not. */
+export function nodeOpenToggle(elementId: string, open: boolean, label: string, cx: number, cy: number, title?: string): VNode {
     const r = NODE_OPEN_TOGGLE_RADIUS_PX;
     const arm = r - 2.5;
     return svg('g', {
         class: { 'node-open-toggle': true, open },
         attrs: { [NODE_OPEN_TOGGLE_ATTR]: elementId }
     },
-        svg('title', {}, open ? `Close ${label}` : `Open ${label}: show what it is made of`),
+        svg('title', {}, title ?? (open ? `Close ${label}` : `Open ${label}: show what it is made of`)),
         svg('circle', { class: { 'node-open-toggle-ring': true }, attrs: { cx, cy, r } }),
         svg('line', { class: { 'node-open-toggle-mark': true }, attrs: { x1: cx - arm, y1: cy, x2: cx + arm, y2: cy } }),
         ...(open ? [] : [svg('line', { class: { 'node-open-toggle-mark': true }, attrs: { x1: cx, y1: cy - arm, x2: cx, y2: cy + arm } })])

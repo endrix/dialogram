@@ -45,6 +45,8 @@ export interface LinkElement {
     args?: Record<string, unknown>;
     parent?: LinkElement;
     children?: readonly LinkElement[];
+    /** Where a link meets an element that is not a box (a transition: its label), in the diagram's coordinates. */
+    linkAnchor?: Box;
 }
 
 /** The links a root carries; nothing for a root with none, or with something else under the key. */
@@ -59,6 +61,10 @@ export function selectionLinksOf(root: LinkElement | undefined): SelectionLink[]
 
 /** Where an element is in the diagram: its place, taken through the elements that hold it. */
 export function absoluteBox(element: LinkElement): Box {
+    const anchor = element.linkAnchor;
+    if (anchor) {
+        return { ...anchor };
+    }
     let x = 0;
     let y = 0;
     for (let current: LinkElement | undefined = element; current; current = current.parent) {

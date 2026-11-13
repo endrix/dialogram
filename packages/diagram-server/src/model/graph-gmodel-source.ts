@@ -1,6 +1,6 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
 import { parseBadgesMeta, parseFactsMeta, parseLinesMeta, parseViewsMeta, textColumns, type UnitBadge } from '../server/graph-load-request-options';
-import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, type PortSide, type SelectionLink, type SymbolKind } from '@dialogram/shared';
+import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
 import { arrangeGroupRows, groupLayoutOptions, isGroupRow, splitEdgesAtGroups } from './group-edges';
@@ -8,6 +8,7 @@ import { URI } from 'vscode-uri';
 import { boundaryMargin, bundlePorts, type PortBus, type PortBusState } from './port-bundles';
 import { stableNodeId as stableNodeIdOf, stableNodeIds, stablePortNames } from './stable-ids';
 import { canOpen, openNodes, openScopeId } from './open-nodes';
+import { compressAutomaton } from './automaton-compress';
 
 /** What an openable node's header toggle takes from its start: its ring and a gap. */
 const OPEN_TOGGLE_ROOM_PX = 20;
@@ -182,7 +183,9 @@ function markFeedbackEdges(children: GModelElement[]): void {
         indexPorts(child, undefined, false);
     }
 
-    const edges = children.filter(isEdge);
+    // A transition of an automaton sends no signal back up a pipeline: an
+    // automaton is made of loops, and none of them is feedback.
+    const edges = children.filter(isEdge).filter(edge => edge.type !== WorkflowDiagramTypes.EDGE_TRANSITION);
     if (edges.length === 0) {
         return;
     }
@@ -275,6 +278,25 @@ function normalizeNavigationFileUri(value: string | undefined): string | undefin
     return URI.file(path.resolve(trimmed)).toString();
 }
 
+/** The steps of the run a state stands for (`meta.steps`, automaton-compress.ts), when it stands for one. */
+function stepsOf(node: PyGraphNode): StateStep[] | undefined {
+    const steps = node.meta?.['steps'];
+    if (!Array.isArray(steps) || steps.length === 0) {
+        return undefined;
+    }
+    const valid = steps.filter((step): step is StateStep => typeof step?.action === 'string'
+        && typeof step?.count === 'number' && Number.isInteger(step.count) && step.count >= 1);
+    return valid.length > 0 ? valid : undefined;
+}
+
+/** A state's size: its name, its steps, and room at its right end for the toggle of the run it folds or opens. */
+function stateSizeOf(node: PyGraphNode): { width: number; height: number } {
+    const size = stateSize(node.label, stepsOf(node));
+    return typeof node.meta?.['run'] === 'string'
+        ? { width: size.width + WorkflowDiagramConstants.STATE_RUN_TOGGLE_PX, height: size.height }
+        : size;
+}
+
 export class GraphGModelSource {
     /**
      * @param storageOptions the product's runtime options; only the node
@@ -290,6 +312,12 @@ export class GraphGModelSource {
      */
     transform(doc: PyGraphDocument, options?: { portBuses?: PortBusState }): { graph: GGraph } {
         doc = resolveSourceFiles(doc);
+        // A large automaton's runs folded and the ways into its hubs made stubs
+        // (automaton-compress.ts); a run the reader unfolded is kept, as its
+        // choice is kept: under the run's id, opened.
+        doc = compressAutomaton(doc, {
+            has: runId => options?.portBuses?.isExpanded(runId, ToggleNodeOpenOperation.OPEN) ?? false
+        });
         // Ids are settled on the producer's nodes. The only nodes bundling adds
         // are buses of the unit's ports, whose ids are their own and in no
         // producer's namespace, so the ids hold for both.
@@ -317,6 +345,8 @@ export class GraphGModelSource {
         const scopeNodes = new Map<string, string[]>();
         const scopeMeta = new Map<string, PyGraphScope>();
         const irNodeToStableId = new Map<string, string>();
+        /** The states of an automaton, by the producer's ids: what a transition's ends name. */
+        const stateIds = new Map<string, string>();
         const removedNodeIds = new Set<string>();
         const scopeById = new Map<string, PyGraphScope>();
         const controlBranchPortMap = new Map<string, Map<string, { inId: string; outId: string; inIndex: number; outIndex: number; branch: string }>>();
@@ -449,6 +479,10 @@ export class GraphGModelSource {
             const producerCaption = typeof node.meta?.['caption'] === 'string' && node.meta['caption'] ? node.meta['caption'] as string : undefined;
             const symbolCaption = symbolKind ? producerCaption ?? (symbolKind === 'register' ? node.label : undefined) : undefined;
             const captioned = !!symbolKind && SymbolGeometry.isCaptioned(symbolKind, symbolCaption);
+            // A node with lines and no ports (a declaration: a variable and
+            // its value, a function and its parameters) has no port area to
+            // keep: it is its header and its lines.
+            const portless = maxPorts === 0 && lines.length > 0 && !framed;
             const size = symbolKind
                 ? SymbolGeometry.size(symbolKind, rowInputs.length, outputs.length,
                     symbolKind === 'register' ? SymbolGeometry.registerBodyWidth(pinNameWidth(rowInputs), pinNameWidth(outputs)) : undefined,
@@ -457,8 +491,12 @@ export class GraphGModelSource {
                     width: Math.max(defaultWidth, labelRequiredWidth, headerLabelW, linesWidth),
                     // The lines are under what the node is without them, so
                     // its ports and its family's mark keep their room.
-                    height: Math.max(minHeight, requiredHeight) + linesHeight + footerReserve
+                    height: (portless ? WorkflowDiagramConstants.HEADER_HEIGHT_PX : Math.max(minHeight, requiredHeight))
+                        + linesHeight + footerReserve
                 };
+            // A state of an automaton is its name in a pill: no header, no
+            // ports, no lines; what it has to say is in its transitions.
+            const isState = node.kind === 'state';
             const gnode: GNode = {
                 id: stableNodeId,
                 type: this.nodeType(node),
@@ -467,7 +505,7 @@ export class GraphGModelSource {
                 layoutOptions: {
                     'elk.portConstraints': 'FIXED_POS'
                 },
-                size,
+                size: isState ? stateSizeOf(node) : size,
                 args: {
                     [WorkflowDiagramMetadata.AST_PATH]: stableNodeId,
                     [WorkflowDiagramMetadata.ENTITY_NAME]: node.label,
@@ -478,8 +516,27 @@ export class GraphGModelSource {
                     'wf:scope': node.scope
                 }
             };
-            if (lines.length > 0) {
+            if (lines.length > 0 && !isState) {
                 gnode.args![WorkflowDiagramMetadata.NODE_LINES] = lines;
+            }
+            if (isState && node.meta?.['initial'] === true) {
+                gnode.args![WorkflowDiagramMetadata.STATE_INITIAL] = true;
+            }
+            // The run a state folds, or opens: the toggle it draws folds or unfolds it.
+            const run = isState && typeof node.meta?.['run'] === 'string' ? node.meta['run'] as string : undefined;
+            if (run) {
+                gnode.args![WorkflowDiagramMetadata.STATE_RUN] = run;
+                if (node.meta?.['runOpen'] === true) {
+                    gnode.args![WorkflowDiagramMetadata.STATE_RUN_OPEN] = true;
+                }
+            }
+            const steps = isState ? stepsOf(node) : undefined;
+            if (steps) {
+                gnode.args![WorkflowDiagramMetadata.STATE_STEPS] = steps;
+                const folded = node.meta?.['folded'];
+                if (Array.isArray(folded)) {
+                    gnode.args![WorkflowDiagramMetadata.STATE_FOLDED] = folded.filter(name => typeof name === 'string');
+                }
             }
             // What the node is one drawing of, for the client to outline the others.
             const sameAs = node.meta?.['sameAs'];
@@ -765,7 +822,7 @@ export class GraphGModelSource {
                     ...(typeof node.meta?.['operator'] === 'string' ? { [WorkflowDiagramMetadata.SYMBOL_OPERATOR]: node.meta['operator'] } : {}),
                     ...(symbolCaption !== undefined ? { [WorkflowDiagramMetadata.SYMBOL_CAPTION]: symbolCaption } : {})
                 };
-            } else {
+            } else if (!isState) {
                 gnode.children!.push(this.createHeaderCompartment(headerLabelId, node.label, subtitle, headerClasses, unitBadges));
             }
             if (unitBadges.length > 0) {
@@ -1001,6 +1058,9 @@ export class GraphGModelSource {
             }
             nodeMap.set(stableNodeId, gnode);
             irNodeToStableId.set(node.id, stableNodeId);
+            if (isState) {
+                stateIds.set(node.id, stableNodeId);
+            }
             children.push(gnode);
             if (node.scope) {
                 const list = scopeNodes.get(node.scope) ?? [];
@@ -1097,7 +1157,27 @@ export class GraphGModelSource {
                     busOfMember.set(String(member), node.id);
                 }
             }
+            // A transition of an automaton is an end too (what its action works
+            // with), and one folded into a run is that run's state.
+            const stateNodeIds = new Set(doc.graph.nodes.filter(node => node.kind === 'state').map(node => node.id));
+            const transitionEnds = new Map<string, string>();
+            for (const edge of doc.graph.edges) {
+                if (stateNodeIds.has(edge.from) && stateNodeIds.has(edge.to)) {
+                    transitionEnds.set(edge.id, edge.id);
+                }
+            }
+            for (const node of doc.graph.nodes) {
+                const folded = node.meta?.['foldedTransitions'];
+                const fold = irNodeToStableId.get(node.id);
+                for (const id of Array.isArray(folded) && fold ? folded : []) {
+                    transitionEnds.set(String(id), fold!);
+                }
+            }
             const linkEnd = (raw: string): string | undefined => {
+                const transition = transitionEnds.get(raw);
+                if (transition) {
+                    return transition;
+                }
                 const node = producerNodeById.get(raw) ?? producerNodeOfPort.get(raw);
                 if (!node) {
                     return groupEnd(raw);
@@ -1113,22 +1193,40 @@ export class GraphGModelSource {
                     (element?.children ?? []).some(child => child.id === id || inside(child));
                 return inside(groupNodeByModelId.get(holder));
             };
+            // Two links of a run's steps to one thing are one link of the run,
+            // both ways when either is.
+            const said = new Map<string, SelectionLink>();
             for (const edge of linkEdges) {
                 const from = linkEnd(edge.from);
                 const to = linkEnd(edge.to);
                 if (!from || !to || from === to || holds(from, to) || holds(to, from)) {
                     continue;
                 }
+                // Only the steps of a run are merged: two links a producer drew
+                // between the same two ends stay two, drawn side by side.
+                const folded = (raw: string): boolean => (transitionEnds.get(raw) ?? raw) !== raw;
+                const key = folded(edge.from) || folded(edge.to)
+                    ? `${from}\u0000${to}\u0000${String(edge.meta!['role'] ?? '')}`
+                    : `\u0000${edge.id}`;
+                const before = said.get(key);
+                if (before) {
+                    if (edge.meta!['bidirectional'] === true) {
+                        before.bidirectional = true;
+                    }
+                    continue;
+                }
                 const role = edge.meta!['role'];
                 const label = edge.meta!['label'];
-                selectionLinks.push({
+                const link: SelectionLink = {
                     id: edge.id,
                     from,
                     to,
                     ...(typeof role === 'string' && this.derivedCssClass('', role) ? { role } : {}),
                     ...(typeof label === 'string' && label.trim() !== '' ? { label: label.trim() } : {}),
                     ...(edge.meta!['bidirectional'] === true ? { bidirectional: true } : {})
-                });
+                };
+                said.set(key, link);
+                selectionLinks.push(link);
             }
         }
         for (const edge of doc.graph.edges) {
@@ -1136,8 +1234,8 @@ export class GraphGModelSource {
             const branch = this.scopeLabel(scope?.kind ?? '');
             const controlNodeId = scope?.controlNodeId ?? undefined;
 
-            let sourceId = portIdMap.get(edge.from) ?? groupEnd(edge.from) ?? this._edgePortId(edge.from);
-            let targetId = portIdMap.get(edge.to) ?? groupEnd(edge.to) ?? this._edgePortId(edge.to);
+            let sourceId = stateIds.get(edge.from) ?? portIdMap.get(edge.from) ?? groupEnd(edge.from) ?? this._edgePortId(edge.from);
+            let targetId = stateIds.get(edge.to) ?? portIdMap.get(edge.to) ?? groupEnd(edge.to) ?? this._edgePortId(edge.to);
 
             const rawEdgeInfo = this.parseEdgeEndpoints(edge);
             // Boundary ports are addressed through node-based IDs in the IR, which makes
@@ -1275,6 +1373,12 @@ export class GraphGModelSource {
             // connection that genuinely has no direction to draw.
             if (edgeMeta?.['undirected'] === true) {
                 gedge.type = WorkflowDiagramTypes.EDGE_CONNECTION_NO_ARROW;
+            }
+            // An edge from a state to a state is a transition of an automaton.
+            const fromState = stateIds.get(edge.from);
+            const toState = stateIds.get(edge.to);
+            if (fromState && toState) {
+                this.asTransition(gedge, edge, nodeMap.get(fromState)!, nodeMap.get(toState)!);
             }
             children.push(gedge);
         }
@@ -1892,6 +1996,42 @@ export class GraphGModelSource {
         return undefined;
     }
 
+    /**
+     * An edge whose two ends are states, as a transition: it ends on the
+     * states themselves, and says what takes it (`meta.label`), where it comes
+     * in the order its state tries its transitions in (`meta.order`, from 1),
+     * the condition it is taken under (`meta.condition`) and what the panel
+     * shows of it (`meta.facts`, as a node's). It has no route: the client
+     * draws it from where its states are.
+     */
+    private asTransition(gedge: GEdge, edge: PyGraphEdge, from: GNode, to: GNode): void {
+        gedge.type = WorkflowDiagramTypes.EDGE_TRANSITION;
+        gedge.sourceId = from.id;
+        gedge.targetId = to.id;
+        const args = gedge.args as Record<string, unknown>;
+        args['wf:from'] = from.args?.[WorkflowDiagramMetadata.ENTITY_NAME] ?? from.id;
+        args['wf:to'] = to.args?.[WorkflowDiagramMetadata.ENTITY_NAME] ?? to.id;
+        const label = typeof args[WorkflowDiagramMetadata.EDGE_LABEL] === 'string' ? args[WorkflowDiagramMetadata.EDGE_LABEL] as string : '';
+        const order = edge.meta?.['order'];
+        const hasOrder = typeof order === 'number' && Number.isInteger(order) && order >= 1;
+        if (hasOrder) {
+            args[WorkflowDiagramMetadata.TRANSITION_ORDER] = order;
+        }
+        const condition = edge.meta?.['condition'];
+        const hasCondition = typeof condition === 'string' && condition.trim() !== '';
+        if (hasCondition) {
+            args[WorkflowDiagramMetadata.TRANSITION_CONDITION] = (condition as string).trim();
+        }
+        args[WorkflowDiagramMetadata.TRANSITION_LABEL_WIDTH] = transitionLabelWidth(label, hasOrder, hasCondition);
+        if (edge.meta?.['stub'] === true) {
+            args[WorkflowDiagramMetadata.TRANSITION_STUB] = true;
+        }
+        const facts = parseFactsMeta(edge.meta?.['facts']);
+        if (facts) {
+            args[WorkflowDiagramMetadata.FACTS] = facts;
+        }
+    }
+
     private orderControlScopes(ids: string[], scopeMeta: Map<string, PyGraphScope>): string[] {
         const order = ['if-then', 'if-else', 'loop-body'];
         return [...ids].sort((a, b) => {
@@ -1913,6 +2053,7 @@ export class GraphGModelSource {
     }
 
     private nodeType(node: PyGraphNode): string {
+        if (node.kind === 'state') return WorkflowDiagramTypes.NODE_STATE;
         if (this.isNetworkInstanceNode(node)) return WorkflowDiagramTypes.NODE_NETWORK;
         // The TYPE matters beyond appearance: the viewer mouse listener refuses
         // to read a node's annotations unless it is NODE_EXTERNAL_ACTOR, so a

@@ -54,6 +54,12 @@ export namespace WorkflowDiagramTypes {
     export const NODE_GROUP = 'node:group';
     export const NODE_BOUNDARY_INPUT = 'node:boundary:input';
     export const NODE_BOUNDARY_OUTPUT = 'node:boundary:output';
+    /**
+     * A state of an automaton: a node of kind `state` in the document. It has
+     * no ports; what leaves and enters it are transitions
+     * ({@link EDGE_TRANSITION}).
+     */
+    export const NODE_STATE = 'node:state';
     
     // Port types
     export const PORT_INPUT = 'port:input';
@@ -67,6 +73,14 @@ export namespace WorkflowDiagramTypes {
     export const EDGE_CONNECTION = 'edge:connection';
     /** Connection edge variant without arrowheads (used for structural wiring inside grouping nodes like if/then/else/join). */
     export const EDGE_CONNECTION_NO_ARROW = 'edge:connection:no-arrow';
+    /**
+     * A transition of an automaton: an edge of the document whose two ends
+     * name states. It ends on the states themselves and carries no route: it
+     * is drawn from where its states are. What takes it is its label, and the
+     * transitions between the same two states are drawn as one line with
+     * their labels beside it, each selected on its own.
+     */
+    export const EDGE_TRANSITION = 'edge:transition';
     
     // Compartment types
     export const COMPARTMENT_HEADER = 'comp:header';
@@ -463,6 +477,43 @@ export namespace WorkflowDiagramMetadata {
     /** On a node: the thing it is one drawing of (`meta.sameAs`). Selecting a
      *  node outlines the others that draw the same thing. */
     export const SAME_AS = 'wf:sameAs';
+    /** On a state: the automaton starts in it (`meta.initial` of the node). */
+    export const STATE_INITIAL = 'wf:stateInitial';
+    /** On a transition: how wide the server takes its label to be drawn, in
+     *  px, so that the client places it without measuring. */
+    export const TRANSITION_LABEL_WIDTH = 'wf:transitionLabelWidth';
+    /** On a transition: its place in the order its state tries its
+     *  transitions in, from 1 (`meta.order` of the edge). Transitions of one
+     *  state with the same place are tried in no order. */
+    export const TRANSITION_ORDER = 'wf:transitionOrder';
+    /** On a transition: the condition it is taken under, as the producer
+     *  writes it (`meta.condition` of the edge). */
+    export const TRANSITION_CONDITION = 'wf:transitionCondition';
+    /**
+     * On a state: the steps of the run of states it stands for. A run of
+     * states each with one way in and one way out (a sequence a program goes
+     * through) is drawn as one state that lists the actions taken along it,
+     * in order (`automaton-compress.ts`); each step is `{ action, count }`,
+     * `count` the times the action is taken in a row.
+     */
+    export const STATE_STEPS = 'wf:stateSteps';
+    /** On a state that stands for a run: the names of the states it folds, in order. */
+    export const STATE_FOLDED = 'wf:stateFolded';
+    /**
+     * On a transition into a state entered from many: it is drawn as a short
+     * arrow at its source towards that state, ending in the state's name,
+     * not as a curve across the drawing (`automaton-compress.ts`).
+     */
+    export const TRANSITION_STUB = 'wf:transitionStub';
+    /**
+     * On a state that folds a run, and on the first state of a run the reader
+     * unfolded: the run's id, under which the choice is kept in the layout
+     * file (`ToggleNodeOpenOperation`). The state draws the toggle: `+`
+     * unfolds the run, `−` folds it again.
+     */
+    export const STATE_RUN = 'wf:stateRun';
+    /** On the first state of an unfolded run (`STATE_RUN`): the run is open. */
+    export const STATE_RUN_OPEN = 'wf:stateRunOpen';
 }
 
 /**

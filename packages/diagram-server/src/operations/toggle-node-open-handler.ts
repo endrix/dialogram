@@ -9,6 +9,11 @@
  * Making room instead (`StorageRuntimeOptions.toggleLayout`): opened, the
  * frame takes the node's place and the nodes stacked under it move down for
  * its height; closed, they move back; undo and redo replay the moves.
+ *
+ * A run of an automaton's states, folded into one state, is opened the same
+ * way (automaton-compress.ts): the state that folds it, or the first state
+ * of the run unfolded, names the run (`STATE_RUN`), and the run's id is the
+ * key its choice is kept under.
  */
 import type { Operation } from '@eclipse-glsp/protocol';
 import { type Command, type MaybePromise } from '@eclipse-glsp/server';
@@ -33,6 +38,8 @@ export interface NodeOpenTarget {
     nodeKey: string;
     /** The producer's id of the node: its frame's id is made from it. */
     producerId: string;
+    /** A run of an automaton's states, drawn folded or unfolded, not a frame. */
+    run?: boolean;
 }
 
 /** What opening each node moved, per diagram session: closing it moves that back. */
@@ -68,6 +75,10 @@ export class WorkflowToggleNodeOpenOperationHandler extends WorkflowTogglePortBu
             return undefined;
         }
         const layout = layoutTargetOf(diagramModel);
+        const run = args[WorkflowDiagramMetadata.STATE_RUN];
+        if (typeof run === 'string' && run !== '') {
+            return { layout, nodeKey: run, producerId: run, run: true };
+        }
         const openKey = args[WorkflowDiagramMetadata.OPEN_NODE_KEY];
         if (typeof openKey === 'string') {
             const scopeId = String(args['wf:scopeId'] ?? '');
@@ -82,11 +93,22 @@ export class WorkflowToggleNodeOpenOperationHandler extends WorkflowTogglePortBu
     }
 
     isOpen(target: NodeOpenTarget): boolean {
+        if (target.run) {
+            return this.runStateOf(target.nodeKey)?.args?.[WorkflowDiagramMetadata.STATE_RUN_OPEN] === true;
+        }
         return this.modelState.index.find(openFrameId(target.producerId)) !== undefined;
+    }
+
+    /** The state that names a run: the one it is folded into, or its first, unfolded. */
+    runStateOf(runId: string): any {
+        return (this.modelState.root.children ?? []).find((child: any) => child.args?.[WorkflowDiagramMetadata.STATE_RUN] === runId);
     }
 
     /** The node's element in the model as it is drawn now: its frame, or itself. */
     elementOf(target: NodeOpenTarget): any {
+        if (target.run) {
+            return this.runStateOf(target.nodeKey);
+        }
         const frame = this.modelState.index.find(openFrameId(target.producerId));
         if (frame) {
             return frame;

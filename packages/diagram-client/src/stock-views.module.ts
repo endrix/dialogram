@@ -59,6 +59,7 @@ import {
 } from './views';
 import { WorkflowIssueMarkerView } from './issue-marker-view';
 import { DetailGraphView } from './detail-graph-view';
+import { StateNode, StateNodeView, TransitionEdge, TransitionEdgeView } from './automaton-views';
 
 /**
  * Stock workflow-specific model elements and views. Registers nothing neutral —
@@ -91,6 +92,10 @@ export const workflowViewsModule = new ContainerModule((bind, unbind, isBound, r
     // Configure edge types
     configureModelElement(context, WorkflowDiagramTypes.EDGE_CONNECTION, WorkflowEdge, WorkflowEdgeView);
     configureModelElement(context, WorkflowDiagramTypes.EDGE_CONNECTION_NO_ARROW, WorkflowEdge, WorkflowNoArrowEdgeView);
+
+    // An automaton: states, and the transitions between them
+    configureModelElement(context, WorkflowDiagramTypes.NODE_STATE, StateNode, StateNodeView);
+    configureModelElement(context, WorkflowDiagramTypes.EDGE_TRANSITION, TransitionEdge, TransitionEdgeView);
 
     // Validation marker view (GLSP uses DefaultTypes.ISSUE_MARKER = 'marker')
     configureModelElement(context, DefaultTypes.ISSUE_MARKER, GIssueMarker, WorkflowIssueMarkerView);

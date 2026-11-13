@@ -85,4 +85,33 @@ export const WorkflowDiagramConstants = {
     /** The least a group is drawn at: one that holds nothing still has a title to show and edges to end at. */
     GROUP_MIN_WIDTH_PX: 140,
     GROUP_MIN_HEIGHT_PX: 66,
+
+    // An automaton: states (nodes of kind `state`) and the transitions
+    // between them. The server sizes a state by its name and a transition's
+    // label by its text; the client draws by the same numbers.
+    STATE_HEIGHT_PX: 36,
+    /** A state with no name is a circle of its height. */
+    STATE_MIN_WIDTH_PX: 36,
+    STATE_LABEL_FONT_SIZE_PX: 12,
+    /** Between a state's rounded end and its name. */
+    STATE_LABEL_PADDING_PX: 16,
+    /** A transition's label: one line beside the line of its transition. */
+    TRANSITION_LABEL_FONT_SIZE_PX: 11,
+    TRANSITION_LABEL_HEIGHT_PX: 18,
+    /** The badge a label opens with when its transition has a place in its state's order. */
+    TRANSITION_ORDER_BADGE_PX: 14,
+    /** The mark a label ends with when its transition has a condition. */
+    TRANSITION_CONDITION_MARK_PX: 8,
+    /** Between the parts of a label, and between a label and its line. */
+    TRANSITION_LABEL_GAP_PX: 5,
+    /** A state that stands for a run of states: one line per step under its name. */
+    STATE_STEP_HEIGHT_PX: 17,
+    STATE_STEP_FONT_SIZE_PX: 11,
+    /** Under the last step of a run's state. */
+    STATE_STEPS_BOTTOM_PX: 8,
+    /** A transition drawn as a stub: how long its arrow is, and the chip with its target's name. */
+    TRANSITION_STUB_PX: 30,
+    TRANSITION_STUB_CHIP_HEIGHT_PX: 18,
+    /** The room a state gives the toggle that unfolds or folds its run, at its right end. */
+    STATE_RUN_TOGGLE_PX: 24,
 } as const;

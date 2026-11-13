@@ -17,6 +17,7 @@ import { ElkExtendedEdge, ElkNode, ElkPort, ElkShape } from 'elkjs';
 import { injectable } from 'inversify';
 import { WorkflowDiagramTypes, WORKFLOW_LAYOUT_PERSISTENCE_KEY } from '@dialogram/shared';
 import { WorkflowDiagramConstants, WorkflowDiagramMetadata, portRowOffset, portSide, type PortSide } from '@dialogram/shared';
+import { AUTOMATON_MARGIN_PX, automatonElkGraph, automatonPlaces, isStateType, transitionLabelWidthOf } from './automaton-layout';
 
 /** Which side of its node a GPort sits on: the producer's placement, else its direction or type. */
 function gportSide(port: GPort): PortSide {
@@ -143,6 +144,20 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
             return root;
         }
         const run = async (): Promise<GGraph> => {
+            // An automaton is placed, not laid out in layers (automaton-layout.ts);
+            // what it works with goes round it.
+            const states = this.automatonStates(root);
+            if (states) {
+                (this as any).elkEdges = [];
+                (this as any).idToElkElement = new Map();
+                const pinned = this.takePinnedGroups(root, (this as any).transformToElk(root) as ElkNode);
+                await this.placeAutomaton(root, states);
+                this.placeUnitPortsBeside(root, states);
+                if (pinned.length > 0) {
+                    await this.layoutPinnedGroups(root, pinned, AUTOMATON_MARGIN_PX);
+                }
+                return root;
+            }
             // Always-on breadcrumb beside the `elk=` timing the submission handler
             // prints: which preset this layout ran with, and why.
             const { size, tier } = this.tierOf(root);
@@ -200,6 +215,86 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
             return root;
         };
         return run();
+    }
+
+    /**
+     * The states of the graph when it is an automaton: when every node of it
+     * is a state, but for the unit's own ports and the groups pinned above
+     * (what the automaton works with: an actor's ports, its state variables,
+     * its helpers).
+     */
+    private automatonStates(root: GGraph): GNode[] | undefined {
+        const nodes = root.children.filter((child): child is GNode => child instanceof GNode);
+        const states = nodes.filter(node => isStateType(node.type));
+        const around = (node: GNode): boolean => this.isUnitPort(node)
+            || (node.type === WorkflowDiagramTypes.NODE_GROUP && (node as any).args?.[WorkflowDiagramMetadata.GROUP_PIN] === 'top');
+        return states.length > 0 && nodes.every(node => isStateType(node.type) || around(node)) ? states : undefined;
+    }
+
+    private isUnitPort(node: GNode): boolean {
+        return node.type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || node.type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT;
+    }
+
+    /**
+     * The unit's own ports beside its automaton, as a network's are beside
+     * it: the inputs in a column on the left, the outputs on the right, in
+     * the order the document has them, centred on the states' height.
+     */
+    private placeUnitPortsBeside(root: GGraph, states: GNode[]): void {
+        const ports = root.children.filter((child): child is GNode => child instanceof GNode && this.isUnitPort(child));
+        if (ports.length === 0) {
+            return;
+        }
+        const left = Math.min(...states.map(state => state.position?.x ?? 0));
+        const right = Math.max(...states.map(state => (state.position?.x ?? 0) + (state.size?.width ?? 0)));
+        const top = Math.min(...states.map(state => state.position?.y ?? 0));
+        const bottom = Math.max(...states.map(state => (state.position?.y ?? 0) + (state.size?.height ?? 0)));
+        // Clear of the labels and loops that stand out of the states' box.
+        const GAP = AUTOMATON_MARGIN_PX + 30;
+        const BETWEEN = 28;
+        const column = (side: GNode[], x: (port: GNode) => number): void => {
+            const height = side.reduce((sum, port) => sum + (port.size?.height ?? 0), 0) + BETWEEN * Math.max(0, side.length - 1);
+            let y = (top + bottom) / 2 - height / 2;
+            for (const port of side) {
+                port.position = { x: Math.round(x(port)), y: Math.round(y) };
+                y += (port.size?.height ?? 0) + BETWEEN;
+            }
+        };
+        column(ports.filter(port => port.type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT), port => left - GAP - (port.size?.width ?? 0));
+        column(ports.filter(port => port.type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT), () => right + GAP);
+        // Nothing left of the margin: move everything right when an input went there.
+        const leftmost = Math.min(...[...states, ...ports].map(node => node.position?.x ?? 0));
+        const shift = AUTOMATON_MARGIN_PX - leftmost;
+        if (shift > 0) {
+            for (const node of [...states, ...ports]) {
+                node.position = { x: (node.position?.x ?? 0) + shift, y: node.position?.y ?? 0 };
+            }
+        }
+    }
+
+    /** Give the states of an automaton their places. Its transitions have no route to make. */
+    private async placeAutomaton(root: GGraph, states: GNode[]): Promise<void> {
+        const transitions = root.children
+            .filter((child): child is GEdge => child instanceof GEdge && child.type === WorkflowDiagramTypes.EDGE_TRANSITION)
+            .map(edge => ({
+                sourceId: edge.sourceId,
+                targetId: edge.targetId,
+                labelWidth: transitionLabelWidthOf(edge.args as Record<string, unknown> | undefined),
+                stub: (edge.args as Record<string, unknown> | undefined)?.[WorkflowDiagramMetadata.TRANSITION_STUB] === true
+            }));
+        // eslint-disable-next-line no-console
+        console.log(`[dialogram perf] layout ${this.networkName(root)}: automaton states=${states.length} transitions=${transitions.length}`);
+        const laidOut = (await (this as any).elk.layout(automatonElkGraph(
+            states.map(state => ({ id: state.id, width: state.size.width, height: state.size.height })),
+            transitions
+        ))) as ElkNode;
+        const places = automatonPlaces(laidOut);
+        for (const state of states) {
+            const place = places.get(state.id);
+            if (place) {
+                state.position = place;
+            }
+        }
     }
 
     /**
@@ -395,9 +490,12 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
      *
      * The diagram's top is its highest node or its highest route, whichever
      * is higher: the layout runs an edge that goes back over the top row, and
-     * a band placed from the nodes alone would sit on it.
+     * a band placed from the nodes alone would sit on it. `clearance` is the
+     * room between the diagram's top and the band: an automaton's transitions
+     * have no route, their loops and labels stand above its top states.
      */
-    private async layoutPinnedGroups(root: GGraph, pinned: ElkNode[]): Promise<void> {
+    private async layoutPinnedGroups(root: GGraph, pinned: ElkNode[],
+        clearance: number = WorkflowDiagramConstants.GROUP_PIN_GAP_PX): Promise<void> {
         const band = (await (this as any).elk.layout({
             id: `${root.id}::pinned`,
             layoutOptions: { 'elk.algorithm': 'layered', 'elk.direction': 'DOWN' },
@@ -437,7 +535,7 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
             }
         }
         const gap = WorkflowDiagramConstants.GROUP_PIN_GAP_PX;
-        let bottom = top - gap;
+        let bottom = top - clearance;
         // From the last up, so that the first ends on top.
         for (const node of [...pinned].reverse()) {
             const group = this.modelState.index.get(node.id);
