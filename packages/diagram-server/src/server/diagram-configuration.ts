@@ -213,12 +213,13 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
             },
             // A transition of an automaton: from a state to a state, with no
             // route of its own to bend and no end to move to another state
-            // by hand.
+            // by hand. Drawn and deleted where the view allows it
+            // (`VIEW_EDITS`); the server refuses either elsewhere.
             {
                 elementTypeId: WorkflowDiagramTypes.EDGE_TRANSITION,
                 dynamic: false,
                 repositionable: false,
-                deletable: false,
+                deletable: true,
                 routable: false,
                 sourceElementTypeIds: [
                     WorkflowDiagramTypes.NODE_STATE

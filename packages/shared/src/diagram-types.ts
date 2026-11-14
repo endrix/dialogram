@@ -421,6 +421,28 @@ export namespace WorkflowDiagramMetadata {
      * pass from an editable view to a read-only one and back.
      */
     export const READ_ONLY_VIEW = 'wf:readOnlyView';
+    /**
+     * On the root of a read-only view: what the reader can still edit in it,
+     * as the producer said (`graph.meta.edits`). `transition`: the
+     * transitions of its automaton, drawn from a state to a state with the
+     * palette's Transition (taken by one of `TRANSITION_LABELS`) and deleted.
+     * The palette shows the tools of these edits and no other.
+     */
+    export const VIEW_EDITS = 'wf:viewEdits';
+    /**
+     * On the root of a view whose transitions can be edited: what a drawn
+     * transition can be taken by (`graph.meta.transitionLabels`, each
+     * `{ id, label, description? }`); drawing one asks which, and the
+     * producer is told its `id`.
+     */
+    export const TRANSITION_LABELS = 'wf:transitionLabels';
+    /**
+     * On the root: what the view was asked of its producer by (the unit's
+     * name, the view, and for a view of an instance the root and the path of
+     * instances to it, the file asked), so that an edit made in it names the
+     * same thing (`ViewRequest`).
+     */
+    export const VIEW_REQUEST = 'wf:viewRequest';
     export const NETWORK_NAME = 'cal:networkName';
     export const NETWORK_FACTORY_NAME = 'cal:networkFactoryName';
     export const NETWORK_PARAMETERS = 'cal:networkParameters';
@@ -522,6 +544,49 @@ export namespace WorkflowDiagramMetadata {
     export const STATE_RUN = 'wf:stateRun';
     /** On the first state of an unfolded run (`STATE_RUN`): the run is open. */
     export const STATE_RUN_OPEN = 'wf:stateRunOpen';
+    /**
+     * On a state: its name in what the automaton is written in, as the
+     * producer said (`meta.state`); a transition drawn from or to it names it
+     * so. A state with none (one the producer draws that no transition is
+     * written from, a run folded into one state) has no transition drawn
+     * from or to it.
+     */
+    export const STATE_NAME = 'wf:stateName';
+}
+
+/**
+ * The palette's group of the Transition tool, by its id: the element the
+ * client shows only while a view allows drawing a transition
+ * (`diagram-client.css`).
+ */
+export const TRANSITIONS_PALETTE_GROUP = 'palette-transitions';
+
+/** What a view was asked of its producer by (`WorkflowDiagramMetadata.VIEW_REQUEST`). */
+export interface ViewRequest {
+    /** The unit's name, as the view was asked for by it. */
+    networkName?: string;
+    /** The view, when it is not the unit's structure. */
+    view?: string;
+    /** For a view of an instance: the root it was asked of, and the path of instances from it. */
+    rootWorkflow?: string;
+    instancePath?: string[];
+    /** The file the view was asked of, when it is not the diagram's own. */
+    graphSourceUri?: string;
+}
+
+/** The edits a view still allows (`VIEW_EDITS` on its root): none when it says none. */
+export function viewEditsOf(rootArgs: Record<string, unknown> | undefined): string[] {
+    const edits = rootArgs?.[WorkflowDiagramMetadata.VIEW_EDITS];
+    return Array.isArray(edits) ? edits.filter((edit): edit is string => typeof edit === 'string' && edit !== '') : [];
+}
+
+/** What a drawn transition can be taken by (`TRANSITION_LABELS` on a root): none when it says none. */
+export function transitionLabelsOf(rootArgs: Record<string, unknown> | undefined): Array<{ id: string; label: string; description?: string }> {
+    const labels = rootArgs?.[WorkflowDiagramMetadata.TRANSITION_LABELS];
+    return Array.isArray(labels)
+        ? labels.filter((entry): entry is { id: string; label: string; description?: string } =>
+            typeof entry?.id === 'string' && entry.id !== '' && typeof entry?.label === 'string')
+        : [];
 }
 
 /**

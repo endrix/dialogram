@@ -55,7 +55,7 @@ describe('a palette for a diagram that creates nothing', () => {
         const items = await providerWith(baseOptions).getItems();
         const ids = items.map((category: any) => category.id);
 
-        expect(ids).toEqual(['palette-entities', 'palette-ports', 'palette-connections']);
+        expect(ids).toEqual(['palette-entities', 'palette-ports', 'palette-connections', 'palette-transitions']);
         const entities = items.find((category: any) => category.id === 'palette-entities');
         expect(entities.children.map((c: any) => c.label)).toContain('Contributed');
     });
@@ -64,13 +64,13 @@ describe('a palette for a diagram that creates nothing', () => {
         const items = await providerWith({ ...baseOptions, supportsElementCreation: true }).getItems();
 
         expect(items.map((category: any) => category.id))
-            .toEqual(['palette-entities', 'palette-ports', 'palette-connections']);
+            .toEqual(['palette-entities', 'palette-ports', 'palette-connections', 'palette-transitions']);
     });
 
     it('keeps ports and connections when a profile carries no storage options at all (no rows, so no Entities)', async () => {
         const items = await providerWith(undefined).getItems();
 
         expect(items.map((category: any) => category.id))
-            .toEqual(['palette-ports', 'palette-connections']);
+            .toEqual(['palette-ports', 'palette-connections', 'palette-transitions']);
     });
 });

@@ -21,7 +21,7 @@ import {
     CreateNodeOperation,
     CreateEdgeOperation
 } from '@eclipse-glsp/protocol';
-import { WorkflowDiagramTypes } from '@dialogram/shared';
+import { TRANSITIONS_PALETTE_GROUP, WorkflowDiagramTypes } from '@dialogram/shared';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
 
 /**
@@ -121,7 +121,19 @@ export class WorkflowToolPaletteItemProvider extends ToolPaletteItemProvider {
             children: connectionItems,
             icon: 'arrow-right'
         });
-        
+
+        // A transition, from a state to a state: offered in every editor,
+        // since the palette is asked once per editor, and shown only while a
+        // view that allows drawing one is (`VIEW_EDITS`, read-only-view.ts).
+        items.push({
+            id: TRANSITIONS_PALETTE_GROUP,
+            label: 'Transitions',
+            sortString: 'D',
+            actions: [],
+            children: [this.createEdgeItem(WorkflowDiagramTypes.EDGE_TRANSITION, 'Transition', 'Draw a transition from a state to a state')],
+            icon: 'arrow-swap'
+        });
+
         return items;
     }
     

@@ -9,6 +9,14 @@ import { WorkflowDiagramMetadata, WorkflowDiagramTypeGuards, WorkflowDiagramType
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { SidecarInvoker } from './sidecar-invoker';
 import { escapePythonStringLiteral } from '../python-text';
+import { allowsTransitionEdits, viewEditTarget, writeTransitionEdit } from './transition-edits';
+
+/** One thing a delete asks the producer to take out. */
+type PlannedDelete =
+    | { kind: 'transition'; id: string }
+    | { kind: 'node'; name: unknown }
+    | { kind: 'edge'; fromExpr: string; toExpr: string; role: unknown }
+    | { kind: 'port'; direction: string; portName: string };
 
 @injectable()
 export class DeleteElementOperationHandler extends OperationHandler {
@@ -34,105 +42,63 @@ export class DeleteElementOperationHandler extends OperationHandler {
     }
 
     private createPythonCommand(operation: DeleteElementOperation, sourceUri: string): Command | undefined {
-        const elementIds = operation.elementIds ?? [];
-        if (elementIds.length === 0) {
+        // What the selection deletes is known before any command is made: a
+        // selection that deletes nothing makes none, so nothing goes on the
+        // undo stack. (A command that writes nothing cannot be undone, and on
+        // top of the stack it would keep every edit below it from being undone.)
+        const deletes = this.plannedDeletes(operation.elementIds ?? []);
+        if (deletes.length === 0) {
             return undefined;
         }
 
         const vscodeUri = vscode.Uri.parse(sourceUri);
-        const root = this.modelState.root;
-        const workflowName = root.args?.['wf:workflowName'] as string | undefined;
+        const workflowName = this.modelState.root.args?.['wf:workflowName'] as string | undefined;
+        const transitions = viewEditTarget(this.modelState.root);
 
         const command = new ReversibleWorkspaceEditCommand({
             label: 'Delete' + this.sidecar.undoLabelSuffix(),
             uri: vscodeUri,
             computeEdits: async () => {
                 const beforeText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
-                const deletedEdges = new Set<string>();
-                for (const id of elementIds) {
-                    const gmodelElement = this.modelState.index.get(id);
-                    if (gmodelElement) {
-                        const elementType = (gmodelElement as any).type as string;
-                        const elementArgs = (gmodelElement as any).args as Record<string, unknown> | undefined;
-                        if (WorkflowDiagramTypeGuards.isReadOnlyElement(elementType, elementArgs)) {
-                            continue;
+                let wrote = false;
+                for (const planned of deletes) {
+                    if (planned.kind === 'transition') {
+                        // A transition the producer refuses to take out (it said
+                        // why) stays, and the others selected with it go: their
+                        // ids name their states and action, not a place in the
+                        // list, so one taken out leaves the others' as they were.
+                        if (transitions && (await writeTransitionEdit(this.sidecar, transitions, 'removeTransition', { transition: planned.id }))) {
+                            wrote = true;
                         }
-                    }
-
-                    const element = this.modelState.index.get(id) as any;
-                    const elementArgs = element?.args as Record<string, unknown> | undefined;
-                    const elementType = element?.type as string | undefined;
-
-                    if (elementType && (elementType.startsWith('node:') || elementType.startsWith('node ')) && elementArgs?.[WorkflowDiagramMetadata.ENTITY_NAME]) {
-                        const ok = await this.sendSidecarOp(sourceUri, {
-                            op: this.sidecar.sidecarOp('deleteNode'),
-                            args: { workflow: workflowName, name: elementArgs[WorkflowDiagramMetadata.ENTITY_NAME] }
-                        });
-                        if (!ok) return undefined;
                         continue;
                     }
-
-                    if (elementType === WorkflowDiagramTypes.EDGE_CONNECTION && elementArgs) {
-                        // A piece of an edge split at group frames stands for the
-                        // edge (`EDGE_OF`): two pieces of one edge delete it once.
-                        // A piece several edges share inside a group stands for
-                        // more than one, and which to delete is not for this
-                        // handler to guess; their stretch between frames is each
-                        // one's own, and deletes it.
-                        const edgesOf = elementArgs[WorkflowDiagramMetadata.EDGES_OF];
-                        if (Array.isArray(edgesOf) && edgesOf.length > 1) {
-                            void vscode.window.showInformationMessage(
-                                `That line inside the group stands for ${edgesOf.length} edges. Select one of them where it runs between groups to delete it.`
-                            );
-                            continue;
-                        }
-                        const edgeOf = elementArgs[WorkflowDiagramMetadata.EDGE_OF];
-                        if (typeof edgeOf === 'string') {
-                            if (deletedEdges.has(edgeOf)) {
-                                continue;
-                            }
-                            deletedEdges.add(edgeOf);
-                        }
-                        const fromName = elementArgs['wf:from'] as string | undefined;
-                        const toName = elementArgs['wf:to'] as string | undefined;
-                        const outPort = elementArgs['wf:outPort'] as string | undefined;
-                        const inPort = elementArgs['wf:inPort'] as string | undefined;
-                        if (!outPort || !inPort) continue;
-                        const fromExpr = this.edgeEndpointExpr(fromName, outPort);
-                        const toExpr = this.edgeEndpointExpr(toName, inPort);
+                    let args: Record<string, unknown>;
+                    if (planned.kind === 'node') {
+                        args = { workflow: workflowName, name: planned.name };
+                    } else if (planned.kind === 'edge') {
                         // The kind of edge, when the producer said (`meta.role`)
                         // and the sidecar makes edges of several kinds: two nodes
                         // may then be joined by more than one, and the sidecar
                         // needs to know which one goes. A sidecar that lists no
                         // kinds gets no role, as before.
-                        const role = (await this.sidecar.edgeRoles(sourceUri))
-                            ? elementArgs[WorkflowDiagramMetadata.EDGE_ROLE]
-                            : undefined;
-                        const ok = await this.sendSidecarOp(sourceUri, {
-                            op: this.sidecar.sidecarOp('deleteEdge'),
-                            args: {
-                                workflow: workflowName,
-                                from_expr: fromExpr,
-                                to_expr: toExpr,
-                                ...(typeof role === 'string' && role.trim() !== '' ? { role: role.trim() } : {})
-                            }
-                        });
-                        if (!ok) return undefined;
-                        continue;
+                        const role = (await this.sidecar.edgeRoles(sourceUri)) ? planned.role : undefined;
+                        args = {
+                            workflow: workflowName,
+                            from_expr: planned.fromExpr,
+                            to_expr: planned.toExpr,
+                            ...(typeof role === 'string' && role.trim() !== '' ? { role: role.trim() } : {})
+                        };
+                    } else {
+                        args = { workflow: workflowName, direction: planned.direction, portName: planned.portName };
                     }
-
-                    if (elementType && elementType.startsWith('port:') && elementArgs) {
-                        const portName = elementArgs[WorkflowDiagramMetadata.PORT_NAME] as string | undefined;
-                        const portDirection = elementArgs[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined;
-                        if (portName && portDirection) {
-                            const ok = await this.sendSidecarOp(sourceUri, {
-                                op: this.sidecar.sidecarOp('deletePort'),
-                                args: { workflow: workflowName, direction: portDirection, portName }
-                            });
-                            if (!ok) return undefined;
-                        }
-                        continue;
+                    const op = planned.kind === 'node' ? 'deleteNode' : planned.kind === 'edge' ? 'deleteEdge' : 'deletePort';
+                    if (!(await this.sendSidecarOp(sourceUri, { op: this.sidecar.sidecarOp(op), args }))) {
+                        return undefined;
                     }
+                    wrote = true;
+                }
+                if (!wrote) {
+                    return undefined;
                 }
                 const afterText = await readAuthoritativeSourceText(vscodeUri);
                 (command as any)._sourceBeforeText = beforeText;
@@ -141,6 +107,84 @@ export class DeleteElementOperationHandler extends OperationHandler {
             },
         });
         return command;
+    }
+
+    /**
+     * What deleting `elementIds` asks the producer to delete, in their order.
+     * A read-only element is kept. A read-only view deletes nothing but what
+     * its edits name: its transitions, where it allows editing them
+     * (transition-edits.ts); a transition elsewhere is kept too.
+     */
+    private plannedDeletes(elementIds: readonly string[]): PlannedDelete[] {
+        const root = this.modelState.root;
+        const readOnlyView = root.args?.[WorkflowDiagramMetadata.READ_ONLY_VIEW] === true;
+        const transitions = allowsTransitionEdits(root) && viewEditTarget(root) !== undefined;
+        const deletedEdges = new Set<string>();
+        const deletes: PlannedDelete[] = [];
+        for (const id of elementIds) {
+            const element = this.modelState.index.get(id) as any;
+            const elementArgs = element?.args as Record<string, unknown> | undefined;
+            const elementType = element?.type as string | undefined;
+            if (element && WorkflowDiagramTypeGuards.isReadOnlyElement(elementType as string, elementArgs)) {
+                continue;
+            }
+
+            if (elementType === WorkflowDiagramTypes.EDGE_TRANSITION) {
+                if (transitions) {
+                    deletes.push({ kind: 'transition', id });
+                }
+                continue;
+            }
+            if (readOnlyView) continue;
+
+            if (elementType && (elementType.startsWith('node:') || elementType.startsWith('node ')) && elementArgs?.[WorkflowDiagramMetadata.ENTITY_NAME]) {
+                deletes.push({ kind: 'node', name: elementArgs[WorkflowDiagramMetadata.ENTITY_NAME] });
+                continue;
+            }
+
+            if (elementType === WorkflowDiagramTypes.EDGE_CONNECTION && elementArgs) {
+                // A piece of an edge split at group frames stands for the
+                // edge (`EDGE_OF`): two pieces of one edge delete it once.
+                // A piece several edges share inside a group stands for
+                // more than one, and which to delete is not for this
+                // handler to guess; their stretch between frames is each
+                // one's own, and deletes it.
+                const edgesOf = elementArgs[WorkflowDiagramMetadata.EDGES_OF];
+                if (Array.isArray(edgesOf) && edgesOf.length > 1) {
+                    void vscode.window.showInformationMessage(
+                        `That line inside the group stands for ${edgesOf.length} edges. Select one of them where it runs between groups to delete it.`
+                    );
+                    continue;
+                }
+                const edgeOf = elementArgs[WorkflowDiagramMetadata.EDGE_OF];
+                if (typeof edgeOf === 'string') {
+                    if (deletedEdges.has(edgeOf)) {
+                        continue;
+                    }
+                    deletedEdges.add(edgeOf);
+                }
+                const outPort = elementArgs['wf:outPort'] as string | undefined;
+                const inPort = elementArgs['wf:inPort'] as string | undefined;
+                if (!outPort || !inPort) continue;
+                deletes.push({
+                    kind: 'edge',
+                    fromExpr: this.edgeEndpointExpr(elementArgs['wf:from'] as string | undefined, outPort),
+                    toExpr: this.edgeEndpointExpr(elementArgs['wf:to'] as string | undefined, inPort),
+                    role: elementArgs[WorkflowDiagramMetadata.EDGE_ROLE]
+                });
+                continue;
+            }
+
+            if (elementType && elementType.startsWith('port:') && elementArgs) {
+                const portName = elementArgs[WorkflowDiagramMetadata.PORT_NAME] as string | undefined;
+                const portDirection = elementArgs[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined;
+                if (portName && portDirection) {
+                    deletes.push({ kind: 'port', direction: portDirection, portName });
+                }
+                continue;
+            }
+        }
+        return deletes;
     }
 
     private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {

@@ -52,6 +52,7 @@ const CALPY_CFG = runtimeConfig('calpy', 'calLang', 'sidecar-export');
 const EXPECTED_SIDECAR_HANDLER_NAMES = [
     'CreateNodeOperationHandler',
     'CreateEdgeOperationHandler',
+    'CreateTransitionOperationHandler',
     'DeleteElementOperationHandler',
     'CutOperationHandler',
     'ReconnectEdgeOperationHandler',

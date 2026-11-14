@@ -6,11 +6,20 @@
  * stays, and so does moving nodes. Per view: the tools come back with the
  * next editable view, without a reload, which the palette itself would not
  * do (it asks for its items once per editor).
+ *
+ * What such a view still allows (`wf:viewEdits`) the page carries too, an
+ * edit a class (`wf-view-edits-transition`), and the stylesheet shows that
+ * edit's tools: the palette's Transition, offered in every editor and shown
+ * only there.
  */
 import { injectable } from 'inversify';
-import { WorkflowDiagramMetadata } from '@dialogram/shared';
+import { WorkflowDiagramMetadata, viewEditsOf } from '@dialogram/shared';
 
 export const READ_ONLY_VIEW_CLASS = 'wf-read-only-view';
+/** The page's class while a view that allows `edit` is shown. */
+export const viewEditClass = (edit: string): string => `wf-view-edits-${edit}`;
+/** The edits a view can allow, and so the classes a page can carry for them. */
+const VIEW_EDITS = ['transition'];
 
 /** Whether the root model is a view the producer marked read-only. */
 export function isReadOnlyView(root: unknown): boolean {
@@ -21,6 +30,11 @@ export function isReadOnlyView(root: unknown): boolean {
 @injectable()
 export class ReadOnlyViewMarker {
     modelRootChanged(root: unknown): void {
-        globalThis.document?.body?.classList.toggle(READ_ONLY_VIEW_CLASS, isReadOnlyView(root));
+        const classes = globalThis.document?.body?.classList;
+        classes?.toggle(READ_ONLY_VIEW_CLASS, isReadOnlyView(root));
+        const edits = viewEditsOf((root as { args?: Record<string, unknown> } | undefined)?.args);
+        for (const edit of VIEW_EDITS) {
+            classes?.toggle(viewEditClass(edit), edits.includes(edit));
+        }
     }
 }

@@ -19,6 +19,7 @@ import { CreateTaskTypeMcpToolHandler } from './operations/create-task-type-mcp-
 import type { SidecarRuntimeConfig } from './sidecar-runtime-config.js';
 import { CreateNodeOperationHandler } from './operations/create-node-handler.js';
 import { CreateEdgeOperationHandler } from './operations/create-edge-handler.js';
+import { CreateTransitionOperationHandler } from './operations/transition-edits.js';
 import { DeleteElementOperationHandler } from './operations/delete-handler.js';
 import { CutOperationHandler } from './operations/cut-handler.js';
 import { ReconnectEdgeOperationHandler } from './operations/reconnect-handler.js';
@@ -49,6 +50,7 @@ function sidecarOperationHandlers(cfg: SidecarRuntimeConfig): OperationHandlerCo
     return [
         CreateNodeOperationHandler,
         CreateEdgeOperationHandler,
+        CreateTransitionOperationHandler,
         DeleteElementOperationHandler,
         CutOperationHandler,
         ReconnectEdgeOperationHandler,

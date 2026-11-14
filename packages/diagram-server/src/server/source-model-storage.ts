@@ -60,6 +60,7 @@ import {
     INSTANCE_PATH_ARG,
     parseNavigationTrailArg as sharedParseNavigationTrailArg,
     parseStringListArg,
+    viewRequestOf,
     deriveTrailFallback as sharedDeriveTrailFallback
 } from './graph-load-request-options';
 import { DIAGRAM_MODEL_SOURCE } from './model-source-token';
@@ -684,6 +685,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         }
         (gmodelRoot as any).args['sourceUri'] = sourceUri;
         (gmodelRoot as any).args['wf:workflowFile'] = workflowFilePath;
+        // What the view was asked for by, for an edit made in it to name the same.
+        (gmodelRoot as any).args[WorkflowDiagramMetadata.VIEW_REQUEST] = viewRequestOf(opts);
         if (workflowName) {
             try {
                 const sourceText = await (await import('fs/promises')).readFile(workflowFilePath, 'utf-8');
