@@ -272,15 +272,24 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
      * The bundles open in the model as it is drawn, for every node that has
      * one, an empty set for a node whose bundles are all closed; and the
      * nodes that open in place, the open ones (drawn as their frames) listed
-     * under `ToggleNodeOpenOperation.OPEN`. What the view shows may be its
-     * fallback's choice; saving all of it keeps that.
+     * under `ToggleNodeOpenOperation.OPEN`, as are the runs of an automaton
+     * that are unfolded (`STATE_RUN_OPEN`, under the run's id). What the view
+     * shows may be its fallback's choice; saving all of it keeps that.
      */
     openBundles(): Map<string, Set<string>> {
         const open = new Map<string, Set<string>>();
         const visit = (element: GModelElement): void => {
             const args = (element as any).args as Record<string, unknown> | undefined;
             const openKey = args?.[WorkflowDiagramMetadata.OPEN_NODE_KEY];
-            if (typeof openKey === 'string') {
+            const run = args?.[WorkflowDiagramMetadata.STATE_RUN];
+            if (typeof run === 'string' && run !== '') {
+                // A run, folded into its state or unfolded from its first.
+                const groups = open.get(run) ?? new Set<string>();
+                if (args?.[WorkflowDiagramMetadata.STATE_RUN_OPEN] === true) {
+                    groups.add(ToggleNodeOpenOperation.OPEN);
+                }
+                open.set(run, groups);
+            } else if (typeof openKey === 'string') {
                 // Open, and with the bundles it had open, which are not drawn now.
                 const groups = open.get(openKey) ?? new Set<string>();
                 groups.add(ToggleNodeOpenOperation.OPEN);

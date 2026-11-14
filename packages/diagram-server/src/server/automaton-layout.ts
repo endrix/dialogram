@@ -125,6 +125,12 @@ export function automatonElkGraph(states: readonly AutomatonState[], transitions
         // Beside a line, its widest label; between two layers, the most labels stacked on one line.
         const widest = Math.max(0, ...directed.map(t => t.labelWidth));
         const stacked = Math.max(1, ...seen.values());
+        // A state whose only transitions are loops is a component of its own
+        // here (a loop is no edge of this graph), and components are packed
+        // next to each other: as far apart as two states with a transition
+        // between them, and a loop's label more, or the loop and its label
+        // land on the next one.
+        const widestLoop = Math.max(0, ...transitions.filter(t => !t.stub && t.sourceId === t.targetId).map(t => t.labelWidth));
         const k = WorkflowDiagramConstants;
         return {
             id: 'automaton',
@@ -133,6 +139,7 @@ export function automatonElkGraph(states: readonly AutomatonState[], transitions
                 'elk.direction': 'DOWN',
                 'elk.layered.spacing.nodeNodeBetweenLayers': large ? '90' : String(Math.max(60, stacked * k.TRANSITION_LABEL_HEIGHT_PX + 28)),
                 'elk.spacing.nodeNode': large ? '140' : String(Math.round(Math.min(160, Math.max(60, widest * 0.6 + 30)))),
+                'elk.spacing.componentComponent': String(MIN_BETWEEN_PX + Math.round(widestLoop / 2)),
                 'elk.layered.cycleBreaking.strategy': 'MODEL_ORDER',
                 'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
                 'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX'

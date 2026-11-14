@@ -401,7 +401,9 @@ const GROUP_ROWS_LAYOUT: Record<string, string> = {
 const GROUP_LIST_LAYOUT: Record<string, string> = {
     'elk.spacing.nodeNode': '0',
     'elk.layered.spacing.nodeNodeBetweenLayers': '0',
-    'elk.padding': `[top=${WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX + 8},left=8,bottom=8,right=8]`
+    'elk.padding': `[top=${WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX + WorkflowDiagramConstants.LIST_FRAME_PADDING_PX},`
+        + `left=${WorkflowDiagramConstants.LIST_FRAME_PADDING_PX},bottom=${WorkflowDiagramConstants.LIST_FRAME_PADDING_PX},`
+        + `right=${WorkflowDiagramConstants.LIST_FRAME_PADDING_PX}]`
 };
 
 /** Whether a group's layout options are the rows' (`groupLayoutOptions(true)`). */

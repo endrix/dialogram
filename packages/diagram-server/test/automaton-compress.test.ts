@@ -110,6 +110,9 @@ describe('a run of states with one way in and one way out', () => {
             expect(target).toMatchObject({ nodeKey: 'fold:state:a', producerId: 'fold:state:a', run: true });
             expect(handler.isOpen(target)).toBe(open);
             expect(handler.elementOf(target)?.id).toBe(state.id);
+            // A toggle saves what the view shows, the run as it stands
+            // included: a view that shows its fallback's choice keeps it.
+            expect([...(handler.openBundles().get('fold:state:a') ?? ['none'])]).toEqual(open ? [ToggleNodeOpenOperation.OPEN] : []);
         }
     });
 

@@ -17,6 +17,7 @@ import { convertToGModelRoot } from '../src/server/gmodel-convert';
 import { WorkflowElkLayoutEngine } from '../src/server/elk-layout-engine';
 import { WorkflowLayoutConfigurator } from '../src/server/layout-configurator';
 import { automatonDrawingBox } from '../src/server/automaton-layout';
+import { restoreGroupGeometry } from '../src/server/group-geometry';
 
 const k = WorkflowDiagramConstants;
 
@@ -146,6 +147,17 @@ describe('a list pinned on the left of an automaton', () => {
         expect(input.position!.x - right).toBeGreaterThanOrEqual(k.GROUP_PIN_GAP_PX - 1);
         expect(input.position!.x - right).toBeLessThanOrEqual(k.GROUP_PIN_GAP_PX + 1);
         expect(frame.position!.y).toBe(Math.min(drawn.y, input.position!.y));
+    });
+
+    it('is as big again when the diagram is opened again, from where its rows are', async () => {
+        for (const count of [2, 40]) {
+            const root = await place(unit(count));
+            const { frame } = parts(root);
+            const laidOut = { ...frame.size! };
+            frame.size = undefined as any;
+            restoreGroupGeometry(root as any, new Map());
+            expect(frame.size).toEqual(laidOut);
+        }
     });
 
     it('goes on in columns when much taller than the automaton, the first rows in the first', async () => {

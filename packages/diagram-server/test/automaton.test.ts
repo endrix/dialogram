@@ -12,14 +12,14 @@ import { describe, expect, it } from 'vitest';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import { GEdge, GGraph, GNode } from '@eclipse-glsp/server';
 import { DefaultElementFilter } from '@eclipse-glsp/layout-elk';
-import { WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, stateWidth, transitionLabelWidth } from '@dialogram/shared';
+import { WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, automatonGeometry, overlapArea, stateWidth, transitionLabelWidth } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument } from '../src/model/graph-gmodel-source';
 import { convertToGModelRoot } from '../src/server/gmodel-convert';
 import { WorkflowElkLayoutEngine } from '../src/server/elk-layout-engine';
 import { WorkflowLayoutConfigurator } from '../src/server/layout-configurator';
 import { applyPersistedEdgeRoutes } from '../src/routing/persisted-edge-routes';
 import { collectEdgeRoutes } from '../src/server/layout-snapshot';
-import { automatonElkGraph, isHub } from '../src/server/automaton-layout';
+import { automatonElkGraph, isHub, transitionLabelWidthOf } from '../src/server/automaton-layout';
 
 const state = (name: string, meta: Record<string, unknown> = {}): any =>
     ({ id: `state:${name}`, kind: 'state', label: name, scope: 'root', ports: [], meta });
@@ -192,6 +192,41 @@ describe('where the states of an automaton go', () => {
         const [idle, run] = [first.get('idle')!, first.get('run')!];
         expect(run.y - (idle.y + WorkflowDiagramConstants.STATE_HEIGHT_PX)).toBeGreaterThanOrEqual(60);
         expect([...(await place())]).toEqual([...first]);
+    });
+
+    it('places a state whose only transitions are loops clear of the others, its loops and their labels on no state', async () => {
+        // Two states with only a loop each, and a program beside a third.
+        for (const doc of [
+            { nodes: [state('a', { initial: true }), state('b')], edges: [transition('a', 'x', 'a'), transition('b', 'a_longer_label', 'b')] },
+            {
+                nodes: [state('a', { initial: true }), state('b'), state('c'), state('lonely')],
+                edges: [transition('a', 'go', 'b'), transition('b', 'go', 'c'), transition('c', 'back', 'a'), transition('lonely', 'spin', 'lonely')]
+            }
+        ]) {
+            const root = model({ version: '1', graph: { id: 'root', ...doc } } as PyGraphDocument);
+            const modelState: any = { root, index: { get: (id: string) => find(root, id), findByClass: (id: string) => find(root, id) } };
+            await new WorkflowElkLayoutEngine(
+                () => new (ELK as any)({ algorithms: ['layered', 'stress'] }),
+                new DefaultElementFilter(),
+                new WorkflowLayoutConfigurator(),
+                modelState
+            ).layout();
+            const states = (root.children ?? []).filter(child => child.type === WorkflowDiagramTypes.NODE_STATE) as GNode[];
+            const boxes = new Map(states.map(s => [s.id, { x: s.position!.x, y: s.position!.y, width: s.size!.width, height: s.size!.height }]));
+            const transitions = (root.children ?? []).filter((child): child is GEdge => child instanceof GEdge && child.type === WorkflowDiagramTypes.EDGE_TRANSITION)
+                .map(edge => ({ id: edge.id, sourceId: edge.sourceId, targetId: edge.targetId, labelWidth: transitionLabelWidthOf(edge.args as any) }));
+            const drawn = automatonGeometry(boxes, transitions);
+            const hits: string[] = [];
+            for (const t of transitions) {
+                const shape = drawn.transitions.get(t.id)!;
+                for (const [id, box] of boxes) {
+                    if (id !== t.sourceId && id !== t.targetId && (overlapArea(shape.label, box) > 0 || overlapArea(shape.shape.box, box) > 0)) {
+                        hits.push(`${t.id} on ${id}`);
+                    }
+                }
+            }
+            expect(hits).toEqual([]);
+        }
     });
 });
 

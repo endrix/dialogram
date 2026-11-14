@@ -7,8 +7,10 @@
  * is past the size at which the platform starts trading quality for speed
  * (`LAYOUT_TIER_MIDDLE_NODES`, `LAYOUT_TIER_MIDDLE_EDGES`): below it elkjs is
  * done before a request would be, and a small diagram lays out exactly as it
- * always has. Anything the server cannot do — not started, timed out, failed —
- * falls back to elkjs for that layout.
+ * always has. A graph that asks for an algorithm the server does not have
+ * (`SERVER_ALGORITHMS`: an automaton placed by stress) stays on elkjs, which
+ * has them all. Anything the server cannot do — not started, timed out,
+ * failed — falls back to elkjs for that layout.
  */
 import type { ELK, ElkLayoutArguments, ElkNode } from 'elkjs';
 import { LAYOUT_TIER_MIDDLE_EDGES, LAYOUT_TIER_MIDDLE_NODES } from '../layout-configurator';
@@ -29,6 +31,24 @@ export function elkGraphSize(graph: ElkNode): { nodes: number; edges: number } {
     };
     visit(graph);
     return { nodes, edges };
+}
+
+/**
+ * The algorithms the ELK server has (`AbstractElkServer`: layered, force and
+ * mrtree, and the ones ELK's core has without asking), by their short ids.
+ */
+const SERVER_ALGORITHMS = new Set(['layered', 'force', 'mrtree', 'box', 'fixed', 'random']);
+
+/** Whether every algorithm a graph asks for, at any depth, is one the server has. */
+export function serverCanLayOut(graph: ElkNode): boolean {
+    const asks = (node: ElkNode): boolean => {
+        const algorithm = node.layoutOptions?.['elk.algorithm'] ?? node.layoutOptions?.['org.eclipse.elk.algorithm'];
+        if (typeof algorithm === 'string' && !SERVER_ALGORITHMS.has(algorithm.replace(/^org\.eclipse\.elk\./, ''))) {
+            return false;
+        }
+        return (node.children ?? []).every(asks);
+    };
+    return asks(graph);
 }
 
 /** Whether a graph of this size goes to the server under this choice. */
@@ -52,7 +72,7 @@ export class SwitchingElk implements ELK {
 
     async layout<T extends ElkNode>(graph: T, args?: ElkLayoutArguments): Promise<LaidOut<T>> {
         const size = elkGraphSize(graph);
-        if (goesToServer(this.options.engine, size)) {
+        if (goesToServer(this.options.engine, size) && serverCanLayOut(graph)) {
             const port = await this.server.ensureStarted();
             if (port !== undefined) {
                 const started = Date.now();

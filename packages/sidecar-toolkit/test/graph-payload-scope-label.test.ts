@@ -99,7 +99,7 @@ describe('graph payload links drawn on selection', () => {
             network: 'top',
             nodes: [
                 { id: 'a:run:step', kind: 'action', label: 'step', scope: 'scope:root', ports: [], metadata: { sameAs: 'step' } },
-                { id: 'v:count', kind: 'state', label: 'count', scope: 'scope:root', ports: [] }
+                { id: 'v:count', kind: 'variable', label: 'count', scope: 'scope:root', ports: [] }
             ],
             edges: [{
                 id: 'l:write',

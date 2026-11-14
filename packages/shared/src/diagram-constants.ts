@@ -76,6 +76,8 @@ export const WorkflowDiagramConstants = {
     LIST_ROW_FONT_SIZE_PX: 11,
     /** Inside a row, before its first column and after its last. */
     LIST_ROW_PADDING_PX: 8,
+    /** Inside a list's frame, round its rows (under its header): it holds them close. */
+    LIST_FRAME_PADDING_PX: 8,
     /** Between two columns of a list. */
     LIST_ROW_COLUMN_GAP_PX: 14,
     /** The family's mark: a band down the row's left edge. */

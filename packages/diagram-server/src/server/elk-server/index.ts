@@ -12,7 +12,7 @@ import { SwitchingElk } from './switching-elk';
 
 export * from './elk-server-options';
 export { ElkServerProcess } from './elk-server-process';
-export { SwitchingElk, elkGraphSize, goesToServer } from './switching-elk';
+export { SwitchingElk, elkGraphSize, goesToServer, serverCanLayOut } from './switching-elk';
 export { layoutOnServer } from './elk-server-client';
 
 const processes = new Map<string, ElkServerProcess>();

@@ -468,6 +468,15 @@ it no longer has.
 
 ### Changed
 
+- **`state` is a node kind of its own.** A node of kind `state` is a state of
+  an automaton (see Added): a pill with its name and nothing else, its
+  `meta.lines` not drawn. A producer that sent another kind of node under
+  that kind (a state variable) sends it under another (`variable`).
+- **A read-only view's root panel says what the view is.** With nothing
+  selected, a view the producer marked read-only (`graph.meta.readOnly`) is
+  titled View and shows its facts, without the sections of what it could
+  not edit (annotations, parameters, input and output ports). Every
+  read-only view has it: an NDF overview and an ASL unit's view too.
 - **A symbol's pins are drawn as wide as the wires.** The short stub from
   a gate's, operator's or register's body to each pin was a 1.5px line
   stopping at the node's edge, half a port short of where the wire ends:
@@ -681,6 +690,11 @@ it no longer has.
 
 ### Fixed
 
+- **A graph the ELK server cannot lay out stays on elkjs.** The server has
+  the layered, force and mrtree algorithms; a graph that asks for another
+  (an automaton placed by stress) went to it under `engine: 'elk-server'`,
+  failed there and fell back to elkjs with a warning, on every layout. It
+  now goes to elkjs from the start.
 - **A view no longer falls back to the structure on a refresh.** The host's
   refresh (a keystroke or a save in any source file, a run) repeats the
   file, the name and the trail of what is shown, and named no view: a

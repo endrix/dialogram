@@ -68,11 +68,14 @@ function groupsInnermostFirst(element: GModelElement, out: GNode[] = []): GNode[
 
 /**
  * The size a group takes around its members: their extent, the padding below
- * them, and on the right the same inset they have on the left.
+ * them, and on the right the same inset they have on the left. A list's
+ * padding is its own, closer, as its layout has it.
  */
 export function groupSizeAroundMembers(group: GNode): Size {
     const header: number = WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX;
-    const pad: number = WorkflowDiagramConstants.GROUP_PADDING_PX;
+    const pad: number = group.args?.[WorkflowDiagramMetadata.GROUP_LIST] === true
+        ? WorkflowDiagramConstants.LIST_FRAME_PADDING_PX
+        : WorkflowDiagramConstants.GROUP_PADDING_PX;
     let left = Number.POSITIVE_INFINITY;
     let right = 0;
     let bottom: number = header;
