@@ -93,9 +93,10 @@ it no longer has.
   out with the same arithmetic, now in `@dialogram/shared`, so what goes
   round the automaton keeps clear of its loops and labels. A large
   automaton is made small: a run of three states or more with one way in
-  and one way out is one state listing its steps (`+` unfolds it, `−` on its
-  first state folds it again), and the ways into a state entered from five
-  or more are short arrows ending in its name. Round it, the unit's ports
+  and one way out is one state listing its steps, the first five and how
+  many more when it is long, all of them in its tooltip (`+` unfolds it, `−`
+  on its first state folds it again), and the ways into a state entered from
+  five or more are short arrows ending in its name. Round it, the unit's ports
   in columns close beside what is drawn, and the groups pinned to it. A link
   drawn on selection may end at a transition, anchored at its label.
 - **A group can be pinned on the left, and be a list.** `pin: 'left'` puts

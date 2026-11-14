@@ -123,6 +123,8 @@ export const WorkflowDiagramConstants = {
     STATE_STEP_FONT_SIZE_PX: 11,
     /** Under the last step of a run's state. */
     STATE_STEPS_BOTTOM_PX: 8,
+    /** How many steps a run's state lists before a last line says how many more there are. */
+    STATE_STEPS_SHOWN: 5,
     /** A transition drawn as a stub: how long its arrow is, and the chip with its target's name. */
     TRANSITION_STUB_PX: 30,
     TRANSITION_STUB_CHIP_HEIGHT_PX: 18,

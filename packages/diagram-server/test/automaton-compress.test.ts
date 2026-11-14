@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { GModelIndex } from '@eclipse-glsp/server';
-import { ToggleNodeOpenOperation, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, stateSize } from '@dialogram/shared';
+import { ToggleNodeOpenOperation, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, stateSize, stateStepLines, stateStepText } from '@dialogram/shared';
 import { convertToGModelRoot } from '../src/server/gmodel-convert';
 import { WorkflowToggleNodeOpenOperationHandler } from '../src/operations/toggle-node-open-handler';
 import { compressAutomaton, foldId, foldableRuns, stepsOf, FOLD_MIN_STATES, HUB_MIN_SOURCES } from '../src/model/automaton-compress';
@@ -122,6 +122,29 @@ describe('a run of states with one way in and one way out', () => {
         // Room at its right end for the toggle that unfolds it.
         expect(fold.size).toEqual({ width: size.width + WorkflowDiagramConstants.STATE_RUN_TOGGLE_PX, height: size.height });
         expect(fold.size.height).toBeGreaterThan(stateSize('read', undefined).height);
+    });
+
+    it('lists the first steps of a long run and says how many more, as tall as those lines', () => {
+        const k = WorkflowDiagramConstants;
+        const steps = (n: number) => Array.from({ length: n }, (_, i) => ({ action: `step_${i}`, count: i === 0 ? 3 : 1 }));
+        // Up to one over the cap, every step: a line that says "1 more" would save nothing.
+        expect(stateStepLines(steps(k.STATE_STEPS_SHOWN + 1))).toEqual({ lines: steps(k.STATE_STEPS_SHOWN + 1).map(stateStepText), more: 0 });
+        const long = stateStepLines(steps(18));
+        expect(long.more).toBe(18 - k.STATE_STEPS_SHOWN);
+        expect(long.lines).toEqual([...steps(k.STATE_STEPS_SHOWN).map(stateStepText), `\u2026 ${18 - k.STATE_STEPS_SHOWN} more`]);
+        expect(long.lines[0]).toBe('step_0 \u00d73');
+        expect(stateSize('a … z', steps(18)).height)
+            .toBe(k.STATE_HEIGHT_PX + (k.STATE_STEPS_SHOWN + 1) * k.STATE_STEP_HEIGHT_PX + k.STATE_STEPS_BOTTOM_PX);
+        // A run of 21 states with a step each: the fold is drawn as tall as six lines, its steps all in the model.
+        const names = Array.from({ length: 21 }, (_, i) => `s${i}`);
+        const longRun = doc(
+            [state('read', { initial: true }), ...names.map(name => state(name))],
+            [t('read', 'go', 's0'), ...names.slice(1).map((name, i) => t(names[i], `step_${i}`, name)), t('s20', 'done', 'read'), t('read', 'idle', 'read')]
+        );
+        const fold: any = new GraphGModelSource().transform(longRun).graph.children?.find((c: any) => c.args?.[WorkflowDiagramMetadata.STATE_STEPS]);
+        expect(fold.args[WorkflowDiagramMetadata.STATE_STEPS]).toHaveLength(20);
+        expect(fold.size.height).toBe(stateSize('s0 … s20', fold.args[WorkflowDiagramMetadata.STATE_STEPS]).height);
+        expect(fold.size.height).toBe(k.STATE_HEIGHT_PX + (k.STATE_STEPS_SHOWN + 1) * k.STATE_STEP_HEIGHT_PX + k.STATE_STEPS_BOTTOM_PX);
     });
 });
 

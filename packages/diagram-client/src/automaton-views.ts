@@ -36,6 +36,7 @@ import {
     automatonGeometry,
     initialMarkDirection,
     initialMarkOf,
+    stateStepLines,
     stateStepText,
     transitionLabelTextX,
     type AutomatonGeometry,
@@ -244,6 +245,8 @@ export class StateNodeView extends ShapeView {
             },
             attrs: { transform: `translate(${node.position.x}, ${node.position.y})` }
         },
+            // A long run's steps, all of them, where it lists only the first few.
+            ...(steps && stateStepLines(steps).more > 0 ? [svg('title', {}, steps.map(stateStepText).join('\n'))] : []),
             svg('rect', { class: { 'node-body': true }, attrs: { x: 0, y: 0, width, height, rx: radius, ry: radius } }),
             ...(initial && box ? [initialMark(box, initialMarkFor(node.id, node.root) ?? { x: -1, y: 0 })] : []),
             svg('text', { class: { 'state-name': true }, attrs: { x: (width - toggleRoom) / 2, y: top } }, label),
@@ -251,17 +254,22 @@ export class StateNodeView extends ShapeView {
                 ? [nodeOpenToggle(node.id, runOpen, label, width - toggleRoom / 2 - 2, top,
                     runOpen ? 'Fold the run this state starts into one state' : `Unfold ${label}: show its states`)]
                 : []),
-            ...(steps
-                ? [
-                    svg('line', { class: { 'state-steps-rule': true }, attrs: { x1: 0, y1: k.STATE_HEIGHT_PX, x2: width, y2: k.STATE_HEIGHT_PX } }),
-                    ...steps.map((step, n) => svg('text', {
-                        class: { 'state-step': true },
-                        attrs: { x: k.STATE_LABEL_PADDING_PX, y: k.STATE_HEIGHT_PX + (n + 0.5) * k.STATE_STEP_HEIGHT_PX + 2 }
-                    }, stateStepText(step)))
-                ]
-                : []),
+            ...(steps ? this.stepLines(steps, width) : []),
             ...context.renderChildren(node)
         ) as VNode;
+    }
+
+    /** Under a run's name, its steps; a long run's first few and a line that says how many more. */
+    private stepLines(steps: StateStep[], width: number): VNode[] {
+        const k = WorkflowDiagramConstants;
+        const { lines, more } = stateStepLines(steps);
+        return [
+            svg('line', { class: { 'state-steps-rule': true }, attrs: { x1: 0, y1: k.STATE_HEIGHT_PX, x2: width, y2: k.STATE_HEIGHT_PX } }),
+            ...lines.map((line, n) => svg('text', {
+                class: { 'state-step': true, 'state-steps-more': more > 0 && n === lines.length - 1 },
+                attrs: { x: k.STATE_LABEL_PADDING_PX, y: k.STATE_HEIGHT_PX + (n + 0.5) * k.STATE_STEP_HEIGHT_PX + 2 }
+            }, line))
+        ] as VNode[];
     }
 }
 

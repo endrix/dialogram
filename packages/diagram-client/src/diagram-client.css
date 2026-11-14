@@ -3799,6 +3799,12 @@ details[open] > summary .agent-chat-expand-arrow {
     user-select: none;
 }
 
+/* The last line of a long run's steps, which says how many more there are:
+   in italics; the steps it stands for are in the tooltip and the panel. */
+.workflow-node.state-node .state-step.state-steps-more {
+    font-style: italic;
+}
+
 /* A way into a state entered from many: a short arrow at its source and the
    state's name at its end; the whole way, dashed, while it or that state is picked. */
 .workflow-edge.transition-edge .transition-stub-chip-box {

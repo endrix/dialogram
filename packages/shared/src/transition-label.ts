@@ -47,16 +47,33 @@ export function stateStepText(step: StateStep): string {
     return step.count > 1 ? `${step.action} \u00d7${step.count}` : step.action;
 }
 
-/** How big a state that stands for a run is drawn: its name, then one line per step. */
+/**
+ * The lines a run's state lists under its name: a line per step, or, for a
+ * long run, its first `STATE_STEPS_SHOWN` steps and a last line that says
+ * how many more there are (the panel lists them all). A run one step longer
+ * than that shows the step rather than a line that says "1 more".
+ */
+export function stateStepLines(steps: readonly StateStep[]): { lines: string[]; more: number } {
+    const shown = WorkflowDiagramConstants.STATE_STEPS_SHOWN;
+    const texts = steps.map(stateStepText);
+    if (texts.length <= shown + 1) {
+        return { lines: texts, more: 0 };
+    }
+    const more = texts.length - shown;
+    return { lines: [...texts.slice(0, shown), `\u2026 ${more} more`], more };
+}
+
+/** How big a state that stands for a run is drawn: its name, then the lines of its steps. */
 export function stateSize(name: string, steps: readonly StateStep[] | undefined): { width: number; height: number } {
     const k = WorkflowDiagramConstants;
     if (!steps || steps.length === 0) {
         return { width: stateWidth(name), height: k.STATE_HEIGHT_PX };
     }
-    const widest = Math.max(...steps.map(step => Math.ceil(stateStepText(step).length * k.STATE_STEP_FONT_SIZE_PX * 0.6)));
+    const { lines } = stateStepLines(steps);
+    const widest = Math.max(...lines.map(line => Math.ceil(line.length * k.STATE_STEP_FONT_SIZE_PX * 0.6)));
     return {
         width: Math.max(stateWidth(name), widest + 2 * k.STATE_LABEL_PADDING_PX),
-        height: k.STATE_HEIGHT_PX + steps.length * k.STATE_STEP_HEIGHT_PX + k.STATE_STEPS_BOTTOM_PX
+        height: k.STATE_HEIGHT_PX + lines.length * k.STATE_STEP_HEIGHT_PX + k.STATE_STEPS_BOTTOM_PX
     };
 }
 
