@@ -194,28 +194,44 @@ describe('where the states of an automaton go', () => {
         expect([...(await place())]).toEqual([...first]);
     });
 
-    it('places a state whose only transitions are loops clear of the others, its loops and their labels on no state', async () => {
-        // Two states with only a loop each, and a program beside a third.
+    /** Lay `doc` out, and draw its transitions where they go. */
+    async function placeAndDraw(doc: { nodes: any[]; edges: any[] }) {
+        const root = model({ version: '1', graph: { id: 'root', ...doc } } as PyGraphDocument);
+        const modelState: any = { root, index: { get: (id: string) => find(root, id), findByClass: (id: string) => find(root, id) } };
+        await new WorkflowElkLayoutEngine(
+            () => new (ELK as any)({ algorithms: ['layered', 'stress'] }),
+            new DefaultElementFilter(),
+            new WorkflowLayoutConfigurator(),
+            modelState
+        ).layout();
+        const states = (root.children ?? []).filter(child => child.type === WorkflowDiagramTypes.NODE_STATE) as GNode[];
+        const boxes = new Map(states.map(s => [s.id, { x: s.position!.x, y: s.position!.y, width: s.size!.width, height: s.size!.height }]));
+        const transitions = (root.children ?? []).filter((child): child is GEdge => child instanceof GEdge && child.type === WorkflowDiagramTypes.EDGE_TRANSITION)
+            .map(edge => ({ id: edge.id, sourceId: edge.sourceId, targetId: edge.targetId, labelWidth: transitionLabelWidthOf(edge.args as any) }));
+        return { boxes, transitions, drawn: automatonGeometry(boxes, transitions) };
+    }
+
+    it('places a state whose only transitions are loops clear of the others, its loops and their labels on no state and no other loop', async () => {
+        const loops = (state: string, ...labels: string[]) => labels.map(label => transition(state, label, state));
         for (const doc of [
+            // Two states with only a loop each, and a program beside a third.
             { nodes: [state('a', { initial: true }), state('b')], edges: [transition('a', 'x', 'a'), transition('b', 'a_longer_label', 'b')] },
             {
                 nodes: [state('a', { initial: true }), state('b'), state('c'), state('lonely')],
                 edges: [transition('a', 'go', 'b'), transition('b', 'go', 'c'), transition('c', 'back', 'a'), transition('lonely', 'spin', 'lonely')]
+            },
+            // Any state, with a loop, beside a program whose first state has four stacked.
+            {
+                nodes: [state('idle', { initial: true }), state('run'), state('*')],
+                edges: [transition('idle', 'start', 'run'), transition('run', 'stop', 'idle'), ...loops('idle', 'poll', 'tick', 'nop', 'skip'), transition('*', 'reset', '*')]
+            },
+            // Two chains, each with a loop: they meet where the components do.
+            {
+                nodes: [state('p', { initial: true }), state('q'), state('r'), state('s')],
+                edges: [transition('p', 'go', 'q'), ...loops('q', 'step'), transition('r', 'go', 's'), ...loops('r', 'tick')]
             }
         ]) {
-            const root = model({ version: '1', graph: { id: 'root', ...doc } } as PyGraphDocument);
-            const modelState: any = { root, index: { get: (id: string) => find(root, id), findByClass: (id: string) => find(root, id) } };
-            await new WorkflowElkLayoutEngine(
-                () => new (ELK as any)({ algorithms: ['layered', 'stress'] }),
-                new DefaultElementFilter(),
-                new WorkflowLayoutConfigurator(),
-                modelState
-            ).layout();
-            const states = (root.children ?? []).filter(child => child.type === WorkflowDiagramTypes.NODE_STATE) as GNode[];
-            const boxes = new Map(states.map(s => [s.id, { x: s.position!.x, y: s.position!.y, width: s.size!.width, height: s.size!.height }]));
-            const transitions = (root.children ?? []).filter((child): child is GEdge => child instanceof GEdge && child.type === WorkflowDiagramTypes.EDGE_TRANSITION)
-                .map(edge => ({ id: edge.id, sourceId: edge.sourceId, targetId: edge.targetId, labelWidth: transitionLabelWidthOf(edge.args as any) }));
-            const drawn = automatonGeometry(boxes, transitions);
+            const { boxes, transitions, drawn } = await placeAndDraw(doc);
             const hits: string[] = [];
             for (const t of transitions) {
                 const shape = drawn.transitions.get(t.id)!;
@@ -225,8 +241,29 @@ describe('where the states of an automaton go', () => {
                     }
                 }
             }
+            const ownLoops = transitions.filter(t => t.sourceId === t.targetId);
+            for (const a of ownLoops) {
+                for (const b of ownLoops) {
+                    if (a.sourceId < b.sourceId) {
+                        const [one, other] = [drawn.transitions.get(a.id)!, drawn.transitions.get(b.id)!];
+                        if ([[one.shape.box, other.shape.box], [one.shape.box, other.label], [one.label, other.shape.box], [one.label, other.label]]
+                            .some(([x, y]) => overlapArea(x, y) > 0)) {
+                            hits.push(`${a.id} on ${b.id}`);
+                        }
+                    }
+                }
+            }
             expect(hits).toEqual([]);
         }
+    });
+
+    it('places a state whose only transitions are loops after the program, under the state it starts in', async () => {
+        const { boxes } = await placeAndDraw({
+            nodes: [state('idle', { initial: true }), state('run'), state('*')],
+            edges: [transition('idle', 'start', 'run'), transition('run', 'stop', 'idle'), transition('*', 'reset', '*')]
+        });
+        const [idle, anyState] = [boxes.get('idle')!, boxes.get('*')!];
+        expect(anyState.y).toBeGreaterThan(idle.y);
     });
 });
 

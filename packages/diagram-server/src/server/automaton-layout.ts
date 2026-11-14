@@ -60,6 +60,8 @@ export const PORT_COLUMN_GAP_PX = 40;
 export const LAYERED_MIN_STATES = 16;
 /** The least between two states with a transition between them: room for the two lines and their arrow heads. */
 const MIN_BETWEEN_PX = 90;
+/** How far a state's loop and the gap before its first label reach out from it. */
+const LOOP_EXTENT_PX = 50;
 /** How many other states a hub's state is next to, at least. */
 const HUB_MIN_NEIGHBOURS = 4;
 /** The share of the pairs of states with a transition between them that a hub's state is in, at least. */
@@ -127,10 +129,18 @@ export function automatonElkGraph(states: readonly AutomatonState[], transitions
         const stacked = Math.max(1, ...seen.values());
         // A state whose only transitions are loops is a component of its own
         // here (a loop is no edge of this graph), and components are packed
-        // next to each other: as far apart as two states with a transition
-        // between them, and a loop's label more, or the loop and its label
-        // land on the next one.
-        const widestLoop = Math.max(0, ...transitions.filter(t => !t.stub && t.sourceId === t.targetId).map(t => t.labelWidth));
+        // one under another, the program first: far enough apart for a loop
+        // from each to meet half way, its labels stacked out from it, and,
+        // beside each other when they wrap, for half the widest label.
+        const loops = transitions.filter(t => !t.stub && t.sourceId === t.targetId);
+        const widestLoop = Math.max(0, ...loops.map(t => t.labelWidth));
+        const loopsOn = new Map<string, number>();
+        loops.forEach(t => loopsOn.set(t.sourceId, (loopsOn.get(t.sourceId) ?? 0) + 1));
+        const mostLoops = Math.max(0, ...loopsOn.values());
+        const componentGap = Math.max(
+            MIN_BETWEEN_PX + Math.round(widestLoop / 2),
+            mostLoops > 0 ? 2 * (LOOP_EXTENT_PX + mostLoops * WorkflowDiagramConstants.TRANSITION_LABEL_HEIGHT_PX) : 0
+        );
         const k = WorkflowDiagramConstants;
         return {
             id: 'automaton',
@@ -139,7 +149,10 @@ export function automatonElkGraph(states: readonly AutomatonState[], transitions
                 'elk.direction': 'DOWN',
                 'elk.layered.spacing.nodeNodeBetweenLayers': large ? '90' : String(Math.max(60, stacked * k.TRANSITION_LABEL_HEIGHT_PX + 28)),
                 'elk.spacing.nodeNode': large ? '140' : String(Math.round(Math.min(160, Math.max(60, widest * 0.6 + 30)))),
-                'elk.spacing.componentComponent': String(MIN_BETWEEN_PX + Math.round(widestLoop / 2)),
+                'elk.spacing.componentComponent': String(componentGap),
+                // The components in the order of their states: the one the
+                // automaton starts in first, on top.
+                'elk.layered.considerModelOrder.components': 'MODEL_ORDER',
                 'elk.layered.cycleBreaking.strategy': 'MODEL_ORDER',
                 'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
                 'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX'

@@ -66,6 +66,13 @@ function groupsInnermostFirst(element: GModelElement, out: GNode[] = []): GNode[
     return out;
 }
 
+/** The padding inside a group, round its members: a list's is its own, closer, as its layout has it. */
+export function groupPadding(group: GModelElement): number {
+    return (group as any).args?.[WorkflowDiagramMetadata.GROUP_LIST] === true
+        ? WorkflowDiagramConstants.LIST_FRAME_PADDING_PX
+        : WorkflowDiagramConstants.GROUP_PADDING_PX;
+}
+
 /**
  * The size a group takes around its members: their extent, the padding below
  * them, and on the right the same inset they have on the left. A list's
@@ -73,9 +80,7 @@ function groupsInnermostFirst(element: GModelElement, out: GNode[] = []): GNode[
  */
 export function groupSizeAroundMembers(group: GNode): Size {
     const header: number = WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX;
-    const pad: number = group.args?.[WorkflowDiagramMetadata.GROUP_LIST] === true
-        ? WorkflowDiagramConstants.LIST_FRAME_PADDING_PX
-        : WorkflowDiagramConstants.GROUP_PADDING_PX;
+    const pad = groupPadding(group);
     let left = Number.POSITIVE_INFINITY;
     let right = 0;
     let bottom: number = header;
@@ -130,8 +135,8 @@ export function restoreGroupGeometry(root: GModelRoot, routes?: Map<string, Poin
 
     const portSize = WorkflowDiagramConstants.GROUP_BOUNDARY_PORT_SIZE_PX;
     const header = WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX;
-    const pad = WorkflowDiagramConstants.GROUP_PADDING_PX;
     for (const group of groups) {
+        const pad = groupPadding(group);
         const origin = absolutePosition(group);
         const crossings: Array<{ port: GPort; size: Size; entering: boolean; at?: Point; inner?: GModelElement }> = [];
         for (const port of group.children) {
@@ -214,11 +219,11 @@ export function relativeToParent(saved: Point, parentOrigin: Point): Point {
  * that grew, whose edges need routing again.
  */
 export function growGroupsToFit(node: GNode): GNode[] {
-    const pad = WorkflowDiagramConstants.GROUP_PADDING_PX;
     const grown: GNode[] = [];
     let child: GNode = node;
     let parent: GModelElement | undefined = (child as any).parent;
     while (parent && isGroup(parent)) {
+        const pad = groupPadding(parent);
         const size = sizeOf(child) ?? { width: 0, height: 0 };
         const neededWidth = (child.position?.x ?? 0) + size.width + pad;
         const neededHeight = (child.position?.y ?? 0) + size.height + pad;
