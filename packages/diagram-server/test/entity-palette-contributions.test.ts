@@ -55,7 +55,7 @@ describe('entity palette contributions', () => {
         expect(entities.map((i: any) => i.label)).toEqual(['Module Instance']);
         // Ports and connections are still the platform's to offer; with no rows there is no Entities header.
         const items = await providerWith({ settingsNamespace: 'hw', operationPrefix: 'hw', platformEntityItems: false }).getItems();
-        expect(items.map((i: any) => i.id)).toEqual(['palette-ports', 'palette-connections']);
+        expect(items.map((i: any) => i.id)).toEqual(['palette-ports', 'palette-connections', 'palette-transitions']);
     });
 
     it('names no kind of its own: the Entities are the product\'s, in its order', async () => {
@@ -82,7 +82,7 @@ describe('entity palette contributions', () => {
             { settingsNamespace: 'x', operationPrefix: 'x', platformEntityItems: true }
         ]) {
             const items = await providerWith(options).getItems();
-            expect(items.map((i: any) => i.id)).toEqual(['palette-ports', 'palette-connections']);
+            expect(items.map((i: any) => i.id)).toEqual(['palette-ports', 'palette-connections', 'palette-transitions']);
         }
     });
 });

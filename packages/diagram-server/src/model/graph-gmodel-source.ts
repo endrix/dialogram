@@ -1,6 +1,6 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
 import { parseBadgesMeta, parseFactsMeta, parseLinesMeta, parseViewsMeta, textColumns, type UnitBadge } from '../server/graph-load-request-options';
-import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
+import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findFeedbackEdges } from './feedback-edges';
 import { arrangeGroupRows, groupLayoutOptions, isGroupRow, splitEdgesAtGroups } from './group-edges';
@@ -13,6 +13,8 @@ import { listColumns, listRowOf, type ListColumns, type ListMember } from './lis
 
 /** What an openable node's header toggle takes from its start: its ring and a gap. */
 const OPEN_TOGGLE_ROOM_PX = 20;
+/** The edits a read-only view can still allow (`graph.meta.edits`), of those the platform has. */
+const KNOWN_VIEW_EDITS: ReadonlySet<string> = new Set(['transition']);
 
 export type PyGraphPort = {
     id: string;
@@ -548,6 +550,9 @@ export class GraphGModelSource {
             }
             if (isState && node.meta?.['initial'] === true) {
                 gnode.args![WorkflowDiagramMetadata.STATE_INITIAL] = true;
+            }
+            if (isState && typeof node.meta?.['state'] === 'string') {
+                gnode.args![WorkflowDiagramMetadata.STATE_NAME] = node.meta['state'] as string;
             }
             // The run a state folds, or opens: the toggle it draws folds or unfolds it.
             const run = isState && typeof node.meta?.['run'] === 'string' ? node.meta['run'] as string : undefined;
@@ -1476,6 +1481,17 @@ export class GraphGModelSource {
         }
         if (doc.graph.meta?.['readOnly'] === true) {
             graphArgs[WorkflowDiagramMetadata.READ_ONLY_VIEW] = true;
+            // What can still be edited in it, of the edits the platform knows.
+            const edits = viewEditsOf({ [WorkflowDiagramMetadata.VIEW_EDITS]: doc.graph.meta?.['edits'] })
+                .filter(edit => KNOWN_VIEW_EDITS.has(edit));
+            if (edits.length > 0) {
+                graphArgs[WorkflowDiagramMetadata.VIEW_EDITS] = edits;
+            }
+            const labels = transitionLabelsOf({ [WorkflowDiagramMetadata.TRANSITION_LABELS]: doc.graph.meta?.['transitionLabels'] });
+            if (edits.includes('transition') && labels.length > 0) {
+                graphArgs[WorkflowDiagramMetadata.TRANSITION_LABELS] = labels.map(({ id, label, description }) =>
+                    ({ id, label, ...(typeof description === 'string' && description.trim() !== '' ? { description: description.trim() } : {}) }));
+            }
         }
         if (doc.partial) {
             graphArgs['wf:partial'] = true;

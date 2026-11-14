@@ -77,6 +77,19 @@ it no longer has.
 
 ### Added
 
+- **A read-only view may let its transitions be drawn and deleted.** A
+  producer that says so (`graph.meta.edits: ["transition"]`, with what may
+  take one in `graph.meta.transitionLabels` and each state's name in what
+  the automaton is written in in its `meta.state`) gets a Transitions group
+  in the palette. A transition drawn from a state to a state asks which of
+  the labels takes it (an agent names one in the operation's `label`) and
+  the producer writes it (`addTransition`: `from`, `to`, `label`); a
+  transition deleted is taken out by its id (`removeTransition`). Both name
+  the view as it was asked for (`network` and `view`, or `rootNetwork` and
+  `instancePath`) and the diagram's file (`document`), the one the undo
+  reverts. A refusal is shown, and nothing is drawn or deleted that the
+  producer has not written. The rest of the view stays read-only: a state
+  is not deleted.
 - **An automaton.** A node of kind `state` is a state (`node:state`), a pill
   as wide as its name, the initial one marked; an edge from a state to a
   state is a transition (`edge:transition`), labelled with its label, its

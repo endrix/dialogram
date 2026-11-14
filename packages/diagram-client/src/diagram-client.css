@@ -322,8 +322,20 @@ body.vscode-high-contrast {
 }
 
 /* A read-only view (wf:readOnlyView, see read-only-view.ts) has nothing to
-   create, so the palette keeps its header and drops its tools. */
-body.wf-read-only-view .tool-palette .palette-body {
+   create, so the palette keeps its header and drops its tools: all of them,
+   or, in a view that still allows an edit (wf:viewEdits), all but that
+   edit's. */
+body.wf-read-only-view:not(.wf-view-edits-transition) .tool-palette .palette-body {
+    display: none;
+}
+
+body.wf-read-only-view.wf-view-edits-transition .tool-palette .palette-body .tool-group:not(#palette-transitions) {
+    display: none;
+}
+
+/* The Transition is in every editor's palette (it asks for its items once)
+   and shown only while a view that allows drawing one is. */
+body:not(.wf-view-edits-transition) .tool-palette #palette-transitions {
     display: none;
 }
 

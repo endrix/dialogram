@@ -9,7 +9,7 @@
  */
 
 // The source-URI key, shared with the host and the toolkit (see `uri-keys.ts`).
-import { WorkflowDiagramConstants, type NodeLine } from '@dialogram/shared';
+import { WorkflowDiagramConstants, type NodeLine, type ViewRequest } from '@dialogram/shared';
 import { normalizeSourceUriKey } from './uri-keys';
 export { normalizeSourceUriKey };
 
@@ -58,6 +58,27 @@ export interface UnitView {
 /** The view id on a request option or root arg, or nothing. */
 export function parseViewArg(raw: unknown): string | undefined {
     return typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : undefined;
+}
+
+/**
+ * What a view was asked of its producer by, from the options it was loaded
+ * with (those the model source answered by: for a view of an instance, the
+ * root and the path of instances to it): what an edit made in the view
+ * names it by again.
+ */
+export function viewRequestOf(opts: Record<string, unknown>): ViewRequest {
+    const text = (raw: unknown): string | undefined => typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : undefined;
+    const networkName = text(opts.networkName);
+    const view = parseViewArg(opts[VIEW_ARG]);
+    const rootWorkflow = text(opts[ROOT_WORKFLOW_ARG]);
+    const instancePath = parseStringListArg(opts[INSTANCE_PATH_ARG]);
+    const graphSourceUri = text(opts[GRAPH_SOURCE_URI_ARG]);
+    return {
+        ...(networkName ? { networkName } : {}),
+        ...(view ? { view } : {}),
+        ...(rootWorkflow && instancePath.length > 0 ? { rootWorkflow, instancePath } : {}),
+        ...(graphSourceUri ? { graphSourceUri } : {})
+    };
 }
 
 /** `meta.views` as the producer wrote it: `[{ id, label, of? }]`, else nothing. */

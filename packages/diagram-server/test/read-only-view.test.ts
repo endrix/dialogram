@@ -54,13 +54,41 @@ describe('a view the producer marks read-only', () => {
         expect(rootArgs()?.[WorkflowDiagramMetadata.READ_ONLY_VIEW]).toBeUndefined();
     });
 
+    it('says what can still be edited in it, of the edits the platform has, and what a drawn transition can be taken by', () => {
+        const labels = [{ id: 'step', label: 'step', description: ' In → Out ' }, { id: 'stop', label: 'stop' }, { id: '', label: 'nameless' }, 'junk'];
+        const args = rootArgs({ readOnly: true, edits: ['transition', 'rename', 7], transitionLabels: labels })!;
+        expect(args[WorkflowDiagramMetadata.VIEW_EDITS]).toEqual(['transition']);
+        expect(args[WorkflowDiagramMetadata.TRANSITION_LABELS]).toEqual([{ id: 'step', label: 'step', description: 'In → Out' }, { id: 'stop', label: 'stop' }]);
+        // An editable view needs no list of what it allows; one that allows no transition, no labels.
+        expect(rootArgs({ edits: ['transition'], transitionLabels: labels })?.[WorkflowDiagramMetadata.VIEW_EDITS]).toBeUndefined();
+        expect(rootArgs({ readOnly: true, transitionLabels: labels })?.[WorkflowDiagramMetadata.TRANSITION_LABELS]).toBeUndefined();
+    });
+
+    it('names each state of its automaton as the producer does, a state with no name none', () => {
+        const graph: any = new GraphGModelSource({} as any).transform({
+            version: '1',
+            graph: {
+                id: 'root',
+                meta: { readOnly: true, edits: ['transition'] },
+                nodes: [
+                    { id: 'state:idle', kind: 'state', label: 'idle', scope: 'root', ports: [], meta: { state: 'idle', initial: true } },
+                    { id: 'state:*', kind: 'state', label: 'any state', scope: 'root', ports: [], meta: {} }
+                ],
+                edges: []
+            }
+        } as PyGraphDocument).graph;
+        const names = (graph.children ?? []).filter((c: any) => c.type === WorkflowDiagramTypes.NODE_STATE)
+            .map((c: any) => [c.args[WorkflowDiagramMetadata.ENTITY_NAME], c.args[WorkflowDiagramMetadata.STATE_NAME]]);
+        expect(names).toEqual([['idle', 'idle'], ['any state', undefined]]);
+    });
+
     it('still gets the palette items, which the client hides: the palette asks once per editor', async () => {
         // An editor that opens on a read-only view and navigates in place to an
         // editable one has only the items it was given at startup.
         const readOnly = { id: 'root', args: { [WorkflowDiagramMetadata.READ_ONLY_VIEW]: true } };
         const editable = { id: 'root', args: {} };
         const ids = async (root: unknown) => (await palette(root).getItems()).map((category: any) => category.id);
-        expect(await ids(readOnly)).toEqual(['palette-entities', 'palette-ports', 'palette-connections']);
+        expect(await ids(readOnly)).toEqual(['palette-entities', 'palette-ports', 'palette-connections', 'palette-transitions']);
         expect(await ids(readOnly)).toEqual(await ids(editable));
     });
 

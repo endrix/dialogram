@@ -9,6 +9,7 @@ import { WorkflowDiagramMetadata, WorkflowDiagramTypeGuards, WorkflowDiagramType
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { SidecarInvoker } from './sidecar-invoker';
 import { escapePythonStringLiteral } from '../python-text';
+import { allowsTransitionEdits, viewEditTarget, writeTransitionEdit } from './transition-edits';
 
 @injectable()
 export class DeleteElementOperationHandler extends OperationHandler {
@@ -42,6 +43,10 @@ export class DeleteElementOperationHandler extends OperationHandler {
         const vscodeUri = vscode.Uri.parse(sourceUri);
         const root = this.modelState.root;
         const workflowName = root.args?.['wf:workflowName'] as string | undefined;
+        // A read-only view deletes nothing but what its edits name: its
+        // transitions, where it allows editing them (transition-edits.ts).
+        const readOnlyView = root.args?.[WorkflowDiagramMetadata.READ_ONLY_VIEW] === true;
+        const transitions = allowsTransitionEdits(root) ? viewEditTarget(root) : undefined;
 
         const command = new ReversibleWorkspaceEditCommand({
             label: 'Delete' + this.sidecar.undoLabelSuffix(),
@@ -62,6 +67,13 @@ export class DeleteElementOperationHandler extends OperationHandler {
                     const element = this.modelState.index.get(id) as any;
                     const elementArgs = element?.args as Record<string, unknown> | undefined;
                     const elementType = element?.type as string | undefined;
+
+                    if (elementType === WorkflowDiagramTypes.EDGE_TRANSITION) {
+                        if (!transitions) continue;
+                        if (!(await writeTransitionEdit(this.sidecar, transitions, 'removeTransition', { transition: id }))) return undefined;
+                        continue;
+                    }
+                    if (readOnlyView) continue;
 
                     if (elementType && (elementType.startsWith('node:') || elementType.startsWith('node ')) && elementArgs?.[WorkflowDiagramMetadata.ENTITY_NAME]) {
                         const ok = await this.sendSidecarOp(sourceUri, {
