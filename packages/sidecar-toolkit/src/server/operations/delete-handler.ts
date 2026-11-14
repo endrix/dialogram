@@ -54,6 +54,9 @@ export class DeleteElementOperationHandler extends OperationHandler {
             computeEdits: async () => {
                 const beforeText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
                 const deletedEdges = new Set<string>();
+                // Whether anything was written: a delete that wrote nothing is
+                // no command, and leaves nothing to undo.
+                let wrote = false;
                 for (const id of elementIds) {
                     const gmodelElement = this.modelState.index.get(id);
                     if (gmodelElement) {
@@ -69,8 +72,13 @@ export class DeleteElementOperationHandler extends OperationHandler {
                     const elementType = element?.type as string | undefined;
 
                     if (elementType === WorkflowDiagramTypes.EDGE_TRANSITION) {
-                        if (!transitions) continue;
-                        if (!(await writeTransitionEdit(this.sidecar, transitions, 'removeTransition', { transition: id }))) return undefined;
+                        // A transition the producer refuses to take out (it said
+                        // why) stays, and the others selected with it go: their
+                        // ids name their states and action, not a place in the
+                        // list, so one taken out leaves the others' as they were.
+                        if (transitions && (await writeTransitionEdit(this.sidecar, transitions, 'removeTransition', { transition: id }))) {
+                            wrote = true;
+                        }
                         continue;
                     }
                     if (readOnlyView) continue;
@@ -81,6 +89,7 @@ export class DeleteElementOperationHandler extends OperationHandler {
                             args: { workflow: workflowName, name: elementArgs[WorkflowDiagramMetadata.ENTITY_NAME] }
                         });
                         if (!ok) return undefined;
+                        wrote = true;
                         continue;
                     }
 
@@ -130,6 +139,7 @@ export class DeleteElementOperationHandler extends OperationHandler {
                             }
                         });
                         if (!ok) return undefined;
+                        wrote = true;
                         continue;
                     }
 
@@ -142,9 +152,13 @@ export class DeleteElementOperationHandler extends OperationHandler {
                                 args: { workflow: workflowName, direction: portDirection, portName }
                             });
                             if (!ok) return undefined;
+                            wrote = true;
                         }
                         continue;
                     }
+                }
+                if (!wrote) {
+                    return undefined;
                 }
                 const afterText = await readAuthoritativeSourceText(vscodeUri);
                 (command as any)._sourceBeforeText = beforeText;

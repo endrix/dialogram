@@ -88,8 +88,9 @@ it no longer has.
   the view as it was asked for (`network` and `view`, or `rootNetwork` and
   `instancePath`) and the diagram's file (`document`), the one the undo
   reverts. A refusal is shown, and nothing is drawn or deleted that the
-  producer has not written. The rest of the view stays read-only: a state
-  is not deleted.
+  producer has not written; a transition refused among several deleted
+  stays, and the others go. A delete that takes nothing out leaves nothing
+  to undo. The rest of the view stays read-only: a state is not deleted.
 - **An automaton.** A node of kind `state` is a state (`node:state`), a pill
   as wide as its name, the initial one marked; an edge from a state to a
   state is a transition (`edge:transition`), labelled with its label, its

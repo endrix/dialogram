@@ -156,12 +156,12 @@ export class CreateTransitionOperationHandler extends OperationHandler {
         if (given !== '') {
             return given;
         }
-        if (operation.args?.['headless'] === true) {
-            return undefined;
-        }
         const labels = transitionLabelsOf(this.modelState.root.args as Record<string, unknown> | undefined);
         if (labels.length === 1) {
             return labels[0].id;
+        }
+        if (operation.args?.['headless'] === true) {
+            return undefined;
         }
         if (labels.length === 0) {
             void vscode.window.showInformationMessage('This view offers nothing to take a transition.');

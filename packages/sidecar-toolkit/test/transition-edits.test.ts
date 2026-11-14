@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -28,14 +28,16 @@ const LABELS = [
     { id: 'stop', label: 'stop' }
 ];
 
+const COUNTER = 'class Counter: ...\n';
+
 function sourceFile(): string {
     const file = path.join(mkdtempSync(path.join(tmpdir(), 'transition-edits-')), 'counter.py');
-    writeFileSync(file, 'class Counter: ...\n');
+    writeFileSync(file, COUNTER);
     return pathToFileURL(file).href;
 }
 
 /** A view of `Counter`'s automaton: `idle`, `run`, and `any state`, which has no name. */
-function modelState(options: { sourceUri: string; edits?: string[]; request?: ViewRequest; readOnly?: boolean }) {
+function modelState(options: { sourceUri: string; edits?: string[]; request?: ViewRequest; readOnly?: boolean; labels?: typeof LABELS }) {
     const state = (id: string, name?: string) => ({
         id,
         type: WorkflowDiagramTypes.NODE_STATE,
@@ -45,7 +47,8 @@ function modelState(options: { sourceUri: string; edits?: string[]; request?: Vi
         ['idle', state('idle', 'idle')],
         ['run', state('run', 'run')],
         ['any state', state('any state')],
-        ['t:run:step->idle', { id: 't:run:step->idle', type: WorkflowDiagramTypes.EDGE_TRANSITION, args: {} }]
+        ['t:run:step->idle', { id: 't:run:step->idle', type: WorkflowDiagramTypes.EDGE_TRANSITION, args: {} }],
+        ['t:*:reset->*', { id: 't:*:reset->*', type: WorkflowDiagramTypes.EDGE_TRANSITION, args: {} }]
     ]);
     return {
         root: {
@@ -54,7 +57,7 @@ function modelState(options: { sourceUri: string; edits?: string[]; request?: Vi
                 'wf:workflowName': 'Counter',
                 [WorkflowDiagramMetadata.READ_ONLY_VIEW]: options.readOnly ?? true,
                 ...(options.edits ? { [WorkflowDiagramMetadata.VIEW_EDITS]: options.edits } : {}),
-                [WorkflowDiagramMetadata.TRANSITION_LABELS]: LABELS,
+                [WorkflowDiagramMetadata.TRANSITION_LABELS]: options.labels ?? LABELS,
                 [WorkflowDiagramMetadata.VIEW_REQUEST]: options.request ?? { networkName: 'Counter', view: 'actor' }
             }
         },
@@ -150,6 +153,17 @@ describe('a transition drawn from a state to a state', () => {
         expect(sent.map(each => each.args.label)).toEqual(['stop']);
     });
 
+    it('takes the only label the view offers, for an agent that names none too', async () => {
+        const sourceUri = sourceFile();
+        const sent: Sent[] = [];
+        await withWindow(() => { throw new Error('asked'); }, async () => {
+            const state = modelState({ sourceUri, edits: ['transition'], labels: [LABELS[0]] });
+            const { edits } = await draw(state, sent, 'idle', 'run', { headless: true });
+            expect(edits).toHaveLength(1);
+        });
+        expect(sent.map(each => each.args.label)).toEqual(['step']);
+    });
+
     it('writes nothing from a state with no name, in a view that allows no such edit, or when the producer refuses', async () => {
         const sourceUri = sourceFile();
         const sent: Sent[] = [];
@@ -192,6 +206,58 @@ describe('a transition deleted', () => {
             op: 'calpy.removeTransition',
             args: { network: 'Counter', view: 'actor', document: vscode.Uri.parse(sourceUri).fsPath, transition: 't:run:step->idle' }
         }]);
+    });
+
+    /** Delete `ids` as the editor does, the document what is on disk; the command, and what the producer was sent. */
+    async function execute(state: any, ids: string[], answer: (transition: string) => boolean) {
+        const file = vscode.Uri.parse(state.root.args.sourceUri).fsPath;
+        const sent: Sent[] = [];
+        const handler = new DeleteElementOperationHandler() as any;
+        handler.modelState = state;
+        handler.sidecar = {
+            ...invoker(sent),
+            sendSidecarOpDetailed: async (uri: string, payload: { op: string; args: Record<string, unknown> }) => {
+                sent.push({ uri, ...payload });
+                const transition = String(payload.args.transition);
+                if (!answer(transition)) {
+                    return { ok: false, message: `${transition} is not taken out` };
+                }
+                writeFileSync(file, readFileSync(file, 'utf8') + `# without ${transition}\n`);
+                return { ok: true };
+            }
+        };
+        const workspace = vscode.workspace as any;
+        const saved = { open: workspace.openTextDocument, apply: workspace.applyEdit };
+        workspace.openTextDocument = async () => ({
+            getText: () => readFileSync(file, 'utf8'), isDirty: false, lineCount: 1, lineAt: () => ({ text: '' }), save: async () => true
+        });
+        workspace.applyEdit = async () => true;
+        try {
+            const command = handler.createCommand({ kind: 'deleteElement', elementIds: ids });
+            await withWindow(() => undefined, () => command.execute());
+            return { command, sent, text: readFileSync(file, 'utf8') };
+        } finally {
+            workspace.openTextDocument = saved.open;
+            workspace.applyEdit = saved.apply;
+        }
+    }
+
+    it('selected with one the producer refuses, goes all the same, whichever comes first, and can be undone', async () => {
+        for (const ids of [['t:run:step->idle', 't:*:reset->*'], ['t:*:reset->*', 't:run:step->idle']]) {
+            const { command, sent, text } = await execute(modelState({ sourceUri: sourceFile(), edits: ['transition'] }), ids, id => id !== 't:*:reset->*');
+            expect(sent.map(each => each.args.transition)).toEqual(ids);
+            expect(text).toBe(COUNTER + '# without t:run:step->idle\n');
+            expect(command.canUndo()).toBe(true);
+        }
+    });
+
+    it('leaves nothing to undo when nothing is taken out: refused, or in a view that does not allow it', async () => {
+        const refused = await execute(modelState({ sourceUri: sourceFile(), edits: ['transition'] }), ['t:*:reset->*'], () => false);
+        expect(refused.text).toBe(COUNTER);
+        expect(refused.command.canUndo()).toBe(false);
+        const kept = await execute(modelState({ sourceUri: sourceFile() }), ['t:run:step->idle', 'idle'], () => true);
+        expect(kept.sent).toEqual([]);
+        expect(kept.command.canUndo()).toBe(false);
     });
 
     it('is kept in a view that does not, and a read-only view deletes nothing else: not a state', async () => {
