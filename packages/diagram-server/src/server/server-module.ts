@@ -130,8 +130,10 @@ export function createWorkflowServerModules(
     // No defaults: ELK applies them only to a root without options of its
     // own, and `WorkflowLayoutConfigurator.graphOptions` always hands the root
     // a full set, so a value here was never read.
+    // `stress` beside `layered`: an automaton's states are placed by it
+    // (automaton-layout.ts); everything else is laid out in layers.
     const elkDefaults = {
-        algorithms: ['layered'],
+        algorithms: ['layered', 'stress'],
         defaultLayoutOptions: {}
     };
     const elkLayoutModule = configureELKLayoutModule({ ...elkDefaults, layoutConfigurator: WorkflowLayoutConfigurator });

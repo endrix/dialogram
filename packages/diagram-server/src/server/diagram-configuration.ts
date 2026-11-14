@@ -70,6 +70,8 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
         mapping.set(WorkflowDiagramTypes.NODE_GROUP, GNode);
         mapping.set(WorkflowDiagramTypes.NODE_BOUNDARY_INPUT, GNode);
         mapping.set(WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT, GNode);
+        // An automaton's states
+        mapping.set(WorkflowDiagramTypes.NODE_STATE, GNode);
 
         // Port types
         mapping.set(WorkflowDiagramTypes.PORT_INPUT, GPort);
@@ -79,6 +81,8 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
         // Edge types
         mapping.set(WorkflowDiagramTypes.EDGE_CONNECTION, GEdge);
         mapping.set(WorkflowDiagramTypes.EDGE_CONNECTION_NO_ARROW, GEdge);
+        // An automaton's transitions
+        mapping.set(WorkflowDiagramTypes.EDGE_TRANSITION, GEdge);
 
         // Label types
         mapping.set(WorkflowDiagramTypes.LABEL_NAME, GLabel);
@@ -177,6 +181,14 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
                 deletable: false,
                 resizable: false,
                 reparentable: false
+            },
+            // A state of an automaton: placed by hand, sized by its name.
+            {
+                elementTypeId: WorkflowDiagramTypes.NODE_STATE,
+                repositionable: true,
+                deletable: false,
+                resizable: false,
+                reparentable: false
             }
         ];
     }
@@ -197,6 +209,22 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
                 ],
                 targetElementTypeIds: [
                     WorkflowDiagramTypes.PORT_INPUT
+                ]
+            },
+            // A transition of an automaton: from a state to a state, with no
+            // route of its own to bend and no end to move to another state
+            // by hand.
+            {
+                elementTypeId: WorkflowDiagramTypes.EDGE_TRANSITION,
+                dynamic: false,
+                repositionable: false,
+                deletable: false,
+                routable: false,
+                sourceElementTypeIds: [
+                    WorkflowDiagramTypes.NODE_STATE
+                ],
+                targetElementTypeIds: [
+                    WorkflowDiagramTypes.NODE_STATE
                 ]
             }
         ];

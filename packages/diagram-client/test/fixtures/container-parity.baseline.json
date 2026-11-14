@@ -427,5 +427,17 @@
         "id": "FeedbackAwareUpdateModelCommand",
         "op": "bind",
         "to": "AnchoredUpdateModelCommand"
+    },
+    {
+        "model": "StateNode",
+        "op": "modelElement",
+        "typeId": "node:state",
+        "view": "StateNodeView"
+    },
+    {
+        "model": "TransitionEdge",
+        "op": "modelElement",
+        "typeId": "edge:transition",
+        "view": "TransitionEdgeView"
     }
 ]

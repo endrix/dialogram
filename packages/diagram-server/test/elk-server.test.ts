@@ -22,7 +22,7 @@ import type { ELK, ElkNode } from 'elkjs';
 import { DefaultElementFilter } from '@eclipse-glsp/layout-elk';
 import { FRAME_HEADER_BYTES, FRAME_MAGIC, encodeFrame, layoutOnServer } from '../src/server/elk-server/elk-server-client';
 import { ElkServerProcess, type SpawnFunction } from '../src/server/elk-server/elk-server-process';
-import { SwitchingElk, elkGraphSize, goesToServer } from '../src/server/elk-server/switching-elk';
+import { SwitchingElk, elkGraphSize, goesToServer, serverCanLayOut } from '../src/server/elk-server/switching-elk';
 import { createElkFactory, disposeElkServers, sharedElkServerProcess } from '../src/server/elk-server/index';
 import { GraphGModelSource } from '../src/model/graph-gmodel-source';
 import { convertToGModelRoot } from '../src/server/gmodel-convert';
@@ -223,6 +223,20 @@ describe('the engine a graph goes to', () => {
 
         expect(sent).toEqual([5000]);
         expect(js.calls).toBe(0);
+    });
+
+    it('keeps a graph on elkjs that asks for an algorithm the server has not, at any depth', async () => {
+        const stress = { id: 'automaton', layoutOptions: { 'elk.algorithm': 'stress' }, children: [{ id: 'a' }, { id: 'b' }] };
+        expect(serverCanLayOut(stress)).toBe(false);
+        expect(serverCanLayOut({ id: 'r', children: [{ id: 'g', layoutOptions: { 'org.eclipse.elk.stress': 'x', 'elk.algorithm': 'org.eclipse.elk.stress' } }] })).toBe(false);
+        expect(serverCanLayOut({ id: 'r', layoutOptions: { 'elk.algorithm': 'org.eclipse.elk.layered' }, children: [{ id: 'g', layoutOptions: { 'elk.algorithm': 'mrtree' } }] })).toBe(true);
+        expect(serverCanLayOut(chain(3))).toBe(true);
+        const js = elkjs();
+        const java = server(5000);
+        await new SwitchingElk(js, java, { engine: 'elk-server' }, async g => g).layout(stress);
+
+        expect(js.calls).toBe(1);
+        expect(java.starts).toBe(0);
     });
 
     it('falls back to elkjs when the server cannot start or fails', async () => {

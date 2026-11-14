@@ -344,3 +344,24 @@ export interface NodeLine {
     /** What kind of line, for the product's stylesheet: `node-line-<kind>`. */
     kind?: string;
 }
+
+/**
+ * What the row of a member of a list shows: its name, then its lines (a
+ * declaration's type and value, a function's parameters and kind), each in a
+ * column the list's rows share, at the place the list gives that column, so
+ * that a list reads as a table. All in one fixed-width font; the places are
+ * from the row's left.
+ */
+export interface ListRow {
+    /** Where the name starts. */
+    nameX: number;
+    cells: ListRowCell[];
+}
+
+/** One of a row's lines, in its column. */
+export interface ListRowCell {
+    text: string;
+    x: number;
+    /** What kind of line, for the product's stylesheet: `list-row-cell-<kind>`. */
+    kind?: string;
+}

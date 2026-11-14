@@ -28,6 +28,7 @@ import { AnnotationEditor } from './annotation-editor';
 import { lastPerKey } from './contributions';
 import { NodeSectionContribution, type NodeInfoRow, type NodeSectionContext } from './node-section';
 import { createPropertySection, shortenPath } from './property-section';
+import { isReadOnlyView } from './read-only-view';
 
 /**
  * IGModelRootListener interface — fire on every model root change
@@ -291,7 +292,8 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
 
         // Track the rendered node for the sections' in-place updates, and let the
         // sections prepare a selected node (not a selected port's) before it is drawn.
-        if (element.type?.startsWith('node')) {
+        // A state of an automaton is no unit of a network: it has no sections of theirs.
+        if (element.type?.startsWith('node') && element.type !== WorkflowDiagramTypes.NODE_STATE) {
             this.lastRenderedNodeId = element.id;
             for (const contribution of this.nodeSections()) {
                 contribution.prepare?.(element, this.lastRoot);
@@ -302,6 +304,8 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
 
         if (element.type.startsWith('edge')) {
             this.updateContentForEdge(element, content);
+        } else if (element.type === WorkflowDiagramTypes.NODE_STATE) {
+            this.updateContentForState(element, content);
         } else if (element.type.startsWith('node')) {
             this.updateContentForNode(element, content, requestAgentDiscovery);
         } else if (element.type.startsWith('port')) {
@@ -1408,7 +1412,11 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         const referencedUri = (rootArgs as Record<string, unknown>)['wf:workflowSourceUri'] as string | undefined
             ?? (rootArgs as Record<string, unknown>)[WorkflowDiagramMetadata.REFERENCED_URI] as string | undefined;
 
-        const basicSection = createPropertySection(usesNetworkModel ? 'Network' : 'Workflow');
+        // A view the producer marked read-only (an actor's automaton, a
+        // projection of a file) is not the network or workflow the editing
+        // sections below edit: it is named and described, nothing more.
+        const readOnly = isReadOnlyView(root);
+        const basicSection = createPropertySection(readOnly ? 'View' : usesNetworkModel ? 'Network' : 'Workflow');
         this.addProperty(basicSection, 'Name', workflowName ?? '(unknown)');
         if (factoryName) {
             this.addProperty(basicSection, 'Factory', factoryName);
@@ -1426,6 +1434,9 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         const graphLoadIssuesSection = this.buildGraphLoadIssuesSection(rootArgs);
         if (graphLoadIssuesSection) {
             content.appendChild(graphLoadIssuesSection);
+        }
+        if (readOnly) {
+            return;
         }
 
         content.appendChild(
@@ -1755,6 +1766,10 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     }
 
     protected updateContentForEdge(edge: PropertyElement, content: HTMLElement): void {
+        if (edge.type === WorkflowDiagramTypes.EDGE_TRANSITION) {
+            this.updateContentForTransition(edge, content);
+            return;
+        }
         const sourceId = edge.sourceId || 'unknown';
         const targetId = edge.targetId || 'unknown';
         
@@ -1794,6 +1809,53 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         // Queue capacity is a network-only connection attribute (lowers to MLIR `capacity(N)`).
         if (this.isNetworkRuntime()) {
             content.appendChild(this.buildEdgeQueueSection(edge));
+        }
+    }
+
+    /**
+     * A state of an automaton: its name, whether the automaton starts in it,
+     * and what the producer says of it. It has no ports, parameters or
+     * annotations to list.
+     */
+    protected updateContentForState(state: PropertyElement, content: HTMLElement): void {
+        const args = state.args;
+        const rows: TemplateResult[] = [ppReadonlyRow('Name', readStringArg(args, WorkflowDiagramMetadata.ENTITY_NAME) ?? '(no name)')];
+        if (args?.[WorkflowDiagramMetadata.STATE_INITIAL] === true) {
+            rows.push(ppReadonlyRow('Initial', 'the automaton starts here'));
+        }
+        content.appendChild(this.litSection('State', { body: html`${rows}` }));
+        const facts = this.buildFactsSection(args as Record<string, unknown> | undefined);
+        if (facts) {
+            content.appendChild(facts);
+        }
+    }
+
+    /**
+     * A transition of an automaton: what takes it, the two states, where it
+     * comes in its state's order and the condition it is taken under, then
+     * what the producer says of it, as a node's facts.
+     */
+    protected updateContentForTransition(edge: PropertyElement, content: HTMLElement): void {
+        const args = edge.args;
+        const from = readStringArg(args, 'wf:from') ?? '';
+        const to = readStringArg(args, 'wf:to') ?? '';
+        const order = readNumberArg(args, WorkflowDiagramMetadata.TRANSITION_ORDER);
+        const condition = readStringArg(args, WorkflowDiagramMetadata.TRANSITION_CONDITION);
+        const rows: TemplateResult[] = [
+            ppReadonlyRow('Label', readStringArg(args, WorkflowDiagramMetadata.EDGE_LABEL) ?? ''),
+            ppReadonlyRow('From', from),
+            ppReadonlyRow('To', to === from ? `${to} (stays)` : to)
+        ];
+        if (order !== undefined) {
+            rows.push(ppReadonlyRow('Order', String(order)));
+        }
+        if (condition) {
+            rows.push(ppReadonlyRow('Condition', condition));
+        }
+        content.appendChild(this.litSection('Transition', { body: html`${rows}` }));
+        const facts = this.buildFactsSection(args as Record<string, unknown> | undefined);
+        if (facts) {
+            content.appendChild(facts);
         }
     }
 

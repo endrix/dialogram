@@ -8,7 +8,7 @@
  * steps, written once.
  */
 import { GEdge, GModelIndex, GModelRoot, ModelState } from '@eclipse-glsp/server';
-import { WorkflowDiagramMetadata, WORKFLOW_LAYOUT_PERSISTENCE_KEY, WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes, WORKFLOW_LAYOUT_PERSISTENCE_KEY, WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { buildEdgeSignatureCounts, edgeRouteKeyFor, type Point } from '../routing/persisted-edge-routes';
 import type { LayoutPersistenceService } from '../services/layout-persistence-service';
@@ -206,7 +206,8 @@ export function collectEdgeRoutes(root: GModelRoot): Map<string, Point[]> {
     const result = new Map<string, Point[]>();
     const signatureCounts = buildEdgeSignatureCounts(root);
     walk(root, element => {
-        if (element instanceof GEdge) {
+        // A transition of an automaton has no route of its own to keep.
+        if (element instanceof GEdge && element.type !== WorkflowDiagramTypes.EDGE_TRANSITION) {
             const key = edgeRouteKeyFor(element.args as Record<string, unknown> | undefined, signatureCounts);
             const routingPoints = (element as any).routingPoints as Point[] | undefined;
             if (typeof key === 'string' && Array.isArray(routingPoints) && routingPoints.length > 0) {

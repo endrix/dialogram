@@ -14,7 +14,7 @@
  */
 
 import { GEdge, GModelElement, GModelIndex, GModelRoot, GPort } from '@eclipse-glsp/server';
-import { WorkflowDiagramConstants, WorkflowDiagramMetadata, portAnchor } from '@dialogram/shared';
+import { WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, portAnchor } from '@dialogram/shared';
 import { cleanLegacyFanoutPoints } from '../server/gmodel-convert';
 
 export type Point = { x: number; y: number };
@@ -213,6 +213,11 @@ export function applyPersistedEdgeRoutes(root: GModelRoot, edgeRoutes: Map<strin
             return;
         }
         if (element instanceof GEdge) {
+            // A transition of an automaton is drawn from its states' places:
+            // a route saved for one (by an older build) is not put back.
+            if (element.type === WorkflowDiagramTypes.EDGE_TRANSITION) {
+                return;
+            }
             const args = element.args as Record<string, unknown> | undefined;
             const key = edgeRouteKeyFor(args, signatureCounts);
             if (!key) {

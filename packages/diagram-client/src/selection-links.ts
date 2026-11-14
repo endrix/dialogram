@@ -45,6 +45,8 @@ export interface LinkElement {
     args?: Record<string, unknown>;
     parent?: LinkElement;
     children?: readonly LinkElement[];
+    /** Where a link meets an element that is not a box (a transition: its label), in the diagram's coordinates. */
+    linkAnchor?: Box;
 }
 
 /** The links a root carries; nothing for a root with none, or with something else under the key. */
@@ -59,6 +61,10 @@ export function selectionLinksOf(root: LinkElement | undefined): SelectionLink[]
 
 /** Where an element is in the diagram: its place, taken through the elements that hold it. */
 export function absoluteBox(element: LinkElement): Box {
+    const anchor = element.linkAnchor;
+    if (anchor) {
+        return { ...anchor };
+    }
     let x = 0;
     let y = 0;
     for (let current: LinkElement | undefined = element; current; current = current.parent) {
@@ -407,7 +413,10 @@ export function selectionOverlay(root: LinkElement): SelectionOverlay | undefine
         });
     };
     // The other nodes of a node's own frame: what a link should not run over
-    // on its way out. Found once a node, however many links end at it.
+    // on its way out. Found once a node, however many links end at it. A row
+    // of a list is left by its sides only: it has rows above and below it,
+    // or the frame's title and edge, and a link out of its top or bottom
+    // would run along the table.
     const neighbours = new Map<string, Box[]>();
     const neighboursOf = (id: string): Box[] => {
         let found = neighbours.get(id);
@@ -419,6 +428,10 @@ export function selectionOverlay(root: LinkElement): SelectionOverlay | undefine
                 : (frame.children ?? [])
                     .filter(child => child !== element && typeof child.type === 'string' && child.type.startsWith('node'))
                     .map(absoluteBox);
+            if (element?.args?.[WorkflowDiagramMetadata.LIST_ROW]) {
+                const box = absoluteBox(element);
+                found = [...found, { ...box, y: box.y - box.height }, { ...box, y: box.y + box.height }];
+            }
             neighbours.set(id, found);
         }
         return found;

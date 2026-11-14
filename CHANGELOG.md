@@ -77,6 +77,38 @@ it no longer has.
 
 ### Added
 
+- **An automaton.** A node of kind `state` is a state (`node:state`), a pill
+  as wide as its name, the initial one marked; an edge from a state to a
+  state is a transition (`edge:transition`), labelled with its label, its
+  place in the order its state tries it in (`meta.order`), a mark where it
+  has a guard (`meta.condition`) and, after the mark, the tokens it takes
+  and gives (`meta.tokens`, `In×384 → Out`). Most automata are laid out in
+  layers from the top down, the initial state first, so they read the way
+  they run; a hub (one state in two thirds of the pairs of states with a
+  transition between them, next to four others at least) is placed by
+  stress, round that state, up to 16 states. A transition has no route: the
+  client draws it from its states' places (a curve bowed when both ways
+  exist and bent round the states in its way, a loop into the widest gap,
+  the labels of the whole automaton placed together), and the server lays
+  out with the same arithmetic, now in `@dialogram/shared`, so what goes
+  round the automaton keeps clear of its loops and labels. A large
+  automaton is made small: a run of three states or more with one way in
+  and one way out is one state listing its steps, the first five and how
+  many more when it is long, all of them in its tooltip (`+` unfolds it, `−`
+  on its first state folds it again), and the ways into a state entered from
+  five or more are short arrows ending in its name. Round it, the unit's ports
+  in columns close beside what is drawn, and the groups pinned to it. A link
+  drawn on selection may end at a transition, anchored at its label.
+- **A group can be pinned on the left, and be a list.** `pin: 'left'` puts
+  a pinned group in a column on the left of the diagram, the first on top.
+  `list: true` on a group's scope draws its members as the rows of a table
+  instead of cards: a row each, its name then its `meta.lines` in columns
+  the list's rows share, in the editor's fixed-width font, its family's
+  colour down its left edge; a line's `kind` is the class
+  `list-row-cell-<kind>` for a product to colour. A row is an element as a
+  card is (selected, opened at its source, the end of a link, which leaves
+  it by a side). Beside an automaton, a list much taller than it goes on in
+  a second column.
 - **An edge can end at a group.** An edge whose end names a group's scope
   (`to: 'scope:run'`) ends on the group's frame instead of at a member: a
   transition into a state, where the state is a group of what can happen in
@@ -436,6 +468,15 @@ it no longer has.
 
 ### Changed
 
+- **`state` is a node kind of its own.** A node of kind `state` is a state of
+  an automaton (see Added): a pill with its name and nothing else, its
+  `meta.lines` not drawn. A producer that sent another kind of node under
+  that kind (a state variable) sends it under another (`variable`).
+- **A read-only view's root panel says what the view is.** With nothing
+  selected, a view the producer marked read-only (`graph.meta.readOnly`) is
+  titled View and shows its facts, without the sections of what it could
+  not edit (annotations, parameters, input and output ports). Every
+  read-only view has it: an NDF overview and an ASL unit's view too.
 - **A symbol's pins are drawn as wide as the wires.** The short stub from
   a gate's, operator's or register's body to each pin was a 1.5px line
   stopping at the node's edge, half a port short of where the wire ends:
@@ -649,6 +690,11 @@ it no longer has.
 
 ### Fixed
 
+- **A graph the ELK server cannot lay out stays on elkjs.** The server has
+  the layered, force and mrtree algorithms; a graph that asks for another
+  (an automaton placed by stress) went to it under `engine: 'elk-server'`,
+  failed there and fell back to elkjs with a warning, on every layout. It
+  now goes to elkjs from the start.
 - **A view no longer falls back to the structure on a refresh.** The host's
   refresh (a keystroke or a save in any source file, a run) repeats the
   file, the name and the trail of what is shown, and named no view: a

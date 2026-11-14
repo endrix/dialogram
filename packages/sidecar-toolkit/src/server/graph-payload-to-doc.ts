@@ -187,8 +187,10 @@ export function graphPayloadToDoc(graphPayload: Record<string, unknown>): GraphD
             label: typeof scope.label === 'string' ? scope.label : undefined,
             // The row of a group nested in a group laid out in rows.
             row: typeof scope.row === 'number' ? scope.row : undefined,
-            // A group kept out of the diagram's flow, in a band above it.
+            // A group kept out of the diagram's flow: in a band above it, or a column on its left.
             pin: typeof scope.pin === 'string' ? scope.pin : undefined,
+            // A group whose members are the rows of a list.
+            list: scope.list === true ? true : undefined,
             // The group the diagram's flow starts in.
             initial: scope.initial === true ? true : undefined,
             parent: typeof scope.parent === 'string' ? scope.parent : undefined,

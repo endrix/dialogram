@@ -127,6 +127,11 @@ describe('keeping a toggled node where it was on screen', () => {
         expect(toggledIn(root({ x: 0, y: 0 }, false), { id: 'scope:open:p', openKey: 'u_prod' })?.id).toBe('u_prod');
     });
 
+    it('follows a run of an automaton from the state it was folded into to its first state, and back', () => {
+        const first = { id: 'get_pred_p', position: { x: 300, y: 40 }, args: { [WorkflowDiagramMetadata.STATE_RUN]: 'fold:state:get_pred_p', [WorkflowDiagramMetadata.STATE_RUN_OPEN]: true } };
+        expect(toggledIn(root({ x: 0, y: 0 }, false, undefined, [first]), { id: 'get_pred_p … get_res_y_e', run: 'fold:state:get_pred_p' })?.id).toBe('get_pred_p');
+    });
+
     it('is told by both toggles what was pressed, before their operation goes', () => {
         const remembered: string[] = [];
         const fake = { remember: (_root: unknown, id: string) => { remembered.push(id); } };

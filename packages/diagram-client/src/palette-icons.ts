@@ -127,6 +127,10 @@ export function nodeFamilyCss(families: readonly NodeFamilySpec[] | undefined): 
         rules.push(`.network-node.external-actor-${name} .node-body.network-border {
     stroke: ${family.color};
 }`);
+        // A member of a list in the family: the band down its row's left edge.
+        rules.push(`.list-row.external-actor-${name} .list-row-mark {
+    fill: ${family.color};
+}`);
         // A plain node in the family: its header, instead of the task amber.
         rules.push(`.actor-node.external-actor-${name} .header-compartment .header-background {
     fill: ${family.color};

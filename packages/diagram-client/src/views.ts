@@ -47,6 +47,7 @@ import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagr
 import { renderSymbolBody, symbolPinsOf } from './symbol-views';
 import { NODE_OPEN_TOGGLE_RADIUS_PX, nodeOpenToggle } from './node-open-toggle';
 import { nodeLinesHeight, nodeLinesOf, renderNodeLines } from './node-lines';
+import { listRowOf, renderListRow } from './list-row-view';
 import { GROUP_INITIAL_MARK_ROOM_PX, groupInitialMark, isGroupInitial } from './group-initial-mark';
 import { WorkflowDiagramConstants, estimatePortLabelSize } from '@dialogram/shared';
 
@@ -184,7 +185,7 @@ function renderRunRing(width: number, height: number): VNode {
 }
 
 /** Internals reached by the family, mark and ring tests; not part of the module's surface. */
-export const __testables = { resolveNodeFamily, renderRunRing, renderNodeCenterImage, RUN_RING_BLEED_PX };
+export const __testables = { resolveNodeFamily, renderRunRing, renderNodeCenterImage, markFits, RUN_RING_BLEED_PX };
 
 /**
  * Draw a family's own full-colour mark centred in the node body, where an icon
@@ -223,6 +224,11 @@ function renderNodeCenterImage(
         place(image.dark, 'dark'),
         ...(hasLight ? [place(image.light!, 'light')] : [])
     )];
+}
+
+/** Whether a family's mark fits in a body `openHeight` tall above its lines, under the header. */
+function markFits(openHeight: number): boolean {
+    return openHeight - HEADER_HEIGHT >= NODE_ICON_SIZE / 2;
 }
 
 /**
@@ -797,6 +803,11 @@ function renderEntityNode(
     // A node in a product's family wears its mark; a subgraph as an actor does.
     const defAnnotations = ((node as any).args?.[WorkflowDiagramMetadata.ENTITY_DEFINITION_ANNOTATIONS] as NodeAnnotations | undefined) ?? [];
     const family = resolveNodeFamily(defAnnotations, clientBehavior().nodeFamilies ?? []);
+    // A member of a list: one row of a table (list-row-view.ts).
+    const listRow = listRowOf(node as any);
+    if (listRow) {
+        return renderListRow(node as any, listRow, { width, height }, rootClasses(family), context);
+    }
     // A node the producer draws as a symbol (a gate, a mux, a register): its
     // shape instead of the box, no family mark over it (symbol-views.ts).
     const symbol = (node as any).args?.[WorkflowDiagramMetadata.SYMBOL];
@@ -866,8 +877,10 @@ function renderEntityNode(
         }),
         // Above the body so the travelling head is not painted over by it.
         ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
-        ...(family?.icon ? [renderNodeCenterIcon(family, width, openHeight)] : []),
-        ...(family?.image ? renderNodeCenterImage(family, width, openHeight) : []),
+        // The mark only where the body above the lines has room for it: a
+        // node that is its header and its lines has none.
+        ...(family?.icon && markFits(openHeight) ? [renderNodeCenterIcon(family, width, openHeight)] : []),
+        ...(family?.image && markFits(openHeight) ? renderNodeCenterImage(family, width, openHeight) : []),
         ...renderNodeLines(lines, width, bodyHeight),
         ...context.renderChildren(node),
         ...(footerLabelNode ? [footerLabelNode] : [])

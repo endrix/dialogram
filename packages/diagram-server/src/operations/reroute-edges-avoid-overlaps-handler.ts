@@ -18,6 +18,12 @@ import { GModelSerializer } from '@eclipse-glsp/server';
 import { routeOrthogonal, type RouterConnector, type RouterObstacle } from '../routing/libavoid-router';
 import { persistLayout } from '../server/layout-snapshot';
 
+/**
+ * A transition of an automaton has no route: the client draws it from where
+ * its states are, so a move never routes it.
+ */
+const isTransition = (edge: GEdge): boolean => edge.type === WorkflowDiagramTypes.EDGE_TRANSITION;
+
 /** Every segment axis-aligned? A diagonal means the polyline is not a valid route. */
 export function isOrthogonalPolyline(points: readonly { x: number; y: number }[]): boolean {
     for (let i = 1; i < points.length; i++) {
@@ -1023,7 +1029,7 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
         if (!resetAll) {
             for (const edgeId of selectedIds) {
                 const el = this.modelState.index.find(edgeId);
-                if (!(el instanceof GEdge)) { continue; }
+                if (!(el instanceof GEdge) || isTransition(el)) { continue; }
                 const route = this.slideRoute(el, nodeBoxes);
                 if (route) {
                     (el as any).routingPoints = route;
@@ -1035,7 +1041,7 @@ export class WorkflowRerouteEdgesAvoidOverlapsOperationHandler extends Operation
         // ── Collect edges to route, then sort for deterministic channel allocation ──
         const edgesToRoute: GEdge[] = [];
         const visitCollect = (el: any): void => {
-            if (el instanceof GEdge && !slidEdgeIds.has(String((el as any).id))
+            if (el instanceof GEdge && !isTransition(el) && !slidEdgeIds.has(String((el as any).id))
                 && (this.shouldRerouteEdge(el, selectedIds, resetAll) || edgeHitByMovedNode(el))) {
                 edgesToRoute.push(el);
             }

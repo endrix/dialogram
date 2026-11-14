@@ -41,6 +41,8 @@ interface Pending {
     key?: string;
     /** Open, the node's key: the node, once closed, is it. */
     openKey?: string;
+    /** A run of an automaton's states: the state that names it, folded or unfolded, is it. */
+    run?: string;
     at: Point;
     state: string;
     since: number;
@@ -75,14 +77,15 @@ function find(root: any, match: (element: any) => boolean): any {
 }
 
 /** The element a press named, in `root`: itself, the frame a node opened into, or the node a frame closed into. */
-export function toggledIn(root: any, pending: Pick<Pending, 'id' | 'key' | 'openKey'>): any {
+export function toggledIn(root: any, pending: Pick<Pending, 'id' | 'key' | 'openKey' | 'run'>): any {
     const byId = root?.index?.getById?.(pending.id);
     if (byId) {
         return byId;
     }
     return find(root, element => {
         const args = element?.args ?? {};
-        return (pending.key !== undefined && args[WorkflowDiagramMetadata.OPEN_NODE_KEY] === pending.key)
+        return (pending.run !== undefined && args[WorkflowDiagramMetadata.STATE_RUN] === pending.run)
+            || (pending.key !== undefined && args[WorkflowDiagramMetadata.OPEN_NODE_KEY] === pending.key)
             || (pending.openKey !== undefined
                 && (element?.id === pending.openKey || args[WorkflowDiagramMetadata.AST_PATH] === pending.openKey));
     });
@@ -111,10 +114,12 @@ export class ToggleAnchor {
         const args = element.args ?? {};
         const key = args[WorkflowDiagramMetadata.AST_PATH] ?? element.id;
         const openKey = args[WorkflowDiagramMetadata.OPEN_NODE_KEY];
+        const run = args[WorkflowDiagramMetadata.STATE_RUN];
         this.pending = {
             id,
             key: typeof key === 'string' ? key : undefined,
             openKey: typeof openKey === 'string' ? openKey : undefined,
+            run: typeof run === 'string' ? run : undefined,
             at: absolutePosition(element),
             state: stateOf(element),
             since: Date.now()
