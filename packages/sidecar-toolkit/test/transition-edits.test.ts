@@ -11,12 +11,14 @@
  * refusal from the producer write nothing; a read-only view deletes nothing
  * else.
  */
+import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { DefaultCommandStack } from '@eclipse-glsp/server/lib/common/command/command-stack';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes, type ViewRequest } from '@dialogram/shared';
 import { CreateTransitionOperationHandler } from '../src/server/operations/transition-edits';
 import { DeleteElementOperationHandler } from '../src/server/operations/delete-handler.js';
@@ -191,7 +193,7 @@ describe('a transition deleted', () => {
         workspace.openTextDocument = async () => ({ getText: () => 'class Counter: ...\n' });
         try {
             const command = handler.createCommand({ kind: 'deleteElement', elementIds: ids });
-            await command.options.computeEdits();
+            await command?.options.computeEdits();
         } finally {
             workspace.openTextDocument = original;
         }
@@ -208,8 +210,19 @@ describe('a transition deleted', () => {
         }]);
     });
 
-    /** Delete `ids` as the editor does, the document what is on disk; the command, and what the producer was sent. */
-    async function execute(state: any, ids: string[], answer: (transition: string) => boolean) {
+    /** GLSP's own command stack, which logs what fails (it is injected a logger in the server). */
+    function commandStack(): DefaultCommandStack {
+        const stack = new DefaultCommandStack();
+        (stack as any).logger = { error: (...args: unknown[]) => { throw new Error(args.map(String).join(' ')); } };
+        return stack;
+    }
+
+    /**
+     * Delete `ids` as the editor does, on GLSP's own command stack (`stack`,
+     * a new one if none), the document what is on disk and an edit applied
+     * written to it; the command, and what the producer was sent.
+     */
+    async function execute(state: any, ids: string[], answer: (transition: string) => boolean, stack = commandStack()) {
         const file = vscode.Uri.parse(state.root.args.sourceUri).fsPath;
         const sent: Sent[] = [];
         const handler = new DeleteElementOperationHandler() as any;
@@ -226,17 +239,35 @@ describe('a transition deleted', () => {
                 return { ok: true };
             }
         };
+        const command = handler.createCommand({ kind: 'deleteElement', elementIds: ids });
+        if (command) {
+            // As GLSP's operation handler does with what it is given.
+            await onDisk(file, () => withWindow(() => undefined, () => stack.execute(command)));
+        }
+        return { command, sent, text: readFileSync(file, 'utf8'), undo: () => onDisk(file, () => stack.undo()), stack };
+    }
+
+    /** Run `body` with the editor's document of `file` what is on disk, and an edit applied to it written there. */
+    async function onDisk<T>(file: string, body: () => Promise<T>): Promise<T> {
         const workspace = vscode.workspace as any;
-        const saved = { open: workspace.openTextDocument, apply: workspace.applyEdit };
+        const proto = (vscode.WorkspaceEdit as any).prototype;
+        const saved = { open: workspace.openTextDocument, apply: workspace.applyEdit, set: proto.set };
+        const pending: string[] = [];
+        proto.set = function (_uri: unknown, edits: Array<{ newText: string }>) { pending.push(...edits.map(edit => edit.newText)); };
         workspace.openTextDocument = async () => ({
             getText: () => readFileSync(file, 'utf8'), isDirty: false, lineCount: 1, lineAt: () => ({ text: '' }), save: async () => true
         });
-        workspace.applyEdit = async () => true;
+        workspace.applyEdit = async () => {
+            const text = pending.pop();
+            if (text) {
+                writeFileSync(file, text);
+            }
+            return true;
+        };
         try {
-            const command = handler.createCommand({ kind: 'deleteElement', elementIds: ids });
-            await withWindow(() => undefined, () => command.execute());
-            return { command, sent, text: readFileSync(file, 'utf8') };
+            return await body();
         } finally {
+            proto.set = saved.set;
             workspace.openTextDocument = saved.open;
             workspace.applyEdit = saved.apply;
         }
@@ -251,18 +282,24 @@ describe('a transition deleted', () => {
         }
     });
 
-    it('leaves nothing to undo when nothing is taken out: refused, or in a view that does not allow it', async () => {
+    it('refused alone, writes nothing and cannot be undone', async () => {
         const refused = await execute(modelState({ sourceUri: sourceFile(), edits: ['transition'] }), ['t:*:reset->*'], () => false);
         expect(refused.text).toBe(COUNTER);
-        expect(refused.command.canUndo()).toBe(false);
-        const kept = await execute(modelState({ sourceUri: sourceFile() }), ['t:run:step->idle', 'idle'], () => true);
-        expect(kept.sent).toEqual([]);
-        expect(kept.command.canUndo()).toBe(false);
+        expect(refused.command!.canUndo()).toBe(false);
     });
 
-    it('is kept in a view that does not, and a read-only view deletes nothing else: not a state', async () => {
+    it('is kept in a view that does not, and a read-only view deletes nothing else, not a state: no command, the undo below untouched', async () => {
         const sourceUri = sourceFile();
-        expect(await remove(modelState({ sourceUri }), ['t:run:step->idle', 'idle'])).toEqual([]);
-        expect(await remove(modelState({ sourceUri, edits: ['transition'] }), ['idle'])).toEqual([]);
+        const editable = modelState({ sourceUri, edits: ['transition'] });
+        const first = await execute(editable, ['t:run:step->idle'], () => true);
+        expect(first.text).not.toBe(COUNTER);
+        for (const [state, ids] of [[modelState({ sourceUri }), ['t:run:step->idle', 'idle']], [editable, ['idle']]] as const) {
+            const kept = await execute(state, [...ids], () => true, first.stack);
+            expect(kept.command).toBeUndefined();
+            expect(kept.sent).toEqual([]);
+        }
+        expect(first.stack.canUndo()).toBe(true);
+        await first.undo();
+        expect(readFileSync(vscode.Uri.parse(sourceUri).fsPath, 'utf8')).toBe(COUNTER);
     });
 });

@@ -89,8 +89,8 @@ it no longer has.
   `instancePath`) and the diagram's file (`document`), the one the undo
   reverts. A refusal is shown, and nothing is drawn or deleted that the
   producer has not written; a transition refused among several deleted
-  stays, and the others go. A delete that takes nothing out leaves nothing
-  to undo. The rest of the view stays read-only: a state is not deleted.
+  stays, and the others go. The rest of the view stays read-only: a state
+  is not deleted.
 - **An automaton.** A node of kind `state` is a state (`node:state`), a pill
   as wide as its name, the initial one marked; an edge from a state to a
   state is a transition (`edge:transition`), labelled with its label, its
@@ -704,6 +704,13 @@ it no longer has.
 
 ### Fixed
 
+- **A delete of nothing that can be deleted is no command.** Delete on a
+  selection of only what is kept (a read-only element, an edge with no
+  ports, a line inside a group that several edges share) made a command
+  that wrote nothing, and it went on the undo stack. What a selection
+  deletes is now known before a command is made, and one that deletes
+  nothing makes none. (A command that cannot be undone on top of the stack
+  keeps every edit below it from being undone.)
 - **A graph the ELK server cannot lay out stays on elkjs.** The server has
   the layered, force and mrtree algorithms; a graph that asks for another
   (an automaton placed by stress) went to it under `engine: 'elk-server'`,
