@@ -79,20 +79,33 @@ export function stateNameOf(element: GModelElement | undefined): string | undefi
 }
 
 /**
- * Have the producer write an edit of the view's transitions (`op`, with
- * `args` beside the view's own); false, the reason shown, when it refuses.
+ * Have the producer write an edit of the view (`op`, with `args` beside the
+ * view's own, which name the view: an arg of the same name does not replace
+ * one of them); false, the reason shown (`failed`, when it gives none), when
+ * it refuses.
  */
+export async function writeViewOp(
+    sidecar: SidecarInvoker,
+    target: ViewEditTarget,
+    op: string,
+    args: Record<string, unknown>,
+    failed: string
+): Promise<boolean> {
+    const result = await sidecar.sendSidecarOpDetailed(target.fileUri, { op: sidecar.sidecarOp(op), args: { ...args, ...target.args } });
+    if (!result.ok) {
+        void vscode.window.showWarningMessage(result.message ?? failed);
+    }
+    return result.ok;
+}
+
+/** Have the producer write an edit of the view's transitions (`op`); false, the reason shown, when it refuses. */
 export async function writeTransitionEdit(
     sidecar: SidecarInvoker,
     target: ViewEditTarget,
     op: 'addTransition' | 'removeTransition',
     args: Record<string, unknown>
 ): Promise<boolean> {
-    const result = await sidecar.sendSidecarOpDetailed(target.fileUri, { op: sidecar.sidecarOp(op), args: { ...target.args, ...args } });
-    if (!result.ok) {
-        void vscode.window.showWarningMessage(result.message ?? `The ${op === 'addTransition' ? 'transition was not drawn' : 'transition was not deleted'}.`);
-    }
-    return result.ok;
+    return writeViewOp(sidecar, target, op, args, `The ${op === 'addTransition' ? 'transition was not drawn' : 'transition was not deleted'}.`);
 }
 
 @injectable()

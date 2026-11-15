@@ -85,6 +85,7 @@ export class DeleteElementOperationHandler extends OperationHandler {
         // deleting one would otherwise bring it back, held, as soon as it was
         // gone (view-edits.ts). One the producer refused stays as it was.
         const writtenStates = new Set<string>();
+        let sourceWritten = false;
         const mayLetGo = deletes.some(planned => planned.kind === 'held' || (planned.kind === 'view' && planned.state !== undefined));
         const holder = mayLetGo ? stateHolderOf(this.modelState, this.layoutPersistence, this.sourceModelStorage) : undefined;
         const letGo = holder
@@ -92,7 +93,7 @@ export class DeleteElementOperationHandler extends OperationHandler {
                 const lettingGo = deletes.flatMap(planned => (planned.kind === 'held' ? [planned.name] : []));
                 lettingGo.push(...writtenStates);
                 return lettingGo.map(name => held.delete(name)).some(Boolean) ? held : undefined;
-            })
+            }, () => !sourceWritten)
             : undefined;
         if (deletes.every(planned => planned.kind === 'held')) {
             return letGo;
@@ -167,6 +168,9 @@ export class DeleteElementOperationHandler extends OperationHandler {
                 if (!wrote) {
                     return undefined;
                 }
+                // The view is drawn again from what was written: what the
+                // editor lets go of with it need not draw it first.
+                sourceWritten = true;
                 const afterText = await readAuthoritativeSourceText(vscodeUri);
                 (command as any)._sourceBeforeText = beforeText;
                 (command as any)._sourceAfterText = afterText;
@@ -195,11 +199,14 @@ export class DeleteElementOperationHandler extends OperationHandler {
             const element = this.modelState.index.get(id) as any;
             const elementArgs = element?.args as Record<string, unknown> | undefined;
             const elementType = element?.type as string | undefined;
-            if (!mayRemove(root, element)) {
+            if (!mayRemove(root, element) || elementType === WorkflowDiagramTypes.NODE_STATE) {
                 // What a read-only view lets go besides its transitions: a
                 // state the editor holds, and what the producer marked
-                // deletable (view-edits.ts). Never a read-only element.
-                const viewDelete = readOnlyView && element && elementType !== WorkflowDiagramTypes.EDGE_TRANSITION
+                // deletable (view-edits.ts). Never a read-only element. A
+                // state is no node of the producer's network, in any view:
+                // only these take one out.
+                const viewDelete = (readOnlyView || elementType === WorkflowDiagramTypes.NODE_STATE) && element
+                    && elementType !== WorkflowDiagramTypes.EDGE_TRANSITION
                     && !WorkflowDiagramTypeGuards.isReadOnlyElement(elementType as string, elementArgs)
                     && viewEditTarget(root) !== undefined
                     ? viewDeleteOf(element, root)

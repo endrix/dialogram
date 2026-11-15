@@ -645,7 +645,8 @@ export function viewCreatesOf(rootArgs: Record<string, unknown> | undefined): Vi
             ? entry.asks.flatMap((ask: any) => {
                 const key = text(ask?.key);
                 const prompt = text(ask?.prompt);
-                return key && prompt ? [{ key, prompt, ...(typeof ask.value === 'string' ? { value: ask.value } : {}) }] : [];
+                // `create` names the entry to the producer: no answer takes its place.
+                return key && key !== 'create' && prompt ? [{ key, prompt, ...(typeof ask.value === 'string' ? { value: ask.value } : {}) }] : [];
             })
             : [];
         const description = text(entry.description);

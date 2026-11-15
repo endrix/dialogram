@@ -101,7 +101,11 @@ it no longer has.
   `asks`, each a `key`, a `prompt` and a default `value`), in the order
   declared, in their groups. Placing one asks its questions (an agent gives
   the answers in the operation's arguments) and the producer writes it
-  (`viewCreate`: `create` and the answers), undone as a transition is. A
+  (`viewCreate`: `create` and the answers), undone as a transition is. An
+  ask keyed `create` is dropped, and no answer replaces the arguments that
+  name the view (`network`, `view`, `document`, …). The palette is asked
+  again only after a model whose view, edits or creates differ from the
+  last one's (after every model where an item is dynamic, as before). A
   node the producer marks `meta.delete` (a state, a port, a row of a list
   it draws) can be deleted, and the producer takes it out (`viewDelete`:
   the node's id, `element`); a refusal is shown and that node stays.

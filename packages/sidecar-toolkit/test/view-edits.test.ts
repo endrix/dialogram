@@ -277,6 +277,16 @@ describe('deleting in a read-only view', () => {
         expect(await heldIn(kept, state)).toEqual({ waiting: { x: 5, y: 6 }, done: { x: 1, y: 2 } });
     });
 
+    it('draws the view again for what the editor alone lets go of, and leaves it to what the producer wrote otherwise', async () => {
+        const held = await remove(['unwritten-state:waiting']);
+        expect(held.kept.storage.rebuilt).toBe(1);
+        const written = await remove(['done'], { held: { waiting: { x: 5, y: 6 }, done: { x: 1, y: 2 } } });
+        expect(await heldIn(written.kept, written.state)).toEqual({ waiting: { x: 5, y: 6 } });
+        expect(written.kept.storage.rebuilt).toBe(0);
+        await written.undo();
+        expect(written.kept.storage.rebuilt).toBe(0);
+    });
+
     it('keeps what the producer refuses to take out, and says why', async () => {
         const { text, said } = await remove(['in'], { answer: { ok: false, message: 'In is read by step' } });
         expect(text()).toBe(COUNTER);
@@ -326,6 +336,24 @@ describe('an entry the producer declared', () => {
             op: 'calpy.viewCreate',
             args: { network: 'Counter', view: 'actor', document: vscode.Uri.parse(sourceUri).fsPath, create: 'port.in', name: 'IN2', type: 'Int(32)' }
         }]);
+    });
+
+    it('asks nothing keyed as the entry is named, and no answer names the entry or the view in its place', async () => {
+        const sourceUri = sourceFile();
+        const sent: Sent[] = [];
+        const state = modelState({ sourceUri, creates: [{
+            id: 'thing',
+            label: 'Thing',
+            asks: [{ key: 'create', prompt: 'Which entry' }, { key: 'network', prompt: 'Which network' }, { key: 'name', prompt: 'Its name' }]
+        }] });
+        const handler = wire(new ViewCreateOperationHandler(), state, sent, holding());
+        const asked = await withWindow(['Other', 't'], async (_said, asked) => {
+            const command = handler.createCommand({ kind: 'createNode', elementTypeId: VIEW_CREATE_ELEMENT_TYPE, args: { create: 'thing' } });
+            await onDisk(vscode.Uri.parse(sourceUri).fsPath, () => command.options.computeEdits());
+            return asked;
+        });
+        expect(asked.map(each => each.prompt)).toEqual(['Which network', 'Its name']);
+        expect(sent[0].args).toMatchObject({ create: 'thing', network: 'Counter', name: 't' });
     });
 
     it('takes an agent\'s answers from the operation, and asks nothing', async () => {

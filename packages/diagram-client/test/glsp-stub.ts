@@ -162,12 +162,30 @@ export class GGraph {}
 export class GIssueMarker {}
 export class GRoutingHandle {}
 export class SetModelCommand {}
-/** GLSP's palette: asks for its items once, again on a model only when one of them is dynamic. */
+export const UpdateModelAction = { KIND: 'updateModel', is: (action: any): boolean => action?.kind === 'updateModel' };
+export const SetModelAction = { KIND: 'setModel', is: (action: any): boolean => action?.kind === 'setModel' };
+/**
+ * GLSP's palette: asks for its items once, again on a model only when one
+ * of them is dynamic (`dynamicItems`, for a test). It counts its asks.
+ */
 export class ToolPalette {
     protected paletteItems: unknown[] = [];
     protected dynamic = false;
+    dynamicItems = false;
+    asked = 0;
     protected async setPaletteItems(): Promise<void> {
-        this.dynamic = false;
+        this.asked++;
+        this.dynamic = this.dynamicItems;
+    }
+    handle(action: unknown): void {
+        if (UpdateModelAction.is(action) || SetModelAction.is(action)) {
+            void this.reloadPaletteBody();
+        }
+    }
+    protected async reloadPaletteBody(): Promise<void> {
+        if (this.dynamic) {
+            await this.setPaletteItems();
+        }
     }
 }
 export class FeedbackAwareSetModelCommand {}

@@ -11,12 +11,17 @@
  * A held state the producer has since written is not drawn twice: the
  * producer's is drawn, where the held one was placed if the view has no
  * place of its own for it. The editor keeps holding it, so that undoing the
- * transition that wrote it leaves the state where it was; deleting or
- * renaming the state drops it (`saveUnwrittenStates`).
+ * transition that wrote it leaves the state where it was, held; deleting the
+ * state lets go of it. A held state the producer stops writing some other
+ * way (its transitions deleted, a rename in the source) is held again, drawn
+ * as not written, until it is deleted. A held state and the producer's of
+ * the same name are drawn under one layout key, the state's name, so a held
+ * state moved keeps its place once written.
  */
 import { UNWRITTEN_STATE_ID_PREFIX, WorkflowDiagramMetadata, WorkflowDiagramTypes, viewEditsOf } from '@dialogram/shared';
 import type { PyGraphDocument, PyGraphNode } from './graph-gmodel-source';
 
+/** Where a held state was placed. */
 export interface Place {
     x: number;
     y: number;
@@ -63,7 +68,12 @@ export function withUnwrittenStates(doc: PyGraphDocument, held: ReadonlyMap<stri
         return doc;
     }
     const written = writtenStates(doc);
-    const scope = [...written.values()][0]?.scope ?? doc.graph.subgraphs?.[0]?.id ?? 'scope:root';
+    // Among the producer's states; with none written yet, among its nodes
+    // that are not in a group (a list or a band pinned beside the drawing).
+    const groups = new Set((doc.graph.subgraphs ?? []).filter(scope => scope.kind === 'group').map(scope => scope.id));
+    const scope = [...written.values()][0]?.scope
+        ?? doc.graph.nodes.find(node => !groups.has(node.scope))?.scope
+        ?? 'scope:root';
     const added = [...held.keys()].filter(name => !written.has(name)).map(name => unwrittenStateNode(name, scope));
     return added.length === 0 ? doc : { ...doc, graph: { ...doc.graph, nodes: [...doc.graph.nodes, ...added] } };
 }
@@ -82,16 +92,24 @@ export function placeHeldStates(
     if (held.size === 0) {
         return;
     }
-    for (const child of root?.children ?? []) {
-        const node = child as { type?: string; args?: Record<string, unknown> };
-        if (node.type !== WorkflowDiagramTypes.NODE_STATE) {
-            continue;
-        }
+    for (const node of statesIn(root)) {
         const name = node.args?.[WorkflowDiagramMetadata.STATE_NAME];
         const key = node.args?.[WorkflowDiagramMetadata.AST_PATH];
         const place = typeof name === 'string' ? held.get(name) : undefined;
         if (place && typeof key === 'string' && !positions.has(key)) {
             positions.set(key, { x: place.x, y: place.y });
+        }
+    }
+}
+
+/** The states drawn in `root`, at any depth: a scope may hold them. */
+export function* statesIn(root: { children?: unknown[] } | undefined): Generator<{ type?: string; args?: Record<string, unknown> }> {
+    for (const child of root?.children ?? []) {
+        const node = child as { type?: string; args?: Record<string, unknown>; children?: unknown[] };
+        if (node.type === WorkflowDiagramTypes.NODE_STATE) {
+            yield node;
+        } else if (Array.isArray(node.children)) {
+            yield* statesIn(node);
         }
     }
 }

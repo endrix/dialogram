@@ -37,20 +37,22 @@ import { LayoutPersistenceService } from '@dialogram/diagram-server/services/lay
 import { collectEdgeRoutes, collectNodePositions } from '@dialogram/diagram-server/server/layout-snapshot';
 import { layoutTargetOf } from '@dialogram/diagram-server/server/layout-target';
 import type { CommandThatMayChangeNothing } from '@dialogram/diagram-server/server/command-stack';
+import { statesIn, type Place } from '@dialogram/diagram-server/model/unwritten-states';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
 import { SidecarInvoker } from './sidecar-invoker';
-import { viewEditTarget, type ViewEditTarget } from './transition-edits';
+import { viewEditTarget, writeViewOp, type ViewEditTarget } from './transition-edits';
 
-export interface Place {
-    x: number;
-    y: number;
-}
+export type { Place };
 
 /** Where the states the editor holds in the view shown are kept, and how the view is drawn again with them. */
 export interface StateHolder {
     load(): Promise<Map<string, Place>>;
-    /** Keep `held`, and draw the view again if it is still the one shown. */
-    save(held: ReadonlyMap<string, Place>): Promise<void>;
+    /**
+     * Keep `held`, and draw the view again if it is still the one shown,
+     * unless told not to (`redraw` false: an edit of the source made with it
+     * has the view drawn again, from what it wrote).
+     */
+    save(held: ReadonlyMap<string, Place>, redraw?: boolean): Promise<void>;
 }
 
 /** Whether the view on `root` lets states be placed and deleted. */
@@ -62,8 +64,8 @@ export function allowsStateEditsOn(root: GModelRoot | undefined): boolean {
 /** The names of the states the view on `root` draws, written or held. */
 export function stateNamesOn(root: GModelRoot | undefined): Set<string> {
     const names = new Set<string>();
-    for (const child of root?.children ?? []) {
-        const name = child.type === WorkflowDiagramTypes.NODE_STATE ? (child as any).args?.[WorkflowDiagramMetadata.STATE_NAME] : undefined;
+    for (const state of statesIn(root)) {
+        const name = state.args?.[WorkflowDiagramMetadata.STATE_NAME];
         if (typeof name === 'string') {
             names.add(name);
         }
@@ -113,8 +115,11 @@ export function stateHolderOf(modelState: ModelState, layoutPersistence: LayoutP
     const target = layoutTargetOf(diagramModel);
     return {
         load: () => layoutPersistence.loadUnwrittenStates(target.filePath, target.networkId),
-        save: async held => {
+        save: async (held, redraw = true) => {
             await layoutPersistence.saveUnwrittenStates(target.filePath, target.networkId, held);
+            if (!redraw) {
+                return;
+            }
             // An undo that arrives once the editor shows another view keeps
             // what it holds, and draws nothing: the view it was made in is
             // drawn with it when it is shown again.
@@ -134,7 +139,9 @@ export function stateHolderOf(modelState: ModelState, layoutPersistence: LayoutP
 /**
  * A change of the states the editor holds: `change` is given what it holds
  * and answers what it is to hold, or nothing to leave it. Undone and redone
- * by keeping what it held before, and after.
+ * by keeping what it held before, and after. Each draws the view again,
+ * unless `redraw` says an edit of the source made with it does (so the view
+ * is not drawn from the document as it was before that edit landed).
  */
 export class HeldStatesCommand implements CommandThatMayChangeNothing {
     private before?: Map<string, Place>;
@@ -142,7 +149,8 @@ export class HeldStatesCommand implements CommandThatMayChangeNothing {
 
     constructor(
         private readonly holder: StateHolder,
-        private readonly change: (held: Map<string, Place>) => Promise<Map<string, Place> | undefined>
+        private readonly change: (held: Map<string, Place>) => Promise<Map<string, Place> | undefined>,
+        private readonly redraw: () => boolean = () => true
     ) {}
 
     async execute(): Promise<void> {
@@ -155,18 +163,18 @@ export class HeldStatesCommand implements CommandThatMayChangeNothing {
         }
         this.before = held;
         this.after = next;
-        await this.holder.save(next);
+        await this.holder.save(next, this.redraw());
     }
 
     async undo(): Promise<void> {
         if (this.before) {
-            await this.holder.save(this.before);
+            await this.holder.save(this.before, this.redraw());
         }
     }
 
     async redo(): Promise<void> {
         if (this.after) {
-            await this.holder.save(this.after);
+            await this.holder.save(this.after, this.redraw());
         }
     }
 
@@ -306,11 +314,7 @@ export async function writeViewEdit(
     args: Record<string, unknown>,
     failed: string
 ): Promise<boolean> {
-    const result = await sidecar.sendSidecarOpDetailed(target.fileUri, { op: sidecar.sidecarOp(op), args: { ...target.args, ...args } });
-    if (!result.ok) {
-        void vscode.window.showWarningMessage(result.message ?? failed);
-    }
-    return result.ok;
+    return writeViewOp(sidecar, target, op, args, failed);
 }
 
 @injectable()
@@ -346,7 +350,8 @@ export class ViewCreateOperationHandler extends OperationHandler {
                     return undefined;
                 }
                 const before = await readAuthoritativeSourceText(target.document);
-                if (!(await writeViewEdit(this.sidecar, target, 'viewCreate', { create: create.id, ...answers }, `The ${create.label.toLowerCase()} was not made.`))) {
+                // Which entry it is, `create`, is not an answer's to change.
+                if (!(await writeViewEdit(this.sidecar, target, 'viewCreate', { ...answers, create: create.id }, `The ${create.label.toLowerCase()} was not made.`))) {
                     return undefined;
                 }
                 // What the producer wrote, read from the disk it wrote to: the

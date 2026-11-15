@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { UNWRITTEN_STATE_ID_PREFIX, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument } from '../src/model/graph-gmodel-source';
-import { placeHeldStates, withUnwrittenStates } from '../src/model/unwritten-states';
+import { placeHeldStates, statesIn, withUnwrittenStates } from '../src/model/unwritten-states';
 import { LayoutPersistenceService } from '../src/services/layout-persistence-service';
 import { WorkflowDiagramConfiguration } from '../src/server/diagram-configuration';
 
@@ -43,6 +43,34 @@ describe('a state the editor holds', () => {
         const waiting = graph.children.find((child: any) => child.args?.[WorkflowDiagramMetadata.STATE_NAME] === 'waiting');
         expect(waiting.type).toBe(WorkflowDiagramTypes.NODE_STATE);
         expect(waiting.args[WorkflowDiagramMetadata.STATE_UNWRITTEN]).toBe(true);
+    });
+
+    it('with no state written yet, is drawn among the view\'s nodes, not in a list or a band beside the drawing', () => {
+        const doc = {
+            version: '1',
+            graph: {
+                id: 'root',
+                meta: { readOnly: true, edits: ['state', 'transition'] },
+                subgraphs: [{ id: 'scope:functions', kind: 'group', label: 'functions' }],
+                nodes: [
+                    { id: 'f:helper', kind: 'function', label: 'helper', scope: 'scope:functions', ports: [] },
+                    { id: 'wf:in:A', kind: 'wf-input', label: 'A', scope: 'scope:root', ports: [] }
+                ],
+                edges: []
+            }
+        } as unknown as PyGraphDocument;
+        const added = withUnwrittenStates(doc, new Map([['waiting', { x: 1, y: 2 }]])).graph.nodes.at(-1);
+        expect([added?.id, added?.scope]).toEqual([UNWRITTEN_STATE_ID_PREFIX + 'waiting', 'scope:root']);
+    });
+
+    it('is placed, and its name found, inside a scope as at the top', () => {
+        const nested = { children: [{ type: 'scope', children: [{ type: WorkflowDiagramTypes.NODE_STATE, args: {
+            [WorkflowDiagramMetadata.STATE_NAME]: 'waiting', [WorkflowDiagramMetadata.AST_PATH]: 'waiting'
+        } }] }] };
+        expect([...statesIn(nested)]).toHaveLength(1);
+        const positions = new Map<string, { x: number; y: number }>();
+        placeHeldStates(nested, held, positions);
+        expect(positions.get('waiting')).toEqual({ x: 300, y: 80 });
     });
 
     it('is not drawn in a view that takes no states', () => {
