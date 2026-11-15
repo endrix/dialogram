@@ -36,6 +36,7 @@ import {
 } from '@dialogram/shared';
 import { GraphGModelSource } from '../model/graph-gmodel-source';
 import { portBusStateOf } from '../model/port-bundles';
+import { allowsStateEdits, placeHeldStates, withUnwrittenStates } from '../model/unwritten-states';
 import { tunedLayoutOptions } from '../operations/layout-tuned-handler';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
@@ -536,13 +537,21 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             portBuses = await this.layoutPersistence.loadPortBuses(fallbackLayout.filePath, fallbackLayout.networkId);
         }
         const hasPersistedEdgeRoutes = edgeRoutes !== undefined;
+        // The states the reader placed that nothing is written of yet: the
+        // editor holds them with the view's layout (unwritten-states.ts).
+        const heldStates = allowsStateEdits(doc)
+            ? await this.layoutPersistence.loadUnwrittenStates(workflowFilePath, networkId)
+            : new Map<string, { x: number; y: number }>();
         perf?.mark('layoutIO');
 
         // The families are the product's; without them every external node
         // renders in the default family.
         const graphTransform = new GraphGModelSource(this.storageOptions);
-        const diagramModel = graphTransform.transform(doc, { portBuses: portBusStateOf(portBuses) });
+        const diagramModel = graphTransform.transform(withUnwrittenStates(doc, heldStates), { portBuses: portBusStateOf(portBuses) });
         perf?.mark('transform');
+        if (loadedLayoutPositions) {
+            placeHeldStates((diagramModel as any).graph, heldStates, loadedLayoutPositions);
+        }
         // A bundle of the unit's ports drawn as one, and its members opened,
         // are placed from the layout around them rather than re-laying out
         // the whole diagram for want of a saved place.

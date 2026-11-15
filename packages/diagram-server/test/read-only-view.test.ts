@@ -5,12 +5,13 @@
  * profile. A producer whose files are mostly editable can also draw some it
  * only reads (a projection of another syntax, a project overview), and one
  * editor passes between both kinds in place. `graph.meta.readOnly` marks such
- * a view: the root carries `wf:readOnlyView`, the client hides the palette's
- * tools while it is shown, and the context menu loses its editing items, while
- * reading, navigating and laying out stay.
+ * a view: the root carries `wf:readOnlyView`, the palette offers only what
+ * the view still allows (its automaton's states and transitions, what its
+ * producer declared it can make), and the context menu loses its editing
+ * items, while reading, navigating and laying out stay.
  */
 import { describe, expect, it } from 'vitest';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { TRANSITIONS_PALETTE_GROUP, VIEW_CREATE_ELEMENT_TYPE, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument } from '../src/model/graph-gmodel-source';
 import { WorkflowToolPaletteItemProvider } from '../src/server/tool-palette-provider';
 import { WorkflowContextMenuItemProvider } from '../src/server/context-menu-item-provider';
@@ -56,8 +57,8 @@ describe('a view the producer marks read-only', () => {
 
     it('says what can still be edited in it, of the edits the platform has, and what a drawn transition can be taken by', () => {
         const labels = [{ id: 'step', label: 'step', description: ' In → Out ' }, { id: 'stop', label: 'stop' }, { id: '', label: 'nameless' }, 'junk'];
-        const args = rootArgs({ readOnly: true, edits: ['transition', 'rename', 7], transitionLabels: labels })!;
-        expect(args[WorkflowDiagramMetadata.VIEW_EDITS]).toEqual(['transition']);
+        const args = rootArgs({ readOnly: true, edits: ['transition', 'rename', 7, 'state'], transitionLabels: labels })!;
+        expect(args[WorkflowDiagramMetadata.VIEW_EDITS]).toEqual(['transition', 'state']);
         expect(args[WorkflowDiagramMetadata.TRANSITION_LABELS]).toEqual([{ id: 'step', label: 'step', description: 'In → Out' }, { id: 'stop', label: 'stop' }]);
         // An editable view needs no list of what it allows; one that allows no transition, no labels.
         expect(rootArgs({ edits: ['transition'], transitionLabels: labels })?.[WorkflowDiagramMetadata.VIEW_EDITS]).toBeUndefined();
@@ -82,14 +83,72 @@ describe('a view the producer marks read-only', () => {
         expect(names).toEqual([['idle', 'idle'], ['any state', undefined]]);
     });
 
-    it('still gets the palette items, which the client hides: the palette asks once per editor', async () => {
-        // An editor that opens on a read-only view and navigates in place to an
-        // editable one has only the items it was given at startup.
-        const readOnly = { id: 'root', args: { [WorkflowDiagramMetadata.READ_ONLY_VIEW]: true } };
-        const editable = { id: 'root', args: {} };
-        const ids = async (root: unknown) => (await palette(root).getItems()).map((category: any) => category.id);
-        expect(await ids(readOnly)).toEqual(['palette-entities', 'palette-ports', 'palette-connections', 'palette-transitions']);
-        expect(await ids(readOnly)).toEqual(await ids(editable));
+    it('says what else can be made in it, as its producer declared it, and what it lets be deleted', () => {
+        const creates = [
+            { id: 'port.in', label: 'Input Port', group: 'Ports', icon: 'arrow-right', asks: [{ key: 'name', prompt: 'Name' }, { key: '', prompt: 'x' }] },
+            { id: 'port.in', label: 'Twice' },
+            { id: 'action', label: ' Action ', description: 'An action of the actor' },
+            { id: 'nameless' },
+            'junk'
+        ];
+        expect(rootArgs({ readOnly: true, creates })?.[WorkflowDiagramMetadata.VIEW_CREATES]).toEqual([
+            { id: 'port.in', label: 'Input Port', group: 'Ports', icon: 'arrow-right', asks: [{ key: 'name', prompt: 'Name' }] },
+            { id: 'action', label: 'Action', description: 'An action of the actor' }
+        ]);
+        // An editable view has its own palette.
+        expect(rootArgs({ creates })?.[WorkflowDiagramMetadata.VIEW_CREATES]).toBeUndefined();
+        const graph: any = new GraphGModelSource({} as any).transform({
+            version: '1',
+            graph: {
+                id: 'root',
+                meta: { readOnly: true, edits: ['state'] },
+                nodes: [
+                    { id: 'state:idle', kind: 'state', label: 'idle', scope: 'root', ports: [], meta: { state: 'idle', delete: true } },
+                    { id: 'state:new', kind: 'state', label: 'new', scope: 'root', ports: [], meta: { state: 'new', unwritten: true } },
+                    { id: 'wf:in:In', kind: 'wf-input', label: 'In', scope: 'root', ports: [{ id: 'wf:in:In:p', name: 'In', direction: 'out' }], meta: { delete: true } }
+                ],
+                edges: []
+            }
+        } as PyGraphDocument).graph;
+        const marks = (graph.children ?? []).map((c: any) => [
+            c.type, c.args[WorkflowDiagramMetadata.VIEW_DELETABLE], c.args[WorkflowDiagramMetadata.STATE_UNWRITTEN], c.args[WorkflowDiagramMetadata.GRAPH_NODE_ID]
+        ]);
+        expect(marks).toEqual([
+            [WorkflowDiagramTypes.NODE_STATE, true, undefined, 'state:idle'],
+            [WorkflowDiagramTypes.NODE_STATE, undefined, true, 'state:new'],
+            [WorkflowDiagramTypes.NODE_BOUNDARY_INPUT, true, undefined, 'wf:in:In']
+        ]);
+    });
+
+    it('offers in the palette what it still allows, and nothing else; an editable view, everything', async () => {
+        // The client asks for the items again with each model (`ViewToolPalette`),
+        // so an editor that passes from one view to another gets each one's.
+        const groups = async (args: Record<string, unknown>) => (await palette({ id: 'root', args }).getItems())
+            .map((group: any) => [group.label, group.children.map((item: any) => [item.label, item.actions[0].elementTypeId, item.actions[0].args?.create])]);
+        expect(await groups({})).toEqual([
+            ['Entities', [['Thing', 'node:actor', undefined]]],
+            ['Ports', [['Input Port', WorkflowDiagramTypes.NODE_BOUNDARY_INPUT, undefined], ['Output Port', WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT, undefined]]],
+            ['Connections', [['Connection', WorkflowDiagramTypes.EDGE_CONNECTION, undefined]]]
+        ]);
+        expect(await groups({ [WorkflowDiagramMetadata.READ_ONLY_VIEW]: true })).toEqual([]);
+        expect(await groups({
+            [WorkflowDiagramMetadata.READ_ONLY_VIEW]: true,
+            [WorkflowDiagramMetadata.VIEW_EDITS]: ['transition', 'state'],
+            [WorkflowDiagramMetadata.VIEW_CREATES]: [
+                { id: 'port.in', label: 'Input Port', group: 'Ports' },
+                { id: 'action', label: 'Action', group: 'Actor' },
+                { id: 'port.out', label: 'Output Port', group: 'Ports' },
+                { id: 'loose', label: 'Loose' }
+            ]
+        })).toEqual([
+            ['Automaton', [['State', WorkflowDiagramTypes.NODE_STATE, undefined], ['Transition', WorkflowDiagramTypes.EDGE_TRANSITION, undefined]]],
+            ['Ports', [['Input Port', VIEW_CREATE_ELEMENT_TYPE, 'port.in'], ['Output Port', VIEW_CREATE_ELEMENT_TYPE, 'port.out']]],
+            ['Actor', [['Action', VIEW_CREATE_ELEMENT_TYPE, 'action']]],
+            ['Create', [['Loose', VIEW_CREATE_ELEMENT_TYPE, 'loose']]]
+        ]);
+        // The Transition alone keeps the group the client knew it by.
+        const only = await palette({ id: 'root', args: { [WorkflowDiagramMetadata.READ_ONLY_VIEW]: true, [WorkflowDiagramMetadata.VIEW_EDITS]: ['transition'] } }).getItems();
+        expect(only.map((group: any) => group.id)).toEqual([TRANSITIONS_PALETTE_GROUP]);
     });
 
     it('keeps reading and navigating items in the context menu, not editing ones', () => {

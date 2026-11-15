@@ -1,6 +1,6 @@
 import { DeleteElementOperation } from '@eclipse-glsp/protocol';
-import { OperationHandler, MaybePromise, Action, ModelState, Command, GModelElement, GModelRoot } from '@eclipse-glsp/server';
-import { inject, injectable } from 'inversify';
+import { OperationHandler, MaybePromise, Action, ModelState, Command, GModelElement, GModelRoot, SourceModelStorage } from '@eclipse-glsp/server';
+import { inject, injectable, optional } from 'inversify';
 import * as vscode from 'vscode';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
 import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
@@ -10,6 +10,9 @@ import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operat
 import { SidecarInvoker } from './sidecar-invoker';
 import { escapePythonStringLiteral } from '../python-text';
 import { allowsTransitionEdits, viewEditTarget, writeTransitionEdit } from './transition-edits';
+import { HeldStatesCommand, stateHolderOf, viewDeleteOf, writeViewEdit, type ViewDelete } from './view-edits';
+import { LayoutPersistenceService } from '@dialogram/diagram-server/services/layout-persistence-service';
+import { CompoundCommandThatMayChangeNothing } from '@dialogram/diagram-server/server/command-stack';
 
 /**
  * Whether `element` of the view on `root` may be taken out of the source, by
@@ -31,6 +34,7 @@ export function mayRemove(root: GModelRoot | undefined, element: GModelElement |
 /** One thing a delete asks the producer to take out. */
 type PlannedDelete =
     | { kind: 'transition'; id: string }
+    | ViewDelete
     | { kind: 'node'; name: unknown }
     | { kind: 'edge'; fromExpr: string; toExpr: string; role: unknown }
     | { kind: 'port'; direction: string; portName: string };
@@ -44,6 +48,14 @@ export class DeleteElementOperationHandler extends OperationHandler {
 
     @inject(SidecarInvoker)
     protected readonly sidecar!: SidecarInvoker;
+
+    @inject(LayoutPersistenceService)
+    @optional()
+    protected readonly layoutPersistence?: LayoutPersistenceService;
+
+    @inject(SourceModelStorage)
+    @optional()
+    protected readonly sourceModelStorage?: SourceModelStorage;
 
     constructor() {
         super();
@@ -68,6 +80,25 @@ export class DeleteElementOperationHandler extends OperationHandler {
             return undefined;
         }
 
+        // The states the editor holds go from what it holds, and so do the
+        // written ones it once held, once the producer has taken them out:
+        // deleting one would otherwise bring it back, held, as soon as it was
+        // gone (view-edits.ts). One the producer refused stays as it was.
+        const writtenStates = new Set<string>();
+        let sourceWritten = false;
+        const mayLetGo = deletes.some(planned => planned.kind === 'held' || (planned.kind === 'view' && planned.state !== undefined));
+        const holder = mayLetGo ? stateHolderOf(this.modelState, this.layoutPersistence, this.sourceModelStorage) : undefined;
+        const letGo = holder
+            ? new HeldStatesCommand(holder, async held => {
+                const lettingGo = deletes.flatMap(planned => (planned.kind === 'held' ? [planned.name] : []));
+                lettingGo.push(...writtenStates);
+                return lettingGo.map(name => held.delete(name)).some(Boolean) ? held : undefined;
+            }, () => !sourceWritten)
+            : undefined;
+        if (deletes.every(planned => planned.kind === 'held')) {
+            return letGo;
+        }
+
         const vscodeUri = vscode.Uri.parse(sourceUri);
         const workflowName = this.modelState.root.args?.['wf:workflowName'] as string | undefined;
         const transitions = viewEditTarget(this.modelState.root);
@@ -85,6 +116,20 @@ export class DeleteElementOperationHandler extends OperationHandler {
                 // What was taken out before a refusal stays taken out, and is
                 // undone with the rest, as one edit.
                 for (const planned of deletes) {
+                    if (planned.kind === 'held') {
+                        continue;
+                    }
+                    if (planned.kind === 'view') {
+                        // Like a transition: one the producer refuses to take
+                        // out (it said why) stays, and the others go.
+                        if (transitions && (await writeViewEdit(this.sidecar, transitions, 'viewDelete', { element: planned.element }, 'It was not deleted.'))) {
+                            wrote = true;
+                            if (planned.state !== undefined) {
+                                writtenStates.add(planned.state);
+                            }
+                        }
+                        continue;
+                    }
                     if (planned.kind === 'transition') {
                         if (transitions && (await writeTransitionEdit(this.sidecar, transitions, 'removeTransition', { transition: planned.id }))) {
                             wrote = true;
@@ -123,31 +168,54 @@ export class DeleteElementOperationHandler extends OperationHandler {
                 if (!wrote) {
                     return undefined;
                 }
+                // The view is drawn again from what was written: what the
+                // editor lets go of with it need not draw it first.
+                sourceWritten = true;
                 const afterText = await readAuthoritativeSourceText(vscodeUri);
                 (command as any)._sourceBeforeText = beforeText;
                 (command as any)._sourceAfterText = afterText;
                 return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];
             },
         });
-        return command;
+        // The source first, then what the editor holds: each says whether it
+        // changed anything, and a delete the producer refused throughout,
+        // letting go of nothing, leaves no entry on the undo stack.
+        return letGo ? new CompoundCommandThatMayChangeNothing(command, letGo) : command;
     }
 
     /**
      * What deleting `elementIds` asks the producer to delete, in their order:
      * what may be taken out ({@link mayRemove}), and of that, what names
-     * something the producer can find.
+     * something the producer can find. A read-only view also lets go what a
+     * cut does not take: the states the editor holds, and what the producer
+     * marked deletable (view-edits.ts).
      */
     private plannedDeletes(elementIds: readonly string[]): PlannedDelete[] {
         const root = this.modelState.root;
+        const readOnlyView = root.args?.[WorkflowDiagramMetadata.READ_ONLY_VIEW] === true;
         const deletedEdges = new Set<string>();
         const deletes: PlannedDelete[] = [];
         for (const id of elementIds) {
             const element = this.modelState.index.get(id) as any;
-            if (!mayRemove(root, element)) {
-                continue;
-            }
             const elementArgs = element?.args as Record<string, unknown> | undefined;
             const elementType = element?.type as string | undefined;
+            if (!mayRemove(root, element) || elementType === WorkflowDiagramTypes.NODE_STATE) {
+                // What a read-only view lets go besides its transitions: a
+                // state the editor holds, and what the producer marked
+                // deletable (view-edits.ts). Never a read-only element. A
+                // state is no node of the producer's network, in any view:
+                // only these take one out.
+                const viewDelete = (readOnlyView || elementType === WorkflowDiagramTypes.NODE_STATE) && element
+                    && elementType !== WorkflowDiagramTypes.EDGE_TRANSITION
+                    && !WorkflowDiagramTypeGuards.isReadOnlyElement(elementType as string, elementArgs)
+                    && viewEditTarget(root) !== undefined
+                    ? viewDeleteOf(element, root)
+                    : undefined;
+                if (viewDelete) {
+                    deletes.push(viewDelete);
+                }
+                continue;
+            }
 
             if (elementType === WorkflowDiagramTypes.EDGE_TRANSITION) {
                 deletes.push({ kind: 'transition', id });

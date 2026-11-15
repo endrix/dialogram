@@ -1,12 +1,12 @@
 /**
- * While a read-only view is shown, the page says so, for the stylesheet to
- * hide the palette's tools; the next editable view takes the mark away.
+ * While a read-only view is shown, the page says so, and says what the view
+ * still allows; the next editable view takes the marks away. The palette
+ * asks the server for the view's own items with each model.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
 import { READ_ONLY_VIEW_CLASS, ReadOnlyViewMarker, isReadOnlyView, viewEditClass } from '../src/read-only-view';
-import { readFileSync } from 'node:fs';
-import { TRANSITIONS_PALETTE_GROUP } from '@dialogram/shared';
+import { ViewToolPalette } from '../src/view-tool-palette';
 
 const original = (globalThis as any).document;
 let classes: Set<string>;
@@ -53,11 +53,37 @@ describe('the read-only view mark', () => {
         expect([...classes]).toEqual([READ_ONLY_VIEW_CLASS]);
     });
 
-    it('lets the stylesheet show the Transition only in a view that allows drawing one, and nothing else there', () => {
-        const css = readFileSync(new URL('../src/diagram-client.css', import.meta.url), 'utf8').replace(/\s+/g, ' ');
-        const group = `#${TRANSITIONS_PALETTE_GROUP}`;
-        expect(css).toContain(`body:not(.${viewEditClass('transition')}) .tool-palette ${group} { display: none; }`);
-        expect(css).toContain(`body.${READ_ONLY_VIEW_CLASS}.${viewEditClass('transition')} .tool-palette .palette-body .tool-group:not(${group}) { display: none; }`);
-        expect(css).toContain(`body.${READ_ONLY_VIEW_CLASS}:not(.${viewEditClass('transition')}) .tool-palette .palette-body { display: none; }`);
+    it('has the palette asked for the items of the view shown when the view changes, and not on every model', async () => {
+        // The server answers per view (what it still allows, and no more).
+        const palette = new ViewToolPalette() as any;
+        await palette.setPaletteItems();
+        const model = (kind: string, args: Record<string, unknown>) => ({ kind, newRoot: { id: 'root', args } });
+        const view = (name: string) => ({
+            [WorkflowDiagramMetadata.READ_ONLY_VIEW]: true,
+            [WorkflowDiagramMetadata.VIEW_EDITS]: ['transition'],
+            [WorkflowDiagramMetadata.VIEW_REQUEST]: { networkName: name, view: 'actor' }
+        });
+        const asks = async (action: unknown) => {
+            const before = palette.asked;
+            palette.handle(action);
+            await new Promise(resolve => setTimeout(resolve, 0));
+            return palette.asked - before;
+        };
+        expect(await asks(model('setModel', view('Counter')))).toBe(1);
+        expect(await asks(model('updateModel', view('Counter')))).toBe(0);
+        expect(await asks(model('updateModel', view('Adder')))).toBe(1);
+        expect(await asks(model('updateModel', {}))).toBe(1);
+        expect(await asks(model('updateModel', {}))).toBe(0);
+    });
+
+    it('has the palette asked again after every model where one of its items is dynamic, as GLSP does', async () => {
+        const palette = new ViewToolPalette() as any;
+        palette.dynamicItems = true;
+        await palette.setPaletteItems();
+        const before = palette.asked;
+        palette.handle({ kind: 'updateModel', newRoot: { id: 'root', args: {} } });
+        palette.handle({ kind: 'updateModel', newRoot: { id: 'root', args: {} } });
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(palette.asked - before).toBe(2);
     });
 });

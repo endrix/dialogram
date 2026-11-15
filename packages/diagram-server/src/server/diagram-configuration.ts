@@ -183,10 +183,14 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
                 reparentable: false
             },
             // A state of an automaton: placed by hand, sized by its name.
+            // Deletable for the client, which otherwise leaves it out of a
+            // delete: what deleting one does is the server's to say (a
+            // state the editor holds, or one the producer marked `delete`;
+            // any other makes no command).
             {
                 elementTypeId: WorkflowDiagramTypes.NODE_STATE,
                 repositionable: true,
-                deletable: false,
+                deletable: true,
                 resizable: false,
                 reparentable: false
             }

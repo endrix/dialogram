@@ -29,7 +29,8 @@ function network() {
         ['p', { id: 'p', type: 'port:input', args: { [WorkflowDiagramMetadata.PORT_NAME]: 'x', [WorkflowDiagramMetadata.PORT_DIRECTION]: 'input' } }],
         ['read-only', { id: 'read-only', type: WorkflowDiagramTypes.NODE_ACTOR, args: { [WorkflowDiagramMetadata.ENTITY_NAME]: 'ro', [WorkflowDiagramMetadata.IS_READ_ONLY]: true } }],
         ['portless', { id: 'portless', type: WorkflowDiagramTypes.EDGE_CONNECTION, args: { 'wf:from': 'a', 'wf:to': 'b' } }],
-        ['shared', { id: 'shared', type: WorkflowDiagramTypes.EDGE_CONNECTION, args: { [WorkflowDiagramMetadata.EDGES_OF]: ['e1', 'e2'], 'wf:outPort': 'o', 'wf:inPort': 'i' } }]
+        ['shared', { id: 'shared', type: WorkflowDiagramTypes.EDGE_CONNECTION, args: { [WorkflowDiagramMetadata.EDGES_OF]: ['e1', 'e2'], 'wf:outPort': 'o', 'wf:inPort': 'i' } }],
+        ['s', { id: 's', type: WorkflowDiagramTypes.NODE_STATE, args: { [WorkflowDiagramMetadata.ENTITY_NAME]: 'idle', [WorkflowDiagramMetadata.STATE_NAME]: 'idle' } }]
     ]);
     const state = {
         root: { args: { sourceUri: pathToFileURL(file).href, 'wf:workflowName': 'net' } },
@@ -127,6 +128,12 @@ describe('delete in a network view', () => {
         const { command, sent } = await remove(['read-only', 'portless', 'shared', 'a']);
         expect(sent.map(each => each.op)).toEqual(['calpy.deleteNode']);
         expect(command.canUndo()).toBe(true);
+    });
+
+    it('never asks the producer to delete a state as a node: only a view\'s own rules take one out', async () => {
+        const { command, sent } = await remove(['s']);
+        expect(command).toBeUndefined();
+        expect(sent).toEqual([]);
     });
 
     it('makes no command of a selection with nothing to delete, saying why for a line several edges share', async () => {

@@ -20,6 +20,7 @@ import type { SidecarRuntimeConfig } from './sidecar-runtime-config.js';
 import { CreateNodeOperationHandler } from './operations/create-node-handler.js';
 import { CreateEdgeOperationHandler } from './operations/create-edge-handler.js';
 import { CreateTransitionOperationHandler } from './operations/transition-edits.js';
+import { CreateStateOperationHandler, ViewCreateOperationHandler } from './operations/view-edits.js';
 import { DeleteElementOperationHandler } from './operations/delete-handler.js';
 import { CutOperationHandler } from './operations/cut-handler.js';
 import { ReconnectEdgeOperationHandler } from './operations/reconnect-handler.js';
@@ -51,6 +52,8 @@ function sidecarOperationHandlers(cfg: SidecarRuntimeConfig): OperationHandlerCo
         CreateNodeOperationHandler,
         CreateEdgeOperationHandler,
         CreateTransitionOperationHandler,
+        CreateStateOperationHandler,
+        ViewCreateOperationHandler,
         DeleteElementOperationHandler,
         CutOperationHandler,
         ReconnectEdgeOperationHandler,

@@ -91,6 +91,39 @@ it no longer has.
   producer has not written; a transition refused among several deleted
   stays, and the others go. The rest of the view stays read-only: a state
   is not deleted.
+- **A palette per view, with what the producer says it can make.** The
+  palette of a read-only view is asked of the server for that view, again
+  when the view changes, and holds what the view lets be placed or drawn:
+  an Automaton group with State where the view takes states
+  (`graph.meta.edits` has `state`) and Transition where it takes
+  transitions, then what the producer declares it can make
+  (`graph.meta.creates`: `id`, `label`, `description`, `icon`, `group`, and
+  `asks`, each a `key`, a `prompt` and a default `value`), in the order
+  declared, in their groups. Placing one asks its questions (an agent gives
+  the answers in the operation's arguments) and the producer writes it
+  (`viewCreate`: `create` and the answers), undone as a transition is. An
+  ask keyed `create` is dropped, and no answer replaces the arguments that
+  name the view (`network`, `view`, `document`, …). The palette is asked
+  again only after a model whose view, edits or creates differ from the
+  last one's (after every model where an item is dynamic, as before). A
+  node the producer marks `meta.delete` (a state, a port, a row of a list
+  it draws) can be deleted, and the producer takes it out (`viewDelete`:
+  the node's id, `element`); a refusal is shown and that node stays.
+- **A state placed before anything is written of it.** An automaton
+  written as its transitions has no state that no transition names: a
+  state placed with the palette's State (asked its name; an agent gives
+  `name`) is held by the editor with the view's layout (`unwrittenStates`)
+  and drawn dashed, its name in italics, until a transition is drawn from
+  or to it. That transition names it to the producer (`addTransition`'s
+  `newStates`), which writes both. Undo and redo of a placed state, and
+  deleting one, change only what the editor holds. A written state the
+  editor once held is let go of when the producer takes it out, and kept
+  when it refuses. A delete of both kinds is one edit, on a compound
+  command that changed nothing when none of its parts did and is undone
+  when each part that changed something can be
+  (`CompoundCommandThatMayChangeNothing`, beside `WorkflowCommandStack`);
+  so is a state named but not given (a dismissed prompt), which leaves no
+  entry on the undo stack.
 - **An automaton.** A node of kind `state` is a state (`node:state`), a pill
   as wide as its name, the initial one marked; an edge from a state to a
   state is a transition (`edge:transition`), labelled with its label, its
@@ -482,6 +515,9 @@ it no longer has.
 
 ### Changed
 
+- **The Transitions group is in the palette only of a view that takes
+  transitions.** It was in every editable palette, where nothing could
+  draw one, and hidden by CSS in read-only views that took none.
 - **`state` is a node kind of its own.** A node of kind `state` is a state of
   an automaton (see Added): a pill with its name and nothing else, its
   `meta.lines` not drawn. A producer that sent another kind of node under

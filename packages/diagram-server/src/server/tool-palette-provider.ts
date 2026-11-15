@@ -11,7 +11,8 @@ import { injectable, inject, optional } from 'inversify';
 import { 
     ToolPaletteItemProvider,
     OperationHandlerRegistry,
-    CreateOperationHandler
+    CreateOperationHandler,
+    ModelState
 } from '@eclipse-glsp/server';
 import { 
     PaletteItem, 
@@ -21,7 +22,15 @@ import {
     CreateNodeOperation,
     CreateEdgeOperation
 } from '@eclipse-glsp/protocol';
-import { TRANSITIONS_PALETTE_GROUP, WorkflowDiagramTypes } from '@dialogram/shared';
+import {
+    STATES_PALETTE_GROUP,
+    TRANSITIONS_PALETTE_GROUP,
+    VIEW_CREATE_ELEMENT_TYPE,
+    WorkflowDiagramMetadata,
+    WorkflowDiagramTypes,
+    viewCreatesOf,
+    viewEditsOf
+} from '@dialogram/shared';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
 
 /**
@@ -42,6 +51,11 @@ export class WorkflowToolPaletteItemProvider extends ToolPaletteItemProvider {
     @optional()
     protected storageOptions?: StorageRuntimeOptions;
 
+    /** The view shown: the palette is asked again whenever it changes (the client's `ViewToolPalette`). */
+    @inject(ModelState)
+    @optional()
+    protected modelState?: ModelState;
+
     protected counter = 0;
 
     override async getItems(_args?: Args): Promise<PaletteItem[]> {
@@ -58,11 +72,14 @@ export class WorkflowToolPaletteItemProvider extends ToolPaletteItemProvider {
         if (this.storageOptions?.supportsElementCreation === false) {
             return [];
         }
-        // A view the producer marked read-only (`wf:readOnlyView`) still gets
-        // the items: the palette asks for them once per editor, so an editor
-        // that opened on such a view would keep an empty palette after
-        // navigating to an editable one. The client hides them while a
-        // read-only view is shown (read-only-view.ts).
+        // A view the producer marked read-only (`wf:readOnlyView`) offers
+        // what it still allows and nothing else. The client asks again each
+        // time the model changes (`ViewToolPalette`), so an editor that
+        // passes from such a view to an editable one gets its items back.
+        const rootArgs = this.modelState?.root?.args as Record<string, unknown> | undefined;
+        if (rootArgs?.[WorkflowDiagramMetadata.READ_ONLY_VIEW] === true) {
+            return this.viewItems(rootArgs);
+        }
 
         const items: PaletteItem[] = [];
 
@@ -122,18 +139,58 @@ export class WorkflowToolPaletteItemProvider extends ToolPaletteItemProvider {
             icon: 'arrow-right'
         });
 
-        // A transition, from a state to a state: offered in every editor,
-        // since the palette is asked once per editor, and shown only while a
-        // view that allows drawing one is (`VIEW_EDITS`, read-only-view.ts).
-        items.push({
-            id: TRANSITIONS_PALETTE_GROUP,
-            label: 'Transitions',
-            sortString: 'D',
-            actions: [],
-            children: [this.createEdgeItem(WorkflowDiagramTypes.EDGE_TRANSITION, 'Transition', 'Draw a transition from a state to a state')],
-            icon: 'arrow-swap'
-        });
+        return items;
+    }
 
+    /**
+     * What a read-only view offers: its automaton's tools, where it allows
+     * editing its states (`state`) or its transitions (`transition`), then
+     * what its producer declared (`VIEW_CREATES`), each under its group, in
+     * the order declared.
+     */
+    protected viewItems(rootArgs: Record<string, unknown>): PaletteItem[] {
+        const items: PaletteItem[] = [];
+        const edits = viewEditsOf(rootArgs);
+        const automaton: PaletteItem[] = [];
+        if (edits.includes('state')) {
+            automaton.push(this.createNodeItem(WorkflowDiagramTypes.NODE_STATE, 'State', 'Place a state: drawing a transition from or to it writes it', 'circle-large-outline'));
+        }
+        if (edits.includes('transition')) {
+            automaton.push(this.createEdgeItem(WorkflowDiagramTypes.EDGE_TRANSITION, 'Transition', 'Draw a transition from a state to a state', 'arrow-swap'));
+        }
+        if (automaton.length > 0) {
+            items.push({
+                // One group, under the id the Transition's group always had.
+                id: edits.includes('transition') ? TRANSITIONS_PALETTE_GROUP : STATES_PALETTE_GROUP,
+                label: 'Automaton',
+                sortString: 'A',
+                actions: [],
+                children: automaton,
+                icon: 'arrow-swap'
+            });
+        }
+        const groups = new Map<string, PaletteItem[]>();
+        for (const create of viewCreatesOf(rootArgs)) {
+            const group = create.group ?? 'Create';
+            const entries = groups.get(group) ?? [];
+            entries.push({
+                ...this.createNodeItem(VIEW_CREATE_ELEMENT_TYPE, create.label, create.description ?? create.label, create.icon ?? 'add', { create: create.id }),
+                // In the order the producer declared them, not by label.
+                sortString: String(entries.length).padStart(3, '0')
+            });
+            groups.set(group, entries);
+        }
+        let order = 0;
+        for (const [label, children] of groups) {
+            items.push({
+                id: `palette-view-${++order}`,
+                label,
+                sortString: `B${String(order).padStart(3, '0')}`,
+                actions: [],
+                children,
+                icon: 'add'
+            });
+        }
         return items;
     }
     
@@ -162,7 +219,8 @@ export class WorkflowToolPaletteItemProvider extends ToolPaletteItemProvider {
     protected createEdgeItem(
         elementTypeId: string, 
         label: string,
-        description: string
+        description: string,
+        icon = 'arrow-right'
     ): PaletteItem {
         const action: TriggerEdgeCreationAction = {
             kind: TriggerEdgeCreationAction.KIND,
@@ -174,7 +232,7 @@ export class WorkflowToolPaletteItemProvider extends ToolPaletteItemProvider {
             label,
             sortString: label,
             actions: [action],
-            icon: 'arrow-right'
+            icon
         };
     }
 }

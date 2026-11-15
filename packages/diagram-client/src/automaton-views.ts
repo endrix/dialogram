@@ -240,6 +240,8 @@ export class StateNodeView extends ShapeView {
                 'state-node': true,
                 'state-initial': initial,
                 'state-run': !!steps,
+                // Placed by the reader, held by the editor: nothing is written of it yet.
+                'state-unwritten': args[WorkflowDiagramMetadata.STATE_UNWRITTEN] === true,
                 selected: node.selected,
                 hover: node.hoverFeedback
             },
