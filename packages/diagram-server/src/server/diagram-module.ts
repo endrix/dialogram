@@ -10,6 +10,7 @@ import 'reflect-metadata';
 import {
     ActionHandlerConstructor,
     BindingTarget,
+    CommandStack,
     CompoundOperationHandler,
     ContextMenuItemProvider,
     DiagramConfiguration,
@@ -41,6 +42,7 @@ import {
 } from './diagram-action-handlers';
 import { WorkflowOperationActionHandler } from './operation-action-handler';
 import { WorkflowUndoRedoActionHandler } from './undo-redo-action-handler';
+import { WorkflowCommandStack } from './command-stack';
 import { WorkflowToolPaletteItemProvider } from './tool-palette-provider';
 import { WorkflowContextMenuItemProvider } from './context-menu-item-provider';
 import { WorkflowLabelEditValidator } from './label-edit-validator';
@@ -99,6 +101,15 @@ export class WorkflowDiagramModule extends GModelDiagramModule {
      */
     protected bindSourceModelStorage(): BindingTarget<SourceModelStorage> {
         return this.options?.edits === 'read-only' ? ReadOnlySourceModelStorage : WorkflowSourceModelStorage;
+    }
+
+    /**
+     * The command stack: GLSP's, keeping no command that changed nothing, so
+     * an edit refused does not stand between Undo and the edits before it
+     * (see {@link WorkflowCommandStack}).
+     */
+    protected override bindCommandStack(): BindingTarget<CommandStack> {
+        return WorkflowCommandStack;
     }
 
     /**

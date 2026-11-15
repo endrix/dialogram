@@ -1,6 +1,12 @@
-import { Command } from '@eclipse-glsp/server';
 import * as vscode from 'vscode';
+import type { CommandThatMayChangeNothing } from '../server/command-stack';
 
+/**
+ * The edits a command applies; nothing (or no edit) when there is nothing to
+ * write: refused, cancelled, nothing to do. A command given nothing changed
+ * nothing and leaves no entry on the undo stack: return nothing only when
+ * nothing has been written.
+ */
 export type ComputeTextEdits = () => Promise<vscode.TextEdit[] | undefined>;
 
 export interface ReversibleWorkspaceEditCommandOptions {
@@ -29,13 +35,15 @@ function sortEditsDescending(edits: vscode.TextEdit[]): vscode.TextEdit[] {
     });
 }
 
-export class ReversibleWorkspaceEditCommand implements Command {
+export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothing {
     private beforeText: string | undefined;
     private afterText: string | undefined;
+    private unchanged = false;
 
     constructor(private readonly options: ReversibleWorkspaceEditCommandOptions) {}
 
     async execute(): Promise<void> {
+        this.unchanged = false;
         const doc = await vscode.workspace.openTextDocument(this.options.uri);
         this.beforeText = doc.getText();
 
@@ -44,6 +52,7 @@ export class ReversibleWorkspaceEditCommand implements Command {
             // Nothing to do; do not create an undo entry.
             this.beforeText = undefined;
             this.afterText = undefined;
+            this.unchanged = true;
             return;
         }
 
@@ -66,6 +75,10 @@ export class ReversibleWorkspaceEditCommand implements Command {
         if (overrideBefore && overrideAfter) {
             this.beforeText = overrideBefore;
             this.afterText = overrideAfter;
+            // The file as it was written, read where it was written: the
+            // same text before and after is an edit that wrote nothing, and
+            // its undo would put back what is there.
+            this.unchanged = overrideBefore === overrideAfter;
         }
 
         await this.options.afterApply?.();
@@ -133,5 +146,15 @@ export class ReversibleWorkspaceEditCommand implements Command {
 
     canUndo(): boolean {
         return this.beforeText !== undefined && this.afterText !== undefined;
+    }
+
+    /**
+     * Whether the last execute changed nothing: no edit to apply, or the
+     * text its handler read after writing is the text before. An edit
+     * VS Code refused to apply is not counted: what was written out of band
+     * before it is not known.
+     */
+    changedNothing(): boolean {
+        return this.unchanged;
     }
 }

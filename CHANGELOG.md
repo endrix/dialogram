@@ -704,6 +704,19 @@ it no longer has.
 
 ### Fixed
 
+- **An edit refused no longer keeps Undo from the edits before it.** In
+  every product, an edit of the source that wrote nothing (the producer
+  refused it, a prompt was dismissed, or it wrote back the text it started
+  from) still went on the undo stack: a node or a connection created, a
+  rename, a reconnect, a paste, a duplicate, a property, a delete, a
+  transition. It could not be undone, and on top of the stack it kept Undo
+  from reaching any edit below it; it also emptied Redo and marked the
+  diagram dirty. A refusal is only known once the edit has run, so the
+  command stack now decides, after running it: a command that says it
+  changed nothing (`changedNothing()`, which both workspace-edit commands
+  answer) is not kept, and the stack is left as it was
+  (`WorkflowCommandStack`, bound by `WorkflowDiagramModule`). Undo undoes
+  the last edit that wrote, and Redo still redoes what was undone.
 - **A delete of nothing that can be deleted is no command.** Delete on a
   selection of only what is kept (a read-only element, an edge with no
   ports, a line inside a group that several edges share) made a command
