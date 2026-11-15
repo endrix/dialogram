@@ -61,12 +61,14 @@ export class DeleteElementOperationHandler extends OperationHandler {
             computeEdits: async () => {
                 const beforeText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
                 let wrote = false;
+                // What the producer refuses to take out (it said why) stays,
+                // and the rest of the selection goes: each is named by its
+                // name, a transition by its states and action, not by a place
+                // in a list, so one taken out leaves the others' as they were.
+                // What was taken out before a refusal stays taken out, and is
+                // undone with the rest, as one edit.
                 for (const planned of deletes) {
                     if (planned.kind === 'transition') {
-                        // A transition the producer refuses to take out (it said
-                        // why) stays, and the others selected with it go: their
-                        // ids name their states and action, not a place in the
-                        // list, so one taken out leaves the others' as they were.
                         if (transitions && (await writeTransitionEdit(this.sidecar, transitions, 'removeTransition', { transition: planned.id }))) {
                             wrote = true;
                         }
@@ -92,10 +94,9 @@ export class DeleteElementOperationHandler extends OperationHandler {
                         args = { workflow: workflowName, direction: planned.direction, portName: planned.portName };
                     }
                     const op = planned.kind === 'node' ? 'deleteNode' : planned.kind === 'edge' ? 'deleteEdge' : 'deletePort';
-                    if (!(await this.sendSidecarOp(sourceUri, { op: this.sidecar.sidecarOp(op), args }))) {
-                        return undefined;
+                    if (await this.writeDelete(sourceUri, planned.kind, { op: this.sidecar.sidecarOp(op), args })) {
+                        wrote = true;
                     }
-                    wrote = true;
                 }
                 if (!wrote) {
                     return undefined;
@@ -187,8 +188,13 @@ export class DeleteElementOperationHandler extends OperationHandler {
         return deletes;
     }
 
-    private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {
-        return this.sidecar.sendSidecarOp(sourceUri, payload);
+    /** Have the producer take out a node, an edge or a port; false, the reason shown, when it refuses. */
+    private async writeDelete(sourceUri: string, kind: 'node' | 'edge' | 'port', payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {
+        const result = await this.sidecar.sendSidecarOpDetailed(sourceUri, payload);
+        if (!result.ok) {
+            void vscode.window.showWarningMessage(result.message ?? `The ${kind} was not deleted.`);
+        }
+        return result.ok;
     }
 
     private edgeEndpointExpr(entityName: string | undefined, portName: string): string {

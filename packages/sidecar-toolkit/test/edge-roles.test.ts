@@ -243,9 +243,9 @@ describe('the delete handler and the kind of edge', () => {
             index: { get: (id: string) => (id === 'e1' ? edge : undefined) }
         };
         handler.sidecar = invokerWith(capabilities);
-        handler.sidecar.sendSidecarOp = async (_uri: string, payload: { op: string; args: Record<string, unknown> }) => {
+        handler.sidecar.sendSidecarOpDetailed = async (_uri: string, payload: { op: string; args: Record<string, unknown> }) => {
             sent.push(payload);
-            return true;
+            return { ok: true };
         };
         const workspaceAny = vscode.workspace as any;
         const original = workspaceAny.openTextDocument;

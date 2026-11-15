@@ -717,6 +717,14 @@ it no longer has.
   answer) is not kept, and the stack is left as it was
   (`WorkflowCommandStack`, bound by `WorkflowDiagramModule`). Undo undoes
   the last edit that wrote, and Redo still redoes what was undone.
+- **A delete refused partway keeps the undo of what it took out.** In a
+  network view, a selection whose node, edge or port the producer refused
+  to take out stopped there and threw away the snapshot of the file: what
+  it had taken out before the refusal was gone from the file and could not
+  be undone, and the rest of the selection stayed. A refused one is now
+  kept, as a refused transition is, with the producer's reason shown (or
+  "The node was not deleted.", for an edge or a port the same), and the
+  rest goes; what was taken out is undone as one edit.
 - **A delete of nothing that can be deleted is no command.** Delete on a
   selection of only what is kept (a read-only element, an edge with no
   ports, a line inside a group that several edges share) made a command

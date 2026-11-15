@@ -3,7 +3,9 @@
  * a node, an edge or a port each, and the file can be undone. What cannot
  * be deleted (a read-only element, an edge with no ports, a piece of line
  * several edges share inside a group) is kept, and a selection of nothing
- * else makes no command at all: nothing goes on the undo stack.
+ * else makes no command at all: nothing goes on the undo stack. What the
+ * producer refuses to take out stays, said why, and the rest goes, undone
+ * as one edit.
  */
 import { describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
@@ -13,6 +15,7 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { DeleteElementOperationHandler } from '../src/server/operations/delete-handler.js';
+import { commandStack, onDisk, saying } from './edits-on-disk';
 
 const NET = 'net = ...\n';
 
@@ -35,22 +38,33 @@ function network() {
     return { file, state };
 }
 
+/**
+ * The producer: each op it is sent written into `file`, unless `answer`
+ * refuses it (`ok: false`, and why); what it was sent kept in `sent`.
+ */
+function producer(file: string, sent: Array<{ op: string; args: Record<string, unknown> }>, answer: (op: string) => { ok: boolean; message?: string } = () => ({ ok: true })) {
+    return {
+        sidecarOp: (op: string) => `calpy.${op}`,
+        undoLabelSuffix: () => '',
+        edgeRoles: async () => undefined,
+        sendSidecarOpDetailed: async (_uri: string, payload: { op: string; args: Record<string, unknown> }) => {
+            sent.push(payload);
+            const answered = answer(payload.op);
+            if (answered.ok) {
+                writeFileSync(file, readFileSync(file, 'utf8') + `# ${payload.op}\n`);
+            }
+            return answered;
+        }
+    };
+}
+
 /** Delete `ids`, the producer writing each op it is sent into the file; the command, what was sent, the file after. */
 async function remove(ids: string[]) {
     const { file, state } = network();
     const sent: Array<{ op: string; args: Record<string, unknown> }> = [];
     const handler = new DeleteElementOperationHandler() as any;
     handler.modelState = state;
-    handler.sidecar = {
-        sidecarOp: (op: string) => `calpy.${op}`,
-        undoLabelSuffix: () => '',
-        edgeRoles: async () => undefined,
-        sendSidecarOp: async (_uri: string, payload: { op: string; args: Record<string, unknown> }) => {
-            sent.push(payload);
-            writeFileSync(file, readFileSync(file, 'utf8') + `# ${payload.op}\n`);
-            return true;
-        }
-    };
+    handler.sidecar = producer(file, sent);
     const workspace = vscode.workspace as any;
     const window = vscode.window as any;
     const saved = { open: workspace.openTextDocument, apply: workspace.applyEdit, info: window.showInformationMessage };
@@ -97,5 +111,39 @@ describe('delete in a network view', () => {
         expect(sent).toEqual([]);
         expect(text).toBe(NET);
         expect(said).toEqual(['That line inside the group stands for 2 edges. Select one of them where it runs between groups to delete it.']);
+    });
+
+    it('refused one of a selection, keeps it, says why, takes out the rest, and undoes what it took out as one edit', async () => {
+        const { file, state } = network();
+        const sent: Array<{ op: string; args: Record<string, unknown> }> = [];
+        const handler = new DeleteElementOperationHandler() as any;
+        handler.modelState = state;
+        handler.sidecar = producer(file, sent, op => op === 'calpy.deleteEdge' ? { ok: false, message: 'a.out is not connected to b.in' } : { ok: true });
+        const stack = commandStack();
+        const said = await saying(async said => {
+            await onDisk(file, () => stack.execute(handler.createCommand({ kind: 'deleteElement', elementIds: ['a', 'e', 'p'] })));
+            return said;
+        });
+        expect(sent.map(each => each.op)).toEqual(['calpy.deleteNode', 'calpy.deleteEdge', 'calpy.deletePort']);
+        expect(readFileSync(file, 'utf8')).toBe(NET + '# calpy.deleteNode\n# calpy.deletePort\n');
+        expect(said).toEqual(['a.out is not connected to b.in']);
+        expect(stack.canUndo()).toBe(true);
+        await onDisk(file, () => stack.undo());
+        expect(readFileSync(file, 'utf8')).toBe(NET);
+    });
+
+    it('refused with no reason, says what was not deleted', async () => {
+        for (const [id, kind] of [['a', 'node'], ['e', 'edge'], ['p', 'port']] as const) {
+            const { file, state } = network();
+            const handler = new DeleteElementOperationHandler() as any;
+            handler.modelState = state;
+            handler.sidecar = producer(file, [], () => ({ ok: false }));
+            const said = await saying(async said => {
+                await onDisk(file, () => commandStack().execute(handler.createCommand({ kind: 'deleteElement', elementIds: [id] })));
+                return said;
+            });
+            expect(said).toEqual([`The ${kind} was not deleted.`]);
+            expect(readFileSync(file, 'utf8')).toBe(NET);
+        }
     });
 });
