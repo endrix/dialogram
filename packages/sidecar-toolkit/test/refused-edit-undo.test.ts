@@ -64,7 +64,7 @@ function producer(file: string, refuses: () => boolean, sent: string[]) {
     const answer = (op: string) => {
         sent.push(op);
         if (refuses()) {
-            return { ok: false, message: `${op} refused` };
+            return { ok: false, failure: 'rejected', message: `${op} refused` };
         }
         writeFileSync(file, readFileSync(file, 'utf8') + `# ${op}\n`);
         return { ok: true };

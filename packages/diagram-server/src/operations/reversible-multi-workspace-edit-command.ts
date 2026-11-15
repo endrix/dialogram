@@ -125,8 +125,13 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
         const override = this.options.outOfBandSnapshots?.();
         this.snapshots = override && override.length > 0 ? override : snapshots;
         // The files as they were written, read where they were written: the
-        // same text before and after in each is an op that wrote nothing.
-        this.unchanged = !!override && override.length > 0 && override.every(s => s.beforeText === s.afterText);
+        // same text before and after in each is an op that wrote nothing,
+        // when they are every file it edited. A file edited here that they
+        // do not name may have changed, so the command is kept.
+        const named = new Set((override ?? []).map(s => s.uri.toString()));
+        this.unchanged = !!override && override.length > 0
+            && override.every(s => s.beforeText === s.afterText)
+            && entries.every(e => named.has(e.uri.toString()));
         await this.options.afterApply?.();
     }
 

@@ -111,8 +111,13 @@ export class DeleteElementOperationHandler extends OperationHandler {
                         args = { workflow: workflowName, direction: planned.direction, portName: planned.portName };
                     }
                     const op = planned.kind === 'node' ? 'deleteNode' : planned.kind === 'edge' ? 'deleteEdge' : 'deletePort';
-                    if (await this.writeDelete(sourceUri, planned.kind, { op: this.sidecar.sidecarOp(op), args })) {
+                    const outcome = await this.writeDelete(sourceUri, planned.kind, { op: this.sidecar.sidecarOp(op), args });
+                    if (outcome === 'written') {
                         wrote = true;
+                    } else if (outcome === 'failed') {
+                        // The producer did not run (it could not start, timed
+                        // out, crashed): the rest would fail the same way.
+                        break;
                     }
                 }
                 if (!wrote) {
@@ -196,16 +201,24 @@ export class DeleteElementOperationHandler extends OperationHandler {
                 continue;
             }
         }
-        return deletes;
+        // The edges first: a node or a port taken out takes the edges at it
+        // with it, and an edge selected with its node would then be asked
+        // for when it is already gone, and refused. The rest keep their order.
+        return [...deletes.filter(planned => planned.kind === 'edge'), ...deletes.filter(planned => planned.kind !== 'edge')];
     }
 
-    /** Have the producer take out a node, an edge or a port; false, the reason shown, when it refuses. */
-    private async writeDelete(sourceUri: string, kind: 'node' | 'edge' | 'port', payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {
+    /**
+     * Have the producer take out a node, an edge or a port: `written`;
+     * `refused`, the reason shown, when it answered no; `failed`, shown too,
+     * when it did not answer (it could not start, timed out, crashed).
+     */
+    private async writeDelete(sourceUri: string, kind: 'node' | 'edge' | 'port', payload: { op: string; args: Record<string, unknown> }): Promise<'written' | 'refused' | 'failed'> {
         const result = await this.sidecar.sendSidecarOpDetailed(sourceUri, payload);
-        if (!result.ok) {
-            void vscode.window.showWarningMessage(result.message ?? `The ${kind} was not deleted.`);
+        if (result.ok) {
+            return 'written';
         }
-        return result.ok;
+        void vscode.window.showWarningMessage(result.message ?? `The ${kind} was not deleted.`);
+        return result.failure === 'rejected' ? 'refused' : 'failed';
     }
 
     private edgeEndpointExpr(entityName: string | undefined, portName: string): string {

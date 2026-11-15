@@ -706,8 +706,8 @@ it no longer has.
 
 - **An edit refused no longer keeps Undo from the edits before it.** In
   every product, an edit of the source that wrote nothing (the producer
-  refused it, a prompt was dismissed, or it wrote back the text it started
-  from) still went on the undo stack: a node or a connection created, a
+  refused it, a prompt was dismissed, or it wrote back the file as it was)
+  still went on the undo stack: a node or a connection created, a
   rename, a reconnect, a paste, a duplicate, a property, a delete, a
   transition. It could not be undone, and on top of the stack it kept Undo
   from reaching any edit below it; it also emptied Redo and marked the
@@ -716,7 +716,15 @@ it no longer has.
   changed nothing (`changedNothing()`, which both workspace-edit commands
   answer) is not kept, and the stack is left as it was
   (`WorkflowCommandStack`, bound by `WorkflowDiagramModule`). Undo undoes
-  the last edit that wrote, and Redo still redoes what was undone.
+  the last edit that wrote, and Redo still redoes what was undone. An edit
+  the producer writes itself is judged by the file on disk before it ran
+  and after, not by the editor's document, which lags what was written
+  out of band (or holds what is not saved). Several operations sent as one
+  (`CompoundOperation`) make a `CompoundCommandThatMayChangeNothing`
+  (`WorkflowCompoundOperationHandler`): dropped when none of them wrote,
+  and undone past one that was refused; a GLSP `CompoundCommand` of parts
+  that all changed nothing is dropped too. An edit applied in the editor's
+  document is kept, whatever it did.
 - **A delete refused partway keeps the undo of what it took out.** In a
   network view, a selection whose node, edge or port the producer refused
   to take out stopped there and threw away the snapshot of the file: what
@@ -724,7 +732,11 @@ it no longer has.
   be undone, and the rest of the selection stayed. A refused one is now
   kept, as a refused transition is, with the producer's reason shown (or
   "The node was not deleted.", for an edge or a port the same), and the
-  rest goes; what was taken out is undone as one edit.
+  rest goes; what was taken out is undone as one edit. A producer that does
+  not answer (it could not start, timed out, crashed) stops the delete
+  there, said once. Selected edges go first: a node taken out takes its
+  edges with it, so an edge selected with its node was asked for when
+  already gone, and refused. Cut takes connections out first too.
 - **A cut in a read-only view takes nothing out.** Cut asked the producer
   to delete every node, edge and port of the selection that was not itself
   marked read-only, in a read-only view too, where a delete asks nothing:

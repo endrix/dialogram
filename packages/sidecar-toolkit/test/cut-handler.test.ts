@@ -79,13 +79,13 @@ async function cut(file: string, state: any, ids: string[]) {
 }
 
 describe('cut', () => {
-    it('in a network view, puts the selection on the clipboard, has the producer take it out, and can be undone', async () => {
+    it('in a network view, puts the selection on the clipboard, has the producer take it out, its connections first, and can be undone', async () => {
         const { file, state } = view();
         const { sent, stack, cut: items } = await cut(file, state, ['a', 'e', 'x', 'read-only']);
         expect(items).toEqual(['entity', 'connection', 'boundaryPort']);
         expect(sent).toEqual([
-            { op: 'calpy.deleteNode', args: { workflow: 'net', name: 'a' } },
             { op: 'calpy.deleteEdge', args: { workflow: 'net', from_expr: 'a.out', to_expr: 'b.in' } },
+            { op: 'calpy.deleteNode', args: { workflow: 'net', name: 'a' } },
             { op: 'calpy.deletePort', args: { workflow: 'net', direction: 'input', portName: 'x' } }
         ]);
         expect(stack.canUndo()).toBe(true);

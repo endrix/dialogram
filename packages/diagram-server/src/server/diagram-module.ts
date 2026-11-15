@@ -11,7 +11,6 @@ import {
     ActionHandlerConstructor,
     BindingTarget,
     CommandStack,
-    CompoundOperationHandler,
     ContextMenuItemProvider,
     DiagramConfiguration,
     GModelDiagramModule,
@@ -42,7 +41,7 @@ import {
 } from './diagram-action-handlers';
 import { WorkflowOperationActionHandler } from './operation-action-handler';
 import { WorkflowUndoRedoActionHandler } from './undo-redo-action-handler';
-import { WorkflowCommandStack } from './command-stack';
+import { WorkflowCommandStack, WorkflowCompoundOperationHandler } from './command-stack';
 import { WorkflowToolPaletteItemProvider } from './tool-palette-provider';
 import { WorkflowContextMenuItemProvider } from './context-menu-item-provider';
 import { WorkflowLabelEditValidator } from './label-edit-validator';
@@ -158,7 +157,7 @@ export class WorkflowDiagramModule extends GModelDiagramModule {
         // without widening what they can alter.
 
         // Essential handlers from DiagramModule that we must include:
-        binding.add(CompoundOperationHandler);
+        binding.add(WorkflowCompoundOperationHandler);
         // Use our custom layout handler instead of default (which only works in MANUAL mode)
         binding.add(WorkflowLayoutOperationHandler);
 

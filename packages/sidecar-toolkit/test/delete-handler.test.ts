@@ -40,7 +40,8 @@ function network() {
 
 /**
  * The producer: each op it is sent written into `file`, unless `answer`
- * refuses it (`ok: false`, and why); what it was sent kept in `sent`.
+ * refuses it (`ok: false`, and why) or says it did not run (`failure`);
+ * what it was sent kept in `sent`.
  */
 function producer(file: string, sent: Array<{ op: string; args: Record<string, unknown> }>, answer: (op: string) => { ok: boolean; message?: string } = () => ({ ok: true })) {
     return {
@@ -53,7 +54,8 @@ function producer(file: string, sent: Array<{ op: string; args: Record<string, u
             if (answered.ok) {
                 writeFileSync(file, readFileSync(file, 'utf8') + `# ${payload.op}\n`);
             }
-            return answered;
+            // A refusal, as the transport describes one, unless the answer says otherwise.
+            return answered.ok ? answered : { failure: 'rejected', ...answered };
         }
     };
 }
@@ -99,6 +101,28 @@ describe('delete in a network view', () => {
         }
     });
 
+    it('takes out an edge selected with its node before the node, which would take it with it', async () => {
+        const { sent } = await remove(['a', 'e']);
+        expect(sent.map(each => each.op)).toEqual(['calpy.deleteEdge', 'calpy.deleteNode']);
+    });
+
+    it('stops at a producer that does not run, says so once, and leaves no entry on the undo stack', async () => {
+        const { file, state } = network();
+        const sent: Array<{ op: string; args: Record<string, unknown> }> = [];
+        const handler = new DeleteElementOperationHandler() as any;
+        handler.modelState = state;
+        handler.sidecar = producer(file, sent, () => ({ ok: false, failure: 'start', message: 'Unable to start the sidecar.' } as any));
+        const stack = commandStack();
+        const said = await saying(async said => {
+            await onDisk(file, () => stack.execute(handler.createCommand({ kind: 'deleteElement', elementIds: ['a', 'e', 'p'] })));
+            return said;
+        });
+        expect(sent.map(each => each.op)).toEqual(['calpy.deleteEdge']);
+        expect(said).toEqual(['Unable to start the sidecar.']);
+        expect(readFileSync(file, 'utf8')).toBe(NET);
+        expect(stack.canUndo()).toBe(false);
+    });
+
     it('keeps what cannot be deleted, and takes out the rest', async () => {
         const { command, sent } = await remove(['read-only', 'portless', 'shared', 'a']);
         expect(sent.map(each => each.op)).toEqual(['calpy.deleteNode']);
@@ -124,7 +148,7 @@ describe('delete in a network view', () => {
             await onDisk(file, () => stack.execute(handler.createCommand({ kind: 'deleteElement', elementIds: ['a', 'e', 'p'] })));
             return said;
         });
-        expect(sent.map(each => each.op)).toEqual(['calpy.deleteNode', 'calpy.deleteEdge', 'calpy.deletePort']);
+        expect(sent.map(each => each.op)).toEqual(['calpy.deleteEdge', 'calpy.deleteNode', 'calpy.deletePort']);
         expect(readFileSync(file, 'utf8')).toBe(NET + '# calpy.deleteNode\n# calpy.deletePort\n');
         expect(said).toEqual(['a.out is not connected to b.in']);
         expect(stack.canUndo()).toBe(true);

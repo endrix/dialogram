@@ -37,7 +37,8 @@ export class CutOperationHandler extends OperationHandler {
         // which a delete may take out of one, the clipboard does not carry).
         // What it takes out is known before a command is made, and a cut of
         // nothing makes none; what was selected has been copied all the
-        // same, by the client, before it asked to cut.
+        // same, by the client, before it asked to cut. (A read-only element
+        // is on neither clipboard: `buildClipboardPayload` leaves it out.)
         const root = this.modelState.root;
         const elementIds = (operation.editorContext?.selectedElementIds ?? [])
             .filter(id => mayRemove(root, this.modelState.index.get(id)));
@@ -45,6 +46,13 @@ export class CutOperationHandler extends OperationHandler {
         if (payload.items.length === 0) {
             return undefined;
         }
+        // The connections first: a node taken out takes the connections at
+        // it with it, and one cut with its node would then be asked for
+        // when it is already gone.
+        const removing = [
+            ...payload.items.filter(item => item.kind === 'connection'),
+            ...payload.items.filter(item => item.kind !== 'connection')
+        ];
         const vscodeUri = vscode.Uri.parse(sourceUri);
         const workflowName = root.args?.['wf:workflowName'] as string | undefined;
 
@@ -54,7 +62,7 @@ export class CutOperationHandler extends OperationHandler {
             computeEdits: async () => {
                 const beforeText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
                 await vscode.env.clipboard.writeText(JSON.stringify(clipboardDataFromPayload(payload)));
-                for (const item of payload.items) {
+                for (const item of removing) {
                     if (item.kind === 'entity') {
                         await this.sendSidecarOp(sourceUri, {
                             op: this.sidecar.sidecarOp('deleteNode'),

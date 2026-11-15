@@ -10,8 +10,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
-import { DefaultCommandStack } from '@eclipse-glsp/server';
-import { WorkflowCommandStack, changedNothing } from '../src/server/command-stack';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
+import { CompoundCommand, DefaultCommandStack } from '@eclipse-glsp/server';
+import { CompoundCommandThatMayChangeNothing, WorkflowCommandStack, WorkflowCompoundOperationHandler, changedNothing } from '../src/server/command-stack';
 import { WorkflowDiagramModule } from '../src/server/diagram-module';
 import { ReversibleWorkspaceEditCommand } from '../src/operations/reversible-workspace-edit-command';
 import { ReversibleMultiWorkspaceEditCommand } from '../src/operations/reversible-multi-workspace-edit-command';
@@ -162,5 +165,99 @@ describe('the platform command stack', () => {
         expect(changedNothing({ execute: () => {}, undo: () => {}, redo: () => {} })).toBe(false);
         await stack.undo();
         expect(undone).toBe(true);
+    });
+
+    it('drops GLSP\'s compound of edits that each changed nothing', async () => {
+        const stack = commandStack();
+        await stack.execute(edit('B'));
+        await stack.execute(new CompoundCommand([refused(), refused()]));
+        await stack.undo();
+        expect(text).toBe('A');
+    });
+
+    it('makes of several operations sent as one a compound undone past a part refused, and dropped when all are', async () => {
+        const handler = new WorkflowCompoundOperationHandler() as any;
+        const parts: any[] = [];
+        handler.operationHandlerRegistry = { getOperationHandler: () => ({ execute: async () => parts.shift() }) };
+        const stack = commandStack();
+        await stack.execute(edit('B'));
+        parts.push(edit('C'), refused());
+        await stack.execute(await handler.createCommand({ kind: 'compound', operationList: [{}, {}] }));
+        expect(text).toBe('C');
+        parts.push(refused(), refused());
+        await stack.execute(await handler.createCommand({ kind: 'compound', operationList: [{}, {}] }));
+        expect(stack.canUndo()).toBe(true);
+        await stack.undo();
+        expect(text).toBe('B');
+        await stack.undo();
+        expect(text).toBe('A');
+    });
+
+    it('drops a compound of which no part changed anything, and undoes one of which a part wrote', async () => {
+        const stack = commandStack();
+        await stack.execute(edit('B'));
+        await stack.execute(new CompoundCommandThatMayChangeNothing([refused(), refused()]));
+        expect(text).toBe('B');
+        const wrote = new CompoundCommandThatMayChangeNothing([edit('C'), refused()]);
+        await stack.execute(wrote);
+        expect(wrote.changedNothing()).toBe(false);
+        expect(stack.canUndo()).toBe(true);
+        await stack.undo();
+        expect(text).toBe('B');
+        await stack.undo();
+        expect(text).toBe('A');
+    });
+});
+
+describe('an edit written out of band, judged by the file on disk', () => {
+    let dir = '';
+    afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+    /**
+     * The file on disk holds `onDisk`, the editor's document `text` (which
+     * lags what was written out of band, or holds what was not saved); the
+     * edit writes `to` on disk, or nothing, and gives as its handlers do the
+     * document's text before and the file's after.
+     */
+    function written(onDisk: string, to?: string): ReversibleWorkspaceEditCommand {
+        dir = mkdtempSync(path.join(tmpdir(), 'command-stack-'));
+        const file = path.join(dir, 'net.src');
+        writeFileSync(file, onDisk);
+        const fileUri = { scheme: 'file', fsPath: file, toString: () => `file://${file}` } as unknown as vscode.Uri;
+        const command: ReversibleWorkspaceEditCommand = new ReversibleWorkspaceEditCommand({
+            label: 'Out of band',
+            uri: fileUri,
+            computeEdits: async () => {
+                const before = text;
+                if (to !== undefined) {
+                    writeFileSync(file, to);
+                }
+                (command as any)._sourceBeforeText = before;
+                (command as any)._sourceAfterText = readFileSync(file, 'utf8');
+                return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];
+            }
+        });
+        return command;
+    }
+
+    it('keeps one that wrote back the text the editor still shows', async () => {
+        text = 'A';
+        const command = written('B', 'A');
+        await commandStack().execute(command);
+        expect(command.changedNothing()).toBe(false);
+    });
+
+    it('drops one refused while the editor shows other text', async () => {
+        text = 'X';
+        const command = written('A');
+        await commandStack().execute(command);
+        expect(command.changedNothing()).toBe(true);
+    });
+
+    it('drops one refused on an empty file', async () => {
+        text = '';
+        const command = written('');
+        await commandStack().execute(command);
+        expect(command.changedNothing()).toBe(true);
     });
 });
