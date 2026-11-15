@@ -17,7 +17,7 @@
  * `createSidecarDiagramProfile` and resolves EVERY handler from a container
  * loaded with the profile's OWN `serverModules`, all in a single module realm —
  * exactly the invariant the platform bundle now guarantees at runtime. It then
- * touches `.operationType` on all 19 handlers (the exact production failure
+ * touches `.operationType` on all 21 handlers (the exact production failure
  * site) and asserts none throw and every kind resolves.
  */
 import 'reflect-metadata';
@@ -171,8 +171,8 @@ describe('createSidecarDiagramProfile — production-path DI resolution (no .sid
         const input = profileInput('wfpy', 'wfLang');
         const { container, handlers } = containerAndHandlersFromProfile(input);
 
-        // All 19 sidecar handlers are present on the assembled profile.
-        expect(handlers).toHaveLength(19);
+        // All 21 sidecar handlers are present on the assembled profile.
+        expect(handlers).toHaveLength(21);
 
         for (const ctor of handlers) {
             const instance = container.resolve(ctor as any);
