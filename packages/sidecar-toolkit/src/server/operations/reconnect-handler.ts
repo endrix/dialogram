@@ -1,8 +1,10 @@
 import { Action, OperationHandler, ModelState, GPort, Command } from '@eclipse-glsp/server';
 import { ReconnectEdgeOperation } from '@eclipse-glsp/protocol';
 import { inject, injectable } from 'inversify';
+import { promises as fs } from 'node:fs';
 import * as vscode from 'vscode';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { readAuthoritativeSourceText } from './authoritative-source-text';
 import type { PortReference } from './create-edge-handler';
 
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
@@ -37,7 +39,7 @@ export class ReconnectEdgeOperationHandler extends OperationHandler {
         const root = this.modelState.root;
         const workflowName = root.args?.[WorkflowDiagramMetadata.WORKFLOW_NAME] as string | undefined;
 
-        return new ReversibleWorkspaceEditCommand({
+        const command: ReversibleWorkspaceEditCommand = new ReversibleWorkspaceEditCommand({
             label: 'Reconnect Edge' + this.sidecar.undoLabelSuffix(),
             uri: vscodeUri,
             computeEdits: async () => {
@@ -73,6 +75,11 @@ export class ReconnectEdgeOperationHandler extends OperationHandler {
                 const currentFromExpr = this.edgeEndpointExpr(currentSourceEntity, currentSourcePort);
                 const currentToExpr = this.edgeEndpointExpr(currentTargetEntity, currentTargetPort);
 
+                // The connection is taken out, then made where it now ends.
+                // Refused either way, the file is as it was and the reason is
+                // shown: a connection the producer would not make where it
+                // was dropped stays where it was.
+                const before = await readAuthoritativeSourceText(vscodeUri);
                 const okDelete = await this.sendSidecarOp(sourceUri, {
                     op: this.sidecar.sidecarOp('deleteEdge'),
                     args: {
@@ -87,11 +94,19 @@ export class ReconnectEdgeOperationHandler extends OperationHandler {
                     op: this.sidecar.sidecarOp('connect'),
                     args: { workflow: workflowName, from_port: fromPort, to_port: toPort }
                 });
-                if (!okConnect) return undefined;
+                if (!okConnect) {
+                    await fs.writeFile(vscodeUri.fsPath, before, 'utf8');
+                    return undefined;
+                }
 
+                // The file as the producer wrote it, read where it wrote it,
+                // before and after, for the undo.
+                (command as any)._sourceBeforeText = before;
+                (command as any)._sourceAfterText = await readAuthoritativeSourceText(vscodeUri);
                 return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];
             },
         });
+        return command;
     }
 
     /**
@@ -139,8 +154,13 @@ export class ReconnectEdgeOperationHandler extends OperationHandler {
         };
     }
 
+    /** Have the producer write one half of the move; false, its reason shown, when it does not. */
     private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {
-        return this.sidecar.sendSidecarOp(sourceUri, payload);
+        const result = await this.sidecar.sendSidecarOpDetailed(sourceUri, payload);
+        if (!result.ok) {
+            void vscode.window.showWarningMessage(result.message ?? 'The connection was not moved.');
+        }
+        return result.ok;
     }
 
     private edgeEndpointExpr(entityName: string | undefined, portName: string): string {

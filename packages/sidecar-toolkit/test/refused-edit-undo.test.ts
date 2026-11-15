@@ -22,6 +22,7 @@ import { CreateEdgeOperationHandler } from '../src/server/operations/create-edge
 import { RenameEntityOperation, RenameEntityOperationHandler } from '../src/server/operations/rename-entity-handler.js';
 import { UpdateEntityParameterOperation, UpdateEntityParameterOperationHandler } from '../src/server/operations/update-entity-parameter-handler.js';
 import { PasteOperationHandler } from '../src/server/operations/paste-handler.js';
+import { ReconnectEdgeOperationHandler } from '../src/server/operations/reconnect-handler.js';
 import { commandStack, onDisk, saying } from './edits-on-disk';
 
 const NET = 'net = ...\n';
@@ -34,7 +35,7 @@ afterEach(() => {
     }
 });
 
-/** A network `net` in a file of its own: `a`, `b`, and a port of each. */
+/** A network `net` in a file of its own: `a`, `b`, `c`, a port of each, and `e` from `a.out` to `b.in`. */
 function network() {
     const dir = mkdtempSync(path.join(tmpdir(), 'refused-edit-undo-'));
     made.push(dir);
@@ -47,9 +48,12 @@ function network() {
     const elements = new Map<string, any>([
         ['a', a],
         ['b', b],
+        ['c', node('c')],
         ['a.out', { id: 'a.out', type: 'port:output', parent: a, args: { [WorkflowDiagramMetadata.PORT_NAME]: 'out' } }],
-        ['b.in', { id: 'b.in', type: 'port:input', parent: b, args: { [WorkflowDiagramMetadata.PORT_NAME]: 'in' } }]
+        ['b.in', { id: 'b.in', type: 'port:input', parent: b, args: { [WorkflowDiagramMetadata.PORT_NAME]: 'in' } }],
+        ['e', { id: 'e', type: WorkflowDiagramTypes.EDGE_CONNECTION, args: { 'wf:from': 'a', 'wf:outPort': 'out', 'wf:to': 'b', 'wf:inPort': 'in' } }]
     ]);
+    elements.set('c.in', { id: 'c.in', type: 'port:input', parent: elements.get('c'), args: { [WorkflowDiagramMetadata.PORT_NAME]: 'in' } });
     const state = {
         sourceUri,
         root: { args: { sourceUri, 'wf:workflowName': 'net', [WorkflowDiagramMetadata.WORKFLOW_NAME]: 'net' } },
@@ -59,11 +63,12 @@ function network() {
     return { file, sourceUri, state };
 }
 
-/** A producer that writes each op it is sent into `file`, until it `refuses` them; what it was sent. */
-function producer(file: string, refuses: () => boolean, sent: string[]) {
+/** A producer that writes each op it is sent into `file`, until it `refuses` them (or the one op `refuses` names); what it was sent. */
+function producer(file: string, refuses: () => boolean | string, sent: string[]) {
     const answer = (op: string) => {
         sent.push(op);
-        if (refuses()) {
+        const refusing = refuses();
+        if (refusing === true || refusing === op) {
             return { ok: false, failure: 'rejected', message: `${op} refused` };
         }
         writeFileSync(file, readFileSync(file, 'utf8') + `# ${op}\n`);
@@ -137,5 +142,53 @@ describe('an edit the producer refuses', () => {
             return said;
         });
         expect(said).toEqual(['calpy.connect refused']);
+    });
+
+    it('(a connection an agent asked for) is refused without a word to the person', async () => {
+        const { file, state } = network();
+        const handler = new CreateEdgeOperationHandler() as any;
+        handler.modelState = state;
+        handler.sidecar = producer(file, () => true, []);
+        const said = await saying(async said => {
+            await onDisk(file, () => commandStack().execute(handler.createCommand({ ...EDITS[1][3], args: { headless: true } })));
+            return said;
+        });
+        expect(said).toEqual([]);
+    });
+});
+
+describe('a connection moved to another port', () => {
+    const MOVE = { kind: 'reconnectEdge', edgeElementId: 'e', sourceElementId: 'a.out', targetElementId: 'c.in' };
+
+    async function move(refuses: () => boolean | string) {
+        const { file, state } = network();
+        const sent: string[] = [];
+        const handler = new ReconnectEdgeOperationHandler() as any;
+        handler.modelState = state;
+        handler.sidecar = producer(file, refuses, sent);
+        const stack = commandStack();
+        const said = await saying(async said => {
+            await onDisk(file, () => stack.execute(handler.createCommand(MOVE)));
+            return said;
+        });
+        return { file, sent, stack, said };
+    }
+
+    it('stays where it was when the producer will not make it there, and says why', async () => {
+        const { file, sent, stack, said } = await move(() => 'calpy.connect');
+        expect(sent).toEqual(['calpy.deleteEdge', 'calpy.connect']);
+        expect(readFileSync(file, 'utf8')).toBe(NET);
+        expect(stack.canUndo()).toBe(false);
+        expect(said).toEqual(['calpy.connect refused']);
+    });
+
+    it('is moved back by Undo', async () => {
+        const { file, sent, stack, said } = await move(() => false);
+        expect(sent).toEqual(['calpy.deleteEdge', 'calpy.connect']);
+        expect(readFileSync(file, 'utf8')).toBe(NET + '# calpy.deleteEdge\n# calpy.connect\n');
+        expect(said).toEqual([]);
+        expect(stack.canUndo()).toBe(true);
+        await onDisk(file, () => stack.undo());
+        expect(readFileSync(file, 'utf8')).toBe(NET);
     });
 });
