@@ -1268,6 +1268,7 @@ export class GraphGModelSource {
                 selectionLinks.push(link);
             }
         }
+        const portOwners = portOwnersOf(doc.graph.nodes);
         for (const edge of doc.graph.edges) {
             const scope = scopeById.get(edge.scope);
             const branch = this.scopeLabel(scope?.kind ?? '');
@@ -1276,7 +1277,7 @@ export class GraphGModelSource {
             let sourceId = stateIds.get(edge.from) ?? portIdMap.get(edge.from) ?? groupEnd(edge.from) ?? this._edgePortId(edge.from);
             let targetId = stateIds.get(edge.to) ?? portIdMap.get(edge.to) ?? groupEnd(edge.to) ?? this._edgePortId(edge.to);
 
-            const rawEdgeInfo = this.parseEdgeEndpoints(edge);
+            const rawEdgeInfo = this.parseEdgeEndpoints(edge, portOwners, doc.graph.nodes);
             // Boundary ports are addressed through node-based IDs in the IR, which makes
             // parseEndpoint read the boundary label as an entity name unless we normalize it here.
             const edgeInfo = rawEdgeInfo
@@ -2020,9 +2021,13 @@ export class GraphGModelSource {
         };
     }
 
-    private parseEdgeEndpoints(edge: PyGraphEdge): { from?: string; to?: string; outPort?: string; inPort?: string } | undefined {
-        const from = this.parseEndpoint(edge.from);
-        const to = this.parseEndpoint(edge.to);
+    private parseEdgeEndpoints(
+        edge: PyGraphEdge,
+        owners: ReadonlyMap<string, PortOwner>,
+        nodes: readonly PyGraphNode[]
+    ): { from?: string; to?: string; outPort?: string; inPort?: string } | undefined {
+        const from = this.parseEndpoint(edge.from) ?? ownedEnd(edge.from, owners, nodes);
+        const to = this.parseEndpoint(edge.to) ?? ownedEnd(edge.to, owners, nodes);
         if (!from || !to) return undefined;
         return {
             from: from.entity ?? 'boundary',
@@ -2261,4 +2266,56 @@ function busArgsOf(port: PyGraphPort | undefined): Record<string, unknown> {
         };
     }
     return port?.busMember ? { [WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF]: port.busMember } : {};
+}
+
+/** The node a port is a port of, and the port's name. */
+interface PortOwner {
+    node: PyGraphNode;
+    name: string;
+}
+
+/** The kinds of node that stand for a port of the drawn unit itself. */
+const BOUNDARY_NODE_KINDS = new Set(['wf-input', 'wf-output']);
+
+/** Each port of `nodes`, by its id, with the node it is a port of. */
+function portOwnersOf(nodes: readonly PyGraphNode[]): Map<string, PortOwner> {
+    const owners = new Map<string, PortOwner>();
+    for (const node of nodes) {
+        for (const port of node.ports ?? []) {
+            if (port.id && !owners.has(port.id)) {
+                owners.set(port.id, { node, name: port.name });
+            }
+        }
+    }
+    return owners;
+}
+
+/**
+ * An end of an edge whose id `parseEndpoint` cannot read, from the document:
+ * the port the end names and the node it is a port of (by its name, as
+ * `ENTITY_NAME` gives it), or a bus of a node (`bus:<node id>:<bundle>`).
+ * A port of a node standing for the unit's own port names no node. Without
+ * it, an edge of a producer whose port ids are of another form (`n:a:p:Out`)
+ * named no ends, and every edit of one (delete, capacity, reconnect,
+ * duplicate, paste) left it out.
+ */
+function ownedEnd(raw: string, owners: ReadonlyMap<string, PortOwner>, nodes: readonly PyGraphNode[]): { entity?: string; port?: string } | undefined {
+    const end = (node: PyGraphNode, port: string) => (BOUNDARY_NODE_KINDS.has(node.kind) ? { port } : { entity: node.label, port });
+    const owned = owners.get(raw);
+    if (owned) {
+        return end(owned.node, owned.name);
+    }
+    if (raw.startsWith('bus:')) {
+        const rest = raw.slice('bus:'.length);
+        let owner: PyGraphNode | undefined;
+        for (const node of nodes) {
+            if (rest.startsWith(node.id + ':') && rest.length > node.id.length + 1 && (!owner || node.id.length > owner.id.length)) {
+                owner = node;
+            }
+        }
+        if (owner) {
+            return end(owner, rest.slice(owner.id.length + 1));
+        }
+    }
+    return undefined;
 }

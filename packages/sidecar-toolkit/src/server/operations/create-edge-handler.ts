@@ -85,7 +85,7 @@ export class CreateEdgeOperationHandler extends OperationHandler {
                 const ok = await this.sendSidecarOp(sourceUri, {
                     op: this.sidecar.sidecarOp('connect'),
                     args: { workflow: workflowName, from_port: fromPort, to_port: toPort, ...(role ? { role } : {}) }
-                });
+                }, operation.args?.['headless'] !== true);
                 if (!ok) {
                     return undefined;
                 }
@@ -179,7 +179,16 @@ export class CreateEdgeOperationHandler extends OperationHandler {
         };
     }
 
-    private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {
-        return this.sidecar.sendSidecarOp(sourceUri, payload);
+    /**
+     * Have the producer write the connection; false, its reason shown to a
+     * person (`say`: not to an agent, which has its own way to fail), when
+     * it does not.
+     */
+    private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }, say = true): Promise<boolean> {
+        const result = await this.sidecar.sendSidecarOpDetailed(sourceUri, payload);
+        if (!result.ok && say) {
+            void vscode.window.showWarningMessage(result.message ?? 'The connection was not made.');
+        }
+        return result.ok;
     }
 }

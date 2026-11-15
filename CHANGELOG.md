@@ -740,6 +740,27 @@ it no longer has.
 
 ### Fixed
 
+- **An edge between ports of any id can be edited.** The model read an
+  edge's ends only from port ids of the `node:` and `wf:` forms, so an
+  edge of a producer that names its ports otherwise (CalPy's
+  `n:<node>:p:<port>`) named neither end: delete, capacity, reconnect,
+  duplicate and paste all left it out, and Delete on one did nothing. An
+  end the id does not name is now read from the port's owner in the
+  document: the instance's label and the port's name, or the port's name
+  alone on the network's own inputs and outputs. A port name with colons
+  of its own stays whole, and a bus end (`bus:<node>:<bundle>`) is read
+  from its node.
+- **A connection the producer refuses says why.** Drawing one that the
+  producer did not write ended without a word; its reason is now shown
+  ("The connection was not made." when it gives none), to a person only:
+  a connection an agent asks for (`headless`) fails without a word.
+- **A connection moved where the producer will not make it stays where it
+  was.** A reconnect takes the connection out, then makes it at its new
+  end; refused there, the connection was gone, and the edit not undoable.
+  The file is now written back as it was, the reason is shown ("The
+  connection was not moved." when it gives none), and no edit is kept. A
+  reconnect made is undone from the file the producer wrote, read on
+  disk.
 - **An edit refused no longer keeps Undo from the edits before it.** In
   every product, an edit of the source that wrote nothing (the producer
   refused it, a prompt was dismissed, or it wrote back the file as it was)
