@@ -10,7 +10,7 @@ import 'reflect-metadata';
 import {
     ActionHandlerConstructor,
     BindingTarget,
-    CompoundOperationHandler,
+    CommandStack,
     ContextMenuItemProvider,
     DiagramConfiguration,
     GModelDiagramModule,
@@ -41,6 +41,7 @@ import {
 } from './diagram-action-handlers';
 import { WorkflowOperationActionHandler } from './operation-action-handler';
 import { WorkflowUndoRedoActionHandler } from './undo-redo-action-handler';
+import { WorkflowCommandStack, WorkflowCompoundOperationHandler } from './command-stack';
 import { WorkflowToolPaletteItemProvider } from './tool-palette-provider';
 import { WorkflowContextMenuItemProvider } from './context-menu-item-provider';
 import { WorkflowLabelEditValidator } from './label-edit-validator';
@@ -102,6 +103,15 @@ export class WorkflowDiagramModule extends GModelDiagramModule {
     }
 
     /**
+     * The command stack: GLSP's, keeping no command that changed nothing, so
+     * an edit refused does not stand between Undo and the edits before it
+     * (see {@link WorkflowCommandStack}).
+     */
+    protected override bindCommandStack(): BindingTarget<CommandStack> {
+        return WorkflowCommandStack;
+    }
+
+    /**
      * Bind the Workflow diagram configuration
      */
     protected bindDiagramConfiguration(): BindingTarget<DiagramConfiguration> {
@@ -147,7 +157,7 @@ export class WorkflowDiagramModule extends GModelDiagramModule {
         // without widening what they can alter.
 
         // Essential handlers from DiagramModule that we must include:
-        binding.add(CompoundOperationHandler);
+        binding.add(WorkflowCompoundOperationHandler);
         // Use our custom layout handler instead of default (which only works in MANUAL mode)
         binding.add(WorkflowLayoutOperationHandler);
 

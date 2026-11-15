@@ -169,6 +169,21 @@ export const ProgressLocation = {
     Notification: 15
 } as const;
 
+// Added for cut-handler.test.ts: a cut puts what it takes out on the clipboard
+// (`vscode.env.clipboard.writeText`) before it takes it out. The text is kept,
+// so a test can read what was cut.
+export const env = {
+    clipboard: {
+        text: '',
+        async writeText(value: string): Promise<void> {
+            this.text = value;
+        },
+        async readText(): Promise<string> {
+            return this.text;
+        }
+    }
+};
+
 export const window = {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     showErrorMessage: async (_message: string): Promise<void> => {

@@ -1,6 +1,12 @@
-import { Command } from '@eclipse-glsp/server';
 import * as vscode from 'vscode';
+import type { CommandThatMayChangeNothing } from '../server/command-stack';
 
+/**
+ * The edits a command applies, by file; nothing (or an empty list) when there
+ * is nothing to write: refused, cancelled, nothing to do. A command given
+ * nothing changed nothing and leaves no entry on the undo stack: return
+ * nothing only when nothing has been written.
+ */
 export type ComputeMultiTextEdits = () => Promise<Array<{ uri: vscode.Uri; edits: vscode.TextEdit[] }> | undefined>;
 
 export interface ReversibleMultiWorkspaceEditCommandOptions {
@@ -50,14 +56,24 @@ type Snapshot = {
     afterText: string;
 };
 
-export class ReversibleMultiWorkspaceEditCommand implements Command {
+export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChangeNothing {
     private snapshots: Snapshot[] | undefined;
+    private unchanged = false;
 
     constructor(private readonly options: ReversibleMultiWorkspaceEditCommandOptions) {}
 
     async execute(): Promise<void> {
+        this.unchanged = false;
         const plan = await this.options.computeEdits();
-        if (!plan || plan.length === 0 || plan.every(p => !p.edits || p.edits.length === 0)) {
+        if (!plan || plan.length === 0) {
+            this.snapshots = undefined;
+            this.unchanged = true;
+            return;
+        }
+        if (plan.every(p => !p.edits || p.edits.length === 0)) {
+            // Files named with no edit for them: what an op that wrote them
+            // itself returns, as well as one that wrote nothing. Which is not
+            // known, so it is not counted as nothing.
             this.snapshots = undefined;
             return;
         }
@@ -108,6 +124,14 @@ export class ReversibleMultiWorkspaceEditCommand implements Command {
 
         const override = this.options.outOfBandSnapshots?.();
         this.snapshots = override && override.length > 0 ? override : snapshots;
+        // The files as they were written, read where they were written: the
+        // same text before and after in each is an op that wrote nothing,
+        // when they are every file it edited. A file edited here that they
+        // do not name may have changed, so the command is kept.
+        const named = new Set((override ?? []).map(s => s.uri.toString()));
+        this.unchanged = !!override && override.length > 0
+            && override.every(s => s.beforeText === s.afterText)
+            && entries.every(e => named.has(e.uri.toString()));
         await this.options.afterApply?.();
     }
 
@@ -190,5 +214,16 @@ export class ReversibleMultiWorkspaceEditCommand implements Command {
 
     canUndo(): boolean {
         return !!this.snapshots && this.snapshots.length > 0;
+    }
+
+    /**
+     * Whether the last execute changed nothing: no file to edit, or the
+     * snapshots its handler took after writing (`outOfBandSnapshots`) have
+     * the text before in every file. Files named with no edit, and an edit
+     * VS Code refused to apply, are not counted: what was written out of
+     * band is not known.
+     */
+    changedNothing(): boolean {
+        return this.unchanged;
     }
 }

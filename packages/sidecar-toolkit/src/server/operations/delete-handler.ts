@@ -1,5 +1,5 @@
 import { DeleteElementOperation } from '@eclipse-glsp/protocol';
-import { OperationHandler, MaybePromise, Action, ModelState, Command } from '@eclipse-glsp/server';
+import { OperationHandler, MaybePromise, Action, ModelState, Command, GModelElement, GModelRoot } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
@@ -10,6 +10,23 @@ import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operat
 import { SidecarInvoker } from './sidecar-invoker';
 import { escapePythonStringLiteral } from '../python-text';
 import { allowsTransitionEdits, viewEditTarget, writeTransitionEdit } from './transition-edits';
+
+/**
+ * Whether `element` of the view on `root` may be taken out of the source, by
+ * a delete or a cut. Never a read-only element. A read-only view lets
+ * nothing go but what its edits name: its transitions, where it allows
+ * editing them (transition-edits.ts); a transition elsewhere stays too.
+ */
+export function mayRemove(root: GModelRoot | undefined, element: GModelElement | undefined): boolean {
+    const args = (element as { args?: Record<string, unknown> } | undefined)?.args;
+    if (element && WorkflowDiagramTypeGuards.isReadOnlyElement(element.type, args)) {
+        return false;
+    }
+    if (element?.type === WorkflowDiagramTypes.EDGE_TRANSITION) {
+        return allowsTransitionEdits(root) && viewEditTarget(root) !== undefined;
+    }
+    return root?.args?.[WorkflowDiagramMetadata.READ_ONLY_VIEW] !== true;
+}
 
 /** One thing a delete asks the producer to take out. */
 type PlannedDelete =
@@ -61,12 +78,14 @@ export class DeleteElementOperationHandler extends OperationHandler {
             computeEdits: async () => {
                 const beforeText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
                 let wrote = false;
+                // What the producer refuses to take out (it said why) stays,
+                // and the rest of the selection goes: each is named by its
+                // name, a transition by its states and action, not by a place
+                // in a list, so one taken out leaves the others' as they were.
+                // What was taken out before a refusal stays taken out, and is
+                // undone with the rest, as one edit.
                 for (const planned of deletes) {
                     if (planned.kind === 'transition') {
-                        // A transition the producer refuses to take out (it said
-                        // why) stays, and the others selected with it go: their
-                        // ids name their states and action, not a place in the
-                        // list, so one taken out leaves the others' as they were.
                         if (transitions && (await writeTransitionEdit(this.sidecar, transitions, 'removeTransition', { transition: planned.id }))) {
                             wrote = true;
                         }
@@ -92,10 +111,14 @@ export class DeleteElementOperationHandler extends OperationHandler {
                         args = { workflow: workflowName, direction: planned.direction, portName: planned.portName };
                     }
                     const op = planned.kind === 'node' ? 'deleteNode' : planned.kind === 'edge' ? 'deleteEdge' : 'deletePort';
-                    if (!(await this.sendSidecarOp(sourceUri, { op: this.sidecar.sidecarOp(op), args }))) {
-                        return undefined;
+                    const outcome = await this.writeDelete(sourceUri, planned.kind, { op: this.sidecar.sidecarOp(op), args });
+                    if (outcome === 'written') {
+                        wrote = true;
+                    } else if (outcome === 'failed') {
+                        // The producer did not run (it could not start, timed
+                        // out, crashed): the rest would fail the same way.
+                        break;
                     }
-                    wrote = true;
                 }
                 if (!wrote) {
                     return undefined;
@@ -110,32 +133,26 @@ export class DeleteElementOperationHandler extends OperationHandler {
     }
 
     /**
-     * What deleting `elementIds` asks the producer to delete, in their order.
-     * A read-only element is kept. A read-only view deletes nothing but what
-     * its edits name: its transitions, where it allows editing them
-     * (transition-edits.ts); a transition elsewhere is kept too.
+     * What deleting `elementIds` asks the producer to delete, in their order:
+     * what may be taken out ({@link mayRemove}), and of that, what names
+     * something the producer can find.
      */
     private plannedDeletes(elementIds: readonly string[]): PlannedDelete[] {
         const root = this.modelState.root;
-        const readOnlyView = root.args?.[WorkflowDiagramMetadata.READ_ONLY_VIEW] === true;
-        const transitions = allowsTransitionEdits(root) && viewEditTarget(root) !== undefined;
         const deletedEdges = new Set<string>();
         const deletes: PlannedDelete[] = [];
         for (const id of elementIds) {
             const element = this.modelState.index.get(id) as any;
+            if (!mayRemove(root, element)) {
+                continue;
+            }
             const elementArgs = element?.args as Record<string, unknown> | undefined;
             const elementType = element?.type as string | undefined;
-            if (element && WorkflowDiagramTypeGuards.isReadOnlyElement(elementType as string, elementArgs)) {
-                continue;
-            }
 
             if (elementType === WorkflowDiagramTypes.EDGE_TRANSITION) {
-                if (transitions) {
-                    deletes.push({ kind: 'transition', id });
-                }
+                deletes.push({ kind: 'transition', id });
                 continue;
             }
-            if (readOnlyView) continue;
 
             if (elementType && (elementType.startsWith('node:') || elementType.startsWith('node ')) && elementArgs?.[WorkflowDiagramMetadata.ENTITY_NAME]) {
                 deletes.push({ kind: 'node', name: elementArgs[WorkflowDiagramMetadata.ENTITY_NAME] });
@@ -184,11 +201,24 @@ export class DeleteElementOperationHandler extends OperationHandler {
                 continue;
             }
         }
-        return deletes;
+        // The edges first: a node or a port taken out takes the edges at it
+        // with it, and an edge selected with its node would then be asked
+        // for when it is already gone, and refused. The rest keep their order.
+        return [...deletes.filter(planned => planned.kind === 'edge'), ...deletes.filter(planned => planned.kind !== 'edge')];
     }
 
-    private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {
-        return this.sidecar.sendSidecarOp(sourceUri, payload);
+    /**
+     * Have the producer take out a node, an edge or a port: `written`;
+     * `refused`, the reason shown, when it answered no; `failed`, shown too,
+     * when it did not answer (it could not start, timed out, crashed).
+     */
+    private async writeDelete(sourceUri: string, kind: 'node' | 'edge' | 'port', payload: { op: string; args: Record<string, unknown> }): Promise<'written' | 'refused' | 'failed'> {
+        const result = await this.sidecar.sendSidecarOpDetailed(sourceUri, payload);
+        if (result.ok) {
+            return 'written';
+        }
+        void vscode.window.showWarningMessage(result.message ?? `The ${kind} was not deleted.`);
+        return result.failure === 'rejected' ? 'refused' : 'failed';
     }
 
     private edgeEndpointExpr(entityName: string | undefined, portName: string): string {

@@ -1,6 +1,13 @@
-import { Command } from '@eclipse-glsp/server';
+import { promises as fs } from 'node:fs';
 import * as vscode from 'vscode';
+import type { CommandThatMayChangeNothing } from '../server/command-stack';
 
+/**
+ * The edits a command applies; nothing (or no edit) when there is nothing to
+ * write: refused, cancelled, nothing to do. A command given nothing changed
+ * nothing and leaves no entry on the undo stack: return nothing only when
+ * nothing has been written.
+ */
 export type ComputeTextEdits = () => Promise<vscode.TextEdit[] | undefined>;
 
 export interface ReversibleWorkspaceEditCommandOptions {
@@ -29,21 +36,25 @@ function sortEditsDescending(edits: vscode.TextEdit[]): vscode.TextEdit[] {
     });
 }
 
-export class ReversibleWorkspaceEditCommand implements Command {
+export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothing {
     private beforeText: string | undefined;
     private afterText: string | undefined;
+    private unchanged = false;
 
     constructor(private readonly options: ReversibleWorkspaceEditCommandOptions) {}
 
     async execute(): Promise<void> {
+        this.unchanged = false;
         const doc = await vscode.workspace.openTextDocument(this.options.uri);
         this.beforeText = doc.getText();
+        const fileBefore = await textOnDisk(this.options.uri);
 
         const edits = await this.options.computeEdits();
         if (!edits || edits.length === 0) {
             // Nothing to do; do not create an undo entry.
             this.beforeText = undefined;
             this.afterText = undefined;
+            this.unchanged = true;
             return;
         }
 
@@ -63,9 +74,16 @@ export class ReversibleWorkspaceEditCommand implements Command {
         this.afterText = afterDoc.getText();
         const overrideBefore = (this as any)._sourceBeforeText as string | undefined;
         const overrideAfter = (this as any)._sourceAfterText as string | undefined;
-        if (overrideBefore && overrideAfter) {
+        if (overrideBefore !== undefined && overrideAfter !== undefined) {
             this.beforeText = overrideBefore;
             this.afterText = overrideAfter;
+            // The file as it was written, read where it was written, before
+            // the edit and after: the same text is an edit that wrote
+            // nothing, and its undo would put back what is there. Its text
+            // before is read here, on disk, where the handler's text after
+            // is read: the handler's own may be the editor's, which lags
+            // what was last written out of band.
+            this.unchanged = (fileBefore ?? overrideBefore) === overrideAfter;
         }
 
         await this.options.afterApply?.();
@@ -133,5 +151,28 @@ export class ReversibleWorkspaceEditCommand implements Command {
 
     canUndo(): boolean {
         return this.beforeText !== undefined && this.afterText !== undefined;
+    }
+
+    /**
+     * Whether the last execute changed nothing: no edit to apply, or, for an
+     * edit written out of band, the file on disk before it ran is the text
+     * its handler read after writing. An edit VS Code refused to apply is
+     * not counted: what was written out of band before it is not known; nor
+     * is one applied in band, which is kept whatever it did.
+     */
+    changedNothing(): boolean {
+        return this.unchanged;
+    }
+}
+
+/** The text of the file `uri` names, on disk; nothing when it is not a file that can be read. */
+async function textOnDisk(uri: vscode.Uri): Promise<string | undefined> {
+    if (uri.scheme !== 'file') {
+        return undefined;
+    }
+    try {
+        return await fs.readFile(uri.fsPath, 'utf8');
+    } catch {
+        return undefined;
     }
 }
