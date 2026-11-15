@@ -112,7 +112,14 @@ it no longer has.
   and drawn dashed, its name in italics, until a transition is drawn from
   or to it. That transition names it to the producer (`addTransition`'s
   `newStates`), which writes both. Undo and redo of a placed state, and
-  deleting one, change only what the editor holds.
+  deleting one, change only what the editor holds. A written state the
+  editor once held is let go of when the producer takes it out, and kept
+  when it refuses. A delete of both kinds is one edit, on a compound
+  command that changed nothing when none of its parts did and is undone
+  when each part that changed something can be
+  (`CompoundCommandThatMayChangeNothing`, beside `WorkflowCommandStack`);
+  so is a state named but not given (a dismissed prompt), which leaves no
+  entry on the undo stack.
 - **An automaton.** A node of kind `state` is a state (`node:state`), a pill
   as wide as its name, the initial one marked; an edge from a state to a
   state is a transition (`edge:transition`), labelled with its label, its
