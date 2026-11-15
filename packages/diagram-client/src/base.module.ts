@@ -38,7 +38,8 @@ import {
     GRoutingHandle,
     GRoutingHandleView,
     SetModelCommand,
-    ComputedBoundsApplicator
+    ComputedBoundsApplicator,
+    ToolPalette
 } from '@eclipse-glsp/client';
 import { EXECUTION_OVERLAY_ACTION_KIND } from '@dialogram/shared';
 import { PostEditSelectionService } from './post-edit-selection-service';
@@ -54,6 +55,7 @@ import { ContainedMovementRestrictor } from './contained-movement-restrictor';
 import { NodeSizePreservingBoundsApplicator } from './node-size-preserving-bounds-applicator';
 import { ExecutionStatesFeedbackCommand } from './execution-states';
 import { SelectionTraceFeedbackCommand, SelectionTraceListener } from './selection-trace';
+import { ViewToolPalette } from './view-tool-palette';
 
 /**
  * The neutral base bindings shared by all diagram-client consumers. Loaded first
@@ -101,6 +103,11 @@ export const diagramBaseModule = new ContainerModule((bind, unbind, isBound, reb
     // Draws the icons a product contributed. Without it their palette entries
     // render an empty slot, since a palette icon is only ever a class name.
     bindAsService(context, TYPES.IDiagramStartup, WorkflowPaletteIconStartup);
+
+    // The palette offers what the view shown allows: asked again with each model.
+    if (isBound(ToolPalette)) {
+        rebind(ToolPalette).to(ViewToolPalette).inSingletonScope();
+    }
 
     // Override copy/paste handler so we can prepare post-paste selection.
     if (isBound(TYPES.ICopyPasteHandler)) {

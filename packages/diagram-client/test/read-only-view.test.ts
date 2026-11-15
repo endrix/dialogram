@@ -1,12 +1,12 @@
 /**
- * While a read-only view is shown, the page says so, for the stylesheet to
- * hide the palette's tools; the next editable view takes the mark away.
+ * While a read-only view is shown, the page says so, and says what the view
+ * still allows; the next editable view takes the marks away. The palette
+ * asks the server for the view's own items with each model.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
 import { READ_ONLY_VIEW_CLASS, ReadOnlyViewMarker, isReadOnlyView, viewEditClass } from '../src/read-only-view';
-import { readFileSync } from 'node:fs';
-import { TRANSITIONS_PALETTE_GROUP } from '@dialogram/shared';
+import { ViewToolPalette } from '../src/view-tool-palette';
 
 const original = (globalThis as any).document;
 let classes: Set<string>;
@@ -53,11 +53,11 @@ describe('the read-only view mark', () => {
         expect([...classes]).toEqual([READ_ONLY_VIEW_CLASS]);
     });
 
-    it('lets the stylesheet show the Transition only in a view that allows drawing one, and nothing else there', () => {
-        const css = readFileSync(new URL('../src/diagram-client.css', import.meta.url), 'utf8').replace(/\s+/g, ' ');
-        const group = `#${TRANSITIONS_PALETTE_GROUP}`;
-        expect(css).toContain(`body:not(.${viewEditClass('transition')}) .tool-palette ${group} { display: none; }`);
-        expect(css).toContain(`body.${READ_ONLY_VIEW_CLASS}.${viewEditClass('transition')} .tool-palette .palette-body .tool-group:not(${group}) { display: none; }`);
-        expect(css).toContain(`body.${READ_ONLY_VIEW_CLASS}:not(.${viewEditClass('transition')}) .tool-palette .palette-body { display: none; }`);
+    it('has the palette asked for the items of the view shown each time the model changes', async () => {
+        // The server answers per view (what it still allows, and no more):
+        // the palette asks again after every model, as for a dynamic one.
+        const palette = new ViewToolPalette() as any;
+        await palette.setPaletteItems();
+        expect(palette.dynamic).toBe(true);
     });
 });

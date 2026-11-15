@@ -53,6 +53,8 @@ const EXPECTED_SIDECAR_HANDLER_NAMES = [
     'CreateNodeOperationHandler',
     'CreateEdgeOperationHandler',
     'CreateTransitionOperationHandler',
+    'CreateStateOperationHandler',
+    'ViewCreateOperationHandler',
     'DeleteElementOperationHandler',
     'CutOperationHandler',
     'ReconnectEdgeOperationHandler',

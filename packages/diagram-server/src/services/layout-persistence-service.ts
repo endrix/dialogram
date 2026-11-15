@@ -35,6 +35,7 @@ export interface LayoutFileContent {
         nodes: Record<string, NodePosition>;
         edges?: Record<string, NodePosition[]>;
         portBuses?: Record<string, string[]>;
+        unwrittenStates?: Record<string, NodePosition>;
     }>;
 }
 
@@ -46,7 +47,29 @@ type LayoutSnapshot = {
      * listed is drawn closed, as one port: how every bundle first opens.
      */
     portBuses?: Record<string, string[]>;
+    /**
+     * The states the reader placed that nothing is written of yet, by name,
+     * each where it was placed: the editor holds them until a transition
+     * from or to one is written.
+     */
+    unwrittenStates?: Record<string, NodePosition>;
 };
+
+/** Unwritten states by name, each with a finite place; nothing when there are none. */
+function normalizeUnwrittenStates(raw: unknown): Record<string, NodePosition> | undefined {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return undefined;
+    }
+    const out: Record<string, NodePosition> = {};
+    for (const [name, place] of Object.entries(raw as Record<string, unknown>)) {
+        const x = (place as any)?.x;
+        const y = (place as any)?.y;
+        if (name.trim() !== '' && Number.isFinite(x) && Number.isFinite(y)) {
+            out[name] = { x, y };
+        }
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+}
 
 /**
  * Open bundles by node, each list sorted and without repeats. An empty record
@@ -219,6 +242,8 @@ export class LayoutPersistenceService {
      * reader's choice still holds for the session.
      */
     private unsavedPortBuses = new Map<string, Record<string, string[]>>();
+    /** The same for the states the editor holds (`unwrittenStates`). */
+    private unsavedUnwrittenStates = new Map<string, Record<string, NodePosition>>();
 
     // Can be disabled for debugging/benchmarks.
     private readonly disablePersistence = process.env.WORKFLOW_DIAGRAM_DISABLE_PERSISTENCE === '1';
@@ -253,7 +278,8 @@ export class LayoutPersistenceService {
             }
         }
         const portBuses = normalizePortBuses(r.portBuses);
-        return { nodes, ...(edges ? { edges } : {}), ...(portBuses ? { portBuses } : {}) };
+        const unwrittenStates = normalizeUnwrittenStates(r.unwrittenStates);
+        return { nodes, ...(edges ? { edges } : {}), ...(portBuses ? { portBuses } : {}), ...(unwrittenStates ? { unwrittenStates } : {}) };
     }
 
     private normalizeLayoutsFromFile(data: LayoutFileContent): Record<string, LayoutSnapshot> {
@@ -543,15 +569,18 @@ export class LayoutPersistenceService {
             edges = preservedEdges;
         }
 
-        // Which bundles are open is saved on its own (`setPortBusExpanded`);
-        // a save of positions keeps it as it stands.
+        // Which bundles are open, and the states the editor holds, are saved
+        // on their own (`savePortBuses`, `saveUnwrittenStates`); a save of
+        // positions keeps them as they stand.
         const portBuses = existingLayouts[networkId]?.portBuses;
+        const unwrittenStates = existingLayouts[networkId]?.unwrittenStates;
         const mergedLayouts: Record<string, LayoutSnapshot> = {
             ...existingLayouts,
             [networkId]: {
                 nodes,
                 ...(edges ? { edges } : {}),
-                ...(portBuses ? { portBuses } : {})
+                ...(portBuses ? { portBuses } : {}),
+                ...(unwrittenStates ? { unwrittenStates } : {})
             }
         };
 
@@ -638,6 +667,56 @@ export class LayoutPersistenceService {
             } catch (error) {
                 console.error(`Failed to save layout file: ${layoutPath}`, error);
                 this.unsavedPortBuses.set(unsavedKey, portBuses);
+            }
+        });
+    }
+
+    /** The states the editor holds in a view, by name, each where it was placed: none when it holds none. */
+    async loadUnwrittenStates(workflowFilePath: string, networkId: string): Promise<Map<string, NodePosition>> {
+        const unsaved = this.unsavedUnwrittenStates.get(`${this.getLayoutFilePath(workflowFilePath)}\u0000${networkId}`);
+        if (!unsaved && this.disablePersistence) {
+            return new Map();
+        }
+        const states = unsaved ?? (await this.loadLayoutSnapshot(workflowFilePath, networkId))?.unwrittenStates;
+        return new Map(Object.entries(states ?? {}).map(([name, place]) => [name, { ...place }]));
+    }
+
+    /**
+     * Save the states the editor holds in a view: `states` replaces what was
+     * saved. A save of positions still waiting on its debounce is written
+     * first, as for the bundles.
+     */
+    async saveUnwrittenStates(workflowFilePath: string, networkId: string, states: ReadonlyMap<string, NodePosition>): Promise<void> {
+        const layoutPath = this.getLayoutFilePath(workflowFilePath);
+        const unsavedKey = `${layoutPath}\u0000${networkId}`;
+        const record: Record<string, NodePosition> = {};
+        for (const [name, place] of states) {
+            record[name] = { x: place.x, y: place.y };
+        }
+        if (this.disablePersistence) {
+            this.unsavedUnwrittenStates.set(unsavedKey, record);
+            return;
+        }
+        const pending = this.pendingSaves.get(layoutPath);
+        if (pending) {
+            clearTimeout(pending.timeout);
+            this.pendingSaves.delete(layoutPath);
+            await this.doSave(layoutPath, pending.networkId, pending.positions, pending.edgeRoutes);
+        }
+        await this.serialized(layoutPath, async () => {
+            const existing = await this.readAnyLayoutFile(workflowFilePath);
+            const layouts = existing ? this.normalizeLayoutsFromFile(existing) : {};
+            const snapshot: LayoutSnapshot = layouts[networkId] ?? { nodes: {} };
+            const { unwrittenStates: _replaced, ...rest } = snapshot;
+            layouts[networkId] = Object.keys(record).length > 0 ? { ...rest, unwrittenStates: record } : rest;
+            const content: LayoutFileContent = { version: LAYOUT_VERSION, layouts };
+            try {
+                await fs.mkdir(path.dirname(layoutPath), { recursive: true });
+                await fs.writeFile(layoutPath, JSON.stringify(content, null, 2), 'utf-8');
+                this.unsavedUnwrittenStates.delete(unsavedKey);
+            } catch (error) {
+                console.error(`Failed to save layout file: ${layoutPath}`, error);
+                this.unsavedUnwrittenStates.set(unsavedKey, record);
             }
         });
     }

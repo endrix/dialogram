@@ -5,7 +5,8 @@
  * Drawing one with the palette's Transition, from a state to a state, asks
  * what takes it (one of `TRANSITION_LABELS`) and has the producer write it:
  * `addTransition` with the two states by their names (`STATE_NAME`) and the
- * label's id. Deleting one has it taken out: `removeTransition` with its id.
+ * label's id, and `newStates`, those of the two the editor holds and the
+ * producer has not written yet (view-edits.ts). Deleting one has it taken out: `removeTransition` with its id.
  * Both name the view as it was asked for (`VIEW_REQUEST`): the unit and the
  * view, or the root and the path of instances, asked of the same file. The
  * diagram's document goes with them (`document`): it is the file the undo
@@ -116,8 +117,15 @@ export class CreateTransitionOperationHandler extends OperationHandler {
         if (!target || !allowsTransitionEdits(root)) {
             return undefined;
         }
-        const from = stateNameOf(this.modelState.index.find(operation.sourceElementId));
-        const to = stateNameOf(this.modelState.index.find(operation.targetElementId));
+        const fromState = this.modelState.index.find(operation.sourceElementId);
+        const toState = this.modelState.index.find(operation.targetElementId);
+        const from = stateNameOf(fromState);
+        const to = stateNameOf(toState);
+        // A state the editor holds is written with the transition: the
+        // producer is told which of the two it is to write (view-edits.ts).
+        const newStates = [...new Set([fromState, toState]
+            .filter(state => (state as any)?.args?.[WorkflowDiagramMetadata.STATE_UNWRITTEN] === true)
+            .map(state => stateNameOf(state)!))];
         const command: ReversibleWorkspaceEditCommand = new ReversibleWorkspaceEditCommand({
             label: 'Create Transition' + this.sidecar.undoLabelSuffix(),
             uri: target.document,
@@ -133,7 +141,7 @@ export class CreateTransitionOperationHandler extends OperationHandler {
                     return undefined;
                 }
                 const before = await readAuthoritativeSourceText(target.document);
-                if (!(await writeTransitionEdit(this.sidecar, target, 'addTransition', { from, to, label }))) {
+                if (!(await writeTransitionEdit(this.sidecar, target, 'addTransition', { from, to, label, ...(newStates.length > 0 ? { newStates } : {}) }))) {
                     return undefined;
                 }
                 // What the producer wrote, read from the disk it wrote to: the

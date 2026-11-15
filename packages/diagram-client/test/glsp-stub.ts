@@ -162,6 +162,14 @@ export class GGraph {}
 export class GIssueMarker {}
 export class GRoutingHandle {}
 export class SetModelCommand {}
+/** GLSP's palette: asks for its items once, again on a model only when one of them is dynamic. */
+export class ToolPalette {
+    protected paletteItems: unknown[] = [];
+    protected dynamic = false;
+    protected async setPaletteItems(): Promise<void> {
+        this.dynamic = false;
+    }
+}
 export class FeedbackAwareSetModelCommand {}
 /** Sprotty's update, unanimated: the new root keeps the old one's viewport; no animations of its own. */
 export class FeedbackAwareUpdateModelCommand {

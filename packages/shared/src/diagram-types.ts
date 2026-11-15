@@ -426,9 +426,23 @@ export namespace WorkflowDiagramMetadata {
      * as the producer said (`graph.meta.edits`). `transition`: the
      * transitions of its automaton, drawn from a state to a state with the
      * palette's Transition (taken by one of `TRANSITION_LABELS`) and deleted.
+     * `state`: its states, placed with the palette's State (held by the
+     * editor until a transition names them, `STATE_UNWRITTEN`) and deleted.
      * The palette shows the tools of these edits and no other.
      */
     export const VIEW_EDITS = 'wf:viewEdits';
+    /**
+     * On the root of a read-only view: what else the reader can make in it,
+     * as the producer said (`graph.meta.creates`, each a `ViewCreate`). The
+     * palette offers each, in its group; placing one asks what it asks and
+     * has the producer write it (`viewCreate`).
+     */
+    export const VIEW_CREATES = 'wf:viewCreates';
+    /**
+     * On an element of a read-only view: the producer lets the reader delete
+     * it (`meta.delete`); Delete has the producer take it out (`viewDelete`).
+     */
+    export const VIEW_DELETABLE = 'wf:viewDeletable';
     /**
      * On the root of a view whose transitions can be edited: what a drawn
      * transition can be taken by (`graph.meta.transitionLabels`, each
@@ -552,6 +566,12 @@ export namespace WorkflowDiagramMetadata {
      * from or to it.
      */
     export const STATE_NAME = 'wf:stateName';
+    /**
+     * On a state the reader placed that nothing is written of yet: the
+     * editor holds it, with the view's layout, until a transition from or to
+     * it is written, which writes the state (`UNWRITTEN_STATE_ID_PREFIX`).
+     */
+    export const STATE_UNWRITTEN = 'wf:stateUnwritten';
 }
 
 /**
@@ -561,6 +581,32 @@ export namespace WorkflowDiagramMetadata {
  */
 export const TRANSITIONS_PALETTE_GROUP = 'palette-transitions';
 
+/** The palette's group of the State tool, by its id. */
+export const STATES_PALETTE_GROUP = 'palette-states';
+
+/**
+ * The element type a palette entry of a view's own creates places
+ * (`VIEW_CREATES`): which one it is, is the entry's `create` arg.
+ */
+export const VIEW_CREATE_ELEMENT_TYPE = 'view-create';
+
+/** The id of a state the editor holds (`STATE_UNWRITTEN`), by its name. */
+export const UNWRITTEN_STATE_ID_PREFIX = 'unwritten-state:';
+
+/** One thing a view lets the reader make (`VIEW_CREATES`), as its producer declared it. */
+export interface ViewCreate {
+    /** What the producer is told to make (`create`). */
+    id: string;
+    /** The palette entry's words. */
+    label: string;
+    description?: string;
+    /** A codicon's name, without `codicon-`. */
+    icon?: string;
+    /** The palette group it is under, by its label. */
+    group?: string;
+    /** What placing it asks, in order: each answer goes to the producer under its `key`. */
+    asks?: Array<{ key: string; prompt: string; value?: string }>;
+}
 /** What a view was asked of its producer by (`WorkflowDiagramMetadata.VIEW_REQUEST`). */
 export interface ViewRequest {
     /** The unit's name, as the view was asked for by it. */
@@ -578,6 +624,43 @@ export interface ViewRequest {
 export function viewEditsOf(rootArgs: Record<string, unknown> | undefined): string[] {
     const edits = rootArgs?.[WorkflowDiagramMetadata.VIEW_EDITS];
     return Array.isArray(edits) ? edits.filter((edit): edit is string => typeof edit === 'string' && edit !== '') : [];
+}
+
+/** What a view lets the reader make (`VIEW_CREATES` on its root): none when it says none, or says it wrongly. */
+export function viewCreatesOf(rootArgs: Record<string, unknown> | undefined): ViewCreate[] {
+    const creates = rootArgs?.[WorkflowDiagramMetadata.VIEW_CREATES];
+    if (!Array.isArray(creates)) {
+        return [];
+    }
+    const text = (value: unknown): string | undefined =>
+        typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+    const out: ViewCreate[] = [];
+    for (const entry of creates) {
+        const id = text(entry?.id);
+        const label = text(entry?.label);
+        if (!id || !label || out.some(seen => seen.id === id)) {
+            continue;
+        }
+        const asks = Array.isArray(entry.asks)
+            ? entry.asks.flatMap((ask: any) => {
+                const key = text(ask?.key);
+                const prompt = text(ask?.prompt);
+                return key && prompt ? [{ key, prompt, ...(typeof ask.value === 'string' ? { value: ask.value } : {}) }] : [];
+            })
+            : [];
+        const description = text(entry.description);
+        const icon = text(entry.icon);
+        const group = text(entry.group);
+        out.push({
+            id,
+            label,
+            ...(description ? { description } : {}),
+            ...(icon ? { icon } : {}),
+            ...(group ? { group } : {}),
+            ...(asks.length > 0 ? { asks } : {})
+        });
+    }
+    return out;
 }
 
 /** What a drawn transition can be taken by (`TRANSITION_LABELS` on a root): none when it says none. */
