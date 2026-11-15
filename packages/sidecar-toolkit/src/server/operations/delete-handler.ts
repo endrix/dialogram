@@ -1,5 +1,5 @@
 import { DeleteElementOperation } from '@eclipse-glsp/protocol';
-import { OperationHandler, MaybePromise, Action, ModelState, Command } from '@eclipse-glsp/server';
+import { OperationHandler, MaybePromise, Action, ModelState, Command, GModelElement, GModelRoot } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
@@ -10,6 +10,23 @@ import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operat
 import { SidecarInvoker } from './sidecar-invoker';
 import { escapePythonStringLiteral } from '../python-text';
 import { allowsTransitionEdits, viewEditTarget, writeTransitionEdit } from './transition-edits';
+
+/**
+ * Whether `element` of the view on `root` may be taken out of the source, by
+ * a delete or a cut. Never a read-only element. A read-only view lets
+ * nothing go but what its edits name: its transitions, where it allows
+ * editing them (transition-edits.ts); a transition elsewhere stays too.
+ */
+export function mayRemove(root: GModelRoot | undefined, element: GModelElement | undefined): boolean {
+    const args = (element as { args?: Record<string, unknown> } | undefined)?.args;
+    if (element && WorkflowDiagramTypeGuards.isReadOnlyElement(element.type, args)) {
+        return false;
+    }
+    if (element?.type === WorkflowDiagramTypes.EDGE_TRANSITION) {
+        return allowsTransitionEdits(root) && viewEditTarget(root) !== undefined;
+    }
+    return root?.args?.[WorkflowDiagramMetadata.READ_ONLY_VIEW] !== true;
+}
 
 /** One thing a delete asks the producer to take out. */
 type PlannedDelete =
@@ -111,32 +128,26 @@ export class DeleteElementOperationHandler extends OperationHandler {
     }
 
     /**
-     * What deleting `elementIds` asks the producer to delete, in their order.
-     * A read-only element is kept. A read-only view deletes nothing but what
-     * its edits name: its transitions, where it allows editing them
-     * (transition-edits.ts); a transition elsewhere is kept too.
+     * What deleting `elementIds` asks the producer to delete, in their order:
+     * what may be taken out ({@link mayRemove}), and of that, what names
+     * something the producer can find.
      */
     private plannedDeletes(elementIds: readonly string[]): PlannedDelete[] {
         const root = this.modelState.root;
-        const readOnlyView = root.args?.[WorkflowDiagramMetadata.READ_ONLY_VIEW] === true;
-        const transitions = allowsTransitionEdits(root) && viewEditTarget(root) !== undefined;
         const deletedEdges = new Set<string>();
         const deletes: PlannedDelete[] = [];
         for (const id of elementIds) {
             const element = this.modelState.index.get(id) as any;
+            if (!mayRemove(root, element)) {
+                continue;
+            }
             const elementArgs = element?.args as Record<string, unknown> | undefined;
             const elementType = element?.type as string | undefined;
-            if (element && WorkflowDiagramTypeGuards.isReadOnlyElement(elementType as string, elementArgs)) {
-                continue;
-            }
 
             if (elementType === WorkflowDiagramTypes.EDGE_TRANSITION) {
-                if (transitions) {
-                    deletes.push({ kind: 'transition', id });
-                }
+                deletes.push({ kind: 'transition', id });
                 continue;
             }
-            if (readOnlyView) continue;
 
             if (elementType && (elementType.startsWith('node:') || elementType.startsWith('node ')) && elementArgs?.[WorkflowDiagramMetadata.ENTITY_NAME]) {
                 deletes.push({ kind: 'node', name: elementArgs[WorkflowDiagramMetadata.ENTITY_NAME] });

@@ -10,8 +10,8 @@
  * delete before it.
  */
 import 'reflect-metadata';
-import { describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { afterEach, describe, expect, it } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -26,9 +26,19 @@ import { commandStack, onDisk, saying } from './edits-on-disk';
 
 const NET = 'net = ...\n';
 
+/** The directories the files are made in, removed after each test: a scan of the temporary directory elsewhere reads them. */
+const made: string[] = [];
+afterEach(() => {
+    for (const dir of made.splice(0)) {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
 /** A network `net` in a file of its own: `a`, `b`, and a port of each. */
 function network() {
-    const file = path.join(mkdtempSync(path.join(tmpdir(), 'refused-edit-undo-')), 'net.py');
+    const dir = mkdtempSync(path.join(tmpdir(), 'refused-edit-undo-'));
+    made.push(dir);
+    const file = path.join(dir, 'net.py');
     writeFileSync(file, NET);
     const sourceUri = pathToFileURL(file).href;
     const node = (name: string) => ({ id: name, type: WorkflowDiagramTypes.NODE_ACTOR, args: { [WorkflowDiagramMetadata.ENTITY_NAME]: name } });

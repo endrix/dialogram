@@ -10,6 +10,7 @@ import { WorkflowDiagramTypeGuards } from '@dialogram/shared';
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { SidecarInvoker } from './sidecar-invoker';
 import { escapePythonStringLiteral } from '../python-text';
+import { mayRemove } from './delete-handler';
 
 @injectable()
 export class CutOperationHandler extends OperationHandler {
@@ -31,12 +32,20 @@ export class CutOperationHandler extends OperationHandler {
     }
 
     private createPythonCommand(operation: CutOperation, sourceUri: string): Command | undefined {
-        const elementIds = operation.editorContext?.selectedElementIds ?? [];
-        if (elementIds.length === 0) {
+        // A cut takes out what a delete of the selection would: never a
+        // read-only element, and nothing of a read-only view (a transition,
+        // which a delete may take out of one, the clipboard does not carry).
+        // What it takes out is known before a command is made, and a cut of
+        // nothing makes none; what was selected has been copied all the
+        // same, by the client, before it asked to cut.
+        const root = this.modelState.root;
+        const elementIds = (operation.editorContext?.selectedElementIds ?? [])
+            .filter(id => mayRemove(root, this.modelState.index.get(id)));
+        const payload = buildClipboardPayload(this.modelState, sourceUri, elementIds);
+        if (payload.items.length === 0) {
             return undefined;
         }
         const vscodeUri = vscode.Uri.parse(sourceUri);
-        const root = this.modelState.root;
         const workflowName = root.args?.['wf:workflowName'] as string | undefined;
 
         const command = new ReversibleWorkspaceEditCommand({
@@ -44,10 +53,6 @@ export class CutOperationHandler extends OperationHandler {
             uri: vscodeUri,
             computeEdits: async () => {
                 const beforeText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
-                const payload = buildClipboardPayload(this.modelState, sourceUri, elementIds);
-                if (payload.items.length === 0) {
-                    return undefined;
-                }
                 await vscode.env.clipboard.writeText(JSON.stringify(clipboardDataFromPayload(payload)));
                 for (const item of payload.items) {
                     if (item.kind === 'entity') {

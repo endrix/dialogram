@@ -725,6 +725,15 @@ it no longer has.
   kept, as a refused transition is, with the producer's reason shown (or
   "The node was not deleted.", for an edge or a port the same), and the
   rest goes; what was taken out is undone as one edit.
+- **A cut in a read-only view takes nothing out.** Cut asked the producer
+  to delete every node, edge and port of the selection that was not itself
+  marked read-only, in a read-only view too, where a delete asks nothing:
+  in a CalPy actor view, cutting a state variable had the sidecar rewrite
+  the actor's file (with the same text) before it refused. A cut now takes
+  out what a delete of the selection would (`mayRemove`, which both ask):
+  in a read-only view nothing, since the transitions a delete may take out
+  there are not cut. What a cut takes out is known before a command is
+  made, and a cut of nothing makes none; the selection is still copied.
 - **A delete of nothing that can be deleted is no command.** Delete on a
   selection of only what is kept (a read-only element, an edge with no
   ports, a line inside a group that several edges share) made a command
