@@ -12,6 +12,7 @@ import { UNWRITTEN_STATE_ID_PREFIX, WorkflowDiagramMetadata, WorkflowDiagramType
 import { GraphGModelSource, type PyGraphDocument } from '../src/model/graph-gmodel-source';
 import { placeHeldStates, withUnwrittenStates } from '../src/model/unwritten-states';
 import { LayoutPersistenceService } from '../src/services/layout-persistence-service';
+import { WorkflowDiagramConfiguration } from '../src/server/diagram-configuration';
 
 function view(meta: Record<string, unknown> = { readOnly: true, edits: ['state', 'transition'] }): PyGraphDocument {
     return {
@@ -61,6 +62,13 @@ describe('a state the editor holds', () => {
         const placed = new Map([[keyOf('run'), { x: 50, y: 50 }]]);
         placeHeldStates(graph, held, placed);
         expect(placed.get(keyOf('run'))).toEqual({ x: 50, y: 50 });
+    });
+
+    it('can be picked for a delete, as any state can: what a delete of one does is the server\'s to say', () => {
+        // The client leaves out of a delete what its type hint says is not deletable.
+        const hint = new WorkflowDiagramConfiguration().shapeTypeHints.find(h => h.elementTypeId === WorkflowDiagramTypes.NODE_STATE);
+        expect(hint?.deletable).toBe(true);
+        expect(hint?.repositionable).toBe(true);
     });
 
     it('is kept with the view\'s layout, per view, and a save of positions keeps it', async () => {
