@@ -179,7 +179,12 @@ export class CreateEdgeOperationHandler extends OperationHandler {
         };
     }
 
+    /** Have the producer write the connection; false, its reason shown, when it does not. */
     private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {
-        return this.sidecar.sendSidecarOp(sourceUri, payload);
+        const result = await this.sidecar.sendSidecarOpDetailed(sourceUri, payload);
+        if (!result.ok) {
+            void vscode.window.showWarningMessage(result.message ?? 'The connection was not made.');
+        }
+        return result.ok;
     }
 }

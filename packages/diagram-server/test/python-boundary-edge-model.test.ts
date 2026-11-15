@@ -213,4 +213,30 @@ describe('GraphGModelSource boundary edge encoding', () => {
         expect(edge?.args?.['wf:to']).toBe('trace_project');
         expect(edge?.args?.['wf:inPort']).toBe('trace_json');
     });
+
+    it('reads the ends of an edge between ports named n:<node>:p:<port>, and of one from a network port', () => {
+        const doc: PyGraphDocument = {
+            version: '1',
+            graph: {
+                id: 'root',
+                nodes: [
+                    { id: 'wf:in:IN', kind: 'wf-input', label: 'IN', scope: 'root', ports: [{ id: 'wf:in:IN:p:IN', name: 'IN', direction: 'out' }] },
+                    { id: 'n:a', kind: 'actor', label: 'a', scope: 'root', ports: [{ id: 'n:a:p:In', name: 'In', direction: 'in' }, { id: 'n:a:p:Out', name: 'Out', direction: 'out' }] },
+                    { id: 'n:b:c', kind: 'actor', label: 'b:c', scope: 'root', ports: [{ id: 'n:b:c:p:In', name: 'In', direction: 'in' }] }
+                ],
+                edges: [
+                    { id: 'e:in', from: 'wf:in:IN:p:IN', to: 'n:a:p:In', scope: 'root' },
+                    { id: 'e:ab', from: 'n:a:p:Out', to: 'n:b:c:p:In', scope: 'root' }
+                ]
+            }
+        } as PyGraphDocument;
+
+        const result = new GraphGModelSource().transform(doc);
+        const ends = (id: string) => {
+            const args = result.graph.children?.find(child => child.id === id)?.args ?? {};
+            return [args['wf:from'], args['wf:outPort'], args['wf:to'], args['wf:inPort']];
+        };
+        expect(ends('e:in')).toEqual(['boundary', 'IN', 'a', 'In']);
+        expect(ends('e:ab')).toEqual(['a', 'Out', 'b:c', 'In']);
+    });
 });

@@ -126,4 +126,16 @@ describe('an edit the producer refuses', () => {
             expect(stack.canUndo()).toBe(false);
         });
     }
+
+    it('(a connection) says why it was not made', async () => {
+        const { file, state } = network();
+        const handler = new CreateEdgeOperationHandler() as any;
+        handler.modelState = state;
+        handler.sidecar = producer(file, () => true, []);
+        const said = await saying(async said => {
+            await onDisk(file, () => commandStack().execute(handler.createCommand(EDITS[1][3])));
+            return said;
+        });
+        expect(said).toEqual(['calpy.connect refused']);
+    });
 });

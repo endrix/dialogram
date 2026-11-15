@@ -2037,6 +2037,17 @@ export class GraphGModelSource {
             }
             return undefined;
         }
+        // A port named `n:<node>:p:<port>`: the node's name runs to the last
+        // `:p:` (a port's name has no colon). Without it, an edge between
+        // such ports named no ends, and every edit of one (delete, capacity,
+        // reconnect, duplicate, paste) left it out.
+        if (parts[0] === 'n') {
+            const at = cleaned.lastIndexOf(':p:');
+            if (at > 2 && at + 3 < cleaned.length) {
+                return { entity: cleaned.slice(2, at), port: cleaned.slice(at + 3) };
+            }
+            return undefined;
+        }
         return undefined;
     }
 

@@ -704,6 +704,15 @@ it no longer has.
 
 ### Fixed
 
+- **An edge between ports named `n:<node>:p:<port>` can be edited.** The
+  model read an edge's ends only from port ids of the `node:` and `wf:`
+  forms, so an edge of a producer that names a node's port
+  `n:<node>:p:<port>` (CalPy) named neither end: delete, capacity,
+  reconnect, duplicate and paste all left it out, and Delete on one did
+  nothing. The node's name runs to the last `:p:`.
+- **A connection the producer refuses says why.** Drawing one that the
+  producer did not write ended without a word; its reason is now shown
+  ("The connection was not made." when it gives none).
 - **An edit refused no longer keeps Undo from the edits before it.** In
   every product, an edit of the source that wrote nothing (the producer
   refused it, a prompt was dismissed, or it wrote back the file as it was)
