@@ -19,7 +19,7 @@ import { WorkflowElkLayoutEngine } from '../src/server/elk-layout-engine';
 import { WorkflowLayoutConfigurator } from '../src/server/layout-configurator';
 import { applyPersistedEdgeRoutes } from '../src/routing/persisted-edge-routes';
 import { collectEdgeRoutes } from '../src/server/layout-snapshot';
-import { automatonElkGraph, isHub, transitionLabelWidthOf } from '../src/server/automaton-layout';
+import { automatonClutter, automatonElkGraph, automatonGeometryInputs, clearEnough, isHub, lessCluttered, transitionLabelWidthOf } from '../src/server/automaton-layout';
 
 const state = (name: string, meta: Record<string, unknown> = {}): any =>
     ({ id: `state:${name}`, kind: 'state', label: name, scope: 'root', ports: [], meta });
@@ -171,6 +171,42 @@ describe('where the states of an automaton go', () => {
         expect(length(toA)).toBeGreaterThan(length(others[0]) + 60);
     });
 
+    it('spreads every gap of a program by the spread it is laid out at, between its components too', () => {
+        const states = [{ id: 'a', width: 60, height: 36, initial: true }, { id: 'b', width: 60, height: 36 }, { id: 'c', width: 60, height: 36 }];
+        // `c` has only a loop: a component of its own.
+        const transitions = [{ sourceId: 'a', targetId: 'b', labelWidth: 40 }, { sourceId: 'c', targetId: 'c', labelWidth: 40 }];
+        const at = (spread: number): Record<string, unknown> => automatonElkGraph(states, transitions, spread).layoutOptions!;
+        for (const option of ['elk.layered.spacing.nodeNodeBetweenLayers', 'elk.spacing.nodeNode', 'elk.spacing.edgeNode', 'elk.spacing.componentComponent']) {
+            expect(Number(at(2)[option])).toBeCloseTo(2 * Number(at(1)[option]), -1);
+        }
+    });
+
+    it('scores clutter as the client draws it: a crossing weighs as a label, a line through a state is one', () => {
+        // A little less overlap is not worth many more crossings.
+        expect(lessCluttered({ overlap: 4, crossings: 0 }, { overlap: 3, crossings: 20 })).toBe(true);
+        expect(lessCluttered({ overlap: 0, crossings: 3 }, { overlap: 0, crossings: 2 })).toBe(false);
+        // `a` to `c` through `b`, a wall between them too tall to go round: a crossing.
+        const box = (x: number) => ({ x, y: 0, width: 60, height: 36 });
+        const wall = { x: 100, y: -2000, width: 60, height: 4036 };
+        const t = (id: string, sourceId: string, targetId: string) => ({ id, sourceId, targetId, labelWidth: 0, targetName: targetId });
+        const states = new Map([['a', box(0)], ['b', wall], ['c', box(400)]]);
+        expect(automatonClutter(states, [t('x', 'a', 'c')]).crossings).toBe(1);
+        expect(automatonClutter(states, [t('x', 'a', 'b')]).crossings).toBe(0);
+    });
+
+    it('draws a state that lists the steps of a run with the corners the client gives it', () => {
+        const { boxes, drawn } = automatonGeometryInputs(
+            [
+                { id: 'idle', position: { x: 0, y: 0 }, size: { width: 60, height: 36 }, args: { [WorkflowDiagramMetadata.STATE_INITIAL]: true } },
+                { id: 'run', position: { x: 0, y: 100 }, size: { width: 120, height: 90 }, args: { [WorkflowDiagramMetadata.STATE_STEPS]: ['load', 'add'], [WorkflowDiagramMetadata.ENTITY_NAME]: 'Run' } }
+            ],
+            [{ id: 't', sourceId: 'idle', targetId: 'run', args: { [WorkflowDiagramMetadata.TRANSITION_ORDER]: 2, [WorkflowDiagramMetadata.TRANSITION_STUB]: true } }]
+        );
+        expect(boxes.get('run')!.radius).toBe(WorkflowDiagramConstants.STATE_HEIGHT_PX / 2);
+        expect(boxes.get('idle')!.radius).toBeUndefined();
+        expect(drawn).toEqual([{ id: 't', sourceId: 'idle', targetId: 'run', order: 2, stub: true, labelWidth: 0, targetName: 'Run' }]);
+    });
+
     it('places every state, apart from the others, and the same way twice', async () => {
         const place = async (): Promise<Map<string, { x: number; y: number }>> => {
             const root = model();
@@ -205,8 +241,22 @@ describe('where the states of an automaton go', () => {
         ).layout();
         const states = (root.children ?? []).filter(child => child.type === WorkflowDiagramTypes.NODE_STATE) as GNode[];
         const boxes = new Map(states.map(s => [s.id, { x: s.position!.x, y: s.position!.y, width: s.size!.width, height: s.size!.height }]));
+        const names = new Map(states.map(s => [s.id, String(s.args?.[WorkflowDiagramMetadata.ENTITY_NAME])]));
+        // As the client draws them: in their order, a stub as a stub.
         const transitions = (root.children ?? []).filter((child): child is GEdge => child instanceof GEdge && child.type === WorkflowDiagramTypes.EDGE_TRANSITION)
-            .map(edge => ({ id: edge.id, sourceId: edge.sourceId, targetId: edge.targetId, labelWidth: transitionLabelWidthOf(edge.args as any) }));
+            .map(edge => {
+                const args = edge.args as Record<string, unknown> | undefined;
+                const order = args?.[WorkflowDiagramMetadata.TRANSITION_ORDER];
+                return {
+                    id: edge.id,
+                    sourceId: edge.sourceId,
+                    targetId: edge.targetId,
+                    ...(typeof order === 'number' ? { order } : {}),
+                    stub: args?.[WorkflowDiagramMetadata.TRANSITION_STUB] === true,
+                    labelWidth: transitionLabelWidthOf(args),
+                    targetName: names.get(edge.targetId) ?? edge.targetId
+                };
+            });
         return { boxes, transitions, drawn: automatonGeometry(boxes, transitions) };
     }
 
@@ -263,6 +313,62 @@ describe('where the states of an automaton go', () => {
         });
         const [idle, anyState] = [boxes.get('idle')!, boxes.get('*')!];
         expect(anyState.y).toBeGreaterThan(idle.y);
+    });
+
+    // A processor's control: a state it fetches in that most others go back
+    // to (drawn as stubs), one it decodes in that leads to most others, a
+    // loop on nearly every state, and three or more labels on some lines.
+    const when = { condition: 'c' };
+    const PROCESSOR = {
+        nodes: ['fetch', 'trap', 'ld_rs1', 'exec', 'shift', 'stmem', 'ldmem', 'ld_rs2'].map(name => state(name, name === 'fetch' ? { initial: true } : {})),
+        edges: [
+            transition('fetch', 'take_irq', 'fetch', { order: 1 }),
+            ...['boot', 'irq_save'].map(action => transition('fetch', action, 'fetch', { order: 1, ...when })),
+            ...['discard', 'wait_resume', 'fetch_stay'].map(action => transition('fetch', action, 'fetch', { order: 2, ...when })),
+            transition('fetch', 'launch_trap', 'trap', { order: 2, ...when }),
+            transition('fetch', 'launch', 'ld_rs1', { order: 2, ...when }),
+            transition('trap', 'trap_halt', 'trap', when),
+            ...([['pcpi_done', 'fetch'], ['pcpi_hold', 'ld_rs1'], ['pcpi_expire', 'trap'], ['to_exec', 'exec'], ['to_shift', 'shift'], ['to_stmem', 'stmem'],
+                ['to_ldmem', 'ldmem'], ['to_fetch', 'fetch'], ['to_offer', 'ld_rs1'], ['to_trap', 'trap'], ['to_rs2', 'ld_rs2']] as const)
+                .map(([action, to]) => transition('ld_rs1', action, to, when)),
+            transition('exec', 'exec_wait', 'exec', when),
+            transition('exec', 'exec_done', 'fetch', when),
+            transition('shift', 'shift_step', 'shift', when),
+            transition('shift', 'shift_done', 'fetch', when),
+            ...(['st', 'ld'] as const).flatMap(kind => {
+                const unit = `${kind}mem`;
+                return [
+                    transition(unit, `${kind}_issue`, unit, { order: 1, ...when }),
+                    transition(unit, `${kind}_misalign`, 'trap', { order: 1, ...when }),
+                    transition(unit, `${kind}_finish`, 'fetch', { order: 2, ...when })
+                ];
+            }),
+            ...['exec', 'shift', 'stmem'].map(to => transition('ld_rs2', `rs2_${to}`, to, when))
+        ]
+    };
+
+    it('keeps the states of a layer apart where a line that skips the layer passes between them', async () => {
+        // From `ld_rs1` to `ld_rs2`, a layer apart, the line passes between two
+        // of the units, drawn there with its label beside it.
+        const { boxes } = await placeAndDraw(PROCESSOR);
+        const layers = new Map<number, Array<{ x: number; width: number }>>();
+        for (const box of boxes.values()) {
+            layers.set(box.y, [...(layers.get(box.y) ?? []), box]);
+        }
+        const gaps = [...layers.values()].flatMap(layer => layer
+            .sort((a, b) => a.x - b.x)
+            .slice(1)
+            .map((box, n) => box.x - (layer[n].x + layer[n].width)));
+        expect(gaps.length).toBeGreaterThan(0);
+        expect(Math.min(...gaps)).toBeGreaterThanOrEqual(60);
+    });
+
+    it('spreads a processor\u2019s control until no label lies on another, on a state or on a chip, and few lines run through one', async () => {
+        const { boxes, transitions } = await placeAndDraw(PROCESSOR);
+        expect(transitions.some(t => t.stub)).toBe(true);
+        const clutter = automatonClutter(boxes, transitions);
+        expect(clutter.overlap).toBe(0);
+        expect(clearEnough(clutter, transitions.length)).toBe(true);
     });
 });
 

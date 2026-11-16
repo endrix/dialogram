@@ -299,6 +299,34 @@ export function labelCandidates(shape: TransitionShape, loop: boolean, bowed: bo
     return result;
 }
 
+/**
+ * A stub's places for its labels: beside its stroke, as a curve's, then
+ * beside its chip, either side, and past it. The stroke is short: beside it,
+ * a label wider than it reaches back over the state it leaves (when it leaves
+ * sideways, every place beside it does) and on over its chip.
+ */
+export function stubLabelCandidates(shape: TransitionShape, chip: Box): LabelCandidate[] {
+    const start = shape.controls[0];
+    const dir = unit({ x: shape.tip.x - start.x, y: shape.tip.y - start.y });
+    const centre = { x: chip.x + chip.width / 2, y: chip.y + chip.height / 2 };
+    // Where a ray from the chip's centre the way `side` goes leaves the chip: the label is set out from there.
+    const edge = (side: Point): Point => {
+        const reach = Math.min(
+            side.x === 0 ? Infinity : chip.width / 2 / Math.abs(side.x),
+            side.y === 0 ? Infinity : chip.height / 2 / Math.abs(side.y)
+        );
+        return { x: centre.x + side.x * reach, y: centre.y + side.y * reach };
+    };
+    const right = { x: -dir.y, y: dir.x };
+    const left = { x: dir.y, y: -dir.x };
+    return [
+        ...labelCandidates(shape, false, false),
+        { at: edge(right), side: right },
+        { at: edge(left), side: left },
+        { at: edge(dir), side: dir }
+    ];
+}
+
 /** The box of a block of labels `width` by `height` at a place beside its curve. */
 export function labelBlockAt(candidate: LabelCandidate, width: number, height: number): Box {
     const { at, side } = candidate;
@@ -326,7 +354,14 @@ const CURVE_WEIGHT = 40;
 /** How far around a block another one or a state is kept, so that two never touch. */
 const BLOCK_MARGIN_PX = 3;
 /** How many points of each curve a block is checked against. */
-const CURVE_SAMPLES = 12;
+const CURVE_SAMPLES = 24;
+
+/** The points of a curve a block of labels is checked against: its inside, not its ends at the states. */
+export function curveSamples(controls: readonly Point[]): Point[] {
+    return controls.length < 2
+        ? []
+        : Array.from({ length: CURVE_SAMPLES - 1 }, (_, k) => curveAt(controls, (k + 1) / CURVE_SAMPLES));
+}
 
 /**
  * Where each block goes (in `blocks`' order; each block's own curve is the
@@ -338,9 +373,7 @@ const CURVE_SAMPLES = 12;
  * as little.
  */
 export function placeLabelBlocks(blocks: readonly LabelBlock[], states: readonly Box[], curves: readonly (readonly Point[])[]): Box[] {
-    const samples = curves.map(controls => controls.length < 2
-        ? []
-        : Array.from({ length: CURVE_SAMPLES - 1 }, (_, k) => curveAt(controls, (k + 1) / CURVE_SAMPLES)));
+    const samples = curves.map(curveSamples);
     const order = blocks
         .map((block, index) => ({ block, index }))
         .sort((a, b) => Number(a.block.candidates.length > 1) - Number(b.block.candidates.length > 1) || a.index - b.index);

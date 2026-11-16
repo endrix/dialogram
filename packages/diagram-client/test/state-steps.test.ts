@@ -6,7 +6,7 @@
 import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
 import { WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
-import { StateNodeView } from '../src/automaton-views';
+import { STATE_INITIAL_INSET_PX, StateNodeView } from '../src/automaton-views';
 
 // The GLSP `svg` helper gives `{tag, props, children}` here, snabbdom vnodes in a browser.
 const classesOf = (vnode: any): Record<string, boolean> => vnode?.data?.class ?? vnode?.props?.class ?? {};
@@ -50,5 +50,36 @@ describe('a state that folds a long run', () => {
         expect(withClass(state, 'state-step').map(textOf)).toEqual(['step_0', 'step_1', 'step_2']);
         expect(withClass(state, 'state-steps-more')).toEqual([]);
         expect((state.children ?? []).some((c: any) => c?.sel === 'title' || c?.tag === 'title')).toBe(false);
+    });
+});
+
+describe('the state an automaton starts in', () => {
+    const k = WorkflowDiagramConstants;
+    const view = (): StateNodeView => Object.assign(new StateNodeView(), { isVisible: () => true });
+    const drawn = (args: Record<string, unknown>, size: { width: number; height: number }): any => view().render({
+        id: 's', type: WorkflowDiagramTypes.NODE_STATE, position: { x: 0, y: 0 }, size, args: { [WorkflowDiagramMetadata.ENTITY_NAME]: 'idle', ...args }
+    } as any, { targetKind: 'hidden', renderChildren: () => [] } as any);
+    const attrsOf = (vnode: any): Record<string, number> => vnode?.data?.attrs ?? vnode?.props?.attrs ?? vnode?.attrs;
+
+    it('is drawn with a second outline inside its own, with its corners, and no mark beside it', () => {
+        const state = drawn({ [WorkflowDiagramMetadata.STATE_INITIAL]: true }, { width: 80, height: k.STATE_HEIGHT_PX });
+        const [outline] = withClass(state, 'state-initial-outline');
+        const inset = STATE_INITIAL_INSET_PX;
+        expect(attrsOf(outline)).toEqual({
+            x: inset, y: inset, width: 80 - 2 * inset, height: k.STATE_HEIGHT_PX - 2 * inset,
+            rx: k.STATE_HEIGHT_PX / 2 - inset, ry: k.STATE_HEIGHT_PX / 2 - inset
+        });
+        expect(withClass(state, 'state-initial-mark')).toEqual([]);
+    });
+
+    it('keeps a pill of a state height\u2019s corners when it lists the steps of a run', () => {
+        const state = drawn({ [WorkflowDiagramMetadata.STATE_INITIAL]: true, [WorkflowDiagramMetadata.STATE_STEPS]: [{ action: 'load', count: 1 }] }, { width: 160, height: 90 });
+        const [outline] = withClass(state, 'state-initial-outline');
+        expect(attrsOf(outline).rx).toBe(k.STATE_HEIGHT_PX / 2 - STATE_INITIAL_INSET_PX);
+        expect(attrsOf(outline).height).toBe(90 - 2 * STATE_INITIAL_INSET_PX);
+    });
+
+    it('is the only state with one', () => {
+        expect(withClass(drawn({}, { width: 80, height: k.STATE_HEIGHT_PX }), 'state-initial-outline')).toEqual([]);
     });
 });

@@ -1085,20 +1085,11 @@ body.vscode-high-contrast-light .node-center-image-light {
     user-select: none;
 }
 
-.workflow-node.state-node .state-initial-mark {
-    color: var(--vscode-foreground, #cccccc);
-}
-
-.workflow-node.state-node .state-initial-dot {
-    fill: currentColor;
-    stroke: none;
-}
-
-.workflow-node.state-node .state-initial-arrow {
-    fill: currentColor;
-    stroke: currentColor;
-    stroke-width: 1.5px;
-    stroke-linejoin: round;
+/* The state an automaton starts in: a second outline inside its own, stroked
+   as the state is (the stroke is the node's, selected or hovered too). */
+.workflow-node.state-node .state-initial-outline {
+    fill: none;
+    pointer-events: none;
 }
 
 /* A transition's line is lighter than a wire's: an automaton has many, and
@@ -1109,8 +1100,12 @@ body.vscode-high-contrast-light .node-center-image-light {
     stroke-width: var(--workflow-transition-width, 1.6px);
 }
 
-/* What the pointer finds of a line: wider than what is drawn. */
-.workflow-edge.transition-edge .transition-reach {
+/* What the pointer finds of a line: wider than what is drawn. It must
+   outrank the base `.sprotty-edge.mouseover:not(.selected) path` (2px): a
+   reach that shrank while hovered left a pointer a few pixels from the line
+   off it, which ended the hover, which widened it again under the pointer,
+   and the edge flickered at the screen's rate. */
+.sprotty-edge .workflow-edge.transition-edge path.transition-reach {
     fill: none;
     stroke: transparent;
     stroke-width: 12px;
