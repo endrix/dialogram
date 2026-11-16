@@ -425,7 +425,10 @@ export class CreateNodeOperationHandler extends OperationHandler {
                         value: defaultName
                     }))?.trim() || defaultName);
                 if (entityName === finalTypeName) {
-                    const hides = `An instance named '${entityName}' would hide the '${finalTypeName}' it is made from: choose another name.`;
+                    const base = this.sidecar.createNodeStrings().sidecarDisplayName;
+                    const hides = headless
+                        ? `${base}: an instance named '${entityName}' would hide the '${finalTypeName}' it is made from — pass another args.name.`
+                        : `An instance named '${entityName}' would hide the '${finalTypeName}' it is made from: choose another name.`;
                     void vscode.window.showErrorMessage(hides);
                     if (headless) {
                         this.createNodeOutcomeSink?.recordRejected(hides);
@@ -1208,11 +1211,11 @@ export class CreateNodeOperationHandler extends OperationHandler {
     }
 
     /**
-     * The arguments to make `entityName` with, as source text, for each
-     * parameter of `typeName` that has no default and is not given already
-     * (`given`): asked of the user, or read off an agent's `args.expressions`.
-     * Nothing when there is none to ask (or the producer cannot say); null
-     * when the user cancelled, or an agent left one out.
+     * The arguments to make `entityName` with, as source text: each parameter
+     * of `typeName` that has no default and is not given already (`given`),
+     * asked of the user; an agent's `args.expressions`, all of them, checked
+     * to give those. Nothing when the producer takes none, or there is none
+     * to send; null when the user cancelled, or an agent left one out.
      */
     private async askRequiredArguments(
         sourceUri: string,
@@ -1222,26 +1225,27 @@ export class CreateNodeOperationHandler extends OperationHandler {
         headless: boolean,
         operation: CreateNodeOperation
     ): Promise<Record<string, string> | undefined | null> {
-        const required = (await requiredParametersOf(this.sidecar, sourceUri, typeName))
-            ?.filter(parameter => !given.includes(parameter.name));
-        if (!required || required.length === 0 || !(await this.sidecar.hasFeature(sourceUri, CREATE_NODE_EXPRESSIONS))) {
+        if (!(await this.sidecar.hasFeature(sourceUri, CREATE_NODE_EXPRESSIONS))) {
             return undefined;
         }
+        const required = ((await requiredParametersOf(this.sidecar, sourceUri, typeName)) ?? [])
+            .filter(parameter => !given.includes(parameter.name));
         const expressions: Record<string, string> = {};
         if (headless) {
             const raw = operation.args?.['expressions'];
-            const passed = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
-            const missing = required.filter(parameter => typeof passed[parameter.name] !== 'string' || String(passed[parameter.name]).trim() === '');
+            for (const [name, text] of Object.entries(raw && typeof raw === 'object' ? raw as Record<string, unknown> : {})) {
+                if (typeof text === 'string' && text.trim() !== '') {
+                    expressions[name] = text.trim();
+                }
+            }
+            const missing = required.filter(parameter => expressions[parameter.name] === undefined);
             if (missing.length > 0) {
                 const base = this.sidecar.createNodeStrings().sidecarDisplayName;
                 this.failAgent(`${base}: '${typeName}' has to be given ${missing.map(parameter => `'${parameter.name}'`).join(', ')}: `
                     + `pass args.expressions {${missing.map(parameter => `"${parameter.name}": "<expression>"`).join(', ')}}.`);
                 return null;
             }
-            for (const parameter of required) {
-                expressions[parameter.name] = String(passed[parameter.name]).trim();
-            }
-            return expressions;
+            return Object.keys(expressions).length > 0 ? expressions : undefined;
         }
         for (const [at, parameter] of required.entries()) {
             const answer = (await vscode.window.showInputBox({
@@ -1256,7 +1260,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
             }
             expressions[parameter.name] = answer;
         }
-        return expressions;
+        return Object.keys(expressions).length > 0 ? expressions : undefined;
     }
 
     private uniqueInstanceName(base: string, taken: Set<string>): string {

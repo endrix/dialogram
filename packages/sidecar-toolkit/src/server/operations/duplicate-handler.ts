@@ -3,13 +3,12 @@ import { OperationHandler, ModelState, type Command, type MaybePromise } from '@
 import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
-import { nextFreeName, WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
+import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { buildClipboardPayload } from '@dialogram/diagram-server/clipboard/clipboard';
 import { SidecarInvoker } from './sidecar-invoker';
-import { SidecarSteps } from './sidecar-edit';
-import { CREATE_NODE_EXPRESSIONS } from './node-arguments';
+import { recreateItems } from './recreate-items';
 
 const WORKFLOW_DUPLICATE_OPERATION_KIND = 'dialogram.duplicate' as const;
 
@@ -52,45 +51,8 @@ export class DuplicateOperationHandler extends OperationHandler {
                     args: { workflow: workflowName }
                 });
                 const taken = new Set((takenResp?.diagnostic?.names as string[] | undefined) ?? []);
-                // A duplicated connection joins the copies, not the entities it was copied from.
-                const renamed = new Map<string, string>();
-                const steps = await SidecarSteps.begin(this.sidecar, sourceUri);
-                const withExpressions = await this.sidecar.hasFeature(sourceUri, CREATE_NODE_EXPRESSIONS);
-                for (const item of payload.items) {
-                    if (item.kind === 'entity') {
-                        const name = nextFreeName(item.name, taken);
-                        taken.add(name);
-                        renamed.set(item.name, name);
-                        // Made with the original's arguments, as written in its source:
-                        // a copy made with none may not be one that can be made.
-                        if (!await steps.send({
-                            op: this.sidecar.sidecarOp('createNode'),
-                            args: { workflow: workflowName, type: item.typeName, name, ...(withExpressions && item.expressions ? { expressions: item.expressions } : {}) }
-                        }, `'${name}' was not made.`)) {
-                            return undefined;
-                        }
-                    } else if (item.kind === 'boundaryPort') {
-                        if (!await steps.send({
-                            op: this.sidecar.sidecarOp('createPort'),
-                            args: { workflow: workflowName, direction: item.direction, portName: item.portName, portType: item.portType ?? 'Any' }
-                        }, `Port '${item.portName}' was not made.`)) {
-                            return undefined;
-                        }
-                    } else if (item.kind === 'connection') {
-                        if (!item.outPort || !item.inPort) continue;
-                        const fromPort = item.from
-                            ? { type: 'actor', actor: renamed.get(item.from) ?? item.from, port: item.outPort }
-                            : { type: 'workflow', name: item.outPort };
-                        const toPort = item.to
-                            ? { type: 'actor', actor: renamed.get(item.to) ?? item.to, port: item.inPort }
-                            : { type: 'workflow', name: item.inPort };
-                        if (!await steps.send({
-                            op: this.sidecar.sidecarOp('connect'),
-                            args: { workflow: workflowName, from_port: fromPort, to_port: toPort }
-                        }, 'A connection was not made.')) {
-                            return undefined;
-                        }
-                    }
+                if (!await recreateItems(this.sidecar, sourceUri, workflowName, payload, taken)) {
+                    return undefined;
                 }
                 const afterText = await readAuthoritativeSourceText(vscodeUri);
                 (command as any)._sourceBeforeText = beforeText;

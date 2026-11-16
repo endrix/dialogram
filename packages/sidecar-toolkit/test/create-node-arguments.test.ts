@@ -161,6 +161,10 @@ describe('a node of a type with parameters that have no default', () => {
         expect(given.asked).toEqual([]);
         expect(given.created).toMatchObject({ name: 'text', expressions: { text: '"x"', path: 'P' } });
 
+        // One with a default is passed on too.
+        const more = await create({ type: 'Text', args: { headless: true, expressions: { text: '"x"', path: 'P', prefix: '">"' } } });
+        expect(more.created).toMatchObject({ expressions: { text: '"x"', path: 'P', prefix: '">"' } });
+
         const short = await create({ type: 'Text', args: { headless: true, expressions: { text: '"x"' } } });
         expect(short.created).toBeUndefined();
         expect(short.said).toEqual([
@@ -190,5 +194,11 @@ describe('an instance', () => {
         });
         expect(created).toBeUndefined();
         expect(said).toEqual(["An instance named 'av1_refdec' would hide the 'av1_refdec' it is made from: choose another name."]);
+    });
+
+    it('named so by an agent is refused with what to pass instead', async () => {
+        const { created, said } = await create({ type: 'av1_refdec', parameters: [], args: { headless: true, name: 'av1_refdec' } });
+        expect(created).toBeUndefined();
+        expect(said).toEqual(["Workflow sidecar: an instance named 'av1_refdec' would hide the 'av1_refdec' it is made from — pass another args.name."]);
     });
 });
