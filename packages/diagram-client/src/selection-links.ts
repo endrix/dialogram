@@ -9,7 +9,10 @@
  * diagram, for the selection:
  *
  * - select a node, and every link it is an end of appears, with the node at
- *   its other end outlined;
+ *   its other end outlined; a row of a list at the other end has its
+ *   background tinted instead (`isLinkEnd`, which its view asks), since the
+ *   outlines of rows stacked on each other would cross, and the link meets
+ *   the row's own edge;
  * - the other nodes that draw the same thing (`SAME_AS`: an action that has a
  *   box in several states) are outlined too, differently.
  *
@@ -384,15 +387,45 @@ export function linksOfSelection(root: LinkElement, selected?: ReadonlySet<strin
     return out;
 }
 
+/**
+ * What the selection brings up, worked out once a render by the root's view
+ * (`noteSelection`), before it draws the nodes: the view of a node asks
+ * whether it is at a link's end (`isLinkEnd`), and the drawing over the
+ * diagram is made from the same answer. On screen only.
+ */
+const broughtUp = new WeakMap<object, LinksOfSelection>();
+
+/** Work out what the selection brings up on `root`, for the render about to draw it as `targetKind`. */
+export function noteSelection(root: LinkElement | undefined, targetKind: string | undefined): void {
+    if (!root) {
+        return;
+    }
+    if (targetKind === 'main') {
+        broughtUp.set(root, linksOfSelection(root));
+    } else {
+        broughtUp.delete(root);
+    }
+}
+
+/** Whether `element` is at the other end of a link of the selection, as its root's view last worked it out. */
+export function isLinkEnd(element: { id: string; root?: object }): boolean {
+    const root = element.root;
+    return !!root && broughtUp.get(root)?.ends.has(element.id) === true;
+}
+
 /** The drawing for the selection, and how many links are in it. */
 export interface SelectionOverlay {
     vnode: VNode;
     links: number;
 }
 
-/** The drawing for the selection: the links, and the outlines of what they lead to; nothing when there is none. */
-export function selectionOverlay(root: LinkElement): SelectionOverlay | undefined {
-    const { links, ends, same } = linksOfSelection(root);
+/**
+ * The drawing for the selection: the links, and the outlines of what they
+ * lead to (not of a row of a list, which tints itself); nothing when there
+ * is none. `found` is what the selection brings up, when it is known.
+ */
+export function selectionOverlay(root: LinkElement, found: LinksOfSelection = linksOfSelection(root)): SelectionOverlay | undefined {
+    const { links, ends, same } = found;
     if (links.length === 0 && same.size === 0) {
         return undefined;
     }
@@ -440,7 +473,8 @@ export function selectionOverlay(root: LinkElement): SelectionOverlay | undefine
     const labelAt = placeLabels(drawn);
     const vnode = svg('g', { class: { 'selection-links': true } },
         ...[...same].map(id => outline(id, 'selection-link-same')).filter((node): node is VNode => !!node),
-        ...[...ends].map(id => outline(id, 'selection-link-end')).filter((node): node is VNode => !!node),
+        ...[...ends].filter(id => !byId.get(id)?.args?.[WorkflowDiagramMetadata.LIST_ROW])
+            .map(id => outline(id, 'selection-link-end')).filter((node): node is VNode => !!node),
         ...drawn.map(each => svg('g', {
             class: { 'selection-link': true, ...(each.link.role ? { [`selection-link-${each.link.role}`]: true } : {}) }
         },
@@ -475,7 +509,7 @@ export function withSelectionLinks(vnode: VNode | undefined, root: LinkElement |
     if (!vnode || !root || targetKind !== 'main') {
         return vnode;
     }
-    const overlay = selectionOverlay(root);
+    const overlay = selectionOverlay(root, broughtUp.get(root));
     if (!overlay) {
         return vnode;
     }

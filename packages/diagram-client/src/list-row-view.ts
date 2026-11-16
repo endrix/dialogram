@@ -12,6 +12,7 @@
 import type { VNode } from 'snabbdom';
 import { svg, type RenderingContext } from '@eclipse-glsp/client';
 import { WorkflowDiagramConstants, WorkflowDiagramMetadata, type ListRow } from '@dialogram/shared';
+import { isLinkEnd } from './selection-links';
 
 /** What a node's row shows, when it is a member of a list. */
 export function listRowOf(node: { args?: Record<string, unknown> }): ListRow | undefined {
@@ -21,7 +22,7 @@ export function listRowOf(node: { args?: Record<string, unknown> }): ListRow | u
 
 /** The row of `node`, `width` by `height`, with the classes its kind and family give it. */
 export function renderListRow(
-    node: { args?: Record<string, unknown>; position: { x: number; y: number }; selected?: boolean; hoverFeedback?: boolean; children?: readonly unknown[] },
+    node: { id?: string; root?: object; args?: Record<string, unknown>; position: { x: number; y: number }; selected?: boolean; hoverFeedback?: boolean; children?: readonly unknown[] },
     row: ListRow,
     size: { width: number; height: number },
     classes: Record<string, boolean>,
@@ -39,6 +40,8 @@ export function renderListRow(
             'workflow-node': true,
             ...classes,
             'list-row': true,
+            // At the end of a link of the selection: tinted, not outlined.
+            'list-row-linked': node.id !== undefined && isLinkEnd({ id: node.id, root: node.root }),
             selected: !!node.selected,
             hover: !!node.hoverFeedback
         },

@@ -4,7 +4,9 @@
  *
  * A member of a list is a row of a table: a body, the family's mark down its
  * left edge, its name and its lines at the columns the server gave it. A link
- * leaves a row by a side, never along the table. A transition's label ends
+ * leaves a row by a side, never along the table, and a row at the end of a
+ * link of the selection has its background tinted, where another node is
+ * outlined. A transition's label ends
  * in the tokens its action takes and gives, after its condition's mark.
  */
 import 'reflect-metadata';
@@ -12,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import { WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { listRowOf, renderListRow } from '../src/list-row-view';
 import { nodeFamilyCss } from '../src/palette-icons';
-import { renderSelectionLinks, type LinkElement } from '../src/selection-links';
+import { isLinkEnd, noteSelection, renderSelectionLinks, type LinkElement } from '../src/selection-links';
 import { TransitionEdgeView } from '../src/automaton-views';
 
 // The GLSP `svg` helper gives `{tag, props, children}` here, snabbdom vnodes in a browser.
@@ -96,6 +98,58 @@ describe('a row of a list', () => {
         expect(start.x).toBe(208);
         expect(start.y).toBeGreaterThan(32);
         expect(start.y).toBeLessThan(52);
+    });
+});
+
+describe('a row at the end of a link of the selection', () => {
+    /** A list of two rows, `ptr` and `cnt`; the action `act`, selected, reads `ptr` and writes the port `out`. */
+    const model = (): any => {
+        const row = (id: string, y: number): any => ({
+            id, type: WorkflowDiagramTypes.NODE_ACTOR, position: { x: 8, y }, size: { width: 200, height: 20 },
+            args: { [WorkflowDiagramMetadata.LIST_ROW]: ROW, [WorkflowDiagramMetadata.ENTITY_NAME]: id }
+        });
+        const frame = {
+            id: 'frame', type: WorkflowDiagramTypes.NODE_GROUP, position: { x: 0, y: 0 }, size: { width: 216, height: 80 },
+            children: [row('ptr', 32), row('cnt', 52)]
+        };
+        const node = (id: string, x: number, selected = false): any => ({
+            id, type: WorkflowDiagramTypes.NODE_ACTOR, position: { x, y: 0 }, size: { width: 100, height: 40 }, selected
+        });
+        const root: any = {
+            id: 'root', type: WorkflowDiagramTypes.GRAPH,
+            args: { [WorkflowDiagramMetadata.SELECTION_LINKS]: [{ id: 'r', from: 'ptr', to: 'act' }, { id: 'w', from: 'act', to: 'out' }] },
+            children: [frame, node('act', 400, true), node('out', 700)]
+        };
+        const adopt = (parent: any): void => (parent.children ?? []).forEach((child: any) => { child.parent = parent; child.root = root; adopt(child); });
+        adopt(root);
+        return root;
+    };
+    const drawRow = (root: any, id: string): any => {
+        const row = root.children[0].children.find((each: any) => each.id === id);
+        return renderListRow(row, ROW, { width: 200, height: 20 }, {}, { renderChildren: () => [] } as any);
+    };
+
+    it('has its background tinted, and is not outlined; another node at a link’s end is', () => {
+        const root = model();
+        noteSelection(root, 'main');
+        expect(classesOf(drawRow(root, 'ptr'))['list-row-linked']).toBe(true);
+        expect(classesOf(drawRow(root, 'cnt'))['list-row-linked']).toBe(false);
+        const drawn = renderSelectionLinks(root);
+        // The port is outlined; the row is not, and its link still meets it, at its side.
+        expect(withClass(drawn, 'selection-link-end')).toHaveLength(1);
+        expect(withClass(drawn, 'selection-link-line')).toHaveLength(2);
+    });
+
+    it('is plain again once nothing is selected, and in the hidden render', () => {
+        const root = model();
+        noteSelection(root, 'main');
+        noteSelection(root, 'hidden');
+        expect(isLinkEnd({ id: 'ptr', root })).toBe(false);
+        root.children[1].selected = false;
+        noteSelection(root, 'main');
+        expect(classesOf(drawRow(root, 'ptr'))['list-row-linked']).toBe(false);
+        // A row of a model whose view has not worked anything out is plain.
+        expect(isLinkEnd({ id: 'ptr' })).toBe(false);
     });
 });
 

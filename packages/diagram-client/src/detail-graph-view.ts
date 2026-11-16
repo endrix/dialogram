@@ -8,12 +8,14 @@ import { injectable } from 'inversify';
 import { GGraphView } from '@eclipse-glsp/client';
 import type { RenderingContext } from '@eclipse-glsp/sprotty';
 import type { VNode } from 'snabbdom';
-import { withSelectionLinks } from './selection-links';
+import { noteSelection, withSelectionLinks } from './selection-links';
 import { markDetail } from './zoom-detail';
 
 @injectable()
 export class DetailGraphView extends GGraphView {
     override render(model: any, context: RenderingContext): VNode {
+        // Before the nodes are drawn: a row at a link's end tints itself.
+        noteSelection(model, context?.targetKind);
         const drawn = markDetail(super.render(model, context) as VNode, model?.zoom, context?.targetKind);
         return withSelectionLinks(drawn, model, context?.targetKind) as VNode;
     }
