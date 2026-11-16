@@ -49,6 +49,7 @@ import { NODE_OPEN_TOGGLE_RADIUS_PX, nodeOpenToggle } from './node-open-toggle';
 import { nodeLinesHeight, nodeLinesOf, renderNodeLines } from './node-lines';
 import { listRowOf, renderListRow } from './list-row-view';
 import { GROUP_INITIAL_MARK_ROOM_PX, groupInitialMark, isGroupInitial } from './group-initial-mark';
+import { isDrawnBackwards } from './feedback-direction';
 import { WorkflowDiagramConstants, estimatePortLabelSize } from '@dialogram/shared';
 
 /** Walk to the model root; the drag-active window is tracked per root. */
@@ -1610,7 +1611,10 @@ export class WorkflowEdgeView extends PolylineEdgeView {
         return svg('g', {
             class: {
                 'sprotty-edge': true,
-                'mouseover': (edge as any).hoverFeedback
+                'mouseover': (edge as any).hoverFeedback,
+                // On a loop and drawn against the flow (feedback-direction.ts); the
+                // server's class, on a declared edge or a self-loop, is the model's.
+                ...(isDrawnBackwards(rootOfEdge(edge), edge as any) ? { [WorkflowDiagramCss.EDGE_FEEDBACK]: true } : {})
             }
         },
             this.renderLine(edge as any, trimmedSegments as any, context),

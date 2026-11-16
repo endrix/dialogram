@@ -518,6 +518,20 @@ it no longer has.
 
 ### Changed
 
+- **A feedback loop is highlighted where the drawing runs back.** The
+  server put the platform's highlight on one edge per loop, the one that
+  pointed backwards in an order of its own (Eades–Lin–Smyth), worked out
+  apart from the layout's cycle breaking: in a CPU's core, of `cpu → mul`
+  and `mul → cpu` it marked `mul → cpu`, drawn left to right, while the
+  layout drew `cpu → mul` back. The server now marks every connection on a
+  loop (`ON_LOOP`, the two nodes in one strongly connected part, with its
+  ends in `LOOP_ENDS`), and the client highlights one that runs against the
+  flow, its target left of its source (`feedback-direction.ts`): after a
+  layout, exactly the edges the layout reversed; after a drag, the wires
+  that run back. A piece cut at a group's frame goes by the whole
+  connection. A loop on one node, and a connection the producer declares
+  (`meta.feedback`), are highlighted by the server whichever way they are
+  drawn, as before. `findFeedbackEdges` is gone for `findLoopEdges`.
 - **The state an automaton starts in has a second outline, not a dot and
   an arrow.** The mark came from where the state had the most room, and in
   a crowded automaton that was among the lines and labels. The outline is

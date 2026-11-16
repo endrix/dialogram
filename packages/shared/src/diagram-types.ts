@@ -130,8 +130,10 @@ export namespace WorkflowDiagramCss {
     
     /**
      * A connection that closes a feedback loop — it feeds a stage that runs
-     * before it. Always applied by the server; whether it is drawn differently
-     * is the reader's choice, made in the webview.
+     * before it. The server applies it to a connection that is feedback
+     * whatever way it is drawn (`IS_FEEDBACK`), the client to one on a loop
+     * that is drawn against the flow (`ON_LOOP`); whether it is drawn
+     * differently is the reader's choice, made in the webview.
      */
     export const EDGE_FEEDBACK = 'workflow-edge-feedback';
     /** A bundle of ports drawn as one port, a bus (see `PORT_BUS_GROUP`). */
@@ -197,8 +199,23 @@ export namespace WorkflowDiagramMetadata {
     export const IS_FINISHED = 'cal:isFinished';
     /** Marks a node as the entity that caused a run failure. */
     export const IS_ERRORED = 'cal:isErrored';
-    /** Marks a connection as the one that closes a feedback loop. */
+    /**
+     * Marks a connection as feedback whatever way it is drawn: one the
+     * producer declared, or a loop on one node.
+     */
     export const IS_FEEDBACK = 'cal:isFeedback';
+    /**
+     * On a connection on a loop of the network (its two ends' nodes in one
+     * strongly connected part): the client draws it as feedback where it runs
+     * against the flow, as the layout draws the edges it reverses.
+     */
+    export const ON_LOOP = 'wf:onLoop';
+    /**
+     * On a connection on a loop: the ids of its two ends. Its pieces at a
+     * group's frame keep them, so that each piece is drawn by which way the
+     * whole connection runs.
+     */
+    export const LOOP_ENDS = 'wf:loopEnds';
     /**
      * Set when the PRODUCER named this connection as the loop-closing one,
      * rather than the platform deriving it from the graph's shape.
