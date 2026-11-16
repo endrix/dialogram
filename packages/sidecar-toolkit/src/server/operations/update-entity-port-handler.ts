@@ -2,8 +2,8 @@ import { Action } from '@eclipse-glsp/protocol';
 import { Command, ModelState, OperationHandler } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
-import { readAuthoritativeSourceText } from './authoritative-source-text';
-import { ReversibleMultiWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-multi-workspace-edit-command';
+import { entityPortWrite } from './entity-port-write';
+import { producerWriteCommand } from './producer-write';
 import { SidecarInvoker } from './sidecar-invoker';
 
 export namespace UpdateEntityPortOperation {
@@ -43,44 +43,43 @@ export class UpdateEntityPortOperationHandler extends OperationHandler {
         return this.createPythonCommand(operation as UpdateEntityPortOperation.Operation, sourceUri);
     }
 
+    /**
+     * Rename or retype the port where its entity is declared
+     * (entity-port-write.ts): a rename has the connections here follow it.
+     */
     private createPythonCommand(operation: UpdateEntityPortOperation.Operation, sourceUri: string): Command | undefined {
-        const command = new ReversibleMultiWorkspaceEditCommand({
+        const renames = operation.field === 'name';
+        return producerWriteCommand({
             label: 'Update Port' + this.sidecar.undoLabelSuffix(),
-            computeEdits: async () => {
+            sidecar: this.sidecar,
+            failed: renames ? `Port '${operation.portName}' was not renamed.` : `Port '${operation.portName}' kept its type.`,
+            request: async () => {
                 const entityName = String(operation.entityType ?? '').trim();
                 if (!entityName) {
                     return undefined;
                 }
-
-                const beforeText = (await vscode.workspace.openTextDocument(vscode.Uri.parse(sourceUri))).getText();
-
-                const opName = operation.field === 'name'
-                    ? this.sidecar.sidecarOp('renamePort')
-                    : this.sidecar.sidecarOp('updatePortType');
-
-                const ok = await this.sendSidecarOp(sourceUri, {
-                    op: opName,
-                    args: {
-                        entity: entityName,
-                        portDirection: operation.portDirection,
-                        portName: operation.portName,
-                        newValue: operation.newValue
-                    }
-                });
-                if (!ok) {
+                const write = await entityPortWrite(
+                    this.sidecar,
+                    this.modelState,
+                    sourceUri,
+                    { entityType: entityName, entityDocumentUri: operation.entityDocumentUri, elementId: operation.portElementId },
+                    {
+                        op: this.sidecar.sidecarOp(renames ? 'renamePort' : 'updatePortType'),
+                        args: {
+                            entity: entityName,
+                            portDirection: operation.portDirection,
+                            portName: operation.portName,
+                            newValue: operation.newValue
+                        }
+                    },
+                    renames
+                );
+                if ('refused' in write) {
+                    void vscode.window.showWarningMessage(write.refused);
                     return undefined;
                 }
-
-                const afterText = await readAuthoritativeSourceText(vscode.Uri.parse(sourceUri));
-                (command as any)._sourceBeforeText = beforeText;
-                (command as any)._sourceAfterText = afterText;
-                return [{ uri: vscode.Uri.parse(sourceUri), edits: [] }];
-            },
+                return write;
+            }
         });
-        return command;
-    }
-
-    private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {
-        return this.sidecar.sendSidecarOp(sourceUri, payload);
     }
 }

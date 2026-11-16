@@ -29,6 +29,7 @@ import { lastPerKey } from './contributions';
 import { NodeSectionContribution, type NodeInfoRow, type NodeSectionContext } from './node-section';
 import { createPropertySection, shortenPath } from './property-section';
 import { isReadOnlyView } from './read-only-view';
+import { elementPanelSignature, networkPanelSignature } from './panel-signature';
 
 /**
  * IGModelRootListener interface — fire on every model root change
@@ -36,6 +37,19 @@ import { isReadOnlyView } from './read-only-view';
  */
 export interface IGModelRootListener {
     modelRootChanged(root: Readonly<GModelRoot>): void;
+}
+
+/**
+ * The file a node's entity is defined in, when the producer said it is
+ * (`REFERENCED_IS_DEFINITION`); a `REFERENCED_URI` alone is only where the
+ * node is written (a module that re-exports the class, say).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function definitionUriOf(node: any): string | undefined {
+    const uri = node?.args?.[WorkflowDiagramMetadata.REFERENCED_URI];
+    return node?.args?.[WorkflowDiagramMetadata.REFERENCED_IS_DEFINITION] === true && typeof uri === 'string' && uri.trim() !== ''
+        ? uri
+        : undefined;
 }
 
 @injectable()
@@ -65,6 +79,49 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     protected initialize(): void {
         this.chrome.initialize();
         this.initializeLinks();
+        this.initializeEditTracking();
+    }
+
+    /** A model skipped while something in the panel was typed into (`redrawIfChanged`). */
+    private redrawPending = false;
+    /** The last key typed in the panel was Enter: what was typed is committed, not being typed. */
+    private panelCommitted = false;
+
+    /**
+     * What the panel's own fields are doing: a value committed with Enter
+     * (the field keeps the focus) lets the model it makes be drawn; a model
+     * skipped while a field was typed into is drawn when the focus leaves
+     * the panel.
+     */
+    protected initializeEditTracking(): void {
+        document.addEventListener('keydown', event => {
+            if (!(event.target as Element | null)?.closest?.('#property-panel')) {
+                return;
+            }
+            if (event.key === 'Enter') {
+                this.panelCommitted = true;
+            } else if (event.key.length === 1 || event.key === 'Backspace' || event.key === 'Delete') {
+                this.panelCommitted = false;
+            }
+        }, true);
+        // A field committed otherwise than with Enter (its value changed and
+        // the focus kept): the model it makes is drawn.
+        document.addEventListener('change', event => {
+            if ((event.target as Element | null)?.closest?.('#property-panel')) {
+                this.panelCommitted = true;
+            }
+        }, true);
+        document.addEventListener('focusout', event => {
+            if (!this.redrawPending || !(event.target as Element | null)?.closest?.('#property-panel')) {
+                return;
+            }
+            // The focus has not landed yet: look once it has.
+            setTimeout(() => {
+                if (this.redrawPending && this.lastRoot && !this.typingInPanel()) {
+                    this.redrawIfChanged(this.lastRoot);
+                }
+            }, 0);
+        }, true);
     }
 
     /** After injection: the node sections' one-time setup. */
@@ -167,6 +224,13 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     private lastRenderedNodeId: string | undefined;
 
     /**
+     * What the panel shows: the element (none: the network), the node to
+     * show if that element is gone (a port's), and the signature of what was
+     * drawn, to draw it again when an edit changes it (`panel-signature.ts`).
+     */
+    private shown: { id?: string; fallbackId?: string; signature: string } | undefined;
+
+    /**
      * One editor per annotation name, in the order the names were first bound.
      * A later binding for a name replaces the earlier one, so a module that
      * loads later can replace an editor an earlier one bound.
@@ -191,6 +255,9 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     // streams (`NodeSectionContribution.modelChanged`).
     modelRootChanged(root: Readonly<GModelRoot>): void {
         this.lastRoot = root;
+        if (this.redrawIfChanged(root)) {
+            return;
+        }
         if (!this.lastRenderedNodeId) {
             return;
         }
@@ -211,6 +278,59 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         for (const contribution of this.nodeSections()) {
             contribution.modelChanged?.(element, content);
         }
+    }
+
+    /**
+     * Draw the panel again when what it shows changed in the new model (an
+     * edit: a port renamed, retyped, added or taken out, a node renamed);
+     * true when it did. What it showed and is gone (renamed: its id is
+     * another) gives way to its node, for a port, or to the network. Not
+     * while something in the panel is being typed into: the next change
+     * draws it.
+     */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    protected redrawIfChanged(root: any): boolean {
+        const shown = this.shown;
+        const content = document.getElementById('property-content');
+        if (!shown || !content) {
+            return false;
+        }
+        if (this.typingInPanel()) {
+            this.redrawPending = true;
+            return false;
+        }
+        this.redrawPending = false;
+        let element = shown.id === undefined ? undefined : root?.index?.getById?.(shown.id);
+        if (shown.id !== undefined && !element && shown.fallbackId !== undefined) {
+            element = root?.index?.getById?.(shown.fallbackId);
+        }
+        const now = element ? elementPanelSignature(element, root) : shown.id === undefined ? networkPanelSignature(root) : undefined;
+        if (now === shown.signature) {
+            return false;
+        }
+        const scrolled = content.scrollTop;
+        this.panelCommitted = false;
+        if (element) {
+            if (this.chrome.lastSelectedElement?.id === element.id) {
+                this.chrome.lastSelectedElement = element;
+            }
+            this.updateContent(element, { requestAgentDiscovery: false });
+        } else {
+            this.showNoSelection();
+        }
+        content.scrollTop = scrolled;
+        return true;
+    }
+
+    protected typingInPanel(): boolean {
+        const active = document.activeElement as HTMLElement | null;
+        // Text being typed: not a choice made in a list or a box ticked,
+        // which commit as they are made and keep the focus.
+        return !this.panelCommitted
+            && !!active?.closest?.('#property-panel')
+            && (active.isContentEditable || !!active.matches?.(
+                'textarea, input:not([type]), input[type="text"], input[type="search"], input[type="number"], input[type="email"], input[type="url"], input[type="tel"], input[type="password"]'
+            ));
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -268,6 +388,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             content.innerHTML = '';
 
             const root = this.lastRoot;
+            this.shown = root ? { signature: networkPanelSignature(root) } : undefined;
             if (!root) {
                 content.innerHTML =
                     '<div class="no-selection">' +
@@ -289,6 +410,11 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         const requestAgentDiscovery = options.requestAgentDiscovery !== false;
 
         content.innerHTML = '';
+        this.shown = {
+            id: element.id,
+            fallbackId: element.type?.startsWith('port') ? element.parent?.id : undefined,
+            signature: elementPanelSignature(element as any, this.lastRoot)
+        };
 
         // Track the rendered node for the sections' in-place updates, and let the
         // sections prepare a selected node (not a selected port's) before it is drawn.
@@ -478,7 +604,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     ): Promise<void> {
         const portName = (portElement?.args?.[WorkflowDiagramMetadata.PORT_NAME] as string | undefined) ?? '';
         const portElementId = String(portElement?.id ?? '');
-        const entityDocumentUri = (_node?.args?.[WorkflowDiagramMetadata.REFERENCED_URI] as string | undefined) ?? undefined;
+        const entityDocumentUri = definitionUriOf(_node);
 
         if (!entityType || !portName || !portElementId) {
             void VscodeUi.instance.errorMessage('Port metadata missing; cannot edit.');
@@ -1723,6 +1849,8 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             kind,
             isOperation: true,
             elementId: node.id,
+            // Where the entity is declared: its ports are written there.
+            entityDocumentUri: definitionUriOf(node),
             entityType,
             portDirection: direction,
             portName,
@@ -1730,7 +1858,8 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         } as any);
     }
 
-    protected async promptAndDeleteEntityPort(entityType: string, direction: 'input' | 'output', portName: string): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    protected async promptAndDeleteEntityPort(node: any, entityType: string, direction: 'input' | 'output', portName: string): Promise<void> {
         const kind = operationKind('deleteEntityPort');
         if (!kind) {
             return;
@@ -1738,6 +1867,8 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         await this.actionDispatcher.dispatch({
             kind,
             isOperation: true,
+            elementId: node?.id,
+            entityDocumentUri: definitionUriOf(node),
             entityType,
             portDirection: direction,
             portName
@@ -2103,7 +2234,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                                   <button
                                       class="pp-icon-btn pp-prow-del danger"
                                       title="Remove port"
-                                      @click=${() => void this.promptAndDeleteEntityPort(entityType, direction, name)}
+                                      @click=${() => void this.promptAndDeleteEntityPort(node, entityType, direction, name)}
                                   >
                                       <span class="codicon codicon-trash"></span>
                                   </button>

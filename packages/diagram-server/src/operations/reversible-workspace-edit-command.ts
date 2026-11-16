@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import * as vscode from 'vscode';
-import type { CommandThatMayChangeNothing } from '../server/command-stack';
+import type { CommandThatMayChangeNothing, CommandThatMayRefuse } from '../server/command-stack';
 
 /**
  * The edits a command applies; nothing (or no edit) when there is nothing to
@@ -10,12 +10,15 @@ import type { CommandThatMayChangeNothing } from '../server/command-stack';
  */
 export type ComputeTextEdits = () => Promise<vscode.TextEdit[] | undefined>;
 
+/** When an `afterApply` hook runs: after the edit is made, undone, or redone. */
+export type ApplyPhase = 'execute' | 'undo' | 'redo';
+
 export interface ReversibleWorkspaceEditCommandOptions {
     label: string;
     uri: vscode.Uri;
     computeEdits: ComputeTextEdits;
-    /** Optional hook invoked after a successful execute/undo/redo. */
-    afterApply?: () => void | Promise<void>;
+    /** Optional hook invoked after a successful execute/undo/redo, told which. */
+    afterApply?: (phase: ApplyPhase) => void | Promise<void>;
 }
 
 function fullDocumentRange(doc: vscode.TextDocument): vscode.Range {
@@ -36,10 +39,11 @@ function sortEditsDescending(edits: vscode.TextEdit[]): vscode.TextEdit[] {
     });
 }
 
-export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothing {
+export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothing, CommandThatMayRefuse {
     private beforeText: string | undefined;
     private afterText: string | undefined;
     private unchanged = false;
+    private refusedLast = false;
 
     constructor(private readonly options: ReversibleWorkspaceEditCommandOptions) {}
 
@@ -72,8 +76,14 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
 
         const afterDoc = await vscode.workspace.openTextDocument(this.options.uri);
         this.afterText = afterDoc.getText();
-        const overrideBefore = (this as any)._sourceBeforeText as string | undefined;
         const overrideAfter = (this as any)._sourceAfterText as string | undefined;
+        // What undo puts back is the file as it was on disk before the
+        // write, read here before the handler ran; the handler's own text
+        // before (`_sourceBeforeText`) only where the file cannot be read
+        // here. That is often the editor's, which after an earlier write
+        // made out of band may not have caught up, and undo would then take
+        // that earlier edit back too.
+        const overrideBefore = fileBefore ?? (this as any)._sourceBeforeText as string | undefined;
         if (overrideBefore !== undefined && overrideAfter !== undefined) {
             this.beforeText = overrideBefore;
             this.afterText = overrideAfter;
@@ -83,13 +93,14 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
             // before is read here, on disk, where the handler's text after
             // is read: the handler's own may be the editor's, which lags
             // what was last written out of band.
-            this.unchanged = (fileBefore ?? overrideBefore) === overrideAfter;
+            this.unchanged = overrideBefore === overrideAfter;
         }
 
-        await this.options.afterApply?.();
+        await this.options.afterApply?.('execute');
     }
 
     async undo(): Promise<void> {
+        this.refusedLast = false;
         if (this.beforeText === undefined || this.afterText === undefined) {
             return;
         }
@@ -97,6 +108,7 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
         const doc = await vscode.workspace.openTextDocument(this.options.uri);
         const currentText = doc.getText();
         if (currentText !== this.afterText) {
+            this.refusedLast = true;
             void vscode.window.showWarningMessage(
                 `Cannot undo '${this.options.label}' because the document changed outside the diagram.`
             );
@@ -106,13 +118,15 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
         const workspaceEdit = new vscode.WorkspaceEdit();
         workspaceEdit.set(this.options.uri, [new vscode.TextEdit(fullDocumentRange(doc), this.beforeText)]);
         const applied = await vscode.workspace.applyEdit(workspaceEdit);
+        this.refusedLast = !applied;
         if (applied) {
             await this.persist(doc);
-            await this.options.afterApply?.();
+            await this.options.afterApply?.('undo');
         }
     }
 
     async redo(): Promise<void> {
+        this.refusedLast = false;
         if (this.beforeText === undefined || this.afterText === undefined) {
             return;
         }
@@ -120,6 +134,7 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
         const doc = await vscode.workspace.openTextDocument(this.options.uri);
         const currentText = doc.getText();
         if (currentText !== this.beforeText) {
+            this.refusedLast = true;
             void vscode.window.showWarningMessage(
                 `Cannot redo '${this.options.label}' because the document changed outside the diagram.`
             );
@@ -129,9 +144,10 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
         const workspaceEdit = new vscode.WorkspaceEdit();
         workspaceEdit.set(this.options.uri, [new vscode.TextEdit(fullDocumentRange(doc), this.afterText)]);
         const applied = await vscode.workspace.applyEdit(workspaceEdit);
+        this.refusedLast = !applied;
         if (applied) {
             await this.persist(doc);
-            await this.options.afterApply?.();
+            await this.options.afterApply?.('redo');
         }
     }
 
@@ -162,6 +178,11 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
      */
     changedNothing(): boolean {
         return this.unchanged;
+    }
+
+    /** Whether the last undo or redo did nothing: the document had changed outside the diagram (it said so), or VS Code refused the edit. */
+    refused(): boolean {
+        return this.refusedLast;
     }
 }
 

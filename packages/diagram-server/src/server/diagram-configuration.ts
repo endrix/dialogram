@@ -208,11 +208,17 @@ export class WorkflowDiagramConfiguration implements DiagramConfiguration {
                 repositionable: true,
                 deletable: true,
                 routable: true,
+                // A network's own port is drawn as a node, its port hidden
+                // inside it (diagram-client.css): the node is where a wire
+                // from a network input starts and one to a network output
+                // ends. The edge handler takes the node for its port.
                 sourceElementTypeIds: [
-                    WorkflowDiagramTypes.PORT_OUTPUT
+                    WorkflowDiagramTypes.PORT_OUTPUT,
+                    WorkflowDiagramTypes.NODE_BOUNDARY_INPUT
                 ],
                 targetElementTypeIds: [
-                    WorkflowDiagramTypes.PORT_INPUT
+                    WorkflowDiagramTypes.PORT_INPUT,
+                    WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT
                 ]
             },
             // A transition of an automaton: from a state to a state, with no

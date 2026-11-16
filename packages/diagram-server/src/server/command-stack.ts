@@ -28,6 +28,36 @@ export function changedNothing(command: Command): boolean {
     return false;
 }
 
+/**
+ * A command that can say, once undone or redone, that it did nothing: the
+ * document had changed outside the diagram, which it said, or the edit was
+ * refused. It is then still the edit to undo (or redo).
+ */
+export interface CommandThatMayRefuse extends Command {
+    /** After `undo` or `redo`: true when it did nothing. */
+    refused(): boolean;
+}
+
+/**
+ * Whether `command`, undone or redone, did nothing. GLSP's compound did
+ * nothing when every part that wrote did nothing; one that cannot say did
+ * what it was asked.
+ */
+export function refused(command: Command | undefined): boolean {
+    if (!command) {
+        return false;
+    }
+    const candidate = command as Partial<CommandThatMayRefuse>;
+    if (typeof candidate.refused === 'function') {
+        return candidate.refused() === true;
+    }
+    if (command instanceof CompoundCommand) {
+        const wrote = partsOf(command).filter(part => !changedNothing(part));
+        return wrote.length > 0 && wrote.every(refused);
+    }
+    return false;
+}
+
 /** The parts of a compound command, in order (GLSP keeps them protected). */
 function partsOf(command: CompoundCommand): Command[] {
     return (command as unknown as { commands: Command[] }).commands;
@@ -42,9 +72,54 @@ function partsOf(command: CompoundCommand): Command[] {
  * whole would then keep Undo from the edits below it. Undoing a part that
  * changed nothing does nothing.
  */
-export class CompoundCommandThatMayChangeNothing extends CompoundCommand implements CommandThatMayChangeNothing {
+export class CompoundCommandThatMayChangeNothing extends CompoundCommand implements CommandThatMayChangeNothing, CommandThatMayRefuse {
+    private refusedLast = false;
+
     changedNothing(): boolean {
         return this.commands.every(changedNothing);
+    }
+
+    /** Whether the last undo or redo did nothing: a part refused, and the parts done before it were put back. */
+    refused(): boolean {
+        return this.refusedLast;
+    }
+
+    /**
+     * Its parts undone last first, as GLSP's; but a part refused (its file
+     * changed outside the diagram) stops the undo, and the parts already
+     * undone are redone: the edit is undone whole or not at all, and the
+     * stack keeps it as the edit to undo.
+     */
+    override async undo(): Promise<void> {
+        this.refusedLast = await this.applyAll([...this.commands].reverse(), part => part.undo(), part => part.redo());
+    }
+
+    /** As `undo`, first part first. */
+    override async redo(): Promise<void> {
+        this.refusedLast = await this.applyAll(this.commands, part => part.redo(), part => part.undo());
+    }
+
+    /** `apply` to each of `parts` in turn; on one refused, `back` to those done, last done first. True when one refused. */
+    private async applyAll(parts: Command[], apply: (part: Command) => unknown, back: (part: Command) => unknown): Promise<boolean> {
+        const done: Command[] = [];
+        try {
+            for (const part of parts) {
+                await apply(part);
+                if (refused(part)) {
+                    for (const each of done) {
+                        await back(each);
+                    }
+                    return true;
+                }
+                done.unshift(part);
+            }
+        } catch (error) {
+            for (const each of done) {
+                await back(each);
+            }
+            throw error;
+        }
+        return false;
     }
 
     override canUndo(): boolean {
@@ -97,6 +172,30 @@ export class WorkflowCommandStack extends DefaultCommandStack {
         ++this.top;
         if (this.saveIndex >= this.top) {
             this.saveIndex = -2;
+        }
+    }
+
+    /**
+     * GLSP's undo moves down the stack before it undoes, whatever the undo
+     * did. One refused (the document changed outside the diagram) did
+     * nothing, and stays the edit to undo: moved past, it would be redone
+     * on a text it was not made on, and every undo below it be refused in
+     * turn, each finding the text of the one above.
+     */
+    override async undo(): Promise<void> {
+        const at = this.top;
+        await super.undo();
+        if (this.top === at - 1 && refused(this.commands[at])) {
+            this.top = at;
+        }
+    }
+
+    /** As `undo`: a redo refused stays the edit to redo. */
+    override async redo(): Promise<void> {
+        const at = this.top;
+        await super.redo();
+        if (this.top === at + 1 && refused(this.commands[at + 1])) {
+            this.top = at;
         }
     }
 }

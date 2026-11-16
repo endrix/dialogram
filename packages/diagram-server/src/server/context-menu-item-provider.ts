@@ -299,8 +299,9 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
             return undefined;
         })();
 
-        // Boundary ports: allow remove when right-clicking the port element itself.
-        if (elementType?.startsWith('port') && boundaryAncestor) {
+        // A network's own port: Remove Port, on the node it is drawn as and
+        // on the port hidden inside it alike.
+        if (boundaryAncestor) {
             items.push({
                 id: 'dialogram.removeBoundaryPort',
                 label: 'Remove Port',
@@ -311,10 +312,9 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
             });
         }
 
-        // Boundary ports: rename + change type.
+        // A network's own port: rename.
         if (elementType === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || elementType === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
             const portName = elementArgs?.[WorkflowDiagramMetadata.PORT_NAME];
-            const portType = elementArgs?.[WorkflowDiagramMetadata.PORT_TYPE];
             if (typeof portName === 'string') {
                 items.push({
                     id: 'dialogram.renameBoundaryPort',
@@ -330,21 +330,9 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
                     ]
                 });
             }
-            if (typeof portName === 'string' && typeof portType === 'string') {
-                items.push({
-                    id: 'dialogram.changeBoundaryPortType',
-                    label: 'Change Type...',
-                    sortString: 'c',
-                    actions: [
-                        {
-                            kind: PROMPT_LABEL_EDIT_KIND,
-                            labelId: `${(element as any).id}_label_type`,
-                            title: 'Change Port Type',
-                            value: portType
-                        } as any
-                    ]
-                });
-            }
+            // No Change Type...: no producer has an edit of a network port's
+            // type, and a type label edit is refused (apply-label-edit-rename-handler.ts),
+            // so the item did nothing.
         }
 
         // Entity instances: rename.

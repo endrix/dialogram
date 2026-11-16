@@ -6,6 +6,8 @@ import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared
 
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { SidecarInvoker } from './sidecar-invoker';
+import { portAt } from './edge-end';
+import { readAuthoritativeSourceText } from './authoritative-source-text';
 import { type SidecarEdgeRole } from '../../sidecar-capabilities';
 
 /** Port reference resolved from GModel args. */
@@ -53,12 +55,12 @@ export class CreateEdgeOperationHandler extends OperationHandler {
         const root = this.modelState.root;
         const workflowName = root.args?.[WorkflowDiagramMetadata.WORKFLOW_NAME] as string | undefined;
 
-        return new ReversibleWorkspaceEditCommand({
+        const command: ReversibleWorkspaceEditCommand = new ReversibleWorkspaceEditCommand({
             label: 'Create Connection' + this.sidecar.undoLabelSuffix(),
             uri: vscodeUri,
             computeEdits: async () => {
-                const sourcePort = this.modelState.index.get(operation.sourceElementId) as GPort;
-                const targetPort = this.modelState.index.get(operation.targetElementId) as GPort;
+                const sourcePort = this.portOf(operation.sourceElementId);
+                const targetPort = this.portOf(operation.targetElementId);
                 if (!sourcePort || !targetPort) {
                     return undefined;
                 }
@@ -89,9 +91,19 @@ export class CreateEdgeOperationHandler extends OperationHandler {
                 if (!ok) {
                     return undefined;
                 }
+                // The file as the producer wrote it, on disk: what undo
+                // expects to find (the command read it before). The editor's
+                // buffer catches up with a write made out of band only
+                // later; read now, it still held the text before, and undo
+                // then found the file "changed outside the diagram".
+                const after = await readAuthoritativeSourceText(vscodeUri).catch(() => undefined);
+                if (after !== undefined) {
+                    (command as any)._sourceAfterText = after;
+                }
                 return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];
             },
         });
+        return command;
     }
 
     /**
@@ -130,6 +142,11 @@ export class CreateEdgeOperationHandler extends OperationHandler {
     /** The edge kinds the sidecar offers (asked once per session); nothing when it says nothing. */
     protected async edgeRoles(sourceUri: string): Promise<SidecarEdgeRole[] | undefined> {
         return this.sidecar.edgeRoles(sourceUri);
+    }
+
+    /** The port an edge is drawn from or to (`edge-end.ts`). */
+    private portOf(elementId: string): GPort | undefined {
+        return portAt(this.modelState.index, elementId);
     }
 
     /**

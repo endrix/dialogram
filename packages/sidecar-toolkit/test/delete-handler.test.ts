@@ -26,7 +26,13 @@ function network() {
     const elements = new Map<string, any>([
         ['a', { id: 'a', type: WorkflowDiagramTypes.NODE_ACTOR, args: { [WorkflowDiagramMetadata.ENTITY_NAME]: 'a' } }],
         ['e', { id: 'e', type: WorkflowDiagramTypes.EDGE_CONNECTION, args: { 'wf:from': 'a', 'wf:to': 'b', 'wf:outPort': 'out', 'wf:inPort': 'in' } }],
-        ['p', { id: 'p', type: 'port:input', args: { [WorkflowDiagramMetadata.PORT_NAME]: 'x', [WorkflowDiagramMetadata.PORT_DIRECTION]: 'input' } }],
+        // A network's own input `x`, drawn as a node, its port hidden inside
+        // it (an output: what flows out of the input); and its output `y`.
+        ['bx', { id: 'bx', type: WorkflowDiagramTypes.NODE_BOUNDARY_INPUT, args: { [WorkflowDiagramMetadata.ENTITY_NAME]: 'x', [WorkflowDiagramMetadata.PORT_NAME]: 'x' } }],
+        ['p', { id: 'p', type: 'port:output', parent: { type: WorkflowDiagramTypes.NODE_BOUNDARY_INPUT }, args: { [WorkflowDiagramMetadata.PORT_NAME]: 'x', [WorkflowDiagramMetadata.PORT_DIRECTION]: 'output' } }],
+        ['by', { id: 'by', type: WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT, args: { [WorkflowDiagramMetadata.ENTITY_NAME]: 'y', [WorkflowDiagramMetadata.PORT_NAME]: 'y' } }],
+        // A port of the instance `a`: its class's, not the network's.
+        ['ap', { id: 'ap', type: 'port:input', parent: { type: WorkflowDiagramTypes.NODE_ACTOR, args: { [WorkflowDiagramMetadata.ENTITY_NAME]: 'a', [WorkflowDiagramMetadata.ENTITY_TYPE]: 'Pass' } }, args: { [WorkflowDiagramMetadata.PORT_NAME]: 'x', [WorkflowDiagramMetadata.PORT_DIRECTION]: 'input' } }],
         ['read-only', { id: 'read-only', type: WorkflowDiagramTypes.NODE_ACTOR, args: { [WorkflowDiagramMetadata.ENTITY_NAME]: 'ro', [WorkflowDiagramMetadata.IS_READ_ONLY]: true } }],
         ['portless', { id: 'portless', type: WorkflowDiagramTypes.EDGE_CONNECTION, args: { 'wf:from': 'a', 'wf:to': 'b' } }],
         ['shared', { id: 'shared', type: WorkflowDiagramTypes.EDGE_CONNECTION, args: { [WorkflowDiagramMetadata.EDGES_OF]: ['e1', 'e2'], 'wf:outPort': 'o', 'wf:inPort': 'i' } }],
@@ -100,6 +106,29 @@ describe('delete in a network view', () => {
             expect(text).not.toBe(NET);
             expect(command.canUndo()).toBe(true);
         }
+    });
+
+    it('takes out a network\'s own port drawn as a node as a port, by its name and the node\'s direction', async () => {
+        for (const [id, args] of [
+            ['bx', { workflow: 'net', direction: 'input', portName: 'x' }],
+            ['by', { workflow: 'net', direction: 'output', portName: 'y' }]
+        ] as const) {
+            const { command, sent } = await remove([id]);
+            expect(sent).toEqual([{ op: 'calpy.deletePort', args }]);
+            expect(command.canUndo()).toBe(true);
+        }
+    });
+
+    it('takes out a network\'s own port once when its node and the port hidden in it are both selected', async () => {
+        const { sent } = await remove(['bx', 'p']);
+        expect(sent).toEqual([{ op: 'calpy.deletePort', args: { workflow: 'net', direction: 'input', portName: 'x' } }]);
+    });
+
+    it('never takes out the network\'s port of the name of an instance\'s port', async () => {
+        const { command, sent, said } = await remove(['ap']);
+        expect(command).toBeUndefined();
+        expect(sent).toEqual([]);
+        expect(said).toEqual(["Port 'x' of 'a' belongs to its class 'Pass': remove it in the property panel, or where the class is declared."]);
     });
 
     it('takes out an edge selected with its node before the node, which would take it with it', async () => {

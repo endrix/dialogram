@@ -195,6 +195,16 @@ export class DeleteElementOperationHandler extends OperationHandler {
         const readOnlyView = root.args?.[WorkflowDiagramMetadata.READ_ONLY_VIEW] === true;
         const deletedEdges = new Set<string>();
         const deletes: PlannedDelete[] = [];
+        // A network's port selected both as its node and as the port hidden
+        // in it (a select-all) is taken out once.
+        const deletedPorts = new Set<string>();
+        const deletePort = (direction: string, portName: string): void => {
+            const key = `${direction}:${portName}`;
+            if (!deletedPorts.has(key)) {
+                deletedPorts.add(key);
+                deletes.push({ kind: 'port', direction, portName });
+            }
+        };
         for (const id of elementIds) {
             const element = this.modelState.index.get(id) as any;
             const elementArgs = element?.args as Record<string, unknown> | undefined;
@@ -219,6 +229,18 @@ export class DeleteElementOperationHandler extends OperationHandler {
 
             if (elementType === WorkflowDiagramTypes.EDGE_TRANSITION) {
                 deletes.push({ kind: 'transition', id });
+                continue;
+            }
+
+            // A network's own port, drawn as a node: its name is the node's
+            // too (`ENTITY_NAME`), but it is a port of the network, deleted
+            // as one, its direction the node's. Its hidden port's direction
+            // is the other way round: what flows out of an input.
+            if (elementType === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || elementType === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+                const portName = elementArgs?.[WorkflowDiagramMetadata.PORT_NAME] ?? elementArgs?.[WorkflowDiagramMetadata.ENTITY_NAME];
+                if (typeof portName === 'string' && portName.trim() !== '') {
+                    deletePort(elementType === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT ? 'input' : 'output', portName);
+                }
                 continue;
             }
 
@@ -260,11 +282,27 @@ export class DeleteElementOperationHandler extends OperationHandler {
                 continue;
             }
 
+            // The port inside a network's own port stands for it. A port of
+            // an instance is its class's, not the network's: `deletePort`
+            // would take out the network's port of that name. Its class's
+            // ports are edited where the class is (the property panel).
             if (elementType && elementType.startsWith('port:') && elementArgs) {
                 const portName = elementArgs[WorkflowDiagramMetadata.PORT_NAME] as string | undefined;
-                const portDirection = elementArgs[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined;
+                const parentType = element?.parent?.type as string | undefined;
+                const portDirection = parentType === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT ? 'input'
+                    : parentType === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT ? 'output'
+                        : undefined;
                 if (portName && portDirection) {
-                    deletes.push({ kind: 'port', direction: portDirection, portName });
+                    deletePort(portDirection, portName);
+                } else if (portName) {
+                    const owner = element?.parent?.args as Record<string, unknown> | undefined;
+                    const instance = owner?.[WorkflowDiagramMetadata.ENTITY_NAME];
+                    const entity = owner?.[WorkflowDiagramMetadata.ENTITY_TYPE];
+                    const whose = typeof instance === 'string' ? ` of '${instance}'` : '';
+                    const cls = typeof entity === 'string' ? ` '${entity}'` : '';
+                    void vscode.window.showInformationMessage(
+                        `Port '${portName}'${whose} belongs to its class${cls}: remove it in the property panel, or where the class is declared.`
+                    );
                 }
                 continue;
             }

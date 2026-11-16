@@ -76,7 +76,7 @@ function modelState() {
 /** A sidecar invoker whose capabilities answer is `capabilities`, counting the asks. */
 function invokerWith(capabilities: unknown, asks = { count: 0 }, answers: Array<boolean> = []): any {
     const invoker: any = {
-        edgeRolesByCommand: new Map(),
+        capabilitiesByCommand: new Map(),
         sidecarOp: (op: string) => `ndf.${op}`,
         undoLabelSuffix: () => ' (ndf)',
         sidecarCommand: () => 'ndf-sidecar',
@@ -87,6 +87,7 @@ function invokerWith(capabilities: unknown, asks = { count: 0 }, answers: Array<
         }
     };
     invoker.edgeRoles = SidecarInvoker.prototype.edgeRoles.bind(invoker);
+    invoker.capabilities = (SidecarInvoker.prototype as any).capabilities.bind(invoker);
     return invoker;
 }
 

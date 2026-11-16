@@ -9,6 +9,7 @@ import type { PortReference } from './create-edge-handler';
 
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { SidecarInvoker } from './sidecar-invoker';
+import { portAt } from './edge-end';
 import { escapePythonStringLiteral } from '../python-text';
 
 @injectable()
@@ -43,8 +44,9 @@ export class ReconnectEdgeOperationHandler extends OperationHandler {
             label: 'Reconnect Edge' + this.sidecar.undoLabelSuffix(),
             uri: vscodeUri,
             computeEdits: async () => {
-                const sourcePort = this.modelState.index.get(operation.sourceElementId) as GPort;
-                const targetPort = this.modelState.index.get(operation.targetElementId) as GPort;
+                // A network's own port, drawn as a node, by its hidden port.
+                const sourcePort = portAt(this.modelState.index, operation.sourceElementId);
+                const targetPort = portAt(this.modelState.index, operation.targetElementId);
                 if (!sourcePort || !targetPort) return undefined;
 
                 const sourceRef = this.getPythonPortReference(sourcePort);

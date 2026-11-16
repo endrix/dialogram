@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import type { CommandThatMayChangeNothing } from '../server/command-stack';
+import type { CommandThatMayChangeNothing, CommandThatMayRefuse } from '../server/command-stack';
+import type { ApplyPhase } from './reversible-workspace-edit-command';
 
 /**
  * The edits a command applies, by file; nothing (or an empty list) when there
@@ -13,7 +14,7 @@ export interface ReversibleMultiWorkspaceEditCommandOptions {
     label: string;
     computeEdits: ComputeMultiTextEdits;
     /** Optional hook invoked after a successful execute/undo/redo. */
-    afterApply?: () => void | Promise<void>;
+    afterApply?: (phase: ApplyPhase) => void | Promise<void>;
     /**
      * Snapshots for an op that wrote the files ITSELF, consulted after the
      * (then no-op) edit is applied.
@@ -56,9 +57,10 @@ type Snapshot = {
     afterText: string;
 };
 
-export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChangeNothing {
+export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChangeNothing, CommandThatMayRefuse {
     private snapshots: Snapshot[] | undefined;
     private unchanged = false;
+    private refusedLast = false;
 
     constructor(private readonly options: ReversibleMultiWorkspaceEditCommandOptions) {}
 
@@ -132,10 +134,11 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
         this.unchanged = !!override && override.length > 0
             && override.every(s => s.beforeText === s.afterText)
             && entries.every(e => named.has(e.uri.toString()));
-        await this.options.afterApply?.();
+        await this.options.afterApply?.('execute');
     }
 
     async undo(): Promise<void> {
+        this.refusedLast = false;
         if (!this.snapshots || this.snapshots.length === 0) {
             return;
         }
@@ -144,6 +147,7 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
         for (const s of this.snapshots) {
             const doc = await vscode.workspace.openTextDocument(s.uri);
             if (doc.getText() !== s.afterText) {
+                this.refusedLast = true;
                 void vscode.window.showWarningMessage(
                     `Cannot undo '${this.options.label}' because a document changed outside the diagram.`
                 );
@@ -158,13 +162,15 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
         }
 
         const applied = await vscode.workspace.applyEdit(workspaceEdit);
+        this.refusedLast = !applied;
         if (applied) {
             await this.persistSnapshots();
-            await this.options.afterApply?.();
+            await this.options.afterApply?.('undo');
         }
     }
 
     async redo(): Promise<void> {
+        this.refusedLast = false;
         if (!this.snapshots || this.snapshots.length === 0) {
             return;
         }
@@ -173,6 +179,7 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
         for (const s of this.snapshots) {
             const doc = await vscode.workspace.openTextDocument(s.uri);
             if (doc.getText() !== s.beforeText) {
+                this.refusedLast = true;
                 void vscode.window.showWarningMessage(
                     `Cannot redo '${this.options.label}' because a document changed outside the diagram.`
                 );
@@ -187,9 +194,10 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
         }
 
         const applied = await vscode.workspace.applyEdit(workspaceEdit);
+        this.refusedLast = !applied;
         if (applied) {
             await this.persistSnapshots();
-            await this.options.afterApply?.();
+            await this.options.afterApply?.('redo');
         }
     }
 
@@ -225,5 +233,10 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
      */
     changedNothing(): boolean {
         return this.unchanged;
+    }
+
+    /** Whether the last undo or redo did nothing: a document had changed outside the diagram (it said so), or VS Code refused the edit. */
+    refused(): boolean {
+        return this.refusedLast;
     }
 }

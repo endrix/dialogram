@@ -1,11 +1,9 @@
 import { Action } from '@eclipse-glsp/protocol';
 import { Command, ModelState, OperationHandler } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
-import * as vscode from 'vscode';
-import { readAuthoritativeSourceText } from './authoritative-source-text';
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
 
-import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
+import { producerWriteCommand } from './producer-write';
 import { SidecarInvoker } from './sidecar-invoker';
 
 export namespace CreateBoundaryPortOperation {
@@ -47,15 +45,14 @@ export class CreateBoundaryPortOperationHandler extends OperationHandler {
     }
 
     private createPythonCommand(operation: CreateBoundaryPortOperation.Operation, sourceUri: string): Command | undefined {
-        const vscodeUri = vscode.Uri.parse(sourceUri);
-        const root = this.modelState.root;
-        const workflowName = root.args?.[WorkflowDiagramMetadata.WORKFLOW_NAME] as string | undefined;
-        const command = new ReversibleWorkspaceEditCommand({
+        const workflowName = this.modelState.root.args?.[WorkflowDiagramMetadata.WORKFLOW_NAME] as string | undefined;
+        return producerWriteCommand({
             label: 'Create Boundary Port' + this.sidecar.undoLabelSuffix(),
-            uri: vscodeUri,
-            computeEdits: async () => {
-                const beforeText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
-                const ok = await this.sendSidecarOp(sourceUri, {
+            sidecar: this.sidecar,
+            failed: `The ${operation.direction} port '${operation.portName}' was not added.`,
+            request: () => ({
+                fileUri: sourceUri,
+                payload: {
                     op: this.sidecar.sidecarOp('createPort'),
                     args: {
                         workflow: workflowName,
@@ -63,20 +60,8 @@ export class CreateBoundaryPortOperationHandler extends OperationHandler {
                         portName: operation.portName,
                         portType: operation.portType || 'Any'
                     }
-                });
-                if (!ok) {
-                    return undefined;
                 }
-                const afterText = await readAuthoritativeSourceText(vscodeUri);
-                (command as any)._sourceBeforeText = beforeText;
-                (command as any)._sourceAfterText = afterText;
-                return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];
-            },
+            })
         });
-        return command;
-    }
-
-    private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {
-        return this.sidecar.sendSidecarOp(sourceUri, payload);
     }
 }
