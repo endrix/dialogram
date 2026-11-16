@@ -362,3 +362,59 @@ describe('a connection moved', () => {
         expect((portAt(modelState.index, 'a_in') as any)?.id).toBe('a_in');
     });
 });
+
+describe('a port of a class used by networks the diagram does not show', () => {
+    it('is renamed in each, told by the sidecar where, and undone in every file', async () => {
+        const { net, actors, modelState } = design();
+        const other = path.join(path.dirname(net), 'other.py');
+        const OTHER = 'pair = ...\n';
+        writeFileSync(other, OTHER);
+        const sent: Sent[] = [];
+        const sidecar = {
+            sidecarOp: (op: string) => `calpy.${op}`,
+            undoLabelSuffix: () => '',
+            hasFeature: async (_uri: string, feature: string) => feature === 'portUsesAcrossFiles' || feature === 'portUsesQuery',
+            sendSidecarOpDetailed: async (uri: string, payload: { op: string; args: Record<string, unknown> }) => {
+                const file = vscode.Uri.parse(uri).fsPath;
+                sent.push({ file: path.basename(file), ...payload });
+                if (payload.op === 'calpy.portUses') {
+                    // Not this network (not built as saved): the other one, and a module that does not load.
+                    return { ok: true, response: { diagnostic: {
+                        usedIn: [{ file: other, workflow: 'pair', instances: ['p'] }],
+                        unchecked: [{ file: path.join(path.dirname(net), 'broken.py'), message: 'No module named x' }]
+                    } } };
+                }
+                writeFileSync(file, readFileSync(file, 'utf8') + `# ${payload.op}\n`);
+                for (const use of payload.args['usedIn'] as Array<{ file: string }>) {
+                    writeFileSync(use.file, readFileSync(use.file, 'utf8') + '# followed\n');
+                }
+                return { ok: true };
+            }
+        };
+        const stack = commandStack();
+        const said = await saying(async said => {
+            await onDisk(() => stack.execute(updatePort(modelState, sidecar, 'name', 'Feed')));
+            return said;
+        });
+        expect(sent.map(each => [each.file, each.op])).toEqual([['actors.py', 'calpy.portUses'], ['actors.py', 'calpy.renamePort']]);
+        expect(sent[1].args['usedIn']).toEqual([
+            { file: other, workflow: 'pair', instances: ['p'] },
+            { file: net, workflow: 'net', instances: ['a'] }
+        ]);
+        expect(said).toEqual(["broken.py could not be loaded: its networks were not checked for 'Pass', and are not followed."]);
+        expect(readFileSync(other, 'utf8')).toBe(OTHER + '# followed\n');
+        expect(readFileSync(net, 'utf8')).toBe(NET + '# followed\n');
+        await onDisk(() => stack.undo());
+        expect(readFileSync(actors, 'utf8')).toBe(ACTORS);
+        expect(readFileSync(net, 'utf8')).toBe(NET);
+        expect(readFileSync(other, 'utf8')).toBe(OTHER);
+    });
+
+    it('is told only this network when the sidecar cannot say where else', async () => {
+        const { net, modelState } = design();
+        const sent: Sent[] = [];
+        await onDisk(() => commandStack().execute(updatePort(modelState, producer(net, sent, true), 'name', 'Feed')));
+        expect(sent.map(each => each.op)).toEqual(['calpy.renamePort']);
+        expect(sent[0].args['usedIn']).toEqual([{ file: net, workflow: 'net', instances: ['a'] }]);
+    });
+});
