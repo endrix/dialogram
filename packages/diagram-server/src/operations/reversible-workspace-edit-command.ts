@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import * as vscode from 'vscode';
-import type { CommandThatMayChangeNothing } from '../server/command-stack';
+import type { CommandThatMayChangeNothing, CommandThatMayRefuse } from '../server/command-stack';
 
 /**
  * The edits a command applies; nothing (or no edit) when there is nothing to
@@ -36,10 +36,11 @@ function sortEditsDescending(edits: vscode.TextEdit[]): vscode.TextEdit[] {
     });
 }
 
-export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothing {
+export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothing, CommandThatMayRefuse {
     private beforeText: string | undefined;
     private afterText: string | undefined;
     private unchanged = false;
+    private refusedLast = false;
 
     constructor(private readonly options: ReversibleWorkspaceEditCommandOptions) {}
 
@@ -75,7 +76,12 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
         const overrideBefore = (this as any)._sourceBeforeText as string | undefined;
         const overrideAfter = (this as any)._sourceAfterText as string | undefined;
         if (overrideBefore !== undefined && overrideAfter !== undefined) {
-            this.beforeText = overrideBefore;
+            // What undo puts back is the file as it was on disk before the
+            // write, read here before the handler ran: the handler's own
+            // text before may be the editor's, which after an earlier write
+            // made out of band may not have caught up, and undo would then
+            // take that earlier edit back too.
+            this.beforeText = fileBefore ?? overrideBefore;
             this.afterText = overrideAfter;
             // The file as it was written, read where it was written, before
             // the edit and after: the same text is an edit that wrote
@@ -90,6 +96,7 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
     }
 
     async undo(): Promise<void> {
+        this.refusedLast = false;
         if (this.beforeText === undefined || this.afterText === undefined) {
             return;
         }
@@ -97,6 +104,7 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
         const doc = await vscode.workspace.openTextDocument(this.options.uri);
         const currentText = doc.getText();
         if (currentText !== this.afterText) {
+            this.refusedLast = true;
             void vscode.window.showWarningMessage(
                 `Cannot undo '${this.options.label}' because the document changed outside the diagram.`
             );
@@ -106,6 +114,7 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
         const workspaceEdit = new vscode.WorkspaceEdit();
         workspaceEdit.set(this.options.uri, [new vscode.TextEdit(fullDocumentRange(doc), this.beforeText)]);
         const applied = await vscode.workspace.applyEdit(workspaceEdit);
+        this.refusedLast = !applied;
         if (applied) {
             await this.persist(doc);
             await this.options.afterApply?.();
@@ -113,6 +122,7 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
     }
 
     async redo(): Promise<void> {
+        this.refusedLast = false;
         if (this.beforeText === undefined || this.afterText === undefined) {
             return;
         }
@@ -120,6 +130,7 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
         const doc = await vscode.workspace.openTextDocument(this.options.uri);
         const currentText = doc.getText();
         if (currentText !== this.beforeText) {
+            this.refusedLast = true;
             void vscode.window.showWarningMessage(
                 `Cannot redo '${this.options.label}' because the document changed outside the diagram.`
             );
@@ -129,6 +140,7 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
         const workspaceEdit = new vscode.WorkspaceEdit();
         workspaceEdit.set(this.options.uri, [new vscode.TextEdit(fullDocumentRange(doc), this.afterText)]);
         const applied = await vscode.workspace.applyEdit(workspaceEdit);
+        this.refusedLast = !applied;
         if (applied) {
             await this.persist(doc);
             await this.options.afterApply?.();
@@ -162,6 +174,11 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
      */
     changedNothing(): boolean {
         return this.unchanged;
+    }
+
+    /** Whether the last undo or redo did nothing: the document had changed outside the diagram (it said so), or VS Code refused the edit. */
+    refused(): boolean {
+        return this.refusedLast;
     }
 }
 

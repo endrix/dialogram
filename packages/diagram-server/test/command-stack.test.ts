@@ -209,6 +209,39 @@ describe('the platform command stack', () => {
     });
 });
 
+describe('an undo or redo refused', () => {
+    it('is still the edit to undo, and the ones below it are undone once the text is back', async () => {
+        const stack = commandStack();
+        await stack.execute(edit('B'));
+        await stack.execute(edit('C'));
+        text = 'X'; // changed outside the diagram
+        await stack.undo();
+        expect(text).toBe('X');
+        expect(stack.canRedo()).toBe(false);
+        await stack.undo();
+        expect(text).toBe('X');
+        text = 'C';
+        await stack.undo();
+        expect(text).toBe('B');
+        await stack.undo();
+        expect(text).toBe('A');
+    });
+
+    it('is still the edit to redo', async () => {
+        const stack = commandStack();
+        await stack.execute(edit('B'));
+        await stack.undo();
+        text = 'X';
+        await stack.redo();
+        expect(text).toBe('X');
+        expect(stack.canRedo()).toBe(true);
+        text = 'A';
+        await stack.redo();
+        expect(text).toBe('B');
+        expect(stack.canRedo()).toBe(false);
+    });
+});
+
 describe('an edit written out of band, judged by the file on disk', () => {
     let dir = '';
     afterEach(() => rmSync(dir, { recursive: true, force: true }));
@@ -252,6 +285,16 @@ describe('an edit written out of band, judged by the file on disk', () => {
         const command = written('A');
         await commandStack().execute(command);
         expect(command.changedNothing()).toBe(true);
+    });
+
+    it('undone, puts back the file as it was on disk, not the text the editor had not caught up from', async () => {
+        text = 'A'; // an earlier edit wrote B; the editor still shows A
+        const command = written('B', 'C');
+        const stack = commandStack();
+        await stack.execute(command);
+        text = 'C'; // caught up
+        await stack.undo();
+        expect(text).toBe('B');
     });
 
     it('drops one refused on an empty file', async () => {

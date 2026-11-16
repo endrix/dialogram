@@ -289,6 +289,36 @@ describe('the instances an edit of a class\'s port is told of', () => {
     });
 });
 
+describe('a connection made', () => {
+    it('is undone though the editor had not caught up with the producer\'s write', async () => {
+        const { net, modelState } = design();
+        const handler = new CreateEdgeOperationHandler() as any;
+        handler.modelState = modelState;
+        handler.sidecar = { sidecarOp: (op: string) => `calpy.${op}`, undoLabelSuffix: () => '', edgeRoles: async () => undefined };
+        handler.sendSidecarOp = async () => {
+            writeFileSync(net, NET + 'connect("x", a.Ports.In)\n');
+            return true;
+        };
+        const stack = commandStack();
+        const workspace = vscode.workspace as any;
+        await onDisk(async () => {
+            // Asked right after the write, the buffer still holds the text before.
+            workspace.openTextDocument = async () => ({ getText: () => NET, isDirty: false, lineCount: 1, lineAt: () => ({ text: '' }), save: async () => true });
+            await stack.execute(handler.createCommand({
+                kind: 'createEdge', elementTypeId: WorkflowDiagramTypes.EDGE_CONNECTION, sourceElementId: 'x', targetElementId: 'a_in'
+            }));
+        });
+        expect(readFileSync(net, 'utf8')).toBe(NET + 'connect("x", a.Ports.In)\n');
+        expect(stack.canUndo()).toBe(true);
+        const said = await saying(async said => {
+            await onDisk(() => stack.undo());
+            return said;
+        });
+        expect(said).toEqual([]);
+        expect(readFileSync(net, 'utf8')).toBe(NET);
+    });
+});
+
 describe('a connection moved', () => {
     it('to a network\'s own port drawn as a node is moved to the port hidden in it', async () => {
         const { portAt } = await import('../src/server/operations/edge-end.js');

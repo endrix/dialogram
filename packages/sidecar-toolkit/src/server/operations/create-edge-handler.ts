@@ -7,6 +7,7 @@ import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { SidecarInvoker } from './sidecar-invoker';
 import { portAt } from './edge-end';
+import { readAuthoritativeSourceText } from './authoritative-source-text';
 import { type SidecarEdgeRole } from '../../sidecar-capabilities';
 
 /** Port reference resolved from GModel args. */
@@ -54,7 +55,7 @@ export class CreateEdgeOperationHandler extends OperationHandler {
         const root = this.modelState.root;
         const workflowName = root.args?.[WorkflowDiagramMetadata.WORKFLOW_NAME] as string | undefined;
 
-        return new ReversibleWorkspaceEditCommand({
+        const command: ReversibleWorkspaceEditCommand = new ReversibleWorkspaceEditCommand({
             label: 'Create Connection' + this.sidecar.undoLabelSuffix(),
             uri: vscodeUri,
             computeEdits: async () => {
@@ -83,6 +84,13 @@ export class CreateEdgeOperationHandler extends OperationHandler {
                 if (role === null) {
                     return undefined;
                 }
+                // The file as the producer reads and writes it, on disk,
+                // before and after: what undo puts back and what it expects
+                // to find. The editor's buffer catches up with a write made
+                // out of band only later; read after the write, it still
+                // held the text before, and undo then found the file
+                // "changed outside the diagram".
+                const before = await readAuthoritativeSourceText(vscodeUri).catch(() => undefined);
                 const ok = await this.sendSidecarOp(sourceUri, {
                     op: this.sidecar.sidecarOp('connect'),
                     args: { workflow: workflowName, from_port: fromPort, to_port: toPort, ...(role ? { role } : {}) }
@@ -90,9 +98,15 @@ export class CreateEdgeOperationHandler extends OperationHandler {
                 if (!ok) {
                     return undefined;
                 }
+                const after = await readAuthoritativeSourceText(vscodeUri).catch(() => undefined);
+                if (before !== undefined && after !== undefined) {
+                    (command as any)._sourceBeforeText = before;
+                    (command as any)._sourceAfterText = after;
+                }
                 return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];
             },
         });
+        return command;
     }
 
     /**

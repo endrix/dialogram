@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { CommandThatMayChangeNothing } from '../server/command-stack';
+import type { CommandThatMayChangeNothing, CommandThatMayRefuse } from '../server/command-stack';
 
 /**
  * The edits a command applies, by file; nothing (or an empty list) when there
@@ -56,9 +56,10 @@ type Snapshot = {
     afterText: string;
 };
 
-export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChangeNothing {
+export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChangeNothing, CommandThatMayRefuse {
     private snapshots: Snapshot[] | undefined;
     private unchanged = false;
+    private refusedLast = false;
 
     constructor(private readonly options: ReversibleMultiWorkspaceEditCommandOptions) {}
 
@@ -136,6 +137,7 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
     }
 
     async undo(): Promise<void> {
+        this.refusedLast = false;
         if (!this.snapshots || this.snapshots.length === 0) {
             return;
         }
@@ -144,6 +146,7 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
         for (const s of this.snapshots) {
             const doc = await vscode.workspace.openTextDocument(s.uri);
             if (doc.getText() !== s.afterText) {
+                this.refusedLast = true;
                 void vscode.window.showWarningMessage(
                     `Cannot undo '${this.options.label}' because a document changed outside the diagram.`
                 );
@@ -158,6 +161,7 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
         }
 
         const applied = await vscode.workspace.applyEdit(workspaceEdit);
+        this.refusedLast = !applied;
         if (applied) {
             await this.persistSnapshots();
             await this.options.afterApply?.();
@@ -165,6 +169,7 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
     }
 
     async redo(): Promise<void> {
+        this.refusedLast = false;
         if (!this.snapshots || this.snapshots.length === 0) {
             return;
         }
@@ -173,6 +178,7 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
         for (const s of this.snapshots) {
             const doc = await vscode.workspace.openTextDocument(s.uri);
             if (doc.getText() !== s.beforeText) {
+                this.refusedLast = true;
                 void vscode.window.showWarningMessage(
                     `Cannot redo '${this.options.label}' because a document changed outside the diagram.`
                 );
@@ -187,6 +193,7 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
         }
 
         const applied = await vscode.workspace.applyEdit(workspaceEdit);
+        this.refusedLast = !applied;
         if (applied) {
             await this.persistSnapshots();
             await this.options.afterApply?.();
@@ -225,5 +232,10 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
      */
     changedNothing(): boolean {
         return this.unchanged;
+    }
+
+    /** Whether the last undo or redo did nothing: a document had changed outside the diagram (it said so), or VS Code refused the edit. */
+    refused(): boolean {
+        return this.refusedLast;
     }
 }
