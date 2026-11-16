@@ -119,6 +119,11 @@ describe('delete in a network view', () => {
         }
     });
 
+    it('takes out a network\'s own port once when its node and the port hidden in it are both selected', async () => {
+        const { sent } = await remove(['bx', 'p']);
+        expect(sent).toEqual([{ op: 'calpy.deletePort', args: { workflow: 'net', direction: 'input', portName: 'x' } }]);
+    });
+
     it('never takes out the network\'s port of the name of an instance\'s port', async () => {
         const { command, sent } = await remove(['ap']);
         expect(command).toBeUndefined();

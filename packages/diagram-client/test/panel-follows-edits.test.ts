@@ -104,16 +104,32 @@ describe('the property panel after an edit', () => {
         expect(content().firstElementChild).toBe(drawn);
     });
 
-    it('waits while something in the panel is typed into, and draws on the next model', () => {
+    it('waits while something in the panel is typed into, and draws once the focus leaves the panel', async () => {
         const panel = new TestPanel();
+        (panel as any).initializeEditTracking();
         const node = add([MOT]);
         panel.show(node, rootWith(node));
         const input = document.createElement('input');
         content().appendChild(input);
         input.focus();
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
         panel.modelRootChanged(rootWith(add([['MOT', 'Int(9)', true]])));
         expect(rows()).toEqual(['MOT:Int(8)']);
         input.blur();
+        await new Promise(resolve => setTimeout(resolve, 5));
+        expect(rows()).toEqual(['MOT:Int(9)']);
+    });
+
+    it('draws the model a value committed with Enter makes, the field keeping the focus', () => {
+        const panel = new TestPanel();
+        (panel as any).initializeEditTracking();
+        const node = add([MOT]);
+        panel.show(node, rootWith(node));
+        const input = document.createElement('input');
+        content().appendChild(input);
+        input.focus();
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: '9', bubbles: true }));
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
         panel.modelRootChanged(rootWith(add([['MOT', 'Int(9)', true]])));
         expect(rows()).toEqual(['MOT:Int(9)']);
     });

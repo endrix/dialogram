@@ -6,6 +6,7 @@ import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared
 
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { SidecarInvoker } from './sidecar-invoker';
+import { portAt } from './edge-end';
 import { type SidecarEdgeRole } from '../../sidecar-capabilities';
 
 /** Port reference resolved from GModel args. */
@@ -132,18 +133,9 @@ export class CreateEdgeOperationHandler extends OperationHandler {
         return this.sidecar.edgeRoles(sourceUri);
     }
 
-    /**
-     * The port an edge is drawn from or to: the element itself, or the port
-     * of a network's own port, which is drawn as a node with its port hidden
-     * inside it and is what the pointer is on.
-     */
+    /** The port an edge is drawn from or to (`edge-end.ts`). */
     private portOf(elementId: string): GPort | undefined {
-        const element = this.modelState.index.get(elementId) as GPort | undefined;
-        const type = (element as { type?: string } | undefined)?.type;
-        if (type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
-            return ((element as any).children as GPort[] | undefined)?.find(child => typeof child.type === 'string' && child.type.startsWith('port'));
-        }
-        return element;
+        return portAt(this.modelState.index, elementId);
     }
 
     /**

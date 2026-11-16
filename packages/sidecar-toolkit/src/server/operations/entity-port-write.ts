@@ -64,36 +64,53 @@ function definitionFileOf(element: ElementLike | undefined): string | undefined 
     return undefined;
 }
 
-/** The instances of `entityType` in the diagram: the names its nodes are drawn by. */
-export function instancesOf(root: ElementLike | undefined, entityType: string): string[] {
+/**
+ * The instances of `entityType` in this network: the names its nodes are
+ * drawn by. Not those inside a subnetwork shown in place (they are that
+ * network's), nor those of another class of the same name: when the class's
+ * file is known (`entityFile`), an instance whose definition is in another
+ * file is not one of it.
+ */
+export function instancesOf(root: ElementLike | undefined, entityType: string, entityFile?: string): string[] {
     const names: string[] = [];
-    const visit = (element: ElementLike | undefined): void => {
+    const visit = (element: ElementLike | undefined, top: boolean): void => {
         if (!element) {
             return;
         }
         const args = element.args;
-        if (!(element.type ?? '').startsWith('port') && args?.[WorkflowDiagramMetadata.ENTITY_TYPE] === entityType) {
+        const isNode = !top && !(element.type ?? '').startsWith('port');
+        if (isNode && args?.[WorkflowDiagramMetadata.ENTITY_TYPE] === entityType) {
             const name = args[WorkflowDiagramMetadata.ENTITY_NAME];
-            if (typeof name === 'string' && name.trim() !== '' && !names.includes(name)) {
+            const definedIn = definitionFileOf(element);
+            const sameClass = !entityFile || !definedIn || sameFile(definedIn, entityFile);
+            if (sameClass && typeof name === 'string' && name.trim() !== '' && !names.includes(name)) {
                 names.push(name);
             }
         }
+        if (isNode && args?.[WorkflowDiagramMetadata.IS_NETWORK_INSTANCE] === true) {
+            return; // a subnetwork: what is inside it is its own
+        }
         for (const child of element.children ?? []) {
-            visit(child);
+            visit(child, false);
         }
     };
-    visit(root);
+    visit(root, true);
     return names;
 }
 
-/** The file the entity's ports are declared in: its own, when the diagram says; the diagram's otherwise. */
+/**
+ * The file the entity's ports are declared in: the definition of the element
+ * the edit was made on, when the producer named it; else the file the panel
+ * read off the instance; the diagram's otherwise.
+ */
 export function entityFileOf(modelState: Pick<ModelState, 'index' | 'root'>, diagramUri: string, edit: EntityPortEdit): string {
-    const given = typeof edit.entityDocumentUri === 'string' ? edit.entityDocumentUri.trim() : '';
-    if (given !== '') {
-        return given;
-    }
     const element = edit.elementId ? modelState.index.find(edit.elementId) as ElementLike | undefined : undefined;
-    return definitionFileOf(element) ?? diagramUri;
+    const defined = definitionFileOf(element);
+    if (defined) {
+        return defined;
+    }
+    const given = typeof edit.entityDocumentUri === 'string' ? edit.entityDocumentUri.trim() : '';
+    return given !== '' ? given : diagramUri;
 }
 
 /**
@@ -126,7 +143,7 @@ export async function entityPortWrite(
     }
     const root = modelState.root as unknown as ElementLike | undefined;
     const workflow = root?.args?.[WorkflowDiagramMetadata.WORKFLOW_NAME];
-    const instances = instancesOf(root, edit.entityType);
+    const instances = instancesOf(root, edit.entityType, fileUri);
     const usedIn = typeof workflow === 'string' && workflow.trim() !== '' && instances.length > 0
         ? [{ file: vscode.Uri.parse(diagramUri).fsPath, workflow, instances }]
         : [];

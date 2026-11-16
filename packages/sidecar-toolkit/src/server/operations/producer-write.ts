@@ -40,11 +40,17 @@ export interface ProducerWriteOptions {
 
 type Snapshot = { uri: vscode.Uri; beforeText: string; afterText: string };
 
-async function textOf(uri: vscode.Uri): Promise<string | undefined> {
+/**
+ * A file as it is on disk, which is what the producer reads and writes; ''
+ * for one not there (yet). Not the editor's buffer: after an earlier edit
+ * written out of band it may not have caught up, and an unsaved change in it
+ * is not what the producer edits.
+ */
+async function textOf(uri: vscode.Uri): Promise<string> {
     try {
-        return (await vscode.workspace.openTextDocument(uri)).getText();
+        return await readAuthoritativeSourceText(uri);
     } catch {
-        return undefined;
+        return '';
     }
 }
 
@@ -75,10 +81,7 @@ export function producerWriteCommand(options: ProducerWriteOptions): ReversibleM
             }
             const all: Snapshot[] = [];
             for (const [at, uri] of uris.entries()) {
-                if (before[at] === undefined) {
-                    continue;
-                }
-                all.push({ uri, beforeText: before[at]!, afterText: await readAuthoritativeSourceText(uri) });
+                all.push({ uri, beforeText: before[at], afterText: await textOf(uri) });
             }
             // The files the producer changed; each as it was when it changed
             // none, which the command then counts as changing nothing.

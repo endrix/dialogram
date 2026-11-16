@@ -195,6 +195,16 @@ export class DeleteElementOperationHandler extends OperationHandler {
         const readOnlyView = root.args?.[WorkflowDiagramMetadata.READ_ONLY_VIEW] === true;
         const deletedEdges = new Set<string>();
         const deletes: PlannedDelete[] = [];
+        // A network's port selected both as its node and as the port hidden
+        // in it (a select-all) is taken out once.
+        const deletedPorts = new Set<string>();
+        const deletePort = (direction: string, portName: string): void => {
+            const key = `${direction}:${portName}`;
+            if (!deletedPorts.has(key)) {
+                deletedPorts.add(key);
+                deletes.push({ kind: 'port', direction, portName });
+            }
+        };
         for (const id of elementIds) {
             const element = this.modelState.index.get(id) as any;
             const elementArgs = element?.args as Record<string, unknown> | undefined;
@@ -229,7 +239,7 @@ export class DeleteElementOperationHandler extends OperationHandler {
             if (elementType === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || elementType === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
                 const portName = elementArgs?.[WorkflowDiagramMetadata.PORT_NAME] ?? elementArgs?.[WorkflowDiagramMetadata.ENTITY_NAME];
                 if (typeof portName === 'string' && portName.trim() !== '') {
-                    deletes.push({ kind: 'port', direction: elementType === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT ? 'input' : 'output', portName });
+                    deletePort(elementType === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT ? 'input' : 'output', portName);
                 }
                 continue;
             }
@@ -283,7 +293,7 @@ export class DeleteElementOperationHandler extends OperationHandler {
                     : parentType === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT ? 'output'
                         : undefined;
                 if (portName && portDirection) {
-                    deletes.push({ kind: 'port', direction: portDirection, portName });
+                    deletePort(portDirection, portName);
                 }
                 continue;
             }

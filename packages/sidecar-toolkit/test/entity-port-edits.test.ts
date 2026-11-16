@@ -236,3 +236,64 @@ describe('a network\'s own port', () => {
         }]);
     });
 });
+
+describe('what an edit reads and where', () => {
+    it('reads each file as it is on disk: undo of a second edit made before the editor caught up keeps the first', async () => {
+        const { net, actors, modelState } = design();
+        const stack = commandStack();
+        await onDisk(() => stack.execute(updatePort(modelState, producer(net, [], true), 'name', 'Feed')));
+        const first = readFileSync(actors, 'utf8');
+        // The editor's buffer still holds the file as it was before the first.
+        const workspace = vscode.workspace as any;
+        await onDisk(async () => {
+            workspace.openTextDocument = async () => ({ getText: () => ACTORS, isDirty: false, lineCount: 1, lineAt: () => ({ text: '' }), save: async () => true });
+            await stack.execute(updatePort(modelState, producer(net, [], true), 'type', 'Int(16)'));
+        });
+        expect(readFileSync(actors, 'utf8')).toBe(first + '# calpy.updatePortType\n');
+        await onDisk(() => stack.undo());
+        expect(readFileSync(actors, 'utf8')).toBe(first);
+    });
+
+    it('goes to the file the element\'s definition is in, not one the panel read off a node that is only written there', async () => {
+        const { net, modelState } = design();
+        const [, Delete] = createEntityPortCrudHandlers({ createEntityPort: 'createEntityPort', deleteEntityPort: 'deleteEntityPort' });
+        const sent: Sent[] = [];
+        const handler = new (Delete as any)();
+        handler.modelState = modelState;
+        handler.sidecar = producer(net, sent, true);
+        await onDisk(() => commandStack().execute(handler.createCommand({
+            kind: 'deleteEntityPort', elementId: 'a', entityType: 'Pass', portDirection: 'input', portName: 'In',
+            entityDocumentUri: pathToFileURL(net).href
+        })));
+        expect(sent.map(each => each.file)).toEqual(['actors.py']);
+    });
+});
+
+describe('the instances an edit of a class\'s port is told of', () => {
+    it('are this network\'s: not those inside a subnetwork shown in place, nor a class of the name from another file', async () => {
+        const { instancesOf } = await import('../src/server/operations/entity-port-write.js');
+        const node = (name: string, extra: Record<string, unknown> = {}, children: any[] = []) => ({
+            id: name, type: WorkflowDiagramTypes.NODE_ACTOR, children,
+            args: { [WorkflowDiagramMetadata.ENTITY_NAME]: name, [WorkflowDiagramMetadata.ENTITY_TYPE]: 'Pass', ...extra }
+        });
+        const definedIn = (file: string) => ({ [WorkflowDiagramMetadata.REFERENCED_URI]: file, [WorkflowDiagramMetadata.REFERENCED_IS_DEFINITION]: true });
+        const root = {
+            id: 'root', children: [
+                node('a', definedIn('file:///d/actors.py')),
+                node('other', definedIn('file:///d/elsewhere.py')),
+                { ...node('sub', { [WorkflowDiagramMetadata.ENTITY_TYPE]: 'Sub', [WorkflowDiagramMetadata.IS_NETWORK_INSTANCE]: true }), children: [node('inner', definedIn('file:///d/actors.py'))] },
+                node('b')
+            ]
+        };
+        expect(instancesOf(root as any, 'Pass', 'file:///d/actors.py')).toEqual(['a', 'b']);
+    });
+});
+
+describe('a connection moved', () => {
+    it('to a network\'s own port drawn as a node is moved to the port hidden in it', async () => {
+        const { portAt } = await import('../src/server/operations/edge-end.js');
+        const { modelState } = design();
+        expect((portAt(modelState.index, 'x') as any)?.id).toBe('x_p');
+        expect((portAt(modelState.index, 'a_in') as any)?.id).toBe('a_in');
+    });
+});
