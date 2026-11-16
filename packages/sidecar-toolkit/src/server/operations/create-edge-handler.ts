@@ -57,8 +57,8 @@ export class CreateEdgeOperationHandler extends OperationHandler {
             label: 'Create Connection' + this.sidecar.undoLabelSuffix(),
             uri: vscodeUri,
             computeEdits: async () => {
-                const sourcePort = this.modelState.index.get(operation.sourceElementId) as GPort;
-                const targetPort = this.modelState.index.get(operation.targetElementId) as GPort;
+                const sourcePort = this.portOf(operation.sourceElementId);
+                const targetPort = this.portOf(operation.targetElementId);
                 if (!sourcePort || !targetPort) {
                     return undefined;
                 }
@@ -130,6 +130,20 @@ export class CreateEdgeOperationHandler extends OperationHandler {
     /** The edge kinds the sidecar offers (asked once per session); nothing when it says nothing. */
     protected async edgeRoles(sourceUri: string): Promise<SidecarEdgeRole[] | undefined> {
         return this.sidecar.edgeRoles(sourceUri);
+    }
+
+    /**
+     * The port an edge is drawn from or to: the element itself, or the port
+     * of a network's own port, which is drawn as a node with its port hidden
+     * inside it and is what the pointer is on.
+     */
+    private portOf(elementId: string): GPort | undefined {
+        const element = this.modelState.index.get(elementId) as GPort | undefined;
+        const type = (element as { type?: string } | undefined)?.type;
+        if (type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+            return ((element as any).children as GPort[] | undefined)?.find(child => typeof child.type === 'string' && child.type.startsWith('port'));
+        }
+        return element;
     }
 
     /**

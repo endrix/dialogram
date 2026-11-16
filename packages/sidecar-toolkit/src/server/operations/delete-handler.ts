@@ -222,6 +222,18 @@ export class DeleteElementOperationHandler extends OperationHandler {
                 continue;
             }
 
+            // A network's own port, drawn as a node: its name is the node's
+            // too (`ENTITY_NAME`), but it is a port of the network, deleted
+            // as one, its direction the node's. Its hidden port's direction
+            // is the other way round: what flows out of an input.
+            if (elementType === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || elementType === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+                const portName = elementArgs?.[WorkflowDiagramMetadata.PORT_NAME] ?? elementArgs?.[WorkflowDiagramMetadata.ENTITY_NAME];
+                if (typeof portName === 'string' && portName.trim() !== '') {
+                    deletes.push({ kind: 'port', direction: elementType === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT ? 'input' : 'output', portName });
+                }
+                continue;
+            }
+
             if (elementType && (elementType.startsWith('node:') || elementType.startsWith('node ')) && elementArgs?.[WorkflowDiagramMetadata.ENTITY_NAME]) {
                 deletes.push({ kind: 'node', name: elementArgs[WorkflowDiagramMetadata.ENTITY_NAME] });
                 continue;
@@ -260,9 +272,16 @@ export class DeleteElementOperationHandler extends OperationHandler {
                 continue;
             }
 
+            // The port inside a network's own port stands for it. A port of
+            // an instance is its class's, not the network's: `deletePort`
+            // would take out the network's port of that name. Its class's
+            // ports are edited where the class is (the property panel).
             if (elementType && elementType.startsWith('port:') && elementArgs) {
                 const portName = elementArgs[WorkflowDiagramMetadata.PORT_NAME] as string | undefined;
-                const portDirection = elementArgs[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined;
+                const parentType = element?.parent?.type as string | undefined;
+                const portDirection = parentType === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT ? 'input'
+                    : parentType === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT ? 'output'
+                        : undefined;
                 if (portName && portDirection) {
                     deletes.push({ kind: 'port', direction: portDirection, portName });
                 }

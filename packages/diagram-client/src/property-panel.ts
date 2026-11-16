@@ -1723,6 +1723,8 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             kind,
             isOperation: true,
             elementId: node.id,
+            // Where the entity is declared: its ports are written there.
+            entityDocumentUri: (node?.args?.[WorkflowDiagramMetadata.REFERENCED_URI] as string | undefined) ?? undefined,
             entityType,
             portDirection: direction,
             portName,
@@ -1730,7 +1732,8 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         } as any);
     }
 
-    protected async promptAndDeleteEntityPort(entityType: string, direction: 'input' | 'output', portName: string): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    protected async promptAndDeleteEntityPort(node: any, entityType: string, direction: 'input' | 'output', portName: string): Promise<void> {
         const kind = operationKind('deleteEntityPort');
         if (!kind) {
             return;
@@ -1738,6 +1741,8 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         await this.actionDispatcher.dispatch({
             kind,
             isOperation: true,
+            elementId: node?.id,
+            entityDocumentUri: (node?.args?.[WorkflowDiagramMetadata.REFERENCED_URI] as string | undefined) ?? undefined,
             entityType,
             portDirection: direction,
             portName
@@ -2103,7 +2108,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                                   <button
                                       class="pp-icon-btn pp-prow-del danger"
                                       title="Remove port"
-                                      @click=${() => void this.promptAndDeleteEntityPort(entityType, direction, name)}
+                                      @click=${() => void this.promptAndDeleteEntityPort(node, entityType, direction, name)}
                                   >
                                       <span class="codicon codicon-trash"></span>
                                   </button>

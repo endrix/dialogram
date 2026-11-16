@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import { WORKFLOW_NETWORK_MODEL_KEY, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { LayoutPersistenceService } from '@dialogram/diagram-server/services/layout-persistence-service';
 
-import { ReversibleMultiWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-multi-workspace-edit-command';
+import { producerWriteCommand } from './producer-write';
 import { SidecarInvoker } from './sidecar-invoker';
 
 export namespace RenameEntityOperation {
@@ -55,11 +55,15 @@ export class RenameEntityOperationHandler extends OperationHandler {
         const root = this.modelState.root;
         const workflowName = root.args?.['wf:workflowName'] as string | undefined;
 
-        return new ReversibleMultiWorkspaceEditCommand({
+        // The producer writes the rename; undo puts back the file it wrote.
+        const element: any = this.modelState.index.find(operation.elementId);
+        const shownName = element?.args?.[WorkflowDiagramMetadata.ENTITY_NAME] as string | undefined;
+        return producerWriteCommand({
             label: 'Rename' + this.sidecar.undoLabelSuffix(),
-            computeEdits: async () => {
-                const element: any = this.modelState.index.find(operation.elementId);
-                const entityName = element?.args?.[WorkflowDiagramMetadata.ENTITY_NAME] as string | undefined;
+            sidecar: this.sidecar,
+            failed: `'${shownName ?? operation.elementId}' was not renamed.`,
+            request: () => {
+                const entityName = shownName;
                 if (!entityName) {
                     return undefined;
                 }
@@ -69,16 +73,13 @@ export class RenameEntityOperationHandler extends OperationHandler {
                     sourceUri,
                     workflowName
                 };
-
-                const ok = await this.sendSidecarOp(sourceUri, {
-                    op: this.sidecar.sidecarOp('renameNode'),
-                    args: { workflow: workflowName, old: entityName, new: operation.newName }
-                });
-                if (!ok) {
-                    return undefined;
-                }
-
-                return [{ uri: vscodeUri, edits: [] }];
+                return {
+                    fileUri: vscodeUri.toString(),
+                    payload: {
+                        op: this.sidecar.sidecarOp('renameNode'),
+                        args: { workflow: workflowName, old: entityName, new: operation.newName }
+                    }
+                };
             },
             afterApply: async () => {
                 const renameInfo = this.lastRename;
@@ -116,7 +117,4 @@ export class RenameEntityOperationHandler extends OperationHandler {
         });
     }
 
-    private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {
-        return this.sidecar.sendSidecarOp(sourceUri, payload);
-    }
 }

@@ -2,7 +2,7 @@ import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
 import { URI } from 'vscode-uri';
 import { SidecarRuntimeService, type CreateNodeStrings, type CreateNodeBehavior, CreateNodeVariant } from '../sidecar-runtime-config';
-import { parseCapabilitiesDiagnostic, type SidecarEdgeRole } from '../../sidecar-capabilities';
+import { parseCapabilitiesDiagnostic, type SidecarCapabilities, type SidecarEdgeRole } from '../../sidecar-capabilities';
 import { invokeSidecar, type SidecarOpResult } from '../../sidecar-transport';
 
 /** What one sidecar request came back as; the transport's result. */
@@ -10,8 +10,8 @@ export type SidecarInvocationResult = SidecarOpResult;
 
 @injectable()
 export class SidecarInvoker {
-    /** The edge kinds each sidecar command offers, asked once per session. */
-    private readonly edgeRolesByCommand = new Map<string, Promise<SidecarEdgeRole[] | undefined>>();
+    /** What each sidecar command says it can do, asked once per session. */
+    private readonly capabilitiesByCommand = new Map<string, Promise<SidecarCapabilities | undefined>>();
 
     constructor(
         @inject(SidecarRuntimeService)
@@ -85,25 +85,43 @@ export class SidecarInvoker {
      * is running. A failed ask is not kept, so the next one tries again.
      */
     async edgeRoles(sourceUri: string): Promise<SidecarEdgeRole[] | undefined> {
+        const roles = (await this.capabilities(sourceUri))?.edgeRoles;
+        return roles && roles.length > 0 ? roles : undefined;
+    }
+
+    /**
+     * Whether the sidecar declares a feature (`getCapabilities.features`);
+     * false when it declares none, or cannot be asked.
+     */
+    async hasFeature(sourceUri: string, feature: string): Promise<boolean> {
+        return (await this.capabilities(sourceUri))?.features[feature] === true;
+    }
+
+    /**
+     * What the sidecar says it can do: asked once per sidecar command for the
+     * session, not on every edit. Each ask is a process of its own, and what
+     * a sidecar offers does not change while it is running. A failed ask is
+     * not kept, so the next one tries again.
+     */
+    private async capabilities(sourceUri: string): Promise<SidecarCapabilities | undefined> {
         let key: string;
         try {
             key = this.sidecarCommand(vscode.Uri.parse(sourceUri));
         } catch {
             key = sourceUri;
         }
-        let pending = this.edgeRolesByCommand.get(key);
+        let pending = this.capabilitiesByCommand.get(key);
         if (!pending) {
             pending = this.sendSidecarCapabilitiesDetailed(sourceUri).then(result => {
                 if (!result.ok || !result.response) {
-                    this.edgeRolesByCommand.delete(key);
+                    this.capabilitiesByCommand.delete(key);
                     return undefined;
                 }
-                return parseCapabilitiesDiagnostic(result.response.diagnostic, '')?.edgeRoles ?? [];
+                return parseCapabilitiesDiagnostic(result.response.diagnostic, '');
             });
-            this.edgeRolesByCommand.set(key, pending);
+            this.capabilitiesByCommand.set(key, pending);
         }
-        const roles = await pending;
-        return roles && roles.length > 0 ? roles : undefined;
+        return pending;
     }
 
     async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {

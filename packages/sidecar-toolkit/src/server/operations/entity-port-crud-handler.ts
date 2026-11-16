@@ -1,13 +1,15 @@
 import { Action, Command, ModelState, OperationHandler, type OperationHandlerConstructor } from '@eclipse-glsp/server';
 import { decorate, inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
-import { readAuthoritativeSourceText } from './authoritative-source-text';
-import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
+import { entityPortWrite } from './entity-port-write';
+import { producerWriteCommand } from './producer-write';
 import { SidecarInvoker } from './sidecar-invoker';
 
 type CreateEntityPortOp = Action & {
     kind: string;
     elementId: string;
+    /** The entity's file, as the property panel read it off the instance. */
+    entityDocumentUri?: string;
     entityType: string;
     portDirection: 'input' | 'output';
     portName: string;
@@ -16,6 +18,9 @@ type CreateEntityPortOp = Action & {
 
 type DeleteEntityPortOp = Action & {
     kind: string;
+    /** The instance the port was deleted from; older clients send none. */
+    elementId?: string;
+    entityDocumentUri?: string;
     entityType: string;
     portDirection: 'input' | 'output';
     portName: string;
@@ -47,6 +52,11 @@ class EntityPortCrudHandlerBase extends OperationHandler {
     @inject(SidecarInvoker)
     protected readonly sidecar!: SidecarInvoker;
 
+    /**
+     * Add or delete the port where its entity is declared
+     * (entity-port-write.ts); a delete is refused while a connection here
+     * uses it, by a sidecar that is told where it is used.
+     */
     createCommand(action: Action): Command | undefined {
         const sourceUri = this.modelState.sourceUri;
         if (!sourceUri) {
@@ -57,43 +67,42 @@ class EntityPortCrudHandlerBase extends OperationHandler {
         if ((action as any).kind !== createKind && (action as any).kind !== deleteKind) {
             return undefined;
         }
-        const vscodeUri = vscode.Uri.parse(sourceUri);
-        const command = new ReversibleWorkspaceEditCommand({
-            label: (action as any).kind === createKind ? 'Create Entity Port' : 'Delete Entity Port',
-            uri: vscodeUri,
-            computeEdits: async () => {
-                const beforeText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
-                const op = action as CreateEntityPortOp | DeleteEntityPortOp;
-                const isCreate = op.kind === createKind;
-                const ok = await this.sendSidecarOp(sourceUri, {
-                    op: isCreate ? this.sidecar.sidecarOp('createEntityPort') : this.sidecar.sidecarOp('deleteEntityPort'),
-                    args: isCreate
-                        ? {
-                            entityType: op.entityType,
-                            portDirection: op.portDirection,
-                            portName: op.portName,
-                            portType: (op as CreateEntityPortOp).portType
-                        }
-                        : {
-                            entityType: op.entityType,
-                            portDirection: op.portDirection,
-                            portName: op.portName
-                        }
-                });
-                if (!ok) {
+        const op = action as CreateEntityPortOp | DeleteEntityPortOp;
+        const isCreate = op.kind === createKind;
+        return producerWriteCommand({
+            label: isCreate ? 'Create Entity Port' : 'Delete Entity Port',
+            sidecar: this.sidecar,
+            failed: isCreate ? `Port '${op.portName}' was not added.` : `Port '${op.portName}' was not deleted.`,
+            request: async () => {
+                const write = await entityPortWrite(
+                    this.sidecar,
+                    this.modelState,
+                    sourceUri,
+                    { entityType: op.entityType, entityDocumentUri: op.entityDocumentUri, elementId: op.elementId },
+                    {
+                        op: this.sidecar.sidecarOp(isCreate ? 'createEntityPort' : 'deleteEntityPort'),
+                        args: isCreate
+                            ? {
+                                entityType: op.entityType,
+                                portDirection: op.portDirection,
+                                portName: op.portName,
+                                portType: (op as CreateEntityPortOp).portType
+                            }
+                            : {
+                                entityType: op.entityType,
+                                portDirection: op.portDirection,
+                                portName: op.portName
+                            }
+                    },
+                    !isCreate
+                );
+                if ('refused' in write) {
+                    void vscode.window.showWarningMessage(write.refused);
                     return undefined;
                 }
-                const afterText = await readAuthoritativeSourceText(vscodeUri);
-                (command as any)._sourceBeforeText = beforeText;
-                (command as any)._sourceAfterText = afterText;
-                return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];
+                return write;
             }
         });
-        return command;
-    }
-
-    private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {
-        return this.sidecar.sendSidecarOp(sourceUri, payload);
     }
 }
 
