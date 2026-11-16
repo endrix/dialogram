@@ -58,6 +58,8 @@ export class RenameEntityOperationHandler extends OperationHandler {
         // The producer writes the rename; undo puts back the file it wrote.
         const element: any = this.modelState.index.find(operation.elementId);
         const shownName = element?.args?.[WorkflowDiagramMetadata.ENTITY_NAME] as string | undefined;
+        // This rename's names: the layout follows them forward, and back on undo.
+        let rename: { oldName: string; newName: string; sourceUri: string; workflowName?: string } | undefined;
         return producerWriteCommand({
             label: 'Rename' + this.sidecar.undoLabelSuffix(),
             sidecar: this.sidecar,
@@ -67,7 +69,7 @@ export class RenameEntityOperationHandler extends OperationHandler {
                 if (!entityName) {
                     return undefined;
                 }
-                this.lastRename = {
+                rename = {
                     oldName: entityName,
                     newName: operation.newName,
                     sourceUri,
@@ -81,8 +83,11 @@ export class RenameEntityOperationHandler extends OperationHandler {
                     }
                 };
             },
-            afterApply: async () => {
-                const renameInfo = this.lastRename;
+            afterApply: async phase => {
+                this.lastRename = rename;
+                const renameInfo = rename && (phase === 'undo'
+                    ? { ...rename, oldName: rename.newName, newName: rename.oldName }
+                    : rename);
                 if (renameInfo?.oldName && renameInfo.newName) {
                     try {
                         const networkId = renameInfo.workflowName && renameInfo.workflowName.trim() !== ''

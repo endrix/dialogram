@@ -10,12 +10,15 @@ import type { CommandThatMayChangeNothing, CommandThatMayRefuse } from '../serve
  */
 export type ComputeTextEdits = () => Promise<vscode.TextEdit[] | undefined>;
 
+/** When an `afterApply` hook runs: after the edit is made, undone, or redone. */
+export type ApplyPhase = 'execute' | 'undo' | 'redo';
+
 export interface ReversibleWorkspaceEditCommandOptions {
     label: string;
     uri: vscode.Uri;
     computeEdits: ComputeTextEdits;
-    /** Optional hook invoked after a successful execute/undo/redo. */
-    afterApply?: () => void | Promise<void>;
+    /** Optional hook invoked after a successful execute/undo/redo, told which. */
+    afterApply?: (phase: ApplyPhase) => void | Promise<void>;
 }
 
 function fullDocumentRange(doc: vscode.TextDocument): vscode.Range {
@@ -73,15 +76,16 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
 
         const afterDoc = await vscode.workspace.openTextDocument(this.options.uri);
         this.afterText = afterDoc.getText();
-        const overrideBefore = (this as any)._sourceBeforeText as string | undefined;
         const overrideAfter = (this as any)._sourceAfterText as string | undefined;
+        // What undo puts back is the file as it was on disk before the
+        // write, read here before the handler ran; the handler's own text
+        // before (`_sourceBeforeText`) only where the file cannot be read
+        // here. That is often the editor's, which after an earlier write
+        // made out of band may not have caught up, and undo would then take
+        // that earlier edit back too.
+        const overrideBefore = fileBefore ?? (this as any)._sourceBeforeText as string | undefined;
         if (overrideBefore !== undefined && overrideAfter !== undefined) {
-            // What undo puts back is the file as it was on disk before the
-            // write, read here before the handler ran: the handler's own
-            // text before may be the editor's, which after an earlier write
-            // made out of band may not have caught up, and undo would then
-            // take that earlier edit back too.
-            this.beforeText = fileBefore ?? overrideBefore;
+            this.beforeText = overrideBefore;
             this.afterText = overrideAfter;
             // The file as it was written, read where it was written, before
             // the edit and after: the same text is an edit that wrote
@@ -89,10 +93,10 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
             // before is read here, on disk, where the handler's text after
             // is read: the handler's own may be the editor's, which lags
             // what was last written out of band.
-            this.unchanged = (fileBefore ?? overrideBefore) === overrideAfter;
+            this.unchanged = overrideBefore === overrideAfter;
         }
 
-        await this.options.afterApply?.();
+        await this.options.afterApply?.('execute');
     }
 
     async undo(): Promise<void> {
@@ -117,7 +121,7 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
         this.refusedLast = !applied;
         if (applied) {
             await this.persist(doc);
-            await this.options.afterApply?.();
+            await this.options.afterApply?.('undo');
         }
     }
 
@@ -143,7 +147,7 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
         this.refusedLast = !applied;
         if (applied) {
             await this.persist(doc);
-            await this.options.afterApply?.();
+            await this.options.afterApply?.('redo');
         }
     }
 

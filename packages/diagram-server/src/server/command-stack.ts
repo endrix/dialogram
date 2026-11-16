@@ -72,9 +72,54 @@ function partsOf(command: CompoundCommand): Command[] {
  * whole would then keep Undo from the edits below it. Undoing a part that
  * changed nothing does nothing.
  */
-export class CompoundCommandThatMayChangeNothing extends CompoundCommand implements CommandThatMayChangeNothing {
+export class CompoundCommandThatMayChangeNothing extends CompoundCommand implements CommandThatMayChangeNothing, CommandThatMayRefuse {
+    private refusedLast = false;
+
     changedNothing(): boolean {
         return this.commands.every(changedNothing);
+    }
+
+    /** Whether the last undo or redo did nothing: a part refused, and the parts done before it were put back. */
+    refused(): boolean {
+        return this.refusedLast;
+    }
+
+    /**
+     * Its parts undone last first, as GLSP's; but a part refused (its file
+     * changed outside the diagram) stops the undo, and the parts already
+     * undone are redone: the edit is undone whole or not at all, and the
+     * stack keeps it as the edit to undo.
+     */
+    override async undo(): Promise<void> {
+        this.refusedLast = await this.applyAll([...this.commands].reverse(), part => part.undo(), part => part.redo());
+    }
+
+    /** As `undo`, first part first. */
+    override async redo(): Promise<void> {
+        this.refusedLast = await this.applyAll(this.commands, part => part.redo(), part => part.undo());
+    }
+
+    /** `apply` to each of `parts` in turn; on one refused, `back` to those done, last done first. True when one refused. */
+    private async applyAll(parts: Command[], apply: (part: Command) => unknown, back: (part: Command) => unknown): Promise<boolean> {
+        const done: Command[] = [];
+        try {
+            for (const part of parts) {
+                await apply(part);
+                if (refused(part)) {
+                    for (const each of done) {
+                        await back(each);
+                    }
+                    return true;
+                }
+                done.unshift(part);
+            }
+        } catch (error) {
+            for (const each of done) {
+                await back(each);
+            }
+            throw error;
+        }
+        return false;
     }
 
     override canUndo(): boolean {

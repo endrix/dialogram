@@ -104,6 +104,13 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                 this.panelCommitted = false;
             }
         }, true);
+        // A field committed otherwise than with Enter (its value changed and
+        // the focus kept): the model it makes is drawn.
+        document.addEventListener('change', event => {
+            if ((event.target as Element | null)?.closest?.('#property-panel')) {
+                this.panelCommitted = true;
+            }
+        }, true);
         document.addEventListener('focusout', event => {
             if (!this.redrawPending || !(event.target as Element | null)?.closest?.('#property-panel')) {
                 return;
@@ -317,9 +324,13 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
 
     protected typingInPanel(): boolean {
         const active = document.activeElement as HTMLElement | null;
+        // Text being typed: not a choice made in a list or a box ticked,
+        // which commit as they are made and keep the focus.
         return !this.panelCommitted
             && !!active?.closest?.('#property-panel')
-            && (active.isContentEditable || !!active.matches?.('input, textarea, select'));
+            && (active.isContentEditable || !!active.matches?.(
+                'textarea, input:not([type]), input[type="text"], input[type="search"], input[type="number"], input[type="email"], input[type="url"], input[type="tel"], input[type="password"]'
+            ));
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

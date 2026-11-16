@@ -242,6 +242,23 @@ describe('an undo or redo refused', () => {
     });
 });
 
+describe('a compound of edits undone', () => {
+    it('one part refused, puts back the parts it undid, and stays the edit to undo', async () => {
+        const stack = commandStack();
+        const stubborn = {
+            execute: async () => undefined, undo: async () => undefined, redo: async () => undefined,
+            canUndo: () => true, changedNothing: () => false, refused: () => true
+        };
+        await stack.execute(edit('B'));
+        await stack.execute(new CompoundCommandThatMayChangeNothing([stubborn as any, edit('C')]));
+        expect(text).toBe('C');
+        await stack.undo();
+        expect(text).toBe('C');
+        expect(stack.canRedo()).toBe(false);
+        expect(stack.canUndo()).toBe(true);
+    });
+});
+
 describe('an edit written out of band, judged by the file on disk', () => {
     let dir = '';
     afterEach(() => rmSync(dir, { recursive: true, force: true }));

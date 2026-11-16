@@ -120,6 +120,19 @@ describe('the property panel after an edit', () => {
         expect(rows()).toEqual(['MOT:Int(9)']);
     });
 
+    it('draws the model a choice made in a list makes, the list keeping the focus', () => {
+        const panel = new TestPanel();
+        (panel as any).initializeEditTracking();
+        const node = add([MOT]);
+        panel.show(node, rootWith(node));
+        const select = document.createElement('select');
+        content().appendChild(select);
+        select.focus();
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        panel.modelRootChanged(rootWith(add([['MOT', 'Int(9)', true]])));
+        expect(rows()).toEqual(['MOT:Int(9)']);
+    });
+
     it('draws the model a value committed with Enter makes, the field keeping the focus', () => {
         const panel = new TestPanel();
         (panel as any).initializeEditTracking();

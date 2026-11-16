@@ -16,6 +16,7 @@
  */
 import * as vscode from 'vscode';
 import { ReversibleMultiWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-multi-workspace-edit-command';
+import type { ApplyPhase } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
 import type { SidecarInvoker } from './sidecar-invoker';
 
@@ -35,22 +36,22 @@ export interface ProducerWriteOptions {
     request: () => ProducerWrite | undefined | Promise<ProducerWrite | undefined>;
     /** Said when the producer refuses with no reason of its own. */
     failed: string;
-    afterApply?: () => void | Promise<void>;
+    afterApply?: (phase: ApplyPhase) => void | Promise<void>;
 }
 
 type Snapshot = { uri: vscode.Uri; beforeText: string; afterText: string };
 
 /**
  * A file as it is on disk, which is what the producer reads and writes; ''
- * for one not there (yet). Not the editor's buffer: after an earlier edit
- * written out of band it may not have caught up, and an unsaved change in it
- * is not what the producer edits.
+ * for one not there (yet); nothing for one that cannot be read. Not the
+ * editor's buffer: after an earlier edit written out of band it may not have
+ * caught up, and an unsaved change in it is not what the producer edits.
  */
-async function textOf(uri: vscode.Uri): Promise<string> {
+async function textOf(uri: vscode.Uri): Promise<string | undefined> {
     try {
         return await readAuthoritativeSourceText(uri);
-    } catch {
-        return '';
+    } catch (error) {
+        return (error as { code?: string } | undefined)?.code === 'ENOENT' ? '' : undefined;
     }
 }
 
@@ -74,6 +75,12 @@ export function producerWriteCommand(options: ProducerWriteOptions): ReversibleM
                 })
             ).values()];
             const before = await Promise.all(uris.map(textOf));
+            // A file that cannot be read could not be put back: nothing is asked.
+            const unreadable = uris.find((_uri, at) => before[at] === undefined);
+            if (unreadable) {
+                void vscode.window.showWarningMessage(`${unreadable.fsPath || unreadable.toString()} cannot be read: nothing was changed.`);
+                return undefined;
+            }
             const result = await options.sidecar.sendSidecarOpDetailed(asked.fileUri, asked.payload);
             if (!result.ok) {
                 void vscode.window.showWarningMessage(result.message ?? options.failed);
@@ -81,7 +88,11 @@ export function producerWriteCommand(options: ProducerWriteOptions): ReversibleM
             }
             const all: Snapshot[] = [];
             for (const [at, uri] of uris.entries()) {
-                all.push({ uri, beforeText: before[at], afterText: await textOf(uri) });
+                const after = await textOf(uri);
+                if (after === undefined) {
+                    void vscode.window.showWarningMessage(`${uri.fsPath || uri.toString()} was written but cannot be read back: undo will not put it back.`);
+                }
+                all.push({ uri, beforeText: before[at]!, afterText: after ?? before[at]! });
             }
             // The files the producer changed; each as it was when it changed
             // none, which the command then counts as changing nothing.

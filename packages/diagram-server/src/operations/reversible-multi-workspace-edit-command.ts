@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { CommandThatMayChangeNothing, CommandThatMayRefuse } from '../server/command-stack';
+import type { ApplyPhase } from './reversible-workspace-edit-command';
 
 /**
  * The edits a command applies, by file; nothing (or an empty list) when there
@@ -13,7 +14,7 @@ export interface ReversibleMultiWorkspaceEditCommandOptions {
     label: string;
     computeEdits: ComputeMultiTextEdits;
     /** Optional hook invoked after a successful execute/undo/redo. */
-    afterApply?: () => void | Promise<void>;
+    afterApply?: (phase: ApplyPhase) => void | Promise<void>;
     /**
      * Snapshots for an op that wrote the files ITSELF, consulted after the
      * (then no-op) edit is applied.
@@ -133,7 +134,7 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
         this.unchanged = !!override && override.length > 0
             && override.every(s => s.beforeText === s.afterText)
             && entries.every(e => named.has(e.uri.toString()));
-        await this.options.afterApply?.();
+        await this.options.afterApply?.('execute');
     }
 
     async undo(): Promise<void> {
@@ -164,7 +165,7 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
         this.refusedLast = !applied;
         if (applied) {
             await this.persistSnapshots();
-            await this.options.afterApply?.();
+            await this.options.afterApply?.('undo');
         }
     }
 
@@ -196,7 +197,7 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
         this.refusedLast = !applied;
         if (applied) {
             await this.persistSnapshots();
-            await this.options.afterApply?.();
+            await this.options.afterApply?.('redo');
         }
     }
 

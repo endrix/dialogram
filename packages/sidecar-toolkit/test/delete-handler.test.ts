@@ -32,7 +32,7 @@ function network() {
         ['p', { id: 'p', type: 'port:output', parent: { type: WorkflowDiagramTypes.NODE_BOUNDARY_INPUT }, args: { [WorkflowDiagramMetadata.PORT_NAME]: 'x', [WorkflowDiagramMetadata.PORT_DIRECTION]: 'output' } }],
         ['by', { id: 'by', type: WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT, args: { [WorkflowDiagramMetadata.ENTITY_NAME]: 'y', [WorkflowDiagramMetadata.PORT_NAME]: 'y' } }],
         // A port of the instance `a`: its class's, not the network's.
-        ['ap', { id: 'ap', type: 'port:input', parent: { type: WorkflowDiagramTypes.NODE_ACTOR }, args: { [WorkflowDiagramMetadata.PORT_NAME]: 'x', [WorkflowDiagramMetadata.PORT_DIRECTION]: 'input' } }],
+        ['ap', { id: 'ap', type: 'port:input', parent: { type: WorkflowDiagramTypes.NODE_ACTOR, args: { [WorkflowDiagramMetadata.ENTITY_NAME]: 'a', [WorkflowDiagramMetadata.ENTITY_TYPE]: 'Pass' } }, args: { [WorkflowDiagramMetadata.PORT_NAME]: 'x', [WorkflowDiagramMetadata.PORT_DIRECTION]: 'input' } }],
         ['read-only', { id: 'read-only', type: WorkflowDiagramTypes.NODE_ACTOR, args: { [WorkflowDiagramMetadata.ENTITY_NAME]: 'ro', [WorkflowDiagramMetadata.IS_READ_ONLY]: true } }],
         ['portless', { id: 'portless', type: WorkflowDiagramTypes.EDGE_CONNECTION, args: { 'wf:from': 'a', 'wf:to': 'b' } }],
         ['shared', { id: 'shared', type: WorkflowDiagramTypes.EDGE_CONNECTION, args: { [WorkflowDiagramMetadata.EDGES_OF]: ['e1', 'e2'], 'wf:outPort': 'o', 'wf:inPort': 'i' } }],
@@ -125,9 +125,10 @@ describe('delete in a network view', () => {
     });
 
     it('never takes out the network\'s port of the name of an instance\'s port', async () => {
-        const { command, sent } = await remove(['ap']);
+        const { command, sent, said } = await remove(['ap']);
         expect(command).toBeUndefined();
         expect(sent).toEqual([]);
+        expect(said).toEqual(["Port 'x' of 'a' belongs to its class 'Pass': remove it in the property panel, or where the class is declared."]);
     });
 
     it('takes out an edge selected with its node before the node, which would take it with it', async () => {

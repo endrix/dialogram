@@ -294,6 +294,15 @@ export class DeleteElementOperationHandler extends OperationHandler {
                         : undefined;
                 if (portName && portDirection) {
                     deletePort(portDirection, portName);
+                } else if (portName) {
+                    const owner = element?.parent?.args as Record<string, unknown> | undefined;
+                    const instance = owner?.[WorkflowDiagramMetadata.ENTITY_NAME];
+                    const entity = owner?.[WorkflowDiagramMetadata.ENTITY_TYPE];
+                    const whose = typeof instance === 'string' ? ` of '${instance}'` : '';
+                    const cls = typeof entity === 'string' ? ` '${entity}'` : '';
+                    void vscode.window.showInformationMessage(
+                        `Port '${portName}'${whose} belongs to its class${cls}: remove it in the property panel, or where the class is declared.`
+                    );
                 }
                 continue;
             }

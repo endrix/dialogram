@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -213,6 +213,41 @@ describe('a rename', () => {
             await onDisk(() => stack.undo());
             expect(readFileSync(net, 'utf8')).toBe(NET);
         }
+    });
+});
+
+describe('a rename\'s layout', () => {
+    it('follows the name forward, back on undo, forward again on redo, each command its own', async () => {
+        const { net, modelState } = design();
+        const moved: string[] = [];
+        const handler = new RenameEntityOperationHandler() as any;
+        handler.modelState = modelState;
+        handler.sidecar = producer(net, [], true);
+        handler.layoutPersistence = { renameNode: async (_file: string, _net: string, from: string, to: string) => { moved.push(`${from}>${to}`); } };
+        const stack = commandStack();
+        await onDisk(() => stack.execute(handler.createCommand({ kind: 'dialogram.renameEntity', elementId: 'a', newName: 'b' })));
+        await onDisk(() => stack.execute(handler.createCommand({ kind: 'dialogram.renameEntity', elementId: 'x', newName: 'y' })));
+        await onDisk(() => stack.undo());
+        await onDisk(() => stack.undo());
+        await onDisk(() => stack.redo());
+        expect(moved).toEqual(['a>b', 'x>y', 'y>x', 'b>a', 'a>b']);
+    });
+});
+
+describe('a file that cannot be read', () => {
+    it('is not asked to be written: it could not be put back', async () => {
+        const { net, actors, modelState } = design();
+        rmSync(actors);
+        mkdirSync(actors); // read as a file, it fails
+        const sent: Sent[] = [];
+        const stack = commandStack();
+        const said = await saying(async said => {
+            await onDisk(() => stack.execute(updatePort(modelState, producer(net, sent, true), 'type', 'Int(16)')));
+            return said;
+        });
+        expect(sent).toEqual([]);
+        expect(said).toEqual([`${actors} cannot be read: nothing was changed.`]);
+        expect(stack.canUndo()).toBe(false);
     });
 });
 
