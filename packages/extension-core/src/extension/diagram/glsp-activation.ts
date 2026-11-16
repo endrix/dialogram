@@ -41,7 +41,7 @@ import { composeStorageRuntimeOptions } from './profile-storage-options';
 import { composeElkServerOptions } from './profile-elk-server-options';
 import { openReference } from './open-reference-host';
 import { type DiagramChatConfirm, type DiagramChatConfirmAnswer, type DiagramChatTask, type DiagramProfile, type DiagramRunAnswer, type DiagramRunHost, type DiagramRunQuestion } from '../../api';
-import { inPlace, openColumnFor, openWithArguments, registerDiagramViewType } from './open-in-place';
+import { inPlace, openColumnFor, openWithArguments, plainOpenOptions, registerDiagramViewType } from './open-in-place';
 import { producerNamedDefinition } from './producer-definition';
 
 // Define the diagram type constant locally to avoid import
@@ -804,6 +804,19 @@ export async function activateGlspIntegration(
                     })();
 
                     // Skip default connector processing (which would showTextDocument).
+                    callback(message, false);
+                    return;
+                }
+
+                // Any other open is a file at a line, in the text editor: a
+                // double-click on a node with no diagram behind it, or on one
+                // that stands for a file. Shown here, not by GLSP's handler,
+                // which shows it in the diagram's group beside the editor the
+                // file already has.
+                const plainTarget = parseExternalTargetUri(uri);
+                if (plainTarget) {
+                    void Promise.resolve(vscode.window.showTextDocument(plainTarget, plainOpenOptions(plainTarget, args as Record<string, unknown> | undefined)))
+                        .catch(() => undefined);
                     callback(message, false);
                     return;
                 }

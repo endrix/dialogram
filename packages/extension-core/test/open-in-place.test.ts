@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { afterEach } from 'vitest';
-import { inPlace, openColumnFor, openWithArguments, registerDiagramViewType } from '../src/extension/diagram/open-in-place';
+import { inPlace, openColumnFor, openWithArguments, plainOpenOptions, registerDiagramViewType } from '../src/extension/diagram/open-in-place';
 
 const uri = (file: string) => vscode.Uri.file(file);
 const text = (file: string) => ({ input: { uri: uri(file) } });
@@ -72,6 +72,24 @@ describe('an open, through the window’s own tabs', () => {
         tabs(custom('/w/out.gds', 'gds.viewer'));
         expect(openWithArguments(uri('/w/out.gds'), 'gds.viewer')).toEqual([uri('/w/out.gds'), 'gds.viewer', 2]);
         expect(openWithArguments(uri('/w/out.gds'), 'other.viewer')).toEqual([uri('/w/out.gds'), 'other.viewer']);
+    });
+
+    it('shows a double-click\u2019s file at its line in the group that has it, not in the diagram\u2019s', () => {
+        // What a double-click on a node with no diagram behind it sends: the
+        // file, the line, for real. GLSP's handler showed it in the active group.
+        tabs(text('/w/cpu.py'));
+        const sent = { jsonOpenerOptions: JSON.stringify({ selection: { start: { line: 41, character: 4 }, end: { line: 41, character: 4 } }, preview: false, preserveFocus: false }) };
+        const options = plainOpenOptions(uri('/w/cpu.py'), sent);
+        expect(options.viewColumn).toBe(2);
+        expect(options.preview).toBe(false);
+        expect(options.preserveFocus).toBe(false);
+        expect([options.selection?.start.line, options.selection?.start.character]).toEqual([41, 4]);
+        // A file no group has opens where it did, the active group.
+        expect(plainOpenOptions(uri('/w/absent.py'), sent).viewColumn).toBeUndefined();
+        // A column the diagram named, or no options at all, are taken as they are.
+        expect(plainOpenOptions(uri('/w/cpu.py'), { jsonOpenerOptions: JSON.stringify({ viewColumn: 3 }) }).viewColumn).toBe(3);
+        expect(plainOpenOptions(uri('/w/cpu.py'), undefined)).toEqual({ viewColumn: 2 });
+        expect(plainOpenOptions(uri('/w/cpu.py'), { jsonOpenerOptions: 'not json' })).toEqual({ viewColumn: 2 });
     });
 
     it('never takes a diagram for the editor of a default open', () => {

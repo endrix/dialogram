@@ -81,3 +81,40 @@ export function openWithArguments(uri: vscode.Uri, viewType: string): [vscode.Ur
     const viewColumn = openColumnFor(uri, { viewType });
     return viewColumn === undefined ? [uri, viewType] : [uri, viewType, viewColumn];
 }
+
+/** A position as the diagram sends it, zero-based. */
+interface SentPosition { line: number; character: number }
+
+const isSentPosition = (value: unknown): value is SentPosition =>
+    !!value && typeof value === 'object'
+    && typeof (value as SentPosition).line === 'number' && typeof (value as SentPosition).character === 'number';
+
+/**
+ * How to show a file the diagram asks for with nothing but where in it
+ * (`jsonOpenerOptions`): a double-click on a node with no diagram behind it,
+ * or on a node that stands for a file. GLSP's own handler showed it in the
+ * active group, the diagram's, whatever group already had the file; this is
+ * its options, at the line asked for, in that group.
+ */
+export function plainOpenOptions(uri: vscode.Uri, args: Record<string, unknown> | undefined): vscode.TextDocumentShowOptions {
+    let sent: Record<string, unknown> = {};
+    const raw = args?.jsonOpenerOptions;
+    if (typeof raw === 'string' && raw.trim() !== '') {
+        try {
+            const parsed = JSON.parse(raw);
+            sent = parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
+        } catch {
+            sent = {};
+        }
+    }
+    const selection = sent.selection as { start?: unknown; end?: unknown } | undefined;
+    const options: vscode.TextDocumentShowOptions = {
+        ...(typeof sent.viewColumn === 'number' ? { viewColumn: sent.viewColumn as vscode.ViewColumn } : {}),
+        ...(typeof sent.preview === 'boolean' ? { preview: sent.preview } : {}),
+        ...(typeof sent.preserveFocus === 'boolean' ? { preserveFocus: sent.preserveFocus } : {}),
+        ...(selection && isSentPosition(selection.start) && isSentPosition(selection.end)
+            ? { selection: new vscode.Range(selection.start.line, selection.start.character, selection.end.line, selection.end.character) }
+            : {})
+    };
+    return inPlace(uri, 'text', options);
+}

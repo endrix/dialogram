@@ -829,6 +829,16 @@ it no longer has.
 
 ### Fixed
 
+- **A double-click that opens a node's source shows the editor the file
+  already has.** The opens of #165 went through the extension's own
+  handler; a double-click on a node with no diagram behind it
+  (`doubleClickOpensSource`: an actor's action or function, say) or on a
+  node that stands for a file sends only the file and the line, which no
+  branch of that handler took, so GLSP's own handler showed it in the
+  diagram's group: a second text editor of a file open in the group beside.
+  The handler now takes that open too, at the line, through `inPlace`
+  (`plainOpenOptions`).
+
 - **A transition no longer flickers under a pointer near its line or
   label.** The 12px stroke that catches the pointer beside a transition's
   line was narrowed to 2px while the edge was hovered, by the edges' own
