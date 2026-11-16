@@ -92,6 +92,28 @@ describe('an open, through the window’s own tabs', () => {
         expect(plainOpenOptions(uri('/w/cpu.py'), { jsonOpenerOptions: 'not json' })).toEqual({ viewColumn: 2 });
     });
 
+    it('takes options sent as args as GLSP did, the JSON over them', () => {
+        tabs(text('/w/cpu.py'));
+        const selection = { start: { line: 3, character: 0 }, end: { line: 3, character: 0 } };
+        const options = plainOpenOptions(uri('/w/cpu.py'), { selection, preview: false, jsonOpenerOptions: JSON.stringify({ preview: true }) });
+        expect(options.selection?.start.line).toBe(3);
+        expect(options.preview).toBe(true);
+        expect(options.viewColumn).toBe(2);
+    });
+
+    it('leaves out what VS Code would refuse: a negative or broken range, a column with no group', () => {
+        // `vscode.Range` throws on a negative line, and the throw would leave the message hook unanswered.
+        tabs(text('/w/cpu.py'));
+        const at = (line: number, character = 0) => ({ start: { line, character }, end: { line, character } });
+        for (const selection of [at(-1), at(2, -3), at(1.5), { start: { line: 1 } }]) {
+            expect(plainOpenOptions(uri('/w/cpu.py'), { jsonOpenerOptions: JSON.stringify({ selection }) }).selection).toBeUndefined();
+        }
+        // Column 0 is no group: the lookup goes on and finds the one with the file.
+        expect(plainOpenOptions(uri('/w/cpu.py'), { jsonOpenerOptions: JSON.stringify({ viewColumn: 0 }) }).viewColumn).toBe(2);
+        expect(plainOpenOptions(uri('/w/cpu.py'), { jsonOpenerOptions: JSON.stringify({ viewColumn: 2.5 }) }).viewColumn).toBe(2);
+        expect(plainOpenOptions(uri('/w/cpu.py'), { jsonOpenerOptions: JSON.stringify({ viewColumn: -2 }) }).viewColumn).toBe(-2);
+    });
+
     it('never takes a diagram for the editor of a default open', () => {
         registerDiagramViewType('workflow.networkDiagram');
         tabs(custom('/w/sub.py', 'workflow.networkDiagram'));
