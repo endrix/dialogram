@@ -4,7 +4,9 @@
  *
  * A member of a list is a row of a table: a body, the family's mark down its
  * left edge, its name and its lines at the columns the server gave it. A link
- * leaves a row by a side, never along the table. A transition's label ends
+ * leaves a row by a side, never along the table, and a row at the end of a
+ * link of the selection has its background tinted, where another node is
+ * outlined. A transition's label ends
  * in the tokens its action takes and gives, after its condition's mark.
  */
 import 'reflect-metadata';
@@ -12,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import { WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { listRowOf, renderListRow } from '../src/list-row-view';
 import { nodeFamilyCss } from '../src/palette-icons';
-import { renderSelectionLinks, type LinkElement } from '../src/selection-links';
+import { markLinkEnd, noteSelection, renderSelectionLinks, withSelectionLinks, type LinkElement } from '../src/selection-links';
 import { TransitionEdgeView } from '../src/automaton-views';
 
 // The GLSP `svg` helper gives `{tag, props, children}` here, snabbdom vnodes in a browser.
@@ -96,6 +98,70 @@ describe('a row of a list', () => {
         expect(start.x).toBe(208);
         expect(start.y).toBeGreaterThan(32);
         expect(start.y).toBeLessThan(52);
+    });
+});
+
+describe('a row at the end of a link of the selection', () => {
+    /** A list of two rows, `ptr` and `cnt`; the action `act`, selected, reads `ptr` and writes the port `out`. */
+    const model = (): any => {
+        const row = (id: string, y: number): any => ({
+            id, type: WorkflowDiagramTypes.NODE_ACTOR, position: { x: 8, y }, size: { width: 200, height: 20 },
+            args: { [WorkflowDiagramMetadata.LIST_ROW]: ROW, [WorkflowDiagramMetadata.ENTITY_NAME]: id }
+        });
+        const frame = {
+            id: 'frame', type: WorkflowDiagramTypes.NODE_GROUP, position: { x: 0, y: 0 }, size: { width: 216, height: 80 },
+            children: [row('ptr', 32), row('cnt', 52)]
+        };
+        const node = (id: string, x: number, selected = false): any => ({
+            id, type: WorkflowDiagramTypes.NODE_ACTOR, position: { x, y: 0 }, size: { width: 100, height: 40 }, selected
+        });
+        const root: any = {
+            id: 'root', type: WorkflowDiagramTypes.GRAPH,
+            args: { [WorkflowDiagramMetadata.SELECTION_LINKS]: [{ id: 'r', from: 'ptr', to: 'act' }, { id: 'w', from: 'act', to: 'out' }] },
+            children: [frame, node('act', 400, true), node('out', 700)]
+        };
+        const adopt = (parent: any): void => (parent.children ?? []).forEach((child: any) => { child.parent = parent; child.root = root; adopt(child); });
+        adopt(root);
+        return root;
+    };
+    const drawRow = (root: any, id: string): any => {
+        const row = root.children[0].children.find((each: any) => each.id === id);
+        return renderListRow(row, ROW, { width: 200, height: 20 }, {}, { renderChildren: () => [] } as any);
+    };
+
+    const svgOf = (): any => ({ sel: 'svg', data: { class: {} }, children: [{ sel: 'g', data: {}, children: [] }] });
+    /** One render as the root's view makes it: worked out, the rows drawn, the drawing over the diagram. */
+    const render = (root: any, rows: string[]): { rows: Record<string, boolean>; overlay: any } => {
+        noteSelection(root, 'main');
+        const drawn = Object.fromEntries(rows.map(id => [id, classesOf(drawRow(root, id))['list-row-linked']]));
+        const svg = withSelectionLinks(svgOf(), root, 'main') as any;
+        return { rows: drawn, overlay: svg.children[0].children[0] };
+    };
+
+    it('has its background tinted, and is not outlined; another node at a link’s end is', () => {
+        const { rows, overlay } = render(model(), ['ptr', 'cnt']);
+        expect(rows).toEqual({ ptr: true, cnt: false });
+        // The port is outlined; the row is not, and its link still meets it.
+        expect(withClass(overlay, 'selection-link-end')).toHaveLength(1);
+        expect(withClass(overlay, 'selection-link-line')).toHaveLength(2);
+    });
+
+    it('is outlined when it was not drawn as a row: nothing else would mark it', () => {
+        const { overlay } = render(model(), []);
+        expect(withClass(overlay, 'selection-link-end')).toHaveLength(2);
+        // Nor without its root's view having worked anything out.
+        expect(withClass(renderSelectionLinks(model()), 'selection-link-end')).toHaveLength(2);
+    });
+
+    it('is plain again once nothing is selected, and in the hidden render', () => {
+        const root = model();
+        noteSelection(root, 'main');
+        noteSelection(root, 'hidden');
+        expect(markLinkEnd({ id: 'ptr', root })).toBe(false);
+        root.children[1].selected = false;
+        expect(render(root, ['ptr']).rows).toEqual({ ptr: false });
+        // A row of a model whose view has not worked anything out is plain.
+        expect(markLinkEnd({ id: 'ptr' })).toBe(false);
     });
 });
 
