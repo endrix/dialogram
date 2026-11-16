@@ -37,6 +37,7 @@ import {
     DefaultTypes,
     GRoutingHandle,
     GRoutingHandleView,
+    FitToScreenCommand,
     SetModelCommand,
     ComputedBoundsApplicator,
     ToolPalette
@@ -48,6 +49,7 @@ import { WorkflowGridStartup } from './grid-startup';
 import { WorkflowPaletteIconStartup } from './palette-icons';
 import { InitialViewportService } from './initial-viewport-service';
 import { ViewportPreservingSetModelCommand } from './viewport-preserving-set-model-command';
+import { FitClearOfOverlaysCommand } from './fit-clear-of-overlays';
 import { RunningAgentsBar } from './running-agents-bar';
 import { ExecutionOverlayMessageBridge } from './execution-overlay-message-bridge';
 import { RunAgentStreamActionHandler } from './editing-action-handlers';
@@ -92,6 +94,9 @@ export const diagramBaseModule = new ContainerModule((bind, unbind, isBound, reb
 
     // Preserve viewport across model refreshes (prevents viewport jump on save-triggered reload).
     rebind(SetModelCommand).to(ViewportPreservingSetModelCommand);
+
+    // Fit draws the diagram where the palette and the canvas's buttons leave it free.
+    rebind(FitToScreenCommand).to(FitClearOfOverlaysCommand);
 
     // Center viewport on initial model load (once per workflow).
     bind(InitialViewportService).toSelf().inSingletonScope();
