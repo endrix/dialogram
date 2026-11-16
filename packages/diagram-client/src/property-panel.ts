@@ -6,7 +6,7 @@ import { html, render, nothing, type TemplateResult } from 'lit';
 import { createRef, ref } from 'lit/directives/ref.js';
 import type { GModelRoot } from '@eclipse-glsp/sprotty';
 import { CenterAction, DeleteElementOperation, SelectAction } from '@eclipse-glsp/protocol';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes, portTypesUsed } from '@dialogram/shared';
 import {
     WorkflowCreateBoundaryPortOperation,
     WorkflowPromptLabelEditAction,
@@ -486,9 +486,13 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         const outputPorts = ports.filter((p: any) => p.args?.[WorkflowDiagramMetadata.IS_INPUT_PORT] === false);
         
         // Basic Info Section
+        // A network runtime's words: its instances are actors, as its
+        // subnetworks are networks.
         let typeLabel = isNetworkInstance
             ? (usesNetworkModel ? 'Network' : 'Workflow')
-            : (isExternalTask ? 'External Task' : 'Task');
+            : usesNetworkModel
+                ? (isExternalTask ? 'External Actor' : 'Actor')
+                : (isExternalTask ? 'External Task' : 'Task');
         let typeBadge = entityType;
 
         if (isBoundaryInput) {
@@ -1816,8 +1820,11 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             return;
         }
 
+        // Offered: the type the diagram's ports have most.
+        const usual = portTypesUsed(this.lastRoot as any)[0];
         const type = await VscodeUi.instance.inputBox({
-            prompt: `Type for ${portName} (optional, e.g. int(size=32))`
+            prompt: `Type for ${portName}`,
+            ...(usual ? { value: usual } : {})
         });
         if (type === undefined) {
             return;
@@ -1841,7 +1848,9 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         if (!portName) {
             return;
         }
-        const portType = (await VscodeUi.instance.inputBox({ prompt: `Type for ${portName}`, value: 'Any' }))?.trim();
+        // Offered: the type the node's own ports have most, else the diagram's.
+        const usual = portTypesUsed(node)[0] ?? portTypesUsed(this.lastRoot as any)[0];
+        const portType = (await VscodeUi.instance.inputBox({ prompt: `Type for ${portName}`, ...(usual ? { value: usual } : {}) }))?.trim();
         if (!portType) {
             return;
         }

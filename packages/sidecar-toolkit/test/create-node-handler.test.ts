@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 
 import { CreateNodeOperationHandler } from '../src/server/operations/create-node-handler.js';
 import type { CreateNodeStrings, CreateNodeBehavior } from '../src/server/sidecar-runtime-config.js';
-import { WorkflowDiagramTypes } from '@dialogram/shared';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 
 /**
  * The create-node vocabulary/behavior is product-supplied config (SP2c-3). These mocks stand in
@@ -510,6 +510,52 @@ describe('workflow create node handler', () => {
             workspaceAny.openTextDocument = originalOpenTextDocument;
             workspaceAny.applyEdit = originalApplyEdit;
             windowAny.showQuickPick = originalShowQuickPick;
+        }
+    });
+
+    it('offers no network inside itself, and words the picker with the product\'s name for the kind', async () => {
+        const workspaceAny = vscode.workspace as any;
+        const windowAny = vscode.window as any;
+        const saved = { open: workspaceAny.openTextDocument, apply: workspaceAny.applyEdit, pick: windowAny.showQuickPick };
+        const picks: Array<{ items: Array<{ label: string; description?: string }>; placeHolder?: string }> = [];
+        workspaceAny.openTextDocument = async () => ({
+            uri: { fsPath: '/tmp/calpy-self-picker.py', toString: () => 'file:///tmp/calpy-self-picker.py' },
+            getText: () => '@network\ndef Main():\n    pass\n'
+        });
+        workspaceAny.applyEdit = async () => false;
+        windowAny.showQuickPick = async (items: Array<{ label: string; description?: string }>, options: { placeHolder?: string }) => {
+            picks.push({ items, placeHolder: options?.placeHolder });
+            return undefined;
+        };
+        try {
+            for (const [elementTypeId, types] of [
+                [WorkflowDiagramTypes.NODE_WORKFLOW, ['NetA', 'Main']],
+                [WorkflowDiagramTypes.NODE_ACTOR, ['Add']]
+            ] as const) {
+                const handler = new CreateNodeOperationHandler();
+                (handler as any).modelState = { root: { args: {
+                    sourceUri: 'file:///tmp/calpy-self-picker.py', 'wf:workflowName': 'Main', [WorkflowDiagramMetadata.WORKFLOW_NAME]: 'Main'
+                } } };
+                (handler as any).sidecar = calpySidecar();
+                (handler as any).sendSidecarCapabilitiesDetailed = async () => ({
+                    ok: true,
+                    response: { status: 'ok', diagnostic: { capabilities: { supportedOps: [
+                        'calpy.listWorkflowTypes', 'calpy.listTaskTypes', 'calpy.createWorkflowType', 'calpy.createTaskType',
+                        'calpy.listInstanceNames', 'calpy.createNode'
+                    ] } } }
+                });
+                (handler as any).sendSidecarListDetailed = async () => ({ ok: true, response: { status: 'ok', diagnostic: { types } } });
+                await (handler.createCommand({ kind: 'createNode', elementTypeId, args: {} } as any) as any).execute();
+            }
+            const [network, actor] = picks;
+            expect(network.placeHolder).toBe('Select a network to instantiate');
+            expect(network.items.filter(item => item.description !== undefined).map(item => [item.label, item.description]))
+                .toEqual([['NetA', 'network']]);
+            expect(actor.placeHolder).toBe('Select an actor to instantiate');
+        } finally {
+            workspaceAny.openTextDocument = saved.open;
+            workspaceAny.applyEdit = saved.apply;
+            windowAny.showQuickPick = saved.pick;
         }
     });
 

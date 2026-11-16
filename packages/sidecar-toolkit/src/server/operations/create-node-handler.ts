@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
 import { URI } from 'vscode-uri';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes, portTypesUsed, withArticle } from '@dialogram/shared';
 
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { AgentCreateNodeOutcomeSink } from '@dialogram/diagram-server/server/agent-create-node-outcome';
@@ -216,11 +216,13 @@ export class CreateNodeOperationHandler extends OperationHandler {
                         void vscode.window.showErrorMessage('Invalid port name (must be an identifier).');
                         return undefined;
                     }
+                    // Offered: the type the diagram's ports have most.
+                    const usual = portTypesUsed(this.modelState.root as any)[0];
                     const portType = headless
                         ? (operation.args?.['portType'] as string | undefined)?.trim()
                         : (await vscode.window.showInputBox({
                             prompt: `Type for ${direction} port '${portName}'`,
-                            placeHolder: 'e.g. int(size=32)'
+                            ...(usual ? { value: usual } : {})
                         }))?.trim();
                     if (!portType) {
                         if (headless) {
@@ -290,10 +292,15 @@ export class CreateNodeOperationHandler extends OperationHandler {
                             return undefined;
                         }
                         const listResult = await this.listTypeNamesDetailed(sourceUri, requestedKind);
-                    const items = await this.resolveAvailableTypeNames(sourceUri, requestedKind, beforeText, listResult, `list available ${typeLabel} types`);
-                    if (!items) {
+                    const listed = await this.resolveAvailableTypeNames(sourceUri, requestedKind, beforeText, listResult, `list available ${typeLabel} types`);
+                    if (!listed) {
                         return undefined;
                     }
+                    // A network is not offered inside itself.
+                    const editing = this.modelState.root?.args?.[WorkflowDiagramMetadata.WORKFLOW_NAME];
+                    const items = requestedKind === 'workflow' && typeof editing === 'string'
+                        ? listed.filter(name => name !== editing)
+                        : listed;
                     type PickItem = vscode.QuickPickItem & (
                         | { itemKind: 'separator' }
                         | { itemKind: 'new' }
@@ -310,10 +317,10 @@ export class CreateNodeOperationHandler extends OperationHandler {
                         });
                     }
                     for (const item of items) {
-                        pickItems.push({ label: item, description: isWorkflow ? '@workflow' : typeLabel, itemKind: 'existing' as const, name: item });
+                        pickItems.push({ label: item, description: typeLabel, itemKind: 'existing' as const, name: item });
                     }
                     const picked = await vscode.window.showQuickPick<PickItem>(pickItems, {
-                        placeHolder: `Select a ${typeLabel} to instantiate`
+                        placeHolder: `Select ${withArticle(typeLabel)} to instantiate`
                     });
                     if (!picked) {
                         return undefined;
