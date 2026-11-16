@@ -185,9 +185,11 @@ it no longer has.
   layout, crosses no frame, and is not drawn until one of its ends is
   selected. Then every such link of the selected node appears over the
   diagram, the node at its other end outlined, and the rest of the diagram
-  all but disappears (see the next entry). For relations too many to draw at once: the state an action reads,
-  the actions that take a token from a port. Its ends name nodes (a port
-  names its node, a group scope its group); `meta.role` gives it the class
+  all but disappears (see "The rest of the diagram all but disappears
+  behind a selection's links" under Changed). For relations too many to
+  draw at once: the state an action reads, the actions that take a token
+  from a port. Its ends name nodes (a port names its node, a group scope
+  its group); `meta.role` gives it the class
   `selection-link-<role>` for a product to colour, `meta.label` a word on
   it, `meta.bidirectional` an arrowhead at both ends. A link leaves a node
   by the side facing the other end, or by the side across when a neighbour
@@ -518,13 +520,16 @@ it no longer has.
 
 - **The rest of the diagram all but disappears behind a selection's
   links.** While links drawn on selection are shown, every node and edge
-  that is neither selected, at a link's end, nor an end of one of those
-  edges (a transition's two states) is drawn at a tenth of its opacity
-  (`wf-focus-faded`, put on by a vnode postprocessor,
-  `SelectionFocusPostprocessor`), and comes back enough to read under the
-  pointer. It was the diagram's edges only, at 0.3, and every state,
-  port and row stayed as it was. A node that holds nodes never fades. A
-  selection with no links (a state) fades nothing.
+  that is neither selected, at a link's end, held by one of those (a group
+  a link leads to), nor an end of one of those edges (a transition's two
+  states, through a group's frame to the other part of an edge cut there)
+  is drawn at a tenth of its opacity (`wf-focus-faded`, put on by a vnode
+  postprocessor, `SelectionFocusPostprocessor`), and comes back enough to
+  read under the pointer. It was the diagram's edges only, at 0.3, and
+  every state, port and row stayed as it was. A node that holds nodes
+  never fades, an edge in error or on the selection's trace neither, and
+  a transition kept in sight draws the line it shares with others between
+  the same two states. A selection with no links (a state) fades nothing.
 - **A row a selection's link leads to is tinted, not outlined.** Selecting
   a transition, or anything else with links drawn on selection, outlined
   each node at a link's other end with a box drawn 3 px outside it. The
