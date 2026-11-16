@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 
 import { CreateNodeOperationHandler } from '../src/server/operations/create-node-handler.js';
 import type { CreateNodeStrings, CreateNodeBehavior } from '../src/server/sidecar-runtime-config.js';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { WORKFLOW_NETWORK_MODEL_KEY, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 
 /**
  * The create-node vocabulary/behavior is product-supplied config (SP2c-3). These mocks stand in
@@ -866,6 +866,70 @@ describe('workflow create node handler', () => {
             workspaceAny.applyEdit = originalApplyEdit;
             windowAny.showInputBox = originalShowInputBox;
             windowAny.showWarningMessage = originalShowWarningMessage;
+            await fs.rm(tempRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('puts a node made from the palette where it was clicked, and nowhere when it is not made', async () => {
+        const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'calpy-placed-'));
+        const mainPath = path.join(tempRoot, 'main.py');
+        await fs.writeFile(mainPath, '@network\ndef Main():\n    pass\n');
+        const workspaceAny = vscode.workspace as any;
+        const windowAny = vscode.window as any;
+        const saved = { open: workspaceAny.openTextDocument, apply: workspaceAny.applyEdit, pick: windowAny.showQuickPick, input: windowAny.showInputBox, error: windowAny.showErrorMessage };
+        workspaceAny.openTextDocument = async () => ({
+            uri: { fsPath: mainPath, toString: () => `file://${mainPath}` },
+            getText: () => '@network\ndef Main():\n    pass\n'
+        });
+        workspaceAny.applyEdit = async () => true;
+        windowAny.showQuickPick = async (items: Array<{ label: string }>) => items.find(item => item.label === 'Add');
+        windowAny.showErrorMessage = async () => undefined;
+        // The layout the diagram is drawn from, by file and network.
+        const layouts = new Map<string, Map<string, { x: number; y: number }>>();
+        const layoutPersistence = {
+            loadLayout: async (file: string, network: string) => layouts.has(`${file}#${network}`) ? new Map(layouts.get(`${file}#${network}`)) : undefined,
+            saveLayoutImmediate: async (file: string, network: string, positions: Map<string, { x: number; y: number }>) => {
+                layouts.set(`${file}#${network}`, new Map(positions));
+            }
+        };
+        layouts.set(`${mainPath}#Main`, new Map([['first', { x: 0, y: 0 }]]));
+        try {
+            for (const [name, ok, drawnFrom] of [['adder', true, ['first', 'adder']], ['broken', false, ['first', 'adder', 'broken']]] as const) {
+                windowAny.showInputBox = async () => name;
+                const handler = new CreateNodeOperationHandler();
+                const seenWhenWritten: Array<Array<string>> = [];
+                (handler as any).modelState = {
+                    root: { args: { sourceUri: `file://${mainPath}`, [WorkflowDiagramMetadata.WORKFLOW_NAME]: 'Main' } },
+                    get: (key: string) => key === WORKFLOW_NETWORK_MODEL_KEY ? { documentUri: `file://${mainPath}`, workflowName: 'Main' } : undefined
+                };
+                (handler as any).layoutPersistence = layoutPersistence;
+                (handler as any).sidecar = calpySidecar();
+                (handler as any).sendSidecarCapabilitiesDetailed = async () => ({
+                    ok: true,
+                    response: { status: 'ok', diagnostic: { capabilities: { supportedOps: ['calpy.listTaskTypes', 'calpy.createTaskType', 'calpy.listInstanceNames', 'calpy.createNode'] } } }
+                });
+                (handler as any).sendSidecarListDetailed = async (_uri: string, payload: { op: string }) => ({
+                    ok: true,
+                    response: { status: 'ok', diagnostic: payload.op === 'calpy.listInstanceNames' ? { names: ['first'] } : { types: ['Add'] } }
+                });
+                (handler as any).sendSidecarOpDetailed = async () => {
+                    seenWhenWritten.push([...(layouts.get(`${mainPath}#Main`)?.keys() ?? [])]);
+                    return ok ? { ok: true, response: { status: 'ok' } } : { ok: false, message: 'refused' };
+                };
+                const command = handler.createCommand({
+                    kind: 'createNode', elementTypeId: WorkflowDiagramTypes.NODE_ACTOR, location: { x: 420, y: 310 }, args: {}
+                } as any);
+                await (command as any).execute();
+                // Saved before the producer writes: the diagram its write brings draws it there.
+                expect(seenWhenWritten).toEqual([drawnFrom]);
+            }
+            expect([...layouts.get(`${mainPath}#Main`)!.entries()]).toEqual([['first', { x: 0, y: 0 }], ['adder', { x: 420, y: 310 }]]);
+        } finally {
+            workspaceAny.openTextDocument = saved.open;
+            workspaceAny.applyEdit = saved.apply;
+            windowAny.showQuickPick = saved.pick;
+            windowAny.showInputBox = saved.input;
+            windowAny.showErrorMessage = saved.error;
             await fs.rm(tempRoot, { recursive: true, force: true });
         }
     });

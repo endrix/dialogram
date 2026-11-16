@@ -7,7 +7,9 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
 import { URI } from 'vscode-uri';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes, portTypesUsed, withArticle } from '@dialogram/shared';
+import { WORKFLOW_NETWORK_MODEL_KEY, WorkflowDiagramMetadata, WorkflowDiagramTypes, portTypesUsed, withArticle } from '@dialogram/shared';
+import { LayoutPersistenceService } from '@dialogram/diagram-server/services/layout-persistence-service';
+import { layoutTargetOf } from '@dialogram/diagram-server/server/layout-target';
 
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { AgentCreateNodeOutcomeSink } from '@dialogram/diagram-server/server/agent-create-node-outcome';
@@ -138,6 +140,10 @@ export class CreateNodeOperationHandler extends OperationHandler {
     @inject(AgentCreateNodeOutcomeSink)
     @optional()
     protected readonly createNodeOutcomeSink?: AgentCreateNodeOutcomeSink;
+
+    @inject(LayoutPersistenceService)
+    @optional()
+    protected readonly layoutPersistence?: LayoutPersistenceService;
 
     getTriggerActions(): TriggerNodeCreationAction[] {
         return this.elementTypeIds.map(elementTypeId => ({
@@ -443,6 +449,9 @@ export class CreateNodeOperationHandler extends OperationHandler {
                     : undefined;
                 const merged = { ...(givenParams ?? {}), ...(collectedInstanceParams ?? {}) };
                 const params = Object.keys(merged).length > 0 ? merged : undefined;
+                // Where the palette was clicked, saved before the producer
+                // writes, so the diagram the write brings draws it there.
+                const placed = await this.placeAt(operation.location, entityName);
                 const result = await this.sendSidecarOpDetailed(sourceUri, {
                     op: this.sidecar.sidecarOp('createNode'),
                     args: {
@@ -454,6 +463,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
                     }
                 });
                 if (!result.ok) {
+                    await placed?.undo();
                     const failureMessage = this.sidecarFailureMessage(`create node '${entityName}'`, result);
                     void vscode.window.showErrorMessage(failureMessage);
                     if (headless) {
@@ -475,6 +485,46 @@ export class CreateNodeOperationHandler extends OperationHandler {
             },
         });
         return command;
+    }
+
+    /**
+     * Save `location` (where the palette was clicked) as the position of the
+     * node `name` will be, in the layout the diagram is drawn from; what puts
+     * the layout back when the node is not made. Nothing when no place was
+     * clicked (an agent's create) or the node already has one.
+     */
+    private async placeAt(
+        location: { x: number; y: number } | undefined,
+        name: string
+    ): Promise<{ undo(): Promise<void> } | undefined> {
+        if (!this.layoutPersistence || !location || !Number.isFinite(location.x) || !Number.isFinite(location.y)) {
+            return undefined;
+        }
+        const diagramModel = this.modelState.get(WORKFLOW_NETWORK_MODEL_KEY) as { documentUri: string; workflowName?: unknown } | undefined;
+        if (!diagramModel) {
+            return undefined;
+        }
+        const layout = this.layoutPersistence;
+        try {
+            const { filePath, networkId } = layoutTargetOf(diagramModel as any);
+            const positions = (await layout.loadLayout(filePath, networkId)) ?? new Map();
+            if (positions.has(name)) {
+                return undefined;
+            }
+            positions.set(name, { x: location.x, y: location.y });
+            await layout.saveLayoutImmediate(filePath, networkId, positions);
+            return {
+                undo: async () => {
+                    const now = (await layout.loadLayout(filePath, networkId)) ?? new Map();
+                    if (now.delete(name)) {
+                        await layout.saveLayoutImmediate(filePath, networkId, now);
+                    }
+                }
+            };
+        } catch {
+            // The node is still made; the diagram parks it as before.
+            return undefined;
+        }
     }
 
     private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {
