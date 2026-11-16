@@ -29,6 +29,7 @@ import { lastPerKey } from './contributions';
 import { NodeSectionContribution, type NodeInfoRow, type NodeSectionContext } from './node-section';
 import { createPropertySection, shortenPath } from './property-section';
 import { isReadOnlyView } from './read-only-view';
+import { elementPanelSignature, networkPanelSignature } from './panel-signature';
 
 /**
  * IGModelRootListener interface — fire on every model root change
@@ -167,6 +168,13 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     private lastRenderedNodeId: string | undefined;
 
     /**
+     * What the panel shows: the element (none: the network), the node to
+     * show if that element is gone (a port's), and the signature of what was
+     * drawn, to draw it again when an edit changes it (`panel-signature.ts`).
+     */
+    private shown: { id?: string; fallbackId?: string; signature: string } | undefined;
+
+    /**
      * One editor per annotation name, in the order the names were first bound.
      * A later binding for a name replaces the earlier one, so a module that
      * loads later can replace an editor an earlier one bound.
@@ -191,6 +199,9 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     // streams (`NodeSectionContribution.modelChanged`).
     modelRootChanged(root: Readonly<GModelRoot>): void {
         this.lastRoot = root;
+        if (this.redrawIfChanged(root)) {
+            return;
+        }
         if (!this.lastRenderedNodeId) {
             return;
         }
@@ -211,6 +222,48 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         for (const contribution of this.nodeSections()) {
             contribution.modelChanged?.(element, content);
         }
+    }
+
+    /**
+     * Draw the panel again when what it shows changed in the new model (an
+     * edit: a port renamed, retyped, added or taken out, a node renamed);
+     * true when it did. What it showed and is gone (renamed: its id is
+     * another) gives way to its node, for a port, or to the network. Not
+     * while something in the panel is being typed into: the next change
+     * draws it.
+     */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    protected redrawIfChanged(root: any): boolean {
+        const shown = this.shown;
+        const content = document.getElementById('property-content');
+        if (!shown || !content || this.typingInPanel()) {
+            return false;
+        }
+        let element = shown.id === undefined ? undefined : root?.index?.getById?.(shown.id);
+        if (shown.id !== undefined && !element && shown.fallbackId !== undefined) {
+            element = root?.index?.getById?.(shown.fallbackId);
+        }
+        const now = element ? elementPanelSignature(element, root) : shown.id === undefined ? networkPanelSignature(root) : undefined;
+        if (now === shown.signature) {
+            return false;
+        }
+        const scrolled = content.scrollTop;
+        if (element) {
+            if (this.chrome.lastSelectedElement?.id === element.id) {
+                this.chrome.lastSelectedElement = element;
+            }
+            this.updateContent(element, { requestAgentDiscovery: false });
+        } else {
+            this.showNoSelection();
+        }
+        content.scrollTop = scrolled;
+        return true;
+    }
+
+    protected typingInPanel(): boolean {
+        const active = document.activeElement as HTMLElement | null;
+        return !!active?.closest?.('#property-panel')
+            && (active.isContentEditable || !!active.matches?.('input, textarea, select'));
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -268,6 +321,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             content.innerHTML = '';
 
             const root = this.lastRoot;
+            this.shown = root ? { signature: networkPanelSignature(root) } : undefined;
             if (!root) {
                 content.innerHTML =
                     '<div class="no-selection">' +
@@ -289,6 +343,11 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         const requestAgentDiscovery = options.requestAgentDiscovery !== false;
 
         content.innerHTML = '';
+        this.shown = {
+            id: element.id,
+            fallbackId: element.type?.startsWith('port') ? element.parent?.id : undefined,
+            signature: elementPanelSignature(element as any, this.lastRoot)
+        };
 
         // Track the rendered node for the sections' in-place updates, and let the
         // sections prepare a selected node (not a selected port's) before it is drawn.
