@@ -505,6 +505,21 @@ function focusOf(byId: ReadonlyMap<string, LinkElement>, found: LinksOfSelection
 }
 
 /**
+ * What `selected` keeps in sight on `root`, besides itself, worked out from
+ * the model alone (for what draws outside a render: the selection's trace).
+ * While it brings links up, all the focus keeps; else the other drawings of
+ * the same thing.
+ */
+export function keptInSight(root: LinkElement, selected: ReadonlySet<string>): Set<string> {
+    const found = linksOfSelection(root, selected);
+    const kept = found.links.length > 0 ? focusOf(indexOf(root), found).kept : new Set(found.same);
+    for (const id of selected) {
+        kept.delete(id);
+    }
+    return kept;
+}
+
+/**
  * Whether `element` all but disappears behind the selection's links: a node
  * or an edge out of what the selection keeps in sight, while links are
  * shown. A node that holds nodes never does; nor does anything else (a port,

@@ -74,7 +74,10 @@ export interface DiagramClientBehavior {
      *  colour, what it leads to in another, the rest faded. A node traces every
      *  path through it, an edge itself and its two ends, a container what feeds
      *  it and what it feeds across its frame; a path crosses group frames as
-     *  its edge does. Off by default. */
+     *  its edge does. A state of an automaton traces one transition each way,
+     *  by the transitions' direction: where it is come to from, where it
+     *  goes. Beside links drawn on selection, all they keep in sight is left
+     *  as it is. Off by default. */
     selectionTrace?: boolean;
     /** Property-panel sections a product does without, each `false` to hide it:
      *  `ports` (the input and output port lists), `annotations` (the raw

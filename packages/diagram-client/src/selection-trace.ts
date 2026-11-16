@@ -27,6 +27,12 @@
  * layout yet), the trace is cut to the direct neighbours: the edges into the
  * node and out of it.
  *
+ * A state of an automaton is always traced to its direct neighbours, by its
+ * transitions' own direction: where it can be come to from (upstream) and
+ * where it can go (downstream). An automaton is all cycles, so a longer path
+ * reaches every state, and it is laid out from the top down, not left to
+ * right, so it is not read by where its states sit.
+ *
  * A selected edge draws itself, every piece of it, and its two ends. A selected
  * container draws the nodes that feed it and the nodes it feeds, across its
  * frame; what it holds stays as it is, neither faded nor coloured, since
@@ -41,7 +47,7 @@ import { FeedbackCommand, IFeedbackActionDispatcher, ISelectionListener, TYPES }
 import type { Action, CommandExecutionContext, Disposable, GModelRoot } from '@eclipse-glsp/sprotty';
 import { inject, injectable, optional } from 'inversify';
 import { clientBehavior } from './profile';
-import { linksOfSelection } from './selection-links';
+import { keptInSight } from './selection-links';
 
 /** A model element as far as tracing goes. */
 export interface TraceElement {
@@ -82,6 +88,8 @@ export interface TraceGraph {
     parentOf: Map<string, string | undefined>;
     /** Nodes that hold other nodes. */
     containers: Set<string>;
+    /** The states of an automaton: each traced to its direct neighbours, by its transitions' direction. */
+    states: Set<string>;
 }
 
 /** What one selection draws, by element id. */
@@ -131,7 +139,8 @@ export function buildTraceGraph(root: TraceElement): TraceGraph {
         edges: new Map(),
         passThrough: new Set(),
         parentOf: new Map(),
-        containers: new Set()
+        containers: new Set(),
+        states: new Set()
     };
     const groups = new Set<string>();
     const edges: TraceElement[] = [];
@@ -156,6 +165,9 @@ export function buildTraceGraph(root: TraceElement): TraceGraph {
         }
         if (startsWith(element, 'node')) {
             graph.parentOf.set(element.id, node);
+            if (element.type === WorkflowDiagramTypes.NODE_STATE) {
+                graph.states.add(element.id);
+            }
             if (node !== undefined) {
                 graph.containers.add(node);
             }
@@ -309,6 +321,16 @@ function union(...sets: ReadonlyArray<Iterable<string>>): Set<string> {
 /** A node's path: every node that leads to it and every node it leads to. */
 function traceNode(graph: TraceGraph, node: string): Trace {
     const start = new Set([node]);
+    if (graph.states.has(node)) {
+        const from = walk(graph, graph.backward, start, 1);
+        const to = walk(graph, graph.forward, start, 1);
+        return {
+            focus: start,
+            upstream: union(from.nodes, from.edges),
+            downstream: union(to.nodes, to.edges),
+            scope: new Set()
+        };
+    }
     let up = walk(graph, graph.flowBackward, start);
     let down = walk(graph, graph.flowForward, start);
     if (up.cyclic || down.cyclic) {
@@ -427,16 +449,18 @@ function withHeld(graph: TraceGraph, trace: Trace): Trace {
 }
 
 /**
- * What the selection's links lead to, and the other drawings of what is
- * selected (selection-links.ts), are read with the selection: they are left
- * as they are, not faded as nodes off the trace are.
+ * What the selection keeps in sight while its links are shown (its links'
+ * ends, their edges and those edges' ends: selection-links.ts), and the other
+ * drawings of what is selected, are read with the selection: they are left as
+ * they are, not faded as nodes off the trace are. The rest the links leave
+ * out fades by their rule, further than the trace fades it.
  */
 export function withLinked(root: TraceElement, selected: readonly string[], trace: Trace): Trace {
-    const { ends, same } = linksOfSelection(root, new Set(selected));
-    if (ends.size === 0 && same.size === 0) {
+    const kept = keptInSight(root, new Set(selected));
+    if (kept.size === 0) {
         return trace;
     }
-    return { ...trace, scope: new Set([...trace.scope, ...ends, ...same]) };
+    return { ...trace, scope: new Set([...trace.scope, ...kept]) };
 }
 
 /** The trace of `selected` on `root`, with what its links lead to. */
