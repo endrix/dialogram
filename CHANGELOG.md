@@ -518,6 +518,18 @@ it no longer has.
 
 ### Changed
 
+- **An automaton is spread until its labels are clear.** The layout made
+  room beside a line for that line's labels only, not for every line
+  through the same room: a state that eleven transitions leave was drawn
+  with labels on labels, on states and on the chips of its stubs. The
+  server now draws the labels and chips where the client will
+  (`automatonClutter`) and lays the automaton out wider, up to five times
+  (`AUTOMATON_SPREADS`), until nothing lies on anything and a line runs
+  through one label in ten at most (`clearEnough`); else it keeps the least
+  cluttered. A stub's labels may go beside its chip or past it, not only
+  beside its short stroke, where a label wider than the stroke lay back on
+  its state. A diagram whose states have saved places keeps them: Auto-Layout
+  lays it out anew.
 - **A selected state traces one transition each way.** With
   `clientBehavior.selectionTrace`, a state of an automaton (`node:state`)
   draws the transitions into it and the states they leave from upstream,
@@ -782,6 +794,16 @@ it no longer has.
 
 ### Fixed
 
+- **A transition no longer flickers under a pointer near its line or
+  label.** The 12px stroke that catches the pointer beside a transition's
+  line was narrowed to 2px while the edge was hovered, by the edges' own
+  hover rule, which outranked it: a pointer a few pixels off the line was
+  then off it, the hover ended, the stroke widened under the pointer again,
+  and the edge flickered at the screen's rate. The reach keeps its width.
+- **Two states of a layer are no longer drawn touching.** A line that
+  skips a layer passes it between two of its states, and ELK kept them
+  only 10px each side of it: the line and its labels lay on both. They keep
+  half the room from it that they keep from each other.
 - **A frame takes no forbidden cursor and no opacity.** A group, an if or
   a foreach is marked `read-only`, and `.workflow-node.read-only` gave it
   `cursor: not-allowed` and `opacity: 0.8`. Both passed to every node it

@@ -299,6 +299,31 @@ export function labelCandidates(shape: TransitionShape, loop: boolean, bowed: bo
     return result;
 }
 
+/**
+ * A stub's places for its labels: beside its stroke, as a curve's, then
+ * beside its chip, either side, and past it. The stroke is short: beside it,
+ * a label wider than it reaches back over the state it leaves (when it leaves
+ * sideways, every place beside it does) and on over its chip.
+ */
+export function stubLabelCandidates(shape: TransitionShape, chip: Box): LabelCandidate[] {
+    const start = shape.controls[0];
+    const dir = unit({ x: shape.tip.x - start.x, y: shape.tip.y - start.y });
+    const centre = { x: chip.x + chip.width / 2, y: chip.y + chip.height / 2 };
+    // From the chip's centre to its edge the way `side` goes: the label is set out from there.
+    const edge = (side: Point): Point => {
+        const reach = Math.abs(side.x) * chip.width / 2 + Math.abs(side.y) * chip.height / 2;
+        return { x: centre.x + side.x * reach, y: centre.y + side.y * reach };
+    };
+    const right = { x: -dir.y, y: dir.x };
+    const left = { x: dir.y, y: -dir.x };
+    return [
+        ...labelCandidates(shape, false, false),
+        { at: edge(right), side: right },
+        { at: edge(left), side: left },
+        { at: edge(dir), side: dir }
+    ];
+}
+
 /** The box of a block of labels `width` by `height` at a place beside its curve. */
 export function labelBlockAt(candidate: LabelCandidate, width: number, height: number): Box {
     const { at, side } = candidate;

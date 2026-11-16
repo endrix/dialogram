@@ -15,6 +15,7 @@ export {
     boxesCrossed,
     transitionAround,
     labelCandidates,
+    stubLabelCandidates,
     labelBlockAt,
     overlapArea,
     placeLabelBlocks,

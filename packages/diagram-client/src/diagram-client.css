@@ -1109,8 +1109,12 @@ body.vscode-high-contrast-light .node-center-image-light {
     stroke-width: var(--workflow-transition-width, 1.6px);
 }
 
-/* What the pointer finds of a line: wider than what is drawn. */
-.workflow-edge.transition-edge .transition-reach {
+/* What the pointer finds of a line: wider than what is drawn. It must
+   outrank the base `.sprotty-edge.mouseover:not(.selected) path` (2px): a
+   reach that shrank while hovered left a pointer a few pixels from the line
+   off it, which ended the hover, which widened it again under the pointer,
+   and the edge flickered at the screen's rate. */
+.sprotty-edge .workflow-edge.transition-edge path.transition-reach {
     fill: none;
     stroke: transparent;
     stroke-width: 12px;

@@ -23,7 +23,9 @@ import {
     WorkflowDiagramTypes,
     automatonBounds,
     automatonGeometry,
+    curveAt,
     initialMarkOf,
+    overlapArea,
     type GeometryBox,
     type GeometryTransition
 } from '@dialogram/shared';
@@ -62,6 +64,16 @@ export const LAYERED_MIN_STATES = 16;
 const MIN_BETWEEN_PX = 90;
 /** How far a state's loop and the gap before its first label reach out from it. */
 const LOOP_EXTENT_PX = 50;
+/**
+ * How far apart an automaton's states are placed, tried in turn while what
+ * is drawn of it is cluttered: the spacing below counts the labels of one
+ * line, not those of every line through the same room (a state that eleven
+ * transitions leave has eleven labels round it, and the chips of its stubs),
+ * so the placement is checked with the labels and chips where the client
+ * draws them, and spread until they are clear (clearEnough).
+ */
+export const AUTOMATON_SPREADS: readonly number[] = [1, 1.3, 1.7, 2.2, 2.8];
+
 /** How many other states a hub's state is next to, at least. */
 const HUB_MIN_NEIGHBOURS = 4;
 /** The share of the pairs of states with a transition between them that a hub's state is in, at least. */
@@ -97,7 +109,8 @@ export function isHub(states: readonly AutomatonState[], transitions: readonly A
  * line. For a hub: one edge per pair of states with a transition either way,
  * as long as the labels drawn beside its lines need. A stub pulls nothing.
  */
-export function automatonElkGraph(states: readonly AutomatonState[], transitions: readonly AutomatonTransition[]): ElkNode {
+export function automatonElkGraph(states: readonly AutomatonState[], transitions: readonly AutomatonTransition[], spread = 1): ElkNode {
+    const spaced = (px: number): string => String(Math.round(px * spread));
     // The state it starts in first: the layers break its cycles in this order.
     states = [...states.filter(state => state.initial), ...states.filter(state => !state.initial)];
     const byId = new Map(states.map(state => [state.id, state]));
@@ -142,13 +155,17 @@ export function automatonElkGraph(states: readonly AutomatonState[], transitions
             mostLoops > 0 ? 2 * (LOOP_EXTENT_PX + mostLoops * WorkflowDiagramConstants.TRANSITION_LABEL_HEIGHT_PX) : 0
         );
         const k = WorkflowDiagramConstants;
+        const nodeGap = large ? 140 : Math.round(Math.min(160, Math.max(60, widest * 0.6 + 30)));
         return {
             id: 'automaton',
             layoutOptions: {
                 'elk.algorithm': 'layered',
                 'elk.direction': 'DOWN',
-                'elk.layered.spacing.nodeNodeBetweenLayers': large ? '90' : String(Math.max(60, stacked * k.TRANSITION_LABEL_HEIGHT_PX + 28)),
-                'elk.spacing.nodeNode': large ? '140' : String(Math.round(Math.min(160, Math.max(60, widest * 0.6 + 30)))),
+                'elk.layered.spacing.nodeNodeBetweenLayers': spaced(large ? 90 : Math.max(60, stacked * k.TRANSITION_LABEL_HEIGHT_PX + 28)),
+                'elk.spacing.nodeNode': spaced(nodeGap),
+                // A line that skips a layer passes it between two of its states, drawn with its labels
+                // beside it: each state keeps half the room from it that it keeps from another state.
+                'elk.spacing.edgeNode': spaced(nodeGap / 2),
                 'elk.spacing.componentComponent': String(componentGap),
                 // The components in the order of their states: the one the
                 // automaton starts in first, on top.
@@ -165,7 +182,7 @@ export function automatonElkGraph(states: readonly AutomatonState[], transitions
         id: 'automaton',
         layoutOptions: {
             'elk.algorithm': 'stress',
-            'elk.stress.desiredEdgeLength': String(MIN_BETWEEN_PX + 60)
+            'elk.stress.desiredEdgeLength': spaced(MIN_BETWEEN_PX + 60)
         },
         children: states.map(state => ({ id: state.id, width: state.width, height: state.height })),
         edges: [...pairs.values()].map((pair, k) => {
@@ -176,10 +193,58 @@ export function automatonElkGraph(states: readonly AutomatonState[], transitions
                 id: `pair${k}`,
                 sources: [pair.a],
                 targets: [pair.b],
-                layoutOptions: { 'elk.stress.desiredEdgeLength': String(Math.round(halves + MIN_BETWEEN_PX + pair.labelWidth * 0.5)) }
+                layoutOptions: { 'elk.stress.desiredEdgeLength': String(Math.round(halves + (MIN_BETWEEN_PX + pair.labelWidth * 0.5) * spread)) }
             };
         })
     };
+}
+
+/** What lies on something else in an automaton's drawing. */
+export interface Clutter {
+    /** The area where a label lies on another label, on a state or on a stub's chip, and where a chip lies on a state or on another chip. */
+    overlap: number;
+    /** How many labels another transition's line runs through. */
+    crossings: number;
+}
+
+/** How many points of a line are tried against a label. */
+const CROSSING_SAMPLES = 24;
+
+/**
+ * What of the automaton whose states are in `states` lies on something else,
+ * where the client draws it (automaton-geometry.ts).
+ */
+export function automatonClutter(states: ReadonlyMap<string, GeometryBox>, transitions: readonly GeometryTransition[]): Clutter {
+    const drawn = [...automatonGeometry(states, transitions).transitions.values()];
+    // The transitions that share a line share its shape and its chip: each is counted once.
+    const lines = drawn.filter(drawing => drawing.first);
+    const chips = lines.flatMap(drawing => drawing.chip ? [drawing.chip.box] : []);
+    const boxes = [...states.values()];
+    const sum = (items: readonly GeometryBox[], others: (n: number) => readonly GeometryBox[]): number =>
+        items.reduce((area, item, n) => area + others(n).reduce((shared, other) => shared + overlapArea(item, other), 0), 0);
+    const labels = drawn.map(drawing => drawing.label);
+    const overlap = sum(labels, n => [...labels.slice(n + 1), ...boxes, ...chips]) + sum(chips, n => [...chips.slice(n + 1), ...boxes]);
+    const points = lines.map(line => ({
+        shape: line.shape,
+        points: Array.from({ length: CROSSING_SAMPLES - 1 }, (_, k) => curveAt(line.shape.controls, (k + 1) / CROSSING_SAMPLES))
+    }));
+    let crossings = 0;
+    for (const drawing of drawn) {
+        const box = drawing.label;
+        crossings += points.filter(line => line.shape !== drawing.shape
+            && line.points.some(p => p.x > box.x && p.x < box.x + box.width && p.y > box.y && p.y < box.y + box.height)).length;
+    }
+    return { overlap, crossings };
+}
+
+/** Clear enough to spread no further: nothing lies on anything, and a line runs through one label in ten at most. */
+export function clearEnough(clutter: Clutter, transitions: number): boolean {
+    return clutter.overlap === 0 && clutter.crossings <= Math.floor(transitions / 10);
+}
+
+/** Whether `a` is less cluttered than `b`: less lying on something else, then fewer labels crossed. */
+export function lessCluttered(a: Clutter, b: Clutter): boolean {
+    return a.overlap < b.overlap || (a.overlap === b.overlap && a.crossings < b.crossings);
 }
 
 /** The states' places from what ELK returned, moved so that the margin is kept on the top and the left. */

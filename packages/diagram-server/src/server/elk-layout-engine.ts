@@ -17,7 +17,10 @@ import { ElkExtendedEdge, ElkNode, ElkPort, ElkShape } from 'elkjs';
 import { injectable } from 'inversify';
 import { WorkflowDiagramTypes, WORKFLOW_LAYOUT_PERSISTENCE_KEY } from '@dialogram/shared';
 import { WorkflowDiagramConstants, WorkflowDiagramMetadata, portRowOffset, portSide, type PortSide } from '@dialogram/shared';
-import { AUTOMATON_MARGIN_PX, PORT_COLUMN_GAP_PX, automatonDrawingBox, automatonElkGraph, automatonPlaces, isStateType, transitionLabelWidthOf } from './automaton-layout';
+import {
+    AUTOMATON_MARGIN_PX, AUTOMATON_SPREADS, PORT_COLUMN_GAP_PX, automatonClutter, automatonDrawingBox, automatonElkGraph, automatonPlaces,
+    clearEnough, isStateType, lessCluttered, transitionLabelWidthOf, type Clutter
+} from './automaton-layout';
 
 /** Which side of its node a GPort sits on: the producer's placement, else its direction or type. */
 function gportSide(port: GPort): PortSide {
@@ -301,28 +304,58 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         }))]);
     }
 
-    /** Give the states of an automaton their places. Its transitions have no route to make. */
+    /**
+     * Give the states of an automaton their places. Its transitions have no
+     * route to make: the client draws them from the states' places, as
+     * automatonGeometry does here to see how cluttered a placement is.
+     */
     private async placeAutomaton(root: GGraph, states: GNode[]): Promise<void> {
+        const argsOf = (element: GNode | GEdge): Record<string, unknown> | undefined => element.args as Record<string, unknown> | undefined;
+        const names = new Map(states.map(state => {
+            const name = argsOf(state)?.[WorkflowDiagramMetadata.ENTITY_NAME];
+            return [state.id, typeof name === 'string' ? name : state.id];
+        }));
         const transitions = root.children
             .filter((child): child is GEdge => child instanceof GEdge && child.type === WorkflowDiagramTypes.EDGE_TRANSITION)
-            .map(edge => ({
-                sourceId: edge.sourceId,
-                targetId: edge.targetId,
-                labelWidth: transitionLabelWidthOf(edge.args as Record<string, unknown> | undefined),
-                stub: (edge.args as Record<string, unknown> | undefined)?.[WorkflowDiagramMetadata.TRANSITION_STUB] === true
+            .map(edge => {
+                const order = argsOf(edge)?.[WorkflowDiagramMetadata.TRANSITION_ORDER];
+                return {
+                    id: edge.id,
+                    sourceId: edge.sourceId,
+                    targetId: edge.targetId,
+                    ...(typeof order === 'number' ? { order } : {}),
+                    labelWidth: transitionLabelWidthOf(argsOf(edge)),
+                    stub: argsOf(edge)?.[WorkflowDiagramMetadata.TRANSITION_STUB] === true,
+                    targetName: names.get(edge.targetId) ?? edge.targetId
+                };
+            });
+        const placed = states.map(state => ({
+            id: state.id,
+            width: state.size.width,
+            height: state.size.height,
+            initial: argsOf(state)?.[WorkflowDiagramMetadata.STATE_INITIAL] === true
+        }));
+        // Spread until it is clear enough; else the least cluttered.
+        let best: { places: Map<string, { x: number; y: number }>; clutter: Clutter; spread: number } | undefined;
+        for (const spread of AUTOMATON_SPREADS) {
+            const laidOut = (await (this as any).elk.layout(automatonElkGraph(placed, transitions, spread))) as ElkNode;
+            const places = automatonPlaces(laidOut);
+            const boxes = new Map(placed.flatMap(state => {
+                const place = places.get(state.id);
+                return place ? [[state.id, { x: place.x, y: place.y, width: state.width, height: state.height }] as const] : [];
             }));
+            const clutter = automatonClutter(boxes, transitions);
+            if (best === undefined || lessCluttered(clutter, best.clutter)) {
+                best = { places, clutter, spread };
+            }
+            if (clearEnough(clutter, transitions.length)) {
+                break;
+            }
+        }
         // eslint-disable-next-line no-console
-        console.log(`[dialogram perf] layout ${this.networkName(root)}: automaton states=${states.length} transitions=${transitions.length}`);
-        const laidOut = (await (this as any).elk.layout(automatonElkGraph(
-            states.map(state => ({
-                id: state.id,
-                width: state.size.width,
-                height: state.size.height,
-                initial: (state.args as Record<string, unknown> | undefined)?.[WorkflowDiagramMetadata.STATE_INITIAL] === true
-            })),
-            transitions
-        ))) as ElkNode;
-        const places = automatonPlaces(laidOut);
+        console.log(`[dialogram perf] layout ${this.networkName(root)}: automaton states=${states.length} transitions=${transitions.length}`
+            + ` spread=${best!.spread} overlap=${Math.round(best!.clutter.overlap)} crossings=${best!.clutter.crossings}`);
+        const places = best!.places;
         for (const state of states) {
             const place = places.get(state.id);
             if (place) {

@@ -19,7 +19,7 @@ import { WorkflowElkLayoutEngine } from '../src/server/elk-layout-engine';
 import { WorkflowLayoutConfigurator } from '../src/server/layout-configurator';
 import { applyPersistedEdgeRoutes } from '../src/routing/persisted-edge-routes';
 import { collectEdgeRoutes } from '../src/server/layout-snapshot';
-import { automatonElkGraph, isHub, transitionLabelWidthOf } from '../src/server/automaton-layout';
+import { automatonClutter, automatonElkGraph, clearEnough, isHub, transitionLabelWidthOf } from '../src/server/automaton-layout';
 
 const state = (name: string, meta: Record<string, unknown> = {}): any =>
     ({ id: `state:${name}`, kind: 'state', label: name, scope: 'root', ports: [], meta });
@@ -205,8 +205,22 @@ describe('where the states of an automaton go', () => {
         ).layout();
         const states = (root.children ?? []).filter(child => child.type === WorkflowDiagramTypes.NODE_STATE) as GNode[];
         const boxes = new Map(states.map(s => [s.id, { x: s.position!.x, y: s.position!.y, width: s.size!.width, height: s.size!.height }]));
+        const names = new Map(states.map(s => [s.id, String(s.args?.[WorkflowDiagramMetadata.ENTITY_NAME])]));
+        // As the client draws them: in their order, a stub as a stub.
         const transitions = (root.children ?? []).filter((child): child is GEdge => child instanceof GEdge && child.type === WorkflowDiagramTypes.EDGE_TRANSITION)
-            .map(edge => ({ id: edge.id, sourceId: edge.sourceId, targetId: edge.targetId, labelWidth: transitionLabelWidthOf(edge.args as any) }));
+            .map(edge => {
+                const args = edge.args as Record<string, unknown> | undefined;
+                const order = args?.[WorkflowDiagramMetadata.TRANSITION_ORDER];
+                return {
+                    id: edge.id,
+                    sourceId: edge.sourceId,
+                    targetId: edge.targetId,
+                    ...(typeof order === 'number' ? { order } : {}),
+                    stub: args?.[WorkflowDiagramMetadata.TRANSITION_STUB] === true,
+                    labelWidth: transitionLabelWidthOf(args),
+                    targetName: names.get(edge.targetId) ?? edge.targetId
+                };
+            });
         return { boxes, transitions, drawn: automatonGeometry(boxes, transitions) };
     }
 
@@ -263,6 +277,62 @@ describe('where the states of an automaton go', () => {
         });
         const [idle, anyState] = [boxes.get('idle')!, boxes.get('*')!];
         expect(anyState.y).toBeGreaterThan(idle.y);
+    });
+
+    // A processor's control: a state it fetches in that most others go back
+    // to (drawn as stubs), one it decodes in that leads to most others, a
+    // loop on nearly every state, and three or more labels on some lines.
+    const when = { condition: 'c' };
+    const PROCESSOR = {
+        nodes: ['fetch', 'trap', 'ld_rs1', 'exec', 'shift', 'stmem', 'ldmem', 'ld_rs2'].map(name => state(name, name === 'fetch' ? { initial: true } : {})),
+        edges: [
+            transition('fetch', 'take_irq', 'fetch', { order: 1 }),
+            ...['boot', 'irq_save'].map(action => transition('fetch', action, 'fetch', { order: 1, ...when })),
+            ...['discard', 'wait_resume', 'fetch_stay'].map(action => transition('fetch', action, 'fetch', { order: 2, ...when })),
+            transition('fetch', 'launch_trap', 'trap', { order: 2, ...when }),
+            transition('fetch', 'launch', 'ld_rs1', { order: 2, ...when }),
+            transition('trap', 'trap_halt', 'trap', when),
+            ...([['pcpi_done', 'fetch'], ['pcpi_hold', 'ld_rs1'], ['pcpi_expire', 'trap'], ['to_exec', 'exec'], ['to_shift', 'shift'], ['to_stmem', 'stmem'],
+                ['to_ldmem', 'ldmem'], ['to_fetch', 'fetch'], ['to_offer', 'ld_rs1'], ['to_trap', 'trap'], ['to_rs2', 'ld_rs2']] as const)
+                .map(([action, to]) => transition('ld_rs1', action, to, when)),
+            transition('exec', 'exec_wait', 'exec', when),
+            transition('exec', 'exec_done', 'fetch', when),
+            transition('shift', 'shift_step', 'shift', when),
+            transition('shift', 'shift_done', 'fetch', when),
+            ...(['st', 'ld'] as const).flatMap(kind => {
+                const unit = `${kind}mem`;
+                return [
+                    transition(unit, `${kind}_issue`, unit, { order: 1, ...when }),
+                    transition(unit, `${kind}_misalign`, 'trap', { order: 1, ...when }),
+                    transition(unit, `${kind}_finish`, 'fetch', { order: 2, ...when })
+                ];
+            }),
+            ...['exec', 'shift', 'stmem'].map(to => transition('ld_rs2', `rs2_${to}`, to, when))
+        ]
+    };
+
+    it('keeps the states of a layer apart where a line that skips the layer passes between them', async () => {
+        // From `ld_rs1` to `ld_rs2`, a layer apart, the line passes between two
+        // of the units, drawn there with its label beside it.
+        const { boxes } = await placeAndDraw(PROCESSOR);
+        const layers = new Map<number, Array<{ x: number; width: number }>>();
+        for (const box of boxes.values()) {
+            layers.set(box.y, [...(layers.get(box.y) ?? []), box]);
+        }
+        const gaps = [...layers.values()].flatMap(layer => layer
+            .sort((a, b) => a.x - b.x)
+            .slice(1)
+            .map((box, n) => box.x - (layer[n].x + layer[n].width)));
+        expect(gaps.length).toBeGreaterThan(0);
+        expect(Math.min(...gaps)).toBeGreaterThanOrEqual(60);
+    });
+
+    it('spreads a processor\u2019s control until no label lies on another, on a state or on a chip, and few lines run through one', async () => {
+        const { boxes, transitions } = await placeAndDraw(PROCESSOR);
+        expect(transitions.some(t => t.stub)).toBe(true);
+        const clutter = automatonClutter(boxes, transitions);
+        expect(clutter.overlap).toBe(0);
+        expect(clearEnough(clutter, transitions.length)).toBe(true);
     });
 });
 

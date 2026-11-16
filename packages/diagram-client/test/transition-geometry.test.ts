@@ -16,6 +16,7 @@ import {
     loopDirection,
     overlapArea,
     placeLabelBlocks,
+    stubLabelCandidates,
     transitionAround,
     transitionBetween,
     transitionLoop,
@@ -173,6 +174,27 @@ describe('where the labels go', () => {
         const [movable, pinned] = placeLabelBlocks([free, fixed], [], [shape.controls, shape.controls]);
         expect(pinned).toEqual(labelBlockAt(candidates[0], 60, 18));
         expect(overlapArea(movable, pinned)).toBe(0);
+    });
+
+    it('tries a stub’s beside its stroke first, then beside its chip, either side, and past it', () => {
+        // A stub that leaves sideways: beside its short stroke, a label wider
+        // than the stroke lies back on its state and on over its chip.
+        const state = pill(0, 0);
+        const stub = transitionStub(state, { x: 500, y: 18 }, 40, 18, 30);
+        const candidates = stubLabelCandidates(stub, stub.chip);
+        expect(candidates.slice(0, -3)).toEqual(labelCandidates(stub, false, false));
+        const beside = candidates.slice(0, -3).map(candidate => labelBlockAt(candidate, 70, 18));
+        expect(beside.every(block => overlapArea(block, state) + overlapArea(block, stub.chip) > 0)).toBe(true);
+        const [right, left, past] = candidates.slice(-3).map(candidate => labelBlockAt(candidate, 70, 18));
+        for (const block of [right, left, past]) {
+            expect(overlapArea(block, state) + overlapArea(block, stub.chip)).toBe(0);
+        }
+        // Going east, its right is south; past the chip is further east.
+        expect(right.y).toBeGreaterThan(stub.chip.y + stub.chip.height);
+        expect(left.y + left.height).toBeLessThan(stub.chip.y);
+        expect(past.x).toBeGreaterThan(stub.chip.x + stub.chip.width);
+        const [placed] = placeLabelBlocks([{ candidates, width: 70, height: 18 }], [state, stub.chip], [stub.controls]);
+        expect(overlapArea(placed, state) + overlapArea(placed, stub.chip)).toBe(0);
     });
 
     it('places the same way every time', () => {

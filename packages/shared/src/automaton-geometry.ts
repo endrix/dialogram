@@ -14,6 +14,7 @@ import { WorkflowDiagramConstants } from './diagram-constants';
 import { stubChipWidth } from './transition-label';
 import {
     labelCandidates,
+    stubLabelCandidates,
     labelLineBox,
     loopDirection,
     placeLabelBlocks,
@@ -145,7 +146,7 @@ export function automatonGeometry(states: ReadonlyMap<string, Box>, transitions:
     const lineHeight = k.TRANSITION_LABEL_HEIGHT_PX;
     const blocks = placeLabelBlocks(
         drawn.map(line => ({
-            candidates: labelCandidates(line.shape, line.loop, line.bowed),
+            candidates: line.chip ? stubLabelCandidates(line.shape, line.chip.box) : labelCandidates(line.shape, line.loop, line.bowed),
             width: Math.max(0, ...line.widths),
             height: lineHeight * line.members.length
         })),
