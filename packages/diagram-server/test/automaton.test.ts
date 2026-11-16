@@ -19,7 +19,7 @@ import { WorkflowElkLayoutEngine } from '../src/server/elk-layout-engine';
 import { WorkflowLayoutConfigurator } from '../src/server/layout-configurator';
 import { applyPersistedEdgeRoutes } from '../src/routing/persisted-edge-routes';
 import { collectEdgeRoutes } from '../src/server/layout-snapshot';
-import { automatonClutter, automatonElkGraph, clearEnough, isHub, transitionLabelWidthOf } from '../src/server/automaton-layout';
+import { automatonClutter, automatonElkGraph, automatonGeometryInputs, clearEnough, isHub, lessCluttered, transitionLabelWidthOf } from '../src/server/automaton-layout';
 
 const state = (name: string, meta: Record<string, unknown> = {}): any =>
     ({ id: `state:${name}`, kind: 'state', label: name, scope: 'root', ports: [], meta });
@@ -169,6 +169,43 @@ describe('where the states of an automaton go', () => {
         const [toA, ...others] = elk.edges!;
         expect(toA.targets[0] === 'a' || toA.sources[0] === 'a').toBe(true);
         expect(length(toA)).toBeGreaterThan(length(others[0]) + 60);
+    });
+
+    it('spreads every gap of a program by the spread it is laid out at, between its components too', () => {
+        const states = [{ id: 'a', width: 60, height: 36, initial: true }, { id: 'b', width: 60, height: 36 }, { id: 'c', width: 60, height: 36 }];
+        // `c` has only a loop: a component of its own.
+        const transitions = [{ sourceId: 'a', targetId: 'b', labelWidth: 40 }, { sourceId: 'c', targetId: 'c', labelWidth: 40 }];
+        const at = (spread: number): Record<string, unknown> => automatonElkGraph(states, transitions, spread).layoutOptions!;
+        for (const option of ['elk.layered.spacing.nodeNodeBetweenLayers', 'elk.spacing.nodeNode', 'elk.spacing.edgeNode', 'elk.spacing.componentComponent']) {
+            expect(Number(at(2)[option])).toBeCloseTo(2 * Number(at(1)[option]), -1);
+        }
+    });
+
+    it('scores clutter as the client draws it: a crossing weighs as a label, a line through a state is one', () => {
+        // A little less overlap is not worth many more crossings.
+        expect(lessCluttered({ overlap: 4, crossings: 0 }, { overlap: 3, crossings: 20 })).toBe(true);
+        expect(lessCluttered({ overlap: 0, crossings: 3 }, { overlap: 0, crossings: 2 })).toBe(false);
+        // `a` to `c` through `b`, a wall between them too tall to go round: a crossing.
+        const box = (x: number) => ({ x, y: 0, width: 60, height: 36 });
+        const wall = { x: 100, y: -2000, width: 60, height: 4036 };
+        const t = (id: string, sourceId: string, targetId: string) => ({ id, sourceId, targetId, labelWidth: 0, targetName: targetId });
+        const states = new Map([['a', box(0)], ['b', wall], ['c', box(400)]]);
+        expect(automatonClutter(states, [t('x', 'a', 'c')]).crossings).toBe(1);
+        expect(automatonClutter(states, [t('x', 'a', 'b')]).crossings).toBe(0);
+    });
+
+    it('draws a state that lists the steps of a run with the corners the client gives it', () => {
+        const { boxes, drawn, initial } = automatonGeometryInputs(
+            [
+                { id: 'idle', position: { x: 0, y: 0 }, size: { width: 60, height: 36 }, args: { [WorkflowDiagramMetadata.STATE_INITIAL]: true } },
+                { id: 'run', position: { x: 0, y: 100 }, size: { width: 120, height: 90 }, args: { [WorkflowDiagramMetadata.STATE_STEPS]: ['load', 'add'], [WorkflowDiagramMetadata.ENTITY_NAME]: 'Run' } }
+            ],
+            [{ id: 't', sourceId: 'idle', targetId: 'run', args: { [WorkflowDiagramMetadata.TRANSITION_ORDER]: 2, [WorkflowDiagramMetadata.TRANSITION_STUB]: true } }]
+        );
+        expect(boxes.get('run')!.radius).toBe(WorkflowDiagramConstants.STATE_HEIGHT_PX / 2);
+        expect(boxes.get('idle')!.radius).toBeUndefined();
+        expect(initial).toBe('idle');
+        expect(drawn).toEqual([{ id: 't', sourceId: 'idle', targetId: 'run', order: 2, stub: true, labelWidth: 0, targetName: 'Run' }]);
     });
 
     it('places every state, apart from the others, and the same way twice', async () => {

@@ -18,8 +18,8 @@ import { injectable } from 'inversify';
 import { WorkflowDiagramTypes, WORKFLOW_LAYOUT_PERSISTENCE_KEY } from '@dialogram/shared';
 import { WorkflowDiagramConstants, WorkflowDiagramMetadata, portRowOffset, portSide, type PortSide } from '@dialogram/shared';
 import {
-    AUTOMATON_MARGIN_PX, AUTOMATON_SPREADS, PORT_COLUMN_GAP_PX, automatonClutter, automatonDrawingBox, automatonElkGraph, automatonPlaces,
-    clearEnough, isStateType, lessCluttered, transitionLabelWidthOf, type Clutter
+    AUTOMATON_MARGIN_PX, AUTOMATON_SPREADS, PORT_COLUMN_GAP_PX, automatonClutter, automatonDrawingBox, automatonElkGraph, automatonGeometryInputs,
+    automatonPlaces, clearEnough, isStateType, lessCluttered, type Clutter
 } from './automaton-layout';
 
 /** Which side of its node a GPort sits on: the producer's placement, else its direction or type. */
@@ -310,45 +310,34 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
      * automatonGeometry does here to see how cluttered a placement is.
      */
     private async placeAutomaton(root: GGraph, states: GNode[]): Promise<void> {
-        const argsOf = (element: GNode | GEdge): Record<string, unknown> | undefined => element.args as Record<string, unknown> | undefined;
-        const names = new Map(states.map(state => {
-            const name = argsOf(state)?.[WorkflowDiagramMetadata.ENTITY_NAME];
-            return [state.id, typeof name === 'string' ? name : state.id];
-        }));
-        const transitions = root.children
+        const edges = root.children
             .filter((child): child is GEdge => child instanceof GEdge && child.type === WorkflowDiagramTypes.EDGE_TRANSITION)
-            .map(edge => {
-                const order = argsOf(edge)?.[WorkflowDiagramMetadata.TRANSITION_ORDER];
-                return {
-                    id: edge.id,
-                    sourceId: edge.sourceId,
-                    targetId: edge.targetId,
-                    ...(typeof order === 'number' ? { order } : {}),
-                    labelWidth: transitionLabelWidthOf(argsOf(edge)),
-                    stub: argsOf(edge)?.[WorkflowDiagramMetadata.TRANSITION_STUB] === true,
-                    targetName: names.get(edge.targetId) ?? edge.targetId
-                };
-            });
+            .map(edge => ({ id: edge.id, sourceId: edge.sourceId, targetId: edge.targetId, args: edge.args as Record<string, unknown> | undefined }));
+        // The drawing's inputs at a placement: the client's, from the same builder that bounds the drawing.
+        const inputsAt = (places: Map<string, { x: number; y: number }>) => automatonGeometryInputs(
+            states.map(state => ({ id: state.id, position: places.get(state.id), size: state.size, args: state.args as Record<string, unknown> | undefined })),
+            edges
+        );
+        // Its transitions, which do not hang on where the states are (a stub names where it leads).
+        const { drawn: transitions } = inputsAt(new Map(states.map(state => [state.id, { x: 0, y: 0 }])));
         const placed = states.map(state => ({
             id: state.id,
             width: state.size.width,
             height: state.size.height,
-            initial: argsOf(state)?.[WorkflowDiagramMetadata.STATE_INITIAL] === true
+            initial: (state.args as Record<string, unknown> | undefined)?.[WorkflowDiagramMetadata.STATE_INITIAL] === true
         }));
-        // Spread until it is clear enough; else the least cluttered.
+        // Spread until it is clear enough, or until spreading further gains nothing; the least cluttered wins.
         let best: { places: Map<string, { x: number; y: number }>; clutter: Clutter; spread: number } | undefined;
         for (const spread of AUTOMATON_SPREADS) {
             const laidOut = (await (this as any).elk.layout(automatonElkGraph(placed, transitions, spread))) as ElkNode;
             const places = automatonPlaces(laidOut);
-            const boxes = new Map(placed.flatMap(state => {
-                const place = places.get(state.id);
-                return place ? [[state.id, { x: place.x, y: place.y, width: state.width, height: state.height }] as const] : [];
-            }));
-            const clutter = automatonClutter(boxes, transitions);
-            if (best === undefined || lessCluttered(clutter, best.clutter)) {
-                best = { places, clutter, spread };
+            const { boxes, drawn } = inputsAt(places);
+            const clutter = automatonClutter(boxes, drawn);
+            if (best !== undefined && !lessCluttered(clutter, best.clutter)) {
+                break;
             }
-            if (clearEnough(clutter, transitions.length)) {
+            best = { places, clutter, spread };
+            if (clearEnough(clutter, drawn.length)) {
                 break;
             }
         }

@@ -197,6 +197,18 @@ describe('where the labels go', () => {
         expect(overlapArea(placed, state) + overlapArea(placed, stub.chip)).toBe(0);
     });
 
+    it('sets a slanted stub’s labels against its chip, not beyond its short side', () => {
+        const state = pill(0, 0);
+        const stub = transitionStub(state, { x: 500, y: 518 }, 80, 16, 30);
+        const [right, left, past] = stubLabelCandidates(stub, stub.chip).slice(-3);
+        // Where a ray from the chip's centre leaves it: on its outline.
+        for (const { at } of [right, left, past]) {
+            const onSide = (Math.abs(at.x - stub.chip.x) < 0.01 || Math.abs(at.x - (stub.chip.x + stub.chip.width)) < 0.01) && at.y >= stub.chip.y - 0.01 && at.y <= stub.chip.y + stub.chip.height + 0.01;
+            const onEnd = (Math.abs(at.y - stub.chip.y) < 0.01 || Math.abs(at.y - (stub.chip.y + stub.chip.height)) < 0.01) && at.x >= stub.chip.x - 0.01 && at.x <= stub.chip.x + stub.chip.width + 0.01;
+            expect(onSide || onEnd).toBe(true);
+        }
+    });
+
     it('places the same way every time', () => {
         // Three blocks on one short line: there is no place free for all,
         // and the one that covers least is taken, each time the same.

@@ -525,8 +525,13 @@ it no longer has.
   server now draws the labels and chips where the client will
   (`automatonClutter`) and lays the automaton out wider, up to five times
   (`AUTOMATON_SPREADS`), until nothing lies on anything and a line runs
-  through one label in ten at most (`clearEnough`); else it keeps the least
-  cluttered. A stub's labels may go beside its chip or past it, not only
+  through one label in ten at most (`clearEnough`), or until spreading
+  further gains nothing; the least cluttered wins, a crossing weighing as a
+  label lying on something. A line through a state it does not join counts
+  as a crossing, and the server draws from the same inputs as the client
+  (`automatonGeometryInputs`: a state that lists steps has its pill
+  corners). The gap between the automaton's components is spread too, and a
+  label is tried against 23 points of each curve, not 11. A stub's labels may go beside its chip or past it, not only
   beside its short stroke, where a label wider than the stroke lay back on
   its state. A diagram whose states have saved places keeps them: Auto-Layout
   lays it out anew.

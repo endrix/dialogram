@@ -34,6 +34,7 @@ export {
     transitionLoop,
     loopDirection,
     curveAt,
+    curveSamples,
     boxesCrossed,
     transitionAround,
     labelCandidates,

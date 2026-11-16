@@ -23,7 +23,8 @@ import {
     WorkflowDiagramTypes,
     automatonBounds,
     automatonGeometry,
-    curveAt,
+    boxesCrossed,
+    curveSamples,
     initialMarkOf,
     overlapArea,
     type GeometryBox,
@@ -166,7 +167,7 @@ export function automatonElkGraph(states: readonly AutomatonState[], transitions
                 // A line that skips a layer passes it between two of its states, drawn with its labels
                 // beside it: each state keeps half the room from it that it keeps from another state.
                 'elk.spacing.edgeNode': spaced(nodeGap / 2),
-                'elk.spacing.componentComponent': String(componentGap),
+                'elk.spacing.componentComponent': spaced(componentGap),
                 // The components in the order of their states: the one the
                 // automaton starts in first, on top.
                 'elk.layered.considerModelOrder.components': 'MODEL_ORDER',
@@ -203,36 +204,53 @@ export function automatonElkGraph(states: readonly AutomatonState[], transitions
 export interface Clutter {
     /** The area where a label lies on another label, on a state or on a stub's chip, and where a chip lies on a state or on another chip. */
     overlap: number;
-    /** How many labels another transition's line runs through. */
+    /** How many labels another transition's line runs through, and how many states a line runs through that it does not join. */
     crossings: number;
 }
 
-/** How many points of a line are tried against a label. */
-const CROSSING_SAMPLES = 24;
+/**
+ * What a crossing weighs against overlap: as much as a label lying wholly on
+ * something, a line of a label's height and of a short name's width.
+ */
+const CROSSING_AREA_PX2 = WorkflowDiagramConstants.TRANSITION_LABEL_HEIGHT_PX * 60;
+
+/** One figure for how cluttered a drawing is: its overlap, with each crossing as the area of a label. */
+export function clutterCost(clutter: Clutter): number {
+    return clutter.overlap + clutter.crossings * CROSSING_AREA_PX2;
+}
 
 /**
  * What of the automaton whose states are in `states` lies on something else,
- * where the client draws it (automaton-geometry.ts).
+ * where the client draws it (automaton-geometry.ts). A line is tried against a
+ * label at the points the labels are placed against (curveSamples), and
+ * against a state as its route was chosen (boxesCrossed).
  */
 export function automatonClutter(states: ReadonlyMap<string, GeometryBox>, transitions: readonly GeometryTransition[]): Clutter {
-    const drawn = [...automatonGeometry(states, transitions).transitions.values()];
+    const geometry = automatonGeometry(states, transitions);
+    const drawn = [...geometry.transitions.entries()].map(([id, drawing]) => ({ id, drawing }));
     // The transitions that share a line share its shape and its chip: each is counted once.
-    const lines = drawn.filter(drawing => drawing.first);
-    const chips = lines.flatMap(drawing => drawing.chip ? [drawing.chip.box] : []);
+    const lines = drawn.filter(({ drawing }) => drawing.first);
+    const chips = lines.flatMap(({ drawing }) => drawing.chip ? [drawing.chip.box] : []);
     const boxes = [...states.values()];
     const sum = (items: readonly GeometryBox[], others: (n: number) => readonly GeometryBox[]): number =>
         items.reduce((area, item, n) => area + others(n).reduce((shared, other) => shared + overlapArea(item, other), 0), 0);
-    const labels = drawn.map(drawing => drawing.label);
+    const labels = drawn.map(({ drawing }) => drawing.label);
     const overlap = sum(labels, n => [...labels.slice(n + 1), ...boxes, ...chips]) + sum(chips, n => [...chips.slice(n + 1), ...boxes]);
-    const points = lines.map(line => ({
-        shape: line.shape,
-        points: Array.from({ length: CROSSING_SAMPLES - 1 }, (_, k) => curveAt(line.shape.controls, (k + 1) / CROSSING_SAMPLES))
-    }));
+    const points = lines.map(({ drawing }) => ({ shape: drawing.shape, points: curveSamples(drawing.shape.controls) }));
     let crossings = 0;
-    for (const drawing of drawn) {
+    for (const { drawing } of drawn) {
         const box = drawing.label;
         crossings += points.filter(line => line.shape !== drawing.shape
             && line.points.some(p => p.x > box.x && p.x < box.x + box.width && p.y > box.y && p.y < box.y + box.height)).length;
+    }
+    // A curve between two states that could not go round a third; a loop and a stub stay at their state.
+    const byId = new Map(transitions.map(t => [t.id, t]));
+    for (const { id, drawing } of lines) {
+        const t = byId.get(id);
+        if (!t || t.stub || t.sourceId === t.targetId) {
+            continue;
+        }
+        crossings += boxesCrossed(drawing.shape.controls, [...states].filter(([stateId]) => stateId !== t.sourceId && stateId !== t.targetId).map(([, box]) => box));
     }
     return { overlap, crossings };
 }
@@ -242,9 +260,9 @@ export function clearEnough(clutter: Clutter, transitions: number): boolean {
     return clutter.overlap === 0 && clutter.crossings <= Math.floor(transitions / 10);
 }
 
-/** Whether `a` is less cluttered than `b`: less lying on something else, then fewer labels crossed. */
+/** Whether `a` is less cluttered than `b`, by {@link clutterCost}. */
 export function lessCluttered(a: Clutter, b: Clutter): boolean {
-    return a.overlap < b.overlap || (a.overlap === b.overlap && a.crossings < b.crossings);
+    return clutterCost(a) < clutterCost(b);
 }
 
 /** The states' places from what ELK returned, moved so that the margin is kept on the top and the left. */
@@ -270,7 +288,7 @@ export function transitionLabelWidthOf(args: Record<string, unknown> | undefined
 }
 
 /** A state of the model as the drawing's box needs it. */
-interface PlacedState {
+export interface PlacedState {
     id: string;
     position?: { x: number; y: number };
     size?: { width: number; height: number };
@@ -278,7 +296,7 @@ interface PlacedState {
 }
 
 /** A transition of the model as the drawing's box needs it. */
-interface PlacedTransition {
+export interface PlacedTransition {
     id: string;
     sourceId: string;
     targetId: string;
@@ -286,14 +304,17 @@ interface PlacedTransition {
 }
 
 /**
- * What the client will draw of an automaton whose states are placed: where
- * its states, its curves and loops, their labels, the chips of its stubs and
- * its initial mark reach (automaton-geometry.ts, the arithmetic the client
- * draws with). What goes round the automaton keeps clear of this box, not
- * only of the states: a loop and its labels stand out of a state on the edge.
- * The states are the root's, so their places are the diagram's.
+ * What the client draws an automaton from, given its states' places: each
+ * state's box (a state that lists the steps of a run has the corners of a pill
+ * of a state's height), its transitions as automatonGeometry takes them, and
+ * the state it starts in. The client builds the same from its model
+ * (automaton-views.ts); the server checks and bounds the drawing with this.
  */
-export function automatonDrawingBox(states: readonly PlacedState[], transitions: readonly PlacedTransition[]): GeometryBox | undefined {
+export function automatonGeometryInputs(states: readonly PlacedState[], transitions: readonly PlacedTransition[]): {
+    boxes: Map<string, GeometryBox>;
+    drawn: GeometryTransition[];
+    initial?: string;
+} {
     const boxes = new Map<string, GeometryBox>();
     const names = new Map<string, string>();
     let initial: string | undefined;
@@ -302,7 +323,6 @@ export function automatonDrawingBox(states: readonly PlacedState[], transitions:
             continue;
         }
         const box: GeometryBox = { x: state.position.x, y: state.position.y, width: state.size.width, height: state.size.height };
-        // A state that lists the steps of a run has the corners of a pill of a state's height.
         const steps = state.args?.[WorkflowDiagramMetadata.STATE_STEPS];
         if (Array.isArray(steps) && steps.length > 0) {
             box.radius = WorkflowDiagramConstants.STATE_HEIGHT_PX / 2;
@@ -326,6 +346,19 @@ export function automatonDrawingBox(states: readonly PlacedState[], transitions:
             targetName: names.get(transition.targetId) ?? transition.targetId
         };
     });
+    return { boxes, drawn, ...(initial !== undefined ? { initial } : {}) };
+}
+
+/**
+ * What the client will draw of an automaton whose states are placed: where
+ * its states, its curves and loops, their labels, the chips of its stubs and
+ * its initial mark reach (automaton-geometry.ts, the arithmetic the client
+ * draws with). What goes round the automaton keeps clear of this box, not
+ * only of the states: a loop and its labels stand out of a state on the edge.
+ * The states are the root's, so their places are the diagram's.
+ */
+export function automatonDrawingBox(states: readonly PlacedState[], transitions: readonly PlacedTransition[]): GeometryBox | undefined {
+    const { boxes, drawn, initial } = automatonGeometryInputs(states, transitions);
     const geometry = automatonGeometry(boxes, drawn);
     const start = initial !== undefined ? { stateId: initial, direction: initialMarkOf(initial, boxes, drawn, geometry) } : undefined;
     return automatonBounds(boxes, geometry, start);
