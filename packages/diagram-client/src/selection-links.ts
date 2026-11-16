@@ -456,7 +456,12 @@ function focusOf(byId: ReadonlyMap<string, LinkElement>, found: LinksOfSelection
         }
         for (const end of [element.sourceId, element.targetId]) {
             if (typeof end === 'string') {
-                edgesAt.set(end, [...(edgesAt.get(end) ?? []), element]);
+                const at = edgesAt.get(end);
+                if (at) {
+                    at.push(element);
+                } else {
+                    edgesAt.set(end, [element]);
+                }
             }
         }
     }
@@ -502,6 +507,21 @@ function focusOf(byId: ReadonlyMap<string, LinkElement>, found: LinksOfSelection
         }
     }
     return { kept, holders };
+}
+
+/**
+ * What `selected` keeps in sight on `root`, besides itself, worked out from
+ * the model alone (for what draws outside a render: the selection's trace).
+ * While it brings links up, all the focus keeps; else the other drawings of
+ * the same thing.
+ */
+export function keptInSight(root: LinkElement, selected: ReadonlySet<string>): Set<string> {
+    const found = linksOfSelection(root, selected);
+    const kept = found.links.length > 0 ? focusOf(indexOf(root), found).kept : new Set(found.same);
+    for (const id of selected) {
+        kept.delete(id);
+    }
+    return kept;
 }
 
 /**

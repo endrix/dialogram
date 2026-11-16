@@ -168,6 +168,52 @@ describe('a selected node', () => {
     });
 });
 
+describe('a selected state of an automaton', () => {
+    /** A state at `x`, the transitions ending on it directly, as an automaton's do. */
+    const state = (name: string, x: number): El => ({
+        id: name, type: WorkflowDiagramTypes.NODE_STATE, position: { x, y: 0 }, size: { width: 60, height: 30 }
+    });
+    const transition = (from: string, to: string): El =>
+        ({ id: `${from}=>${to}`, type: WorkflowDiagramTypes.EDGE_TRANSITION, sourceId: from, targetId: to });
+
+    it('traces where it is come to from and where it goes, one transition each way, by the transitions’ direction', () => {
+        // s1 -> s2 -> s3 -> s1, s3 -> s4, and s2 stays in s2. s3 sits left of s2,
+        // so a wire would be read against its arrow; a transition is not.
+        const root = model(state('s1', 0), state('s2', 300), state('s3', 100), state('s4', 400),
+            transition('s1', 's2'), transition('s2', 's3'), transition('s3', 's1'), transition('s3', 's4'), transition('s2', 's2'));
+        const { result, classes } = trace(root, 's2');
+        expect(sorted(result.upstream)).toEqual(['s1', 's1=>s2']);
+        // Staying in s2 is where it goes.
+        expect(sorted(result.downstream)).toEqual(['s2=>s2', 's2=>s3', 's3']);
+        for (const id of ['s4', 's3=>s1', 's3=>s4']) {
+            expect(classes[id], id).toEqual([TraceCss.FADED]);
+        }
+    });
+
+    it('is traced as a state when it holds a node, and its transitions are not turned for a selected container', () => {
+        const held = { ...state('s2', 300), children: [{ ...node('inner'), position: { x: 5, y: 5 }, size: { width: 10, height: 10 } }] } as El;
+        const root = model(state('s1', 0), held, state('s3', 100), transition('s1', 's2'), transition('s2', 's3'));
+        const { result } = trace(root, 's2');
+        expect(sorted(result.upstream)).toEqual(['s1', 's1=>s2']);
+        expect(sorted(result.downstream)).toEqual(['s2=>s3', 's3']);
+        // A group around s3 traced as a container: s2 => s3, drawn back to the left, still leads into it.
+        const framed = model(state('s2', 300), group('g', state('s3', 100)), transition('s2', 's3'));
+        expect(sorted(trace(framed, 'g').result.upstream)).toContain('s2');
+    });
+
+    it('beside the links of what is selected, leaves all they keep in sight as it is', () => {
+        // The row x is linked to the transition a => b; c is none of it.
+        const root = model(state('a', 0), state('b', 200), state('c', 400), node('x'), transition('a', 'b'), transition('b', 'c'));
+        root.args = { [WorkflowDiagramMetadata.SELECTION_LINKS]: [{ id: 'l1', from: 'x', to: 'a=>b' }] };
+        const classes = traceClassesOf(root, ['x']);
+        for (const id of ['a=>b', 'a', 'b']) {
+            expect(classes[id], id).toEqual([TraceCss.SCOPE]);
+        }
+        expect(classes['c']).toEqual([TraceCss.FADED]);
+        expect(classes['b=>c']).toEqual([TraceCss.FADED]);
+    });
+});
+
 describe('nested groups', () => {
     it('follows a path out of one group and into another, every piece drawn, no group on it', () => {
         const root = model(group('A', node('a')), group('B', node('b')), node('c'),

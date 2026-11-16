@@ -518,6 +518,20 @@ it no longer has.
 
 ### Changed
 
+- **A selected state traces one transition each way.** With
+  `clientBehavior.selectionTrace`, a state of an automaton (`node:state`)
+  draws the transitions into it and the states they leave from upstream,
+  the transitions out of it (one that stays in it too) and the states they
+  reach downstream, by the transitions' own direction; no transition is
+  turned by where its states sit, for any trace. It was traced as any
+  node: an automaton is all cycles, so the trace fell back to the direct
+  neighbours, and read them left to right, which an automaton laid out
+  from the top down is not.
+- **The trace leaves what a selection's links keep in sight as it is.**
+  Selecting something whose links are drawn (a variable's row) traced it
+  as any node and faded the transitions and states its links lead to.
+  Everything the links keep in sight is now in the trace's scope, and what
+  both fade is at the links' 0.1, the stronger of the two.
 - **The rest of the diagram all but disappears behind a selection's
   links.** While links drawn on selection are shown, every node and edge
   that is neither selected, at a link's end, held by one of those (a group
@@ -768,6 +782,11 @@ it no longer has.
 
 ### Fixed
 
+- **A frame takes no forbidden cursor and no opacity.** A group, an if or
+  a foreach is marked `read-only`, and `.workflow-node.read-only` gave it
+  `cursor: not-allowed` and `opacity: 0.8`. Both passed to every node it
+  holds: the pointer showed a forbidden sign over members that can be
+  selected and edited, and they were drawn fainter. The rule is gone.
 - **An edge between ports of any id can be edited.** The model read an
   edge's ends only from port ids of the `node:` and `wf:` forms, so an
   edge of a producer that names its ports otherwise (CalPy's
