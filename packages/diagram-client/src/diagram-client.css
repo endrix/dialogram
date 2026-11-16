@@ -2316,6 +2316,27 @@ body.workflow-properties-visible .floating-tool-btn {
     margin-bottom: 8px;
 }
 
+.annotation-derived {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 6px;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 11px;
+}
+
+.annotation-derived-arg {
+    color: var(--pp-muted, var(--vscode-descriptionForeground));
+    overflow-wrap: anywhere;
+}
+
+.annotation-derived-note {
+    margin-top: 4px;
+    font-family: var(--vscode-font-family, sans-serif);
+    font-style: italic;
+    color: var(--pp-muted, var(--vscode-descriptionForeground));
+}
+
 .annotation-title {
     font-weight: 700;
     font-size: 11px;

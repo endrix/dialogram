@@ -747,10 +747,25 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
 
                     const argsArr = (a?.arguments as any[]) ?? [];
                     const argsMap = new Map<string, string>();
+                    // What the producer works out and the class does not write
+                    // (a source's port): shown, never written back.
+                    const derivedArgs: Array<[string, string]> = [];
                     for (const arg of argsArr) {
                         if (arg?.name) {
-                            argsMap.set(String(arg.name), String(arg.value ?? '').trim());
+                            const entry: [string, string] = [String(arg.name), String(arg.value ?? '').trim()];
+                            if (arg.derived === true) {
+                                derivedArgs.push(entry);
+                            } else {
+                                argsMap.set(...entry);
+                            }
                         }
+                    }
+                    // An annotation the class does not write (the viewer of a
+                    // source): nothing on the class to save or remove.
+                    if (a?.derived === true) {
+                        list.appendChild(this.derivedAnnotationItem(name, [...argsMap.entries(), ...derivedArgs],
+                            'Not written on the class: worked out from it. Nothing here to save or remove.'));
+                        continue;
                     }
 
                     const editor = this.annotationEditorFor(name);
@@ -904,6 +919,9 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                         if (reserved.has(k)) continue;
                         appendArgRow(k, v, false);
                     }
+                    if (derivedArgs.length > 0) {
+                        body.appendChild(this.derivedArgumentRows(derivedArgs, 'Worked out, not written on the class: not saved with it.'));
+                    }
 
                     const addArgBtn = document.createElement('button');
                     addArgBtn.type = 'button';
@@ -922,6 +940,41 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         }
 
         return annSection;
+    }
+
+    /** Arguments shown as they are, `name = value`, with what they are (`note`). */
+    protected derivedArgumentRows(args: Array<[string, string]>, note: string): HTMLElement {
+        const rows = document.createElement('div');
+        rows.className = 'annotation-derived';
+        for (const [name, value] of args) {
+            const row = document.createElement('div');
+            row.className = 'annotation-derived-arg';
+            row.textContent = `${name} = ${value}`;
+            rows.appendChild(row);
+        }
+        const said = document.createElement('div');
+        said.className = 'annotation-derived-note';
+        said.textContent = note;
+        rows.appendChild(said);
+        return rows;
+    }
+
+    /** An annotation the producer works out, shown with its arguments and no actions. */
+    protected derivedAnnotationItem(name: string, args: Array<[string, string]>, note: string): HTMLElement {
+        const item = document.createElement('div');
+        item.className = 'annotation-item';
+        const header = document.createElement('div');
+        header.className = 'annotation-header';
+        const title = document.createElement('div');
+        title.className = 'annotation-title';
+        title.textContent = `@${name}`;
+        header.appendChild(title);
+        const body = document.createElement('div');
+        body.className = 'annotation-body';
+        body.appendChild(this.derivedArgumentRows(args, note));
+        item.appendChild(header);
+        item.appendChild(body);
+        return item;
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1347,9 +1400,20 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
 
         return {
             name,
-            inputValue: this.formatEditableParameterValue(value),
+            inputValue: this.sourceExpressionOf(entry) ?? this.formatEditableParameterValue(value),
             detailText: type || undefined
         };
+    }
+
+    /**
+     * What the source writes for a parameter (`FRONT_OPTIONS`,
+     * `File(path=TESTBENCH)`), when the producer says (`expression`): its
+     * `value` is what that evaluated to, and written back it would replace
+     * the source's text with a literal.
+     */
+    protected sourceExpressionOf(entry: Record<string, unknown>): string | undefined {
+        const expression = entry.expression;
+        return typeof expression === 'string' && expression.trim() !== '' ? expression.trim() : undefined;
     }
 
     protected formatEditableParameterValue(value: unknown): string {
@@ -1445,13 +1509,29 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
 
         const entry = raw as Record<string, unknown>;
         const typeText = typeof entry.type === 'string' ? entry.type.trim() : '';
-        const value = entry.value ?? entry.boundValue ?? entry.currentValue ?? entry.assignedValue ?? entry.defaultValue ?? entry.default;
         return {
             name: normalized.name,
-            inputValue: this.formatEditableParameterValue(value),
+            inputValue: this.signatureDefaultOf(entry),
             typeText,
             detailText: normalized.detailText
         };
+    }
+
+    /**
+     * The default a factory's signature declares for a parameter, as the
+     * signature writes it: its `defaultValue` (source text); none for one the
+     * producer says is `required`. A producer that names no defaults gives
+     * only the value the instance was made with, which is what was shown.
+     */
+    protected signatureDefaultOf(entry: Record<string, unknown>): string {
+        if (typeof entry.defaultValue === 'string') {
+            return entry.defaultValue;
+        }
+        if (entry.required === true) {
+            return '';
+        }
+        const value = entry.value ?? entry.boundValue ?? entry.currentValue ?? entry.assignedValue ?? entry.defaultValue ?? entry.default;
+        return this.formatEditableParameterValue(value);
     }
 
     protected normalizeWorkflowParameters(raw: unknown): Array<{ name: string; valueText: string; detailText?: string }> {
@@ -2127,7 +2207,8 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         };
 
         const paramRow = (def: any) => {
-            const value = String(entityParams.find((p) => p.name === def.name)?.value ?? '');
+            const given = entityParams.find((p) => p.name === def.name);
+            const value = (given && this.sourceExpressionOf(given)) ?? String(given?.value ?? '');
             const onCommit = (e: Event) => {
                 const inputEl = (e.target as HTMLElement)
                     .closest('.pp-arow')
