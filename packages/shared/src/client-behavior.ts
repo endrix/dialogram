@@ -31,6 +31,13 @@ export interface DiagramClientBehavior {
     graphSourceNavigation?: boolean;
     /** Property panel renders the network-model sections and labels. */
     networkPropertySections?: boolean;
+    /**
+     * The product's words for a node's kind, as the property panel names it:
+     * an `instance` of a definition (an Actor, a Module, a Task) and a
+     * `network` instantiated in another (a Network, a Workflow). Unset, the
+     * panel says Task and Network or Workflow.
+     */
+    kindLabels?: { instance?: string; network?: string };
     /** Cross-file navigation UI uses the network entity vocabulary. */
     networkNavigationLabels?: boolean;
     /** Sentinel option value/default for the agent CLI-tools "none" selection. */

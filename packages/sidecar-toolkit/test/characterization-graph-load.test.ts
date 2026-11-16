@@ -286,6 +286,9 @@ describe('characterization: calLang sidecar path', () => {
         expect(root.args?.['wf:errors']).toEqual([
             expect.objectContaining({ message: expect.stringContaining('CalPy sidecar graph export failed') })
         ]);
+        // Nothing was drawn, so nothing can be edited there: the root is a
+        // read-only view (no palette tools, no ports to add in the panel).
+        expect(root.args?.['wf:readOnlyView']).toBe(true);
         expect(cliInvocationCalls).toBe(0);
     });
 });

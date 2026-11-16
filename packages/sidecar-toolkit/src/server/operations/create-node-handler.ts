@@ -7,7 +7,9 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
 import { URI } from 'vscode-uri';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { WORKFLOW_NETWORK_MODEL_KEY, WorkflowDiagramMetadata, WorkflowDiagramTypes, portTypesUsed, withArticle } from '@dialogram/shared';
+import { LayoutPersistenceService } from '@dialogram/diagram-server/services/layout-persistence-service';
+import { layoutTargetOf } from '@dialogram/diagram-server/server/layout-target';
 
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { AgentCreateNodeOutcomeSink } from '@dialogram/diagram-server/server/agent-create-node-outcome';
@@ -139,6 +141,10 @@ export class CreateNodeOperationHandler extends OperationHandler {
     @optional()
     protected readonly createNodeOutcomeSink?: AgentCreateNodeOutcomeSink;
 
+    @inject(LayoutPersistenceService)
+    @optional()
+    protected readonly layoutPersistence?: LayoutPersistenceService;
+
     getTriggerActions(): TriggerNodeCreationAction[] {
         return this.elementTypeIds.map(elementTypeId => ({
             kind: TriggerNodeCreationAction.KIND,
@@ -216,11 +222,13 @@ export class CreateNodeOperationHandler extends OperationHandler {
                         void vscode.window.showErrorMessage('Invalid port name (must be an identifier).');
                         return undefined;
                     }
+                    // Offered: the type the diagram's ports have most.
+                    const usual = portTypesUsed(this.modelState.root as any)[0];
                     const portType = headless
                         ? (operation.args?.['portType'] as string | undefined)?.trim()
                         : (await vscode.window.showInputBox({
                             prompt: `Type for ${direction} port '${portName}'`,
-                            placeHolder: 'e.g. int(size=32)'
+                            ...(usual ? { value: usual } : {})
                         }))?.trim();
                     if (!portType) {
                         if (headless) {
@@ -290,10 +298,15 @@ export class CreateNodeOperationHandler extends OperationHandler {
                             return undefined;
                         }
                         const listResult = await this.listTypeNamesDetailed(sourceUri, requestedKind);
-                    const items = await this.resolveAvailableTypeNames(sourceUri, requestedKind, beforeText, listResult, `list available ${typeLabel} types`);
-                    if (!items) {
+                    const listed = await this.resolveAvailableTypeNames(sourceUri, requestedKind, beforeText, listResult, `list available ${typeLabel} types`);
+                    if (!listed) {
                         return undefined;
                     }
+                    // A network is not offered inside itself.
+                    const editing = this.modelState.root?.args?.[WorkflowDiagramMetadata.WORKFLOW_NAME];
+                    const items = requestedKind === 'workflow' && typeof editing === 'string'
+                        ? listed.filter(name => name !== editing)
+                        : listed;
                     type PickItem = vscode.QuickPickItem & (
                         | { itemKind: 'separator' }
                         | { itemKind: 'new' }
@@ -310,10 +323,10 @@ export class CreateNodeOperationHandler extends OperationHandler {
                         });
                     }
                     for (const item of items) {
-                        pickItems.push({ label: item, description: isWorkflow ? '@workflow' : typeLabel, itemKind: 'existing' as const, name: item });
+                        pickItems.push({ label: item, description: typeLabel, itemKind: 'existing' as const, name: item });
                     }
                     const picked = await vscode.window.showQuickPick<PickItem>(pickItems, {
-                        placeHolder: `Select a ${typeLabel} to instantiate`
+                        placeHolder: `Select ${withArticle(typeLabel)} to instantiate`
                     });
                     if (!picked) {
                         return undefined;
@@ -436,17 +449,27 @@ export class CreateNodeOperationHandler extends OperationHandler {
                     : undefined;
                 const merged = { ...(givenParams ?? {}), ...(collectedInstanceParams ?? {}) };
                 const params = Object.keys(merged).length > 0 ? merged : undefined;
-                const result = await this.sendSidecarOpDetailed(sourceUri, {
-                    op: this.sidecar.sidecarOp('createNode'),
-                    args: {
-                        ...(pickedNodeArgs ?? {}),
-                        workflow: workflowName,
-                        type: finalTypeName,
-                        name: entityName,
-                        params
-                    }
-                });
+                // Where the palette was clicked, saved before the producer
+                // writes, so the diagram the write brings draws it there.
+                const placed = await this.placeAt(operation.location, entityName);
+                let result: SidecarInvocationResult;
+                try {
+                    result = await this.sendSidecarOpDetailed(sourceUri, {
+                        op: this.sidecar.sidecarOp('createNode'),
+                        args: {
+                            ...(pickedNodeArgs ?? {}),
+                            workflow: workflowName,
+                            type: finalTypeName,
+                            name: entityName,
+                            params
+                        }
+                    });
+                } catch (error) {
+                    await placed?.undo();
+                    throw error;
+                }
                 if (!result.ok) {
+                    await placed?.undo();
                     const failureMessage = this.sidecarFailureMessage(`create node '${entityName}'`, result);
                     void vscode.window.showErrorMessage(failureMessage);
                     if (headless) {
@@ -468,6 +491,60 @@ export class CreateNodeOperationHandler extends OperationHandler {
             },
         });
         return command;
+    }
+
+    /**
+     * Save `location` (where the palette was clicked) as the position of the
+     * node `name` will be, in the layout the diagram is drawn from; what puts
+     * the layout back when the node is not made. Nothing when no place was
+     * clicked (an agent's create), or when that layout places nothing yet
+     * (a diagram never saved, a nested view drawn from its fallback): a
+     * layout of the new node alone would have every other node placed anew.
+     */
+    private async placeAt(
+        location: { x: number; y: number } | undefined,
+        name: string
+    ): Promise<{ undo(): Promise<void> } | undefined> {
+        if (!this.layoutPersistence || !location || !Number.isFinite(location.x) || !Number.isFinite(location.y)) {
+            return undefined;
+        }
+        const diagramModel = this.modelState.get(WORKFLOW_NETWORK_MODEL_KEY) as { documentUri: string; workflowName?: unknown } | undefined;
+        if (!diagramModel) {
+            return undefined;
+        }
+        const layout = this.layoutPersistence;
+        try {
+            const { filePath, networkId } = layoutTargetOf(diagramModel as any);
+            const positions = await layout.loadLayout(filePath, networkId);
+            if (!positions || positions.size === 0) {
+                return undefined;
+            }
+            // The click wins over a position left by a node of that name
+            // made, undone or deleted before.
+            const before = positions.get(name);
+            const change = async (edit: (now: Map<string, { x: number; y: number }>) => void): Promise<void> => {
+                const now = await layout.loadLayout(filePath, networkId);
+                if (!now) {
+                    return;
+                }
+                edit(now);
+                // With the routes of a save still waiting, which this one replaces.
+                await layout.saveLayoutImmediate(filePath, networkId, now, await layout.loadEdgeRoutes(filePath, networkId));
+            };
+            await change(now => { now.set(name, { x: location.x, y: location.y }); });
+            return {
+                undo: () => change(now => {
+                    if (before) {
+                        now.set(name, before);
+                    } else {
+                        now.delete(name);
+                    }
+                })
+            };
+        } catch {
+            // The node is still made; the diagram parks it as before.
+            return undefined;
+        }
     }
 
     private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {

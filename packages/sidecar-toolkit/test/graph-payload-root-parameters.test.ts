@@ -155,7 +155,9 @@ describe('WorkflowSourceModelStorage graph payload root parameters', () => {
                 }
             ],
             edges: [],
-            subgraphs: []
+            subgraphs: [],
+            // Nothing drawn, nothing to edit.
+            meta: { readOnly: true }
         });
     });
 

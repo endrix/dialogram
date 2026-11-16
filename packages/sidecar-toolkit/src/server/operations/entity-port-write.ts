@@ -16,6 +16,13 @@
  * diagram's file too. A sidecar that does not is not sent such an edit of an
  * entity in another file: the connections here would be left naming a port
  * the entity no longer has.
+ *
+ * A sidecar that can say where else the entity is used
+ * (`features.portUsesQuery`: `portUses {entity}`) is asked first: every
+ * network of the project that has an instance of it is then told, and each
+ * of their files is one the edit may write, put back by its undo. What it
+ * could not look into (a module that does not load) is said: those networks'
+ * connections are not followed.
  */
 import type { ModelState } from '@eclipse-glsp/server';
 import * as vscode from 'vscode';
@@ -25,6 +32,54 @@ import type { SidecarInvoker } from './sidecar-invoker';
 
 /** The sidecar feature: it follows `usedIn` when a port is renamed or deleted. */
 export const PORT_USES_ACROSS_FILES = 'portUsesAcrossFiles';
+
+/** The sidecar feature: `portUses {entity}` answers where else the entity is used. */
+export const PORT_USES_QUERY = 'portUsesQuery';
+
+/** One network an entity is used in: its file (a path), its name and the entity's instances in it. */
+export interface PortUse {
+    file: string;
+    workflow: string;
+    instances: string[];
+}
+
+function isPortUse(value: unknown): value is PortUse {
+    const use = value as Partial<PortUse> | undefined;
+    return typeof use?.file === 'string' && typeof use.workflow === 'string'
+        && Array.isArray(use.instances) && use.instances.every(name => typeof name === 'string');
+}
+
+/**
+ * Where the sidecar says the entity of `fileUri` is used, and what it could
+ * not look into; nothing when it cannot say (no `portUsesQuery`, or the
+ * query failed).
+ */
+async function usesAcrossProject(
+    sidecar: Pick<SidecarInvoker, 'hasFeature' | 'sidecarOp' | 'sendSidecarOpDetailed'>,
+    diagramUri: string,
+    fileUri: string,
+    entityType: string
+): Promise<{ usedIn: PortUse[]; unchecked: string[] } | undefined> {
+    if (!(await sidecar.hasFeature(diagramUri, PORT_USES_QUERY))) {
+        return undefined;
+    }
+    const result = await sidecar.sendSidecarOpDetailed(fileUri, { op: sidecar.sidecarOp('portUses'), args: { entity: entityType } })
+        .catch((error: unknown) => ({ ok: false as const, message: error instanceof Error ? error.message : String(error) }));
+    const diagnostic = result.ok ? (result as { response?: any }).response?.diagnostic : undefined;
+    if (!Array.isArray(diagnostic?.usedIn)) {
+        // Asked and not answered: the edit goes on for this network, and
+        // the reader is told the others are not followed.
+        const why = result.ok ? 'no list of networks in its answer' : (result.message ?? 'no answer');
+        void vscode.window.showWarningMessage(
+            `Where else '${entityType}' is used could not be asked (${why}): only this network's connections follow.`
+        );
+        return undefined;
+    }
+    const unchecked = Array.isArray(diagnostic.unchecked)
+        ? (diagnostic.unchecked as Array<{ file?: unknown }>).map(each => String(each?.file ?? '')).filter(file => file !== '')
+        : [];
+    return { usedIn: (diagnostic.usedIn as unknown[]).filter(isPortUse), unchecked };
+}
 
 /** What an edit of an entity's port names it by. */
 export interface EntityPortEdit {
@@ -119,7 +174,7 @@ export function entityFileOf(modelState: Pick<ModelState, 'index' | 'root'>, dia
  * the edit renames or deletes it (`followsUses`); or why it is not asked.
  */
 export async function entityPortWrite(
-    sidecar: Pick<SidecarInvoker, 'hasFeature'>,
+    sidecar: Pick<SidecarInvoker, 'hasFeature' | 'sidecarOp' | 'sendSidecarOpDetailed'>,
     modelState: Pick<ModelState, 'index' | 'root'>,
     diagramUri: string,
     edit: EntityPortEdit,
@@ -144,12 +199,30 @@ export async function entityPortWrite(
     const root = modelState.root as unknown as ElementLike | undefined;
     const workflow = root?.args?.[WorkflowDiagramMetadata.WORKFLOW_NAME];
     const instances = instancesOf(root, edit.entityType, fileUri);
-    const usedIn = typeof workflow === 'string' && workflow.trim() !== '' && instances.length > 0
+    const here: PortUse[] = typeof workflow === 'string' && workflow.trim() !== '' && instances.length > 0
         ? [{ file: vscode.Uri.parse(diagramUri).fsPath, workflow, instances }]
         : [];
+    const project = await usesAcrossProject(sidecar, diagramUri, fileUri, edit.entityType);
+    // The project's uses as the sidecar found them; this network's as it is
+    // drawn, when the sidecar did not find it (it may not build as saved).
+    const usedIn = project
+        ? [...project.usedIn, ...here.filter(mine => !project.usedIn.some(use => sameFile(use.file, mine.file) && use.workflow === mine.workflow))]
+        : here;
+    if (project && project.unchecked.length > 0) {
+        const names = project.unchecked.map(file => file.split(/[\\/]/).pop() ?? file);
+        void vscode.window.showWarningMessage(
+            `${names.join(', ')} could not be loaded: ${names.length === 1 ? 'its networks were' : 'their networks were'} not checked for '${edit.entityType}', and are not followed.`
+        );
+    }
+    // Every file the edit may write, so its undo puts each back.
+    const alsoWrites = [...new Map(
+        [...(elsewhere ? [diagramUri] : []), ...usedIn.map(use => vscode.Uri.file(use.file).toString())]
+            .filter(uri => !sameFile(uri, fileUri))
+            .map(uri => [vscode.Uri.parse(uri).fsPath, uri] as const)
+    ).values()];
     return {
         fileUri,
-        ...(elsewhere ? { alsoWrites: [diagramUri] } : {}),
+        ...(alsoWrites.length > 0 ? { alsoWrites } : {}),
         payload: { ...payload, args: { ...payload.args, usedIn } }
     };
 }

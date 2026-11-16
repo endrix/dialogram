@@ -107,8 +107,8 @@ describe('a view of the instance it was reached through', () => {
 
         expect(asked).toEqual([BY_INSTANCE, BY_NAME]);
         const messages = (result.diagnostics as Array<{ message: string }>).map(d => d.message).join(' | ');
-        expect(messages).toContain('no definition under that name');
-        expect(messages).toContain('asked of the instance first: instance path not found');
+        // The instance's answer first: it was asked first, and the view is the instance's.
+        expect(messages).toContain('instance path not found (asked of its file by name next: no definition under that name)');
     });
 
     it('says so when its file answers in the root’s place: what is shown is the definition’s', async () => {

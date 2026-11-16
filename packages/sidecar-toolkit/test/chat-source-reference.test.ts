@@ -135,3 +135,37 @@ describe("the profile's chat.sourceContext", () => {
         expect(profile.chat.graphContextProvider).toBeUndefined();
     });
 });
+
+describe('the profile\'s words for a node\'s kind', () => {
+    const base = (): any => ({
+        key: 'hw', displayName: 'HW', settingsNamespace: 'hw', customEditorViewType: 'hw.diagram',
+        glspClientId: 'hw.client', glspClientName: 'hw',
+        commands: {
+            openDiagram: 'c.openDiagram', openDiagramSplit: 'c.openDiagramSplit', layoutDiagram: 'c.layoutDiagram',
+            refreshDiagramModel: 'c.refreshDiagramModel', layoutDiagramIfNeeded: 'c.layoutDiagramIfNeeded',
+            fitToScreen: 'c.fitToScreen', runWorkflow: 'c.runWorkflow', stopWorkflow: 'c.stopWorkflow',
+            setQueueTraceVisible: 'c.setQueueTraceVisible', setAgentToolConfig: 'c.setAgentToolConfig',
+            getAgentToolConfig: 'c.getAgentToolConfig', chatOpen: 'c.chatOpen', chatSend: 'c.chatSend',
+            chatAddViewerEditor: 'c.chatAddViewerEditor', chatAddViewerTask: 'c.chatAddViewerTask',
+            newSourceFile: 'c.newSourceFile', exportDiagramAsSvg: 'c.exportDiagramAsSvg'
+        },
+        operationKinds: { createEntityPort: 'op.createEntityPort', deleteEntityPort: 'op.deleteEntityPort' },
+        sidecarOperationPrefix: 'hw', sidecarCommandSettingKey: 'sidecarCommand', sidecarCommandDefault: 'hw-sidecar',
+        cliCommandSettingKey: 'cliCommand', cliCommandDefault: 'hw', acceptedOperationPrefixes: ['hw'],
+        graphAcquisition: 'cli-plan', cliGraphArgs: (file: string) => ['plan', file],
+        undoLabelSuffix: ' (hw)', createNodeStrings: { typeLabel: (kind: string) => (kind === 'workflow' ? 'network' : 'actor') }, createNodeBehavior: {},
+        sourceExtension: '.sv', mcpEnabledSetting: { section: 'hw.chat', key: 'enableMcpTools', default: true },
+        scopeArgKey: 'workflow', newContainer: { label: 'Module', decorator: 'module', importLine: '' },
+        identifierNoun: 'SystemVerilog', runOutputDirSettingKey: 'runOutputDir', liveExecutionGlowSettingKey: 'liveExecutionGlow',
+        agentToolsSettingKey: 'agentTools', agentToolAuthSettingKey: 'agentToolAuth', agentToolPolicySettingKey: 'agentToolPolicy',
+        agentToolTimeoutMsSettingKey: 'agentToolTimeoutMs', agentToolRegistrySettingKey: 'agentToolRegistry',
+        agentMcpBridgeCmdSettingKey: 'agentMcpBridgeCmd', exportOp: 'exportModuleGraph'
+    });
+
+    it('are the product\'s create-node words, unless it gives its own', () => {
+        const chat = { name: 'hw', fullName: 'HW' };
+        expect((createSidecarDiagramProfile({ ...base(), chat }) as any).clientBehavior.kindLabels).toEqual({ instance: 'Actor', network: 'Network' });
+        const own = createSidecarDiagramProfile({ ...base(), chat, clientBehavior: { kindLabels: { instance: 'Cell' } } }) as any;
+        expect(own.clientBehavior.kindLabels).toEqual({ instance: 'Cell' });
+    });
+});

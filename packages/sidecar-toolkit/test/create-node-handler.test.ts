@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 
 import { CreateNodeOperationHandler } from '../src/server/operations/create-node-handler.js';
 import type { CreateNodeStrings, CreateNodeBehavior } from '../src/server/sidecar-runtime-config.js';
-import { WorkflowDiagramTypes } from '@dialogram/shared';
+import { WORKFLOW_NETWORK_MODEL_KEY, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 
 /**
  * The create-node vocabulary/behavior is product-supplied config (SP2c-3). These mocks stand in
@@ -513,6 +513,52 @@ describe('workflow create node handler', () => {
         }
     });
 
+    it('offers no network inside itself, and words the picker with the product\'s name for the kind', async () => {
+        const workspaceAny = vscode.workspace as any;
+        const windowAny = vscode.window as any;
+        const saved = { open: workspaceAny.openTextDocument, apply: workspaceAny.applyEdit, pick: windowAny.showQuickPick };
+        const picks: Array<{ items: Array<{ label: string; description?: string }>; placeHolder?: string }> = [];
+        workspaceAny.openTextDocument = async () => ({
+            uri: { fsPath: '/tmp/calpy-self-picker.py', toString: () => 'file:///tmp/calpy-self-picker.py' },
+            getText: () => '@network\ndef Main():\n    pass\n'
+        });
+        workspaceAny.applyEdit = async () => false;
+        windowAny.showQuickPick = async (items: Array<{ label: string; description?: string }>, options: { placeHolder?: string }) => {
+            picks.push({ items, placeHolder: options?.placeHolder });
+            return undefined;
+        };
+        try {
+            for (const [elementTypeId, types] of [
+                [WorkflowDiagramTypes.NODE_WORKFLOW, ['NetA', 'Main']],
+                [WorkflowDiagramTypes.NODE_ACTOR, ['Add']]
+            ] as const) {
+                const handler = new CreateNodeOperationHandler();
+                (handler as any).modelState = { root: { args: {
+                    sourceUri: 'file:///tmp/calpy-self-picker.py', 'wf:workflowName': 'Main', [WorkflowDiagramMetadata.WORKFLOW_NAME]: 'Main'
+                } } };
+                (handler as any).sidecar = calpySidecar();
+                (handler as any).sendSidecarCapabilitiesDetailed = async () => ({
+                    ok: true,
+                    response: { status: 'ok', diagnostic: { capabilities: { supportedOps: [
+                        'calpy.listWorkflowTypes', 'calpy.listTaskTypes', 'calpy.createWorkflowType', 'calpy.createTaskType',
+                        'calpy.listInstanceNames', 'calpy.createNode'
+                    ] } } }
+                });
+                (handler as any).sendSidecarListDetailed = async () => ({ ok: true, response: { status: 'ok', diagnostic: { types } } });
+                await (handler.createCommand({ kind: 'createNode', elementTypeId, args: {} } as any) as any).execute();
+            }
+            const [network, actor] = picks;
+            expect(network.placeHolder).toBe('Select a network to instantiate');
+            expect(network.items.filter(item => item.description !== undefined).map(item => [item.label, item.description]))
+                .toEqual([['NetA', 'network']]);
+            expect(actor.placeHolder).toBe('Select an actor to instantiate');
+        } finally {
+            workspaceAny.openTextDocument = saved.open;
+            workspaceAny.applyEdit = saved.apply;
+            windowAny.showQuickPick = saved.pick;
+        }
+    });
+
     it('includes project workflow types in wfpy quick pick when sidecar returns an empty list', async () => {
         const handler = new CreateNodeOperationHandler();
         const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wfpy-create-node-'));
@@ -820,6 +866,91 @@ describe('workflow create node handler', () => {
             workspaceAny.applyEdit = originalApplyEdit;
             windowAny.showInputBox = originalShowInputBox;
             windowAny.showWarningMessage = originalShowWarningMessage;
+            await fs.rm(tempRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('puts a node made from the palette where it was clicked, and nowhere when it is not made', async () => {
+        const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'calpy-placed-'));
+        const mainPath = path.join(tempRoot, 'main.py');
+        await fs.writeFile(mainPath, '@network\ndef Main():\n    pass\n');
+        const workspaceAny = vscode.workspace as any;
+        const windowAny = vscode.window as any;
+        const saved = { open: workspaceAny.openTextDocument, apply: workspaceAny.applyEdit, pick: windowAny.showQuickPick, input: windowAny.showInputBox, error: windowAny.showErrorMessage };
+        workspaceAny.openTextDocument = async () => ({
+            uri: { fsPath: mainPath, toString: () => `file://${mainPath}` },
+            getText: () => '@network\ndef Main():\n    pass\n'
+        });
+        workspaceAny.applyEdit = async () => true;
+        windowAny.showQuickPick = async (items: Array<{ label: string }>) => items.find(item => item.label === 'Add');
+        windowAny.showErrorMessage = async () => undefined;
+        // The layout the diagram is drawn from, by file and network, and the routes saved with it.
+        const key = `${mainPath}#Main`;
+        const layouts = new Map<string, Map<string, { x: number; y: number }>>();
+        const routes = new Map([['first|Out|second|In', [{ x: 1, y: 1 }]]]);
+        const routesSaved: unknown[] = [];
+        const layoutPersistence = {
+            loadLayout: async (file: string, network: string) => {
+                const positions = layouts.get(`${file}#${network}`);
+                return positions && positions.size > 0 ? new Map(positions) : undefined;
+            },
+            loadEdgeRoutes: async () => routes,
+            saveLayoutImmediate: async (file: string, network: string, positions: Map<string, { x: number; y: number }>, edgeRoutes?: unknown) => {
+                layouts.set(`${file}#${network}`, new Map(positions));
+                routesSaved.push(edgeRoutes);
+            }
+        };
+        const create = async (name: string, answer: 'ok' | 'refused' | 'throws', location = { x: 420, y: 310 }) => {
+            windowAny.showInputBox = async () => name;
+            const handler = new CreateNodeOperationHandler();
+            const seenWhenWritten: Array<[string, { x: number; y: number }][]> = [];
+            (handler as any).modelState = {
+                root: { args: { sourceUri: `file://${mainPath}`, [WorkflowDiagramMetadata.WORKFLOW_NAME]: 'Main' } },
+                get: (stateKey: string) => stateKey === WORKFLOW_NETWORK_MODEL_KEY ? { documentUri: `file://${mainPath}`, workflowName: 'Main' } : undefined
+            };
+            (handler as any).layoutPersistence = layoutPersistence;
+            (handler as any).sidecar = calpySidecar();
+            (handler as any).sendSidecarCapabilitiesDetailed = async () => ({
+                ok: true,
+                response: { status: 'ok', diagnostic: { capabilities: { supportedOps: ['calpy.listTaskTypes', 'calpy.createTaskType', 'calpy.listInstanceNames', 'calpy.createNode'] } } }
+            });
+            (handler as any).sendSidecarListDetailed = async (_uri: string, payload: { op: string }) => ({
+                ok: true,
+                response: { status: 'ok', diagnostic: payload.op === 'calpy.listInstanceNames' ? { names: ['first'] } : { types: ['Add'] } }
+            });
+            (handler as any).sendSidecarOpDetailed = async () => {
+                seenWhenWritten.push([...(layouts.get(key)?.entries() ?? [])]);
+                if (answer === 'throws') {
+                    throw new Error('the sidecar died');
+                }
+                return answer === 'ok' ? { ok: true, response: { status: 'ok' } } : { ok: false, message: 'refused' };
+            };
+            const command = handler.createCommand({ kind: 'createNode', elementTypeId: WorkflowDiagramTypes.NODE_ACTOR, location, args: {} } as any);
+            await (command as any).execute().catch(() => undefined);
+            return seenWhenWritten;
+        };
+        try {
+            // No layout yet: nothing saved, the diagram places it as before.
+            await create('adder', 'ok');
+            expect(layouts.has(key)).toBe(false);
+
+            layouts.set(key, new Map([['first', { x: 0, y: 0 }], ['stale', { x: 5, y: 5 }]]));
+            // Saved before the producer writes: the diagram its write brings draws it there, routes kept.
+            expect(await create('adder', 'ok')).toEqual([[['first', { x: 0, y: 0 }], ['stale', { x: 5, y: 5 }], ['adder', { x: 420, y: 310 }]]]);
+            expect(routesSaved).toEqual([routes]);
+            // Refused, or the producer gone: the layout as it was, a position left by a node of that name too.
+            await create('broken', 'refused');
+            await create('stale', 'throws', { x: 900, y: 100 });
+            expect([...layouts.get(key)!.entries()]).toEqual([['first', { x: 0, y: 0 }], ['stale', { x: 5, y: 5 }], ['adder', { x: 420, y: 310 }]]);
+            // Made: the click wins over that left position.
+            await create('stale', 'ok', { x: 900, y: 100 });
+            expect(layouts.get(key)!.get('stale')).toEqual({ x: 900, y: 100 });
+        } finally {
+            workspaceAny.openTextDocument = saved.open;
+            workspaceAny.applyEdit = saved.apply;
+            windowAny.showQuickPick = saved.pick;
+            windowAny.showInputBox = saved.input;
+            windowAny.showErrorMessage = saved.error;
             await fs.rm(tempRoot, { recursive: true, force: true });
         }
     });

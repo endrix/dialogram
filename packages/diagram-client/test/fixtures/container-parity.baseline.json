@@ -87,6 +87,11 @@
         "to": "ViewportPreservingSetModelCommand"
     },
     {
+        "id": "FitToScreenCommand",
+        "op": "rebind",
+        "to": "FitClearOfOverlaysCommand"
+    },
+    {
         "id": "Symbol(stub.ICopyPasteHandler)",
         "op": "bind",
         "scope": "singleton",

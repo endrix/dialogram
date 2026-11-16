@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Container } from 'inversify';
 import { Messenger } from 'vscode-messenger-webview';
 import { EXECUTION_OVERLAY_ACTION_KIND } from '@dialogram/shared';
-import { TYPES, SetModelCommand, EditorContextService } from '@eclipse-glsp/client';
+import { TYPES, SetModelCommand, FitToScreenCommand, EditorContextService } from '@eclipse-glsp/client';
 import { createDiagramContainer, composeDiagramModules } from '../src/container';
 import { diagramBaseModule } from '../src/base.module';
 import { workflowViewsModule } from '../src/stock-views.module';
@@ -42,6 +42,7 @@ function bootNeutralBaseContainer(): Container {
     container.bind(TYPES.ILogger).toConstantValue({});
     container.bind(TYPES.LogLevel).toConstantValue(2);
     container.bind(SetModelCommand).toConstantValue(class {});
+    container.bind(FitToScreenCommand).toConstantValue(class {});
     container.bind(TYPES.IActionDispatcher).toConstantValue({ dispatch: () => undefined });
     container.bind(EditorContextService).toConstantValue({});
     container.bind(TYPES.ViewerOptions).toConstantValue({});

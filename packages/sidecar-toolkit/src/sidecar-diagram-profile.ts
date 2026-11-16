@@ -58,6 +58,19 @@ const AGENT_TOOL_OVERRIDES_STATE_KEY = 'workflow.agentToolEntityOverrides';
 /** The webview behaviour flags a product sets; the platform's `DiagramClientBehavior` minus what it derives itself. */
 export type SidecarClientBehavior = ProductClientBehavior;
 
+/** `word` with its first letter in upper case: "actor" -> "Actor". */
+function capitalized(word: string): string {
+    return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+/** The panel's words for a node's kind, from the product's create-node prompts; none when it names no kind. */
+function kindLabelsOf(strings: Partial<CreateNodeStrings> | undefined): { instance: string; network: string } | undefined {
+    const typeLabel = strings?.typeLabel;
+    return typeof typeLabel === 'function'
+        ? { instance: capitalized(typeLabel('task')), network: capitalized(typeLabel('workflow')) }
+        : undefined;
+}
+
 /**
  * The command ids a sidecar diagram profile carries. A product may name any of
  * them; the ones it leaves out are derived (see {@link resolveSidecarProfileInput}):
@@ -769,9 +782,13 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
         // A projection creates nothing, whatever the input says.
         supportsElementCreation: readOnly ? false : input.supportsElementCreation,
         operationKinds: input.operationKinds,
-        clientBehavior: runs && input.cliResumeArgs
-            ? { ...input.clientBehavior, resumeAtStep: true }
-            : input.clientBehavior,
+        clientBehavior: {
+            ...input.clientBehavior,
+            // The panel names a node's kind in the words the product's
+            // create-node prompts use (an actor, a module, a task).
+            kindLabels: input.clientBehavior?.kindLabels ?? kindLabelsOf(input.createNodeStrings),
+            ...(runs && input.cliResumeArgs ? { resumeAtStep: true } : {})
+        },
         clientStylesheets: input.clientStylesheets,
         clientAssets: input.clientAssets,
         // Read-only, the server registers no writing operation handler at all

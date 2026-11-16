@@ -163,6 +163,14 @@ export class GGraph {}
 export class GIssueMarker {}
 export class GRoutingHandle {}
 export class SetModelCommand {}
+/** Sprotty's fit: the action it was given, and the viewport the whole canvas gives. */
+export class FitToScreenCommand {
+    constructor(protected readonly action: any = {}) {}
+    getNewViewport(_bounds: unknown, _model: unknown): unknown {
+        return undefined;
+    }
+}
+export const Dimension = { isValid: (d: any): boolean => !!d && d.width >= 0 && d.height >= 0 };
 export const UpdateModelAction = { KIND: 'updateModel', is: (action: any): boolean => action?.kind === 'updateModel' };
 export const SetModelAction = { KIND: 'setModel', is: (action: any): boolean => action?.kind === 'setModel' };
 /**
