@@ -365,7 +365,10 @@ body.vscode-high-contrast {
 }
 
 /* ── Feedback loops ──────────────────────────────────────────────────────
-   A connection that feeds a stage running before it. Drawn in a lighter hue so
+   A connection on a loop drawn back, against the flow: the edge the layout
+   reverses to lay the loop out, or after a drag the wire that runs back
+   (`feedback-direction.ts`); and a loop on one node, or one the producer
+   declares, whichever way it is drawn. Drawn in a lighter hue so
    the loop can be found at a glance instead of by tracing arrows: it is where
    a pipeline stops being a pipeline, and it decides initial tokens, deadlock
    and scheduling.
@@ -373,13 +376,13 @@ body.vscode-high-contrast {
    LIGHTER, not louder — these are not errors and there is nothing to fix, so
    the stroke WIDTH is left alone and only the colour moves. That is also why
    the rule sits here beside `cal-edge-error` rather than with the
-   `.workflow-edge` rules further down: both classes come from the MODEL, and
-   the element that carries them is the one with `.sprotty-edge` (a first
-   version keyed on `.workflow-edge .edge-line` matched nothing at all).
+   `.workflow-edge` rules further down: both classes sit on the element with
+   `.sprotty-edge` (a first version keyed on `.workflow-edge .edge-line`
+   matched nothing at all).
 
-   Gated on the body class the palette's loop toggle sets: the server marks the
-   edges always, and whether they are drawn apart is a question about looking,
-   answered here with no round trip. */
+   Gated on the body class the palette's loop toggle sets: the edges are
+   marked always, and whether they are drawn apart is a question about
+   looking, answered here with no round trip. */
 body.workflow-feedback-edges .sprotty-edge.workflow-edge-feedback:not(.selected):not(.mouseover),
 body.workflow-feedback-edges .sprotty-edge.workflow-edge-feedback:not(.selected):not(.mouseover) path {
     stroke: var(--workflow-edge-feedback, #d19a66);

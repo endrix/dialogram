@@ -1,8 +1,8 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
 import { parseBadgesMeta, parseFactsMeta, parseLinesMeta, parseViewsMeta, textColumns, type UnitBadge } from '../server/graph-load-request-options';
-import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
+import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import * as path from 'node:path';
-import { findFeedbackEdges } from './feedback-edges';
+import { findLoopEdges } from './feedback-edges';
 import { arrangeGroupRows, groupLayoutOptions, isGroupRow, splitEdgesAtGroups } from './group-edges';
 import { URI } from 'vscode-uri';
 import { boundaryMargin, bundlePorts, type PortBus, type PortBusState } from './port-bundles';
@@ -156,24 +156,38 @@ function isEdge(element: GModelElement): element is GEdge {
 }
 
 /**
- * Tag the connections that close a feedback loop.
+ * Tag the connections on a feedback loop.
  *
  * The graph is walked in `feedback-edges.ts`; this is the part that knows the
  * model. Two jobs: say which node owns each endpoint — an edge attaches to a
  * PORT, and an actor's in and out ports are the same node, so without this
- * every actor in a straight pipeline would look like a loop — and put the class
- * on the edges the walk names.
+ * every actor in a straight pipeline would look like a loop — and mark the
+ * edges the walk names. A loop on one node, and an edge the producer declared,
+ * are feedback whichever way they are drawn: they get the class here. Any
+ * other edge on a loop is marked `ON_LOOP` with its two ends, and the client
+ * gives it the class where it is drawn against the flow.
  *
- * The class is always applied. Whether it is DRAWN differently is the reader's
- * choice, made in the webview with no round trip, because it is a question
- * about looking rather than about the graph (see the palette toggle).
+ * Whether the class is DRAWN differently is the reader's choice, made in the
+ * webview with no round trip, because it is a question about looking rather
+ * than about the graph (see the palette toggle).
  */
 function markFeedbackEdges(children: GModelElement[]): void {
     /** endpoint id → owning node id, for every port under every node. */
     const ownerByEndpoint = new Map<string, string>();
     /** The endpoints on a node of the unit's boundary. */
     const onBoundary = new Set<string>();
+    /** The side of its node each port is on. */
+    const sideOf = new Map<string, PortSide>();
     const indexPorts = (element: GModelElement, owner: string | undefined, boundary: boolean): void => {
+        if (element.type.startsWith('port')) {
+            const args = (element.args ?? {}) as Record<string, unknown>;
+            sideOf.set(element.id, portSide({
+                absolute: { x: 0, y: 0 },
+                direction: args[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined,
+                side: args[WorkflowDiagramMetadata.PORT_SIDE] as string | undefined,
+                type: element.type
+            }));
+        }
         const isNode = !isEdge(element) && element.type !== WorkflowDiagramTypes.GRAPH;
         const nodeId = isNode ? element.id : owner;
         const isBoundary = isNode ? BOUNDARY_NODE_TYPES.has(element.type) : boundary;
@@ -200,33 +214,53 @@ function markFeedbackEdges(children: GModelElement[]): void {
 
     // If the producer named any of them, its answer is the whole answer.
     //
-    // The derived answer below is a fact about the DRAWING: which edges point
-    // backwards in the order the layout will use. That is the right question
-    // when nobody knows better, and it is why this is computed at all. But a
-    // producer often does know better, because in its own terms the loop has a
-    // designated closing element and the shape cannot show which one it is —
-    // several edges of one cycle are equally good candidates by shape alone,
-    // and the heuristic picks among them by degree.
+    // The derived answer below is a fact about the DRAWING: which edges of a
+    // loop the layout draws backwards. That is the right question when nobody
+    // knows better, and it is why this is computed at all. But a producer
+    // often does know better, because in its own terms the loop has a
+    // designated closing element and the shape cannot show which one it is.
     //
     // All-or-nothing, deliberately. Merging the two sets would mark one cycle
-    // twice, once where the producer said and once where the heuristic guessed,
-    // and a reader cannot tell which mark carries meaning. A document that
-    // declares nothing behaves exactly as it did before.
+    // twice, once where the producer said and once where the drawing ran
+    // back, and a reader cannot tell which mark carries meaning.
     const declared = edges.filter(
         edge => edge.args?.[WorkflowDiagramMetadata.DECLARED_FEEDBACK] === true
     );
-    const feedback = declared.length > 0
-        ? new Set(declared.map(edge => edge.id))
-        // An endpoint nothing claims is its own node: a boundary port hangs off
-        // the graph itself, and calling two of them the same node would invent
-        // a loop.
-        : findFeedbackEdges(edges.map(edge => asLoopEdge(edge, onBoundary)), ownerOfLoopEnd(ownerByEndpoint));
-    for (const edge of edges) {
-        if (!feedback.has(edge.id)) {
-            continue;
-        }
+    const markFeedback = (edge: GEdge): void => {
         edge.cssClasses = [...(edge.cssClasses ?? []), WorkflowDiagramCss.EDGE_FEEDBACK];
         edge.args = { ...(edge.args ?? {}), [WorkflowDiagramMetadata.IS_FEEDBACK]: true };
+    };
+    if (declared.length > 0) {
+        declared.forEach(markFeedback);
+        return;
+    }
+    // A return wire runs against the flow by its ports' places: it leaves a
+    // port on the west or enters one on the east, as a handshake's `ready`
+    // does. It closes no loop of the network (the layout lays it back, as
+    // `isReturnWire` in elk-layout-engine.ts says): with it, every channel's
+    // `valid` and `ready` would be a loop, and every `ready` drawn as one.
+    const isReturnWire = (edge: GEdge): boolean =>
+        sideOf.get(edge.sourceId) === 'WEST' || sideOf.get(edge.targetId) === 'EAST';
+    // An endpoint nothing claims is its own node: a boundary port hangs off
+    // the graph itself, and calling two of them the same node would invent a
+    // loop.
+    const asLoop = new Map(edges.filter(edge => !isReturnWire(edge)).map(edge => [edge.id, asLoopEdge(edge, onBoundary)]));
+    const ownerOf = ownerOfLoopEnd(ownerByEndpoint);
+    const onLoop = findLoopEdges([...asLoop.values()], ownerOf);
+    for (const edge of edges) {
+        if (!onLoop.has(edge.id)) {
+            continue;
+        }
+        const ends = asLoop.get(edge.id)!;
+        if (ownerOf(ends.sourceId) === ownerOf(ends.targetId)) {
+            markFeedback(edge);
+        } else {
+            edge.args = {
+                ...(edge.args ?? {}),
+                [WorkflowDiagramMetadata.ON_LOOP]: true,
+                [WorkflowDiagramMetadata.LOOP_ENDS]: [[edge.sourceId, edge.targetId]]
+            };
+        }
     }
 }
 
@@ -1424,9 +1458,10 @@ export class GraphGModelSource {
         }
 
         // After the edges exist and before anything is pruned: which of them
-        // send the signal back up the pipeline. Done over the finished model
-        // rather than over the IR because a loop belongs to the NODES, and only
-        // the model knows which node owns a port — see `feedback-edges.ts`.
+        // lie on a loop (the client draws as feedback those that run back).
+        // Done over the finished model rather than over the IR because a loop
+        // belongs to the NODES, and only the model knows which node owns a
+        // port — see `feedback-edges.ts`.
         markFeedbackEdges(children);
 
         // Remove re-parented nodes from root children
@@ -1444,7 +1479,8 @@ export class GraphGModelSource {
 
         // An edge that enters or leaves a group is cut at the group's frame, so
         // each group can lay out on its own (see `group-edges.ts`). After the
-        // feedback marking, which the pieces inherit, and once the members sit
+        // loop marking, which the pieces inherit with the whole edge's ends,
+        // and once the members sit
         // inside their groups, which decides what each edge crosses.
         splitEdgesAtGroups(children);
         // Once the groups are nested and the edges cut: which groups lay out in rows.

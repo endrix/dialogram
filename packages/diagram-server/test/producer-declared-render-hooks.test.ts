@@ -171,14 +171,15 @@ describe('an edge role and width', () => {
 });
 
 describe('which connection closes a loop', () => {
-    it('is derived when the producer says nothing', () => {
-        // Unchanged behaviour, and the reason the derivation exists: with no
-        // opinion available, the edge that points backwards in the layout's own
-        // ordering is the honest answer.
+    it('is the drawing\u2019s when the producer says nothing', () => {
+        // With no opinion available, the connection the layout draws back is
+        // the honest answer: the server marks the loop, the client the one of
+        // its connections that runs against the flow.
         const edges = loopFixture();
 
-        const marked = edges.filter((child: any) => child.args?.[WorkflowDiagramMetadata.IS_FEEDBACK] === true);
-        expect(marked.map((edge: any) => edge.id)).toEqual(['back']);
+        expect(edges.filter((child: any) => child.args?.[WorkflowDiagramMetadata.IS_FEEDBACK] === true)).toEqual([]);
+        expect(edges.filter((child: any) => child.args?.[WorkflowDiagramMetadata.ON_LOOP] === true).map((edge: any) => edge.id))
+            .toEqual(['forward', 'back']);
     });
 
     it('is the producer’s answer when it gives one', () => {
@@ -227,5 +228,6 @@ describe('which connection closes a loop', () => {
         const marked = edges.filter((child: any) => child.args?.[WorkflowDiagramMetadata.IS_FEEDBACK] === true);
         expect(marked).toHaveLength(1);
         expect(marked[0].id).toBe('back');
+        expect(edges.filter((child: any) => child.args?.[WorkflowDiagramMetadata.ON_LOOP] === true)).toEqual([]);
     });
 });
