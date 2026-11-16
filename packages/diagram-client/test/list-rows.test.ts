@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import { WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { listRowOf, renderListRow } from '../src/list-row-view';
 import { nodeFamilyCss } from '../src/palette-icons';
-import { isLinkEnd, noteSelection, renderSelectionLinks, type LinkElement } from '../src/selection-links';
+import { markLinkEnd, noteSelection, renderSelectionLinks, withSelectionLinks, type LinkElement } from '../src/selection-links';
 import { TransitionEdgeView } from '../src/automaton-views';
 
 // The GLSP `svg` helper gives `{tag, props, children}` here, snabbdom vnodes in a browser.
@@ -129,27 +129,39 @@ describe('a row at the end of a link of the selection', () => {
         return renderListRow(row, ROW, { width: 200, height: 20 }, {}, { renderChildren: () => [] } as any);
     };
 
-    it('has its background tinted, and is not outlined; another node at a link’s end is', () => {
-        const root = model();
+    const svgOf = (): any => ({ sel: 'svg', data: { class: {} }, children: [{ sel: 'g', data: {}, children: [] }] });
+    /** One render as the root's view makes it: worked out, the rows drawn, the drawing over the diagram. */
+    const render = (root: any, rows: string[]): { rows: Record<string, boolean>; overlay: any } => {
         noteSelection(root, 'main');
-        expect(classesOf(drawRow(root, 'ptr'))['list-row-linked']).toBe(true);
-        expect(classesOf(drawRow(root, 'cnt'))['list-row-linked']).toBe(false);
-        const drawn = renderSelectionLinks(root);
-        // The port is outlined; the row is not, and its link still meets it, at its side.
-        expect(withClass(drawn, 'selection-link-end')).toHaveLength(1);
-        expect(withClass(drawn, 'selection-link-line')).toHaveLength(2);
+        const drawn = Object.fromEntries(rows.map(id => [id, classesOf(drawRow(root, id))['list-row-linked']]));
+        const svg = withSelectionLinks(svgOf(), root, 'main') as any;
+        return { rows: drawn, overlay: svg.children[0].children[0] };
+    };
+
+    it('has its background tinted, and is not outlined; another node at a link’s end is', () => {
+        const { rows, overlay } = render(model(), ['ptr', 'cnt']);
+        expect(rows).toEqual({ ptr: true, cnt: false });
+        // The port is outlined; the row is not, and its link still meets it.
+        expect(withClass(overlay, 'selection-link-end')).toHaveLength(1);
+        expect(withClass(overlay, 'selection-link-line')).toHaveLength(2);
+    });
+
+    it('is outlined when it was not drawn as a row: nothing else would mark it', () => {
+        const { overlay } = render(model(), []);
+        expect(withClass(overlay, 'selection-link-end')).toHaveLength(2);
+        // Nor without its root's view having worked anything out.
+        expect(withClass(renderSelectionLinks(model()), 'selection-link-end')).toHaveLength(2);
     });
 
     it('is plain again once nothing is selected, and in the hidden render', () => {
         const root = model();
         noteSelection(root, 'main');
         noteSelection(root, 'hidden');
-        expect(isLinkEnd({ id: 'ptr', root })).toBe(false);
+        expect(markLinkEnd({ id: 'ptr', root })).toBe(false);
         root.children[1].selected = false;
-        noteSelection(root, 'main');
-        expect(classesOf(drawRow(root, 'ptr'))['list-row-linked']).toBe(false);
+        expect(render(root, ['ptr']).rows).toEqual({ ptr: false });
         // A row of a model whose view has not worked anything out is plain.
-        expect(isLinkEnd({ id: 'ptr' })).toBe(false);
+        expect(markLinkEnd({ id: 'ptr' })).toBe(false);
     });
 });
 

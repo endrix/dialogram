@@ -12,7 +12,7 @@
 import type { VNode } from 'snabbdom';
 import { svg, type RenderingContext } from '@eclipse-glsp/client';
 import { WorkflowDiagramConstants, WorkflowDiagramMetadata, type ListRow } from '@dialogram/shared';
-import { isLinkEnd } from './selection-links';
+import { markLinkEnd } from './selection-links';
 
 /** What a node's row shows, when it is a member of a list. */
 export function listRowOf(node: { args?: Record<string, unknown> }): ListRow | undefined {
@@ -41,7 +41,7 @@ export function renderListRow(
             ...classes,
             'list-row': true,
             // At the end of a link of the selection: tinted, not outlined.
-            'list-row-linked': node.id !== undefined && isLinkEnd({ id: node.id, root: node.root }),
+            'list-row-linked': markLinkEnd(node),
             selected: !!node.selected,
             hover: !!node.hoverFeedback
         },

@@ -523,9 +523,11 @@ it no longer has.
   row. A row at a link's end now has its background tinted
   (`list-row-linked`, the editor's focus colour mixed into the row's
   fill), and the link meets the row's own edge; another node is outlined
-  as before. The root's view works out what the selection brings up once
-  a render, before the nodes are drawn (`noteSelection`), and a row's view
-  asks it (`isLinkEnd`).
+  as before, and so is a row that is not drawn. The root's view works out
+  what the selection brings up once a render, before the nodes are drawn
+  (`noteSelection`); a row's view asks it and marks itself
+  (`markLinkEnd`), and the drawing over the diagram outlines every end
+  that did not.
 - **The Transitions group is in the palette only of a view that takes
   transitions.** It was in every editable palette, where nothing could
   draw one, and hidden by CSS in read-only views that took none.

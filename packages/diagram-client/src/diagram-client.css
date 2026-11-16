@@ -1620,8 +1620,9 @@ body.vscode-high-contrast-light .node-center-image-light {
 
 /* A row a link of the selection leads to (`list-row-linked`): its
    background tinted where another node is outlined, since the outlines of
-   rows stacked on each other would cross. The link meets the row's edge. */
-.workflow-node.list-row.list-row-linked:not(.selected) {
+   rows stacked on each other would cross. The link meets the row's edge.
+   Selected or under the pointer, a row looks as any other does. */
+.workflow-node.list-row.list-row-linked:not(.selected, .hover) {
     fill: color-mix(in srgb, var(--workflow-node-fill) 72%, var(--vscode-focusBorder, #007fd4) 28%);
 }
 
