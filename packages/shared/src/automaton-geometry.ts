@@ -55,8 +55,6 @@ export interface TransitionDrawing {
 
 export interface AutomatonGeometry {
     transitions: Map<string, TransitionDrawing>;
-    /** Per state, the directions its loop and its stubs leave in, which its initial mark keeps clear of. */
-    away: Map<string, Point[]>;
 }
 
 const centreOf = (box: Box): Point => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
@@ -165,57 +163,15 @@ export function automatonGeometry(states: ReadonlyMap<string, Box>, transitions:
             });
         });
     });
-    return { transitions: result, away };
+    return { transitions: result };
 }
-
-/** How many directions around a state its initial mark is tried in. */
-const MARK_DIRECTIONS = 16;
 
 /**
- * The direction a state's initial mark comes from: of the directions around
- * it, the one furthest from where its transitions leave and from its loop.
- * West when nothing is in the way, as a statechart draws it, and the first
- * found going round from there when several are as free.
+ * What the drawing covers: its states, its curves and loops, their labels and
+ * the chips of its stubs. The state it starts in is drawn with a second
+ * outline inside its own, which takes nothing beyond it.
  */
-export function initialMarkDirection(state: Point, neighbours: readonly Point[], loop: Point | undefined): Point {
-    const taken = neighbours.map(other => Math.atan2(other.y - state.y, other.x - state.x));
-    if (loop) {
-        taken.push(Math.atan2(loop.y, loop.x));
-    }
-    const clearance = (angle: number): number => Math.min(Math.PI, ...taken.map(other => {
-        const apart = Math.abs(angle - other) % (2 * Math.PI);
-        return Math.min(apart, 2 * Math.PI - apart);
-    }));
-    let best = Math.PI;
-    for (let k = 1; k < MARK_DIRECTIONS; k++) {
-        const angle = Math.PI + k * 2 * Math.PI / MARK_DIRECTIONS;
-        if (clearance(angle) > clearance(best) + 1e-6) {
-            best = angle;
-        }
-    }
-    return { x: Math.cos(best), y: Math.sin(best) };
-}
-
-/** Where a state's initial mark comes from: clear of its lines, its loop and its stubs. */
-export function initialMarkOf(stateId: string, states: ReadonlyMap<string, Box>, transitions: readonly GeometryTransition[], geometry: AutomatonGeometry): Point {
-    const state = states.get(stateId)!;
-    const centre = centreOf(state);
-    const away = geometry.away.get(stateId) ?? [];
-    const neighbours = [...stateNeighbours(stateId, states, transitions), ...away.map(d => ({ x: centre.x + d.x * 100, y: centre.y + d.y * 100 }))];
-    return initialMarkDirection(centre, neighbours, undefined);
-}
-
-/** The initial mark's parts, from the state's outline outwards: its arrow head, its shaft, its dot. */
-export const INITIAL_MARK = { DOT: 4.5, SHAFT: 16, HEAD: 7 } as const;
-
-/** How far the initial mark reaches from the state's outline. */
-export const INITIAL_MARK_REACH_PX = INITIAL_MARK.HEAD + INITIAL_MARK.SHAFT + 2 * INITIAL_MARK.DOT + 1;
-
-/**
- * What the drawing covers: its states, its curves and loops, their labels,
- * the chips of its stubs and the mark of the state it starts in.
- */
-export function automatonBounds(states: ReadonlyMap<string, Box>, geometry: AutomatonGeometry, initial?: { stateId: string; direction: Point }): Box | undefined {
+export function automatonBounds(states: ReadonlyMap<string, Box>, geometry: AutomatonGeometry): Box | undefined {
     let bounds: Box | undefined;
     const add = (box: Box): void => {
         bounds = bounds ? unionBox(bounds, box) : { x: box.x, y: box.y, width: box.width, height: box.height };
@@ -229,14 +185,6 @@ export function automatonBounds(states: ReadonlyMap<string, Box>, geometry: Auto
         if (drawing.chip) {
             add(drawing.chip.box);
         }
-    }
-    const start = initial ? states.get(initial.stateId) : undefined;
-    if (start && initial) {
-        const centre = centreOf(start);
-        // From the centre past the outline, which is no further than the half diagonal.
-        const reach = Math.hypot(start.width, start.height) / 2 + INITIAL_MARK_REACH_PX;
-        const dot = { x: centre.x + initial.direction.x * reach, y: centre.y + initial.direction.y * reach };
-        add({ x: dot.x - INITIAL_MARK.DOT, y: dot.y - INITIAL_MARK.DOT, width: 2 * INITIAL_MARK.DOT, height: 2 * INITIAL_MARK.DOT });
     }
     return bounds;
 }

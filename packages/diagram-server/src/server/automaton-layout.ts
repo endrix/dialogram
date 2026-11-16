@@ -25,7 +25,6 @@ import {
     automatonGeometry,
     boxesCrossed,
     curveSamples,
-    initialMarkOf,
     overlapArea,
     type GeometryBox,
     type GeometryTransition
@@ -306,18 +305,15 @@ export interface PlacedTransition {
 /**
  * What the client draws an automaton from, given its states' places: each
  * state's box (a state that lists the steps of a run has the corners of a pill
- * of a state's height), its transitions as automatonGeometry takes them, and
- * the state it starts in. The client builds the same from its model
+ * of a state's height) and its transitions as automatonGeometry takes them. The client builds the same from its model
  * (automaton-views.ts); the server checks and bounds the drawing with this.
  */
 export function automatonGeometryInputs(states: readonly PlacedState[], transitions: readonly PlacedTransition[]): {
     boxes: Map<string, GeometryBox>;
     drawn: GeometryTransition[];
-    initial?: string;
 } {
     const boxes = new Map<string, GeometryBox>();
     const names = new Map<string, string>();
-    let initial: string | undefined;
     for (const state of states) {
         if (!state.position || !state.size) {
             continue;
@@ -330,9 +326,6 @@ export function automatonGeometryInputs(states: readonly PlacedState[], transiti
         boxes.set(state.id, box);
         const name = state.args?.[WorkflowDiagramMetadata.ENTITY_NAME];
         names.set(state.id, typeof name === 'string' ? name : state.id);
-        if (state.args?.[WorkflowDiagramMetadata.STATE_INITIAL] === true) {
-            initial = state.id;
-        }
     }
     const drawn: GeometryTransition[] = transitions.map(transition => {
         const order = transition.args?.[WorkflowDiagramMetadata.TRANSITION_ORDER];
@@ -346,20 +339,17 @@ export function automatonGeometryInputs(states: readonly PlacedState[], transiti
             targetName: names.get(transition.targetId) ?? transition.targetId
         };
     });
-    return { boxes, drawn, ...(initial !== undefined ? { initial } : {}) };
+    return { boxes, drawn };
 }
 
 /**
  * What the client will draw of an automaton whose states are placed: where
- * its states, its curves and loops, their labels, the chips of its stubs and
- * its initial mark reach (automaton-geometry.ts, the arithmetic the client
- * draws with). What goes round the automaton keeps clear of this box, not
+ * its states, its curves and loops, their labels and the chips of its stubs
+ * reach (automaton-geometry.ts, the arithmetic the client draws with). What goes round the automaton keeps clear of this box, not
  * only of the states: a loop and its labels stand out of a state on the edge.
  * The states are the root's, so their places are the diagram's.
  */
 export function automatonDrawingBox(states: readonly PlacedState[], transitions: readonly PlacedTransition[]): GeometryBox | undefined {
-    const { boxes, drawn, initial } = automatonGeometryInputs(states, transitions);
-    const geometry = automatonGeometry(boxes, drawn);
-    const start = initial !== undefined ? { stateId: initial, direction: initialMarkOf(initial, boxes, drawn, geometry) } : undefined;
-    return automatonBounds(boxes, geometry, start);
+    const { boxes, drawn } = automatonGeometryInputs(states, transitions);
+    return automatonBounds(boxes, automatonGeometry(boxes, drawn));
 }

@@ -29,13 +29,10 @@ import {
     type IViewArgs
 } from '@eclipse-glsp/client';
 import {
-    INITIAL_MARK,
     WorkflowDiagramConstants,
     WorkflowDiagramMetadata,
     WorkflowDiagramTypes,
     automatonGeometry,
-    initialMarkDirection,
-    initialMarkOf,
     stateStepLines,
     stateStepText,
     transitionLabelTextX,
@@ -49,7 +46,7 @@ import type { VNode } from 'snabbdom';
 import { WorkflowEdge, WorkflowNode } from './model';
 import { nodeOpenToggle } from './node-open-toggle';
 import { isKeptBySelection } from './selection-links';
-import { leaveState, unionBox, type Box, type Point } from './transition-geometry';
+import { unionBox, type Box, type Point } from './transition-geometry';
 
 /** A state of an automaton. */
 export class StateNode extends WorkflowNode {
@@ -103,7 +100,6 @@ function boxOf(state: unknown): Box | undefined {
     return box;
 }
 
-const centreOf = (box: Box): Point => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
 
 function isTransition(element: unknown): element is SEdgeImpl {
     return (element as { type?: string } | undefined)?.type === WorkflowDiagramTypes.EDGE_TRANSITION;
@@ -186,33 +182,22 @@ export function transitionDrawing(edge: SEdgeImpl): TransitionDrawing | undefine
     return root ? automatonDrawing(root).transitions.get(edge.id) : undefined;
 }
 
-export { initialMarkDirection };
+/** How far inside a state's outline the second outline of the state it starts in is drawn. */
+export const STATE_INITIAL_INSET_PX = 3;
 
-/** The mark of the state an automaton starts in: a dot and an arrow into the state, from `direction`. */
-function initialMark(state: Box, direction: Point): VNode {
-    const { DOT, SHAFT, HEAD } = INITIAL_MARK;
-    // Where the arrow ends, on the state's outline, in the state's own coordinates.
-    const centre = centreOf(state);
-    const at = leaveState(state, { x: centre.x + direction.x * 100, y: centre.y + direction.y * 100 }, 1);
-    // Drawn pointing east into the origin, then turned to point at the state.
-    const angle = Math.atan2(-direction.y, -direction.x) * 180 / Math.PI;
-    return svg('g', { class: { 'state-initial-mark': true }, attrs: { transform: `translate(${at.x - state.x}, ${at.y - state.y}) rotate(${angle})` } },
-        svg('title', {}, 'Starts here'),
-        svg('circle', { class: { 'state-initial-dot': true }, attrs: { cx: -(SHAFT + HEAD + DOT), cy: 0, r: DOT } }),
-        svg('path', {
-            class: { 'state-initial-arrow': true },
-            attrs: { d: `M${-(SHAFT + HEAD)},0 H${-HEAD} M-1,0 l${-HEAD},${-HEAD / 2} v${HEAD} Z` }
-        })
-    ) as VNode;
-}
-
-/** Where a state's initial mark comes from: clear of its lines, its loop and its stubs. */
-function initialMarkFor(stateId: string, root: unknown): Point | undefined {
-    if (!root) {
-        return undefined;
-    }
-    const drawing = automatonDrawing(root as { children?: readonly unknown[] });
-    return drawing.states.has(stateId) ? initialMarkOf(stateId, drawing.states, drawing.transitionsIn, drawing) : undefined;
+/**
+ * The second outline of the state an automaton starts in, inside its own and
+ * with its corners, so that it takes no room and is stroked as the state is
+ * (selected, hovered or read-only). A state that lists steps has a pill's
+ * corners of a state's height.
+ */
+function initialOutline(width: number, height: number, radius: number): VNode {
+    const inset = STATE_INITIAL_INSET_PX;
+    const inner = Math.max(0, radius - inset);
+    return svg('rect', {
+        class: { 'state-initial-outline': true },
+        attrs: { x: inset, y: inset, width: Math.max(0, width - 2 * inset), height: Math.max(0, height - 2 * inset), rx: inner, ry: inner }
+    }, svg('title', {}, 'Starts here')) as VNode;
 }
 
 @injectable()
@@ -225,7 +210,6 @@ export class StateNodeView extends ShapeView {
         const args = node.args ?? {};
         const name = args[WorkflowDiagramMetadata.ENTITY_NAME];
         const initial = args[WorkflowDiagramMetadata.STATE_INITIAL] === true;
-        const box = boxOf(node);
         const steps = stepsOfState(node);
         const k = WorkflowDiagramConstants;
         const radius = steps ? k.STATE_HEIGHT_PX / 2 : height / 2;
@@ -251,7 +235,7 @@ export class StateNodeView extends ShapeView {
             // A long run's steps, all of them, where it lists only the first few.
             ...(steps && stateStepLines(steps).more > 0 ? [svg('title', {}, steps.map(stateStepText).join('\n'))] : []),
             svg('rect', { class: { 'node-body': true }, attrs: { x: 0, y: 0, width, height, rx: radius, ry: radius } }),
-            ...(initial && box ? [initialMark(box, initialMarkFor(node.id, node.root) ?? { x: -1, y: 0 })] : []),
+            ...(initial ? [initialOutline(width, height, radius)] : []),
             svg('text', { class: { 'state-name': true }, attrs: { x: (width - toggleRoom) / 2, y: top } }, label),
             ...(run
                 ? [nodeOpenToggle(node.id, runOpen, label, width - toggleRoom / 2 - 2, top,

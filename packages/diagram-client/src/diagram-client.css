@@ -1085,20 +1085,11 @@ body.vscode-high-contrast-light .node-center-image-light {
     user-select: none;
 }
 
-.workflow-node.state-node .state-initial-mark {
-    color: var(--vscode-foreground, #cccccc);
-}
-
-.workflow-node.state-node .state-initial-dot {
-    fill: currentColor;
-    stroke: none;
-}
-
-.workflow-node.state-node .state-initial-arrow {
-    fill: currentColor;
-    stroke: currentColor;
-    stroke-width: 1.5px;
-    stroke-linejoin: round;
+/* The state an automaton starts in: a second outline inside its own, stroked
+   as the state is (the stroke is the node's, selected or hovered too). */
+.workflow-node.state-node .state-initial-outline {
+    fill: none;
+    pointer-events: none;
 }
 
 /* A transition's line is lighter than a wire's: an automaton has many, and

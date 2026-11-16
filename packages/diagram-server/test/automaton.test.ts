@@ -195,7 +195,7 @@ describe('where the states of an automaton go', () => {
     });
 
     it('draws a state that lists the steps of a run with the corners the client gives it', () => {
-        const { boxes, drawn, initial } = automatonGeometryInputs(
+        const { boxes, drawn } = automatonGeometryInputs(
             [
                 { id: 'idle', position: { x: 0, y: 0 }, size: { width: 60, height: 36 }, args: { [WorkflowDiagramMetadata.STATE_INITIAL]: true } },
                 { id: 'run', position: { x: 0, y: 100 }, size: { width: 120, height: 90 }, args: { [WorkflowDiagramMetadata.STATE_STEPS]: ['load', 'add'], [WorkflowDiagramMetadata.ENTITY_NAME]: 'Run' } }
@@ -204,7 +204,6 @@ describe('where the states of an automaton go', () => {
         );
         expect(boxes.get('run')!.radius).toBe(WorkflowDiagramConstants.STATE_HEIGHT_PX / 2);
         expect(boxes.get('idle')!.radius).toBeUndefined();
-        expect(initial).toBe('idle');
         expect(drawn).toEqual([{ id: 't', sourceId: 'idle', targetId: 'run', order: 2, stub: true, labelWidth: 0, targetName: 'Run' }]);
     });
 

@@ -23,7 +23,6 @@ import {
     transitionStub,
     type Box
 } from '../src/transition-geometry';
-import { initialMarkDirection } from '../src/automaton-views';
 
 const pill = (x: number, y: number, width = 100, height = 36): Box => ({ x, y, width, height });
 const close = (a: number, b: number): boolean => Math.abs(a - b) < 0.01;
@@ -217,18 +216,5 @@ describe('where the labels go', () => {
         const once = placeLabelBlocks(blocks, [pill(0, 0), pill(300, 40)], blocks.map(() => shape.controls));
         expect(placeLabelBlocks(blocks, [pill(0, 0), pill(300, 40)], blocks.map(() => shape.controls))).toEqual(once);
         expect(overlapArea(once[0], once[1])).toBe(0);
-    });
-});
-
-describe('the initial mark', () => {
-    it('comes from the west when nothing is in the way, as a statechart draws it', () => {
-        const from = initialMarkDirection({ x: 0, y: 0 }, [], undefined);
-        expect(close(from.x, -1) && close(from.y, 0)).toBe(true);
-    });
-
-    it('comes from where the state has the most room', () => {
-        // Transitions west and east, a loop up: the mark comes from below.
-        const from = initialMarkDirection({ x: 0, y: 0 }, [{ x: -100, y: 0 }, { x: 100, y: 0 }], { x: 0, y: -1 });
-        expect(close(from.x, 0) && close(from.y, 1)).toBe(true);
     });
 });

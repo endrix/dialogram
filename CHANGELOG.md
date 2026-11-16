@@ -518,6 +518,15 @@ it no longer has.
 
 ### Changed
 
+- **The state an automaton starts in has a second outline, not a dot and
+  an arrow.** The mark came from where the state had the most room, and in
+  a crowded automaton that was among the lines and labels. The outline is
+  drawn 3px inside the state's own, with its corners, and stroked as the
+  state is, selected or hovered too; it takes no room. Gone from the shared
+  package with the mark: `initialMarkDirection`, `initialMarkOf`,
+  `INITIAL_MARK`, `INITIAL_MARK_REACH_PX`, `AutomatonGeometry.away` and
+  `automatonBounds`' third argument. A group's initial mark (the first
+  stage of a pipeline) is unchanged.
 - **An automaton is spread until its labels are clear.** The layout made
   room beside a line for that line's labels only, not for every line
   through the same room: a state that eleven transitions leave was drawn
