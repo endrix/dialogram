@@ -73,14 +73,14 @@ describe('python agent annotation roundtrip', () => {
             };
             (handler as any).sidecar = {
                 sidecarOp: (name: string) => `wfpy.${name}`,
-                undoLabelSuffix: () => ' (wfpy)'
-            };
-            (handler as any).sendSidecarOp = async (sourceUri: string, payload: any) => {
-                sidecarCalls.push({ sourceUri, payload });
-                const nextAnnotation = String(payload?.args?.annotationText ?? '');
-                pyText = pyText.replace('@agent(prompt="OLD")', nextAnnotation);
-                await fs.writeFile(workflowPath, pyText);
-                return true;
+                undoLabelSuffix: () => ' (wfpy)',
+                sendSidecarOpDetailed: async (sourceUri: string, payload: any) => {
+                    sidecarCalls.push({ sourceUri, payload });
+                    const nextAnnotation = String(payload?.args?.annotationText ?? '');
+                    pyText = pyText.replace('@agent(prompt="OLD")', nextAnnotation);
+                    await fs.writeFile(workflowPath, pyText);
+                    return { ok: true };
+                }
             };
 
             const operation: UpdateDefinitionAnnotationOperation.Operation = {
@@ -162,11 +162,11 @@ describe('python agent annotation roundtrip', () => {
             };
             (handler as any).sidecar = {
                 sidecarOp: (name: string) => `wfpy.${name}`,
-                undoLabelSuffix: () => ' (wfpy)'
-            };
-            (handler as any).sendSidecarOp = async (sourceUri: string, payload: any) => {
-                sidecarCalls.push({ sourceUri, payload });
-                return true;
+                undoLabelSuffix: () => ' (wfpy)',
+                sendSidecarOpDetailed: async (sourceUri: string, payload: any) => {
+                    sidecarCalls.push({ sourceUri, payload });
+                    return { ok: true };
+                }
             };
 
             const operation: UpdateDefinitionAnnotationOperation.Operation = {

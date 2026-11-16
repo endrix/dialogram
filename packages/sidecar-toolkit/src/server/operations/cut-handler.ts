@@ -9,6 +9,7 @@ import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { WorkflowDiagramTypeGuards } from '@dialogram/shared';
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { SidecarInvoker } from './sidecar-invoker';
+import { SidecarSteps } from './sidecar-edit';
 import { escapePythonStringLiteral } from '../python-text';
 import { mayRemove } from './delete-handler';
 
@@ -62,25 +63,32 @@ export class CutOperationHandler extends OperationHandler {
             computeEdits: async () => {
                 const beforeText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
                 await vscode.env.clipboard.writeText(JSON.stringify(clipboardDataFromPayload(payload)));
+                const steps = await SidecarSteps.begin(this.sidecar, sourceUri);
                 for (const item of removing) {
                     if (item.kind === 'entity') {
-                        await this.sendSidecarOp(sourceUri, {
+                        if (!await steps.send({
                             op: this.sidecar.sidecarOp('deleteNode'),
                             args: { workflow: workflowName, name: item.name }
-                        });
+                        }, `'${item.name}' was not cut.`)) {
+                            return undefined;
+                        }
                     } else if (item.kind === 'connection') {
                         if (!item.outPort || !item.inPort) continue;
                         const fromExpr = this.edgeEndpointExpr(item.from, item.outPort);
                         const toExpr = this.edgeEndpointExpr(item.to, item.inPort);
-                        await this.sendSidecarOp(sourceUri, {
+                        if (!await steps.send({
                             op: this.sidecar.sidecarOp('deleteEdge'),
                             args: { workflow: workflowName, from_expr: fromExpr, to_expr: toExpr }
-                        });
+                        }, `The connection ${fromExpr} → ${toExpr} was not cut.`)) {
+                            return undefined;
+                        }
                     } else if (item.kind === 'boundaryPort') {
-                        await this.sendSidecarOp(sourceUri, {
+                        if (!await steps.send({
                             op: this.sidecar.sidecarOp('deletePort'),
                             args: { workflow: workflowName, direction: item.direction, portName: item.portName }
-                        });
+                        }, `Port '${item.portName}' was not cut.`)) {
+                            return undefined;
+                        }
                     }
                 }
                 const afterText = await readAuthoritativeSourceText(vscodeUri);
@@ -90,10 +98,6 @@ export class CutOperationHandler extends OperationHandler {
             },
         });
         return command;
-    }
-
-    private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {
-        return this.sidecar.sendSidecarOp(sourceUri, payload);
     }
 
     private edgeEndpointExpr(entityName: string | undefined, portName: string): string {

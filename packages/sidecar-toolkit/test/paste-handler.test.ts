@@ -42,6 +42,8 @@ function handlerWith(taken: string[], sent: Array<{ op: string; args: Record<str
     };
     (handler as any).sidecar = {
         sidecarOp: (name: string) => `hdl.${name}`,
+        hasFeature: async () => false,
+        async sendSidecarOpDetailed(uri: string, payload: any) { return { ok: await (this as any).sendSidecarOp(uri, payload) }; },
         sendSidecarOp: async (_uri: string, payload: { op: string; args: Record<string, unknown> }) => {
             sent.push(payload);
             return true;

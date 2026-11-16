@@ -68,6 +68,10 @@ export class CliGraphModelSource implements DiagramModelSource {
 
     async getGraph(sourceUri: string, options: ModelSourceOptions): Promise<SidecarModelSourceResult | undefined> {
         const opts = options.requestOptions ?? {};
+        // A reload from disk (a save, a write by the producer) plans anew: a
+        // file the workflow imports may be what changed, and the caches know
+        // only the workflows' own files.
+        const fresh = opts.forceReloadFromDisk === true;
         const workflowFilePath = URI.parse(sourceUri).fsPath;
         const graphSourceUri = typeof opts[GRAPH_SOURCE_URI_ARG] === 'string' && String(opts[GRAPH_SOURCE_URI_ARG]).trim() !== ''
             ? normalizeSourceUriKey(String(opts[GRAPH_SOURCE_URI_ARG]).trim())
@@ -93,7 +97,7 @@ export class CliGraphModelSource implements DiagramModelSource {
         // A view other than the structure is not in the hierarchy export: the
         // plan command makes it, told which view with `--view <id>`.
         const view = parseViewArg(opts[VIEW_ARG]);
-        const fromHierarchy = view ? undefined : await this.viewFromHierarchy(sourceUri, workflowFilePath, selectedWorkflowName, opts);
+        const fromHierarchy = view ? undefined : await this.viewFromHierarchy(sourceUri, workflowFilePath, selectedWorkflowName, opts, fresh);
         if (fromHierarchy) {
             return this.fallback.attachDiagnostics({ ...fromHierarchy, resolvedOptions: opts });
         }
@@ -109,7 +113,7 @@ export class CliGraphModelSource implements DiagramModelSource {
         // Skip re-running the workflow when on-disk content is unchanged (e.g. debounced live
         // updates, reopen). The key includes the content hash, so a save misses and re-runs.
         const planCacheKey = await this.computePlanCacheKey(workflowFilePath, view ? `${selectedWorkflowName ?? ''}@${view}` : selectedWorkflowName);
-        if (planCacheKey) {
+        if (planCacheKey && !fresh) {
             const cached = this.planGraphCache.get(planCacheKey);
             if (cached !== undefined) {
                 this.planGraphCache.delete(planCacheKey);
@@ -231,7 +235,8 @@ export class CliGraphModelSource implements DiagramModelSource {
         sourceUri: string,
         workflowFilePath: string,
         workflowName: string | undefined,
-        opts: Record<string, unknown>
+        opts: Record<string, unknown>,
+        fresh = false
     ): Promise<GraphDocument | undefined> {
         if (!this.cfg.cliHierarchyArgs || typeof opts.content === 'string') {
             return undefined;
@@ -243,7 +248,7 @@ export class CliGraphModelSource implements DiagramModelSource {
         if (!root) {
             return undefined;
         }
-        const exported = await this.hierarchyCache.get(root.file, root.workflow);
+        const exported = await this.hierarchyCache.get(root.file, root.workflow, fresh);
         if (!exported) {
             return undefined;
         }

@@ -73,6 +73,13 @@ export function extractTopLevelPythonDefinitions(sourceText: string): PythonDefi
             continue;
         }
 
+        // Inside a body (a class's nested `class Ports:`, a factory's own
+        // `@workflow def`): not a definition of the module.
+        if (trimmed !== '' && /^\s/.test(line)) {
+            clearPendingDecorators();
+            continue;
+        }
+
         if (trimmed.startsWith('@')) {
             pendingDecorators.push(trimmed);
             decoratorParenDepth = Math.max(0, countParenDeltaOutsideStrings(line));

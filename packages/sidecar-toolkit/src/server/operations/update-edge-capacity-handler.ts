@@ -5,6 +5,7 @@ import { readAuthoritativeSourceText } from './authoritative-source-text';
 
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { SidecarInvoker } from './sidecar-invoker';
+import { sendSidecarEdit } from './sidecar-edit';
 import { escapePythonStringLiteral } from '../python-text';
 
 export namespace UpdateEdgeCapacityOperation {
@@ -70,7 +71,7 @@ export class UpdateEdgeCapacityOperationHandler extends OperationHandler {
                 }
                 const fromExpr = this.edgeEndpointExpr(fromName, outPort);
                 const toExpr = this.edgeEndpointExpr(toName, inPort);
-                const ok = await this.sidecar.sendSidecarOp(sourceUri, {
+                const ok = await sendSidecarEdit(this.sidecar, sourceUri, {
                     op: this.sidecar.sidecarOp('updateEdgeCapacity'),
                     args: {
                         workflow: workflowName,
@@ -78,7 +79,7 @@ export class UpdateEdgeCapacityOperationHandler extends OperationHandler {
                         to_expr: toExpr,
                         capacity: operation.capacity
                     }
-                });
+                }, `The capacity of ${fromExpr} → ${toExpr} was not changed.`);
                 if (!ok) {
                     return undefined;
                 }

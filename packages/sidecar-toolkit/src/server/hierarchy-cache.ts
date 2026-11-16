@@ -97,11 +97,16 @@ export class HierarchyCache {
         private readonly hash: (filePath: string) => Promise<string | undefined> = fileHash
     ) {}
 
-    /** The hierarchy rooted at `rootWorkflow` in `rootFile`, exported anew if any of its files changed. */
-    async get(rootFile: string, rootWorkflow: string): Promise<HierarchyExport | undefined> {
+    /**
+     * The hierarchy rooted at `rootWorkflow` in `rootFile`, exported anew if
+     * any of its files changed, or when asked `fresh`: the files it knows are
+     * its workflows', and a class one of them imports (whose ports changed)
+     * is not among them.
+     */
+    async get(rootFile: string, rootWorkflow: string, fresh = false): Promise<HierarchyExport | undefined> {
         const key = `${rootFile}::${rootWorkflow}`;
         const cached = this.entries.get(key);
-        if (cached && (await this.unchanged(cached))) {
+        if (cached && !fresh && (await this.unchanged(cached))) {
             this.entries.delete(key);
             this.entries.set(key, cached);
             return cached.exported;

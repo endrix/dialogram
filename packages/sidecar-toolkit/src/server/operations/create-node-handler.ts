@@ -13,6 +13,7 @@ import { layoutTargetOf } from '@dialogram/diagram-server/server/layout-target';
 
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { AgentCreateNodeOutcomeSink } from '@dialogram/diagram-server/server/agent-create-node-outcome';
+import { CREATE_NODE_EXPRESSIONS, requiredParametersOf } from './node-arguments';
 import { SidecarInvoker, SidecarInvocationResult } from './sidecar-invoker';
 import type {
     CreateNodeVariant,
@@ -410,7 +411,10 @@ export class CreateNodeOperationHandler extends OperationHandler {
                     return undefined;
                 }
                 const taken = new Set(names);
-                const defaultName = this.uniqueInstanceName(finalTypeName.toLowerCase(), taken);
+                // Never the type's own name: an instance named as the
+                // workflow it is made from (`av1_refdec = av1_refdec()`)
+                // hides it, and the workflow cannot be made.
+                const defaultName = this.uniqueInstanceName(finalTypeName.toLowerCase(), new Set([...taken, finalTypeName]));
                 // Headless: use a caller-supplied `args.name`, else auto-generate the same unique
                 // default the dialog pre-fills — never open the instance-name input box.
                 const providedName = (operation.args?.['name'] as string | undefined)?.trim();
@@ -420,6 +424,14 @@ export class CreateNodeOperationHandler extends OperationHandler {
                         prompt: 'Instance name',
                         value: defaultName
                     }))?.trim() || defaultName);
+                if (entityName === finalTypeName) {
+                    const hides = `An instance named '${entityName}' would hide the '${finalTypeName}' it is made from: choose another name.`;
+                    void vscode.window.showErrorMessage(hides);
+                    if (headless) {
+                        this.createNodeOutcomeSink?.recordRejected(hides);
+                    }
+                    return undefined;
+                }
                 if (taken.has(entityName)) {
                     const base = this.sidecar.createNodeStrings().sidecarDisplayName;
                     const collisionMessage = headless
@@ -449,6 +461,10 @@ export class CreateNodeOperationHandler extends OperationHandler {
                     : undefined;
                 const merged = { ...(givenParams ?? {}), ...(collectedInstanceParams ?? {}) };
                 const params = Object.keys(merged).length > 0 ? merged : undefined;
+                const expressions = await this.askRequiredArguments(sourceUri, finalTypeName, entityName, Object.keys(merged), headless, operation);
+                if (expressions === null) {
+                    return undefined;
+                }
                 // Where the palette was clicked, saved before the producer
                 // writes, so the diagram the write brings draws it there.
                 const placed = await this.placeAt(operation.location, entityName);
@@ -461,7 +477,8 @@ export class CreateNodeOperationHandler extends OperationHandler {
                             workflow: workflowName,
                             type: finalTypeName,
                             name: entityName,
-                            params
+                            params,
+                            ...(expressions ? { expressions } : {})
                         }
                     });
                 } catch (error) {
@@ -545,10 +562,6 @@ export class CreateNodeOperationHandler extends OperationHandler {
             // The node is still made; the diagram parks it as before.
             return undefined;
         }
-    }
-
-    private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {
-        return this.sidecar.sendSidecarOp(sourceUri, payload);
     }
 
     private async sendSidecarOpDetailed(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<SidecarInvocationResult> {
@@ -1192,6 +1205,58 @@ export class CreateNodeOperationHandler extends OperationHandler {
         const base = this.sidecar.createNodeStrings().sidecarDisplayName;
         const message = result.message?.trim() || `Operation failed while trying to ${action}.`;
         return `${base} failed to ${action}${detail}: ${message}`;
+    }
+
+    /**
+     * The arguments to make `entityName` with, as source text, for each
+     * parameter of `typeName` that has no default and is not given already
+     * (`given`): asked of the user, or read off an agent's `args.expressions`.
+     * Nothing when there is none to ask (or the producer cannot say); null
+     * when the user cancelled, or an agent left one out.
+     */
+    private async askRequiredArguments(
+        sourceUri: string,
+        typeName: string,
+        entityName: string,
+        given: string[],
+        headless: boolean,
+        operation: CreateNodeOperation
+    ): Promise<Record<string, string> | undefined | null> {
+        const required = (await requiredParametersOf(this.sidecar, sourceUri, typeName))
+            ?.filter(parameter => !given.includes(parameter.name));
+        if (!required || required.length === 0 || !(await this.sidecar.hasFeature(sourceUri, CREATE_NODE_EXPRESSIONS))) {
+            return undefined;
+        }
+        const expressions: Record<string, string> = {};
+        if (headless) {
+            const raw = operation.args?.['expressions'];
+            const passed = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+            const missing = required.filter(parameter => typeof passed[parameter.name] !== 'string' || String(passed[parameter.name]).trim() === '');
+            if (missing.length > 0) {
+                const base = this.sidecar.createNodeStrings().sidecarDisplayName;
+                this.failAgent(`${base}: '${typeName}' has to be given ${missing.map(parameter => `'${parameter.name}'`).join(', ')}: `
+                    + `pass args.expressions {${missing.map(parameter => `"${parameter.name}": "<expression>"`).join(', ')}}.`);
+                return null;
+            }
+            for (const parameter of required) {
+                expressions[parameter.name] = String(passed[parameter.name]).trim();
+            }
+            return expressions;
+        }
+        for (const [at, parameter] of required.entries()) {
+            const answer = (await vscode.window.showInputBox({
+                title: `${entityName} = ${typeName}(…)${required.length > 1 ? ` (${at + 1}/${required.length})` : ''}`,
+                prompt: `'${parameter.name}'${parameter.type ? ` (${parameter.type})` : ''} has no default: the expression to give it`,
+                placeHolder: parameter.type === 'str' ? `"${parameter.name}"` : parameter.type ?? '',
+                ignoreFocusOut: true,
+                validateInput: value => value.trim() === '' ? `'${parameter.name}' has to be given.` : undefined
+            }))?.trim();
+            if (!answer) {
+                return null;
+            }
+            expressions[parameter.name] = answer;
+        }
+        return expressions;
     }
 
     private uniqueInstanceName(base: string, taken: Set<string>): string {

@@ -13,6 +13,27 @@ function isReadOnly(element: any): boolean {
 }
 
 /**
+ * The arguments an instance is made with, as written in its source: the
+ * `expression` the producer gives a parameter. A parameter it gives only the
+ * value of (evaluated: a path made absolute, a record spelled out) is left
+ * out, for that value is not what the source says.
+ */
+function argumentExpressions(parameters: unknown): Record<string, string> | undefined {
+    if (!Array.isArray(parameters)) {
+        return undefined;
+    }
+    const expressions: Record<string, string> = {};
+    for (const parameter of parameters) {
+        const name = (parameter as { name?: unknown } | null)?.name;
+        const expression = (parameter as { expression?: unknown } | null)?.expression;
+        if (typeof name === 'string' && name.trim() !== '' && typeof expression === 'string' && expression.trim() !== '') {
+            expressions[name] = expression;
+        }
+    }
+    return Object.keys(expressions).length > 0 ? expressions : undefined;
+}
+
+/**
  * The clipboard payload for the selected elements: every editable entity,
  * boundary port and connection among them, by the names a paste re-creates
  * it from. Read-only and virtual elements are left out.
@@ -35,7 +56,8 @@ export function buildClipboardPayload(modelState: ModelState, sourceUri: string,
             const name = args?.[WorkflowDiagramMetadata.ENTITY_NAME];
             const typeName = args?.[WorkflowDiagramMetadata.ENTITY_TYPE];
             if (typeof name === 'string' && name.trim() !== '' && typeof typeName === 'string' && typeName.trim() !== '') {
-                items.push({ kind: 'entity', elementTypeId, name, typeName });
+                const expressions = argumentExpressions(args?.[WorkflowDiagramMetadata.ENTITY_PARAMETERS]);
+                items.push({ kind: 'entity', elementTypeId, name, typeName, ...(expressions ? { expressions } : {}) });
             }
             continue;
         }

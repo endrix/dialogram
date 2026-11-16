@@ -80,6 +80,17 @@ describe('the cache', () => {
         expect(runs()).toBe(2);
     });
 
+    it('exports it again when asked fresh, though none of its files changed', async () => {
+        // A class a workflow imports is in none of the hierarchy's files: a
+        // port added to it changes no hash the cache keeps.
+        const { cache, runs } = cacheWith({ '/w/top.py': 'a', '/w/block.py': 'b' });
+
+        await cache.get('/w/top.py', 'top');
+        await cache.get('/w/top.py', 'top', true);
+
+        expect(runs()).toBe(2);
+    });
+
     it('returns nothing for an export that failed or is not one', async () => {
         expect(await new HierarchyCache(async () => undefined).get('/w/top.py', 'top')).toBeUndefined();
         expect(await new HierarchyCache(async () => '{"graph": {}}').get('/w/top.py', 'top')).toBeUndefined();
@@ -133,6 +144,17 @@ describe('a view read from the hierarchy', () => {
         expect(nestedDoc.graph.id).toBe('wf:b1-view');
         expect(nestedDoc.hierarchy.workflowName).toBe('top');
         expect(exports()).toBe(1);
+    });
+
+    it('exports anew on a reload from disk: a file the workflow imports may be what changed', async () => {
+        const { src, top, exports } = await source();
+        const topUri = URI.file(top).toString();
+
+        await src.getGraph(topUri, { requestOptions: { networkName: 'top' } });
+        await src.getGraph(topUri, { requestOptions: { networkName: 'top' } });
+        expect(exports()).toBe(1);
+        await src.getGraph(topUri, { requestOptions: { networkName: 'top', forceReloadFromDisk: true } });
+        expect(exports()).toBe(2);
     });
 
     it('leaves an instance that did not elaborate to a plan of its own', async () => {
