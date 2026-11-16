@@ -211,9 +211,10 @@ export namespace WorkflowDiagramMetadata {
      */
     export const ON_LOOP = 'wf:onLoop';
     /**
-     * On a connection on a loop: the ids of its two ends. Its pieces at a
-     * group's frame keep them, so that each piece is drawn by which way the
-     * whole connection runs.
+     * On a connection on a loop: `[source, target]` pairs, the ids of the
+     * ends of each connection on a loop it carries — one, or several for a
+     * piece at a group's frame that edges share. The pieces keep them, so that
+     * each is drawn by which way the whole connections run.
      */
     export const LOOP_ENDS = 'wf:loopEnds';
     /**

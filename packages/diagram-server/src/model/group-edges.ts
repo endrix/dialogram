@@ -312,6 +312,20 @@ function share(existing: GEdge, edge: GEdge): void {
     if (existing.type !== edge.type && edge.type === WorkflowDiagramTypes.EDGE_CONNECTION) {
         existing.type = edge.type;
     }
+    // Feedback when any of its edges is: the loops of every edge it carries,
+    // whose ends the client tells the way the piece runs by.
+    if (edge.args?.[WorkflowDiagramMetadata.IS_FEEDBACK] === true) {
+        args[WorkflowDiagramMetadata.IS_FEEDBACK] = true;
+        if (!existing.cssClasses?.includes(WorkflowDiagramCss.EDGE_FEEDBACK)) {
+            existing.cssClasses = [...(existing.cssClasses ?? []), WorkflowDiagramCss.EDGE_FEEDBACK];
+        }
+    }
+    if (edge.args?.[WorkflowDiagramMetadata.ON_LOOP] === true) {
+        const ends = Array.isArray(args[WorkflowDiagramMetadata.LOOP_ENDS]) ? args[WorkflowDiagramMetadata.LOOP_ENDS] as unknown[] : [];
+        const more = Array.isArray(edge.args[WorkflowDiagramMetadata.LOOP_ENDS]) ? edge.args[WorkflowDiagramMetadata.LOOP_ENDS] as unknown[] : [];
+        args[WorkflowDiagramMetadata.ON_LOOP] = true;
+        args[WorkflowDiagramMetadata.LOOP_ENDS] = [...ends, ...more];
+    }
     existing.args = args;
 }
 

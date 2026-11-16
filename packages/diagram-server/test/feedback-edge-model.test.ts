@@ -72,7 +72,7 @@ describe('feedback loops in a built model', () => {
         for (const id of ['e1', 'e2', 'back']) {
             const edge = children.find(c => c.id === id) as any;
             expect(edge.args?.['wf:onLoop'], id).toBe(true);
-            expect(edge.args?.['wf:loopEnds'], id).toEqual([edge.sourceId, edge.targetId]);
+            expect(edge.args?.['wf:loopEnds'], id).toEqual([[edge.sourceId, edge.targetId]]);
             // Not the server's to say which one is drawn back.
             expect(edge.cssClasses ?? [], id).not.toContain(FEEDBACK);
         }
@@ -151,6 +151,43 @@ describe('feedback loops in a built model', () => {
         const back = children.find(c => c.id === 'back');
         expect(back?.cssClasses).toContain('cal-edge-error');
         expect(back?.cssClasses).toContain(FEEDBACK);
+    });
+
+    it('takes no handshake\u2019s ready for a loop, as the layout lays it back', () => {
+        // Each channel is `valid` east to west and `ready` back west to east:
+        // with the ready wires, A -> B -> C would be two loops and every ready
+        // drawn as feedback.
+        const stage = (name: string, extra: PyGraphDocument['graph']['nodes'][number]['ports'] = []): PyGraphDocument['graph']['nodes'][number] => ({
+            id: `node:${name}`, kind: 'actor', label: name, type: 'Stage', scope: 'scope:root',
+            ports: [
+                { id: `p:${name}:in_valid`, name: 'in_valid', direction: 'in' },
+                { id: `p:${name}:in_ready`, name: 'in_ready', direction: 'out', side: 'WEST' },
+                { id: `p:${name}:out_valid`, name: 'out_valid', direction: 'out' },
+                { id: `p:${name}:out_ready`, name: 'out_ready', direction: 'in', side: 'EAST' },
+                ...extra
+            ]
+        });
+        const channel = (from: string, to: string) => [
+            { id: `${from}${to}:valid`, from: `p:${from}:out_valid`, to: `p:${to}:in_valid`, scope: 'scope:root' },
+            { id: `${from}${to}:ready`, from: `p:${to}:in_ready`, to: `p:${from}:out_ready`, scope: 'scope:root' }
+        ];
+        const onLoop = (doc: PyGraphDocument): string[] => (new GraphGModelSource().transform(doc).graph.children ?? [])
+            .filter((c: any) => c.args?.['wf:onLoop'] === true).map(c => c.id).sort();
+        const pipeline: PyGraphDocument = {
+            version: '1',
+            graph: { id: 'root', nodes: [stage('A'), stage('B'), stage('C')], edges: [...channel('A', 'B'), ...channel('B', 'C')] }
+        };
+        expect(onLoop(pipeline)).toEqual([]);
+        // C fed back to A is a loop: its valid wires are on it, no ready is.
+        const ring: PyGraphDocument = {
+            version: '1',
+            graph: {
+                id: 'root',
+                nodes: [stage('A', [{ id: 'p:A:fb', name: 'fb', direction: 'in' }]), stage('B'), stage('C')],
+                edges: [...channel('A', 'B'), ...channel('B', 'C'), { id: 'CA:valid', from: 'p:C:out_valid', to: 'p:A:fb', scope: 'scope:root' }]
+            }
+        };
+        expect(onLoop(ring)).toEqual(['AB:valid', 'BC:valid', 'CA:valid']);
     });
 
     it('says so in the args, not only in a class', () => {

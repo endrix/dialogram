@@ -47,6 +47,7 @@ import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared
 import { FeedbackCommand, IFeedbackActionDispatcher, ISelectionListener, TYPES } from '@eclipse-glsp/client';
 import type { Action, CommandExecutionContext, Disposable, GModelRoot } from '@eclipse-glsp/sprotty';
 import { inject, injectable, optional } from 'inversify';
+import { standsWhereItsNodeDoes } from './feedback-direction';
 import { clientBehavior } from './profile';
 import { keptInSight } from './selection-links';
 
@@ -161,7 +162,9 @@ export function buildTraceGraph(root: TraceElement): TraceGraph {
         // across the page (one under the other, or moved by hand) would
         // otherwise turn a wire between them by a few pixels of port offset.
         // A port on a group's frame keeps its own place; the frame is wide.
-        if (startsWith(element, 'port') && node !== undefined && !groups.has(node) && middle.has(node)) {
+        // The feedback highlight reads a wire by the same rule.
+        if (startsWith(element, 'port') && node !== undefined && middle.has(node)
+            && standsWhereItsNodeDoes(element, groups.has(node))) {
             middle.set(element.id, middle.get(node)!);
         }
         if (startsWith(element, 'node')) {

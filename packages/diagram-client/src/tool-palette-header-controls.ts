@@ -278,7 +278,7 @@ function patchHeaderTools(headerTools: HTMLElement): void {
             loopIcon.classList.toggle('cal-feedback-hidden-icon', !visible);
             loopIcon.title = visible
                 ? 'Hide the feedback-loop highlight'
-                : 'Highlight connections that close a feedback loop';
+                : 'Highlight the connections that run back on a feedback loop';
             loopIcon.setAttribute('aria-label', loopIcon.title);
             loopIcon.setAttribute('aria-pressed', String(visible));
         };

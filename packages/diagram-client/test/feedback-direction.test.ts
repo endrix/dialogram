@@ -3,26 +3,33 @@
  * against the flow, as the layout draws the edges it reverses.
  */
 import { describe, expect, it } from 'vitest';
-import { WorkflowDiagramCss, WorkflowDiagramMetadata } from '@dialogram/shared';
+import { WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { isDrawnBackwards } from '../src/feedback-direction';
 import { WorkflowEdgeView } from '../src/views';
 
 /** A root with nodes and their ports, positions relative to their parent, and an index over them. */
-function diagram(nodes: Record<string, { x: number; ports: Record<string, { x: number }> }>) {
+function diagram(nodes: Record<string, { x: number; y?: number; width?: number; group?: boolean; ports: Record<string, { x: number }> }>) {
     const root: any = { id: 'root', position: { x: 0, y: 0 }, children: [] };
     const byId = new Map<string, any>([['root', root]]);
     for (const [id, node] of Object.entries(nodes)) {
-        const element: any = { id, parent: root, position: { x: node.x, y: 0 }, size: { width: 100, height: 60 }, children: [] };
+        const group = node.group === true;
+        const element: any = {
+            id, type: group ? WorkflowDiagramTypes.NODE_GROUP : 'node:actor', parent: root,
+            position: { x: node.x, y: node.y ?? 0 }, size: { width: node.width ?? 100, height: 60 }, children: []
+        };
         byId.set(id, element);
         for (const [portId, port] of Object.entries(node.ports)) {
-            byId.set(portId, { id: portId, parent: element, position: { x: port.x, y: 20 }, size: { width: 8, height: 8 } });
+            byId.set(portId, {
+                id: portId, type: group ? WorkflowDiagramTypes.PORT_GROUP_BOUNDARY : 'port:input', parent: element,
+                position: { x: port.x, y: 20 }, size: { width: 8, height: 8 }
+            });
         }
     }
     root.index = { getById: (id: string) => byId.get(id) };
     return root;
 }
 
-const onLoop = (sourceId: string, targetId: string, ends: string[] = [sourceId, targetId]) => ({
+const onLoop = (sourceId: string, targetId: string, ends: string[][] = [[sourceId, targetId]]) => ({
     sourceId, targetId, args: { [WorkflowDiagramMetadata.ON_LOOP]: true, [WorkflowDiagramMetadata.LOOP_ENDS]: ends }
 });
 
@@ -48,9 +55,38 @@ describe('a connection on a loop', () => {
         const frame = diagram({
             mul: { x: 200, ports: { 'mul.in': { x: -4 } } },
             cpu: { x: 500, ports: { 'cpu.out': { x: 96 } } },
-            group: { x: 700, ports: { 'group.east': { x: 96 } } }
+            group: { x: 700, group: true, ports: { 'group.east': { x: 96 } } }
         });
-        expect(isDrawnBackwards(frame, onLoop('cpu.out', 'group.east', ['cpu.out', 'mul.in']))).toBe(true);
+        expect(isDrawnBackwards(frame, onLoop('cpu.out', 'group.east', [['cpu.out', 'mul.in']]))).toBe(true);
+    });
+
+    it('is feedback where it is a shared piece and one of its connections runs back, whichever is listed first', () => {
+        const forward = ['mul.out', 'cpu.in'];
+        const back = ['cpu.out', 'mul.in'];
+        expect(isDrawnBackwards(root, onLoop('x', 'y', [forward, back]))).toBe(true);
+        expect(isDrawnBackwards(root, onLoop('x', 'y', [back, forward]))).toBe(true);
+        expect(isDrawnBackwards(root, onLoop('x', 'y', [forward]))).toBe(false);
+    });
+
+    it('reads two nodes stacked one under the other by their middles, not by their ports', () => {
+        // B dragged under A, ten pixels right of it: A.out (east) is right of B.in (west),
+        // yet the wire from A to B runs forward, and the one back from B to A runs back.
+        const stacked = diagram({
+            A: { x: 200, ports: { 'A.in': { x: -4 }, 'A.out': { x: 96 } } },
+            B: { x: 210, y: 120, ports: { 'B.in': { x: -4 }, 'B.out': { x: 96 } } }
+        });
+        expect(isDrawnBackwards(stacked, onLoop('A.out', 'B.in'))).toBe(false);
+        expect(isDrawnBackwards(stacked, onLoop('B.out', 'A.in'))).toBe(true);
+    });
+
+    it('reads a port on a group\u2019s frame by its own place, the frame being wide', () => {
+        // A wide group whose east frame port is right of `cpu`, though the group's middle is left of it.
+        const wide = diagram({
+            cpu: { x: 500, ports: { 'cpu.in': { x: -4 } } },
+            group: { x: 0, width: 800, group: true, ports: { 'group.east': { x: 796 } } }
+        });
+        expect(isDrawnBackwards(wide, onLoop('group.east', 'cpu.in'))).toBe(true);
+        expect(isDrawnBackwards(wide, onLoop('cpu.in', 'group.east'))).toBe(false);
     });
 
     it('is no feedback when it is on no loop, or its ends are not in the model', () => {

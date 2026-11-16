@@ -144,6 +144,30 @@ describe('cutting edges at group frames', () => {
         expect((shared?.cssClasses ?? []).some(c => c.startsWith('edge-role-'))).toBe(false);
     });
 
+    it('keeps on a shared piece the loops of every edge it carries, whichever comes first', () => {
+        // b1 -> a1 closes a1 -> b1 (and a1 -> a2 -> b1); x -> b1 is on no loop.
+        // All three enter B for b1 through one piece.
+        const doc = document([edge('b1', 'a1', 'back'), edge('x', 'b1', 'verifies')]);
+        const late = find(transform(doc), 'scope:scope:B::in::b1_port_in::piece');
+        const plainFirst = { ...doc, graph: { ...doc.graph, edges: [doc.graph.edges.at(-1)!, ...doc.graph.edges.slice(0, -1)] } };
+        const early = find(transform(plainFirst), 'scope:scope:B::in::b1_port_in::piece');
+        for (const shared of [late, early]) {
+            expect(shared?.args?.[WorkflowDiagramMetadata.EDGES_OF]).toHaveLength(3);
+            expect(shared?.args?.[WorkflowDiagramMetadata.ON_LOOP]).toBe(true);
+            expect([...(shared?.args?.[WorkflowDiagramMetadata.LOOP_ENDS] ?? [])].sort())
+                .toEqual([['a1_port_out', 'b1_port_in'], ['a2_port_out', 'b1_port_in']]);
+        }
+    });
+
+    it('draws a shared piece as feedback when any edge it carries is declared so', () => {
+        const declared = { ...edge('a2', 'b1', 'refines'), meta: { role: 'refines', feedback: true } };
+        const doc = document();
+        const edges = doc.graph.edges.map(e => e.id === declared.id ? declared : e);
+        const shared = find(transform({ ...doc, graph: { ...doc.graph, edges } }), 'scope:scope:B::in::b1_port_in::piece');
+        expect(shared?.args?.[WorkflowDiagramMetadata.IS_FEEDBACK]).toBe(true);
+        expect(shared?.cssClasses).toContain('workflow-edge-feedback');
+    });
+
     it('cuts an edge from the root into a group once, at that group', () => {
         const root = transform(document());
         const middle = find(root, 'e:x->a1:verifies');

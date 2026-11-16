@@ -1,6 +1,6 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
 import { parseBadgesMeta, parseFactsMeta, parseLinesMeta, parseViewsMeta, textColumns, type UnitBadge } from '../server/graph-load-request-options';
-import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
+import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findLoopEdges } from './feedback-edges';
 import { arrangeGroupRows, groupLayoutOptions, isGroupRow, splitEdgesAtGroups } from './group-edges';
@@ -176,7 +176,18 @@ function markFeedbackEdges(children: GModelElement[]): void {
     const ownerByEndpoint = new Map<string, string>();
     /** The endpoints on a node of the unit's boundary. */
     const onBoundary = new Set<string>();
+    /** The side of its node each port is on. */
+    const sideOf = new Map<string, PortSide>();
     const indexPorts = (element: GModelElement, owner: string | undefined, boundary: boolean): void => {
+        if (element.type.startsWith('port')) {
+            const args = (element.args ?? {}) as Record<string, unknown>;
+            sideOf.set(element.id, portSide({
+                absolute: { x: 0, y: 0 },
+                direction: args[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined,
+                side: args[WorkflowDiagramMetadata.PORT_SIDE] as string | undefined,
+                type: element.type
+            }));
+        }
         const isNode = !isEdge(element) && element.type !== WorkflowDiagramTypes.GRAPH;
         const nodeId = isNode ? element.id : owner;
         const isBoundary = isNode ? BOUNDARY_NODE_TYPES.has(element.type) : boundary;
@@ -223,10 +234,17 @@ function markFeedbackEdges(children: GModelElement[]): void {
         declared.forEach(markFeedback);
         return;
     }
+    // A return wire runs against the flow by its ports' places: it leaves a
+    // port on the west or enters one on the east, as a handshake's `ready`
+    // does. It closes no loop of the network (the layout lays it back, as
+    // `isReturnWire` in elk-layout-engine.ts says): with it, every channel's
+    // `valid` and `ready` would be a loop, and every `ready` drawn as one.
+    const isReturnWire = (edge: GEdge): boolean =>
+        sideOf.get(edge.sourceId) === 'WEST' || sideOf.get(edge.targetId) === 'EAST';
     // An endpoint nothing claims is its own node: a boundary port hangs off
     // the graph itself, and calling two of them the same node would invent a
     // loop.
-    const asLoop = new Map(edges.map(edge => [edge.id, asLoopEdge(edge, onBoundary)]));
+    const asLoop = new Map(edges.filter(edge => !isReturnWire(edge)).map(edge => [edge.id, asLoopEdge(edge, onBoundary)]));
     const ownerOf = ownerOfLoopEnd(ownerByEndpoint);
     const onLoop = findLoopEdges([...asLoop.values()], ownerOf);
     for (const edge of edges) {
@@ -240,7 +258,7 @@ function markFeedbackEdges(children: GModelElement[]): void {
             edge.args = {
                 ...(edge.args ?? {}),
                 [WorkflowDiagramMetadata.ON_LOOP]: true,
-                [WorkflowDiagramMetadata.LOOP_ENDS]: [edge.sourceId, edge.targetId]
+                [WorkflowDiagramMetadata.LOOP_ENDS]: [[edge.sourceId, edge.targetId]]
             };
         }
     }
@@ -1440,9 +1458,10 @@ export class GraphGModelSource {
         }
 
         // After the edges exist and before anything is pruned: which of them
-        // send the signal back up the pipeline. Done over the finished model
-        // rather than over the IR because a loop belongs to the NODES, and only
-        // the model knows which node owns a port — see `feedback-edges.ts`.
+        // lie on a loop (the client draws as feedback those that run back).
+        // Done over the finished model rather than over the IR because a loop
+        // belongs to the NODES, and only the model knows which node owns a
+        // port — see `feedback-edges.ts`.
         markFeedbackEdges(children);
 
         // Remove re-parented nodes from root children
@@ -1460,7 +1479,8 @@ export class GraphGModelSource {
 
         // An edge that enters or leaves a group is cut at the group's frame, so
         // each group can lay out on its own (see `group-edges.ts`). After the
-        // feedback marking, which the pieces inherit, and once the members sit
+        // loop marking, which the pieces inherit with the whole edge's ends,
+        // and once the members sit
         // inside their groups, which decides what each edge crosses.
         splitEdgesAtGroups(children);
         // Once the groups are nested and the edges cut: which groups lay out in rows.
