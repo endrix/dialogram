@@ -167,7 +167,10 @@ export class SidecarModelSource implements DiagramModelSource {
                             ]
                         }
                     }
-                    : { ...byName, error: `${byName.error ?? 'no graph'} (asked of the instance first: ${whyNot})` };
+                    // Neither answered: the instance's answer first, as it
+                    // was asked first and the view is the instance's (a
+                    // file that does not load says so there, by its line).
+                    : { ...byName, error: `${whyNot} (asked of its file by name next: ${byName.error ?? 'no graph'})` };
             }
         }
         sidecarResult ??= await this.tryLoadGraphFromSidecar(graphFilePath, opts);
@@ -505,7 +508,11 @@ export class SidecarModelSource implements DiagramModelSource {
                     }
                 ],
                 edges: [],
-                subgraphs: []
+                subgraphs: [],
+                // Nothing was drawn, so nothing can be edited: no palette tools,
+                // no ports to add in the panel, no editing in the menu. The
+                // view comes back as it was once its file exports again.
+                meta: { readOnly: true }
             }
         };
     }

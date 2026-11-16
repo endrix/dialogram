@@ -332,7 +332,11 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                     }
                 ],
                 edges: [],
-                subgraphs: []
+                subgraphs: [],
+                // Nothing was drawn, so nothing can be edited: no palette tools,
+                // no ports to add in the panel, no editing in the menu. The
+                // view comes back as it was once its file exports again.
+                meta: { readOnly: true }
             }
         };
     }
