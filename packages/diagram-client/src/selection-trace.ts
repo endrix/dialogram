@@ -29,9 +29,10 @@
  *
  * A state of an automaton is always traced to its direct neighbours, by its
  * transitions' own direction: where it can be come to from (upstream) and
- * where it can go (downstream). An automaton is all cycles, so a longer path
- * reaches every state, and it is laid out from the top down, not left to
- * right, so it is not read by where its states sit.
+ * where it can go (downstream, with a transition that stays in it). Most
+ * automata loop, so a longer path reaches every state; one that leads into a
+ * loop would reach the whole loop. A transition is never turned by where its
+ * states sit: an automaton is laid out from the top down, not left to right.
  *
  * A selected edge draws itself, every piece of it, and its two ends. A selected
  * container draws the nodes that feed it and the nodes it feeds, across its
@@ -216,7 +217,9 @@ export function buildTraceGraph(root: TraceElement): TraceGraph {
         push(graph.backward, target, { port: source, edge: edge.id });
         // Drawn back to the left: read as running the other way.
         const [sourceX, targetX] = [middle.get(source), middle.get(target)];
-        const turned = sourceX !== undefined && targetX !== undefined && targetX < sourceX;
+        // Not a transition: an automaton is laid out from the top down, and is read by its arrows.
+        const turned = edge.type !== WorkflowDiagramTypes.EDGE_TRANSITION
+            && sourceX !== undefined && targetX !== undefined && targetX < sourceX;
         const [from, to] = turned ? [target, source] : [source, target];
         push(graph.flowForward, from, { port: to, edge: edge.id });
         push(graph.flowBackward, to, { port: from, edge: edge.id });
@@ -324,10 +327,17 @@ function traceNode(graph: TraceGraph, node: string): Trace {
     if (graph.states.has(node)) {
         const from = walk(graph, graph.backward, start, 1);
         const to = walk(graph, graph.forward, start, 1);
+        // A transition that stays in the state is where it goes, not where it is come to from.
+        for (const edge of from.edges) {
+            const ends = graph.edges.get(edge);
+            if (ends && graph.ownerOf.get(ends.source) === node && graph.ownerOf.get(ends.target) === node) {
+                from.edges.delete(edge);
+            }
+        }
         return {
             focus: start,
-            upstream: union(from.nodes, from.edges),
-            downstream: union(to.nodes, to.edges),
+            upstream: union(from.nodes, from.edges, from.ports),
+            downstream: union(to.nodes, to.edges, to.ports),
             scope: new Set()
         };
     }
@@ -420,7 +430,9 @@ export function computeTrace(graph: TraceGraph, selected: readonly string[]): Tr
         }
         const node = graph.parentOf.has(id) ? id : graph.ownerOf.get(id);
         if (node !== undefined && graph.parentOf.has(node)) {
-            return withHeld(graph, graph.containers.has(node) ? traceContainer(graph, node) : traceNode(graph, node));
+            // A state is traced as a state, even one that holds nodes.
+            const container = graph.containers.has(node) && !graph.states.has(node);
+            return withHeld(graph, container ? traceContainer(graph, node) : traceNode(graph, node));
         }
     }
     return undefined;

@@ -456,7 +456,12 @@ function focusOf(byId: ReadonlyMap<string, LinkElement>, found: LinksOfSelection
         }
         for (const end of [element.sourceId, element.targetId]) {
             if (typeof end === 'string') {
-                edgesAt.set(end, [...(edgesAt.get(end) ?? []), element]);
+                const at = edgesAt.get(end);
+                if (at) {
+                    at.push(element);
+                } else {
+                    edgesAt.set(end, [element]);
+                }
             }
         }
     }
