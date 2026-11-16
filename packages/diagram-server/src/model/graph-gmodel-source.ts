@@ -2089,7 +2089,7 @@ export class GraphGModelSource {
         if (tokens !== '') {
             args[WorkflowDiagramMetadata.TRANSITION_TOKENS] = tokens;
         }
-        args[WorkflowDiagramMetadata.TRANSITION_LABEL_WIDTH] = transitionLabelWidth(label, hasOrder, hasCondition, tokens);
+        args[WorkflowDiagramMetadata.TRANSITION_LABEL_WIDTH] = transitionLabelWidth(label, hasOrder, hasCondition);
         if (edge.meta?.['stub'] === true) {
             args[WorkflowDiagramMetadata.TRANSITION_STUB] = true;
         }

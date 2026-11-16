@@ -14,7 +14,12 @@
  *   the outlines of rows stacked on each other would cross, and the link
  *   meets the row's own edge;
  * - the other nodes that draw the same thing (`SAME_AS`: an action that has a
- *   box in several states) are outlined too, differently.
+ *   box in several states) are outlined too, differently;
+ * - the rest all but disappears (`isFadedBySelection`, which selection-focus.ts
+ *   puts on each element's drawing): every node and edge that is neither
+ *   selected, nor at a link's end, nor a drawing of the same thing, nor an
+ *   end of an edge that is one of those. A node that holds nodes never fades,
+ *   since its opacity would multiply into what it holds.
  *
  * A link leaves a node by the side that faces the other end: its top or
  * bottom when the two are more above each other than beside, a side
@@ -48,6 +53,9 @@ export interface LinkElement {
     args?: Record<string, unknown>;
     parent?: LinkElement;
     children?: readonly LinkElement[];
+    /** An edge's ends. */
+    sourceId?: string;
+    targetId?: string;
     /** Where a link meets an element that is not a box (a transition: its label), in the diagram's coordinates. */
     linkAnchor?: Box;
 }
@@ -311,6 +319,8 @@ function indexOf(root: LinkElement): Map<string, LinkElement> {
 }
 
 export interface LinksOfSelection {
+    /** What is selected. */
+    selected: Set<string>;
     /** The links to draw. */
     links: SelectionLink[];
     /** The nodes at the other ends: what the selection uses, or is used by. */
@@ -319,7 +329,7 @@ export interface LinksOfSelection {
     same: Set<string>;
 }
 
-const NOTHING: LinksOfSelection = { links: [], ends: new Set(), same: new Set() };
+const NOTHING: LinksOfSelection = { selected: new Set(), links: [], ends: new Set(), same: new Set() };
 
 /**
  * Whether a model has anything a selection could bring up: a link, or a
@@ -367,7 +377,7 @@ export function linksOfSelection(root: LinkElement, selected?: ReadonlySet<strin
     if (chosen.size === 0) {
         return NOTHING;
     }
-    const out: LinksOfSelection = { links: [], ends: new Set(), same: new Set() };
+    const out: LinksOfSelection = { selected: chosen, links: [], ends: new Set(), same: new Set() };
     for (const link of selectionLinksOf(root)) {
         if (chosen.has(link.from) || chosen.has(link.to)) {
             out.links.push(link);
@@ -394,7 +404,7 @@ export function linksOfSelection(root: LinkElement, selected?: ReadonlySet<strin
  * by its tint). The drawing over the diagram is made from the same answer,
  * and outlines the ends that did not mark themselves. On screen only.
  */
-interface Noted { found: LinksOfSelection; marked: Set<string> }
+interface Noted { found: LinksOfSelection; marked: Set<string>; kept?: Set<string> }
 const noted = new WeakMap<object, Noted>();
 
 /** Work out what the selection brings up on `root`, for the render about to draw it as `targetKind`. */
@@ -403,10 +413,53 @@ export function noteSelection(root: LinkElement | undefined, targetKind: string 
         return;
     }
     if (targetKind === 'main') {
-        noted.set(root, { found: linksOfSelection(root), marked: new Set() });
+        const found = linksOfSelection(root);
+        noted.set(root, { found, marked: new Set(), ...(found.links.length > 0 ? { kept: keptBy(root, found) } : {}) });
     } else {
         noted.delete(root);
     }
+}
+
+/**
+ * What stays in sight while the selection's links are shown: the selection,
+ * the ends of its links, the other drawings of the same thing, and the ends
+ * of every edge among them (a transition's two states; the node of a port).
+ */
+function keptBy(root: LinkElement, found: LinksOfSelection): Set<string> {
+    const byId = indexOf(root);
+    const kept = new Set([...found.selected, ...found.ends, ...found.same]);
+    for (const id of [...kept]) {
+        const element = byId.get(id);
+        for (const end of [element?.sourceId, element?.targetId]) {
+            if (typeof end !== 'string') {
+                continue;
+            }
+            kept.add(end);
+            const at = byId.get(end);
+            if (at?.type?.startsWith('port') && at.parent) {
+                kept.add(at.parent.id);
+            }
+        }
+    }
+    return kept;
+}
+
+/**
+ * Whether `element` all but disappears behind the selection's links: a node
+ * or an edge out of what the selection keeps in sight, while links are
+ * shown. A node that holds nodes never does; nor does anything else (a port,
+ * a label), which goes with its node or edge.
+ */
+export function isFadedBySelection(element: { id: string; type?: string; root?: object; children?: readonly { type?: string }[] }): boolean {
+    const kept = element.root ? noted.get(element.root)?.kept : undefined;
+    if (!kept || kept.has(element.id)) {
+        return false;
+    }
+    const type = element.type ?? '';
+    if (type.startsWith('edge')) {
+        return true;
+    }
+    return type.startsWith('node') && !(element.children ?? []).some(child => child.type?.startsWith('node') === true);
 }
 
 /**

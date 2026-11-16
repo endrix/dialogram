@@ -118,8 +118,6 @@ export const WorkflowDiagramConstants = {
     TRANSITION_CONDITION_MARK_PX: 8,
     /** Between the parts of a label, and between a label and its line. */
     TRANSITION_LABEL_GAP_PX: 5,
-    /** Between what takes a transition (its label, its mark) and the tokens it takes and gives. */
-    TRANSITION_TOKENS_GAP_PX: 8,
     /** A state that stands for a run of states: one line per step under its name. */
     STATE_STEP_HEIGHT_PX: 17,
     STATE_STEP_FONT_SIZE_PX: 11,

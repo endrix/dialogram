@@ -340,11 +340,11 @@ export class TransitionEdgeView implements IView {
                             svg('text', { class: { 'transition-order-text': true }, attrs: { x: badge / 2, y: middle } }, String(order))
                         ]
                         : []),
-                    // The condition's mark and the tokens follow the label in the same text, so they sit where the label ends in any font.
+                    // The condition's mark follows the label in the same text, so it sits where the label ends in any font.
+                    // The tokens are in the title only: selecting the transition draws its links to the ports.
                     svg('text', { class: { 'transition-label-text': true }, attrs: { x: transitionLabelTextX(hasOrder), y: middle } },
                         text,
-                        ...(typeof condition === 'string' ? [svg('tspan', { class: { 'transition-condition': true }, attrs: { dx: 4 } }, '◆')] : []),
-                        ...(tokens ? [svg('tspan', { class: { 'transition-tokens': true }, attrs: { dx: WorkflowDiagramConstants.TRANSITION_TOKENS_GAP_PX } }, tokens)] : []))
+                        ...(typeof condition === 'string' ? [svg('tspan', { class: { 'transition-condition': true }, attrs: { dx: 4 } }, '◆')] : []))
                 )
             )
         ) as VNode;

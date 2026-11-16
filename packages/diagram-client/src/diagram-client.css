@@ -1171,12 +1171,6 @@ body.vscode-high-contrast-light .node-center-image-light {
     font-size: 9px;
 }
 
-/* What a transition's action takes and gives, after its label: quieter. */
-.workflow-edge.transition-edge .transition-tokens {
-    fill: var(--vscode-descriptionForeground, #8b8b8b);
-    font-weight: 400;
-}
-
 /* The base GLSP rules `.sprotty-edge.selected path` and `.sprotty-edge.mouseover:not(.selected)
    path` force 2px on the line with a higher specificity than `.workflow-edge .edge-line` (3.5px),
    so selecting or hovering an edge would shrink it. Re-assert the default edge-line width (with
@@ -1447,10 +1441,19 @@ body.vscode-high-contrast-light .node-center-image-light {
     stroke-linejoin: round;
 }
 
-/* While links are shown, the diagram's own edges step back. Not an edge
-   that is itself being read: one selected, one in error, one on the
-   selection's trace (which fades the rest by its own rule, further down). */
-.selection-links-shown .sprotty-edge:not(.selected):not(.cal-edge-error):not(.wf-trace-focus):not(.wf-trace-upstream):not(.wf-trace-downstream),
+/* While links are shown, what the selection does not keep in sight all but
+   disappears (`wf-focus-faded`, selection-focus.ts): every node and edge but
+   the selection, its links' ends, and their edges' ends. Under the pointer,
+   one comes back enough to be read. */
+.wf-focus-faded {
+    opacity: 0.1;
+    transition: opacity 120ms ease-out;
+}
+
+.wf-focus-faded:hover {
+    opacity: 0.55;
+}
+
 .selection-links-shown .workflow-node-group .group-loop {
     opacity: 0.3;
 }

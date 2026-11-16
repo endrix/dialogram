@@ -181,17 +181,14 @@ describe('the label of a transition', () => {
         return new TransitionEdgeView().render(edge, {} as any);
     };
 
-    it('ends in the tokens its action takes and gives, after the condition’s mark, and says them in its title', () => {
+    it('names its action, then the condition’s mark, and says the tokens its action moves in its title only', () => {
         const label = drawn({ [WorkflowDiagramMetadata.TRANSITION_CONDITION]: 'self.ready()', [WorkflowDiagramMetadata.TRANSITION_TOKENS]: 'In×384 → Out' });
-        const [tokens] = withClass(label, 'transition-tokens');
-        expect(textOf(tokens)).toBe('In×384 → Out');
-        expect(attrsOf(tokens).dx).toBe(WorkflowDiagramConstants.TRANSITION_TOKENS_GAP_PX);
+        const [text] = withClass(label, 'transition-label-text');
+        expect(textOf(text)).toBe('go');
+        expect(withClass(text, 'transition-condition')).toHaveLength(1);
+        expect(JSON.stringify(text)).not.toContain('In×384');
         const [title] = withClass({ children: withClass(label, 'transition-label') }, 'transition-label')
             .flatMap((g: any) => (g.children ?? []).filter((c: any) => c?.sel === 'title' || c?.tag === 'title'));
         expect(textOf(title)).toBe('go, when self.ready()\nIn×384 → Out');
-    });
-
-    it('has no tokens when its action moves none', () => {
-        expect(withClass(drawn({}), 'transition-tokens')).toEqual([]);
     });
 });

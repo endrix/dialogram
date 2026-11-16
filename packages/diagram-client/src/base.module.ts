@@ -55,6 +55,7 @@ import { ContainedMovementRestrictor } from './contained-movement-restrictor';
 import { NodeSizePreservingBoundsApplicator } from './node-size-preserving-bounds-applicator';
 import { ExecutionStatesFeedbackCommand } from './execution-states';
 import { SelectionTraceFeedbackCommand, SelectionTraceListener } from './selection-trace';
+import { SelectionFocusPostprocessor } from './selection-focus';
 import { ViewToolPalette } from './view-tool-palette';
 
 /**
@@ -142,4 +143,9 @@ export const diagramBaseModule = new ContainerModule((bind, unbind, isBound, reb
     bind(SelectionTraceListener).toSelf().inSingletonScope();
     bind(TYPES.ISelectionListener).toService(SelectionTraceListener);
     configureCommand(context, SelectionTraceFeedbackCommand);
+
+    // While the selection's links are shown, the rest all but disappears
+    // (see selection-focus.ts).
+    bind(SelectionFocusPostprocessor).toSelf().inSingletonScope();
+    bind(TYPES.IVNodePostprocessor).toService(SelectionFocusPostprocessor);
 });
