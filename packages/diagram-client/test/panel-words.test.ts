@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 /**
- * The property panel names a node in its runtime's words: on a network
- * runtime an instance is an Actor (as its subnetwork is a Network), not a
- * Task.
+ * The property panel names a node's kind in the product's words
+ * (`clientBehavior.kindLabels`, from its create-node prompts): an Actor, a
+ * Module. A product that gives none gets the platform's: a Task.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkflowDiagramMetadata as M, WorkflowDiagramTypes as T } from '@dialogram/shared';
@@ -18,9 +18,13 @@ afterEach(() => {
 describe('the panel\'s words for a node', () => {
     beforeEach(() => resetPanel());
 
-    for (const [network, expected, not] of [[true, 'Actor', 'Task'], [false, 'Task', 'Actor']] as const) {
-        it(`call an instance ${expected} on a ${network ? 'network' : 'workflow'} runtime`, () => {
-            installPage({ networkPropertySections: network });
+    for (const [behavior, expected, not] of [
+        [{ networkPropertySections: true, kindLabels: { instance: 'Actor', network: 'Network' } }, 'Actor', 'Task'],
+        [{ networkPropertySections: true, kindLabels: { instance: 'Module', network: 'Module' } }, 'Module', 'Actor'],
+        [{ networkPropertySections: true }, 'Task', 'Actor']
+    ] as const) {
+        it(`call an instance ${expected} where the product says ${behavior.kindLabels?.instance ?? 'nothing'}`, () => {
+            installPage(behavior as any);
             const node: any = { id: 'n:add', type: T.NODE_ACTOR, args: { [M.ENTITY_NAME]: 'add', [M.ENTITY_TYPE]: 'Add' }, children: [] };
             const panel = new TestPanel();
             panel.show(node, { id: 'root', type: 'graph', args: {}, children: [node], index: { getById: () => node } });

@@ -17,6 +17,12 @@ describe('the words of a prompt', () => {
         expect(portTypesUsed({ children: [] })).toEqual([]);
     });
 
+    it('count the network\'s own ports, not the copies a group frame draws', () => {
+        const boundary = (type: string) => ({ type: T.NODE_BOUNDARY_INPUT, args: { [M.PORT_TYPE]: type } });
+        const mirror = (type: string) => ({ type: T.PORT_GROUP_BOUNDARY, args: { [M.PORT_TYPE]: type } });
+        expect(portTypesUsed({ children: [boundary('Int(13)'), mirror('Bool'), mirror('Bool'), mirror('Bool')] })).toEqual(['Int(13)']);
+    });
+
     it('put the article a word takes before it', () => {
         expect(withArticle('actor')).toBe('an actor');
         expect(withArticle('network')).toBe('a network');

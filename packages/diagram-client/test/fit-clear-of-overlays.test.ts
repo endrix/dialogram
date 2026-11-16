@@ -35,6 +35,15 @@ describe('fit, clear of the overlays', () => {
         ]);
     });
 
+    it('keeps no area another holds, however many overlays there are', () => {
+        const areas = freeAreas(canvas, [palette, button, crumb, fabs, { x: 600, y: 400, width: 10, height: 10 }, { x: 20, y: 500, width: 10, height: 10 }]);
+        for (const area of areas) {
+            expect(areas.filter(other => other !== area && other.x <= area.x && other.y <= area.y
+                && other.x + other.width >= area.x + area.width && other.y + other.height >= area.y + area.height)).toEqual([]);
+        }
+        expect(areas.length).toBeLessThan(40);
+    });
+
     for (const [what, content] of [
         ['a square automaton', { x: -40, y: -30, width: 900, height: 830 }],
         ['a wide network', { x: 0, y: 0, width: 1400, height: 240 }],

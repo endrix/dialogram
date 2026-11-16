@@ -418,3 +418,24 @@ describe('a port of a class used by networks the diagram does not show', () => {
         expect(sent[0].args['usedIn']).toEqual([{ file: net, workflow: 'net', instances: ['a'] }]);
     });
 });
+
+describe('a port of a class whose other uses could not be asked', () => {
+    it('is renamed for this network, and the reader is told the others are not followed', async () => {
+        const { net, modelState } = design();
+        const sent: Sent[] = [];
+        const base = producer(net, sent, true);
+        const sidecar = {
+            ...base,
+            hasFeature: async (_uri: string, feature: string) => feature === 'portUsesAcrossFiles' || feature === 'portUsesQuery',
+            sendSidecarOpDetailed: async (uri: string, payload: { op: string; args: Record<string, unknown> }) =>
+                payload.op === 'calpy.portUses' ? { ok: false, message: 'timed out' } : base.sendSidecarOpDetailed(uri, payload)
+        };
+        const said = await saying(async said => {
+            await onDisk(() => commandStack().execute(updatePort(modelState, sidecar, 'name', 'Feed')));
+            return said;
+        });
+        expect(sent.map(each => each.op)).toEqual(['calpy.renamePort']);
+        expect(sent[0].args['usedIn']).toEqual([{ file: net, workflow: 'net', instances: ['a'] }]);
+        expect(said).toEqual(["Where else 'Pass' is used could not be asked (timed out): only this network's connections follow."]);
+    });
+});

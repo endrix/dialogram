@@ -63,9 +63,16 @@ async function usesAcrossProject(
     if (!(await sidecar.hasFeature(diagramUri, PORT_USES_QUERY))) {
         return undefined;
     }
-    const result = await sidecar.sendSidecarOpDetailed(fileUri, { op: sidecar.sidecarOp('portUses'), args: { entity: entityType } });
-    const diagnostic = result.ok ? result.response?.diagnostic : undefined;
+    const result = await sidecar.sendSidecarOpDetailed(fileUri, { op: sidecar.sidecarOp('portUses'), args: { entity: entityType } })
+        .catch((error: unknown) => ({ ok: false as const, message: error instanceof Error ? error.message : String(error) }));
+    const diagnostic = result.ok ? (result as { response?: any }).response?.diagnostic : undefined;
     if (!Array.isArray(diagnostic?.usedIn)) {
+        // Asked and not answered: the edit goes on for this network, and
+        // the reader is told the others are not followed.
+        const why = result.ok ? 'no list of networks in its answer' : (result.message ?? 'no answer');
+        void vscode.window.showWarningMessage(
+            `Where else '${entityType}' is used could not be asked (${why}): only this network's connections follow.`
+        );
         return undefined;
     }
     const unchecked = Array.isArray(diagnostic.unchecked)

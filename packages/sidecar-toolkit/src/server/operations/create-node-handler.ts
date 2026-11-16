@@ -452,16 +452,22 @@ export class CreateNodeOperationHandler extends OperationHandler {
                 // Where the palette was clicked, saved before the producer
                 // writes, so the diagram the write brings draws it there.
                 const placed = await this.placeAt(operation.location, entityName);
-                const result = await this.sendSidecarOpDetailed(sourceUri, {
-                    op: this.sidecar.sidecarOp('createNode'),
-                    args: {
-                        ...(pickedNodeArgs ?? {}),
-                        workflow: workflowName,
-                        type: finalTypeName,
-                        name: entityName,
-                        params
-                    }
-                });
+                let result: SidecarInvocationResult;
+                try {
+                    result = await this.sendSidecarOpDetailed(sourceUri, {
+                        op: this.sidecar.sidecarOp('createNode'),
+                        args: {
+                            ...(pickedNodeArgs ?? {}),
+                            workflow: workflowName,
+                            type: finalTypeName,
+                            name: entityName,
+                            params
+                        }
+                    });
+                } catch (error) {
+                    await placed?.undo();
+                    throw error;
+                }
                 if (!result.ok) {
                     await placed?.undo();
                     const failureMessage = this.sidecarFailureMessage(`create node '${entityName}'`, result);
@@ -491,7 +497,9 @@ export class CreateNodeOperationHandler extends OperationHandler {
      * Save `location` (where the palette was clicked) as the position of the
      * node `name` will be, in the layout the diagram is drawn from; what puts
      * the layout back when the node is not made. Nothing when no place was
-     * clicked (an agent's create) or the node already has one.
+     * clicked (an agent's create), or when that layout places nothing yet
+     * (a diagram never saved, a nested view drawn from its fallback): a
+     * layout of the new node alone would have every other node placed anew.
      */
     private async placeAt(
         location: { x: number; y: number } | undefined,
@@ -507,19 +515,31 @@ export class CreateNodeOperationHandler extends OperationHandler {
         const layout = this.layoutPersistence;
         try {
             const { filePath, networkId } = layoutTargetOf(diagramModel as any);
-            const positions = (await layout.loadLayout(filePath, networkId)) ?? new Map();
-            if (positions.has(name)) {
+            const positions = await layout.loadLayout(filePath, networkId);
+            if (!positions || positions.size === 0) {
                 return undefined;
             }
-            positions.set(name, { x: location.x, y: location.y });
-            await layout.saveLayoutImmediate(filePath, networkId, positions);
-            return {
-                undo: async () => {
-                    const now = (await layout.loadLayout(filePath, networkId)) ?? new Map();
-                    if (now.delete(name)) {
-                        await layout.saveLayoutImmediate(filePath, networkId, now);
-                    }
+            // The click wins over a position left by a node of that name
+            // made, undone or deleted before.
+            const before = positions.get(name);
+            const change = async (edit: (now: Map<string, { x: number; y: number }>) => void): Promise<void> => {
+                const now = await layout.loadLayout(filePath, networkId);
+                if (!now) {
+                    return;
                 }
+                edit(now);
+                // With the routes of a save still waiting, which this one replaces.
+                await layout.saveLayoutImmediate(filePath, networkId, now, await layout.loadEdgeRoutes(filePath, networkId));
+            };
+            await change(now => { now.set(name, { x: location.x, y: location.y }); });
+            return {
+                undo: () => change(now => {
+                    if (before) {
+                        now.set(name, before);
+                    } else {
+                        now.delete(name);
+                    }
+                })
             };
         } catch {
             // The node is still made; the diagram parks it as before.

@@ -486,13 +486,12 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         const outputPorts = ports.filter((p: any) => p.args?.[WorkflowDiagramMetadata.IS_INPUT_PORT] === false);
         
         // Basic Info Section
-        // A network runtime's words: its instances are actors, as its
-        // subnetworks are networks.
+        // The product's words for the kind (an Actor, a Module), else the
+        // platform's.
+        const words = clientBehavior().kindLabels;
         let typeLabel = isNetworkInstance
-            ? (usesNetworkModel ? 'Network' : 'Workflow')
-            : usesNetworkModel
-                ? (isExternalTask ? 'External Actor' : 'Actor')
-                : (isExternalTask ? 'External Task' : 'Task');
+            ? (words?.network ?? (usesNetworkModel ? 'Network' : 'Workflow'))
+            : `${isExternalTask ? 'External ' : ''}${words?.instance ?? 'Task'}`;
         let typeBadge = entityType;
 
         if (isBoundaryInput) {

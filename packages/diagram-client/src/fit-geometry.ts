@@ -42,15 +42,28 @@ export function freeAreas(canvas: { width: number; height: number }, covered: re
                 { x: area.x, y: bottom, width: area.width, height: area.y + area.height - bottom }
             ].filter(side => side.width > 0 && side.height > 0));
         }
-        areas = next;
+        areas = largest(next);
     }
     return areas;
 }
 
+function contains(outer: Rect, inner: Rect): boolean {
+    return outer.x <= inner.x && outer.y <= inner.y
+        && outer.x + outer.width >= inner.x + inner.width && outer.y + outer.height >= inner.y + inner.height;
+}
+
+/** `areas` without those another holds (one of equal ones kept): a smaller one never fits the drawing bigger. */
+function largest(areas: Rect[]): Rect[] {
+    return areas.filter((area, index) => !areas.some((other, at) =>
+        at !== index && contains(other, area) && (!contains(area, other) || at < index)));
+}
+
 /**
  * The viewport that draws `content` (in the model's units) as big as it can
- * be, `margin` pixels inside one of the canvas's free areas, centred there;
- * nothing when no free area has room for the margin.
+ * be, `margin` screen pixels inside one of the canvas's free areas, centred
+ * there; nothing when no free area has room for the margin. (A fit's
+ * `padding` is taken as that margin: in screen pixels, not the model's
+ * units, so it looks the same at any zoom.)
  */
 export function viewportClearOf(
     content: Rect,

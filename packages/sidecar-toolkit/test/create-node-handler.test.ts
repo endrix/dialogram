@@ -884,46 +884,67 @@ describe('workflow create node handler', () => {
         workspaceAny.applyEdit = async () => true;
         windowAny.showQuickPick = async (items: Array<{ label: string }>) => items.find(item => item.label === 'Add');
         windowAny.showErrorMessage = async () => undefined;
-        // The layout the diagram is drawn from, by file and network.
+        // The layout the diagram is drawn from, by file and network, and the routes saved with it.
+        const key = `${mainPath}#Main`;
         const layouts = new Map<string, Map<string, { x: number; y: number }>>();
+        const routes = new Map([['first|Out|second|In', [{ x: 1, y: 1 }]]]);
+        const routesSaved: unknown[] = [];
         const layoutPersistence = {
-            loadLayout: async (file: string, network: string) => layouts.has(`${file}#${network}`) ? new Map(layouts.get(`${file}#${network}`)) : undefined,
-            saveLayoutImmediate: async (file: string, network: string, positions: Map<string, { x: number; y: number }>) => {
+            loadLayout: async (file: string, network: string) => {
+                const positions = layouts.get(`${file}#${network}`);
+                return positions && positions.size > 0 ? new Map(positions) : undefined;
+            },
+            loadEdgeRoutes: async () => routes,
+            saveLayoutImmediate: async (file: string, network: string, positions: Map<string, { x: number; y: number }>, edgeRoutes?: unknown) => {
                 layouts.set(`${file}#${network}`, new Map(positions));
+                routesSaved.push(edgeRoutes);
             }
         };
-        layouts.set(`${mainPath}#Main`, new Map([['first', { x: 0, y: 0 }]]));
+        const create = async (name: string, answer: 'ok' | 'refused' | 'throws', location = { x: 420, y: 310 }) => {
+            windowAny.showInputBox = async () => name;
+            const handler = new CreateNodeOperationHandler();
+            const seenWhenWritten: Array<[string, { x: number; y: number }][]> = [];
+            (handler as any).modelState = {
+                root: { args: { sourceUri: `file://${mainPath}`, [WorkflowDiagramMetadata.WORKFLOW_NAME]: 'Main' } },
+                get: (stateKey: string) => stateKey === WORKFLOW_NETWORK_MODEL_KEY ? { documentUri: `file://${mainPath}`, workflowName: 'Main' } : undefined
+            };
+            (handler as any).layoutPersistence = layoutPersistence;
+            (handler as any).sidecar = calpySidecar();
+            (handler as any).sendSidecarCapabilitiesDetailed = async () => ({
+                ok: true,
+                response: { status: 'ok', diagnostic: { capabilities: { supportedOps: ['calpy.listTaskTypes', 'calpy.createTaskType', 'calpy.listInstanceNames', 'calpy.createNode'] } } }
+            });
+            (handler as any).sendSidecarListDetailed = async (_uri: string, payload: { op: string }) => ({
+                ok: true,
+                response: { status: 'ok', diagnostic: payload.op === 'calpy.listInstanceNames' ? { names: ['first'] } : { types: ['Add'] } }
+            });
+            (handler as any).sendSidecarOpDetailed = async () => {
+                seenWhenWritten.push([...(layouts.get(key)?.entries() ?? [])]);
+                if (answer === 'throws') {
+                    throw new Error('the sidecar died');
+                }
+                return answer === 'ok' ? { ok: true, response: { status: 'ok' } } : { ok: false, message: 'refused' };
+            };
+            const command = handler.createCommand({ kind: 'createNode', elementTypeId: WorkflowDiagramTypes.NODE_ACTOR, location, args: {} } as any);
+            await (command as any).execute().catch(() => undefined);
+            return seenWhenWritten;
+        };
         try {
-            for (const [name, ok, drawnFrom] of [['adder', true, ['first', 'adder']], ['broken', false, ['first', 'adder', 'broken']]] as const) {
-                windowAny.showInputBox = async () => name;
-                const handler = new CreateNodeOperationHandler();
-                const seenWhenWritten: Array<Array<string>> = [];
-                (handler as any).modelState = {
-                    root: { args: { sourceUri: `file://${mainPath}`, [WorkflowDiagramMetadata.WORKFLOW_NAME]: 'Main' } },
-                    get: (key: string) => key === WORKFLOW_NETWORK_MODEL_KEY ? { documentUri: `file://${mainPath}`, workflowName: 'Main' } : undefined
-                };
-                (handler as any).layoutPersistence = layoutPersistence;
-                (handler as any).sidecar = calpySidecar();
-                (handler as any).sendSidecarCapabilitiesDetailed = async () => ({
-                    ok: true,
-                    response: { status: 'ok', diagnostic: { capabilities: { supportedOps: ['calpy.listTaskTypes', 'calpy.createTaskType', 'calpy.listInstanceNames', 'calpy.createNode'] } } }
-                });
-                (handler as any).sendSidecarListDetailed = async (_uri: string, payload: { op: string }) => ({
-                    ok: true,
-                    response: { status: 'ok', diagnostic: payload.op === 'calpy.listInstanceNames' ? { names: ['first'] } : { types: ['Add'] } }
-                });
-                (handler as any).sendSidecarOpDetailed = async () => {
-                    seenWhenWritten.push([...(layouts.get(`${mainPath}#Main`)?.keys() ?? [])]);
-                    return ok ? { ok: true, response: { status: 'ok' } } : { ok: false, message: 'refused' };
-                };
-                const command = handler.createCommand({
-                    kind: 'createNode', elementTypeId: WorkflowDiagramTypes.NODE_ACTOR, location: { x: 420, y: 310 }, args: {}
-                } as any);
-                await (command as any).execute();
-                // Saved before the producer writes: the diagram its write brings draws it there.
-                expect(seenWhenWritten).toEqual([drawnFrom]);
-            }
-            expect([...layouts.get(`${mainPath}#Main`)!.entries()]).toEqual([['first', { x: 0, y: 0 }], ['adder', { x: 420, y: 310 }]]);
+            // No layout yet: nothing saved, the diagram places it as before.
+            await create('adder', 'ok');
+            expect(layouts.has(key)).toBe(false);
+
+            layouts.set(key, new Map([['first', { x: 0, y: 0 }], ['stale', { x: 5, y: 5 }]]));
+            // Saved before the producer writes: the diagram its write brings draws it there, routes kept.
+            expect(await create('adder', 'ok')).toEqual([[['first', { x: 0, y: 0 }], ['stale', { x: 5, y: 5 }], ['adder', { x: 420, y: 310 }]]]);
+            expect(routesSaved).toEqual([routes]);
+            // Refused, or the producer gone: the layout as it was, a position left by a node of that name too.
+            await create('broken', 'refused');
+            await create('stale', 'throws', { x: 900, y: 100 });
+            expect([...layouts.get(key)!.entries()]).toEqual([['first', { x: 0, y: 0 }], ['stale', { x: 5, y: 5 }], ['adder', { x: 420, y: 310 }]]);
+            // Made: the click wins over that left position.
+            await create('stale', 'ok', { x: 900, y: 100 });
+            expect(layouts.get(key)!.get('stale')).toEqual({ x: 900, y: 100 });
         } finally {
             workspaceAny.openTextDocument = saved.open;
             workspaceAny.applyEdit = saved.apply;
