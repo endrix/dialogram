@@ -41,7 +41,10 @@ import { composeStorageRuntimeOptions } from './profile-storage-options';
 import { composeElkServerOptions } from './profile-elk-server-options';
 import { openReference } from './open-reference-host';
 import { type DiagramChatConfirm, type DiagramChatConfirmAnswer, type DiagramChatTask, type DiagramProfile, type DiagramRunAnswer, type DiagramRunHost, type DiagramRunQuestion } from '../../api';
-import { inPlace, openColumnFor, openWithArguments, registerDiagramViewType } from './open-in-place';
+import {
+    inPlace, isSerializedRange, openColumnFor, openWithArguments, parseSerializedRangeArg, parseShowOptionsArg, plainOpenOptions,
+    registerDiagramViewType, serializedRangeToVscodeRange
+} from './open-in-place';
 import { producerNamedDefinition } from './producer-definition';
 
 // Define the diagram type constant locally to avoid import
@@ -54,7 +57,6 @@ const ROOT_WORKFLOW_ARG = 'cal:rootWorkflow';
 const INSTANCE_PATH_ARG = 'cal:instancePath';
 const NAV_TRAIL_ARG = 'wf:navTrail';
 const RUN_ID_ARG = 'wf:runId';
-const SHOW_OPTIONS_ARG = 'jsonOpenerOptions';
 const NAVIGATE_PREFER_DEFINITION_ARG = 'wf:navigatePreferDefinition';
 const NAVIGATE_SOURCE_URI_ARG = 'wf:navigateSourceUri';
 const NAVIGATE_SOURCE_RANGE_ARG = 'wf:navigateSourceRange';
@@ -73,9 +75,6 @@ const VIEWER_RIGHT_URI_ARG = 'wf:viewerRightUri';
 const VIEWER_TITLE_ARG = 'wf:viewerTitle';
 const VIEWER_MESSAGE_ARG = 'wf:viewerMessage';
 
-type SerializedPosition = { line: number; character: number };
-type SerializedRange = { start: SerializedPosition; end: SerializedPosition };
-type ParsedShowOptions = Omit<vscode.TextDocumentShowOptions, 'selection'> & { selection?: SerializedRange };
 
 // Client-side action kind (handled by @eclipse-glsp/client gridModule).
 // Do NOT import from '@eclipse-glsp/client' here because the package loads CSS.
@@ -246,56 +245,6 @@ function getRecentNavigation(
     };
 }
 
-function isSerializedPosition(value: unknown): value is SerializedPosition {
-    if (!value || typeof value !== 'object') {
-        return false;
-    }
-    const v = value as Record<string, unknown>;
-    return typeof v.line === 'number' && typeof v.character === 'number';
-}
-
-function isSerializedRange(value: unknown): value is SerializedRange {
-    if (!value || typeof value !== 'object') {
-        return false;
-    }
-    const v = value as Record<string, unknown>;
-    return isSerializedPosition(v.start) && isSerializedPosition(v.end);
-}
-
-function parseSerializedRangeArg(value: unknown): SerializedRange | undefined {
-    if (isSerializedRange(value)) {
-        return value;
-    }
-
-    if (typeof value !== 'string' || value.trim() === '') {
-        return undefined;
-    }
-
-    try {
-        const parsed = JSON.parse(value);
-        return isSerializedRange(parsed) ? parsed : undefined;
-    } catch {
-        return undefined;
-    }
-}
-
-function parseShowOptionsArg(args: Record<string, unknown> | undefined): ParsedShowOptions | undefined {
-    const raw = args?.[SHOW_OPTIONS_ARG];
-    if (typeof raw !== 'string' || raw.trim() === '') {
-        return undefined;
-    }
-
-    try {
-        const parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== 'object') {
-            return undefined;
-        }
-        return parsed as ParsedShowOptions;
-    } catch {
-        return undefined;
-    }
-}
-
 function parseNavigateSymbolArg(value: unknown): string | undefined {
     if (typeof value !== 'string') {
         return undefined;
@@ -305,14 +254,6 @@ function parseNavigateSymbolArg(value: unknown): string | undefined {
 }
 
 
-function serializedRangeToVscodeRange(range: SerializedRange): vscode.Range {
-    return new vscode.Range(
-        range.start.line,
-        range.start.character,
-        range.end.line,
-        range.end.character
-    );
-}
 
 
 
@@ -804,6 +745,23 @@ export async function activateGlspIntegration(
                     })();
 
                     // Skip default connector processing (which would showTextDocument).
+                    callback(message, false);
+                    return;
+                }
+
+                // Any other open is a file at a line, in the text editor: a
+                // double-click on a node with no diagram behind it, or on one
+                // that stands for a file. Shown here, not by GLSP's handler,
+                // which shows it in the diagram's group beside the editor the
+                // file already has.
+                const plainTarget = parseExternalTargetUri(uri);
+                if (plainTarget) {
+                    void (async () => {
+                        await vscode.window.showTextDocument(plainTarget, plainOpenOptions(plainTarget, args as Record<string, unknown> | undefined));
+                    })().catch(error => {
+                        const reason = error instanceof Error ? error.message : String(error ?? 'unknown error');
+                        void vscode.window.showErrorMessage(`Could not open ${plainTarget.fsPath || uri}: ${reason}`);
+                    });
                     callback(message, false);
                     return;
                 }
