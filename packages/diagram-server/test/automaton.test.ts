@@ -86,7 +86,7 @@ describe('an automaton in the model', () => {
         expect(stop.args[WorkflowDiagramMetadata.TRANSITION_LABEL_WIDTH]).toBe(transitionLabelWidth('stop', true, true));
     });
 
-    it('gives a transition the tokens its action takes and gives, and room for them in its label', () => {
+    it('gives a transition the tokens its action takes and gives, for its tooltip, not its label', () => {
         const rated = new GraphGModelSource().transform({
             version: '1',
             graph: {
@@ -100,9 +100,8 @@ describe('an automaton in the model', () => {
         } as PyGraphDocument).graph;
         const edge = (id: string): any => rated.children?.find((child: any) => child.id === id);
         expect(edge('t:idle:start->run').args[WorkflowDiagramMetadata.TRANSITION_TOKENS]).toBe('In×384 → Out');
-        expect(edge('t:idle:start->run').args[WorkflowDiagramMetadata.TRANSITION_LABEL_WIDTH])
-            .toBe(transitionLabelWidth('start', false, false, 'In×384 → Out'));
-        expect(transitionLabelWidth('start', false, false, 'In×384 → Out')).toBeGreaterThan(transitionLabelWidth('start', false, false));
+        // They are said in the label's tooltip, not on it: the label is as wide as its action's name.
+        expect(edge('t:idle:start->run').args[WorkflowDiagramMetadata.TRANSITION_LABEL_WIDTH]).toBe(transitionLabelWidth('start', false, false));
         // Tokens that are no text are none.
         expect(edge('t:run:stop->idle').args[WorkflowDiagramMetadata.TRANSITION_TOKENS]).toBeUndefined();
         expect(edge('t:run:stop->idle').args[WorkflowDiagramMetadata.TRANSITION_LABEL_WIDTH]).toBe(transitionLabelWidth('stop', false, false));

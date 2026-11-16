@@ -100,6 +100,7 @@ export const TYPES = {
     IAsyncClipboardService: Symbol.for('stub.IAsyncClipboardService'),
     ViewerOptions: Symbol.for('stub.ViewerOptions'),
     ISelectionListener: Symbol.for('stub.ISelectionListener'),
+    IVNodePostprocessor: Symbol.for('stub.IVNodePostprocessor'),
     IGModelRootListener: Symbol.for('stub.IGModelRootListener'),
     IDiagramStartup: Symbol.for('stub.IDiagramStartup'),
     IContextMenuService: Symbol.for('stub.IContextMenuService'),

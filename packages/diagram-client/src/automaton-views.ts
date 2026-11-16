@@ -48,6 +48,7 @@ import { injectable } from 'inversify';
 import type { VNode } from 'snabbdom';
 import { WorkflowEdge, WorkflowNode } from './model';
 import { nodeOpenToggle } from './node-open-toggle';
+import { isKeptBySelection } from './selection-links';
 import { leaveState, unionBox, type Box, type Point } from './transition-geometry';
 
 /** A state of an automaton. */
@@ -293,8 +294,10 @@ export class TransitionEdgeView implements IView {
         const tokens = typeof args[WorkflowDiagramMetadata.TRANSITION_TOKENS] === 'string' ? args[WorkflowDiagramMetadata.TRANSITION_TOKENS] as string : undefined;
         const middle = label.height / 2;
         const badge = WorkflowDiagramConstants.TRANSITION_ORDER_BADGE_PX;
-        // The line is the first's; another draws it over the first while it is picked.
-        const line = first || edge.selected || edge.hoverFeedback
+        // The line is the first's; another draws it over the first while it is picked, or
+        // while the selection keeps it in sight (the first may be faded behind it).
+        const kept = !first && isKeptBySelection(edge);
+        const line = first || kept || edge.selected || edge.hoverFeedback
             ? [
                 ...(first ? [svg('path', { class: { 'transition-reach': true }, attrs: { d: shape.path } })] : []),
                 svg('path', { class: { 'edge-line': true }, attrs: { d: shape.path, fill: 'none' } }),
@@ -307,7 +310,7 @@ export class TransitionEdgeView implements IView {
         const stubParts = chip
             ? [
                 ...(picked ? [svg('path', { class: { 'transition-stub-way': true }, attrs: { d: chip.way.path, fill: 'none' } })] : []),
-                ...(first
+                ...(first || kept
                     ? [svg('g', { class: { 'transition-stub-chip': true }, attrs: { transform: `translate(${chip.box.x}, ${chip.box.y})` } },
                         svg('title', {}, `To ${chip.name}`),
                         svg('rect', { class: { 'transition-stub-chip-box': true }, attrs: { x: 0, y: 0, width: chip.box.width, height: chip.box.height, rx: chip.box.height / 2, ry: chip.box.height / 2 } }),
@@ -340,11 +343,11 @@ export class TransitionEdgeView implements IView {
                             svg('text', { class: { 'transition-order-text': true }, attrs: { x: badge / 2, y: middle } }, String(order))
                         ]
                         : []),
-                    // The condition's mark and the tokens follow the label in the same text, so they sit where the label ends in any font.
+                    // The condition's mark follows the label in the same text, so it sits where the label ends in any font.
+                    // The tokens are in the title only: selecting the transition draws its links to the ports.
                     svg('text', { class: { 'transition-label-text': true }, attrs: { x: transitionLabelTextX(hasOrder), y: middle } },
                         text,
-                        ...(typeof condition === 'string' ? [svg('tspan', { class: { 'transition-condition': true }, attrs: { dx: 4 } }, '◆')] : []),
-                        ...(tokens ? [svg('tspan', { class: { 'transition-tokens': true }, attrs: { dx: WorkflowDiagramConstants.TRANSITION_TOKENS_GAP_PX } }, tokens)] : []))
+                        ...(typeof condition === 'string' ? [svg('tspan', { class: { 'transition-condition': true }, attrs: { dx: 4 } }, '◆')] : []))
                 )
             )
         ) as VNode;

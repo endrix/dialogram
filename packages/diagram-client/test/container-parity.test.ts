@@ -32,7 +32,8 @@
  * states, and the read-only view marker (hides the palette's tools while the view shown is
  * read-only, bound to itself and as a model-root listener), and the selection trace (its listener,
  * bound to itself and as a selection listener, and the `SelectionTraceFeedbackCommand` that draws
- * the path), the bus toggle's mouse listener (opens or closes a port bundle) and the node
+ * the path), the selection focus (its postprocessor, bound to itself and as a vnode
+ * postprocessor, which fades what the selection's links leave out), the bus toggle's mouse listener (opens or closes a port bundle) and the node
  * toggle's (opens a node holding a graph of its own in place), and the toggle anchor (keeps
  * the toggled node where it was on screen once the view is laid out again, bound to itself
  * and as a model-root listener, with GLSP's update command rebound to the

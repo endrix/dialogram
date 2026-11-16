@@ -403,6 +403,17 @@
         "to": "service:SelectionTraceListener"
     },
     {
+        "id": "SelectionFocusPostprocessor",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "id": "Symbol(stub.IVNodePostprocessor)",
+        "op": "bind",
+        "to": "service:SelectionFocusPostprocessor"
+    },
+    {
         "impl": "PortBusToggleMouseListener",
         "op": "bindAsService",
         "service": "Symbol(stub.MouseListener)"

@@ -14,7 +14,13 @@
  *   the outlines of rows stacked on each other would cross, and the link
  *   meets the row's own edge;
  * - the other nodes that draw the same thing (`SAME_AS`: an action that has a
- *   box in several states) are outlined too, differently.
+ *   box in several states) are outlined too, differently;
+ * - the rest all but disappears (`isFadedBySelection`, which selection-focus.ts
+ *   puts on each element's drawing): every node and edge that is neither
+ *   selected, nor at a link's end, nor a drawing of the same thing, nor
+ *   held by one of those, nor an end of an edge that is one of those, nor
+ *   the other part of such an edge cut at a group's frame. A node that holds
+ *   nodes never fades, since its opacity would multiply into what it holds.
  *
  * A link leaves a node by the side that faces the other end: its top or
  * bottom when the two are more above each other than beside, a side
@@ -30,7 +36,7 @@
  */
 import type { VNode } from 'snabbdom';
 import { svg } from '@eclipse-glsp/client';
-import { WorkflowDiagramMetadata, type SelectionLink } from '@dialogram/shared';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes, type SelectionLink } from '@dialogram/shared';
 import { ZOOM_TEXT_CLASSES } from './zoom-detail';
 
 export interface Box { x: number; y: number; width: number; height: number }
@@ -48,6 +54,9 @@ export interface LinkElement {
     args?: Record<string, unknown>;
     parent?: LinkElement;
     children?: readonly LinkElement[];
+    /** An edge's ends. */
+    sourceId?: string;
+    targetId?: string;
     /** Where a link meets an element that is not a box (a transition: its label), in the diagram's coordinates. */
     linkAnchor?: Box;
 }
@@ -311,6 +320,8 @@ function indexOf(root: LinkElement): Map<string, LinkElement> {
 }
 
 export interface LinksOfSelection {
+    /** What is selected. */
+    selected: Set<string>;
     /** The links to draw. */
     links: SelectionLink[];
     /** The nodes at the other ends: what the selection uses, or is used by. */
@@ -319,7 +330,7 @@ export interface LinksOfSelection {
     same: Set<string>;
 }
 
-const NOTHING: LinksOfSelection = { links: [], ends: new Set(), same: new Set() };
+const NOTHING: LinksOfSelection = { selected: new Set(), links: [], ends: new Set(), same: new Set() };
 
 /**
  * Whether a model has anything a selection could bring up: a link, or a
@@ -367,7 +378,7 @@ export function linksOfSelection(root: LinkElement, selected?: ReadonlySet<strin
     if (chosen.size === 0) {
         return NOTHING;
     }
-    const out: LinksOfSelection = { links: [], ends: new Set(), same: new Set() };
+    const out: LinksOfSelection = { selected: chosen, links: [], ends: new Set(), same: new Set() };
     for (const link of selectionLinksOf(root)) {
         if (chosen.has(link.from) || chosen.has(link.to)) {
             out.links.push(link);
@@ -394,7 +405,14 @@ export function linksOfSelection(root: LinkElement, selected?: ReadonlySet<strin
  * by its tint). The drawing over the diagram is made from the same answer,
  * and outlines the ends that did not mark themselves. On screen only.
  */
-interface Noted { found: LinksOfSelection; marked: Set<string> }
+interface Noted {
+    found: LinksOfSelection;
+    marked: Set<string>;
+    /** Every element, by id, when the selection brings anything up. */
+    byId?: Map<string, LinkElement>;
+    /** While links are shown: what stays in sight, and the nodes that hold nodes (which never fade). */
+    focus?: Focus;
+}
 const noted = new WeakMap<object, Noted>();
 
 /** Work out what the selection brings up on `root`, for the render about to draw it as `targetKind`. */
@@ -403,10 +421,113 @@ export function noteSelection(root: LinkElement | undefined, targetKind: string 
         return;
     }
     if (targetKind === 'main') {
-        noted.set(root, { found: linksOfSelection(root), marked: new Set() });
+        const found = linksOfSelection(root);
+        const byId = found.links.length > 0 || found.same.size > 0 ? indexOf(root) : undefined;
+        noted.set(root, { found, marked: new Set(), byId, focus: byId && found.links.length > 0 ? focusOf(byId, found) : undefined });
     } else {
         noted.delete(root);
     }
+}
+
+interface Focus {
+    kept: Set<string>;
+    holders: Set<string>;
+}
+
+const isNode = (element: LinkElement | undefined): boolean => element?.type?.startsWith('node') === true;
+
+/**
+ * What stays in sight while the selection's links are shown: the selection,
+ * the ends of its links and the other drawings of the same thing, all a kept
+ * node holds (a group a link leads to), and the ends of every edge among
+ * them (a transition's two states, a port's node), through a group's frame
+ * to the other part of an edge cut there. Also which nodes hold nodes, at
+ * any depth: those never fade, since their opacity would multiply into what
+ * they hold.
+ */
+function focusOf(byId: ReadonlyMap<string, LinkElement>, found: LinksOfSelection): Focus {
+    const holders = new Set<string>();
+    const edgesAt = new Map<string, LinkElement[]>();
+    for (const element of byId.values()) {
+        if (isNode(element)) {
+            for (let up = element.parent; up && !holders.has(up.id); up = up.parent) {
+                holders.add(up.id);
+            }
+        }
+        for (const end of [element.sourceId, element.targetId]) {
+            if (typeof end === 'string') {
+                edgesAt.set(end, [...(edgesAt.get(end) ?? []), element]);
+            }
+        }
+    }
+    const kept = new Set<string>();
+    const queue: string[] = [];
+    const keep = (id: string): void => {
+        if (!kept.has(id)) {
+            kept.add(id);
+            queue.push(id);
+        }
+    };
+    const keepAllOf = (element: LinkElement): void => {
+        for (const child of element.children ?? []) {
+            keep(child.id);
+            keepAllOf(child);
+        }
+    };
+    for (const id of [...found.selected, ...found.ends, ...found.same]) {
+        keep(id);
+        const element = byId.get(id);
+        if (element && holders.has(id)) {
+            keepAllOf(element);
+        }
+    }
+    while (queue.length > 0) {
+        const element = byId.get(queue.pop()!);
+        for (const end of [element?.sourceId, element?.targetId]) {
+            if (typeof end !== 'string') {
+                continue;
+            }
+            keep(end);
+            const at = byId.get(end);
+            if (!at?.type?.startsWith('port') || !at.parent) {
+                continue;
+            }
+            keep(at.parent.id);
+            // A port on a group's frame passes the edge on to the other side,
+            // but where the edge ends at the group itself.
+            const onFrame = at.type === WorkflowDiagramTypes.PORT_GROUP_BOUNDARY || at.parent.type === WorkflowDiagramTypes.NODE_GROUP;
+            if (onFrame && at.args?.[WorkflowDiagramMetadata.GROUP_END] !== true) {
+                (edgesAt.get(end) ?? []).forEach(edge => keep(edge.id));
+            }
+        }
+    }
+    return { kept, holders };
+}
+
+/**
+ * Whether `element` all but disappears behind the selection's links: a node
+ * or an edge out of what the selection keeps in sight, while links are
+ * shown. A node that holds nodes never does; nor does anything else (a port,
+ * a label), which goes with its node or edge.
+ */
+export function isFadedBySelection(element: { id: string; type?: string; root?: object }): boolean {
+    const focus = element.root ? noted.get(element.root)?.focus : undefined;
+    if (!focus || focus.kept.has(element.id)) {
+        return false;
+    }
+    const type = element.type ?? '';
+    return type.startsWith('edge') || (type.startsWith('node') && !focus.holders.has(element.id));
+}
+
+/**
+ * Whether `element` is kept in sight by the selection while its links are
+ * shown: an edge that shares its line with another (a transition with
+ * others between the same two states) draws the line itself, in case the
+ * one that draws it fades.
+ */
+export function isKeptBySelection(element: { id: string; root?: object }): boolean {
+    const focus = element.root ? noted.get(element.root)?.focus : undefined;
+    return focus?.kept.has(element.id) === true;
 }
 
 /**
@@ -436,13 +557,14 @@ export interface SelectionOverlay {
  * when it is known.
  */
 export function selectionOverlay(
-    root: LinkElement, found: LinksOfSelection = linksOfSelection(root), marked: ReadonlySet<string> = new Set()
+    root: LinkElement, found: LinksOfSelection = linksOfSelection(root), marked: ReadonlySet<string> = new Set(),
+    index?: ReadonlyMap<string, LinkElement>
 ): SelectionOverlay | undefined {
     const { links, ends, same } = found;
     if (links.length === 0 && same.size === 0) {
         return undefined;
     }
-    const byId = indexOf(root);
+    const byId = index ?? indexOf(root);
     const boxes = new Map<string, Box | undefined>();
     const boxOf = (id: string): Box | undefined => {
         if (!boxes.has(id)) {
@@ -522,7 +644,7 @@ export function withSelectionLinks(vnode: VNode | undefined, root: LinkElement |
         return vnode;
     }
     const entry = noted.get(root);
-    const overlay = selectionOverlay(root, entry?.found, entry?.marked);
+    const overlay = selectionOverlay(root, entry?.found, entry?.marked, entry?.byId);
     if (!overlay) {
         return vnode;
     }
