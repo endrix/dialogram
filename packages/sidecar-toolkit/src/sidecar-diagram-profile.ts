@@ -16,7 +16,7 @@ import * as vscode from 'vscode';
 import { DEFAULT_EXPORT_OP, invokeSidecarOp } from './sidecar-graph-export.js';
 import { createSourceReferenceContext } from './chat-source-reference.js';
 import { createRegistryChatTools, type RegistryChatTool } from './registry-tools.js';
-import { RESUME_TOOL } from './run-failure.js';
+import { RESUME_TOOL, RUN_TOOL } from './run-failure.js';
 import { getCliInvocation,
     getGraphLoadTimeoutMs,
     getSidecarCommand,
@@ -42,7 +42,9 @@ import { registerNewSourceFileCommand } from './new-source-file-command.js';
 import { createCliStatusSource, type SidecarStatusSourceInput } from './cli-status-source.js';
 import {
     CliRunDriver,
+    plannedRunOf,
     resumeFailedRunCommandId,
+    runFromChatCommandId,
     type CliRunDriverConfig,
     type CliRunDriverHost,
     type AgentToolEntitySettings
@@ -680,6 +682,11 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
     // yes or no.
     // A run can only be resumed, or driven at all, where the CLI runs one.
     const runs = input.cliRuns !== false;
+    if (runs && !readOnly) {
+        // The IDE's own run, so the diagram and the chat's Run tab show it. A
+        // read-only diagram's chat only reads.
+        chatTools.push(runWorkflowTool(input.commands.runWorkflow));
+    }
     if (runs && input.cliResumeArgs) {
         chatTools.push(resumeFailedRunTool(input.commands.runWorkflow));
     }
@@ -712,7 +719,15 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
                 get: () => context.workspaceState.get<Record<string, AgentToolEntitySettings>>(AGENT_TOOL_OVERRIDES_STATE_KEY),
                 update: (value: Record<string, AgentToolEntitySettings>) =>
                     context.workspaceState.update(AGENT_TOOL_OVERRIDES_STATE_KEY, value)
-            }
+            },
+            // A diagram drawn from the CLI plan shows the plan's workflow; a run
+            // of it runs that one, and asks for the inputs the plan lists.
+            planRun: input.graphAcquisition === 'cli-plan' && planGraph
+                ? async (sourceUri, workflowName) => {
+                    const planned = await planGraph(sourceUri.fsPath, workflowName ? { [input.scopeArgKey ?? 'workflow']: workflowName } : {});
+                    return planned.ok ? plannedRunOf(planned.response?.diagnostic?.graph) : undefined;
+                }
+                : undefined
         };
         const driver = new CliRunDriver(config, {
             overlay: host.overlay,
@@ -859,6 +874,43 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
  * the person first, in the chat (the run driver's `resumeFailedRun`); the agent learns the
  * answer, and the run's outcome shows on the diagram.
  */
+/** The chat tool that runs the workflow the way the diagram's Run does (see `CliRunDriver.runFromChat`). */
+export function runWorkflowTool(runWorkflowCommandId: string): RegistryChatTool {
+    return {
+        name: RUN_TOOL,
+        description:
+            'Run the workflow of this file the way the diagram\'s Run button does: its nodes light up on the diagram as they fire, '
+            + "and its log shows in the chat's Run tab. Use it instead of running the CLI in a shell, which shows nowhere. "
+            + 'Pass a value for each workflow input in `inputs` (the result names any missing; ask the user for values you do not know). '
+            + 'The call waits for the run to end, up to `waitSeconds` (default 60), and says how it ended and which files hold its outputs; '
+            + 'called again while that run is going, it waits for it instead of starting another.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                workflow: { type: 'string', description: 'The workflow to run, when the file defines several. Default: the one the diagram shows.' },
+                inputs: {
+                    type: 'object',
+                    additionalProperties: { type: 'string' },
+                    description: 'A value for each workflow input, by name: text as it is, a number as digits, a File as a path. "" gives an input no token.'
+                },
+                waitSeconds: { type: 'number', description: 'How long to wait for the run to end, in seconds (0 to 600). Default 60.' }
+            }
+        },
+        // It starts processes (and an agent node's model calls): never on the
+        // auto-approved read-only bridge.
+        mutates: true,
+        handler: async (file, args) => {
+            const result = await vscode.commands.executeCommand<string>(runFromChatCommandId(runWorkflowCommandId), {
+                file,
+                workflowName: typeof args.workflow === 'string' ? args.workflow : undefined,
+                inputs: args.inputs && typeof args.inputs === 'object' ? args.inputs : undefined,
+                waitSeconds: typeof args.waitSeconds === 'number' ? args.waitSeconds : undefined
+            });
+            return typeof result === 'string' ? result : 'The run could not be started.';
+        }
+    };
+}
+
 export function resumeFailedRunTool(runWorkflowCommandId: string): RegistryChatTool {
     return {
         name: RESUME_TOOL,
