@@ -116,33 +116,40 @@ The consumer-path proof test (`test/consumer-build.test.ts`) runs exactly this
 build headlessly against a fixture that imports `createDiagramContainer`, so this
 recipe is exercised in CI.
 
-**Path imports need a resolver.** The package has no `exports` map, so a
+**Path imports need an alias.** The package has no `exports` map, so a
 product built against a Dialogram checkout maps `@dialogram/<pkg>[/<subpath>]`
 to the package sources itself. That is what makes the path imports in §4
 (`@dialogram/diagram-client/stock-starter`,
 `@dialogram/diagram-client/diagram-client.css`) resolve:
 
 ```js
-const resolveDialogram = {
-    name: 'resolve-dialogram-packages',
-    setup(build) {
-        build.onResolve({ filter: /^@dialogram\// }, args => {
-            const rest = args.path.slice('@dialogram/'.length);
-            const slash = rest.indexOf('/');
-            const pkg = slash < 0 ? rest : rest.slice(0, slash);
-            const subpath = slash < 0 ? undefined : rest.slice(slash + 1);
-            const base = path.join(dialogramPackages, pkg, 'src');
-            if (!subpath) return { path: path.join(base, 'index.ts') };
-            return { path: path.join(base, path.extname(subpath) ? subpath : `${subpath}.ts`) };
-        });
-    }
-};
+const { dialogramAlias, writeLegacyDecoratorBundles } = await import(
+    pathToFileURL(path.join(dialogramRoot, 'scripts/esbuild-dialogram.mjs')).href
+);
+
+await esbuild.build({
+    // ...the options above, and:
+    alias: dialogramAlias(path.join(dialogramRoot, 'packages')),
+    write: false,                                   // the plugin writes what passes
+    plugins: [writeLegacyDecoratorBundles()]
+});
 ```
+
+Use esbuild's `alias`, not an `onResolve` plugin. esbuild applies a
+`tsconfig.json` only to a path its own resolver found, so a module a plugin
+resolves is compiled without the package's `experimentalDecorators`, with
+standard decorators, and inversify's property `@inject` throws when the bundle
+loads ("Cannot read properties of undefined (reading 'prototype')"). It shows
+only once a decorated module is first imported by package name, which is why a
+plugin can seem to work. `writeLegacyDecoratorBundles` fails the build, naming
+the module, rather than write such a bundle; the extension's own build uses
+both (`packages/extension/esbuild.mjs`).
 
 A product with its own `node_modules` also pins GLSP, Sprotty and inversify to
 the platform's copy, so the bundle has one inversify realm (chisel-ide's
 `esbuild.mjs`, `pinPlatformRealmPlugin`). `test/stock-starter-build.test.ts`
-builds a product entry through this resolver and checks its stylesheet order.
+builds a product entry through this alias and checks its stylesheet order, and
+that a decorated module imported by package name keeps its legacy decorators.
 
 ### 4. Wiring your starter
 
@@ -160,7 +167,7 @@ them twice.
 
 `@dialogram/diagram-client/stock-starter` is a path import. The package has no
 `exports` map, so your bundler must resolve `@dialogram/<pkg>/<subpath>` to
-`packages/<pkg>/src/<subpath>.ts`, as the resolver plugin in §3 does.
+`packages/<pkg>/src/<subpath>.ts`, as the alias in §3 does.
 
 ```ts
 // Import the starter FIRST: its imports bring GLSP's own stylesheets, and
