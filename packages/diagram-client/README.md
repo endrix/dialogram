@@ -123,12 +123,16 @@ to the package sources itself. That is what makes the path imports in §4
 `@dialogram/diagram-client/diagram-client.css`) resolve:
 
 ```js
-// alias: dialogramAlias in the build options
-const dialogramAlias = Object.fromEntries(
-    fs.readdirSync(dialogramPackages)
-        .filter(pkg => fs.existsSync(path.join(dialogramPackages, pkg, 'src')))
-        .map(pkg => [`@dialogram/${pkg}`, path.join(dialogramPackages, pkg, 'src')])
+const { dialogramAlias, writeLegacyDecoratorBundles } = await import(
+    pathToFileURL(path.join(dialogramRoot, 'scripts/esbuild-dialogram.mjs')).href
 );
+
+await esbuild.build({
+    // ...the options above, and:
+    alias: dialogramAlias(path.join(dialogramRoot, 'packages')),
+    write: false,                                   // the plugin writes what passes
+    plugins: [writeLegacyDecoratorBundles()]
+});
 ```
 
 Use esbuild's `alias`, not an `onResolve` plugin. esbuild applies a
@@ -137,8 +141,9 @@ resolves is compiled without the package's `experimentalDecorators`, with
 standard decorators, and inversify's property `@inject` throws when the bundle
 loads ("Cannot read properties of undefined (reading 'prototype')"). It shows
 only once a decorated module is first imported by package name, which is why a
-plugin can seem to work. The extension's own build fails when a bundle carries
-a standard decorator (`packages/extension/esbuild.mjs`).
+plugin can seem to work. `writeLegacyDecoratorBundles` fails the build, naming
+the module, rather than write such a bundle; the extension's own build uses
+both (`packages/extension/esbuild.mjs`).
 
 A product with its own `node_modules` also pins GLSP, Sprotty and inversify to
 the platform's copy, so the bundle has one inversify realm (chisel-ide's
@@ -162,7 +167,7 @@ them twice.
 
 `@dialogram/diagram-client/stock-starter` is a path import. The package has no
 `exports` map, so your bundler must resolve `@dialogram/<pkg>/<subpath>` to
-`packages/<pkg>/src/<subpath>.ts`, as the resolver plugin in §3 does.
+`packages/<pkg>/src/<subpath>.ts`, as the alias in §3 does.
 
 ```ts
 // Import the starter FIRST: its imports bring GLSP's own stylesheets, and

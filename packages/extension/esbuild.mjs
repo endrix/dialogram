@@ -3,6 +3,7 @@ import * as esbuild from 'esbuild';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { dialogramAlias, writeLegacyDecoratorBundles } from '../../scripts/esbuild-dialogram.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const watch = process.argv.includes('--watch');
@@ -55,64 +56,10 @@ const srcDirs = {
 };
 
 // @dialogram/* imports (subpaths too, such as @dialogram/extension-core/api) resolve to the
-// packages' source .ts files. An alias, not an onResolve plugin: esbuild applies a tsconfig.json
-// only to a path its own resolver found, so a file a plugin resolved was compiled without its
-// package's `experimentalDecorators`, with standard decorators, and inversify's property
-// `@inject` threw at load ("Cannot read properties of undefined (reading 'prototype')"): the
-// platform bundle would not activate once a file with one was first imported by package name.
-const workspaceAlias = Object.fromEntries(Object.entries(srcDirs).map(([pkg, dir]) => [`@dialogram/${pkg}`, dir]));
-
-// Every bundle's decorators are the legacy ones the packages' tsconfigs ask for. A standard one
-// means a module was compiled without its tsconfig, and inversify's property `@inject` throws
-// at load. Such a bundle fails the build, naming the module, and is not written: the contexts
-// build in memory (`write: false`) and this writes their outputs only when they pass, so the
-// bundle on disk (and in a watch's dev host) stays the last good one.
-const STANDARD_DECORATOR_HELPER = /\[\s*"class",\s*"method",\s*"getter",\s*"setter",\s*"accessor",\s*"field"/;
-function standardDecoratorsIn(text) {
-    // esbuild's helper for standard decorators; its kind names survive --minify.
-    if (!STANDARD_DECORATOR_HELPER.test(text)) {
-        return [];
-    }
-    // Unminified, each module is headed by a comment naming it, and each decorated class calls
-    // `__decoratorStart(`. Minified, neither is left.
-    const found = new Set();
-    let module = '';
-    for (const line of text.split('\n')) {
-        const origin = /^\s*\/\/ (\S+\.[cm]?[jt]sx?)$/.exec(line);
-        if (origin) {
-            module = origin[1];
-        } else if (line.includes('__decoratorStart(')) {
-            found.add(module || '(a module before the first module comment)');
-        }
-    }
-    return found.size > 0 ? [...found] : ['a module (build without --minify to see which)'];
-}
-const writeLegacyDecoratorBundles = {
-    name: 'write-legacy-decorator-bundles',
-    setup(build) {
-        build.onEnd(result => {
-            // A failed build has nothing to write, and says why itself.
-            if (result.errors.length > 0 || !result.outputFiles) {
-                return undefined;
-            }
-            const errors = result.outputFiles
-                .filter(file => /\.[cm]?js$/.test(file.path))
-                .flatMap(file => standardDecoratorsIn(file.text).map(module => ({
-                    text: `${path.relative(__dirname, file.path)} not written: ${module} was compiled with standard `
-                        + `decorators, without its package's tsconfig (experimentalDecorators). Resolve it through `
-                        + `\`alias\`, not an onResolve plugin.`
-                })));
-            if (errors.length > 0) {
-                return { errors };
-            }
-            for (const file of result.outputFiles) {
-                fs.mkdirSync(path.dirname(file.path), { recursive: true });
-                fs.writeFileSync(file.path, file.contents);
-            }
-            return undefined;
-        });
-    }
-};
+// packages' source .ts files through an alias, and a bundle is written only when it keeps the
+// legacy decorators the packages' tsconfigs ask for: see scripts/esbuild-dialogram.mjs.
+const workspaceAlias = dialogramAlias(path.resolve(__dirname, '..'));
+const writeBundles = writeLegacyDecoratorBundles({ relativeTo: __dirname });
 
 // Host entry: returns the DialogramApi from activate().
 const hostCtx = await esbuild.context({
@@ -130,7 +77,7 @@ const hostCtx = await esbuild.context({
     minify,
     alias: workspaceAlias,
     write: false,
-    plugins: [writeLegacyDecoratorBundles, ...plugins]
+    plugins: [writeBundles, ...plugins]
 });
 
 // libavoid (WASM), vendored at vendor/libavoid — see its README for why it is
@@ -179,7 +126,7 @@ const platformCtx = await esbuild.context({
     minify,
     alias: workspaceAlias,
     write: false,
-    plugins: [writeLegacyDecoratorBundles, ...plugins]
+    plugins: [writeBundles, ...plugins]
 });
 
 // GLSP diagram client bundle (runs in consumer webviews, browser IIFE)
@@ -200,7 +147,7 @@ const glspClientCtx = await esbuild.context({
     minify,
     alias: workspaceAlias,
     write: false,
-    plugins: [writeLegacyDecoratorBundles, ...plugins],
+    plugins: [writeBundles, ...plugins],
     loader: {
         '.css': 'css',
         '.ttf': 'dataurl',
@@ -219,12 +166,17 @@ const contexts = [hostCtx, platformCtx, glspClientCtx];
 if (watch) {
     await Promise.all(contexts.map(ctx => ctx.watch()));
 } else {
-    try {
-        await Promise.all(contexts.map(ctx => ctx.rebuild()));
-    } catch {
-        // esbuild has printed each error.
-        process.exitCode = 1;
-    } finally {
-        contexts.forEach(ctx => ctx.dispose());
+    // Every context finishes (and writes what passes) before any is disposed: disposing one
+    // cancels a build still running.
+    const results = await Promise.allSettled(contexts.map(ctx => ctx.rebuild()));
+    await Promise.all(contexts.map(ctx => ctx.dispose()));
+    for (const result of results) {
+        if (result.status === 'rejected') {
+            process.exitCode = 1;
+            // esbuild has printed a build's own errors; anything else it has not.
+            if (!Array.isArray(result.reason?.errors)) {
+                console.error(result.reason);
+            }
+        }
     }
 }

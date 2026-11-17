@@ -9,26 +9,19 @@
  * the path import `@dialogram/diagram-client/stock-starter` resolves through
  * the alias README §3 describes.
  */
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
 import { describe, expect, it } from 'vitest';
 import { CUSTOM_DEMO_NODE_TYPE } from './fixtures/custom-view-consumer/custom-node';
+import { dialogramAlias as aliasFor, standardDecoratorsIn } from '../../../scripts/esbuild-dialogram.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const PACKAGES = path.resolve(REPO_ROOT, 'packages');
 
 /** README §3's alias: `@dialogram/<pkg>[/<subpath>]` to the package sources. */
-const dialogramAlias = Object.fromEntries(
-    fs.readdirSync(PACKAGES)
-        .filter(pkg => fs.existsSync(path.join(PACKAGES, pkg, 'src')))
-        .map(pkg => [`@dialogram/${pkg}`, path.join(PACKAGES, pkg, 'src')])
-);
-
-/** esbuild's helper for standard decorators: its kind names, which survive minifying. */
-const STANDARD_DECORATOR_HELPER = /\[\s*"class",\s*"method",\s*"getter",\s*"setter",\s*"accessor",\s*"field"/;
+const dialogramAlias = aliasFor(PACKAGES);
 
 /** Bundle an entry file, or an entry module's own text (`{ contents }`). */
 async function build(entry: string | { contents: string }): Promise<{ js: string; css: string }> {
@@ -93,6 +86,6 @@ describe('the stock start-up, bundled', () => {
         const { js } = await build({ contents: "export { ViewerMouseListener } from '@dialogram/diagram-client/viewer-mouse-listener';" });
         expect(js).toContain('ViewerMouseListener');
         expect(js).toContain('__decorateClass(');
-        expect(js).not.toMatch(STANDARD_DECORATOR_HELPER);
+        expect(standardDecoratorsIn(js)).toEqual([]);
     }, 120_000);
 });

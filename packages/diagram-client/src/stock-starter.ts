@@ -22,10 +22,10 @@
  * Not exported from the package barrel: importing this module starts nothing,
  * but it pulls in GLSP's VS Code webview integration, which only a bundle
  * needs. A product imports it by path, `@dialogram/diagram-client/stock-starter`,
- * which resolves through the build's Dialogram resolver: the package has no
+ * which resolves through the build's Dialogram alias: the package has no
  * `exports` map, so the bundler must map `@dialogram/<pkg>/<subpath>` to
- * `packages/<pkg>/src/<subpath>.ts` (chisel-ide's `resolveDialogramPlugin`;
- * README §3).
+ * `packages/<pkg>/src/<subpath>.ts` (`dialogramAlias` in
+ * scripts/esbuild-dialogram.mjs; README §3).
  */
 
 import 'reflect-metadata';
