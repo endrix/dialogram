@@ -3,6 +3,7 @@ import * as esbuild from 'esbuild';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { dialogramAlias, writeLegacyDecoratorBundles } from '../../scripts/esbuild-dialogram.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const watch = process.argv.includes('--watch');
@@ -54,22 +55,11 @@ const srcDirs = {
     'sidecar-toolkit': path.resolve(__dirname, '../sidecar-toolkit/src'),
 };
 
-// Plugin to resolve @dialogram/* imports (including subpaths such as
-// @dialogram/extension-core/api) to source .ts files
-const resolveWorkspacePlugin = {
-    name: 'resolve-workspace-packages',
-    setup(build) {
-        build.onResolve({ filter: /^@dialogram\// }, args => {
-            const [pkg, ...rest] = args.path.replace('@dialogram/', '').split('/');
-            const srcDir = srcDirs[pkg];
-            if (!srcDir) {
-                return undefined;
-            }
-            const entry = rest.length === 0 ? 'index' : rest.join('/');
-            return { path: path.join(srcDir, `${entry}.ts`) };
-        });
-    }
-};
+// @dialogram/* imports (subpaths too, such as @dialogram/extension-core/api) resolve to the
+// packages' source .ts files through an alias, and a bundle is written only when it keeps the
+// legacy decorators the packages' tsconfigs ask for: see scripts/esbuild-dialogram.mjs.
+const workspaceAlias = dialogramAlias(path.resolve(__dirname, '..'));
+const writeBundles = writeLegacyDecoratorBundles({ relativeTo: __dirname });
 
 // Host entry: returns the DialogramApi from activate().
 const hostCtx = await esbuild.context({
@@ -85,7 +75,9 @@ const hostCtx = await esbuild.context({
     platform: 'node',
     sourcemap: !minify,
     minify,
-    plugins: [resolveWorkspacePlugin, ...plugins]
+    alias: workspaceAlias,
+    write: false,
+    plugins: [writeBundles, ...plugins]
 });
 
 // libavoid (WASM), vendored at vendor/libavoid — see its README for why it is
@@ -132,7 +124,9 @@ const platformCtx = await esbuild.context({
     platform: 'node',
     sourcemap: !minify,
     minify,
-    plugins: [resolveWorkspacePlugin, ...plugins]
+    alias: workspaceAlias,
+    write: false,
+    plugins: [writeBundles, ...plugins]
 });
 
 // GLSP diagram client bundle (runs in consumer webviews, browser IIFE)
@@ -151,7 +145,9 @@ const glspClientCtx = await esbuild.context({
     platform: 'browser',
     sourcemap: false,
     minify,
-    plugins: [resolveWorkspacePlugin, ...plugins],
+    alias: workspaceAlias,
+    write: false,
+    plugins: [writeBundles, ...plugins],
     loader: {
         '.css': 'css',
         '.ttf': 'dataurl',
@@ -170,6 +166,17 @@ const contexts = [hostCtx, platformCtx, glspClientCtx];
 if (watch) {
     await Promise.all(contexts.map(ctx => ctx.watch()));
 } else {
-    await Promise.all(contexts.map(ctx => ctx.rebuild()));
-    contexts.forEach(ctx => ctx.dispose());
+    // Every context finishes (and writes what passes) before any is disposed: disposing one
+    // cancels a build still running.
+    const results = await Promise.allSettled(contexts.map(ctx => ctx.rebuild()));
+    await Promise.all(contexts.map(ctx => ctx.dispose()));
+    for (const result of results) {
+        if (result.status === 'rejected') {
+            process.exitCode = 1;
+            // esbuild has printed a build's own errors; anything else it has not.
+            if (!Array.isArray(result.reason?.errors)) {
+                console.error(result.reason);
+            }
+        }
+    }
 }
