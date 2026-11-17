@@ -103,4 +103,48 @@ describe('createRegistryChatTools (T7)', () => {
         const text = await toolNamed('list_workflow_types', invoke).handler('/abs/net.py', {});
         expect(text).toContain('Error: boom');
     });
+
+    it('validate_workflow judges by the plan when the profile elaborates through it', async () => {
+        // The export reads the file as fine; the plan, which draws the diagram, does not.
+        const { invoke, calls } = stubInvoke({ status: 'ok', diagnostic: { graph: { nodes: [], edges: [] } } });
+        const planned: Array<Record<string, unknown>> = [];
+        const tools = createRegistryChatTools({
+            invoke,
+            exportOp: 'exportGraph',
+            scopeArgKey: 'workflow',
+            elaborate: async (_file, args) => {
+                planned.push(args);
+                return {
+                    ok: true,
+                    response: {
+                        status: 'ok',
+                        diagnostic: {
+                            graph: { nodes: [], edges: [] },
+                            partial: true,
+                            errors: [{ message: "TypeError: connect() target is the node 'show'", file: 'wf.py', line: 19 }]
+                        }
+                    }
+                };
+            }
+        });
+        const verdict = JSON.parse(await tools.find(t => t.name === 'validate_workflow')!.handler('/abs/wf.py', { network: 'outer' }));
+        expect(calls).toHaveLength(0);
+        expect(planned).toEqual([{ workflow: 'outer' }]);
+        expect(verdict.ok).toBe(false);
+        expect(verdict.partial).toBe(true);
+        expect(verdict.errors[0].message).toContain("target is the node 'show'");
+        expect(verdict.errors[0].location).toEqual({ file: 'wf.py', line: 19, column: null });
+    });
+
+    it('validate_workflow says why when the plan could not run at all', async () => {
+        const { invoke } = stubInvoke({});
+        const tools = createRegistryChatTools({
+            invoke,
+            scopeArgKey: 'workflow',
+            elaborate: async () => ({ ok: false, message: 'wfpy: command not found' })
+        });
+        const verdict = JSON.parse(await tools.find(t => t.name === 'validate_workflow')!.handler('/abs/wf.py', {}));
+        expect(verdict.ok).toBe(false);
+        expect(verdict.errors[0].message).toBe('wfpy: command not found');
+    });
 });

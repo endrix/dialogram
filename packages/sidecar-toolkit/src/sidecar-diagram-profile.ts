@@ -617,8 +617,8 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
     // Read-only, the one op anyone asks for is the graph export, and the CLI
     // plan answers it, in the sidecar's envelope, with the same deadline the
     // model source gives the plan; the op name is not looked at.
-    const invoke = readOnly && cliGraphArgs
-        ? (file: string, _opName: string, args: Record<string, unknown>) => {
+    const planGraph = cliGraphArgs
+        ? (file: string, args: Record<string, unknown>) => {
             const scopeUri = vscode.Uri.file(file);
             const scoped = args[input.scopeArgKey];
             return exportGraphFromCli(file, {
@@ -628,6 +628,9 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
                 timeoutMs: getGraphLoadTimeoutMs(runtimeConfig, vscode, scopeUri)
             });
         }
+        : undefined;
+    const invoke = readOnly && planGraph
+        ? (file: string, _opName: string, args: Record<string, unknown>) => planGraph(file, args)
         : (file: string, opName: string, args: Record<string, unknown>) =>
             invokeSidecarOp(
                 file,
@@ -635,11 +638,15 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
                 opName,
                 args
             );
+    // The diagram of a profile drawn from the CLI plan shows what the plan makes of the file,
+    // so the agent's verdict is the plan's too, never the export's (see RegistryToolsConfig).
+    const elaborate = input.graphAcquisition === 'cli-plan' ? planGraph : undefined;
     const chatTools = createRegistryChatTools({
         scopeArgKey: input.scopeArgKey,
         exportOp: input.exportOp,
         invoke,
-        graphOnly: readOnly
+        graphOnly: readOnly,
+        elaborate
     });
     // The source by reference (`chat.sourceContext: 'reference'`): no file
     // attached, a compact graph summary, and a selected node as a file and line.

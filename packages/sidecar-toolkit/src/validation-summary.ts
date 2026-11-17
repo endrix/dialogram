@@ -52,12 +52,14 @@ export function summarizeValidation(result: any): Record<string, unknown> {
     return { ok: false, partial: true, problems: 1, summary: '1 problem found (file did not elaborate).', errors, elements };
   }
 
-  for (const e of (Array.isArray(graph.errors) ? graph.errors : [])) {
+  // A plan document carries its errors and `partial` beside the graph; an export, inside it.
+  const documentErrors = Array.isArray(result?.diagnostic?.errors) ? result.diagnostic.errors : [];
+  for (const e of [...(Array.isArray(graph.errors) ? graph.errors : []), ...documentErrors]) {
     errors.push({
       severity: e?.severity ?? 'error',
       code: e?.code,
       message: e?.message,
-      location: e?.location ?? null,
+      location: e?.location ?? (e?.file ? { file: e.file, line: e.line ?? null, column: e.column ?? null } : null),
     });
   }
 
@@ -80,7 +82,7 @@ export function summarizeValidation(result: any): Record<string, unknown> {
   scan(graph.nodes, 'node');
   scan(graph.edges, 'edge');
 
-  const partial = graph.partial === true;
+  const partial = graph.partial === true || result?.diagnostic?.partial === true;
   const erroredElements = elements.filter((e) => e.errored).length;
   const problems = errors.filter((e) => e.severity === 'error').length + erroredElements;
   const ok = !partial && problems === 0;
