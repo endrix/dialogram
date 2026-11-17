@@ -142,7 +142,7 @@ describe('a contributed annotation editor', () => {
         await tick();
         expect(panel.last(UPDATE)).toEqual({
             kind: UPDATE, isOperation: true, elementId: 'node:scope:root:probed', action: 'upsert',
-            annotationName: 'probe', annotationText: '@probe(\n    level=1,\n    note="x"\n)'
+            annotationName: 'probe', annotationText: '@probe(level=1, note="x")'
         });
     });
 });
@@ -160,8 +160,17 @@ describe('the panel without annotation editors', () => {
         await tick();
         expect(panel.last(UPDATE)).toEqual({
             kind: UPDATE, isOperation: true, elementId: 'node:scope:root:bare', action: 'upsert',
-            annotationName: 'agent', annotationText: '@agent(\n    prompt="hi",\n    model="m"\n)'
+            annotationName: 'agent', annotationText: '@agent(prompt="hi", model="m")'
         });
+    });
+
+    it('writes one argument a line when they do not fit one', async () => {
+        const panel = panelWith(undefined);
+        const prompt = `"${'a long prompt '.repeat(6).trim()}"`;
+        panel.show(taskNode('bare', [{ name: 'agent', arguments: [{ name: 'prompt', value: prompt }, { name: 'model', value: '"m"' }] }]));
+        button(card('agent'), 'Save').click();
+        await tick();
+        expect(panel.last(UPDATE)?.annotationText).toBe(`@agent(\n    prompt=${prompt},\n    model="m"\n)`);
     });
 });
 

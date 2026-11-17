@@ -76,7 +76,7 @@ describe('an annotation the producer works out', () => {
         expect([...streamblocks.querySelectorAll('.annotation-derived-arg')].map(row => row.textContent)).toEqual(['network = "top"']);
         button(streamblocks, 'Save').click();
         await tick();
-        expect(panel.last(UPDATE)?.annotationText).toBe('@streamblocks(\n    facade="instance",\n    run=False\n)');
+        expect(panel.last(UPDATE)?.annotationText).toBe('@streamblocks(facade="instance", run=False)');
     });
 });
 

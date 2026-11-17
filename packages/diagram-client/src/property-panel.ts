@@ -814,11 +814,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
 
                         const text = editor?.formatAnnotation
                             ? editor.formatAnnotation(argsMap, pairs)
-                            : (pairs.length === 0
-                                ? `@${name}`
-                                : `@${name}(\n${pairs
-                                    .map(([k, v]) => `    ${k}=${v}`)
-                                    .join(',\n')}\n)`);
+                            : this.annotationTextOf(name, pairs);
 
                         // An editor that merges sends its arguments beside the text, so the
                         // server keeps the args the card doesn't manage (outputValidators,
@@ -940,6 +936,21 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         }
 
         return annSection;
+    }
+
+    /**
+     * `@name(k=v, …)`: on one line when it fits one (88 columns, as Black
+     * and ruff write Python), one argument a line otherwise.
+     */
+    protected annotationTextOf(name: string, pairs: ReadonlyArray<readonly [string, string]>): string {
+        if (pairs.length === 0) {
+            return `@${name}`;
+        }
+        const oneLine = `@${name}(${pairs.map(([k, v]) => `${k}=${v}`).join(', ')})`;
+        if (oneLine.length <= 88 && !oneLine.includes('\n')) {
+            return oneLine;
+        }
+        return `@${name}(\n${pairs.map(([k, v]) => `    ${k}=${v}`).join(',\n')}\n)`;
     }
 
     /** Arguments shown as they are, `name = value`, with what they are (`note`). */
