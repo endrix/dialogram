@@ -44,7 +44,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { dialogramAlias } from '../esbuild-dialogram.mjs';
+import { dialogramBuild } from '../esbuild-dialogram.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '../..');
@@ -143,12 +143,12 @@ function parseArgs(argv) {
  * each package's tsconfig too; this pins the renderer's own entries). */
 const TSCONFIG = { compilerOptions: { experimentalDecorators: true, useDefineForClassFields: false } };
 
-/** `@dialogram/*` to the workspace sources, through the alias the extension's build uses. */
-const DIALOGRAM_ALIAS = dialogramAlias(path.join(REPO, 'packages'));
+/** `@dialogram/*` to the workspace sources, as the extension's build builds them. */
+const PLATFORM = { packagesDir: path.join(REPO, 'packages') };
 
 async function bundleSchemaBuilder(workDir) {
     const outfile = path.join(workDir, 'build-schema.cjs');
-    await esbuild.build({
+    await esbuild.build(dialogramBuild({
         entryPoints: [path.join(HERE, 'build-schema.ts')],
         outfile,
         bundle: true,
@@ -157,15 +157,14 @@ async function bundleSchemaBuilder(workDir) {
         target: 'node18',
         logLevel: 'error',
         external: ['vscode'],
-        tsconfigRaw: TSCONFIG,
-        alias: DIALOGRAM_ALIAS
-    });
+        tsconfigRaw: TSCONFIG
+    }, PLATFORM));
     return outfile;
 }
 
 async function bundleClient(workDir) {
     const outdir = path.join(workDir, 'bundle');
-    await esbuild.build({
+    await esbuild.build(dialogramBuild({
         entryPoints: [path.join(HERE, 'headless-entry.ts')],
         outdir,
         bundle: true,
@@ -174,10 +173,9 @@ async function bundleClient(workDir) {
         target: 'ES2017',
         logLevel: 'error',
         tsconfigRaw: TSCONFIG,
-        alias: DIALOGRAM_ALIAS,
         loader: { '.css': 'css', '.ttf': 'dataurl', '.woff': 'dataurl', '.woff2': 'dataurl', '.eot': 'dataurl', '.svg': 'dataurl' },
         define: { 'process.env.NODE_ENV': '"production"', global: 'window' }
-    });
+    }, PLATFORM));
     return outdir;
 }
 

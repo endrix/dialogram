@@ -14,31 +14,27 @@ import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
 import { describe, expect, it } from 'vitest';
 import { CUSTOM_DEMO_NODE_TYPE } from './fixtures/custom-view-consumer/custom-node';
-import { dialogramAlias as aliasFor, standardDecoratorsIn } from '../../../scripts/esbuild-dialogram.mjs';
+import { dialogramBuild, standardDecoratorsIn } from '../../../scripts/esbuild-dialogram.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const PACKAGES = path.resolve(REPO_ROOT, 'packages');
 
-/** README §3's alias: `@dialogram/<pkg>[/<subpath>]` to the package sources. */
-const dialogramAlias = aliasFor(PACKAGES);
-
 /** Bundle an entry file, or an entry module's own text (`{ contents }`). */
 async function build(entry: string | { contents: string }): Promise<{ js: string; css: string }> {
-    const result = await esbuild.build({
+    // README §3's build, in memory.
+    const result = await esbuild.build(dialogramBuild({
         ...(typeof entry === 'string'
             ? { entryPoints: [entry] }
             : { stdin: { contents: entry.contents, resolveDir: __dirname, loader: 'ts' as const, sourcefile: 'entry.ts' } }),
         absWorkingDir: REPO_ROOT,
         bundle: true,
-        write: false,
         outdir: 'stock-starter-build-out',
         format: 'iife',
         platform: 'browser',
         target: 'ES2017',
         jsxFactory: 'svg',
         logLevel: 'silent',
-        alias: dialogramAlias,
         loader: {
             '.css': 'css',
             '.ttf': 'dataurl',
@@ -51,7 +47,7 @@ async function build(entry: string | { contents: string }): Promise<{ js: string
             'process.env.NODE_ENV': '"production"',
             global: 'window'
         }
-    });
+    }, { packagesDir: PACKAGES, inMemory: true }));
     expect(result.errors).toEqual([]);
     const js = result.outputFiles.find(f => f.path.endsWith('.js'))!.text;
     const css = result.outputFiles.find(f => f.path.endsWith('.css'))?.text ?? '';

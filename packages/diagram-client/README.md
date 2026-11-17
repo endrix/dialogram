@@ -123,16 +123,13 @@ to the package sources itself. That is what makes the path imports in §4
 `@dialogram/diagram-client/diagram-client.css`) resolve:
 
 ```js
-const { dialogramAlias, writeLegacyDecoratorBundles } = await import(
+const { dialogramBuild } = await import(
     pathToFileURL(path.join(dialogramRoot, 'scripts/esbuild-dialogram.mjs')).href
 );
 
-await esbuild.build({
-    // ...the options above, and:
-    alias: dialogramAlias(path.join(dialogramRoot, 'packages')),
-    write: false,                                   // the plugin writes what passes
-    plugins: [writeLegacyDecoratorBundles()]
-});
+await esbuild.build(dialogramBuild({
+    // ...the options above, your own plugins among them
+}, { packagesDir: path.join(dialogramRoot, 'packages') }));
 ```
 
 Use esbuild's `alias`, not an `onResolve` plugin. esbuild applies a
@@ -141,9 +138,22 @@ resolves is compiled without the package's `experimentalDecorators`, with
 standard decorators, and inversify's property `@inject` throws when the bundle
 loads ("Cannot read properties of undefined (reading 'prototype')"). It shows
 only once a decorated module is first imported by package name, which is why a
-plugin can seem to work. `writeLegacyDecoratorBundles` fails the build, naming
-the module, rather than write such a bundle; the extension's own build uses
-both (`packages/extension/esbuild.mjs`).
+plugin can seem to work. `dialogramBuild` adds the alias (`dialogramAlias`)
+and plugins around yours:
+- before them, a check that fails the build, naming the module, when one was
+  compiled with standard decorators;
+- after them, the refusal of a `@dialogram/` path the alias does not map and
+  `external` does not name, which esbuild would otherwise look for in
+  `node_modules` (another checkout, perhaps), so a plugin of yours may serve
+  such a path;
+- last, the write: only when no `onEnd` failed the build, and only the files
+  that changed, so a failed build leaves the last good bundle.
+
+The wrapper writes the bundle itself (leave `write` out); `{ inMemory: true }`
+leaves the outputs in `outputFiles` instead, checked all the same. A "build
+succeeded" line belongs in `{ onWritten }`, which runs once the files are on
+disk: a plugin's `onEnd` of yours runs before the write. The extension's own
+build and the SVG renderer build this way.
 
 A product with its own `node_modules` also pins GLSP, Sprotty and inversify to
 the platform's copy, so the bundle has one inversify realm (chisel-ide's
