@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
-import { activeSourceUri, readRequestedNetworkName, resolveDiagramOpenTarget } from '../../extension-core/src/extension/diagram/open-diagram-target';
+import {
+    TEXT_DOCUMENT_LIMIT_BYTES,
+    activeSourceUri,
+    readRequestedNetworkName,
+    resolveDiagramOpenTarget,
+    sizeOfFile,
+    tabSourceUri
+} from '../../extension-core/src/extension/diagram/open-diagram-target';
 
 describe('resolveDiagramOpenTarget', () => {
     it('accepts an absolute python path outside the active editor and returns the opened file uri', async () => {
@@ -22,59 +29,139 @@ describe('resolveDiagramOpenTarget', () => {
     // VS Code does not hand a file over 50 MB to extensions as a text document:
     // `openTextDocument` rejects. A generated circuit is that large, and its
     // diagram is drawn from the file, not from a text document.
-    const tooLargeForText = async (): Promise<{ uri: vscode.Uri }> => {
+    const refusedAsText = async (): Promise<{ uri: vscode.Uri }> => {
         throw new Error('Files above 50MB cannot be synchronized with extensions.');
     };
+    const sixtyFourMegabytes = 64 * 1024 * 1024;
 
-    it('opens a file VS Code will not open as text, when the file is there', async () => {
+    it('opens a file refused as text for its size', async () => {
         const targetUri = vscode.Uri.file('/designs/Top.fir');
-        const fileExists = vi.fn(async () => true);
+        const fileSize = vi.fn(async () => sixtyFourMegabytes);
 
         const resolved = await resolveDiagramOpenTarget(targetUri, {
             getActiveWorkflowUri: () => undefined,
-            openTextDocument: tooLargeForText,
-            fileExists,
+            openTextDocument: refusedAsText,
+            fileSize,
             sourceExtensions: ['.fir']
         });
 
-        expect(fileExists).toHaveBeenCalledWith(targetUri);
+        expect(fileSize).toHaveBeenCalledWith(targetUri);
         expect(resolved?.toString()).toBe(targetUri.toString());
     });
 
-    it('does not open a file that is not there', async () => {
-        const resolved = await resolveDiagramOpenTarget(vscode.Uri.file('/designs/Gone.fir'), {
-            getActiveWorkflowUri: () => undefined,
-            openTextDocument: tooLargeForText,
-            fileExists: async () => false,
-            sourceExtensions: ['.fir']
-        });
-
-        expect(resolved).toBeUndefined();
-    });
-
-    it('does not open a file it cannot open as text when nothing can say it is there', async () => {
-        // A caller that gives no `fileExists` keeps the answer it had.
+    it('does not open a file refused as text for another reason', async () => {
+        // A binary, an undecodable file: small enough to have been handed
+        // over, so its size is not why it was refused, and it is not a source.
         const resolved = await resolveDiagramOpenTarget(vscode.Uri.file('/designs/Top.fir'), {
             getActiveWorkflowUri: () => undefined,
-            openTextDocument: tooLargeForText,
+            openTextDocument: refusedAsText,
+            fileSize: async () => 4096,
             sourceExtensions: ['.fir']
         });
 
         expect(resolved).toBeUndefined();
     });
 
-    it('does not ask whether a file of another kind is there', async () => {
-        const fileExists = vi.fn(async () => true);
+    it('does not open a file exactly at the limit, which is handed over', async () => {
+        const resolved = await resolveDiagramOpenTarget(vscode.Uri.file('/designs/Top.fir'), {
+            getActiveWorkflowUri: () => undefined,
+            openTextDocument: refusedAsText,
+            fileSize: async () => TEXT_DOCUMENT_LIMIT_BYTES,
+            sourceExtensions: ['.fir']
+        });
+
+        expect(resolved).toBeUndefined();
+    });
+
+    it('does not open what is not a file that is there', async () => {
+        for (const fileSize of [async () => undefined, async () => { throw new Error('ENOENT'); }]) {
+            const resolved = await resolveDiagramOpenTarget(vscode.Uri.file('/designs/Gone.fir'), {
+                getActiveWorkflowUri: () => undefined,
+                openTextDocument: refusedAsText,
+                fileSize,
+                sourceExtensions: ['.fir']
+            });
+            expect(resolved).toBeUndefined();
+        }
+    });
+
+    it('does not open a file it cannot open as text when nothing can say how large it is', async () => {
+        // A caller that gives no `fileSize` keeps the answer it had.
+        const resolved = await resolveDiagramOpenTarget(vscode.Uri.file('/designs/Top.fir'), {
+            getActiveWorkflowUri: () => undefined,
+            openTextDocument: refusedAsText,
+            sourceExtensions: ['.fir']
+        });
+
+        expect(resolved).toBeUndefined();
+    });
+
+    it('does not ask how large a file of another kind is', async () => {
+        const fileSize = vi.fn(async () => sixtyFourMegabytes);
 
         const resolved = await resolveDiagramOpenTarget(vscode.Uri.file('/designs/notes.txt'), {
             getActiveWorkflowUri: () => undefined,
-            openTextDocument: tooLargeForText,
-            fileExists,
+            openTextDocument: refusedAsText,
+            fileSize,
             sourceExtensions: ['.fir']
         });
 
         expect(resolved).toBeUndefined();
-        expect(fileExists).not.toHaveBeenCalled();
+        expect(fileSize).not.toHaveBeenCalled();
+    });
+
+    it('names a file refused for its size by its path, as a text document is named', async () => {
+        // A caller keys an open diagram by this URI, so the file has one
+        // however it was asked for.
+        const asPath = await resolveDiagramOpenTarget('/designs/Top.fir', {
+            getActiveWorkflowUri: () => undefined,
+            openTextDocument: refusedAsText,
+            fileSize: async () => sixtyFourMegabytes,
+            sourceExtensions: ['.fir']
+        });
+        const asUri = await resolveDiagramOpenTarget('file:///designs/Top.fir', {
+            getActiveWorkflowUri: () => undefined,
+            openTextDocument: refusedAsText,
+            fileSize: async () => sixtyFourMegabytes,
+            sourceExtensions: ['.fir']
+        });
+
+        expect(asPath?.toString()).toBe(vscode.Uri.file('/designs/Top.fir').toString());
+        expect(asUri?.toString()).toBe(asPath?.toString());
+    });
+});
+
+describe('sizeOfFile', () => {
+    it('is the size of a file, and of a link to one', () => {
+        expect(sizeOfFile({ type: vscode.FileType.File, size: 12 })).toBe(12);
+        expect(sizeOfFile({ type: vscode.FileType.File | vscode.FileType.SymbolicLink, size: 12 })).toBe(12);
+    });
+
+    it('is nothing for a folder, a link to one, or anything else', () => {
+        // The type is a bitmask: a link to a folder is not `Directory` alone.
+        expect(sizeOfFile({ type: vscode.FileType.Directory, size: 4096 })).toBeUndefined();
+        expect(sizeOfFile({ type: vscode.FileType.Directory | vscode.FileType.SymbolicLink, size: 4096 })).toBeUndefined();
+        expect(sizeOfFile({ type: vscode.FileType.Unknown, size: 0 })).toBeUndefined();
+    });
+});
+
+describe('tabSourceUri', () => {
+    const file = vscode.Uri.file('/designs/Top.fir');
+
+    it('is the file of a text editor and of a custom editor', () => {
+        expect(tabSourceUri(new vscode.TabInputText(file))).toBe(file);
+        expect(tabSourceUri(new vscode.TabInputCustom(file, 'hex.editor'))).toBe(file);
+    });
+
+    it('is the side being edited, for a diff', () => {
+        const original = vscode.Uri.file('/designs/Top.fir.orig');
+        expect(tabSourceUri(new vscode.TabInputTextDiff(original, file))).toBe(file);
+    });
+
+    it('is nothing for a tab that shows no such file', () => {
+        expect(tabSourceUri(new vscode.TabInputNotebook(file, 'jupyter-notebook'))).toBeUndefined();
+        expect(tabSourceUri({ uri: file })).toBeUndefined();
+        expect(tabSourceUri(undefined)).toBeUndefined();
     });
 });
 

@@ -835,10 +835,13 @@ it no longer has.
   open commands asked both, so on such a file (a generated circuit of a
   processor with an accelerator is 64 MB) they said to open a file first, to
   someone looking at one. A command with no argument takes the active tab's
-  file when no diagram or text editor is in front (`activeSourceUri`), and a
-  file that cannot be opened as text is a target when it is there
-  (`ResolveDiagramOpenTargetOptions.fileExists`). A diagram is drawn from the
-  file by its producer and never needed the text document.
+  file when no diagram or text editor is in front (`activeSourceUri`,
+  `tabSourceUri`), and a file refused as text for its size, and only for
+  that, is a target (`ResolveDiagramOpenTargetOptions.fileSize`). A diagram is
+  drawn from the file by its producer and never needed the text document.
+  Where the text is needed it is said instead of thrown: a rename answers
+  that nothing was renamed, and a source with no diagram to show says it
+  could not be opened as text either.
 - **A double-click that opens a node's source shows the editor the file
   already has.** The opens of #165 went through the extension's own
   handler; a double-click on a node with no diagram behind it

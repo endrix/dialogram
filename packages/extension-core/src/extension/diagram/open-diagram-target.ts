@@ -39,15 +39,17 @@ export type ResolveDiagramOpenTargetOptions = {
     getActiveWorkflowUri: () => vscode.Uri | undefined;
     openTextDocument: (uri: vscode.Uri) => Thenable<{ uri: vscode.Uri }>;
     /**
-     * Whether a file is there, asked when it could not be opened as text.
+     * The size of a file in bytes, `undefined` when it is not a file that is
+     * there; asked when the file could not be opened as text.
      *
      * VS Code does not hand a file over 50 MB to extensions as a text
      * document, and a generated source can be larger: a circuit, a netlist.
      * The diagram of such a file is drawn from the file by its producer and
-     * needs no text document, so a file that exists is a file to open. Absent,
+     * needs no text document, so a file refused for its size is still a file
+     * to open. One refused for another reason (a binary, say) is not. Absent,
      * a file that cannot be opened as text is not a target, as before.
      */
-    fileExists?: (uri: vscode.Uri) => Thenable<boolean>;
+    fileSize?: (uri: vscode.Uri) => Thenable<number | undefined>;
     workspaceRoot?: string;
     /** The profile's declared source extensions; absent/empty accepts any file
      *  (see `source-extensions.ts` for why the default is permissive). */
@@ -130,12 +132,45 @@ export async function resolveDiagramOpenTarget(
         const document = await options.openTextDocument(resolved);
         return document.uri;
     } catch {
+        // Refused as text. For its size, and only for that, it is still a
+        // source: no file of 50 MB or less is too large to be handed over.
         try {
-            return options.fileExists && (await options.fileExists(resolved)) ? resolved : undefined;
+            const size = options.fileSize ? await options.fileSize(resolved) : undefined;
+            // By its path, as a text document's is: a caller keys an open
+            // diagram by the URI, and must find it whichever way the file
+            // was named.
+            return size !== undefined && size > TEXT_DOCUMENT_LIMIT_BYTES ? vscode.Uri.file(resolved.fsPath) : undefined;
         } catch {
             return undefined;
         }
     }
+}
+
+/** The size past which VS Code keeps a file's text from extensions. */
+export const TEXT_DOCUMENT_LIMIT_BYTES = 50 * 1024 * 1024;
+
+/**
+ * The size of what a `stat` found when it is a file, a link to one included;
+ * `undefined` for a folder or anything else. The type is a bitmask: a link to
+ * a folder is a folder, and compared with `Directory` alone it was not one.
+ */
+export function sizeOfFile(stat: { type: number; size: number }): number | undefined {
+    return (stat.type & vscode.FileType.File) !== 0 ? stat.size : undefined;
+}
+
+/**
+ * The file a tab shows, for the kinds of tab that show a file a diagram can
+ * be of: a text editor, a custom editor, and a diff, whose file is the side
+ * being edited. A notebook, a terminal, a webview show no such file.
+ */
+export function tabSourceUri(input: unknown): vscode.Uri | undefined {
+    if (input instanceof vscode.TabInputText || input instanceof vscode.TabInputCustom) {
+        return input.uri;
+    }
+    if (input instanceof vscode.TabInputTextDiff) {
+        return input.modified;
+    }
+    return undefined;
 }
 
 /** What the window has in front: each as VS Code reports it, any of them absent. */

@@ -83,6 +83,34 @@ export class Uri {
     }
 }
 
+/** A text editor's tab. */
+export class TabInputText {
+    constructor(public readonly uri: Uri) {}
+}
+
+/** A custom editor's tab. */
+export class TabInputCustom {
+    constructor(public readonly uri: Uri, public readonly viewType: string) {}
+}
+
+/** A diff's tab: the two sides, and no file of its own. */
+export class TabInputTextDiff {
+    constructor(public readonly original: Uri, public readonly modified: Uri) {}
+}
+
+/** A notebook's tab. */
+export class TabInputNotebook {
+    constructor(public readonly uri: Uri, public readonly notebookType: string) {}
+}
+
+/** A bitmask, as in VS Code: a symbolic link to a file is `File | SymbolicLink`. */
+export enum FileType {
+    Unknown = 0,
+    File = 1,
+    Directory = 2,
+    SymbolicLink = 64
+}
+
 export class TextEdit {
     constructor(
         public readonly range: Range,
