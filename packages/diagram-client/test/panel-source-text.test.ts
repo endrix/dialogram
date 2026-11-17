@@ -51,6 +51,50 @@ describe('an argument', () => {
     });
 });
 
+describe('an argument written over several lines', () => {
+    const PROMPT = '"""first line\nsecond line"""';
+    const CALL = 'File(\n    path=TESTBENCH,  # tb\n    ext=""\n)';
+    const node = () => taskNode('front', [], {
+        [WorkflowDiagramMetadata.ENTITY_PARAMETERS]: [
+            { name: 'text', kind: 'value', type: 'str', value: "'first line\\nsecond line'", expression: PROMPT },
+            { name: 'path', kind: 'value', type: 'File', value: "File(path='/abs/tb.cpp', ext='')", expression: CALL }
+        ],
+        [WorkflowDiagramMetadata.ENTITY_DEFINITION_PARAMETERS]: [{ name: 'text', type: 'str' }, { name: 'path', type: 'File' }]
+    });
+
+    it('keeps its lines, and is written back as it is by an Update of it unchanged', async () => {
+        const panel = new TestPanel();
+        panel.show(node());
+        const fields = [...section('Instance Parameters')!.querySelectorAll('textarea.pp-input')] as HTMLTextAreaElement[];
+        expect(fields.map(field => field.value)).toEqual([PROMPT, CALL]);
+        const update = fields[1].closest('.pp-arow')!.querySelector('button[title="Update"]') as HTMLButtonElement;
+        update.click();
+        await tick();
+        expect(panel.last('dialogram.updateEntityParameter')).toMatchObject({ parameterName: 'path', newValue: CALL.trim() });
+    });
+
+    it('starts a line on Enter, and is committed on Ctrl+Enter', async () => {
+        const panel = new TestPanel();
+        panel.show(node());
+        const field = section('Instance Parameters')!.querySelector('textarea.pp-input') as HTMLTextAreaElement;
+        field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        await tick();
+        expect(panel.last('dialogram.updateEntityParameter')).toBeUndefined();
+        field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
+        await tick();
+        expect(panel.last('dialogram.updateEntityParameter')).toMatchObject({ parameterName: 'text', newValue: PROMPT });
+    });
+
+    it('in a one-line argument stays an input', () => {
+        new TestPanel().show(taskNode('front', [], {
+            [WorkflowDiagramMetadata.ENTITY_PARAMETERS]: [{ name: 'text', kind: 'value', type: 'str', value: "'x'", expression: 'FRONT_OPTIONS' }],
+            [WorkflowDiagramMetadata.ENTITY_DEFINITION_PARAMETERS]: [{ name: 'text', type: 'str' }]
+        }));
+        expect(section('Instance Parameters')!.querySelectorAll('textarea').length).toBe(0);
+        expect((section('Instance Parameters')!.querySelector('input.pp-input') as HTMLInputElement).value).toBe('FRONT_OPTIONS');
+    });
+});
+
 describe('an annotation the producer works out', () => {
     const VIEWER = { name: 'viewer', derived: true, arguments: [{ name: 'action', value: '"open"' }, { name: 'path', value: '"/abs/tb.cpp"' }] };
     const SOURCE = { name: 'source', arguments: [{ name: 'port', value: '"Out"', derived: true }] };

@@ -3869,3 +3869,14 @@ details[open] > summary .agent-chat-expand-arrow {
     opacity: 0.8;
     pointer-events: none;
 }
+
+/* Source text of several lines (a triple-quoted string, a call over lines): kept as written. */
+textarea.source-lines {
+    resize: vertical;
+    min-height: 2.4em;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: pre;
+    overflow-x: auto;
+}

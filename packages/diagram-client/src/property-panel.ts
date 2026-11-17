@@ -939,6 +939,43 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     }
 
     /**
+     * A field holding source text: an input, or -- for text of several
+     * lines (a triple-quoted string, a call written over lines) -- a
+     * textarea, which keeps the line breaks an input would drop, so an
+     * Update of it unchanged writes back what the source has. Enter commits
+     * an input; in a textarea it starts a line, and Ctrl/Cmd+Enter commits.
+     */
+    protected sourceField(
+        value: string,
+        options: {
+            className: string;
+            fieldRef?: ReturnType<typeof createRef<HTMLInputElement | HTMLTextAreaElement>>;
+            placeholder?: string;
+            ariaLabel?: string;
+            onInput?: () => void;
+            onCommit: (e: Event) => void;
+        }
+    ): TemplateResult {
+        const field = options.fieldRef ?? createRef<HTMLInputElement | HTMLTextAreaElement>();
+        const onKeydown = (e: KeyboardEvent): void => {
+            const lines = e.target instanceof HTMLTextAreaElement;
+            if (e.key === 'Enter' && (!lines || e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                options.onCommit(e);
+            }
+        };
+        if (value.includes('\n')) {
+            return html`<textarea ${ref(field)} class=${`${options.className} source-lines`}
+                rows=${Math.min(value.split('\n').length, 8)} .value=${value}
+                placeholder=${options.placeholder ?? ''} aria-label=${options.ariaLabel ?? nothing}
+                title="Ctrl+Enter to commit" @input=${() => options.onInput?.()} @keydown=${onKeydown}></textarea>`;
+        }
+        return html`<input ${ref(field)} class=${options.className} .value=${value}
+            placeholder=${options.placeholder ?? ''} aria-label=${options.ariaLabel ?? nothing}
+            @input=${() => options.onInput?.()} @keydown=${onKeydown} />`;
+    }
+
+    /**
      * `@name(k=v, …)`: on one line when it fits one (88 columns, as Black
      * and ruff write Python), one argument a line otherwise.
      */
@@ -1134,7 +1171,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         const paramRows = rows.map((original) => {
             const nameRef = createRef<HTMLInputElement>();
             const typeRef = createRef<HTMLInputElement>();
-            const defRef = createRef<HTMLInputElement>();
+            const defRef = createRef<HTMLInputElement | HTMLTextAreaElement>();
             const rowRef = createRef<HTMLDivElement>();
             const markDirty = (): void => {
                 const dirty =
@@ -1165,8 +1202,14 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                     <input ${ref(typeRef)} class="pp-defparam-type" .value=${original.type}
                         placeholder="type" aria-label="type" @input=${markDirty} @keydown=${onKeydown} />
                     <span class="pp-defparam-sep">=</span>
-                    <input ${ref(defRef)} class="pp-defparam-default" .value=${original.default}
-                        placeholder="default" aria-label="default" @input=${markDirty} @keydown=${onKeydown} />
+                    ${this.sourceField(original.default, {
+                        className: 'pp-defparam-default',
+                        fieldRef: defRef,
+                        placeholder: 'default',
+                        ariaLabel: 'default',
+                        onInput: markDirty,
+                        onCommit: commit
+                    })}
                     <button class="mini-btn primary pp-defparam-save" type="button"
                         title="Save (Enter)" @click=${commit}>Save</button>
                 </div>
@@ -1299,7 +1342,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             );
 
         const rows = entityParams.map((parameter) => {
-            const inputRef = createRef<HTMLInputElement>();
+            const inputRef = createRef<HTMLInputElement | HTMLTextAreaElement>();
             const commit = (): void => {
                 const next = (inputRef.value?.value ?? '').trim();
                 if (!next) {
@@ -1311,17 +1354,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             return html`
                 <div class="param-map-item">
                     <div class="param-map-key" title=${parameter.name}>${parameter.name}</div>
-                    <input
-                        ${ref(inputRef)}
-                        class="param-map-input"
-                        .value=${parameter.inputValue}
-                        @keydown=${(e: KeyboardEvent) => {
-                            if (e.key === 'Enter') {
-                                e.preventDefault();
-                                commit();
-                            }
-                        }}
-                    />
+                    ${this.sourceField(parameter.inputValue, { className: 'param-map-input', fieldRef: inputRef, onCommit: commit })}
                     <button class="mini-btn" type="button" @click=${commit}>Update</button>
                 </div>
                 ${parameter.detailText
@@ -2223,7 +2256,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             const onCommit = (e: Event) => {
                 const inputEl = (e.target as HTMLElement)
                     .closest('.pp-arow')
-                    ?.querySelector('input') as HTMLInputElement | null;
+                    ?.querySelector('input, textarea') as HTMLInputElement | HTMLTextAreaElement | null;
                 if (inputEl) commit(def.name, inputEl.value);
             };
             return html`
@@ -2233,14 +2266,11 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                         ${def.type ? html`<span class="pp-akey-type">${def.type}</span>` : nothing}
                     </span>
                     <span class="pp-aval">
-                        <input
-                            class="pp-input"
-                            .value=${value}
-                            placeholder="value (expression)"
-                            @keydown=${(e: KeyboardEvent) => {
-                                if (e.key === 'Enter') onCommit(e);
-                            }}
-                        />
+                        ${this.sourceField(value, {
+                            className: 'pp-input',
+                            placeholder: 'value (expression)',
+                            onCommit: onCommit
+                        })}
                         <button class="pp-icon-btn" title="Update" @click=${onCommit}>
                             <span class="codicon codicon-check"></span>
                         </button>
