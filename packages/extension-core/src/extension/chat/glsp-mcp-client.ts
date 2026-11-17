@@ -5,7 +5,7 @@
  * dispatches the GLSP operation a gesture in the diagram would, so the edit goes through the
  * same handler, lands on the editor's undo stack, and the tool answers what it did. The slash
  * commands are the person's shorthand for the same edits, and call the same tools: they used to
- * send their own sidecar requests, whose arguments had drifted from what the sidecar takes, past
+ * send their own producer requests, whose arguments had drifted from what the producer takes, past
  * undo.
  *
  * Streamable HTTP, as far as a tool call needs it: `initialize` opens a session (its id comes

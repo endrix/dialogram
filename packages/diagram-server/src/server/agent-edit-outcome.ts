@@ -5,7 +5,7 @@
  * handler asks the producer to rewrite the source. The model is re-read from that source only on
  * a later reload, so the stock tools' before/after diff of the model index never sees the edit:
  * `create-edges` said "Edge creation likely failed" for an edge it made, and `delete-elements`
- * said "deleted 0" for a node it deleted. The sidecar invoker records each edit's answer here
+ * said "deleted 0" for a node it deleted. The producer's invoker records each edit's answer here
  * instead, while the operation runs (it runs inside `dispatch`), and the tool reads them back
  * after it: what landed, and for what was refused, the producer's own reason.
  *
@@ -14,7 +14,7 @@
 import { injectable } from 'inversify';
 
 export interface AgentEditOutcome {
-    /** The op as sent, with its runtime prefix (`wfpy.connect`). */
+    /** The op as sent, with its runtime prefix (`<prefix>.connect`). */
     readonly op: string;
     readonly ok: boolean;
     /** The producer's reason for a refusal. */

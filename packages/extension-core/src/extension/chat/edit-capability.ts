@@ -65,8 +65,8 @@ export function createEditChatCapability(deps: EditChatCapabilityDeps): EditChat
     /**
      * The diagram's GLSP-MCP tools, the ones the agent edits with: the same handlers a gesture
      * in the diagram reaches, the editor's undo, and an answer saying what was done or why not.
-     * The commands used to send their own sidecar requests, whose arguments had drifted from
-     * what the sidecar takes (`/rename` sent `oldName`, `/connect` wrote `connect(a, b)`), past
+     * The commands used to send their own producer requests, whose arguments had drifted from
+     * what the producer takes (`/rename` sent `oldName`, `/connect` named whole nodes), past
      * undo; now each is the person's shorthand for one tool call.
      */
     const tools = deps.mcpServerUrl ? (deps.mcpClient ?? new GlspMcpClient(deps.mcpServerUrl)) : undefined;
