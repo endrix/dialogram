@@ -7,10 +7,13 @@
  *   - one into an input of an entity that was not copied is left out (that
  *     input has its writer), as is, in another file, one whose end is not
  *     there;
- *   - in another file only literal arguments are carried, and what is left
- *     out is said.
+ *   - in another file only literal arguments are carried; one the type
+ *     cannot be made without is asked, the original's text offered, before
+ *     anything is written (Escape makes nothing); what else is left out is
+ *     said.
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import * as vscode from 'vscode';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
@@ -20,7 +23,10 @@ import { recreateItems } from '../src/server/operations/recreate-items.js';
 import { saying } from './edits-on-disk';
 
 const made: string[] = [];
+const windowAny = vscode.window as any;
+const savedInput = windowAny.showInputBox;
 afterEach(() => {
+    windowAny.showInputBox = savedInput;
     for (const dir of made.splice(0)) {
         rmSync(dir, { recursive: true, force: true });
     }
@@ -39,25 +45,40 @@ const entity = (name: string, expressions?: Record<string, string>): DiagramClip
 const edge = (from: string | undefined, to: string | undefined): DiagramClipboardItem =>
     ({ kind: 'connection', elementTypeId: WorkflowDiagramTypes.EDGE_CONNECTION, from, to, outPort: 'Out', inPort: 'In' });
 
-async function recreate(items: DiagramClipboardItem[], copiedFrom: string, into: string) {
+async function recreate(
+    items: DiagramClipboardItem[],
+    copiedFrom: string,
+    into: string,
+    options: { required?: string[]; typed?: (box: { prompt?: string; value?: string }) => string | undefined; made?: boolean } = {}
+) {
     const sent: Array<{ op: string; args: Record<string, unknown> }> = [];
+    const asked: Array<{ title?: string; prompt?: string; value?: string }> = [];
+    windowAny.showInputBox = async (box: any) => {
+        asked.push({ title: box?.title, prompt: box?.prompt, value: box?.value });
+        return (options.typed ?? (b => b.value))(box ?? {});
+    };
     const sidecar = {
         sidecarOp: (op: string) => `wfpy.${op}`,
         hasFeature: async () => true,
+        sendSidecarListDetailed: async () => ({
+            ok: true,
+            response: { diagnostic: { parameters: [...(options.required ?? []).map(name => ({ name, type: 'str' })), { name: 'size', type: 'int', defaultValue: '1' }] } }
+        }),
         sendSidecarOpDetailed: async (_uri: string, payload: { op: string; args: Record<string, unknown> }) => {
             sent.push(payload);
             return { ok: true };
         }
     };
     const said = await saying(async said => {
-        expect(await recreateItems(sidecar as any, into, 'flow', { version: 1, sourceUri: copiedFrom, items }, new Set(['a', 'b', 'c']))).toBe(true);
+        expect(await recreateItems(sidecar as any, into, 'flow', { version: 1, sourceUri: copiedFrom, items }, new Set(['a', 'b', 'c'])))
+            .toBe(options.made ?? true);
         return said;
     });
     const connects = sent.filter(each => each.op === 'wfpy.connect').map(each => {
         const end = (port: any) => port.type === 'workflow' ? `"${port.name}"` : `${port.actor}.${port.port}`;
         return `${end(each.args.from_port)} -> ${end(each.args.to_port)}`;
     });
-    return { sent, said, connects };
+    return { sent, said, connects, asked };
 }
 
 describe('items made again in the file they were copied from', () => {
@@ -87,5 +108,29 @@ describe('items made in another file', () => {
         expect(sent[0].args.expressions).toEqual({ size: '4', name: '"x"' });
         expect(connects).toEqual([]);
         expect(said).toEqual(["Made without a2: text=FRONT_OPTIONS: it names what the file it was copied from binds, maybe nothing here. Give it here if needed."]);
+    });
+});
+
+describe('an entity made in another file, of a type it cannot be made without an argument it was given', () => {
+    const copy = [entity('a', { text: 'FRONT_OPTIONS', size: '4' })];
+
+    it('is made with what is answered, the original’s text offered', async () => {
+        const { sent, said, asked } = await recreate(copy, file('top.py'), file('other.py'), {
+            required: ['text'], typed: () => 'OTHER_OPTIONS'
+        });
+        expect(asked).toEqual([{
+            title: 'a2 = Text(…)',
+            prompt: "'text' (str) has no default: the copy was given FRONT_OPTIONS, which may name nothing here. The expression to give it",
+            value: 'FRONT_OPTIONS'
+        }]);
+        expect(sent.map(each => each.args)).toEqual([{ workflow: 'flow', type: 'Text', name: 'a2', expressions: { size: '4', text: 'OTHER_OPTIONS' } }]);
+        expect(said).toEqual([]);
+    });
+
+    it('is not made, nor anything else, when the question is escaped', async () => {
+        const { sent } = await recreate([...copy, entity('b')], file('top.py'), file('other.py'), {
+            required: ['text'], typed: () => undefined, made: false
+        });
+        expect(sent).toEqual([]);
     });
 });

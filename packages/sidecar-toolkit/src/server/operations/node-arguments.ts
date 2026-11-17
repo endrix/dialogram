@@ -11,6 +11,7 @@
  * `expressions {name: text}`, `features.createNodeExpressions`); a copy of a
  * node carries the original's the same way.
  */
+import * as vscode from 'vscode';
 import type { SidecarInvoker } from './sidecar-invoker';
 
 /** `typeParameters {type}`: the parameters an instance of a type is made with. */
@@ -54,4 +55,38 @@ export async function requiredParametersOf(
         return undefined;
     }
     return parameters.filter(isTypeParameter).filter(parameter => parameter.defaultValue === undefined);
+}
+
+/**
+ * Ask the user for each of `parameters` of `entityName = typeName(…)`, one
+ * input box each, as source text. `was` pre-fills a parameter with what the
+ * node it is a copy of was given, and says so: in another file that text may
+ * name nothing. Null when one is escaped.
+ */
+export async function askArguments(
+    entityName: string,
+    typeName: string,
+    parameters: TypeParameter[],
+    was: Record<string, string> = {}
+): Promise<Record<string, string> | null> {
+    const answers: Record<string, string> = {};
+    for (const [at, parameter] of parameters.entries()) {
+        const before = was[parameter.name];
+        const what = `'${parameter.name}'${parameter.type ? ` (${parameter.type})` : ''} has no default`;
+        const answer = (await vscode.window.showInputBox({
+            title: `${entityName} = ${typeName}(…)${parameters.length > 1 ? ` (${at + 1}/${parameters.length})` : ''}`,
+            prompt: before !== undefined
+                ? `${what}: the copy was given ${before}, which may name nothing here. The expression to give it`
+                : `${what}: the expression to give it`,
+            value: before,
+            placeHolder: parameter.type === 'str' ? `"${parameter.name}"` : parameter.type ?? '',
+            ignoreFocusOut: true,
+            validateInput: value => value.trim() === '' ? `'${parameter.name}' has to be given.` : undefined
+        }))?.trim();
+        if (!answer) {
+            return null;
+        }
+        answers[parameter.name] = answer;
+    }
+    return answers;
 }

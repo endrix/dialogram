@@ -13,7 +13,7 @@ import { layoutTargetOf } from '@dialogram/diagram-server/server/layout-target';
 
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { AgentCreateNodeOutcomeSink } from '@dialogram/diagram-server/server/agent-create-node-outcome';
-import { CREATE_NODE_EXPRESSIONS, requiredParametersOf } from './node-arguments';
+import { CREATE_NODE_EXPRESSIONS, requiredParametersOf, askArguments } from './node-arguments';
 import { SidecarInvoker, SidecarInvocationResult } from './sidecar-invoker';
 import type {
     CreateNodeVariant,
@@ -1247,20 +1247,11 @@ export class CreateNodeOperationHandler extends OperationHandler {
             }
             return Object.keys(expressions).length > 0 ? expressions : undefined;
         }
-        for (const [at, parameter] of required.entries()) {
-            const answer = (await vscode.window.showInputBox({
-                title: `${entityName} = ${typeName}(…)${required.length > 1 ? ` (${at + 1}/${required.length})` : ''}`,
-                prompt: `'${parameter.name}'${parameter.type ? ` (${parameter.type})` : ''} has no default: the expression to give it`,
-                placeHolder: parameter.type === 'str' ? `"${parameter.name}"` : parameter.type ?? '',
-                ignoreFocusOut: true,
-                validateInput: value => value.trim() === '' ? `'${parameter.name}' has to be given.` : undefined
-            }))?.trim();
-            if (!answer) {
-                return null;
-            }
-            expressions[parameter.name] = answer;
+        const answers = await askArguments(entityName, typeName, required);
+        if (!answers) {
+            return null;
         }
-        return Object.keys(expressions).length > 0 ? expressions : undefined;
+        return Object.keys(answers).length > 0 ? answers : undefined;
     }
 
     private uniqueInstanceName(base: string, taken: Set<string>): string {

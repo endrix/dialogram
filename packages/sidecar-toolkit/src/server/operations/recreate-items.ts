@@ -13,18 +13,21 @@
  * An entity is made with the original's arguments as written in its
  * source (`expressions`, when the producer takes them). In another file,
  * only those that are literals: a name the original's file binds
- * (`FRONT_OPTIONS`) may be bound nowhere there; what is left out is said.
+ * (`FRONT_OPTIONS`) may be bound nowhere there. One the type cannot be made
+ * without is asked, the original's text offered (`Text()` would not plan);
+ * what else is left out is said. Everything is asked before anything is
+ * written: Escape makes nothing.
  *
  * The steps are written whole or not at all (`SidecarSteps`).
  */
 import * as vscode from 'vscode';
 import { URI } from 'vscode-uri';
 import { nextFreeName, type DiagramClipboardPayload } from '@dialogram/shared';
-import { CREATE_NODE_EXPRESSIONS } from './node-arguments';
+import { CREATE_NODE_EXPRESSIONS, askArguments, requiredParametersOf } from './node-arguments';
 import { SidecarSteps } from './sidecar-edit';
 import type { SidecarInvoker } from './sidecar-invoker';
 
-type Sidecar = Pick<SidecarInvoker, 'sidecarOp' | 'hasFeature' | 'sendSidecarOpDetailed'>;
+type Sidecar = Pick<SidecarInvoker, 'sidecarOp' | 'hasFeature' | 'sendSidecarOpDetailed' | 'sendSidecarListDetailed'>;
 
 /** A number, a string, `True`, `False` or `None`: what means the same in any file. */
 const LITERAL = /^(?:[-+]?\d[\d_]*(?:\.\d+)?(?:[eE][-+]?\d+)?|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|True|False|None)$/;
@@ -39,8 +42,9 @@ function sameFile(a: string, b: string): boolean {
 
 /**
  * Make `payload`'s items in `workflowName` of `sourceUri`, the entities under
- * names not in `taken`. False when a step was refused: the file is back as
- * it was, and the refusal has been said.
+ * names not in `taken`. False when a step was refused (the file is back as
+ * it was, and the refusal has been said) or a question was escaped (nothing
+ * was written).
  */
 export async function recreateItems(
     sidecar: Sidecar,
@@ -51,24 +55,43 @@ export async function recreateItems(
 ): Promise<boolean> {
     const here = sameFile(payload.sourceUri, sourceUri);
     const withExpressions = await sidecar.hasFeature(sourceUri, CREATE_NODE_EXPRESSIONS);
-    const steps = await SidecarSteps.begin(sidecar, sourceUri);
     const renamed = new Map<string, string>();
     const portsMade = new Set<string>();
     const leftOut: string[] = [];
 
+    // Each entity's name and arguments, settled before anything is written.
+    const made = new Map<object, { name: string; expressions?: Record<string, string> }>();
+    for (const item of payload.items) {
+        if (item.kind !== 'entity') {
+            continue;
+        }
+        const name = nextFreeName(item.name, taken);
+        taken.add(name);
+        renamed.set(item.name, name);
+        const original = withExpressions ? item.expressions ?? {} : {};
+        let expressions: Record<string, string> = { ...original };
+        if (withExpressions && !here) {
+            expressions = Object.fromEntries(Object.entries(original).filter(([, text]) => LITERAL.test(text.trim())));
+            const missing = ((await requiredParametersOf(sidecar, sourceUri, item.typeName)) ?? [])
+                .filter(parameter => expressions[parameter.name] === undefined);
+            if (missing.length > 0) {
+                const answers = await askArguments(name, item.typeName, missing, original);
+                if (!answers) {
+                    return false;
+                }
+                Object.assign(expressions, answers);
+            }
+            leftOut.push(...Object.entries(original)
+                .filter(([argument]) => expressions[argument] === undefined)
+                .map(([argument, text]) => `${name}: ${argument}=${text}`));
+        }
+        made.set(item, { name, ...(Object.keys(expressions).length > 0 ? { expressions } : {}) });
+    }
+
+    const steps = await SidecarSteps.begin(sidecar, sourceUri);
     for (const item of payload.items) {
         if (item.kind === 'entity') {
-            const name = nextFreeName(item.name, taken);
-            taken.add(name);
-            renamed.set(item.name, name);
-            let expressions = withExpressions ? item.expressions : undefined;
-            if (expressions && !here) {
-                const kept = Object.entries(expressions).filter(([, text]) => LITERAL.test(text.trim()));
-                leftOut.push(...Object.entries(expressions)
-                    .filter(([, text]) => !LITERAL.test(text.trim()))
-                    .map(([argument, text]) => `${name}: ${argument}=${text}`));
-                expressions = kept.length > 0 ? Object.fromEntries(kept) : undefined;
-            }
+            const { name, expressions } = made.get(item)!;
             if (!await steps.send({
                 op: sidecar.sidecarOp('createNode'),
                 args: { workflow: workflowName, type: item.typeName, name, ...(expressions ? { expressions } : {}) }
