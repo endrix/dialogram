@@ -829,6 +829,16 @@ it no longer has.
 
 ### Fixed
 
+- **A source too large for a text document opens as a diagram.** VS Code does
+  not hand a file over 50 MB to extensions as text: `activeTextEditor` is
+  absent while the file is on screen, and `openTextDocument` rejects it. The
+  open commands asked both, so on such a file (a generated circuit of a
+  processor with an accelerator is 64 MB) they said to open a file first, to
+  someone looking at one. A command with no argument takes the active tab's
+  file when no diagram or text editor is in front (`activeSourceUri`), and a
+  file that cannot be opened as text is a target when it is there
+  (`ResolveDiagramOpenTargetOptions.fileExists`). A diagram is drawn from the
+  file by its producer and never needed the text document.
 - **A double-click that opens a node's source shows the editor the file
   already has.** The opens of #165 went through the extension's own
   handler; a double-click on a node with no diagram behind it

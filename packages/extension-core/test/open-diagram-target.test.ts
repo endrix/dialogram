@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
-import { readRequestedNetworkName, resolveDiagramOpenTarget } from '../../extension-core/src/extension/diagram/open-diagram-target';
+import { activeSourceUri, readRequestedNetworkName, resolveDiagramOpenTarget } from '../../extension-core/src/extension/diagram/open-diagram-target';
 
 describe('resolveDiagramOpenTarget', () => {
     it('accepts an absolute python path outside the active editor and returns the opened file uri', async () => {
@@ -17,6 +17,91 @@ describe('resolveDiagramOpenTarget', () => {
         expect(openTextDocument).toHaveBeenCalledTimes(1);
         expect(openTextDocument).toHaveBeenCalledWith(targetUri);
         expect(resolved?.toString()).toBe(targetUri.toString());
+    });
+
+    // VS Code does not hand a file over 50 MB to extensions as a text document:
+    // `openTextDocument` rejects. A generated circuit is that large, and its
+    // diagram is drawn from the file, not from a text document.
+    const tooLargeForText = async (): Promise<{ uri: vscode.Uri }> => {
+        throw new Error('Files above 50MB cannot be synchronized with extensions.');
+    };
+
+    it('opens a file VS Code will not open as text, when the file is there', async () => {
+        const targetUri = vscode.Uri.file('/designs/Top.fir');
+        const fileExists = vi.fn(async () => true);
+
+        const resolved = await resolveDiagramOpenTarget(targetUri, {
+            getActiveWorkflowUri: () => undefined,
+            openTextDocument: tooLargeForText,
+            fileExists,
+            sourceExtensions: ['.fir']
+        });
+
+        expect(fileExists).toHaveBeenCalledWith(targetUri);
+        expect(resolved?.toString()).toBe(targetUri.toString());
+    });
+
+    it('does not open a file that is not there', async () => {
+        const resolved = await resolveDiagramOpenTarget(vscode.Uri.file('/designs/Gone.fir'), {
+            getActiveWorkflowUri: () => undefined,
+            openTextDocument: tooLargeForText,
+            fileExists: async () => false,
+            sourceExtensions: ['.fir']
+        });
+
+        expect(resolved).toBeUndefined();
+    });
+
+    it('does not open a file it cannot open as text when nothing can say it is there', async () => {
+        // A caller that gives no `fileExists` keeps the answer it had.
+        const resolved = await resolveDiagramOpenTarget(vscode.Uri.file('/designs/Top.fir'), {
+            getActiveWorkflowUri: () => undefined,
+            openTextDocument: tooLargeForText,
+            sourceExtensions: ['.fir']
+        });
+
+        expect(resolved).toBeUndefined();
+    });
+
+    it('does not ask whether a file of another kind is there', async () => {
+        const fileExists = vi.fn(async () => true);
+
+        const resolved = await resolveDiagramOpenTarget(vscode.Uri.file('/designs/notes.txt'), {
+            getActiveWorkflowUri: () => undefined,
+            openTextDocument: tooLargeForText,
+            fileExists,
+            sourceExtensions: ['.fir']
+        });
+
+        expect(resolved).toBeUndefined();
+        expect(fileExists).not.toHaveBeenCalled();
+    });
+});
+
+describe('activeSourceUri', () => {
+    const isFir = (uri: vscode.Uri | undefined): boolean => !!uri && uri.fsPath.endsWith('.fir');
+    const diagram = vscode.Uri.file('/designs/Shown.fir');
+    const text = vscode.Uri.file('/designs/Edited.fir');
+    const tab = vscode.Uri.file('/designs/Large.fir');
+
+    it('is the active diagram\'s file before anything else', () => {
+        expect(activeSourceUri({ diagramUri: diagram, textEditorUri: text, tabUri: tab }, isFir)).toBe(diagram);
+    });
+
+    it('is the active text editor\'s file when no diagram is in front', () => {
+        expect(activeSourceUri({ textEditorUri: text, tabUri: tab }, isFir)).toBe(text);
+    });
+
+    it('is the active tab\'s file when VS Code reports no text editor for it', () => {
+        // A file over 50 MB: on screen in a text editor extensions are not told
+        // about. The command said to open a file first, to someone looking at one.
+        expect(activeSourceUri({ tabUri: tab }, isFir)).toBe(tab);
+    });
+
+    it('passes over what is in front and is not one of the product\'s sources', () => {
+        const notes = vscode.Uri.file('/designs/notes.txt');
+        expect(activeSourceUri({ diagramUri: notes, textEditorUri: notes, tabUri: tab }, isFir)).toBe(tab);
+        expect(activeSourceUri({ textEditorUri: notes, tabUri: notes }, isFir)).toBeUndefined();
     });
 });
 /**

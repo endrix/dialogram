@@ -38,6 +38,16 @@ export function readRequestedNetworkName(arg: DiagramOpenTargetArg | undefined):
 export type ResolveDiagramOpenTargetOptions = {
     getActiveWorkflowUri: () => vscode.Uri | undefined;
     openTextDocument: (uri: vscode.Uri) => Thenable<{ uri: vscode.Uri }>;
+    /**
+     * Whether a file is there, asked when it could not be opened as text.
+     *
+     * VS Code does not hand a file over 50 MB to extensions as a text
+     * document, and a generated source can be larger: a circuit, a netlist.
+     * The diagram of such a file is drawn from the file by its producer and
+     * needs no text document, so a file that exists is a file to open. Absent,
+     * a file that cannot be opened as text is not a target, as before.
+     */
+    fileExists?: (uri: vscode.Uri) => Thenable<boolean>;
     workspaceRoot?: string;
     /** The profile's declared source extensions; absent/empty accepts any file
      *  (see `source-extensions.ts` for why the default is permissive). */
@@ -120,6 +130,36 @@ export async function resolveDiagramOpenTarget(
         const document = await options.openTextDocument(resolved);
         return document.uri;
     } catch {
-        return undefined;
+        try {
+            return options.fileExists && (await options.fileExists(resolved)) ? resolved : undefined;
+        } catch {
+            return undefined;
+        }
     }
+}
+
+/** What the window has in front: each as VS Code reports it, any of them absent. */
+export type ActiveSources = {
+    /** The file the active diagram is of. */
+    diagramUri?: vscode.Uri;
+    /** The document of the active text editor. */
+    textEditorUri?: vscode.Uri;
+    /** The file the active tab shows, whatever shows it. */
+    tabUri?: vscode.Uri;
+};
+
+/**
+ * The source file a command with no argument is about: the active diagram's,
+ * else the active text editor's, else the active tab's.
+ *
+ * The tab is asked last and has to be asked: a file over 50 MB is shown in a
+ * text editor that extensions are not told about, so `activeTextEditor` is
+ * absent while the file is on screen, and the command said "open a file first"
+ * to someone looking at one.
+ */
+export function activeSourceUri(
+    active: ActiveSources,
+    isSource: (uri: vscode.Uri | undefined) => boolean
+): vscode.Uri | undefined {
+    return [active.diagramUri, active.textEditorUri, active.tabUri].find(uri => isSource(uri));
 }

@@ -30,7 +30,7 @@ import type { WorkflowEditorProvider } from './diagram-editor-provider';
 import { ExecutionOverlayRegistry } from './execution-overlay';
 import { forwardExecutionOverlayEvents, forwardExecutionOverlayStates, type ExecutionOverlayWebviewSink } from './execution-overlay-bridge';
 import { registerStatusSource } from './status-source';
-import { readRequestedNetworkName, resolveDiagramOpenTarget, type DiagramOpenTargetArg } from './open-diagram-target';
+import { activeSourceUri, readRequestedNetworkName, resolveDiagramOpenTarget, type DiagramOpenTargetArg } from './open-diagram-target';
 import { matchesSourceExtension, sourceFileNoun } from './source-extensions';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
 import { executeViewerCommand, executeViewerOpen, executeViewerReveal } from './viewer-actions';
@@ -1078,16 +1078,23 @@ function registerCalDiagramCommands(
     const isProfileSource = (uri: vscode.Uri | undefined): uri is vscode.Uri =>
         !!uri && matchesSourceExtension(uri.fsPath, profile.sourceExtensions);
 
-    const getActiveWorkflowUri = (): vscode.Uri | undefined => {
-        const diagramUri = getActiveWorkflowDiagramUri();
-        if (isProfileSource(diagramUri)) {
-            return diagramUri;
+    const getActiveWorkflowUri = (): vscode.Uri | undefined =>
+        activeSourceUri(
+            {
+                diagramUri: getActiveWorkflowDiagramUri(),
+                textEditorUri: vscode.window.activeTextEditor?.document.uri,
+                tabUri: (vscode.window.tabGroups.activeTabGroup.activeTab?.input as { uri?: vscode.Uri } | undefined)?.uri
+            },
+            isProfileSource
+        );
+
+    /** Whether a file is there: for a source VS Code will not open as text (see `fileExists`). */
+    const sourceFileExists = async (uri: vscode.Uri): Promise<boolean> => {
+        try {
+            return (await vscode.workspace.fs.stat(uri)).type !== vscode.FileType.Directory;
+        } catch {
+            return false;
         }
-        const activeEditorUri = vscode.window.activeTextEditor?.document.uri;
-        if (isProfileSource(activeEditorUri)) {
-            return activeEditorUri;
-        }
-        return undefined;
     };
 
     const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1173,6 +1180,7 @@ function registerCalDiagramCommands(
             const sourceUri = await resolveDiagramOpenTarget(arg, {
                 getActiveWorkflowUri,
                 openTextDocument: vscode.workspace.openTextDocument,
+                fileExists: sourceFileExists,
                 workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
                 sourceExtensions: profile.sourceExtensions
             });
@@ -1236,6 +1244,7 @@ function registerCalDiagramCommands(
             const sourceUri = await resolveDiagramOpenTarget(arg, {
                 getActiveWorkflowUri,
                 openTextDocument: vscode.workspace.openTextDocument,
+                fileExists: sourceFileExists,
                 workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
                 sourceExtensions: profile.sourceExtensions
             });
