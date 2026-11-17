@@ -54,19 +54,45 @@ const srcDirs = {
     'sidecar-toolkit': path.resolve(__dirname, '../sidecar-toolkit/src'),
 };
 
-// Plugin to resolve @dialogram/* imports (including subpaths such as
-// @dialogram/extension-core/api) to source .ts files
-const resolveWorkspacePlugin = {
-    name: 'resolve-workspace-packages',
-    setup(build) {
-        build.onResolve({ filter: /^@dialogram\// }, args => {
-            const [pkg, ...rest] = args.path.replace('@dialogram/', '').split('/');
-            const srcDir = srcDirs[pkg];
-            if (!srcDir) {
-                return undefined;
+// @dialogram/* imports (subpaths too, such as @dialogram/extension-core/api) resolve to the
+// packages' source .ts files. An alias, not an onResolve plugin: esbuild applies a tsconfig.json
+// only to a path its own resolver found, so a file a plugin resolved was compiled without its
+// package's `experimentalDecorators`, with standard decorators, and inversify's property
+// `@inject` threw at load ("Cannot read properties of undefined (reading 'prototype')"): the
+// platform bundle would not activate once a file with one was first imported by package name.
+const workspaceAlias = Object.fromEntries(Object.entries(srcDirs).map(([pkg, dir]) => [`@dialogram/${pkg}`, dir]));
+
+// Every bundle's decorators are the legacy ones the packages' tsconfigs ask for. A standard one
+// means a file was compiled without its tsconfig; say which, rather than fail at activation.
+const BUNDLES = ['out/main.cjs', 'dist/platform.cjs', 'dist/webview/diagram-client.js'];
+function standardDecorators() {
+    const found = [];
+    for (const bundle of BUNDLES) {
+        const file = path.resolve(__dirname, bundle);
+        if (!fs.existsSync(file)) {
+            continue;
+        }
+        let source = '';
+        for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+            const origin = /^\s*\/\/ ((?:\.\.\/|src\/)\S+\.ts)$/.exec(line);
+            if (origin) {
+                source = origin[1];
+            } else if (line.includes('__decoratorStart(')) {
+                found.push(`${bundle}: ${source || '(unknown source)'}`);
             }
-            const entry = rest.length === 0 ? 'index' : rest.join('/');
-            return { path: path.join(srcDir, `${entry}.ts`) };
+        }
+    }
+    return [...new Set(found)];
+}
+const decoratorGuard = {
+    name: 'legacy-decorators-only',
+    setup(build) {
+        build.onEnd(() => {
+            if (watch) {
+                for (const each of standardDecorators()) {
+                    console.error(`[esbuild] standard decorators, compiled without its tsconfig: ${each}`);
+                }
+            }
         });
     }
 };
@@ -85,7 +111,8 @@ const hostCtx = await esbuild.context({
     platform: 'node',
     sourcemap: !minify,
     minify,
-    plugins: [resolveWorkspacePlugin, ...plugins]
+    alias: workspaceAlias,
+    plugins: [...plugins, decoratorGuard]
 });
 
 // libavoid (WASM), vendored at vendor/libavoid — see its README for why it is
@@ -132,7 +159,8 @@ const platformCtx = await esbuild.context({
     platform: 'node',
     sourcemap: !minify,
     minify,
-    plugins: [resolveWorkspacePlugin, ...plugins]
+    alias: workspaceAlias,
+    plugins: [...plugins, decoratorGuard]
 });
 
 // GLSP diagram client bundle (runs in consumer webviews, browser IIFE)
@@ -151,7 +179,8 @@ const glspClientCtx = await esbuild.context({
     platform: 'browser',
     sourcemap: false,
     minify,
-    plugins: [resolveWorkspacePlugin, ...plugins],
+    alias: workspaceAlias,
+    plugins: [...plugins, decoratorGuard],
     loader: {
         '.css': 'css',
         '.ttf': 'dataurl',
@@ -172,4 +201,9 @@ if (watch) {
 } else {
     await Promise.all(contexts.map(ctx => ctx.rebuild()));
     contexts.forEach(ctx => ctx.dispose());
+    const standard = standardDecorators();
+    if (standard.length > 0) {
+        console.error(['[esbuild] standard decorators, compiled without its tsconfig:', ...standard].join('\n  '));
+        process.exit(1);
+    }
 }
