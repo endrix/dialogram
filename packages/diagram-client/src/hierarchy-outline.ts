@@ -23,6 +23,7 @@
  * node family's colour and its badges.
  */
 import { inject, injectable, multiInject, optional } from 'inversify';
+import { raiseFloatingPanel, stackAsFloatingPanel } from './floating-panels';
 import { findNodeIdByGraphId } from './producer-ids';
 import { EditorContextService, TYPES, type IActionDispatcher, type MouseListener } from '@eclipse-glsp/client';
 import { RequestModelAction } from '@eclipse-glsp/sprotty';
@@ -143,6 +144,10 @@ export class HierarchyOutlinePanel {
         while (holder.firstChild) {
             document.body.appendChild(holder.firstChild);
         }
+        const panel = document.getElementById(PANEL_ID);
+        if (panel) {
+            stackAsFloatingPanel(panel);
+        }
     }
 
     private wire(): void {
@@ -205,6 +210,9 @@ export class HierarchyOutlinePanel {
         }
         document.getElementById(TOGGLE_ID)?.classList.toggle('active', open);
         if (open) {
+            if (panel) {
+                raiseFloatingPanel(panel);
+            }
             this.placeNearButton();
             this.render();
         }

@@ -69,6 +69,21 @@ describe('connectionStatus auto-show suppression', () => {
         expect(showSpy).not.toHaveBeenCalled();
     });
 
+    it('a connect takes back the "Not connected" row it made untrue', () => {
+        const { panel } = makePanel();
+        const notConnected = () => ((panel as any).timeline as Array<{ content?: string }>).filter(t => t.content?.includes('Not connected'));
+
+        (panel as any).handleIncomingMessage('chat.connectionStatus', { connected: false });
+        (panel as any).handleIncomingMessage('chat.connectionStatus', { connected: true, agent: 'claude' });
+        expect(notConnected()).toEqual([]);
+
+        // Under the conversation it is history, and stays.
+        (panel as any).handleIncomingMessage('chat.connectionStatus', { connected: false, reason: 'agent exited' });
+        (panel as any).pushMessage('user', 'still there?');
+        (panel as any).handleIncomingMessage('chat.connectionStatus', { connected: true, agent: 'claude' });
+        expect(notConnected()).toHaveLength(1);
+    });
+
     it('the disconnected→connected startup flip never opens the panel', () => {
         const { panel, showSpy } = makePanel();
 
