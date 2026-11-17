@@ -28,21 +28,36 @@ export function isEditOp(op: string, ...names: string[]): boolean {
 
 @injectable()
 export class AgentEditOutcomeSink {
-    private outcomes: AgentEditOutcome[] = [];
+    /** The answers of the collection running now; none: nobody is asking, and nothing is kept. */
+    private open: AgentEditOutcome[] | undefined;
+    private queue: Promise<unknown> = Promise.resolve();
 
+    /**
+     * An edit's answer, kept for the collection running now. Outside one (a person's own gesture,
+     * which says what went wrong in its own way) it is dropped.
+     */
     record(outcome: AgentEditOutcome): void {
-        this.outcomes = [...this.outcomes, outcome];
+        this.open?.push(outcome);
     }
 
-    /** Clear before a tool's dispatch, so only its own edits are read back. */
-    reset(): void {
-        this.outcomes = [];
-    }
-
-    /** Read-and-clear the outcomes recorded since the last reset. */
-    take(): readonly AgentEditOutcome[] {
-        const drained = this.outcomes;
-        this.outcomes = [];
-        return drained;
+    /**
+     * Run `edit` and say what the producer answered while it ran. One collection at a time: a
+     * tool call waits for the one before it, so two running at once never read, or wipe, each
+     * other's answers. A gesture handled while one runs would still count for it; the action
+     * dispatcher runs one action at a time, so that takes a gesture queued in that window.
+     */
+    collect<T>(edit: () => Promise<T>): Promise<{ value: T; outcomes: readonly AgentEditOutcome[] }> {
+        const run = async (): Promise<{ value: T; outcomes: readonly AgentEditOutcome[] }> => {
+            const outcomes: AgentEditOutcome[] = [];
+            this.open = outcomes;
+            try {
+                return { value: await edit(), outcomes };
+            } finally {
+                this.open = undefined;
+            }
+        };
+        const result = this.queue.then(run, run);
+        this.queue = result.catch(() => undefined);
+        return result;
     }
 }

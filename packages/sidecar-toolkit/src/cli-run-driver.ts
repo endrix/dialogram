@@ -934,7 +934,9 @@ export class CliRunDriver {
             if (this.activeRun.sourceUri.fsPath !== sourceUri.fsPath) {
                 return `Another workflow is running (${path.basename(this.activeRun.sourceUri.fsPath)}); this one can run once it ends.`;
             }
-            return this.describeRunEnd(await this.nextRunEnd(waitMs), this.activeRun?.workflowName, waitMs);
+            // Read before the wait: the run is no longer active once it has ended.
+            const runningName = this.activeRun.workflowName;
+            return this.describeRunEnd(await this.nextRunEnd(waitMs), runningName, waitMs);
         }
         if (this.askingForInputs) {
             return 'A run is waiting for the person to give its inputs in the editor.';
@@ -943,9 +945,19 @@ export class CliRunDriver {
         const inputs: Record<string, string> = Object.fromEntries(
             Object.entries(args.inputs ?? {}).map(([name, value]) => [name, typeof value === 'string' ? value : JSON.stringify(value)])
         );
+        if (!this.config.planRun && Object.keys(inputs).length > 0) {
+            // Only a run whose inputs the plan names hands them on: dropped, they would start a
+            // run with no tokens that "finishes" with nothing to show.
+            return 'Not started: runs here take no inputs from the chat. Start it again without `inputs`.';
+        }
         if (this.config.planRun) {
             const planned = await this.config.planRun(sourceUri, workflowName).catch(() => undefined);
             workflowName ??= planned?.workflowName;
+            const unknown = planned ? Object.keys(inputs).filter(name => !planned.inputs.some(input => input.name === name)) : [];
+            if (unknown.length > 0) {
+                const known = planned!.inputs.map(input => input.name).join(', ') || 'none';
+                return `Not started: ${workflowName ?? 'the workflow'} has no input ${unknown.map(name => `'${name}'`).join(', ')}; its inputs are ${known}.`;
+            }
             const missing = (planned?.inputs ?? []).filter(input => inputs[input.name] === undefined);
             if (missing.length > 0) {
                 const list = missing.map(input => `${input.name}${input.type ? ` (${input.type})` : ''}`).join(', ');

@@ -130,7 +130,7 @@ describe('slash contributions', () => {
         expect(tools.calls.map(call => call.tool)).toEqual(['session-info', 'create-nodes']);
         expect(tools.calls[1].args).toEqual({
             sessionId: 'glsp_1',
-            nodes: [{ elementTypeId: 'node:actor', position: { x: 0, y: 0 }, args: { type: 'Reader', name: 'reader' } }]
+            nodes: [{ elementTypeId: 'node:actor', position: { x: 0, y: 0 }, args: { type: 'Reader', name: 'reader', createType: true } }]
         });
     });
 
@@ -138,31 +138,38 @@ describe('slash contributions', () => {
         const { capability, tools } = makeCapability();
         await findCmd(capability, 'create-agent').handler({ _positional: ['Summarize'] }, CTX);
         expect(tools.calls[1].args.nodes[0]).toEqual({
-            elementTypeId: 'node:external-actor', position: { x: 0, y: 0 }, args: { agentTask: true, type: 'Summarize' }
+            elementTypeId: 'node:external-actor', position: { x: 0, y: 0 }, args: { agentTask: true, type: 'Summarize', createType: true }
         });
     });
 
-    it('create of a type the file lacks scaffolds the type of that kind, then the node', async () => {
-        const answers = [
-            { ok: false, text: "'Reader' is not bound in wf.py" },
-            { ok: true, text: "Created the task type 'Reader'." },
-            { ok: true, text: 'created reader' }
-        ];
-        const { capability, tools } = makeCapability(makeBackend(), makeProfile(), answers);
+    it('create of a type the file lacks is one call: the diagram makes the type first, the way its palette does', async () => {
+        // It used to try, scaffold on any failure with the command's word as the kind, and try
+        // again: a failure for any other reason (a type imported from elsewhere) wrote a class
+        // shadowing it, and `/create-network` asked for a task kind called "network".
+        const { capability, tools } = makeCapability(makeBackend(), makeProfile(), [{ ok: true, text: "- Created the task type 'Reader'.\n- Reader 'reader'" }]);
         const result = await findCmd(capability, 'create-task').handler({ _positional: ['Reader', 'reader'] }, CTX);
-        expect(tools.calls.filter(call => call.tool !== 'session-info').map(call => call.tool)).toEqual(['create-nodes', 'create-task-type', 'create-nodes']);
-        expect(tools.calls.find(call => call.tool === 'create-task-type')!.args).toEqual({ sessionId: 'glsp_1', name: 'Reader', kind: 'task' });
-        expect(result).toEqual({ success: true, info: "Created the task type 'Reader'.\ncreated reader" });
+        expect(tools.calls.filter(call => call.tool !== 'session-info').map(call => call.tool)).toEqual(['create-nodes']);
+        expect(result).toEqual({ success: true, info: "- Created the task type 'Reader'.\n- Reader 'reader'" });
     });
 
-    it("create whose type exists keeps the create's own reason when the scaffold is refused", async () => {
-        const answers = [
-            { ok: false, text: "a node named 'reader' already exists" },
-            { ok: false, text: "'Reader' already exists" }
-        ];
-        const { capability } = makeCapability(makeBackend(), makeProfile(), answers);
+    it("a refused create is the command's error, and nothing else is tried", async () => {
+        const { capability, tools } = makeCapability(makeBackend(), makeProfile(), [{ ok: false, text: "a node named 'reader' already exists" }]);
         const result = await findCmd(capability, 'create-task').handler({ _positional: ['Reader', 'reader'] }, CTX);
         expect(result).toEqual({ success: false, error: "a node named 'reader' already exists" });
+        expect(tools.calls.filter(call => call.tool !== 'session-info')).toHaveLength(1);
+    });
+
+    it("a row that fixes its type takes only the node's name (a clause of one kind)", async () => {
+        const profile = makeProfile();
+        profile.storageOptions.entityPaletteItems.push({ elementTypeId: 'node:actor', label: 'Requirement', args: { type: 'requirement' } });
+        profile.chat.nodeCommands.push({ command: 'new-requirement', nodeType: 'requirement', description: 'Add a requirement clause' });
+        const { capability, tools } = makeCapability(makeBackend(), profile);
+        const command = findCmd(capability, 'new-requirement');
+        expect(command.usage).toBe('<name>');
+        await command.handler({ _positional: ['Latency', 'budget'] }, CTX);
+        expect(tools.calls[1].args.nodes[0]).toEqual({
+            elementTypeId: 'node:actor', position: { x: 0, y: 0 }, args: { type: 'requirement', name: 'Latency budget' }
+        });
     });
 
     it('create without a type fails with the usage message', async () => {
@@ -198,13 +205,28 @@ describe('slash contributions', () => {
         expect(tools.calls[1]).toEqual({ tool: 'modify-nodes', args: { sessionId: 'glsp_1', nodes: [{ elementId: 'splitter', text: 'words' }] } });
     });
 
-    it('update sets each key=value as a parameter of the node', async () => {
+    it('update sets each key=value as a parameter of the node, the value as typed', async () => {
         const { capability, tools } = makeCapability();
-        await findCmd(capability, 'update').handler({ _positional: ['top_words'], top_n: '5' }, CTX);
+        // The shared parser would strip the quotes and cut File(path="x") at its `=`.
+        const raw = 'top_words top_n=5 path="in put.txt" src=File(path="x y")';
+        await findCmd(capability, 'update').handler({ _raw: raw, _positional: ['top_words'] }, CTX);
         expect(tools.calls[1]).toEqual({
             tool: 'set-node-parameters',
-            args: { sessionId: 'glsp_1', node: 'top_words', parameters: { top_n: '5' } }
+            args: { sessionId: 'glsp_1', node: 'top_words', parameters: { top_n: '5', path: '"in put.txt"', src: 'File(path="x y")' } }
         });
+    });
+
+    it('says so when the diagram tools are turned off for this user', async () => {
+        const original = vscode.workspace.getConfiguration;
+        (vscode.workspace as any).getConfiguration = () => ({ get: (key: string, fallback: unknown) => (key === 'useGlspMcp' ? false : fallback) });
+        try {
+            const { capability, tools } = makeCapability();
+            const result = await findCmd(capability, 'delete').handler({ _positional: ['a'] }, CTX);
+            expect(result).toEqual({ success: false, error: expect.stringContaining('dialogram.chat.useGlspMcp') });
+            expect(tools.calls).toEqual([]);
+        } finally {
+            (vscode.workspace as any).getConfiguration = original;
+        }
     });
 
     it("a refusal is the command's error, in the tool's words", async () => {

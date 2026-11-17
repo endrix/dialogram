@@ -28,7 +28,8 @@ describe('SlashCommandRegistry.parse', () => {
         const r = makeRegistry();
         expect(r.parse('/create-task reader type="file"')).toEqual({
             command: 'create-task',
-            args: { _positional: ['reader'], type: 'file' }
+            // The text as typed is kept too, for a command whose values are source text.
+            args: { _raw: 'reader type="file"', _positional: ['reader'], type: 'file' }
         });
     });
 
@@ -44,7 +45,7 @@ describe('SlashCommandRegistry.resolve', () => {
         const r = makeRegistry();
         const hit = r.resolve('/create-task reader', 'build');
         expect(hit?.contribution.command).toBe('create-task');
-        expect(hit?.args).toEqual({ _positional: ['reader'] });
+        expect(hit?.args).toEqual({ _raw: 'reader', _positional: ['reader'] });
     });
 
     it('returns null for natural language', () => {

@@ -25,6 +25,7 @@ import {
 } from '../src/server/mcp-diagram-module';
 import { AgentDispatchCreateNodesMcpToolHandler } from '../src/server/create-nodes-mcp-tool-handler';
 import { AgentDispatchCreateEdgesMcpToolHandler } from '../src/server/create-edges-mcp-tool-handler';
+import { AgentEditOutcomeSink } from '../src/server/agent-edit-outcome';
 import {
     AgentDispatchDeleteElementsMcpToolHandler,
     AgentDispatchModifyNodesMcpToolHandler,
@@ -443,14 +444,12 @@ describe('agent edits say what the producer answered', () => {
         return () => { proto.createResult = original; };
     }
 
-    /** A sink the stubbed dispatch fills, one batch of answers per call. */
+    /** The real sink, which the stubbed dispatch fills with one batch of answers per call. */
     function scriptedSink(batches: Array<Array<{ op: string; ok: boolean; message?: string }>>) {
-        let current: Array<{ op: string; ok: boolean; message?: string }> = [];
-        return {
-            reset: () => { current = []; },
-            take: () => current,
-            next: () => { current = batches.shift() ?? []; }
-        };
+        const sink = new AgentEditOutcomeSink();
+        return Object.assign(sink, {
+            next: () => { for (const outcome of batches.shift() ?? []) sink.record(outcome); }
+        });
     }
 
     it('create-edges reports each edge: made, or refused with the reason', async () => {
@@ -516,6 +515,54 @@ describe('agent edits say what the producer answered', () => {
             expect(given.elementIds).toEqual(['alias:n_splitter']);
             expect(result.isError).toBeFalsy();
             expect(result.content[0].text).toContain('Deleted splitter (1 edit(s) to the source).');
+        } finally {
+            restore();
+        }
+    });
+
+    it('delete-elements counts every answer of the delete, a transition or view element too', async () => {
+        const sink = scriptedSink([[{ op: 'calpy.removeTransition', ok: true }]]);
+        const restore = stubSuper(DeleteElementsMcpToolHandler, () => sink.next());
+        try {
+            const handler = new AgentDispatchDeleteElementsMcpToolHandler();
+            (handler as any).modelState = { root: GGraph.builder().id('root').build(), index: { find: () => ({}) } };
+            (handler as any).aliasService = { lookup: (id: string) => id };
+            (handler as any).agentSignal = { markPending: () => {} };
+            (handler as any).editOutcomes = sink;
+            const result = await (handler as any).createResult({ sessionId: 's', elementIds: ['t1'] });
+            expect(result.isError).toBeFalsy();
+            expect(result.content[0].text).toContain('Deleted t1 (1 edit(s) to the source).');
+        } finally {
+            restore();
+        }
+    });
+
+    it('modify-nodes says a rename the source was never asked for did not happen', async () => {
+        const restore = stubSuper(ModifyNodesMcpToolHandler);
+        try {
+            const handler = new AgentDispatchModifyNodesMcpToolHandler();
+            (handler as any).modelState = { root: GGraph.builder().id('root').build(), index: { find: () => ({}) } };
+            (handler as any).aliasService = { lookup: (id: string) => id };
+            (handler as any).editOutcomes = scriptedSink([]);
+            const result = await (handler as any).createResult({ sessionId: 's', nodes: [{ elementId: 'n1', text: 'counter' }] });
+            expect(result.isError).toBe(true);
+            expect(result.content[0].text).toContain("Not renamed: the source was not asked to rename 'n1'.");
+        } finally {
+            restore();
+        }
+    });
+
+    it('modify-nodes says what it renamed, not the label of a model not yet re-read', async () => {
+        const sink = scriptedSink([[{ op: 'wfpy.renameNode', ok: true }]]);
+        const restore = stubSuper(ModifyNodesMcpToolHandler, () => sink.next());
+        try {
+            const handler = new AgentDispatchModifyNodesMcpToolHandler();
+            (handler as any).modelState = { root: GGraph.builder().id('root').build(), index: { find: () => ({}) } };
+            (handler as any).aliasService = { lookup: (id: string) => id };
+            (handler as any).editOutcomes = sink;
+            const result = await (handler as any).createResult({ sessionId: 's', nodes: [{ elementId: 'n1', text: 'counter' }] });
+            expect(result.isError).toBeFalsy();
+            expect(result.content[0].text).toBe("Renamed 'n1' to 'counter'; its uses in the source follow.");
         } finally {
             restore();
         }

@@ -140,7 +140,7 @@ describe('unified runtime absorbed features', () => {
             data: { text: '/ping now', mode: 'build' }
         });
         expect(handler).toHaveBeenCalledWith(
-            { _positional: ['now'] },
+            { _raw: 'now', _positional: ['now'] },
             expect.objectContaining({ file: expect.stringContaining('wf.py'), selectedNodeIds: [] })
         );
         const sys = posts.find(p => p.payload.type === 'chat.message');

@@ -10,7 +10,9 @@
  *
  * Streamable HTTP, as far as a tool call needs it: `initialize` opens a session (its id comes
  * back in the `mcp-session-id` header), each request carries it, and an answer is JSON or one
- * server-sent event. A session the server forgot (404) is opened again once.
+ * server-sent event. A session the server forgot (404) is opened again once: nothing ran on it.
+ * A call that was sent is never sent again, whatever happened to its answer -- an edit may have
+ * been made, and made twice is worse than reported lost.
  */
 
 const PROTOCOL_VERSION = '2025-06-18';
@@ -40,37 +42,49 @@ export class GlspMcpClient {
     ) {}
 
     async callTool(name: string, args: Record<string, unknown>): Promise<GlspMcpToolAnswer> {
+        const reason = (err: unknown) => (err instanceof Error ? err.message : String(err));
         for (let attempt = 0; attempt < 2; attempt++) {
-            try {
-                if (!this.session) {
+            if (!this.session) {
+                try {
                     await this.initialize();
+                } catch (err) {
+                    // Opening a session changes nothing: it may be tried again.
+                    this.session = undefined;
+                    if (attempt === 1) {
+                        return { ok: false, text: `The diagram's tools did not answer: ${reason(err)}` };
+                    }
+                    continue;
                 }
+            }
+            let message: any;
+            try {
                 const response = await this.post({ jsonrpc: '2.0', id: this.nextId++, method: 'tools/call', params: { name, arguments: args } });
                 if (response.status === 404) {
-                    // The server forgot the session (it restarted): open another, once.
+                    // The server forgot the session (it restarted) and ran nothing: open another, once.
                     this.session = undefined;
                     continue;
                 }
-                const message = await readMessage(response);
-                if (message.error) {
-                    return { ok: false, text: String(message.error.message ?? 'The diagram tool failed.') };
-                }
-                const result = message.result ?? {};
-                const text = (Array.isArray(result.content) ? result.content : [])
-                    .map((part: { text?: unknown }) => (typeof part?.text === 'string' ? part.text : ''))
-                    .join('\n')
-                    .trim();
-                return {
-                    ok: result.isError !== true,
-                    text,
-                    ...(result.structuredContent && typeof result.structuredContent === 'object' ? { structured: result.structuredContent } : {})
-                };
+                message = await readMessage(response);
             } catch (err) {
                 this.session = undefined;
-                if (attempt === 1) {
-                    return { ok: false, text: `The diagram's tools did not answer: ${err instanceof Error ? err.message : String(err)}` };
-                }
+                return {
+                    ok: false,
+                    text: `The diagram's tools did not answer (${reason(err)}). The edit may have been made: look at the diagram before trying again.`
+                };
             }
+            if (message.error) {
+                return { ok: false, text: String(message.error.message ?? 'The diagram tool failed.') };
+            }
+            const result = message.result ?? {};
+            const text = (Array.isArray(result.content) ? result.content : [])
+                .map((part: { text?: unknown }) => (typeof part?.text === 'string' ? part.text : ''))
+                .join('\n')
+                .trim();
+            return {
+                ok: result.isError !== true,
+                text,
+                ...(result.structuredContent && typeof result.structuredContent === 'object' ? { structured: result.structuredContent } : {})
+            };
         }
         return { ok: false, text: "The diagram's tools did not answer." };
     }

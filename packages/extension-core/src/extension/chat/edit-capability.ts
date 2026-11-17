@@ -42,6 +42,47 @@ export interface EditChatCapability {
 const AUTO_LAYOUT_DEBOUNCE_MS = 400;
 const VIEW_OP_SETTLE_MS = 500;
 
+/**
+ * `reader path="a b.txt" src=File(path="x")` as words: split at blanks outside quotes and
+ * brackets, each kept as written.
+ */
+export function sourceWords(raw: string): string[] {
+    const words: string[] = [];
+    let current = '';
+    let depth = 0;
+    let quote: string | undefined;
+    for (let at = 0; at < raw.length; at++) {
+        const ch = raw[at];
+        if (quote) {
+            current += ch;
+            if (ch === '\\' && at + 1 < raw.length) {
+                current += raw[++at];
+            } else if (ch === quote) {
+                quote = undefined;
+            }
+            continue;
+        }
+        if (ch === '"' || ch === "'") {
+            quote = ch;
+        } else if ('([{'.includes(ch)) {
+            depth += 1;
+        } else if (')]}'.includes(ch)) {
+            depth = Math.max(0, depth - 1);
+        } else if (/\s/.test(ch) && depth === 0) {
+            if (current) {
+                words.push(current);
+            }
+            current = '';
+            continue;
+        }
+        current += ch;
+    }
+    if (current) {
+        words.push(current);
+    }
+    return words;
+}
+
 export function createEditChatCapability(deps: EditChatCapabilityDeps): EditChatCapability {
     const { profile, editBackend } = deps;
 
@@ -94,6 +135,13 @@ export function createEditChatCapability(deps: EditChatCapabilityDeps): EditChat
                 error: `Slash commands edit through the diagram's tools, which ${profile.displayName} has not turned on. Ask in a message instead.`
             };
         }
+        // The per-user rollback of the diagram's tools holds for the commands as for the agent.
+        if (!vscode.workspace.getConfiguration(CORE_CHAT_SECTION).get<boolean>('useGlspMcp', true)) {
+            return {
+                success: false,
+                error: `Slash commands edit through the diagram's tools, which the setting ${CORE_CHAT_SECTION}.useGlspMcp turns off. Ask in a message instead.`
+            };
+        }
         const sessionId = await sessionFor(ctx);
         if (!sessionId) {
             return { success: false, error: 'Open the diagram of this file: a slash command edits the diagram it shows.' };
@@ -118,42 +166,46 @@ export function createEditChatCapability(deps: EditChatCapabilityDeps): EditChat
         const row = profile.storageOptions?.entityPaletteItems?.find(
             each => each.label.trim().toLowerCase() === nc.nodeType.trim().toLowerCase()
         );
-        slashCommands.push({
-            command: nc.command,
-            description: `${nc.description}: an instance of <Type>, which is created first when the file has none`,
-            usage: '<Type> [name]',
-            modes: ['build'],
-            handler: async (args, ctx) => {
-                const type = args.type || positional(args, 0);
-                const name = args.name || positional(args, 1);
-                if (!type) {
-                    return { success: false, error: `Please name the ${nc.nodeType} type. Usage: /${nc.command} <Type> [name]` };
-                }
-                if (!row) {
-                    return { success: false, error: `${profile.displayName} has no palette entry for a ${nc.nodeType}.` };
-                }
-                const create = () => callTool(ctx, 'create-nodes', {
-                    nodes: [{
-                        elementTypeId: row.elementTypeId,
-                        position: { x: 0, y: 0 },
-                        args: { ...(row.args ?? {}), type, ...(name ? { name } : {}) }
-                    }]
-                });
-                const first = await create();
-                if (first.success) {
-                    return first;
-                }
-                // No such type yet, the usual reason: scaffold it, as the palette's wizard does,
-                // then the node. A type that exists refuses the scaffold, and the create's own
-                // reason stands.
-                const scaffold = await callTool(ctx, 'create-task-type', { name: type, kind: nc.nodeType });
-                if (!scaffold.success) {
-                    return first;
-                }
-                const second = await create();
-                return second.success ? { success: true, info: `${scaffold.info}\n${second.info}` } : second;
-            }
+        // A row that fixes its type (a document's clause of one kind) makes that type: the
+        // command names only the node. Any other names the type it makes an instance of.
+        const fixedType = typeof row?.args?.type === 'string' && row.args.type.trim() !== '' ? row.args.type : undefined;
+        const create = (ctx: ChatCommandContext, args: Record<string, unknown>) => callTool(ctx, 'create-nodes', {
+            nodes: [{ elementTypeId: row!.elementTypeId, position: { x: 0, y: 0 }, args: { ...(row!.args ?? {}), ...args } }]
         });
+        slashCommands.push(fixedType
+            ? {
+                command: nc.command,
+                description: nc.description,
+                usage: '<name>',
+                modes: ['build'],
+                handler: async (args, ctx) => {
+                    const name = args.name || positionals(args).join(' ');
+                    if (!name) {
+                        return { success: false, error: `Please name the ${nc.nodeType}. Usage: /${nc.command} <name>` };
+                    }
+                    return create(ctx, { name });
+                }
+            }
+            : {
+                command: nc.command,
+                description: `${nc.description}: an instance of <Type>, which is created first when the file has none`,
+                usage: '<Type> [name]',
+                modes: ['build'],
+                handler: async (args, ctx) => {
+                    const type = args.type || positional(args, 0);
+                    const name = args.name || positional(args, 1);
+                    if (!type) {
+                        return { success: false, error: `Please name the ${nc.nodeType} type. Usage: /${nc.command} <Type> [name]` };
+                    }
+                    if (!row) {
+                        return { success: false, error: `${profile.displayName} has no palette entry for a ${nc.nodeType}.` };
+                    }
+                    // `createType`: when the source has no type of that name, the diagram makes
+                    // it first, as the palette's "Create new…" does, in the same undoable edit;
+                    // a type imported from elsewhere is found, and left alone.
+                    return create(ctx, { type, ...(name ? { name } : {}), createType: true });
+                }
+            });
     }
 
     slashCommands.push({
@@ -220,9 +272,12 @@ export function createEditChatCapability(deps: EditChatCapabilityDeps): EditChat
         usage: '<name> param=value …',
         modes: ['build'],
         handler: async (args, ctx) => {
-            const name = args.name || positional(args, 0);
+            // From the text as typed: a value is source text, whose quotes, parentheses and `=`
+            // the shared argument parser would strip or split.
+            const words = sourceWords(typeof args._raw === 'string' ? args._raw : '');
+            const name = words.find(word => !word.includes('='));
             const parameters = Object.fromEntries(
-                Object.entries(args).filter(([key]) => key !== 'name' && key !== '_positional').map(([key, value]) => [key, String(value)])
+                words.filter(word => word.includes('=')).map(word => [word.slice(0, word.indexOf('=')), word.slice(word.indexOf('=') + 1)])
             );
             if (!name || Object.keys(parameters).length === 0) {
                 return { success: false, error: 'Please name the node and a parameter. Usage: /update <name> param=value' };

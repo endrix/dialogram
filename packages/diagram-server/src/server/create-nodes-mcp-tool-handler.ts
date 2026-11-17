@@ -53,7 +53,9 @@ export class AgentDispatchCreateNodesMcpToolHandler extends CreateNodesMcpToolHa
         'if a required value is missing the call fails with a message naming exactly what to pass. ' +
         "On success the confirmation lists each created node's port names — pass those to create-edges " +
         'as args.source/args.target "nodeName.portName" to connect the node without any query-elements ' +
-        'dump. This operation modifies the source and is undoable via the editor.';
+        'dump. With `args.createType: true`, a type the file does not have (none of that name defined ' +
+        'or imported) is created first, as the palette\'s "Create new…" does, in the same undoable edit. ' +
+        'This operation modifies the source and is undoable via the editor.';
 
     // The stock handler declares CreateNodesOutputSchema and derives `createdNodes` from a
     // post-dispatch `modelState.index` diff. In dialogram that diff can never see a create (the
@@ -112,7 +114,7 @@ export class AgentDispatchCreateNodesMcpToolHandler extends CreateNodesMcpToolHa
  * could not be resolved from source the line degrades to the plain id + name confirmation.
  */
 function formatCreatedNode(outcome: CreatedNodeOutcome): string {
-    const base = `- ${outcome.type} '${outcome.name}' (#${outcome.name})`;
+    const base = `${outcome.createdType ? `- Created the ${outcome.createdType}.\n` : ''}- ${outcome.type} '${outcome.name}' (#${outcome.name})`;
     if (!outcome.ports || outcome.ports.length === 0) {
         return base;
     }

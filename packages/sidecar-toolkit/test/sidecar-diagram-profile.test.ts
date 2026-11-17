@@ -177,6 +177,11 @@ describe('createSidecarDiagramProfile', () => {
         expect(runs.chat?.tools?.map(t => t.name)).toEqual(expect.arrayContaining(['run_workflow', 'resume_failed_run']));
         // A run starts processes: kept off the auto-approved read-only bridge.
         expect(runs.chat?.tools?.find(t => t.name === 'run_workflow')?.mutates).toBe(true);
+        // Inputs only where the plan names them; a run here hands on no others.
+        const inputsOf = (profile: typeof runs) =>
+            Object.keys((profile.chat?.tools?.find(t => t.name === 'run_workflow')?.inputSchema as any)?.properties ?? {});
+        expect(inputsOf(runs)).toContain('inputs');
+        expect(inputsOf(createSidecarDiagramProfile(baseInput({ graphAcquisition: 'sidecar-export' } as any)))).not.toContain('inputs');
 
         const none = createSidecarDiagramProfile(baseInput({ cliRuns: false, cliResumeArgs: resume }));
         expect(none.runDriver).toBeUndefined();

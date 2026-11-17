@@ -198,6 +198,21 @@ describe("the chat's run", () => {
         expect(spawns).toEqual([]);
     });
 
+    it('starts nothing for an input the workflow does not have, and names the ones it does', async () => {
+        makeDriver(async () => planned);
+        const said = await fromChat({ file: fileOf(sourceFile()), inputs: { Text: 'hi', Doc: '', Txt: 'x' } });
+        expect(said).toBe("Not started: shout has no input 'Txt'; its inputs are Text, Doc.");
+        expect(spawns).toEqual([]);
+    });
+
+    it('starts nothing when given inputs a run here cannot take', async () => {
+        // No plan to name the inputs: they would be dropped, and the run "finish" with nothing.
+        makeDriver();
+        const said = await fromChat({ file: fileOf(sourceFile()), inputs: { Text: 'hi' } });
+        expect(said).toContain('Not started: runs here take no inputs from the chat.');
+        expect(spawns).toEqual([]);
+    });
+
     it("runs the plan's workflow with the values given, asking the person nothing, and says it finished", async () => {
         makeDriver(async () => planned);
         const said = await fromChat({ file: fileOf(sourceFile()), inputs: { Text: 'hi', Doc: '' }, waitSeconds: 5 });

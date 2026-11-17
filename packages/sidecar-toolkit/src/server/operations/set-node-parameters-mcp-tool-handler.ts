@@ -53,19 +53,19 @@ export class SetNodeParametersMcpToolHandler extends OperationMcpDiagramToolHand
         const set: string[] = [];
         const refused: string[] = [];
         for (const [parameterName, newValue] of entries) {
-            this.editOutcomes?.reset();
             const operation: UpdateEntityParameterOperation.Operation = {
                 kind: UpdateEntityParameterOperation.KIND,
                 elementId,
                 parameterName,
                 newValue
             };
-            await this.actionDispatcher.dispatch(operation);
             if (!this.editOutcomes) {
+                await this.actionDispatcher.dispatch(operation);
                 set.push(`${parameterName} = ${newValue}`);
                 continue;
             }
-            const answers = this.editOutcomes.take().filter(outcome => isEditOp(outcome.op, 'updateNodeParameter'));
+            const { outcomes } = await this.editOutcomes.collect(() => this.actionDispatcher.dispatch(operation));
+            const answers = outcomes.filter(outcome => isEditOp(outcome.op, 'updateNodeParameter'));
             const failed = answers.find(outcome => !outcome.ok);
             if (answers.length === 0) {
                 refused.push(`${parameterName}: not changed (nothing reached the source).`);

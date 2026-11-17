@@ -52,13 +52,14 @@ export class CreateTaskTypeMcpToolHandler extends OperationMcpDiagramToolHandler
     protected editOutcomes?: AgentEditOutcomeSink;
 
     protected async createResult({ name, kind }: CreateTaskTypeInput): Promise<McpToolResult> {
-        this.editOutcomes?.reset();
-        await this.actionDispatcher.dispatch(CreateTaskTypeOperation.create({ name, typeKind: kind }));
+        const dispatch = () => this.actionDispatcher.dispatch(CreateTaskTypeOperation.create({ name, typeKind: kind }));
         const label = `${kind?.trim() || 'task'} type '${name}'`;
         if (!this.editOutcomes) {
+            await dispatch();
             return this.success(`Scaffolded ${label}. Undo via the editor if unintended.`);
         }
-        const answer = this.editOutcomes.take().find(outcome => isEditOp(outcome.op, 'createTaskType', 'createWorkflowType'));
+        const { outcomes } = await this.editOutcomes.collect(dispatch);
+        const answer = outcomes.find(outcome => isEditOp(outcome.op, 'createTaskType', 'createWorkflowType'));
         if (!answer) {
             return this.error(`The ${label} was not created: the diagram could not ask the source for it.`);
         }

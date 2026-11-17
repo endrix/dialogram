@@ -129,9 +129,10 @@ export class AgentDispatchCreateEdgesMcpToolHandler extends CreateEdgesMcpToolHa
         const refused: string[] = [];
         for (const [at, edge] of resolvedEdges.entries()) {
             const label = this.edgeLabel(input.edges[at], edge);
-            this.editOutcomes.reset();
-            const stock = await super.createResult({ ...input, edges: [edge] } as Parameters<CreateEdgesMcpToolHandler['createResult']>[0]);
-            const answers = this.editOutcomes.take().filter(outcome => isEditOp(outcome.op, 'connect'));
+            const { value: stock, outcomes } = await this.editOutcomes.collect(
+                () => super.createResult({ ...input, edges: [edge] } as Parameters<CreateEdgesMcpToolHandler['createResult']>[0])
+            );
+            const answers = outcomes.filter(outcome => isEditOp(outcome.op, 'connect'));
             if (answers.length === 0) {
                 // Nothing reached the producer: the diagram could not use these endpoints.
                 refused.push(`${label}: not connected. ${textOf(stock)}`.trim());

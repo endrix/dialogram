@@ -58,6 +58,24 @@ describe('GlspMcpClient', () => {
         expect(sent.at(-1)!.headers['mcp-session-id']).toBe('s-2');
     });
 
+    it('never sends a tool call twice: one that may have been made is reported, not repeated', async () => {
+        // An edit sent, then its answer lost (a reset socket), may have been made; sending it
+        // again made a second node with a second undo entry.
+        let calls = 0;
+        const { sent, fetchImpl } = server(opened('s-1'));
+        const client = new GlspMcpClient('http://x/mcp', async (url, init) => {
+            if (JSON.parse(init.body).method === 'tools/call') {
+                calls += 1;
+                throw new Error('socket hang up');
+            }
+            return fetchImpl(url, init);
+        });
+        const answer = await client.callTool('create-nodes', {});
+        expect(calls).toBe(1);
+        expect(answer).toEqual({ ok: false, text: expect.stringContaining('The edit may have been made') });
+        expect(sent.map(each => each.body.method)).toEqual(['initialize', 'notifications/initialized']);
+    });
+
     it('says the tools did not answer when the server is down', async () => {
         const client = new GlspMcpClient('http://x/mcp', async () => { throw new Error('ECONNREFUSED'); });
         const answer = await client.callTool('a', {});

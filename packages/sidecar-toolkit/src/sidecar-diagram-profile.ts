@@ -685,7 +685,8 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
     if (runs && !readOnly) {
         // The IDE's own run, so the diagram and the chat's Run tab show it. A
         // read-only diagram's chat only reads.
-        chatTools.push(runWorkflowTool(input.commands.runWorkflow));
+        // Inputs only where the plan names them: the run hands on no others.
+        chatTools.push(runWorkflowTool(input.commands.runWorkflow, { takesInputs: input.graphAcquisition === 'cli-plan' }));
     }
     if (runs && input.cliResumeArgs) {
         chatTools.push(resumeFailedRunTool(input.commands.runWorkflow));
@@ -875,24 +876,27 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
  * answer, and the run's outcome shows on the diagram.
  */
 /** The chat tool that runs the workflow the way the diagram's Run does (see `CliRunDriver.runFromChat`). */
-export function runWorkflowTool(runWorkflowCommandId: string): RegistryChatTool {
+export function runWorkflowTool(runWorkflowCommandId: string, options: { takesInputs?: boolean } = {}): RegistryChatTool {
+    const takesInputs = options.takesInputs !== false;
     return {
         name: RUN_TOOL,
         description:
             'Run the workflow of this file the way the diagram\'s Run button does: its nodes light up on the diagram as they fire, '
             + "and its log shows in the chat's Run tab. Use it instead of running the CLI in a shell, which shows nowhere. "
-            + 'Pass a value for each workflow input in `inputs` (the result names any missing; ask the user for values you do not know). '
+            + (takesInputs ? 'Pass a value for each workflow input in `inputs` (the result names any missing; ask the user for values you do not know). ' : '')
             + 'The call waits for the run to end, up to `waitSeconds` (default 60), and says how it ended and which files hold its outputs; '
             + 'called again while that run is going, it waits for it instead of starting another.',
         inputSchema: {
             type: 'object',
             properties: {
                 workflow: { type: 'string', description: 'The workflow to run, when the file defines several. Default: the one the diagram shows.' },
-                inputs: {
-                    type: 'object',
-                    additionalProperties: { type: 'string' },
-                    description: 'A value for each workflow input, by name: text as it is, a number as digits, a File as a path. "" gives an input no token.'
-                },
+                ...(takesInputs ? {
+                    inputs: {
+                        type: 'object',
+                        additionalProperties: { type: 'string' },
+                        description: 'A value for each workflow input, by name: text as it is, a number as digits, a File as a path. "" gives an input no token.'
+                    }
+                } : {}),
                 waitSeconds: { type: 'number', description: 'How long to wait for the run to end, in seconds (0 to 600). Default 60.' }
             }
         },

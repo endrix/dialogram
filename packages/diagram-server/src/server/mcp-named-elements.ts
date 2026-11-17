@@ -78,9 +78,9 @@ export class NamedNodeMcpLabelProvider implements McpLabelProvider {
     }
 }
 
-/** The producer's answers to one kind of edit, as lines for the agent; `undefined` when none came. */
+/** The producer's answers (to these ops, when named), as lines for the agent; `undefined` when none came. */
 function answersOf(outcomes: readonly AgentEditOutcome[], ...ops: string[]): { ok: number; refused: string[] } | undefined {
-    const answers = outcomes.filter(outcome => isEditOp(outcome.op, ...ops));
+    const answers = ops.length === 0 ? [...outcomes] : outcomes.filter(outcome => isEditOp(outcome.op, ...ops));
     if (answers.length === 0) {
         return undefined;
     }
@@ -113,9 +113,10 @@ export class AgentDispatchDeleteElementsMcpToolHandler extends DeleteElementsMcp
         if (!this.editOutcomes) {
             return super.createResult({ ...input, elementIds });
         }
-        this.editOutcomes.reset();
-        const stock = await super.createResult({ ...input, elementIds });
-        const answers = answersOf(this.editOutcomes.take(), 'deleteNode', 'deleteEdge', 'deletePort');
+        // Every answer while the delete runs is the delete's: a node, an edge, a port, a
+        // transition or a view element, each by its own op.
+        const { value: stock, outcomes } = await this.editOutcomes.collect(() => super.createResult({ ...input, elementIds }));
+        const answers = answersOf(outcomes);
         if (!answers) {
             return this.error(`Nothing was deleted. ${textOf(stock)}`.trim());
         }
@@ -155,13 +156,23 @@ export class AgentDispatchModifyNodesMcpToolHandler extends ModifyNodesMcpToolHa
         if (!this.editOutcomes) {
             return super.createResult({ ...input, nodes });
         }
-        this.editOutcomes.reset();
-        const stock = await super.createResult({ ...input, nodes });
-        const renames = answersOf(this.editOutcomes.take(), 'renameNode');
-        if (renames && renames.refused.length > 0) {
-            return this.error(['Not renamed:', ...renames.refused.map(each => `- ${each}`)].join('\n'));
+        const { value: stock, outcomes } = await this.editOutcomes.collect(() => super.createResult({ ...input, nodes }));
+        const renaming = input.nodes.filter(change => typeof change.text === 'string' && change.text.trim() !== '');
+        if (renaming.length === 0) {
+            return stock;
         }
-        return stock;
+        // A rename is the producer's: with no answer from it, nothing was renamed, whatever the
+        // stock result (which reads the label off a model not yet re-read) says.
+        const answers = answersOf(outcomes);
+        if (!answers) {
+            return this.error(`Not renamed: the source was not asked to rename ${renaming.map(change => `'${change.elementId}'`).join(', ')}. ${textOf(stock)}`.trim());
+        }
+        if (answers.refused.length > 0) {
+            return this.error(['Not renamed:', ...answers.refused.map(each => `- ${each}`)].join('\n'));
+        }
+        const renamed = `Renamed ${renaming.map(change => `'${change.elementId}' to '${change.text!.trim()}'`).join(', ')}; its uses in the source follow.`;
+        const moved = input.nodes.some(change => change.position !== undefined || change.size !== undefined);
+        return this.success(moved ? `${renamed}\n${textOf(stock)}` : renamed);
     }
 
     /** The alias of the node named `given`, when `given` is no element's id. */
