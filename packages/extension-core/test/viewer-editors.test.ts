@@ -142,3 +142,24 @@ describe('ranking for the file at hand', () => {
         expect(ranked).toEqual(many);
     });
 });
+
+describe('a command named for the kind of file', () => {
+    const htmlPreview = {
+        id: 'ebezati.wfpy-ide',
+        displayName: 'Workflow IDE',
+        commands: [{ command: 'workflow.glsp.openHtmlPreview', title: 'Workflow: Open HTML Preview' }]
+    };
+
+    it('comes right after the editors that claim the file, ahead of every other viewer', () => {
+        const all = discoverViewerEditors([markdown, imagePreview, noise, htmlPreview]);
+        const ranked = rankForFile(all, 'site/report.html');
+        expect(ranked[0].command).toBe('workflow.glsp.openHtmlPreview');
+        expect(ranked).toHaveLength(all.length);
+    });
+
+    it('is not moved for a file of another kind', () => {
+        const all = discoverViewerEditors([markdown, htmlPreview]);
+        expect(rankForFile(all, 'plot.csv')).toEqual(all);
+    });
+});
+

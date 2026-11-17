@@ -84,6 +84,31 @@ describe('viewer action dispatch', () => {
         expect(executeCommand).toHaveBeenCalledWith('vscode.openWith', targetUri, 'vscode.markdown.preview.editor');
     });
 
+    it('says so, and opens the default editor, when nothing installed provides the editor', async () => {
+        const targetUri = vscode.Uri.parse('file:///tmp/report.html');
+        vi.spyOn(vscode.commands, 'getCommands').mockResolvedValue([]);
+        const executeCommand = vi.spyOn(vscode.commands, 'executeCommand').mockResolvedValue(undefined);
+        const warned: string[] = [];
+        const original = (vscode.window as any).showWarningMessage;
+        (vscode.window as any).showWarningMessage = async (message: string) => { warned.push(message); return undefined; };
+        (vscode as any).extensions = {
+            all: [{ packageJSON: { contributes: { customEditors: [{ viewType: 'imagePreview.previewEditor' }], commands: [{ command: 'workflow.glsp.openHtmlPreview' }] } } }]
+        };
+        try {
+            await executeViewerOpen(targetUri, 'simpleBrowser.view');
+            expect(warned[0]).toContain("No installed extension provides the editor 'simpleBrowser.view'");
+            expect(executeCommand.mock.calls.map(call => call[0])).toEqual(['vscode.open']);
+
+            // A declared editor or command is still tried as before.
+            executeCommand.mockClear();
+            await executeViewerOpen(targetUri, 'imagePreview.previewEditor');
+            expect(executeCommand).toHaveBeenCalledWith('vscode.openWith', targetUri, 'imagePreview.previewEditor');
+        } finally {
+            (vscode.window as any).showWarningMessage = original;
+            delete (vscode as any).extensions;
+        }
+    });
+
     it('surfaces the fallback command error when openWith also fails', async () => {
         const targetUri = vscode.Uri.parse('file:///tmp/report.html');
         vi.spyOn(vscode.commands, 'getCommands').mockResolvedValue([]);
