@@ -8,12 +8,12 @@
  * knows.
  */
 import type { GPort } from '@eclipse-glsp/server';
-import { WorkflowDiagramTypes } from '@dialogram/shared';
+import { isBoundaryNodeType, WorkflowDiagramTypes } from '@dialogram/shared';
 
 export function portAt(index: { get(id: string): unknown }, elementId: string): GPort | undefined {
     const element = index.get(elementId) as (GPort & { type?: string; children?: unknown[] }) | undefined;
     const type = element?.type;
-    if (type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+    if (isBoundaryNodeType(type)) {
         return (element!.children as GPort[] | undefined)?.find(child => typeof child.type === 'string' && child.type.startsWith('port'));
     }
     return element;

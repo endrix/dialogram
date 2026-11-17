@@ -14,7 +14,7 @@
  * state's name; and, for the network shown when nothing is selected, its
  * name, parameters, annotations, facts, load issues and its own ports.
  */
-import { WorkflowDiagramMetadata as M, WorkflowDiagramTypes } from '@dialogram/shared';
+import { isBoundaryNodeType, WorkflowDiagramMetadata as M, WorkflowDiagramTypes } from '@dialogram/shared';
 
 interface ElementLike {
     id?: string;
@@ -110,7 +110,7 @@ export function networkPanelSignature(root: RootLike | undefined): string {
     const boundaries: unknown[] = [];
     const visit = (element: ElementLike | undefined): void => {
         for (const child of element?.children ?? []) {
-            if (child.type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || child.type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+            if (isBoundaryNodeType(child.type)) {
                 boundaries.push([child.type, child.id, picked(child, NODE_KEYS)]);
             }
             visit(child);

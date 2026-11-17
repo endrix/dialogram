@@ -264,7 +264,6 @@ function markFeedbackEdges(children: GModelElement[]): void {
     }
 }
 
-
 /** What an end on the unit's boundary is suffixed with: one node for what enters it, one for what leaves. */
 const INTO_BOUNDARY = '\u0000in';
 const OUT_OF_BOUNDARY = '\u0000out';

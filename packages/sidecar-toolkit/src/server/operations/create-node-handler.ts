@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
 import { URI } from 'vscode-uri';
-import { WORKFLOW_NETWORK_MODEL_KEY, WorkflowDiagramMetadata, WorkflowDiagramTypes, portTypesUsed, withArticle } from '@dialogram/shared';
+import { isBoundaryNodeType, WORKFLOW_NETWORK_MODEL_KEY, WorkflowDiagramMetadata, WorkflowDiagramTypes, portTypesUsed, withArticle } from '@dialogram/shared';
 import { LayoutPersistenceService } from '@dialogram/diagram-server/services/layout-persistence-service';
 import { layoutTargetOf } from '@dialogram/diagram-server/server/layout-target';
 
@@ -651,7 +651,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
     }
 
     private requiredOpsForElementType(elementTypeId: string): string[] {
-        if (elementTypeId === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || elementTypeId === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+        if (isBoundaryNodeType(elementTypeId)) {
             return [this.sidecar.sidecarOp('createPort')];
         }
 

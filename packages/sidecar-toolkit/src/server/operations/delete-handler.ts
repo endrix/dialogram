@@ -3,7 +3,7 @@ import { OperationHandler, MaybePromise, Action, ModelState, Command, GModelElem
 import { inject, injectable, optional } from 'inversify';
 import * as vscode from 'vscode';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
-import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
+import { isBoundaryNodeType, WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypeGuards, WorkflowDiagramTypes } from '@dialogram/shared';
 
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
@@ -236,7 +236,7 @@ export class DeleteElementOperationHandler extends OperationHandler {
             // too (`ENTITY_NAME`), but it is a port of the network, deleted
             // as one, its direction the node's. Its hidden port's direction
             // is the other way round: what flows out of an input.
-            if (elementType === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || elementType === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+            if (isBoundaryNodeType(elementType)) {
                 const portName = elementArgs?.[WorkflowDiagramMetadata.PORT_NAME] ?? elementArgs?.[WorkflowDiagramMetadata.ENTITY_NAME];
                 if (typeof portName === 'string' && portName.trim() !== '') {
                     deletePort(elementType === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT ? 'input' : 'output', portName);

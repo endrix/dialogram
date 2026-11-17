@@ -63,18 +63,6 @@ function buildRoot() {
         .addChildren(reportPort)
         .build();
 
-    // A unit drawn in place, inside a group: its boundary node is the unit's port, not the diagram's.
-    const innerClkPort = GPort.builder().id('unit.clk.p').type(WorkflowDiagramTypes.PORT_OUTPUT)
-        .addArg(WorkflowDiagramMetadata.PORT_NAME, 'clk')
-        .build();
-    const innerClk = GNode.builder().id('unit.clk').type(WorkflowDiagramTypes.NODE_BOUNDARY_INPUT)
-        .addArg(WorkflowDiagramMetadata.ENTITY_NAME, 'unit_clk')
-        .addArg(WorkflowDiagramMetadata.PORT_NAME, 'clk')
-        .addChildren(innerClkPort)
-        .build();
-    const group = GNode.builder().id('g_unit').type(WorkflowDiagramTypes.NODE_GROUP)
-        .addChildren(innerClk)
-        .build();
     // A diagram port whose names all differ: entity 'rst_label', node port 'reset', its port 'rst_n'.
     const resetPort = GPort.builder().id('wf.rst.p').type(WorkflowDiagramTypes.PORT_OUTPUT)
         .addArg(WorkflowDiagramMetadata.PORT_NAME, 'rst_n')
@@ -85,7 +73,7 @@ function buildRoot() {
         .addChildren(resetPort)
         .build();
 
-    return GGraph.builder().id('root').addChildren(producer, consumer, dup, textFile, report, group, reset).build();
+    return GGraph.builder().id('root').addChildren(producer, consumer, dup, textFile, report, reset).build();
 }
 
 describe('resolveEndpointElementId', () => {
@@ -154,21 +142,14 @@ describe('resolveEndpointElementId', () => {
         expect(resolveEndpointElementId(root, 'Report')).toEqual({ ok: true, elementId: 'wf.Report.p' });
     });
 
-    it("takes a boundary node inside a group for its unit's port, not the diagram's", () => {
+    it("finds a diagram port by its port name, and by its entity name in a dotted spec", () => {
         const root = buildRoot();
-        const bare = resolveEndpointElementId(root, 'clk');
-        expect(bare.ok).toBe(false);
-        expect(bare.message).toContain("No diagram port named 'clk'");
-        expect(bare.message).not.toMatch(/own ports: [^.]*clk/);
-        // Still addressable as the node it is.
-        expect(resolveEndpointElementId(root, 'unit_clk.clk')).toEqual({ ok: true, elementId: 'unit.clk.p' });
-    });
-
-    it("finds a diagram port by its port's own name, and by its entity name in a dotted spec", () => {
-        const root = buildRoot();
-        expect(resolveEndpointElementId(root, 'rst_n')).toEqual({ ok: true, elementId: 'wf.rst.p' });
         expect(resolveEndpointElementId(root, 'reset')).toEqual({ ok: true, elementId: 'wf.rst.p' });
+        // Only the node's name: a name its inner port has would make others ambiguous.
+        expect(resolveEndpointElementId(root, 'rst_n').ok).toBe(false);
         expect(resolveEndpointElementId(root, 'rst_label.rst_n')).toEqual({ ok: true, elementId: 'wf.rst.p' });
         expect(resolveEndpointElementId(root, 'TextFile.TextFile')).toEqual({ ok: true, elementId: 'wf.TextFile.p' });
+        // And the names it accepts are the names it lists.
+        expect(resolveEndpointElementId(root, 'nobody.x').message).toContain('rst_label');
     });
 });

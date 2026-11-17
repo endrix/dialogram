@@ -3,7 +3,7 @@ import { ReconnectEdgeOperation } from '@eclipse-glsp/protocol';
 import { inject, injectable } from 'inversify';
 import { promises as fs } from 'node:fs';
 import * as vscode from 'vscode';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { isBoundaryNodeType, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
 import type { PortReference } from './create-edge-handler';
 
@@ -132,8 +132,7 @@ export class ReconnectEdgeOperationHandler extends OperationHandler {
 
         const parentType = parent.type as string | undefined;
         const isBoundary =
-            parentType === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT ||
-            parentType === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT;
+            isBoundaryNodeType(parentType);
 
         if (isBoundary) {
             return {
