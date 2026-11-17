@@ -60,7 +60,9 @@ export class SidecarSteps {
         } catch {
             restored = false;
         }
-        const reason = result.message ?? failed;
+        // A producer's reason may end without a stop (wfpy's do): one sentence.
+        const said = (result.message ?? failed).trim();
+        const reason = /[.!?]$/.test(said) ? said : `${said}.`;
         void vscode.window.showWarningMessage(restored
             ? `${reason} Nothing was changed.`
             : `${reason} The steps before it could not be taken back in ${path}.`);

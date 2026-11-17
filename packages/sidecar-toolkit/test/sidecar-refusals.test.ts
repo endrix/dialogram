@@ -133,6 +133,21 @@ describe('a refusal', () => {
     });
 });
 
+describe('a refusal’s reason', () => {
+    it('is one sentence with what was done after it, whether or not the producer ends it', async () => {
+        const { file, state } = view();
+        const { sidecar } = producer(file, { refuse: 'wfpy.deleteNode', reason: "'t' is made in a loop: take it out there first" });
+        const handler = new CutOperationHandler() as any;
+        handler.modelState = state;
+        handler.sidecar = sidecar;
+        const said = await saying(async said => {
+            await onDisk(file, () => commandStack().execute(handler.createCommand(CutOperation.create({ selectedElementIds: ['t', 'e'] }))));
+            return said;
+        });
+        expect(said).toEqual(["'t' is made in a loop: take it out there first. Nothing was changed."]);
+    });
+});
+
 describe('a duplicate', () => {
     async function duplicate(features: string[]) {
         const { file, state } = view();
