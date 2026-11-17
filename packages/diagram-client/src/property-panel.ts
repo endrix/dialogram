@@ -965,7 +965,10 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             }
         };
         if (value.includes('\n')) {
+            // Its height is its rows' and room for a scroll bar under them: the
+            // field's class sets a one-line control's.
             return html`<textarea ${ref(field)} class=${`${options.className} source-lines`}
+                style="height: auto; padding: 4px 8px 14px;"
                 rows=${Math.min(value.split('\n').length, 8)} .value=${value}
                 placeholder=${options.placeholder ?? ''} aria-label=${options.ariaLabel ?? nothing}
                 title="Ctrl+Enter to commit" @input=${() => options.onInput?.()} @keydown=${onKeydown}></textarea>`;
