@@ -150,8 +150,10 @@ and plugins around yours:
   that changed, so a failed build leaves the last good bundle.
 
 The wrapper writes the bundle itself (leave `write` out); `{ inMemory: true }`
-leaves the outputs in `outputFiles` instead, checked all the same. The
-extension's own build and the SVG renderer build this way.
+leaves the outputs in `outputFiles` instead, checked all the same. A "build
+succeeded" line belongs in `{ onWritten }`, which runs once the files are on
+disk: a plugin's `onEnd` of yours runs before the write. The extension's own
+build and the SVG renderer build this way.
 
 A product with its own `node_modules` also pins GLSP, Sprotty and inversify to
 the platform's copy, so the bundle has one inversify realm (chisel-ide's

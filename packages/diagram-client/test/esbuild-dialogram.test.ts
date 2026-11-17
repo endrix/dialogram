@@ -25,15 +25,16 @@ const freshDir = () => {
     return dir;
 };
 
-/** Build an entry module's text into `outdir` the way the platform builds. */
-function build(
+/** An entry module's text built into `outdir` the way the platform builds. */
+function options(
     outdir: string,
     contents: string,
-    { plugins = [], tsconfigRaw, inMemory = false, external }: {
+    { plugins = [], tsconfigRaw, inMemory = false, external, packages, onWritten }: {
         plugins?: esbuild.Plugin[]; tsconfigRaw?: esbuild.TsconfigRaw; inMemory?: boolean; external?: string[];
+        packages?: 'external'; onWritten?: (result: esbuild.BuildResult) => void;
     } = {}
 ) {
-    return esbuild.build(dialogramBuild({
+    return dialogramBuild({
         stdin: { contents, resolveDir: __dirname, loader: 'ts', sourcefile: 'entry.ts' },
         bundle: true,
         outdir,
@@ -44,9 +45,16 @@ function build(
         metafile: true,
         plugins,
         ...(tsconfigRaw ? { tsconfigRaw } : {}),
-        ...(external ? { external } : {})
-    }, { packagesDir: PACKAGES, relativeTo: outdir, inMemory }));
+        ...(external ? { external } : {}),
+        ...(packages ? { packages } : {})
+    }, { packagesDir: PACKAGES, relativeTo: outdir, inMemory, onWritten });
 }
+
+/** Build it once. */
+const build = Object.assign(
+    (...args: Parameters<typeof options>) => esbuild.build(options(...args)),
+    { options }
+);
 
 describe('the platform build', () => {
     it('leaves an unchanged bundle alone, and writes a changed one in place', async () => {
@@ -69,6 +77,26 @@ describe('the platform build', () => {
         expect(fs.readdirSync(dir)).toEqual(['stdin.js']);
     }, 60_000);
 
+    it('says a build succeeded once its bundle is on disk, and writes again what went missing', async () => {
+        const dir = freshDir();
+        const out = path.join(dir, 'stdin.js');
+        const seen: string[] = [];
+        const ctx = await esbuild.context(build.options(dir, 'export const answer = 41;', {
+            onWritten: () => seen.push(fs.existsSync(out) ? fs.readFileSync(out, 'utf8') : 'missing')
+        }));
+        try {
+            await ctx.rebuild();
+            expect(seen).toHaveLength(1);
+            expect(seen[0]).toMatch(/answer = 41/);
+            // The writer compares with what it last wrote; a file deleted since is written again.
+            fs.rmSync(out);
+            await ctx.rebuild();
+            expect(seen[1]).toMatch(/answer = 41/);
+        } finally {
+            await ctx.dispose();
+        }
+    }, 60_000);
+
     it('fails a bundle with a standard decorator, written or in memory, and writes nothing', async () => {
         const dir = freshDir();
         const decorated = 'const mark = (..._: unknown[]): any => undefined;\n@mark class Marked {}\nexport { Marked };';
@@ -79,6 +107,17 @@ describe('the platform build', () => {
             });
         }
         expect(fs.readdirSync(dir)).toEqual([]);
+        // A build with no outdir, whose one output is `<stdout>`, is checked too.
+        const unnamed = esbuild.build(dialogramBuild({
+            stdin: { contents: decorated, loader: 'ts', resolveDir: __dirname },
+            bundle: true,
+            target: 'ES2017',
+            logLevel: 'silent',
+            tsconfigRaw: standard
+        }, { packagesDir: PACKAGES, inMemory: true }));
+        await expect(unnamed).rejects.toMatchObject({
+            errors: [expect.objectContaining({ text: expect.stringContaining('was compiled with standard decorators') })]
+        });
     }, 60_000);
 
     it("writes nothing when the build's own onEnd fails it", async () => {
@@ -89,10 +128,12 @@ describe('the platform build', () => {
                 b.onEnd(() => ({ errors: [{ text: 'over budget' }] }));
             }
         };
-        await expect(build(dir, 'export const answer = 41;', { plugins: [budget] })).rejects.toMatchObject({
+        const said: unknown[] = [];
+        await expect(build(dir, 'export const answer = 41;', { plugins: [budget], onWritten: result => said.push(result) })).rejects.toMatchObject({
             errors: [expect.objectContaining({ text: 'over budget' })]
         });
         expect(fs.readdirSync(dir)).toEqual([]);
+        expect(said).toEqual([]);
     }, 60_000);
 
     it('refuses a `write` of its own rather than ignore it', () => {
@@ -122,6 +163,9 @@ describe('the platform build', () => {
         const built = await build(dir, "export * from '@dialogram/runtime-api';", { external: ['@dialogram/runtime-*'], inMemory: true });
         expect(built.errors).toEqual([]);
         expect(built.outputFiles![0].text).toContain('@dialogram/runtime-api');
+        // As does a build that keeps every package it does not alias external.
+        const kept = await build(dir, "export * from '@dialogram/runtime-api';", { packages: 'external', inMemory: true });
+        expect(kept.outputFiles![0].text).toContain('@dialogram/runtime-api');
     }, 60_000);
 
     it('lets a plugin of the build serve a @dialogram path of its own', async () => {

@@ -35,14 +35,16 @@ export function dialogramAlias(packagesDir) {
             if (!fs.existsSync(src) || !fs.existsSync(manifest)) {
                 return [];
             }
-            const name = JSON.parse(fs.readFileSync(manifest, 'utf8')).name;
+            let name;
+            try {
+                name = JSON.parse(fs.readFileSync(manifest, 'utf8')).name;
+            } catch (err) {
+                throw new Error(`${manifest} is not readable JSON: ${err instanceof Error ? err.message : err}`);
+            }
             return typeof name === 'string' && name.startsWith('@dialogram/') ? [[name, src]] : [];
         })
     );
 }
-
-/** {@link dialogramAlias} once per checkout: a build of several bundles reads the folder once. */
-const aliasByPackagesDir = new Map();
 
 /**
  * esbuild options for a build of Dialogram's sources, the way the platform builds them:
@@ -53,23 +55,23 @@ const aliasByPackagesDir = new Map();
  * - a bundle with a module compiled with standard decorators fails the build
  *   ({@link legacyDecoratorsOnly}, first, so the build's own `onEnd` sees the failure);
  * - the bundle is written last ({@link writeBundles}), and only when no `onEnd` failed the build:
- *   a failed build leaves the last good bundle on disk.
+ *   a failed build leaves the last good bundle on disk. `onWritten` runs after the write, so a
+ *   "build succeeded" line said there is never ahead of the files.
  *
  * `inMemory` leaves the outputs in the result's `outputFiles` (a test reads them), checked all the
- * same. The build writes the bundle itself: `options.write` is refused, rather than ignored.
+ * same (`onWritten` then runs once they pass). The build writes the bundle itself: `options.write`
+ * is refused, rather than ignored. A build with `packages: 'external'` keeps every package it does
+ * not alias external, as asked: nothing is refused.
  *
  * @param {import('esbuild').BuildOptions} options
- * @param {{ packagesDir: string, relativeTo?: string, inMemory?: boolean }} platform
+ * @param {{ packagesDir: string, relativeTo?: string, inMemory?: boolean, onWritten?: (result: import('esbuild').BuildResult) => void }} platform
  * @returns {import('esbuild').BuildOptions & { write: false, alias: Record<string, string>, plugins: import('esbuild').Plugin[] }}
  */
-export function dialogramBuild(options, { packagesDir, relativeTo, inMemory = false }) {
+export function dialogramBuild(options, { packagesDir, relativeTo, inMemory = false, onWritten }) {
     if (options.write !== undefined) {
         throw new Error('dialogramBuild writes the bundle itself: leave `write` out, or pass `inMemory: true` to keep it in memory.');
     }
-    if (!aliasByPackagesDir.has(packagesDir)) {
-        aliasByPackagesDir.set(packagesDir, dialogramAlias(packagesDir));
-    }
-    const alias = { ...aliasByPackagesDir.get(packagesDir), ...(options.alias ?? {}) };
+    const alias = { ...dialogramAlias(packagesDir), ...(options.alias ?? {}) };
     return {
         ...options,
         alias,
@@ -77,8 +79,8 @@ export function dialogramBuild(options, { packagesDir, relativeTo, inMemory = fa
         plugins: [
             legacyDecoratorsOnly({ relativeTo }),
             ...(options.plugins ?? []),
-            dialogramPackagesOnly(alias, { external: options.external }),
-            ...(inMemory ? [] : [writeBundles()])
+            ...(options.packages === 'external' ? [] : [dialogramPackagesOnly(alias, { external: options.external })]),
+            writeBundles({ write: !inMemory, onWritten })
         ]
     };
 }
@@ -151,7 +153,7 @@ export function standardDecoratorsIn(text) {
 }
 
 /**
- * An esbuild plugin that fails a build whose JS output has a module compiled with standard
+ * An esbuild plugin that fails a build whose code output has a module compiled with standard
  * decorators, naming each. It writes nothing: in {@link dialogramBuild} the bundle is written last,
  * so a failed build leaves the last good one on disk (and in a watch's dev host).
  *
@@ -163,8 +165,10 @@ export function legacyDecoratorsOnly({ relativeTo = process.cwd() } = {}) {
         name: 'legacy-decorators-only',
         setup(build) {
             build.onEnd(result => {
+                // Every output but a stylesheet or a source map: a build with no `outdir` names
+                // its one output `<stdout>`.
                 const errors = (result.outputFiles ?? [])
-                    .filter(file => /\.[cm]?js$/.test(file.path))
+                    .filter(file => !/\.(css|map)$/.test(file.path))
                     .flatMap(file => standardDecoratorsIn(file.text).map(module => ({
                         text: `${path.relative(relativeTo, file.path)} not written: ${module} was compiled with standard `
                             + `decorators, without its package's tsconfig (experimentalDecorators). Resolve it through `
@@ -177,20 +181,28 @@ export function legacyDecoratorsOnly({ relativeTo = process.cwd() } = {}) {
 }
 
 /**
- * An esbuild plugin for a build with `write: false`, last among its plugins: it writes the outputs
- * when no `onEnd` before it failed the build, and only those that changed.
+ * An esbuild plugin for a build with `write: false`, last among its plugins: when no `onEnd` before
+ * it failed the build, it writes the outputs that changed (unless `write` is false), then calls
+ * `onWritten`. What it last wrote is kept, so a watch's rebuild compares with that rather than
+ * read every bundle back from disk.
  *
+ * @param {{ write?: boolean, onWritten?: (result: import('esbuild').BuildResult) => void }} [options]
  * @returns {import('esbuild').Plugin}
  */
-export function writeBundles() {
+export function writeBundles({ write = true, onWritten } = {}) {
+    /** @type {Map<string, Uint8Array>} */
+    const lastWritten = new Map();
     return {
         name: 'write-bundles',
         setup(build) {
             build.onEnd(async result => {
-                if (result.errors.length > 0 || !result.outputFiles) {
+                if (result.errors.length > 0) {
                     return undefined;
                 }
-                await Promise.all(result.outputFiles.map(file => writeIfChanged(file.path, file.contents)));
+                if (write && result.outputFiles) {
+                    await Promise.all(result.outputFiles.map(file => writeIfChanged(file.path, file.contents, lastWritten)));
+                }
+                onWritten?.(result);
                 return undefined;
             });
         }
@@ -204,14 +216,22 @@ export function writeBundles() {
  * watcher of the file keeps its file, and a file a reader holds open (Windows) is not swapped from
  * under it.
  *
+ * The file's last contents are taken from `lastWritten` when this writer wrote it, and read from
+ * disk otherwise; either way a file gone or of another size since is written again.
+ *
  * @param {string} file
  * @param {Uint8Array} contents
+ * @param {Map<string, Uint8Array>} lastWritten
  */
-async function writeIfChanged(file, contents) {
+async function writeIfChanged(file, contents, lastWritten) {
     try {
         const stat = await fs.promises.stat(file);
-        if (stat.size === contents.byteLength && Buffer.compare(await fs.promises.readFile(file), contents) === 0) {
-            return;
+        if (stat.size === contents.byteLength) {
+            const last = lastWritten.get(file) ?? await fs.promises.readFile(file);
+            if (Buffer.compare(last, contents) === 0) {
+                lastWritten.set(file, contents);
+                return;
+            }
         }
     } catch (err) {
         // Not written yet; anything else is the write's to report.
@@ -221,4 +241,5 @@ async function writeIfChanged(file, contents) {
     }
     await fs.promises.mkdir(path.dirname(file), { recursive: true });
     await fs.promises.writeFile(file, contents);
+    lastWritten.set(file, contents);
 }

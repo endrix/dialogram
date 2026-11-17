@@ -35,21 +35,16 @@ function padZeroes(i) {
     return i.toString().padStart(2, '0');
 }
 
-const plugins = [{
-    name: 'watch-plugin',
-    setup(build) {
-        build.onEnd(result => {
-            if (result.errors.length === 0) {
-                console.log(getTime() + success);
-            }
-        });
-    },
-}];
 
 // @dialogram/* imports (subpaths too, such as @dialogram/extension-core/api) resolve to the
 // packages' source .ts files through an alias, and a bundle is written only when it keeps the
 // legacy decorators the packages' tsconfigs ask for: see scripts/esbuild-dialogram.mjs.
-const platform = { packagesDir: path.resolve(__dirname, '..'), relativeTo: __dirname };
+// The success line comes once the bundle is on disk.
+const platform = {
+    packagesDir: path.resolve(__dirname, '..'),
+    relativeTo: __dirname,
+    onWritten: () => console.log(getTime() + success)
+};
 
 // Host entry: returns the DialogramApi from activate().
 const hostCtx = await esbuild.context(dialogramBuild({
@@ -65,7 +60,6 @@ const hostCtx = await esbuild.context(dialogramBuild({
     platform: 'node',
     sourcemap: !minify,
     minify,
-    plugins
 }, platform));
 
 // libavoid (WASM), vendored at vendor/libavoid — see its README for why it is
@@ -112,7 +106,6 @@ const platformCtx = await esbuild.context(dialogramBuild({
     platform: 'node',
     sourcemap: !minify,
     minify,
-    plugins
 }, platform));
 
 // GLSP diagram client bundle (runs in consumer webviews, browser IIFE)
@@ -131,7 +124,6 @@ const glspClientCtx = await esbuild.context(dialogramBuild({
     platform: 'browser',
     sourcemap: false,
     minify,
-    plugins,
     loader: {
         '.css': 'css',
         '.ttf': 'dataurl',
