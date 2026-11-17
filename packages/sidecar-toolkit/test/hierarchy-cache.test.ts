@@ -80,6 +80,26 @@ describe('the cache', () => {
         expect(runs()).toBe(2);
     });
 
+    it('exports it again when the file of a class a workflow imports changes', async () => {
+        // `Text` is declared in lib/text.py, none of the hierarchy's workflow
+        // files: a port added to it has to be drawn too.
+        const hashes: Record<string, string> = { '/w/top.py': 'a', '/w/block.py': 'b', '/w/lib/text.py': 't' };
+        let runs = 0;
+        const cache = new HierarchyCache(async () => {
+            runs += 1;
+            const doc = graph('top-view');
+            (doc.graph.nodes[0] as any).metadata = { referencedSource: { file: '/w/lib/text.py', line: 5 } };
+            return JSON.stringify({ ...doc, hierarchy: tree('/w/top.py', '/w/block.py') });
+        }, async file => hashes[file]);
+
+        await cache.get('/w/top.py', 'top');
+        await cache.get('/w/top.py', 'top');
+        expect(runs).toBe(1);
+        hashes['/w/lib/text.py'] = 't2';
+        await cache.get('/w/top.py', 'top');
+        expect(runs).toBe(2);
+    });
+
     it('returns nothing for an export that failed or is not one', async () => {
         expect(await new HierarchyCache(async () => undefined).get('/w/top.py', 'top')).toBeUndefined();
         expect(await new HierarchyCache(async () => '{"graph": {}}').get('/w/top.py', 'top')).toBeUndefined();
@@ -133,6 +153,31 @@ describe('a view read from the hierarchy', () => {
         expect(nestedDoc.graph.id).toBe('wf:b1-view');
         expect(nestedDoc.hierarchy.workflowName).toBe('top');
         expect(exports()).toBe(1);
+    });
+
+    it('plans again, with no hierarchy, when the file of a class a workflow imports changes', async () => {
+        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'plan-cache-'));
+        const top = path.join(dir, 'top.py');
+        const text = path.join(dir, 'text.py');
+        const runs = path.join(dir, 'runs');
+        await fs.writeFile(top, '@workflow\ndef top():\n    t = Text()\n');
+        await fs.writeFile(text, 'class Text:\n    pass\n');
+        const plan = path.join(dir, 'plan.cjs');
+        const doc = { version: '1', graph: { id: 'wf:top', nodes: [{ id: 't', label: 't', metadata: { referencedSource: { file: text, line: 1 } } }], edges: [] } };
+        await fs.writeFile(plan, `require('fs').appendFileSync(${JSON.stringify(runs)}, 'x'); process.stdout.write(${JSON.stringify(JSON.stringify(doc))});`);
+        const fallback: any = { analysis: { pickDefaultWorkflowName: () => 'top' }, attachDiagnostics: (d: unknown) => d };
+        const src: any = new CliGraphModelSource({ cliCommandDefault: 'runtime', cliGraphArgs: () => [] } as any, fallback);
+        src.getCliInvocation = () => ({ cmd: process.execPath, argsPrefix: [plan] });
+        const planned = async () => (await fs.readFile(runs, 'utf8')).length;
+        const topUri = URI.file(top).toString();
+
+        await src.getGraph(topUri, { requestOptions: { networkName: 'top' } });
+        await src.getGraph(topUri, { requestOptions: { networkName: 'top' } });
+        expect(await planned()).toBe(1);
+        await fs.writeFile(text, 'class Text:\n    Extra = Port[str](direction="in")\n');
+        await src.getGraph(topUri, { requestOptions: { networkName: 'top' } });
+        expect(await planned()).toBe(2);
+        await fs.rm(dir, { recursive: true, force: true });
     });
 
     it('leaves an instance that did not elaborate to a plan of its own', async () => {

@@ -107,6 +107,7 @@ async function runCreate(options: {
         (handler as any).sidecar = {
             settingsNamespace: () => 'wfLang',
             sidecarOp: (op: string) => `wfpy.${op}`,
+            hasFeature: async () => false,
             undoLabelSuffix: () => ' (wf)',
             createNodeStrings: () => STRINGS,
             createNodeBehavior: () => BEHAVIOR,
@@ -165,7 +166,8 @@ describe('a picked variant entry', () => {
         expect(created!.args).toMatchObject({
             workflow: 'Main',
             type: 'child',
-            name: 'child',
+            // Not `child`: `child = child()` would hide the workflow it makes.
+            name: 'child2',
             params: { instance: 'wf-out/r2' },
             importFrom: 'flows.child'
         });

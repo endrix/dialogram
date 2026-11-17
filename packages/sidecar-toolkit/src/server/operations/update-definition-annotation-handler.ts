@@ -1,10 +1,9 @@
 import { Action, Command, ModelState, OperationHandler } from '@eclipse-glsp/server';
 import { normalizeWorkflowReferenceName } from '../source-analysis';
 import { inject, injectable } from 'inversify';
-import * as vscode from 'vscode';
-import { readAuthoritativeSourceText } from './authoritative-source-text';
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
-import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
+import { entityFileOf } from './entity-port-write';
+import { producerWriteCommand } from './producer-write';
 import { SidecarInvoker } from './sidecar-invoker';
 
 export namespace UpdateDefinitionAnnotationOperation {
@@ -63,16 +62,20 @@ export class UpdateDefinitionAnnotationOperationHandler extends OperationHandler
             return undefined;
         }
 
-        const vscodeUri = vscode.Uri.parse(sourceUri);
-
-        const command = new ReversibleWorkspaceEditCommand({
-            label: (operation.action === 'remove' ? 'Remove Annotation' : 'Update Annotation') + this.sidecar.undoLabelSuffix(),
-            uri: vscodeUri,
-            computeEdits: async () => {
-                const beforeText = (await vscode.workspace.openTextDocument(vscodeUri)).getText();
+        // Sent for the definition's own file: a class imported from another
+        // module is declared there, not in the diagram's.
+        const fileUri = entityFileOf(this.modelState, sourceUri, { entityType: defName, elementId: operation.elementId });
+        const removing = operation.action === 'remove';
+        return producerWriteCommand({
+            label: (removing ? 'Remove Annotation' : 'Update Annotation') + this.sidecar.undoLabelSuffix(),
+            sidecar: this.sidecar,
+            failed: removing
+                ? `@${operation.annotationName} was not removed from '${defName}'.`
+                : `@${operation.annotationName} of '${defName}' was not changed.`,
+            request: () => {
                 let sidecarOp: string;
                 let sidecarArgs: Record<string, unknown>;
-                if (operation.action === 'remove') {
+                if (removing) {
                     sidecarOp = this.sidecar.sidecarOp('removeDefinitionAnnotation');
                     sidecarArgs = {
                         entityType: defName,
@@ -88,32 +91,17 @@ export class UpdateDefinitionAnnotationOperationHandler extends OperationHandler
                     };
                 } else {
                     sidecarOp = this.sidecar.sidecarOp('updateDefinitionAnnotation');
-                    const normalizedAnnotationText = normalizePythonLiteralNames(operation.annotationText ?? '');
                     sidecarArgs = {
                         entityType: defName,
                         annotationName: operation.annotationName,
-                        annotationText: normalizedAnnotationText,
+                        annotationText: normalizePythonLiteralNames(operation.annotationText ?? ''),
                     };
                 }
-                const ok = await this.sendSidecarOp(sourceUri, {
-                    op: sidecarOp,
-                    args: sidecarArgs,
-                });
-                if (!ok) {
-                    return undefined;
-                }
-                const afterText = await readAuthoritativeSourceText(vscodeUri);
-                (command as any)._sourceBeforeText = beforeText;
-                (command as any)._sourceAfterText = afterText;
-                return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];
-            },
+                return { fileUri, payload: { op: sidecarOp, args: sidecarArgs } };
+            }
         });
-        return command;
     }
 
-    private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {
-        return this.sidecar.sendSidecarOp(sourceUri, payload);
-    }
 }
 
 function normalizePythonLiteralNames(text: string): string {

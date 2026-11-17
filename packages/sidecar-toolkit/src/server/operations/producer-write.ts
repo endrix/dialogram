@@ -19,6 +19,7 @@ import { ReversibleMultiWorkspaceEditCommand } from '@dialogram/diagram-server/o
 import type { ApplyPhase } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
 import type { SidecarInvoker } from './sidecar-invoker';
+import { sendSidecarEdit } from './sidecar-edit';
 
 /** What the producer is asked to write, and where. */
 export interface ProducerWrite {
@@ -81,9 +82,7 @@ export function producerWriteCommand(options: ProducerWriteOptions): ReversibleM
                 void vscode.window.showWarningMessage(`${unreadable.fsPath || unreadable.toString()} cannot be read: nothing was changed.`);
                 return undefined;
             }
-            const result = await options.sidecar.sendSidecarOpDetailed(asked.fileUri, asked.payload);
-            if (!result.ok) {
-                void vscode.window.showWarningMessage(result.message ?? options.failed);
+            if (!await sendSidecarEdit(options.sidecar, asked.fileUri, asked.payload, options.failed)) {
                 return undefined;
             }
             const all: Snapshot[] = [];

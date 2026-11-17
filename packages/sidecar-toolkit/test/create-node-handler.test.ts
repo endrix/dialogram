@@ -65,6 +65,7 @@ function calpySidecar() {
     return {
         settingsNamespace: () => 'calLang',
         sidecarOp: (opName: string) => `calpy.${opName}`,
+        hasFeature: async () => false,
         undoLabelSuffix: () => ' (wfpy)',
         createNodeStrings: () => CALPY_CREATE_NODE_STRINGS,
         createNodeBehavior: () => CALPY_CREATE_NODE_BEHAVIOR,
@@ -77,6 +78,7 @@ function wfpySidecar() {
     return {
         settingsNamespace: () => 'wfLang',
         sidecarOp: (opName: string) => `wfpy.${opName}`,
+        hasFeature: async () => false,
         undoLabelSuffix: () => ' (wfpy)',
         createNodeStrings: () => WFPY_CREATE_NODE_STRINGS,
         createNodeBehavior: () => WFPY_CREATE_NODE_BEHAVIOR,
@@ -1003,6 +1005,7 @@ describe('workflow create node handler', () => {
             (handler as any).sidecar = {
                 settingsNamespace: () => 'anyLang',
                 sidecarOp: (opName: string) => `any.${opName}`,
+                hasFeature: async () => false,
                 undoLabelSuffix: () => ' (any)',
                 createNodeStrings: () => ({
                     newTypeNamePrompt: () => 'New gizmo name',

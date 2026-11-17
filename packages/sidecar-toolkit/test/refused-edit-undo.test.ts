@@ -76,6 +76,7 @@ function producer(file: string, refuses: () => boolean | string, sent: string[])
     };
     return {
         sidecarOp: (op: string) => `calpy.${op}`,
+        hasFeature: async () => false,
         undoLabelSuffix: () => '',
         edgeRoles: async () => undefined,
         sendSidecarOp: async (_uri: string, payload: { op: string }) => answer(payload.op).ok,

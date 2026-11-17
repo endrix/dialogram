@@ -6,6 +6,7 @@ import { WorkflowDiagramMetadata } from '@dialogram/shared';
 
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { SidecarInvoker } from './sidecar-invoker';
+import { sendSidecarEdit } from './sidecar-edit';
 
 export namespace UpdateEntityParameterOperation {
     export const KIND = 'dialogram.updateEntityParameter';
@@ -60,7 +61,7 @@ export class UpdateEntityParameterOperationHandler extends OperationHandler {
                 if (!entityName) {
                     return undefined;
                 }
-                const ok = await this.sendSidecarOp(sourceUri, {
+                const ok = await sendSidecarEdit(this.sidecar, sourceUri, {
                     op: this.sidecar.sidecarOp('updateNodeParameter'),
                     args: {
                         workflow: workflowName,
@@ -68,7 +69,7 @@ export class UpdateEntityParameterOperationHandler extends OperationHandler {
                         parameterName: operation.parameterName,
                         newValue: operation.newValue
                     }
-                });
+                }, `Parameter '${operation.parameterName}' of '${entityName}' was not changed.`);
                 if (!ok) {
                     return undefined;
                 }
@@ -81,7 +82,4 @@ export class UpdateEntityParameterOperationHandler extends OperationHandler {
         return command;
     }
 
-    private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {
-        return this.sidecar.sendSidecarOp(sourceUri, payload);
-    }
 }

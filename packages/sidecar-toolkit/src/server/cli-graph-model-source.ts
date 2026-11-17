@@ -25,7 +25,7 @@ import {
     parseNavigationTrailArg,
     parseViewArg
 } from '@dialogram/diagram-server/server/graph-load-request-options';
-import { HierarchyCache, findInstance, outlineOf } from './hierarchy-cache';
+import { HierarchyCache, definitionFiles, fileHash, findInstance, outlineOf } from './hierarchy-cache';
 import { extractWorkflowDefinitionNames } from './source-analysis';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
 import {
@@ -39,6 +39,16 @@ import { describeChildFailure, runChildProcess } from '../run-child-process';
 import { SidecarModelSource, type SidecarModelSourceResult, nodeIdentitiesFromDoc } from './sidecar-model-source';
 
 /**
+ * A plan kept: its output, and the files the definitions it draws are
+ * declared in, as they read when it was made. The key hashes the workflow's
+ * own file; a class it imports is in another.
+ */
+interface CachedPlan {
+    json: string;
+    definitions: Map<string, string | undefined>;
+}
+
+/**
  * Acquires workflow graph documents via the runtime CLI's `plan --format graph`, falling back to
  * the static sidecar (via the injected {@link SidecarModelSource}) when the CLI can't elaborate.
  */
@@ -50,7 +60,7 @@ export class CliGraphModelSource implements DiagramModelSource {
      * an unchanged file re-read identical disk content and become cache hits. A save changes the
      * content hash and misses, so edits always re-run. Bounded LRU-ish.
      */
-    private readonly planGraphCache = new Map<string, string>();
+    private readonly planGraphCache = new Map<string, CachedPlan>();
     private static readonly PLAN_GRAPH_CACHE_MAX = 24;
 
     /** One export per hierarchy root, when the runtime can make one. */
@@ -110,10 +120,14 @@ export class CliGraphModelSource implements DiagramModelSource {
         // updates, reopen). The key includes the content hash, so a save misses and re-runs.
         const planCacheKey = await this.computePlanCacheKey(workflowFilePath, view ? `${selectedWorkflowName ?? ''}@${view}` : selectedWorkflowName);
         if (planCacheKey) {
-            const cached = this.planGraphCache.get(planCacheKey);
-            if (cached !== undefined) {
+            const entry = this.planGraphCache.get(planCacheKey);
+            const cached = entry && (await this.definitionsUnchanged(entry)) ? entry.json : undefined;
+            if (entry && cached === undefined) {
+                this.planGraphCache.delete(planCacheKey); // a file a definition is in changed
+            }
+            if (entry && cached !== undefined) {
                 this.planGraphCache.delete(planCacheKey);
-                this.planGraphCache.set(planCacheKey, cached); // refresh LRU position
+                this.planGraphCache.set(planCacheKey, entry); // refresh LRU position
                 try {
                     const doc = JSON.parse(cached) as GraphDocument;
                     return this.fallback.attachDiagnostics({ ...doc, resolvedOptions: opts });
@@ -159,7 +173,11 @@ export class CliGraphModelSource implements DiagramModelSource {
                 throw new Error('parsed document missing graph payload');
             }
             if (planCacheKey) {
-                this.planGraphCache.set(planCacheKey, stdout);
+                const definitions = new Map<string, string | undefined>();
+                for (const file of definitionFiles(parsed)) {
+                    definitions.set(file, await fileHash(file));
+                }
+                this.planGraphCache.set(planCacheKey, { json: stdout, definitions });
                 while (this.planGraphCache.size > CliGraphModelSource.PLAN_GRAPH_CACHE_MAX) {
                     const oldest = this.planGraphCache.keys().next().value;
                     if (oldest === undefined) {
@@ -329,6 +347,16 @@ export class CliGraphModelSource implements DiagramModelSource {
     }
 
     /** Cache key for a runtime plan: (file, workflow, sha256 of on-disk content). undefined if unreadable. */
+    /** Whether every file a definition drawn in `entry` is declared in reads as it did. */
+    private async definitionsUnchanged(entry: CachedPlan): Promise<boolean> {
+        for (const [file, hash] of entry.definitions) {
+            if ((await fileHash(file)) !== hash) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private async computePlanCacheKey(filePath: string, workflowName: string | undefined): Promise<string | undefined> {
         try {
             const fsModule = await import('node:fs/promises');

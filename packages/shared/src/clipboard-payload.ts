@@ -4,8 +4,11 @@
  * webview reads it to pick the pasted elements once the model is back.
  *
  * An item carries the names the paste re-creates the element from, never the
- * source text: the pasted entity gets a fresh name in the target diagram, and
- * the product's sidecar writes it in the product's own syntax.
+ * element's source text: the pasted entity gets a fresh name in the target
+ * diagram, and the product's sidecar writes it in the product's own syntax.
+ * The one piece of source an entity carries is its arguments, as the
+ * producer reports them written (`expression` of each parameter), so a copy
+ * is made with what the original is made with, not with none.
  */
 
 export const CLIPBOARD_FORMAT = 'application/json';
@@ -16,6 +19,8 @@ export type DiagramClipboardItem =
           elementTypeId: string;
           name: string;
           typeName: string;
+          /** Each argument the instance is made with, by name, as written in its source. */
+          expressions?: Record<string, string>;
       }
     | {
           kind: 'boundaryPort';

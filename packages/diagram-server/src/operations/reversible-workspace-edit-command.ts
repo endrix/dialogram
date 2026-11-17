@@ -82,8 +82,11 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
         // before (`_sourceBeforeText`) only where the file cannot be read
         // here. That is often the editor's, which after an earlier write
         // made out of band may not have caught up, and undo would then take
-        // that earlier edit back too.
-        const overrideBefore = fileBefore ?? (this as any)._sourceBeforeText as string | undefined;
+        // that earlier edit back too. A handler that asks before it writes
+        // says what the file was when it began writing (`_fileBeforeWrite`):
+        // what was saved while a question was open is not the edit's to undo.
+        const overrideBefore = (this as any)._fileBeforeWrite as string | undefined
+            ?? fileBefore ?? (this as any)._sourceBeforeText as string | undefined;
         if (overrideBefore !== undefined && overrideAfter !== undefined) {
             this.beforeText = overrideBefore;
             this.afterText = overrideAfter;

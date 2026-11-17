@@ -747,10 +747,25 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
 
                     const argsArr = (a?.arguments as any[]) ?? [];
                     const argsMap = new Map<string, string>();
+                    // What the producer works out and the class does not write
+                    // (a source's port): shown, never written back.
+                    const derivedArgs: Array<[string, string]> = [];
                     for (const arg of argsArr) {
                         if (arg?.name) {
-                            argsMap.set(String(arg.name), String(arg.value ?? '').trim());
+                            const entry: [string, string] = [String(arg.name), String(arg.value ?? '').trim()];
+                            if (arg.derived === true) {
+                                derivedArgs.push(entry);
+                            } else {
+                                argsMap.set(...entry);
+                            }
                         }
+                    }
+                    // An annotation the class does not write (the viewer of a
+                    // source): nothing on the class to save or remove.
+                    if (a?.derived === true) {
+                        list.appendChild(this.derivedAnnotationItem(name, [...argsMap.entries(), ...derivedArgs],
+                            'Not written on the class: worked out from it. Nothing here to save or remove.'));
+                        continue;
                     }
 
                     const editor = this.annotationEditorFor(name);
@@ -799,11 +814,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
 
                         const text = editor?.formatAnnotation
                             ? editor.formatAnnotation(argsMap, pairs)
-                            : (pairs.length === 0
-                                ? `@${name}`
-                                : `@${name}(\n${pairs
-                                    .map(([k, v]) => `    ${k}=${v}`)
-                                    .join(',\n')}\n)`);
+                            : this.annotationTextOf(name, pairs);
 
                         // An editor that merges sends its arguments beside the text, so the
                         // server keeps the args the card doesn't manage (outputValidators,
@@ -904,6 +915,9 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                         if (reserved.has(k)) continue;
                         appendArgRow(k, v, false);
                     }
+                    if (derivedArgs.length > 0) {
+                        body.appendChild(this.derivedArgumentRows(derivedArgs, 'Worked out, not written on the class: not saved with it.'));
+                    }
 
                     const addArgBtn = document.createElement('button');
                     addArgBtn.type = 'button';
@@ -922,6 +936,93 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         }
 
         return annSection;
+    }
+
+    /**
+     * A field holding source text: an input, or -- for text of several
+     * lines (a triple-quoted string, a call written over lines) -- a
+     * textarea, which keeps the line breaks an input would drop, so an
+     * Update of it unchanged writes back what the source has. Enter commits
+     * an input; in a textarea it starts a line, and Ctrl/Cmd+Enter commits.
+     */
+    protected sourceField(
+        value: string,
+        options: {
+            className: string;
+            fieldRef?: ReturnType<typeof createRef<HTMLInputElement | HTMLTextAreaElement>>;
+            placeholder?: string;
+            ariaLabel?: string;
+            onInput?: () => void;
+            onCommit: (e: Event) => void;
+        }
+    ): TemplateResult {
+        const field = options.fieldRef ?? createRef<HTMLInputElement | HTMLTextAreaElement>();
+        const onKeydown = (e: KeyboardEvent): void => {
+            const lines = e.target instanceof HTMLTextAreaElement;
+            if (e.key === 'Enter' && (!lines || e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                options.onCommit(e);
+            }
+        };
+        if (value.includes('\n')) {
+            return html`<textarea ${ref(field)} class=${`${options.className} source-lines`}
+                rows=${Math.min(value.split('\n').length, 8)} .value=${value}
+                placeholder=${options.placeholder ?? ''} aria-label=${options.ariaLabel ?? nothing}
+                title="Ctrl+Enter to commit" @input=${() => options.onInput?.()} @keydown=${onKeydown}></textarea>`;
+        }
+        return html`<input ${ref(field)} class=${options.className} .value=${value}
+            placeholder=${options.placeholder ?? ''} aria-label=${options.ariaLabel ?? nothing}
+            @input=${() => options.onInput?.()} @keydown=${onKeydown} />`;
+    }
+
+    /**
+     * `@name(k=v, …)`: on one line when it fits one (88 columns, the
+     * common formatters' width), one argument a line otherwise.
+     */
+    protected annotationTextOf(name: string, pairs: ReadonlyArray<readonly [string, string]>): string {
+        if (pairs.length === 0) {
+            return `@${name}`;
+        }
+        const oneLine = `@${name}(${pairs.map(([k, v]) => `${k}=${v}`).join(', ')})`;
+        if (oneLine.length <= 88 && !oneLine.includes('\n')) {
+            return oneLine;
+        }
+        return `@${name}(\n${pairs.map(([k, v]) => `    ${k}=${v}`).join(',\n')}\n)`;
+    }
+
+    /** Arguments shown as they are, `name = value`, with what they are (`note`). */
+    protected derivedArgumentRows(args: Array<[string, string]>, note: string): HTMLElement {
+        const rows = document.createElement('div');
+        rows.className = 'annotation-derived';
+        for (const [name, value] of args) {
+            const row = document.createElement('div');
+            row.className = 'annotation-derived-arg';
+            row.textContent = `${name} = ${value}`;
+            rows.appendChild(row);
+        }
+        const said = document.createElement('div');
+        said.className = 'annotation-derived-note';
+        said.textContent = note;
+        rows.appendChild(said);
+        return rows;
+    }
+
+    /** An annotation the producer works out, shown with its arguments and no actions. */
+    protected derivedAnnotationItem(name: string, args: Array<[string, string]>, note: string): HTMLElement {
+        const item = document.createElement('div');
+        item.className = 'annotation-item';
+        const header = document.createElement('div');
+        header.className = 'annotation-header';
+        const title = document.createElement('div');
+        title.className = 'annotation-title';
+        title.textContent = `@${name}`;
+        header.appendChild(title);
+        const body = document.createElement('div');
+        body.className = 'annotation-body';
+        body.appendChild(this.derivedArgumentRows(args, note));
+        item.appendChild(header);
+        item.appendChild(body);
+        return item;
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1070,7 +1171,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         const paramRows = rows.map((original) => {
             const nameRef = createRef<HTMLInputElement>();
             const typeRef = createRef<HTMLInputElement>();
-            const defRef = createRef<HTMLInputElement>();
+            const defRef = createRef<HTMLInputElement | HTMLTextAreaElement>();
             const rowRef = createRef<HTMLDivElement>();
             const markDirty = (): void => {
                 const dirty =
@@ -1101,8 +1202,14 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                     <input ${ref(typeRef)} class="pp-defparam-type" .value=${original.type}
                         placeholder="type" aria-label="type" @input=${markDirty} @keydown=${onKeydown} />
                     <span class="pp-defparam-sep">=</span>
-                    <input ${ref(defRef)} class="pp-defparam-default" .value=${original.default}
-                        placeholder="default" aria-label="default" @input=${markDirty} @keydown=${onKeydown} />
+                    ${this.sourceField(original.default, {
+                        className: 'pp-defparam-default',
+                        fieldRef: defRef,
+                        placeholder: 'default',
+                        ariaLabel: 'default',
+                        onInput: markDirty,
+                        onCommit: commit
+                    })}
                     <button class="mini-btn primary pp-defparam-save" type="button"
                         title="Save (Enter)" @click=${commit}>Save</button>
                 </div>
@@ -1235,7 +1342,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             );
 
         const rows = entityParams.map((parameter) => {
-            const inputRef = createRef<HTMLInputElement>();
+            const inputRef = createRef<HTMLInputElement | HTMLTextAreaElement>();
             const commit = (): void => {
                 const next = (inputRef.value?.value ?? '').trim();
                 if (!next) {
@@ -1247,17 +1354,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             return html`
                 <div class="param-map-item">
                     <div class="param-map-key" title=${parameter.name}>${parameter.name}</div>
-                    <input
-                        ${ref(inputRef)}
-                        class="param-map-input"
-                        .value=${parameter.inputValue}
-                        @keydown=${(e: KeyboardEvent) => {
-                            if (e.key === 'Enter') {
-                                e.preventDefault();
-                                commit();
-                            }
-                        }}
-                    />
+                    ${this.sourceField(parameter.inputValue, { className: 'param-map-input', fieldRef: inputRef, onCommit: commit })}
                     <button class="mini-btn" type="button" @click=${commit}>Update</button>
                 </div>
                 ${parameter.detailText
@@ -1347,9 +1444,20 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
 
         return {
             name,
-            inputValue: this.formatEditableParameterValue(value),
+            inputValue: this.sourceExpressionOf(entry) ?? this.formatEditableParameterValue(value),
             detailText: type || undefined
         };
+    }
+
+    /**
+     * What the source writes for a parameter (`FRONT_OPTIONS`,
+     * `File(path=TESTBENCH)`), when the producer says (`expression`): its
+     * `value` is what that evaluated to, and written back it would replace
+     * the source's text with a literal.
+     */
+    protected sourceExpressionOf(entry: Record<string, unknown>): string | undefined {
+        const expression = entry.expression;
+        return typeof expression === 'string' && expression.trim() !== '' ? expression.trim() : undefined;
     }
 
     protected formatEditableParameterValue(value: unknown): string {
@@ -1445,13 +1553,29 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
 
         const entry = raw as Record<string, unknown>;
         const typeText = typeof entry.type === 'string' ? entry.type.trim() : '';
-        const value = entry.value ?? entry.boundValue ?? entry.currentValue ?? entry.assignedValue ?? entry.defaultValue ?? entry.default;
         return {
             name: normalized.name,
-            inputValue: this.formatEditableParameterValue(value),
+            inputValue: this.signatureDefaultOf(entry),
             typeText,
             detailText: normalized.detailText
         };
+    }
+
+    /**
+     * The default a factory's signature declares for a parameter, as the
+     * signature writes it: its `defaultValue` (source text); none for one the
+     * producer says is `required`. A producer that names no defaults gives
+     * only the value the instance was made with, which is what was shown.
+     */
+    protected signatureDefaultOf(entry: Record<string, unknown>): string {
+        if (typeof entry.defaultValue === 'string') {
+            return entry.defaultValue;
+        }
+        if (entry.required === true) {
+            return '';
+        }
+        const value = entry.value ?? entry.boundValue ?? entry.currentValue ?? entry.assignedValue ?? entry.defaultValue ?? entry.default;
+        return this.formatEditableParameterValue(value);
     }
 
     protected normalizeWorkflowParameters(raw: unknown): Array<{ name: string; valueText: string; detailText?: string }> {
@@ -2127,11 +2251,12 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         };
 
         const paramRow = (def: any) => {
-            const value = String(entityParams.find((p) => p.name === def.name)?.value ?? '');
+            const given = entityParams.find((p) => p.name === def.name);
+            const value = (given && this.sourceExpressionOf(given)) ?? String(given?.value ?? '');
             const onCommit = (e: Event) => {
                 const inputEl = (e.target as HTMLElement)
                     .closest('.pp-arow')
-                    ?.querySelector('input') as HTMLInputElement | null;
+                    ?.querySelector('input, textarea') as HTMLInputElement | HTMLTextAreaElement | null;
                 if (inputEl) commit(def.name, inputEl.value);
             };
             return html`
@@ -2141,14 +2266,11 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                         ${def.type ? html`<span class="pp-akey-type">${def.type}</span>` : nothing}
                     </span>
                     <span class="pp-aval">
-                        <input
-                            class="pp-input"
-                            .value=${value}
-                            placeholder="value (expression)"
-                            @keydown=${(e: KeyboardEvent) => {
-                                if (e.key === 'Enter') onCommit(e);
-                            }}
-                        />
+                        ${this.sourceField(value, {
+                            className: 'pp-input',
+                            placeholder: 'value (expression)',
+                            onCommit: onCommit
+                        })}
                         <button class="pp-icon-btn" title="Update" @click=${onCommit}>
                             <span class="codicon codicon-check"></span>
                         </button>

@@ -48,6 +48,8 @@ describe('workflow update definition parameter handler', () => {
             };
             (handler as any).sidecar = {
                 sidecarOp: (opName: string) => `wfpy.${opName}`,
+                hasFeature: async () => false,
+                async sendSidecarOpDetailed(uri: string, payload: any) { return { ok: await (this as any).sendSidecarOp(uri, payload) }; },
                 sendSidecarOp: async (_sourceUri: string, nextPayload: { op: string; args: Record<string, unknown> }) => {
                     payload = nextPayload;
                     pyText = 'def make_decoder(scale: int = 7):\n    return scale\n';

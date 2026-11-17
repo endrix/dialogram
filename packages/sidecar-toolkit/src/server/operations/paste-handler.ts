@@ -3,11 +3,12 @@ import { OperationHandler, ModelState, type Command, type MaybePromise } from '@
 import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
 import { readAuthoritativeSourceText } from './authoritative-source-text';
-import { nextFreeName, WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
+import { WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { parseClipboardPayload } from '@dialogram/diagram-server/clipboard/clipboard';
 import { SidecarInvoker } from './sidecar-invoker';
+import { recreateItems } from './recreate-items';
 
 @injectable()
 export class PasteOperationHandler extends OperationHandler {
@@ -54,44 +55,15 @@ export class PasteOperationHandler extends OperationHandler {
         });
         const taken = new Set((takenResp?.diagnostic?.names as string[] | undefined) ?? []);
         const beforeText = (await vscode.workspace.openTextDocument(vscode.Uri.parse(sourceUri))).getText();
-        // A pasted connection joins the pasted copies, not the entities it was copied from.
-        const renamed = new Map<string, string>();
-        for (const item of payload.items) {
-            if (item.kind === 'entity') {
-                const name = nextFreeName(item.name, taken);
-                taken.add(name);
-                renamed.set(item.name, name);
-                await this.sendSidecarOp(sourceUri, {
-                    op: this.sidecar.sidecarOp('createNode'),
-                    args: { workflow: workflowName, type: item.typeName, name }
-                });
-            } else if (item.kind === 'boundaryPort') {
-                await this.sendSidecarOp(sourceUri, {
-                    op: this.sidecar.sidecarOp('createPort'),
-                    args: { workflow: workflowName, direction: item.direction, portName: item.portName, portType: item.portType ?? 'Any' }
-                });
-            } else if (item.kind === 'connection') {
-                if (!item.outPort || !item.inPort) continue;
-                const fromPort = item.from
-                    ? { type: 'actor', actor: renamed.get(item.from) ?? item.from, port: item.outPort }
-                    : { type: 'workflow', name: item.outPort };
-                const toPort = item.to
-                    ? { type: 'actor', actor: renamed.get(item.to) ?? item.to, port: item.inPort }
-                    : { type: 'workflow', name: item.inPort };
-                await this.sendSidecarOp(sourceUri, {
-                    op: this.sidecar.sidecarOp('connect'),
-                    args: { workflow: workflowName, from_port: fromPort, to_port: toPort }
-                });
-            }
+        const fileBeforeWrite = await recreateItems(this.sidecar, sourceUri, workflowName, payload, taken);
+        if (fileBeforeWrite === undefined) {
+            return undefined;
         }
+        (command as any)._fileBeforeWrite = fileBeforeWrite;
         const afterText = await readAuthoritativeSourceText(vscode.Uri.parse(sourceUri));
         (command as any)._sourceBeforeText = beforeText;
         (command as any)._sourceAfterText = afterText;
         return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];
-    }
-
-    private async sendSidecarOp(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<boolean> {
-        return this.sidecar.sendSidecarOp(sourceUri, payload);
     }
 
     private async sendSidecarList(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<any | undefined> {

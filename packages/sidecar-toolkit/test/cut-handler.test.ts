@@ -58,7 +58,9 @@ async function cut(file: string, state: any, ids: string[]) {
     handler.modelState = state;
     handler.sidecar = {
         sidecarOp: (op: string) => `calpy.${op}`,
+        hasFeature: async () => false,
         undoLabelSuffix: () => '',
+        async sendSidecarOpDetailed(uri: string, payload: any) { return { ok: await (this as any).sendSidecarOp(uri, payload) }; },
         sendSidecarOp: async (_uri: string, payload: { op: string; args: Record<string, unknown> }) => {
             sent.push(payload);
             writeFileSync(file, readFileSync(file, 'utf8') + `# ${payload.op}\n`);

@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 /**
  * One export of a whole workflow hierarchy, cached per root.
  *
@@ -74,6 +75,35 @@ export function hierarchyFiles(entry: HierarchyEntry): string[] {
     return [...files];
 }
 
+/**
+ * The files the definitions drawn are declared in (each node's
+ * `referencedSource.file`): a class a workflow imports, whose ports or
+ * parameters are drawn, is not one of the workflows' own files, and a port
+ * added to it has to be drawn too.
+ */
+export function definitionFiles(exported: unknown): string[] {
+    const files = new Set<string>();
+    const walk = (value: unknown): void => {
+        if (Array.isArray(value)) {
+            value.forEach(walk);
+            return;
+        }
+        if (!value || typeof value !== 'object') {
+            return;
+        }
+        for (const [key, inner] of Object.entries(value)) {
+            const file = key === 'referencedSource' ? (inner as { file?: unknown } | null)?.file : undefined;
+            if (typeof file === 'string' && path.isAbsolute(file)) {
+                files.add(file);
+            } else {
+                walk(inner);
+            }
+        }
+    };
+    walk(exported);
+    return [...files];
+}
+
 export async function fileHash(filePath: string): Promise<string | undefined> {
     try {
         return createHash('sha256').update(await fs.readFile(filePath)).digest('hex');
@@ -122,7 +152,7 @@ export class HierarchyCache {
             return undefined;
         }
 
-        const files = new Set([rootFile, ...hierarchyFiles(exported.hierarchy)]);
+        const files = new Set([rootFile, ...hierarchyFiles(exported.hierarchy), ...definitionFiles(exported)]);
         const hashes = new Map<string, string | undefined>();
         for (const file of files) {
             hashes.set(file, await this.hash(file));
