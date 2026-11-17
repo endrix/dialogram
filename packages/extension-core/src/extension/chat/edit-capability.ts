@@ -1,19 +1,19 @@
 /**
  * The diagram-profile chat contribution: the data the unified ChatRuntime
- * consumes to drive chat around the edit backend — slash commands mapping to
- * real edit-backend ops (with capability
- * gating, optimistic concurrency and diagram refresh), the graph context
- * provider, the in-process MCP tool descriptors, the keyword view-ops post-turn hook
- * and the debounced auto-layout.
+ * consumes to drive chat around the edit backend — slash commands, each one
+ * call of the diagram's GLSP-MCP tools (the agent's own, so undoable and honest
+ * about what they did), the graph context provider, the keyword view-ops
+ * post-turn hook and the debounced auto-layout.
  *
  * Commands whose legacy implementation was a stub (validate, analyze, …) are
  * deliberately NOT carried over: they reported success without doing anything.
  */
 import * as vscode from 'vscode';
-import type { DiagramEditBackend } from '@dialogram/shared';
+import { WorkflowDiagramTypes, type DiagramEditBackend } from '@dialogram/shared';
 import type { DiagramProfile } from '../../api';
 import type { WorkflowEditorProvider } from '../diagram/diagram-editor-provider';
 import type { ChatCommandContext, ChatCommandContribution, ChatCommandResult } from './slash-commands';
+import { GlspMcpClient } from './glsp-mcp-client';
 
 /**
  * The platform-wide chat settings section. Shared by every reader of a core
@@ -26,6 +26,10 @@ export interface EditChatCapabilityDeps {
     editBackend: DiagramEditBackend;
     getEditorProvider(): WorkflowEditorProvider | undefined;
     log(message: string): void;
+    /** The diagram's GLSP-MCP server, which the slash commands edit through; none, and they say so. */
+    mcpServerUrl?: string;
+    /** A client of it (the tests stand one in); one is made from the URL otherwise. */
+    mcpClient?: Pick<GlspMcpClient, 'callTool'>;
 }
 
 export interface EditChatCapability {
@@ -35,15 +39,53 @@ export interface EditChatCapability {
     dispose(): void;
 }
 
-/** Default node-creation commands when the chat config supplies none. */
 const AUTO_LAYOUT_DEBOUNCE_MS = 400;
 const VIEW_OP_SETTLE_MS = 500;
+
+/**
+ * `reader path="a b.txt" src=File(path="x")` as words: split at blanks outside quotes and
+ * brackets, each kept as written.
+ */
+export function sourceWords(raw: string): string[] {
+    const words: string[] = [];
+    let current = '';
+    let depth = 0;
+    let quote: string | undefined;
+    for (let at = 0; at < raw.length; at++) {
+        const ch = raw[at];
+        if (quote) {
+            current += ch;
+            if (ch === '\\' && at + 1 < raw.length) {
+                current += raw[++at];
+            } else if (ch === quote) {
+                quote = undefined;
+            }
+            continue;
+        }
+        if (ch === '"' || ch === "'") {
+            quote = ch;
+        } else if ('([{'.includes(ch)) {
+            depth += 1;
+        } else if (')]}'.includes(ch)) {
+            depth = Math.max(0, depth - 1);
+        } else if (/\s/.test(ch) && depth === 0) {
+            if (current) {
+                words.push(current);
+            }
+            current = '';
+            continue;
+        }
+        current += ch;
+    }
+    if (current) {
+        words.push(current);
+    }
+    return words;
+}
 
 export function createEditChatCapability(deps: EditChatCapabilityDeps): EditChatCapability {
     const { profile, editBackend } = deps;
 
-    /** Last source revision the chat saw per file (optimistic concurrency). */
-    const sourceRevisionCache = new Map<string, string>();
     let autoLayoutTimer: ReturnType<typeof setTimeout> | undefined;
 
     const scheduleAutoLayout = (uri: vscode.Uri): void => {
@@ -61,154 +103,193 @@ export function createEditChatCapability(deps: EditChatCapabilityDeps): EditChat
         }, AUTO_LAYOUT_DEBOUNCE_MS);
     };
 
-    /** Run one named edit against the backend, mirroring the legacy semantics. */
-    const runOp = async (
-        opName: string,
-        extraArgs: Record<string, unknown>,
-        ctx: ChatCommandContext
-    ): Promise<ChatCommandResult> => {
-        const uri = vscode.Uri.file(ctx.file);
-        if (!(await editBackend.supportsOp(uri.toString(), opName))) {
+    /**
+     * The diagram's GLSP-MCP tools, the ones the agent edits with: the same handlers a gesture
+     * in the diagram reaches, the editor's undo, and an answer saying what was done or why not.
+     * The commands used to send their own producer requests, whose arguments had drifted from
+     * what the producer takes (`/rename` sent `oldName`, `/connect` named whole nodes), past
+     * undo; now each is the person's shorthand for one tool call.
+     */
+    const tools = deps.mcpServerUrl ? (deps.mcpClient ?? new GlspMcpClient(deps.mcpServerUrl)) : undefined;
+
+    /** The GLSP-MCP session of the diagram showing this file: the one in this editor, or any; or why none. */
+    const sessionFor = async (ctx: ChatCommandContext): Promise<{ sessionId?: string; error?: string }> => {
+        const listed = await tools!.callTool('session-info', {});
+        if (!listed.ok) {
+            // The tools did not answer: that, not a diagram to open, is what to say.
+            return { error: listed.text || "The diagram's tools did not answer." };
+        }
+        const rows = (listed.structured?.sessions as Array<{ sessionId?: string; sourceUri?: string; readOnly?: boolean }> | undefined) ?? [];
+        const shown = rows.filter(row => {
+            try {
+                return !!row.sourceUri && vscode.Uri.parse(row.sourceUri).fsPath === vscode.Uri.file(ctx.file).fsPath;
+            } catch {
+                return false;
+            }
+        });
+        const current = deps.getEditorProvider()?.getClientIdForDocumentUri?.(vscode.Uri.file(ctx.file));
+        return { sessionId: (shown.find(row => row.sessionId === current) ?? shown.find(row => !row.readOnly) ?? shown[0])?.sessionId };
+    };
+
+    /** One tool call on the diagram of the chat's file; its answer is the command's. */
+    const callTool = async (ctx: ChatCommandContext, tool: string, args: Record<string, unknown>): Promise<ChatCommandResult> => {
+        if (!tools) {
             return {
                 success: false,
-                error: `'${opName}' isn't supported by the ${profile.displayName} runtime.`
+                error: `Slash commands edit through the diagram's tools, which ${profile.displayName} has not turned on. Ask in a message instead.`
             };
         }
-        const network = deps.getEditorProvider()?.getRefreshContext(uri)?.networkName;
-        const builtArgs = { ...editBackend.scopeArgs(uri.toString(), network), ...extraArgs };
-        const enforceRevision = vscode.workspace.getConfiguration(CORE_CHAT_SECTION).get<boolean>('checkSourceRevision', false);
-        const knownRevision = sourceRevisionCache.get(ctx.file);
-        const expectedRevision = enforceRevision && knownRevision ? knownRevision : undefined;
-        const result = await editBackend.applyNamedEdit(uri.toString(), opName, builtArgs, { expectedRevision });
-        if (!result.ok) {
-            if (result.conflict) {
-                deps.getEditorProvider()?.refreshModelFromDisk(uri);
-                sourceRevisionCache.set(ctx.file, String(result.conflict.actualRevision ?? ''));
-                deps.log(`concurrent modification on ${ctx.file}; reloaded for retry`);
-                return {
-                    success: false,
-                    error: 'The workflow file changed since the chat last read it — the diagram was reloaded. Please retry.'
-                };
-            }
-            return { success: false, error: result.message ?? `The edit backend rejected ${opName}` };
+        // The per-user rollback of the diagram's tools holds for the commands as for the agent.
+        if (!vscode.workspace.getConfiguration(CORE_CHAT_SECTION).get<boolean>('useGlspMcp', true)) {
+            return {
+                success: false,
+                error: `Slash commands edit through the diagram's tools, which the setting ${CORE_CHAT_SECTION}.useGlspMcp turns off. Ask in a message instead.`
+            };
         }
-        if (result.revision) {
-            sourceRevisionCache.set(ctx.file, String(result.revision));
+        const { sessionId, error } = await sessionFor(ctx);
+        if (error) {
+            return { success: false, error };
         }
-        deps.getEditorProvider()?.refreshModelFromDisk(uri);
-        scheduleAutoLayout(uri);
-        return { success: true };
+        if (!sessionId) {
+            return { success: false, error: 'Open the diagram of this file: a slash command edits the diagram it shows.' };
+        }
+        const answer = await tools.callTool(tool, { sessionId, ...args });
+        if (!answer.ok) {
+            return { success: false, error: answer.text || `${tool} failed.` };
+        }
+        scheduleAutoLayout(vscode.Uri.file(ctx.file));
+        return { success: true, info: answer.text || `Done: ${tool}.` };
     };
 
     const positional = (args: Record<string, any>, index: number): string | undefined =>
         args._positional?.[index];
+    const positionals = (args: Record<string, any>): string[] =>
+        (Array.isArray(args._positional) ? args._positional : []).map(String).filter((each: string) => each.trim() !== '');
 
     const slashCommands: ChatCommandContribution[] = [];
 
     for (const nc of profile.chat?.nodeCommands ?? []) {
-        slashCommands.push({
-            command: nc.command,
-            description: nc.description,
-            usage: '<name>',
-            modes: ['build'],
-            handler: async (args, ctx) => {
-                const name = args.name || positional(args, 0);
-                if (!name) {
-                    return {
-                        success: false,
-                        error: `Please provide a name for the ${nc.nodeType}. Usage: /${nc.command} <name>`
-                    };
-                }
-                return runOp('createNode', { type: nc.nodeType, name, params: {} }, ctx);
-            }
+        // The palette row of this kind: what a drop of it on the canvas creates.
+        const row = profile.storageOptions?.entityPaletteItems?.find(
+            each => each.label.trim().toLowerCase() === nc.nodeType.trim().toLowerCase()
+        );
+        // A row that fixes its type (a document's clause of one kind) makes that type: the
+        // command names only the node. Any other names the type it makes an instance of.
+        const fixedType = typeof row?.args?.type === 'string' && row.args.type.trim() !== '' ? row.args.type : undefined;
+        const create = (ctx: ChatCommandContext, args: Record<string, unknown>) => callTool(ctx, 'create-nodes', {
+            nodes: [{ elementTypeId: row!.elementTypeId, position: { x: 0, y: 0 }, args: { ...(row!.args ?? {}), ...args } }]
         });
+        slashCommands.push(fixedType
+            ? {
+                command: nc.command,
+                description: nc.description,
+                usage: '<name>',
+                modes: ['build'],
+                handler: async (args, ctx) => {
+                    const name = args.name || positionals(args).join(' ');
+                    if (!name) {
+                        return { success: false, error: `Please name the ${nc.nodeType}. Usage: /${nc.command} <name>` };
+                    }
+                    return create(ctx, { name });
+                }
+            }
+            : {
+                command: nc.command,
+                description: `${nc.description}: an instance of <Type>, which is created first when the file has none`,
+                usage: '<Type> [name]',
+                modes: ['build'],
+                handler: async (args, ctx) => {
+                    const type = args.type || positional(args, 0);
+                    const name = args.name || positional(args, 1);
+                    if (!type) {
+                        return { success: false, error: `Please name the ${nc.nodeType} type. Usage: /${nc.command} <Type> [name]` };
+                    }
+                    if (!row) {
+                        return { success: false, error: `${profile.displayName} has no palette entry for a ${nc.nodeType}.` };
+                    }
+                    // `createType`: when the source has no type of that name, the diagram makes
+                    // it first, as the palette's "Create new…" does, in the same undoable edit;
+                    // a type imported from elsewhere is found, and left alone.
+                    return create(ctx, { type, ...(name ? { name } : {}), createType: true });
+                }
+            });
     }
 
     slashCommands.push({
         command: 'connect',
-        description: 'Connect two nodes',
-        usage: '<source> <target>',
+        description: "Connect a node's port to another's: node.Port, or one of the diagram's own ports by its name",
+        usage: '<from> <to>',
         modes: ['build'],
         handler: async (args, ctx) => {
-            const source = args.source || positional(args, 0);
-            const target = args.target || positional(args, 1);
+            const source = args.source || args.from || positional(args, 0);
+            const target = args.target || args.to || positional(args, 1);
             if (!source || !target) {
-                return {
-                    success: false,
-                    error: 'Please provide source and target nodes. Usage: /connect <source> <target>'
-                };
+                return { success: false, error: 'Please name both ends. Usage: /connect <node.Port> <node.Port>' };
             }
-            return runOp('connect', { source, target }, ctx);
+            return callTool(ctx, 'create-edges', {
+                edges: [{ elementTypeId: WorkflowDiagramTypes.EDGE_CONNECTION, args: { source, target } }]
+            });
         }
     });
 
     slashCommands.push({
         command: 'delete',
-        description: 'Delete a node',
-        usage: '<name>',
+        description: 'Delete nodes by name, with their edges',
+        usage: '<name> [name…]',
         modes: ['build'],
         handler: async (args, ctx) => {
-            const name = args.name || positional(args, 0);
-            if (!name) {
-                return { success: false, error: 'Please provide a node name to delete. Usage: /delete <name>' };
+            const names = args.name ? [String(args.name)] : positionals(args);
+            if (names.length === 0) {
+                return { success: false, error: 'Please name a node to delete. Usage: /delete <name>' };
             }
-            return runOp('deleteNode', { name }, ctx);
+            return callTool(ctx, 'delete-elements', { elementIds: names });
         }
     });
 
     slashCommands.push({
         command: 'delete-selected',
-        description: 'Delete all selected nodes',
+        description: 'Delete the selected nodes',
         modes: ['build'],
         handler: async (_args, ctx) => {
             if (ctx.selectedNodeIds.length === 0) {
                 return { success: false, error: 'No nodes selected. Please select nodes to delete.' };
             }
-            for (const id of ctx.selectedNodeIds) {
-                const result = await runOp('deleteNode', { name: id }, ctx);
-                if (!result.success) {
-                    return result;
-                }
-            }
-            return { success: true };
+            return callTool(ctx, 'delete-elements', { elementIds: ctx.selectedNodeIds });
         }
     });
 
     slashCommands.push({
         command: 'rename',
-        description: 'Rename a node',
-        usage: '<oldName> <newName>',
+        description: 'Rename a node; its uses in the source follow',
+        usage: '<name> <newName>',
         modes: ['build'],
         handler: async (args, ctx) => {
-            const oldName = args.oldName || positional(args, 0);
-            const newName = args.newName || positional(args, 1);
+            const oldName = args.oldName || args.old || positional(args, 0);
+            const newName = args.newName || args.new || positional(args, 1);
             if (!oldName || !newName) {
-                return {
-                    success: false,
-                    error: 'Please provide the current and the new name. Usage: /rename <oldName> <newName>'
-                };
+                return { success: false, error: 'Please give the current and the new name. Usage: /rename <name> <newName>' };
             }
-            return runOp('renameNode', { oldName, newName }, ctx);
+            return callTool(ctx, 'modify-nodes', { nodes: [{ elementId: oldName, text: newName }] });
         }
     });
 
     slashCommands.push({
         command: 'update',
-        description: 'Update node parameters',
-        usage: '<name> key=value …',
+        description: "Set a node's parameters; each value is source text (5, \"a.txt\", File(path=\"x\"))",
+        usage: '<name> param=value …',
         modes: ['build'],
         handler: async (args, ctx) => {
-            const name = args.name || positional(args, 0);
-            if (!name) {
-                return {
-                    success: false,
-                    error: 'Please provide a node name to update. Usage: /update <name> param=value'
-                };
+            // From the text as typed: a value is source text, whose quotes, parentheses and `=`
+            // the shared argument parser would strip or split.
+            const words = sourceWords(typeof args._raw === 'string' ? args._raw : '');
+            const name = words.find(word => !word.includes('='));
+            const parameters = Object.fromEntries(
+                words.filter(word => word.includes('=')).map(word => [word.slice(0, word.indexOf('=')), word.slice(word.indexOf('=') + 1)])
+            );
+            if (!name || Object.keys(parameters).length === 0) {
+                return { success: false, error: 'Please name the node and a parameter. Usage: /update <name> param=value' };
             }
-            const params = { ...args };
-            delete params.name;
-            delete params._positional;
-            return runOp('updateNodeParameter', { name, params }, ctx);
+            return callTool(ctx, 'set-node-parameters', { node: name, parameters });
         }
     });
 

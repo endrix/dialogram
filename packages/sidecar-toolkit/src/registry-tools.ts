@@ -44,6 +44,14 @@ export interface RegistryToolsConfig {
    * registry listings and the validation verdict have no one to ask.
    */
   graphOnly?: boolean;
+  /**
+   * How `validate_workflow` elaborates the file, when the diagram is drawn from something other
+   * than the sidecar's export: a profile whose graph comes from the CLI plan judges a file by
+   * that plan. The static export reads a file the plan refuses (a parameter given to a state
+   * field, `connect(node, node)`) as fine, and the agent was told such a file passed while the
+   * diagram showed it broken. Default: the export op.
+   */
+  elaborate?: (file: string, args: Record<string, unknown>) => Promise<SidecarOpResult>;
 }
 
 const networkProp = {
@@ -111,8 +119,12 @@ export function createRegistryChatTools(cfg: RegistryToolsConfig): RegistryChatT
         'Parse and elaborate the current file and report problems as a compact verdict: {ok, partial, problems, errors[], elements[]}, where errors are file-level and elements are per-node/edge diagnostics with source locations. Call this AFTER editing the file to check your work, then fix what it reports and re-validate until ok is true.',
       inputSchema: { type: 'object', properties: { ...networkProp } },
       handler: async (file, args) => {
-        const result = await cfg.invoke(file, exportOp, scope(args));
-        return JSON.stringify(summarizeValidation(result.response), null, 2);
+        const result = cfg.elaborate
+          ? await cfg.elaborate(file, scope(args))
+          : await cfg.invoke(file, exportOp, scope(args));
+        // A transport that failed outright has no response: its message is the problem.
+        const verdict = summarizeValidation(result.ok || result.response ? result.response : { message: result.message });
+        return JSON.stringify(verdict, null, 2);
       },
     },
     // Type creation is a reversible GLSP operation tool (`create-task-type`), undoable via the

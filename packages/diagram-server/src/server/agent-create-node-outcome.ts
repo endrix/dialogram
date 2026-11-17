@@ -42,6 +42,8 @@ export interface CreatedNodeOutcome {
      * (e.g. an existing type declared in another module).
      */
     readonly ports?: readonly CreatedNodePort[];
+    /** The type made for it first, when the file had none (`args.createType`), as the producer names it. */
+    readonly createdType?: string;
 }
 
 /** A create the headless path refused, carrying an agent-actionable message. */
@@ -57,8 +59,14 @@ export class AgentCreateNodeOutcomeSink {
     private outcomes: readonly AgentCreateNodeOutcome[] = [];
 
     /** Record a successful create (instance name + concrete type + optional discovered ports). */
-    recordCreated(name: string, type: string, ports?: readonly CreatedNodePort[]): void {
-        this.outcomes = [...this.outcomes, { kind: 'created', name, type, ports: ports && ports.length > 0 ? ports : undefined }];
+    recordCreated(name: string, type: string, ports?: readonly CreatedNodePort[], createdType?: string): void {
+        this.outcomes = [...this.outcomes, {
+            kind: 'created',
+            name,
+            type,
+            ports: ports && ports.length > 0 ? ports : undefined,
+            ...(createdType ? { createdType } : {})
+        }];
     }
 
     /** Record a rejected create with the actionable, agent-facing message. */

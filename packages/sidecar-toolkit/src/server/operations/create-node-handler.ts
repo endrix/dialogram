@@ -490,6 +490,40 @@ export class CreateNodeOperationHandler extends OperationHandler {
                     await placed?.undo();
                     throw error;
                 }
+                // An agent or a slash command may ask for the type to be made
+                // when the file has none of that name: what the wizard's
+                // "Create new…" does, here only once the producer said the type
+                // is not found -- a type imported from elsewhere is found, and
+                // must not be shadowed by a class of the same name.
+                let createdType: string | undefined;
+                if (!result.ok && headless && result.code === 'type_not_found' && (operation.args?.['createType'] === true || operation.args?.['createType'] === 'true') && !variant) {
+                    const kind: WorkflowTypeKind = isWorkflow ? 'workflow' : isAgent ? 'agent' : isViewer ? 'viewer' : isExternal ? 'tool' : 'task';
+                    // As the wizard writes it: in this file only, so putting the file back
+                    // takes all of it back.
+                    const made = await this.sendSidecarOpDetailed(sourceUri, isWorkflow
+                        ? { op: this.sidecar.sidecarOp('createWorkflowType'), args: { name: finalTypeName } }
+                        : { op: this.sidecar.sidecarOp('createTaskType'), args: { kind, name: finalTypeName } });
+                    if (made.ok) {
+                        result = await this.sendSidecarOpDetailed(sourceUri, {
+                            op: this.sidecar.sidecarOp('createNode'),
+                            args: {
+                                ...(pickedNodeArgs ?? {}),
+                                workflow: workflowName,
+                                type: finalTypeName,
+                                name: entityName,
+                                params,
+                                ...(expressions ? { expressions } : {})
+                            }
+                        });
+                        if (result.ok) {
+                            this.recordTypeListCacheHit(sourceUri, kind, finalTypeName);
+                            createdType = `${this.typeLabelForPicker(kind)} type '${finalTypeName}'`;
+                        } else {
+                            // The type alone is not what was asked for: the file goes back.
+                            await vscode.workspace.fs.writeFile(vscodeUri, new TextEncoder().encode((command as any)._fileBeforeWrite));
+                        }
+                    }
+                }
                 if (!result.ok) {
                     await placed?.undo();
                     const failureMessage = this.sidecarFailureMessage(`create node '${entityName}'`, result);
@@ -507,7 +541,7 @@ export class CreateNodeOperationHandler extends OperationHandler {
                     // parsed from the rewritten source) so the next create-edges can address them by
                     // "name.port" without a query-elements dump.
                     const ports = extractTypePorts(afterText, finalTypeName);
-                    this.createNodeOutcomeSink?.recordCreated(entityName, finalTypeName, ports);
+                    this.createNodeOutcomeSink?.recordCreated(entityName, finalTypeName, ports, createdType);
                 }
                 return [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')];
             },

@@ -53,6 +53,20 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      */
     readonly diagramType = WORKFLOW_DIAGRAM_TYPE;
 
+    /**
+     * A diagram is never dirty: each edit is on disk when it is made (the edit
+     * commands save the source they change, and the layout is written as it
+     * moves). GLSP reports every operation to VS Code as an unsaved edit of the
+     * document, so a diagram showed ● after any command, an auto-layout as well
+     * as an edit, and asked to save on close what was already saved. No edit is
+     * reported: undo and redo are the products' own keys, bound to the diagram's
+     * command stack (`<ns>.glsp.undo` / `redo`), not VS Code's edit stack.
+     */
+    private readonly neverChanges = new vscode.EventEmitter<vscode.CustomDocumentEditEvent<vscode.CustomDocument>>();
+    override get onDidChangeCustomDocument(): vscode.Event<vscode.CustomDocumentEditEvent<vscode.CustomDocument>> {
+        return this.neverChanges.event;
+    }
+
     private uriToClientId = new Map<string, string>();
     /** Per-URI webview handles, for the profile's raw `postToWebview` channel. */
     private uriToWebview = new Map<string, vscode.Webview>();

@@ -170,16 +170,24 @@ describe('createSidecarDiagramProfile', () => {
         expect(withResume.clientBehavior).toMatchObject({ noneSentinel: 'x', resumeAtStep: true });
     });
 
-    it('builds no run driver, offers no resume, for a product whose CLI has no run', () => {
+    it('builds no run driver, offers no run or resume, for a product whose CLI has no run', () => {
         const resume = (runDir: string, step: number) => ['--resume-from', runDir, '--at-step', String(step)];
         const runs = createSidecarDiagramProfile(baseInput({ cliResumeArgs: resume }));
         expect(typeof runs.runDriver).toBe('function');
-        expect(runs.chat?.tools?.map(t => t.name)).toContain('resume_failed_run');
+        expect(runs.chat?.tools?.map(t => t.name)).toEqual(expect.arrayContaining(['run_workflow', 'resume_failed_run']));
+        // A run starts processes: kept off the auto-approved read-only bridge.
+        expect(runs.chat?.tools?.find(t => t.name === 'run_workflow')?.mutates).toBe(true);
+        // Inputs only where the plan names them; a run here hands on no others.
+        const inputsOf = (profile: typeof runs) =>
+            Object.keys((profile.chat?.tools?.find(t => t.name === 'run_workflow')?.inputSchema as any)?.properties ?? {});
+        expect(inputsOf(runs)).toContain('inputs');
+        expect(inputsOf(createSidecarDiagramProfile(baseInput({ graphAcquisition: 'sidecar-export' } as any)))).not.toContain('inputs');
 
         const none = createSidecarDiagramProfile(baseInput({ cliRuns: false, cliResumeArgs: resume }));
         expect(none.runDriver).toBeUndefined();
         expect((none.clientBehavior as any)?.resumeAtStep).toBeUndefined();
         expect(none.chat?.tools?.map(t => t.name)).not.toContain('resume_failed_run');
+        expect(none.chat?.tools?.map(t => t.name)).not.toContain('run_workflow');
     });
 
     it('leaves the creation palette alone unless the product suppresses it', () => {
@@ -224,11 +232,11 @@ describe('createSidecarDiagramProfile', () => {
 
     // --- T7 (GLSP-MCP): registry-tool relocation + profile.mcp default ---
 
-    it('bridges the 5 sidecar-registry READ tools into chat.tools (mutation tools excluded)', () => {
+    it('bridges the 5 sidecar-registry READ tools into chat.tools (mutation tools excluded), beside the run', () => {
         const p = createSidecarDiagramProfile(baseInput());
         const names = (p.chat?.tools ?? []).map((t) => t.name).sort();
         expect(names).toEqual(
-            ['get_graph', 'list_nodes', 'list_task_types', 'list_workflow_types', 'validate_workflow'].sort()
+            ['get_graph', 'list_nodes', 'list_task_types', 'list_workflow_types', 'validate_workflow', 'run_workflow'].sort()
         );
         // create_node/connect moved to GLSP-MCP built-ins; they must NOT be in chat.tools.
         expect(names).not.toContain('create_node');

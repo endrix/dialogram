@@ -54,7 +54,67 @@ type RunWorkflowArgs = {
     resumeAtActor?: string;
     /** With `resumeFrom`: resume at its last completed step -- where it failed. */
     resumeAtLastStep?: boolean;
+    /** Values for the workflow's inputs, as the person would type them; an input
+     *  named here is not asked for. An empty value gives that input no token. */
+    inputs?: Record<string, string>;
+    /** Ask for the inputs `inputs` leaves out (default true). A caller that
+     *  cannot wait on a person (the chat's tool) passes false: those inputs get no token. */
+    askInputs?: boolean;
+    /** The plan its caller already made (the chat's run checks the inputs against it), so the
+     *  file is not planned twice. */
+    planned?: PlannedRun;
 };
+
+/** What a run of a file needs to know before it starts, from the plan the diagram is drawn from. */
+export interface PlannedRun {
+    /** The workflow the plan shows for the file: what a run of the diagram runs. */
+    workflowName?: string;
+    /** Its inputs, each a value the run asks for. */
+    inputs: Array<{ name: string; type?: string }>;
+}
+
+/** The plan's run of a file: its workflow (the graph's id, `wf:<name>`) and its root inputs. */
+export function plannedRunOf(graph: unknown): PlannedRun | undefined {
+    const g = graph as { id?: unknown; nodes?: Array<{ kind?: string; label?: string; scope?: string; ports?: Array<{ name?: string; type?: string }> }>; subgraphs?: Array<{ id?: string; kind?: string }> } | undefined;
+    if (!g || typeof g !== 'object' || !Array.isArray(g.nodes)) {
+        return undefined;
+    }
+    const root = g.subgraphs?.find(scope => scope.kind === 'root')?.id;
+    const inputs = g.nodes
+        .filter(node => node.kind === 'wf-input' && (!root || !node.scope || node.scope === root))
+        .map(node => ({ name: String(node.ports?.[0]?.name ?? node.label ?? ''), type: node.ports?.[0]?.type }))
+        .filter(input => input.name !== '');
+    const id = typeof g.id === 'string' ? g.id.replace(/^wf:/, '').trim() : '';
+    return { ...(id ? { workflowName: id } : {}), inputs };
+}
+
+/** An input's value as `--input` takes it: text stays text even when it reads as a number. */
+export function runInputValue(value: string, type: string | undefined): string {
+    const bare = (type ?? '').trim();
+    if ((bare === 'str' || bare === 'string') && !value.startsWith('"')) {
+        return JSON.stringify(value);
+    }
+    return value;
+}
+
+/** The command the chat's `run_workflow` tool runs (see `CliRunDriver.runFromChat`). */
+export function runFromChatCommandId(runWorkflowCommandId: string): string {
+    return `${runWorkflowCommandId}.fromChat`;
+}
+
+/** How a run ended, for a caller waiting on it. */
+type RunEnd =
+    | { kind: 'clean'; runDir?: string }
+    | { kind: 'failed'; headline: string; runDir?: string }
+    | { kind: 'stopped' };
+
+/** What the chat's `run_workflow` tool passes: the file, and optionally the workflow, its inputs and how long to wait. */
+export interface RunFromChatArgs {
+    file?: string;
+    workflowName?: string;
+    inputs?: Record<string, unknown>;
+    waitSeconds?: number;
+}
 
 /** The command the chat's `resume_failed_run` tool runs (see `CliRunDriver.resumeFailedRun`). */
 export function resumeFailedRunCommandId(runWorkflowCommandId: string): string {
@@ -133,6 +193,10 @@ export interface CliRunDriverConfig {
         get(): Record<string, AgentToolEntitySettings> | undefined;
         update(value: Record<string, AgentToolEntitySettings>): Thenable<void>;
     };
+    /** The plan's run of a file, for the workflow named or, when none is, the one
+     *  the diagram shows; `undefined` when the plan cannot say. Without it a run
+     *  names only the workflow its caller named, and asks for no input. */
+    planRun?: (sourceUri: vscode.Uri, workflowName: string | undefined) => Promise<PlannedRun | undefined>;
 }
 
 /** A question a running agent puts to the user (the runtime's elicitation channel,
@@ -195,6 +259,14 @@ export class CliRunDriver {
     /** Per-entity agent-tool overrides; mutated by the config commands and read
      *  when building run args. Persisted through `config.overrideState`. */
     private readonly agentToolOverrides = new Map<string, AgentToolEntitySettings>();
+    /** The value last given to each input, by file, workflow and input: the next run offers it. */
+    private readonly lastInputValues = new Map<string, string>();
+    /** A run is asking for its inputs: another waits for it. */
+    private askingForInputs = false;
+    /** Told once when the run in progress ends: the chat's run waits on it. */
+    private readonly runEndListeners = new Set<(end: RunEnd) => void>();
+    /** Told when a run's process has started: the chat's run times its wait from there. */
+    private readonly runStartListeners = new Set<() => void>();
 
     /** Always-on live-overlay watch: the driver owns the knowledge of the
      *  `run.wf-viewer.live.json` file (name, schema, out-dir resolution) that the
@@ -232,6 +304,12 @@ export class CliRunDriver {
             vscode.commands.registerCommand(
                 resumeFailedRunCommandId(this.config.runWorkflowCommandId),
                 async (args?: { file?: string }) => this.resumeFailedRun(args?.file)
+            )
+        );
+        context.subscriptions.push(
+            vscode.commands.registerCommand(
+                runFromChatCommandId(this.config.runWorkflowCommandId),
+                async (args?: RunFromChatArgs) => this.runFromChat(args ?? {})
             )
         );
 
@@ -836,6 +914,183 @@ export class CliRunDriver {
         }
     }
 
+    private tellRunEnd(end: RunEnd): void {
+        for (const listener of [...this.runEndListeners]) {
+            listener(end);
+        }
+    }
+
+    /**
+     * The chat's `run_workflow`: the IDE's own run of the file, so the diagram
+     * shows it running and the chat's Run tab its log, where a run the agent
+     * starts in its shell shows nowhere. A workflow with inputs is not started
+     * until each has a value: the agent is told which, to ask the person. The
+     * call waits for the run to end, up to `waitSeconds`, and says how it ended
+     * and where its outputs are; a run of the file already going is waited on,
+     * not started again.
+     */
+    async runFromChat(args: RunFromChatArgs): Promise<string> {
+        if (!args.file) {
+            return 'Name the workflow file to run.';
+        }
+        const sourceUri = vscode.Uri.file(args.file);
+        const waitMs = Math.min(Math.max(Number(args.waitSeconds ?? 60) || 0, 0), 600) * 1000;
+        if (this.activeRun) {
+            if (this.activeRun.sourceUri.fsPath !== sourceUri.fsPath) {
+                return `Another workflow is running (${path.basename(this.activeRun.sourceUri.fsPath)}); this one can run once it ends.`;
+            }
+            // Read before the wait: the run is no longer active once it has ended.
+            const runningName = this.activeRun.workflowName;
+            return this.describeRunEnd(await this.nextRunEnd(waitMs), runningName, waitMs);
+        }
+        if (this.askingForInputs) {
+            return 'A run is waiting for the person to give its inputs in the editor.';
+        }
+        let workflowName = typeof args.workflowName === 'string' && args.workflowName.trim() ? args.workflowName.trim() : undefined;
+        const inputs: Record<string, string> = Object.fromEntries(
+            Object.entries(args.inputs ?? {}).map(([name, value]) => [name, typeof value === 'string' ? value : JSON.stringify(value)])
+        );
+        if (!this.config.planRun && Object.keys(inputs).length > 0) {
+            // Only a run whose inputs the plan names hands them on: dropped, they would start a
+            // run with no tokens that "finishes" with nothing to show.
+            return 'Not started: runs here take no inputs from the chat. Start it again without `inputs`.';
+        }
+        let planned: PlannedRun | undefined;
+        if (this.config.planRun) {
+            planned = await this.config.planRun(sourceUri, workflowName).catch(() => undefined);
+            if (!planned && Object.keys(inputs).length > 0) {
+                // The plan names the inputs; without it the run would drop them all.
+                return 'Not started: the workflow could not be planned, so its inputs cannot be handed on. '
+                    + 'Call validate_workflow to see why, and fix that first.';
+            }
+            workflowName ??= planned?.workflowName;
+            const unknown = planned ? Object.keys(inputs).filter(name => !planned.inputs.some(input => input.name === name)) : [];
+            if (unknown.length > 0) {
+                const known = planned!.inputs.map(input => input.name).join(', ') || 'none';
+                return `Not started: ${workflowName ?? 'the workflow'} has no input ${unknown.map(name => `'${name}'`).join(', ')}; its inputs are ${known}.`;
+            }
+            const missing = (planned?.inputs ?? []).filter(input => inputs[input.name] === undefined);
+            if (missing.length > 0) {
+                const list = missing.map(input => `${input.name}${input.type ? ` (${input.type})` : ''}`).join(', ');
+                return `Not started: ${workflowName ?? 'the workflow'} takes the input${missing.length > 1 ? 's' : ''} ${list}. `
+                    + 'Pass a value for each in `inputs` (text as it is, a number as digits, a File as a path; "" gives that input no token), '
+                    + 'and ask the user for any you do not know.';
+            }
+        }
+        // The wait is timed from the run's start, not from the call: planning and resolving the
+        // CLI take their own time, and a run that never started is not "still going".
+        let ended: Promise<RunEnd | undefined> | undefined;
+        let onStart: (() => void) | undefined;
+        const begun = new Promise<void>(resolve => {
+            onStart = (): void => {
+                this.runStartListeners.delete(onStart!);
+                ended = this.nextRunEnd(waitMs);
+                resolve();
+            };
+            this.runStartListeners.add(onStart);
+        });
+        const started = this.runWorkflow({ sourceUri: sourceUri.toString(), workflowName, inputs, askInputs: false, planned });
+        const early = await Promise.race([
+            begun.then(() => undefined),
+            started.then(result => (result && typeof result === 'object' && 'error' in result
+                ? String((result as { error: unknown }).error)
+                : 'it ended before its process started.'))
+        ]);
+        if (!ended) {
+            this.runStartListeners.delete(onStart!);
+            return `The run did not start: ${early ?? 'it ended before its process started.'}`;
+        }
+        return this.describeRunEnd(await ended, workflowName, waitMs);
+    }
+
+    /** The end of the run in progress or the next one, or `undefined` after `waitMs`. */
+    private nextRunEnd(waitMs: number): Promise<RunEnd | undefined> {
+        return new Promise(resolve => {
+            const timer = setTimeout(() => {
+                this.runEndListeners.delete(listener);
+                resolve(undefined);
+            }, waitMs);
+            const listener = (end: RunEnd): void => {
+                clearTimeout(timer);
+                this.runEndListeners.delete(listener);
+                resolve(end);
+            };
+            this.runEndListeners.add(listener);
+        });
+    }
+
+    private async describeRunEnd(end: RunEnd | undefined, workflowName: string | undefined, waitMs: number): Promise<string> {
+        const which = workflowName ? `The run of ${workflowName}` : 'The run';
+        if (!end) {
+            return `${which} is still going after ${Math.round(waitMs / 1000)} s: the diagram shows it as it runs, and the chat's Run tab its log. `
+                + 'Call run_workflow again on the file to wait for it to end.';
+        }
+        if (end.kind === 'stopped') {
+            return `${which} was stopped.`;
+        }
+        if (end.kind === 'failed') {
+            return `${which} failed: ${end.headline}${end.runDir ? ` Its records are in ${end.runDir}.` : ''} `
+                + 'The user is offered to have it looked at; after a fix, resume_failed_run resumes it from where it failed.';
+        }
+        const outputs = end.runDir ? await this.runOutputs(end.runDir) : [];
+        if (!end.runDir) {
+            return `${which} finished.`;
+        }
+        return outputs.length > 0
+            ? `${which} finished. Its outputs, one file per workflow output:\n${outputs.map(file => `- ${file}`).join('\n')}`
+            : `${which} finished, but made no output: an input without a token, or a node that never fired. Its records are in ${end.runDir}.`;
+    }
+
+    /** The files a run made for the workflow's outputs: its directory less the run's own records. */
+    private async runOutputs(runDir: string): Promise<string[]> {
+        try {
+            const entries = await fs.readdir(runDir, { withFileTypes: true });
+            return entries
+                .filter(entry => entry.isFile() && !entry.name.startsWith('run.'))
+                .map(entry => path.join(runDir, entry.name))
+                .sort();
+        } catch {
+            return [];
+        }
+    }
+
+    private inputMemoryKey(sourceUri: vscode.Uri, workflowName: string | undefined, input: string): string {
+        return `${sourceUri.toString()}#${workflowName ?? ''}#${input}`;
+    }
+
+    /**
+     * Ask for the value of one input of the run: a file for a `File` input, text
+     * otherwise, offering the value given last time. `undefined` when the person
+     * cancelled the run; an empty string runs it with no token on that input.
+     */
+    private async askRunInput(
+        sourceUri: vscode.Uri,
+        workflowName: string | undefined,
+        input: { name: string; type?: string },
+        index: number,
+        count: number
+    ): Promise<string | undefined> {
+        const last = this.lastInputValues.get(this.inputMemoryKey(sourceUri, workflowName, input.name));
+        const title = `Run ${workflowName ?? path.basename(sourceUri.fsPath)}: input ${index + 1} of ${count}`;
+        if (/(^|\.)File$/.test((input.type ?? '').trim())) {
+            const picked = await vscode.window.showOpenDialog({
+                title: `${title}, '${input.name}' (a file)`,
+                openLabel: `Use as ${input.name}`,
+                canSelectFiles: true,
+                canSelectFolders: false,
+                canSelectMany: false,
+                defaultUri: last ? vscode.Uri.file(last) : vscode.Uri.file(path.dirname(sourceUri.fsPath))
+            });
+            return picked?.[0]?.fsPath;
+        }
+        return vscode.window.showInputBox({
+            title,
+            prompt: `The value of '${input.name}'${input.type ? ` (${input.type})` : ''}. Empty: no token on that input.`,
+            value: last ?? '',
+            ignoreFocusOut: true
+        });
+    }
+
     private async stopWorkflow(): Promise<{ ok: boolean; message: string }> {
         const active = this.activeRun;
         if (!active) {
@@ -867,8 +1122,50 @@ export class CliRunDriver {
             return { error: 'No active workflow diagram found' };
         }
 
-        const workflowName = typeof args?.workflowName === 'string' && args.workflowName.trim() ? args.workflowName.trim() : undefined;
+        let workflowName = typeof args?.workflowName === 'string' && args.workflowName.trim() ? args.workflowName.trim() : undefined;
         const namespaceName = typeof args?.namespaceName === 'string' && args.namespaceName.trim() ? args.namespaceName.trim() : undefined;
+
+        // A new run (a resumed one replays its own): the workflow the diagram
+        // shows when the caller named none -- the command palette names none,
+        // and a file that imports a workflow defines two -- and a value for
+        // each of its inputs, asked for, since a run without them makes no
+        // token there and "finishes" with nothing to show.
+        const inputArgs: string[] = [];
+        const resuming = typeof args?.resumeFrom === 'string' && args.resumeFrom.trim() !== '';
+        // A namespace's run is not the diagram's workflow: its inputs are not the plan's.
+        const namespaceOnly = Boolean(namespaceName) && !workflowName;
+        if (!resuming && !namespaceOnly && this.config.planRun) {
+            if (this.askingForInputs) {
+                const message = 'A run is waiting for its inputs: answer or cancel it first.';
+                void vscode.window.showWarningMessage(message);
+                return { error: message };
+            }
+            this.askingForInputs = true;
+            try {
+                const planned = args?.planned ?? await this.config.planRun(sourceUri, workflowName).catch(() => undefined);
+                if (!workflowName && !namespaceName && planned?.workflowName) {
+                    workflowName = planned.workflowName;
+                }
+                const inputs = planned?.inputs ?? [];
+                for (const [index, input] of inputs.entries()) {
+                    const given = args?.inputs?.[input.name];
+                    const value = given !== undefined
+                        ? String(given)
+                        : args?.askInputs === false
+                            ? ''
+                            : await this.askRunInput(sourceUri, workflowName, input, index, inputs.length);
+                    if (value === undefined) {
+                        return { error: `Run cancelled: no value was given for the input '${input.name}'.` };
+                    }
+                    if (value !== '') {
+                        this.lastInputValues.set(this.inputMemoryKey(sourceUri, workflowName, input.name), value);
+                        inputArgs.push('--input', `${input.name}=${runInputValue(value, input.type)}`);
+                    }
+                }
+            } finally {
+                this.askingForInputs = false;
+            }
+        }
 
         const runOutDir = await this.resolveRunOutDir(sourceUri);
         if (!runOutDir) {
@@ -897,6 +1194,7 @@ export class CliRunDriver {
         if (namespaceName && !workflowName) {
             cliArgs.push('--namespace', namespaceName);
         }
+        cliArgs.push(...inputArgs);
 
         // Resume a run at a step the stepper shows, or before a node's last
         // firing: the firings up to it are replayed by the runtime, not run.
@@ -1062,6 +1360,10 @@ export class CliRunDriver {
         let streamBatch: RunStreamEvent[] = [];
         let streamFlushTimer: ReturnType<typeof setInterval> | undefined;
         let streamEventCount = 0;
+        // Whether the runtime closed its own stream. A stopped (killed) or
+        // crashed run never does, and the diagram's chat would show its agents
+        // streaming for good: the driver closes it for them.
+        let streamClosed = false;
         // Permanent, ungated host breadcrumbs (console.log so a webview/console
         // paste captures them — the extension host relays console.log). Every hop
         // of the run-stream pipeline logs, mirroring the client-side `[wf-lang
@@ -1088,6 +1390,9 @@ export class CliRunDriver {
             streamClient = new RunEventStreamClient({
                 discoveryFilePath,
                 onEvent: (event) => {
+                    if (event.type === 'run.finished' || event.type === 'run.stream.closing') {
+                        streamClosed = true;
+                    }
                     streamBatch.push(event);
                     hostLog(`SSE event #${++streamEventCount} type=${String(event.type)}`);
                 },
@@ -1105,8 +1410,13 @@ export class CliRunDriver {
                 streamFlushTimer = undefined;
             }
             flushStreamEvents();
+            const started = streamClient !== undefined;
             streamClient?.stop();
             streamClient = undefined;
+            if (started && !streamClosed) {
+                streamClosed = true;
+                this.host.overlay.emitEvents(sourceUri.toString(), [{ type: 'run.stream.closing', reason: 'the run ended without closing its stream' }]);
+            }
             this.stopElicitSocket();
         };
 
@@ -1138,6 +1448,9 @@ export class CliRunDriver {
                             output,
                             stopRequested: false
                         };
+                        for (const listener of [...this.runStartListeners]) {
+                            listener();
+                        }
                     },
                     () => this.activeRun?.stopRequested === true,
                     (text) => {
@@ -1156,6 +1469,7 @@ export class CliRunDriver {
         stopStream();
 
         if (stopRequested) {
+            this.tellRunEnd({ kind: 'stopped' });
             vscode.window.showInformationMessage('Workflow run canceled.');
             return { ok: false, canceled: true };
         }
@@ -1176,6 +1490,7 @@ export class CliRunDriver {
                 this.failedRuns.set(sourceUri.fsPath, { sourceUri, workflowName, runDir, failure });
                 this.lastFailedFile = sourceUri.fsPath;
             }
+            this.tellRunEnd({ kind: 'failed', headline: failureHeadline(failure, exitCode), runDir });
             void this.reportFailure({ sourceUri, workflowName, failure, exitCode, stderrTail, runDir, output });
             return { error: failureHeadline(failure, exitCode) };
         }
@@ -1191,6 +1506,12 @@ export class CliRunDriver {
             startedAfterMs: runStartedAtMs,
             workflowName
         });
+        if (this.runEndListeners.size > 0) {
+            this.tellRunEnd({
+                kind: 'clean',
+                runDir: await this.findLatestRunDir({ baseOutDir: runOutDir, sourcePath: sourceUri.fsPath, startedAfterMs: runStartedAtMs, workflowName })
+            });
+        }
 
         if (queueTracePath) {
             const openAction = 'Open Queue Trace';

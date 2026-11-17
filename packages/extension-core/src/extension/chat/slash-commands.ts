@@ -7,6 +7,8 @@
  * sent to the agent (mlir's 0.2.0 `slashCommands` semantics). Parsing is the
  * legacy intent-resolver grammar, ported verbatim: `/cmd a b key=value` with
  * positionals collected under `_positional` and quotes stripped from values.
+ * The text after the command is kept, as typed, under `_raw`, for a command
+ * whose values are source text (quotes and all).
  */
 
 export interface ChatCommandContext {
@@ -43,7 +45,7 @@ export interface ChatCommandContribution {
 const SLASH_RE = /^\/([\w-]+)(?:\s+(.+))?$/;
 
 function parseArgs(argsString: string): Record<string, any> {
-    const args: Record<string, any> = {};
+    const args: Record<string, any> = { _raw: argsString };
     for (const part of argsString.split(/\s+/)) {
         const [key, value] = part.split('=');
         if (key && value) {

@@ -1,5 +1,6 @@
 import { injectable } from 'inversify';
 import { IDiagramStartup, ISelectionListener } from '@eclipse-glsp/client';
+import { raiseFloatingPanel, stackAsFloatingPanel } from './floating-panels';
 import { Messenger } from 'vscode-messenger-webview';
 import { DiagramWebviewChannel, getDiagramWebviewChannel } from './webview-channel';
 import { NotificationType } from 'vscode-messenger-common';
@@ -257,6 +258,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   private receivedStatus = false;
   private statusHandshakeTimer: number | null = null;
   private lastStatusKey = '';
+  /** The "Not connected" row of a disconnection since taken back by a connect. */
+  private disconnectedRow: TimelineItem | undefined;
   /**
    * Number of `chat.ready` posts made so far (initial + retries). If the host
    * hasn't wired its chat messenger yet (it may still be spawning opencode), the
@@ -845,6 +848,15 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
           undefined,
           { reveal: false }
         );
+        this.disconnectedRow = this.timeline[this.timeline.length - 1];
+      } else if (this.disconnectedRow) {
+        // Connected since: the row said what is no longer so (the chat opened
+        // with "Not connected" under a status reading "Connected"). It goes,
+        // unless the conversation went on below it, where it is history.
+        if (this.timeline[this.timeline.length - 1] === this.disconnectedRow) {
+          this.timeline.pop();
+        }
+        this.disconnectedRow = undefined;
       }
     }
 
@@ -1126,6 +1138,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   show(): void {
     if (!this.panel) return;
     this.panel.classList.add('visible');
+    raiseFloatingPanel(this.panel);
     document.body.classList.add(ChatPanel.VISIBLE_BODY_CLASS);
     this.isVisible = true;
     this.focusInput();
@@ -1178,6 +1191,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       document.body.appendChild(panel);
     }
     this.panel = panel;
+    stackAsFloatingPanel(panel);
 
     // Restore the saved message-drawer height.
     const savedHeight = localStorage.getItem(ChatPanel.PANEL_HEIGHT_STORAGE_KEY);

@@ -34,6 +34,7 @@ import { WorkflowElkLayoutEngine } from './elk-layout-engine';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
 import { AgentCreateNodeOutcomeSink } from './agent-create-node-outcome';
+import { AgentEditOutcomeSink } from './agent-edit-outcome';
 import { WorkflowRerouteEdgesAvoidOverlapsOperationHandler } from '../operations/reroute-edges-avoid-overlaps-handler';
 import { WorkflowLayoutBoundaryFlowOperationHandler } from '../operations/layout-boundary-flow-handler';
 import { DIAGRAM_MODEL_SOURCE } from './model-source-token';
@@ -212,6 +213,10 @@ export function createWorkflowServerModules(
     const agentCreateNodeOutcomeModule = new ContainerModule((bind, _unbind, isBound) => {
         if (!isBound(AgentCreateNodeOutcomeSink)) {
             bind(AgentCreateNodeOutcomeSink).toSelf().inSingletonScope();
+        }
+        // The same channel for every other edit an agent's tool call makes (see AgentEditOutcomeSink).
+        if (!isBound(AgentEditOutcomeSink)) {
+            bind(AgentEditOutcomeSink).toSelf().inSingletonScope();
         }
     });
     additionalModules.push(agentCreateNodeOutcomeModule);

@@ -59,6 +59,9 @@ export async function activateProfileRuntime(
         editBackend: profile.editBackend,
         getEditorProvider: () => glsp.editorProvider,
         log: (m) => log(m),
+        // The slash commands edit through the diagram's tools: only where the
+        // profile turns them on, as for the agent.
+        mcpServerUrl: profile.mcp?.enabled === true ? glsp.mcpServerUrl : undefined,
       });
     }
     const config = assembleChatRuntimeConfig(

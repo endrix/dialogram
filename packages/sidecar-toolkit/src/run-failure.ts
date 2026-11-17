@@ -26,6 +26,9 @@ export interface FixTask {
 /** The chat tool that resumes the failed run once a fix is in. */
 export const RESUME_TOOL = 'resume_failed_run';
 
+/** The chat tool that starts the IDE's run of a file (`runWorkflowTool`). */
+export const RUN_TOOL = 'run_workflow';
+
 /** At most this much of the run's stderr goes to the agent: the end, where the traceback is. */
 export const STDERR_TAIL_CHARS = 8000;
 

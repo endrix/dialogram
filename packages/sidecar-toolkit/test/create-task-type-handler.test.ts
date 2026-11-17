@@ -85,4 +85,37 @@ describe('create task type handler', () => {
             await fs.rm(tempRoot, { recursive: true, force: true });
         }
     });
+
+    it('asks the sidecar for the kind the operation names; a workflow through its own op', async () => {
+        const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'create-task-type-kind-'));
+        const workflowPath = path.join(tempRoot, 'net.py');
+        await fs.writeFile(workflowPath, 'pass\n');
+        const sourceUri = `file://${workflowPath}`;
+        const payloads: Array<{ op: string; args: Record<string, unknown> }> = [];
+        const workspaceAny = vscode.workspace as any;
+        const originalOpenTextDocument = workspaceAny.openTextDocument;
+        workspaceAny.openTextDocument = async () => ({ uri: { fsPath: workflowPath, toString: () => sourceUri }, getText: () => 'pass\n' });
+        try {
+            for (const typeKind of ['agent', 'workflow']) {
+                const handler = new CreateTaskTypeOperationHandler();
+                (handler as any).modelState = { sourceUri, index: { find: () => undefined } };
+                (handler as any).sidecar = {
+                    sidecarOp: (opName: string) => `wfpy.${opName}`,
+                    undoLabelSuffix: () => '',
+                    sendSidecarOpDetailed: async (_uri: string, payload: { op: string; args: Record<string, unknown> }) => {
+                        payloads.push(payload);
+                        return { ok: true, response: { status: 'ok' } };
+                    }
+                };
+                await handler.createCommand(CreateTaskTypeOperation.create({ name: 'Foo', typeKind }))?.execute();
+            }
+            expect(payloads).toEqual([
+                { op: 'wfpy.createTaskType', args: { kind: 'agent', name: 'Foo', updatePackageExports: true } },
+                { op: 'wfpy.createWorkflowType', args: { name: 'Foo' } }
+            ]);
+        } finally {
+            workspaceAny.openTextDocument = originalOpenTextDocument;
+            await fs.rm(tempRoot, { recursive: true, force: true });
+        }
+    });
 });

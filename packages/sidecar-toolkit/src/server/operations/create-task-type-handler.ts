@@ -69,10 +69,14 @@ export class CreateTaskTypeOperationHandler extends OperationHandler {
                 const packageUri = siblingPackageInit(vscodeUri);
                 const packageBefore = packageUri ? await readTextIfPresent(packageUri) : undefined;
 
-                const result = await this.sidecar.sendSidecarOpDetailed(sourceUri, {
-                    op: this.sidecar.sidecarOp('createTaskType'),
-                    args: { kind: TASK_TYPE_KIND, name, updatePackageExports: true }
-                });
+                // A workflow is made by its own op, as the palette's wizard makes it.
+                const typeKind = operation.typeKind?.trim() || TASK_TYPE_KIND;
+                const result = await this.sidecar.sendSidecarOpDetailed(sourceUri, typeKind === 'workflow'
+                    ? { op: this.sidecar.sidecarOp('createWorkflowType'), args: { name } }
+                    : {
+                        op: this.sidecar.sidecarOp('createTaskType'),
+                        args: { kind: typeKind, name, updatePackageExports: true }
+                    });
                 if (!result.ok) {
                     return undefined;
                 }

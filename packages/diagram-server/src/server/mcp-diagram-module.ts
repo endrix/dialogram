@@ -33,6 +33,12 @@ import { makePlatformToolHandlerClass, type PlatformMcpTool } from './mcp-platfo
 import { isDiagramOperationModule, type McpToolBinding } from './operation-modules';
 import { AgentDispatchCreateNodesMcpToolHandler } from './create-nodes-mcp-tool-handler';
 import { AgentDispatchCreateEdgesMcpToolHandler } from './create-edges-mcp-tool-handler';
+import {
+    AgentDispatchDeleteElementsMcpToolHandler,
+    AgentDispatchModifyNodesMcpToolHandler,
+    NamedNodeMcpLabelProvider,
+    PaletteElementTypesProvider
+} from './mcp-named-elements';
 
 /**
  * Keep mutation-capable tools OFF the read-only GLSP-MCP bridge.
@@ -92,6 +98,16 @@ export class DiagramMcpModule extends DefaultMcpDiagramModule {
         this.edits = options?.edits;
     }
 
+    /** A node's label is the name in its header: `modify-nodes` `text` renames it. */
+    protected override bindLabelProvider(): ReturnType<DefaultMcpDiagramModule['bindLabelProvider']> {
+        return NamedNodeMcpLabelProvider;
+    }
+
+    /** Each creatable type labelled with the palette rows it stands for, not "Create Node". */
+    protected override bindElementTypesProvider(): ReturnType<DefaultMcpDiagramModule['bindElementTypesProvider']> {
+        return PaletteElementTypesProvider;
+    }
+
     protected override configureToolHandlers(
         binding: InstanceMultiBinding<McpDiagramToolHandlerConstructor>
     ): void {
@@ -135,6 +151,12 @@ export class DiagramMcpModule extends DefaultMcpDiagramModule {
         // never uses this handler, so its behaviour is unchanged.
         binding.remove(CreateEdgesMcpToolHandler);
         binding.add(AgentDispatchCreateEdgesMcpToolHandler);
+        // `delete-elements` and `modify-nodes` take a node by its name and say what the producer
+        // answered; `modify-nodes` `text` is a rename (see mcp-named-elements.ts).
+        binding.remove(DeleteElementsMcpToolHandler);
+        binding.add(AgentDispatchDeleteElementsMcpToolHandler);
+        binding.remove(ModifyNodesMcpToolHandler);
+        binding.add(AgentDispatchModifyNodesMcpToolHandler);
         // The tools of the product's own operations (a type scaffold, say). Each rides the
         // built-in operation-tool path: it dispatches a reversible GLSP operation, so the
         // mutation flows through the undoable workspace edits, the one sanctioned way to

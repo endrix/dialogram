@@ -142,3 +142,31 @@ describe('ranking for the file at hand', () => {
         expect(ranked).toEqual(many);
     });
 });
+
+describe('a command named for the kind of file', () => {
+    const htmlPreview = {
+        id: 'ebezati.wfpy-ide',
+        displayName: 'Workflow IDE',
+        commands: [{ command: 'workflow.glsp.openHtmlPreview', title: 'Workflow: Open HTML Preview' }]
+    };
+
+    it('comes right after the editors that claim the file, ahead of every other viewer', () => {
+        const all = discoverViewerEditors([markdown, imagePreview, noise, htmlPreview]);
+        const ranked = rankForFile(all, 'site/report.html');
+        expect(ranked[0].command).toBe('workflow.glsp.openHtmlPreview');
+        expect(ranked).toHaveLength(all.length);
+    });
+
+    it('takes a short extension as a word, not as the start of one', () => {
+        // `.c` once put every "Copy…" and "Close…" command first.
+        const copy = { id: 'x.copy', displayName: 'Copy', commands: [{ command: 'copy.view', title: 'Copy: View Clipboard' }] };
+        const all = discoverViewerEditors([markdown, copy]);
+        expect(rankForFile(all, 'main.c')).toEqual(all);
+    });
+
+    it('is not moved for a file of another kind', () => {
+        const all = discoverViewerEditors([markdown, htmlPreview]);
+        expect(rankForFile(all, 'plot.csv')).toEqual(all);
+    });
+});
+

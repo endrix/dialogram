@@ -25,6 +25,7 @@ import {
     type McpToolResult
 } from '@eclipse-glsp/server-mcp';
 import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
+import { AgentEditOutcomeSink, isEditOp } from './agent-edit-outcome';
 import { resolveEndpointElementId, type EndpointResolution } from './edge-endpoint-name-resolver';
 
 /**
@@ -55,6 +56,15 @@ export class AgentDispatchCreateEdgesMcpToolHandler extends CreateEdgesMcpToolHa
     @optional()
     protected agentSignal?: AgentStructuralEditSignal;
 
+    @inject(AgentEditOutcomeSink)
+    @optional()
+    protected editOutcomes?: AgentEditOutcomeSink;
+
+    // The stock result is a diff of the model index, which never sees a dialogram edge (the model
+    // is re-read from the source on a later reload): it said "Edge creation likely failed" for an
+    // edge it made. The result is text read from what the producer answered instead.
+    override readonly outputSchema = undefined;
+
     override readonly description =
         'Create one or multiple edges connecting two elements in the diagram. Address each endpoint ' +
         "EITHER by raw element id (`sourceElementId` / `targetElementId`, from query-elements) OR by " +
@@ -63,8 +73,10 @@ export class AgentDispatchCreateEdgesMcpToolHandler extends CreateEdgesMcpToolHa
         'no query-elements/diagram-model dump. After create-nodes, the confirmation lists each new ' +
         "node's port names, so the very next create-edges can use nodeName.portName directly. When " +
         "the diagram's edges come in kinds, name the kind in `args.role`; without it the diagram's " +
-        'default kind is made (never a question to the person). Set ' +
+        "default kind is made (never a question to the person). One of the diagram's own ports (a " +
+        "workflow input or output) is named alone, without a dot (args.source \"TextFile\"). Set " +
         '`dryRun: true` to validate without creating. Use `element-types` for valid edge type IDs. ' +
+        'The result says, per edge, whether it was made and if not why. ' +
         'This modifies the source and is undoable via the editor.';
 
     override readonly inputSchema = NameAddressableCreateEdgesInputSchema as unknown as CreateEdgesMcpToolHandler['inputSchema'];
@@ -104,11 +116,58 @@ export class AgentDispatchCreateEdgesMcpToolHandler extends CreateEdgesMcpToolHa
             return this.error(errors.join('\n'));
         }
 
-        const result = await super.createResult({ ...input, edges: resolvedEdges } as Parameters<CreateEdgesMcpToolHandler['createResult']>[0]);
-        if (input.dryRun !== true) {
+        if (input.dryRun === true || !this.editOutcomes) {
+            const result = await super.createResult({ ...input, edges: resolvedEdges } as Parameters<CreateEdgesMcpToolHandler['createResult']>[0]);
+            if (input.dryRun !== true) {
+                this.agentSignal?.markPending();
+            }
+            return result;
+        }
+
+        // One edge at a time, so each one's answer is its own.
+        const made: string[] = [];
+        const refused: string[] = [];
+        for (const [at, edge] of resolvedEdges.entries()) {
+            const label = this.edgeLabel(input.edges[at], edge);
+            const { value: stock, outcomes } = await this.editOutcomes.collect(
+                () => super.createResult({ ...input, edges: [edge] } as Parameters<CreateEdgesMcpToolHandler['createResult']>[0])
+            );
+            // Every answer while the edge is made is the edge's: a connection, a transition
+            // between states, a view edge, each by its own op.
+            const answers = outcomes;
+            if (answers.length === 0) {
+                // Nothing reached the producer: the diagram could not use these endpoints.
+                refused.push(`${label}: not connected. ${textOf(stock)}`.trim());
+            } else if (answers.every(outcome => outcome.ok)) {
+                made.push(label);
+            } else {
+                refused.push(`${label}: ${answers.find(outcome => !outcome.ok)?.message ?? 'the connection was refused.'}`);
+            }
+        }
+        if (made.length > 0) {
             this.agentSignal?.markPending();
         }
-        return result;
+        const lines = [
+            ...(made.length > 0 ? [`Connected ${made.length} edge(s):`, ...made.map(each => `- ${each}`)] : []),
+            ...(refused.length > 0 ? [`Not connected (${refused.length}):`, ...refused.map(each => `- ${each}`)] : [])
+        ];
+        // An error only when nothing was made: a call that made some edges is not to be repeated
+        // whole, which would make those again.
+        if (made.length === 0) {
+            return this.error(lines.join('\n'));
+        }
+        if (refused.length > 0) {
+            lines.unshift(`Partly done: ${made.length} of ${made.length + refused.length} edges made. Do not repeat those; call again only for the ones not connected, once their reason is dealt with.`);
+        }
+        return this.success(lines.join('\n'));
+    }
+
+    /** How the agent named an edge: its name specs, or the ids it gave. */
+    private edgeLabel(given: NameAddressableEdge, resolved: NameAddressableEdge): string {
+        const args = (given.args ?? {}) as Record<string, unknown>;
+        const source = typeof args.source === 'string' ? args.source : given.sourceElementId ?? resolved.sourceElementId;
+        const target = typeof args.target === 'string' ? args.target : given.targetElementId ?? resolved.targetElementId;
+        return `${source} → ${target}`;
     }
 
     /**
@@ -134,4 +193,10 @@ export class AgentDispatchCreateEdgesMcpToolHandler extends CreateEdgesMcpToolHa
         }
         return { ok: true, elementId: this.encodeIds([resolution.elementId])[0] };
     }
+}
+
+/** The text of a tool result. */
+function textOf(result: McpToolResult): string {
+    const content = (result as { content?: Array<{ type?: string; text?: string }> }).content ?? [];
+    return content.map(part => part.text ?? '').join(' ').trim();
 }

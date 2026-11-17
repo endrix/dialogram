@@ -1355,6 +1355,77 @@ describe('workflow create node handler', () => {
         }
     });
 
+    describe('a headless create that may make its type (args.createType)', () => {
+        async function createWith(answers: (op: string) => any, args: Record<string, unknown>, elementTypeId: string = WorkflowDiagramTypes.NODE_TASK) {
+            const handler = new CreateNodeOperationHandler();
+            const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-create-type-'));
+            const mainPath = path.join(tempRoot, 'main.py');
+            await fs.writeFile(mainPath, '@workflow()\ndef Main():\n    pass\n');
+            const workspaceAny = vscode.workspace as any;
+            const original = { openTextDocument: workspaceAny.openTextDocument, applyEdit: workspaceAny.applyEdit, fs: workspaceAny.fs };
+            const sent: Array<{ op: string; args: any }> = [];
+            const created: any[] = [];
+            const rejected: string[] = [];
+            const writes: string[] = [];
+            workspaceAny.openTextDocument = async (uri: any) => {
+                const fsPath = uri?.fsPath ?? mainPath;
+                const text = await fs.readFile(fsPath, 'utf-8');
+                return { uri: { fsPath, toString: () => `file://${fsPath}` }, getText: () => text };
+            };
+            workspaceAny.applyEdit = async () => true;
+            workspaceAny.fs = { ...(original.fs ?? {}), writeFile: async (_uri: any, bytes: Uint8Array) => { writes.push(new TextDecoder().decode(bytes)); } };
+            try {
+                (handler as any).modelState = { root: { args: { sourceUri: `file://${mainPath}`, 'wf:workflowName': 'Main' } } };
+                (handler as any).sidecar = wfpySidecar();
+                (handler as any).createNodeOutcomeSink = {
+                    recordRejected: (message: string) => { rejected.push(message); },
+                    recordCreated: (name: string, type: string, _ports: unknown, createdType?: string) => { created.push({ name, type, createdType }); }
+                };
+                (handler as any).sendSidecarListDetailed = async () => ({ ok: true, response: { status: 'ok', diagnostic: { names: [] } } });
+                (handler as any).sendSidecarOpDetailed = async (_uri: string, payload: { op: string; args: any }) => {
+                    sent.push(payload);
+                    return answers(payload.op);
+                };
+                const command = handler.createCommand({ kind: 'createNode', elementTypeId, args: { headless: true, ...args } } as any);
+                await (command as any).execute();
+                return { sent: sent.map(each => [each.op.replace(/^.*\./, ''), each.args.kind ?? null]), created, rejected, writes };
+            } finally {
+                Object.assign(workspaceAny, original);
+                await fs.rm(tempRoot, { recursive: true, force: true });
+            }
+        }
+        const notFound = { ok: false, code: 'type_not_found', message: "Type 'Reader' not found" };
+        const ok = { ok: true, response: { status: 'ok' } };
+
+        it('makes the type the source does not have, then the node, as the wizard does', async () => {
+            let creates = 0;
+            const result = await createWith(op => (op.endsWith('createNode') && creates++ === 0 ? notFound : ok), { type: 'Reader', name: 'reader', createType: true });
+            expect(result.sent).toEqual([['createNode', null], ['createTaskType', 'task'], ['createNode', null]]);
+            expect(result.created).toEqual([{ name: 'reader', type: 'Reader', createdType: "task type 'Reader'" }]);
+        });
+
+        it('makes a workflow for the workflow row', async () => {
+            let creates = 0;
+            const result = await createWith(op => (op.endsWith('createNode') && creates++ === 0 ? notFound : ok), { type: 'Inner', name: 'inner', createType: true }, WorkflowDiagramTypes.NODE_WORKFLOW);
+            expect(result.sent.map(([op]) => op)).toEqual(['createNode', 'createWorkflowType', 'createNode']);
+        });
+
+        it('makes no type for any other refusal, nor unasked', async () => {
+            const taken = await createWith(op => (op.endsWith('createNode') ? { ok: false, code: 'invalid_parameter_name', message: 'bad' } : ok), { type: 'Reader', name: 'reader', createType: true });
+            expect(taken.sent).toEqual([['createNode', null]]);
+            const unasked = await createWith(op => (op.endsWith('createNode') ? notFound : ok), { type: 'Reader', name: 'reader' });
+            expect(unasked.sent).toEqual([['createNode', null]]);
+            expect(unasked.rejected[0]).toContain("Type 'Reader' not found");
+        });
+
+        it('puts the file back when the node still cannot be made', async () => {
+            const result = await createWith(op => (op.endsWith('createNode') ? notFound : ok), { type: 'Reader', name: 'reader', createType: true });
+            expect(result.sent.map(([op]) => op)).toEqual(['createNode', 'createTaskType', 'createNode']);
+            expect(result.writes).toEqual(['@workflow()\ndef Main():\n    pass\n']);
+            expect(result.created).toEqual([]);
+        });
+    });
+
     it('records an actionable rejection on the outcome sink for a headless instance-name collision', async () => {
         // The 4-identical-retries scenario: the derived/explicit name already exists. The agent must
         // learn to pass a unique args.name, not silently receive a success-shaped "0 created".
