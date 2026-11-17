@@ -30,7 +30,14 @@ import type { WorkflowEditorProvider } from './diagram-editor-provider';
 import { ExecutionOverlayRegistry } from './execution-overlay';
 import { forwardExecutionOverlayEvents, forwardExecutionOverlayStates, type ExecutionOverlayWebviewSink } from './execution-overlay-bridge';
 import { registerStatusSource } from './status-source';
-import { readRequestedNetworkName, resolveDiagramOpenTarget, type DiagramOpenTargetArg } from './open-diagram-target';
+import {
+    activeSourceUri,
+    readRequestedNetworkName,
+    resolveDiagramOpenTarget,
+    sizeOfFile,
+    tabSourceUri,
+    type DiagramOpenTargetArg
+} from './open-diagram-target';
 import { matchesSourceExtension, sourceFileNoun } from './source-extensions';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
 import { executeViewerCommand, executeViewerOpen, executeViewerReveal } from './viewer-actions';
@@ -1078,16 +1085,39 @@ function registerCalDiagramCommands(
     const isProfileSource = (uri: vscode.Uri | undefined): uri is vscode.Uri =>
         !!uri && matchesSourceExtension(uri.fsPath, profile.sourceExtensions);
 
-    const getActiveWorkflowUri = (): vscode.Uri | undefined => {
-        const diagramUri = getActiveWorkflowDiagramUri();
-        if (isProfileSource(diagramUri)) {
-            return diagramUri;
+    const getActiveWorkflowUri = (): vscode.Uri | undefined =>
+        activeSourceUri(
+            {
+                diagramUri: getActiveWorkflowDiagramUri(),
+                textEditorUri: vscode.window.activeTextEditor?.document.uri,
+                tabUri: tabSourceUri(vscode.window.tabGroups.activeTabGroup.activeTab?.input)
+            },
+            isProfileSource
+        );
+
+    /** A file's size, for a source VS Code will not open as text (see `fileSize`). */
+    const sourceFileSize = async (uri: vscode.Uri): Promise<number | undefined> => {
+        try {
+            return sizeOfFile(await vscode.workspace.fs.stat(uri));
+        } catch {
+            return undefined;
         }
-        const activeEditorUri = vscode.window.activeTextEditor?.document.uri;
-        if (isProfileSource(activeEditorUri)) {
-            return activeEditorUri;
+    };
+
+    /**
+     * Show a source as text, for one that has no diagram to show. Said when
+     * it cannot be: a file over 50 MB opens as a diagram and is refused as a
+     * text document, and the refusal was an error nobody caught.
+     */
+    const showSourceAsText = async (uri: vscode.Uri, options: vscode.TextDocumentShowOptions): Promise<void> => {
+        try {
+            await vscode.window.showTextDocument(uri, options);
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            void vscode.window.showWarningMessage(
+                `${path.basename(uri.fsPath)} has no diagram to show, and could not be opened as text: ${reason}`
+            );
         }
-        return undefined;
     };
 
     const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1173,6 +1203,7 @@ function registerCalDiagramCommands(
             const sourceUri = await resolveDiagramOpenTarget(arg, {
                 getActiveWorkflowUri,
                 openTextDocument: vscode.workspace.openTextDocument,
+                fileSize: sourceFileSize,
                 workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
                 sourceExtensions: profile.sourceExtensions
             });
@@ -1185,7 +1216,7 @@ function registerCalDiagramCommands(
                 ? await profile.canOpenSource(sourceUri, { requestedName: requestedNetwork })
                 : undefined;
             if (decideDiagramOpen(canOpen, false) === 'text-fallback') {
-                await vscode.window.showTextDocument(sourceUri, inPlace(sourceUri, 'text', {
+                await showSourceAsText(sourceUri, inPlace(sourceUri, 'text', {
                     preview: true,
                     preserveFocus: false
                 }));
@@ -1236,6 +1267,7 @@ function registerCalDiagramCommands(
             const sourceUri = await resolveDiagramOpenTarget(arg, {
                 getActiveWorkflowUri,
                 openTextDocument: vscode.workspace.openTextDocument,
+                fileSize: sourceFileSize,
                 workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
                 sourceExtensions: profile.sourceExtensions
             });
@@ -1248,7 +1280,7 @@ function registerCalDiagramCommands(
                 ? await profile.canOpenSource(sourceUri, { requestedName: requestedNetwork })
                 : undefined;
             if (decideDiagramOpen(canOpen, false) === 'text-fallback') {
-                await vscode.window.showTextDocument(sourceUri, {
+                await showSourceAsText(sourceUri, {
                     preview: true,
                     preserveFocus: false,
                     viewColumn: vscode.ViewColumn.Beside
@@ -1309,7 +1341,18 @@ function registerCalDiagramCommands(
                     return { ok: false, message };
                 }
 
-                const document = await vscode.workspace.openTextDocument(sourceUri);
+                // A rename is an edit of the text, and a file VS Code keeps
+                // from extensions (over 50 MB) has no text to edit here. The
+                // file in front can be one now, so it is answered, not thrown.
+                let document: vscode.TextDocument;
+                try {
+                    document = await vscode.workspace.openTextDocument(sourceUri);
+                } catch (error) {
+                    const reason = error instanceof Error ? error.message : String(error);
+                    const message = `Nothing was renamed: ${path.basename(sourceUri.fsPath)} could not be opened as text (${reason}).`;
+                    void vscode.window.showWarningMessage(message);
+                    return { ok: false, message };
+                }
 
                 const providedOldName = typeof args?.oldName === 'string' ? args.oldName.trim() : '';
                 const oldName = providedOldName || (await vscode.window.showInputBox({
