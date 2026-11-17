@@ -123,15 +123,16 @@ to the package sources itself. That is what makes the path imports in §4
 `@dialogram/diagram-client/diagram-client.css`) resolve:
 
 ```js
-const { dialogramAlias, writeLegacyDecoratorBundles } = await import(
+const { dialogramAlias, dialogramPackagesOnly, writeLegacyDecoratorBundles } = await import(
     pathToFileURL(path.join(dialogramRoot, 'scripts/esbuild-dialogram.mjs')).href
 );
+const dialogramPackages = path.join(dialogramRoot, 'packages');
 
 await esbuild.build({
     // ...the options above, and:
-    alias: dialogramAlias(path.join(dialogramRoot, 'packages')),
+    alias: dialogramAlias(dialogramPackages),
     write: false,                                   // the plugin writes what passes
-    plugins: [writeLegacyDecoratorBundles()]
+    plugins: [dialogramPackagesOnly(dialogramPackages), writeLegacyDecoratorBundles()]
 });
 ```
 
@@ -142,8 +143,11 @@ standard decorators, and inversify's property `@inject` throws when the bundle
 loads ("Cannot read properties of undefined (reading 'prototype')"). It shows
 only once a decorated module is first imported by package name, which is why a
 plugin can seem to work. `writeLegacyDecoratorBundles` fails the build, naming
-the module, rather than write such a bundle; the extension's own build uses
-both (`packages/extension/esbuild.mjs`).
+the module, rather than write such a bundle, and leaves an unchanged one alone.
+`dialogramPackagesOnly` refuses a `@dialogram/<pkg>` with no sources in this
+checkout, which esbuild would otherwise look for in `node_modules` (another
+checkout, perhaps). The extension's own build uses all three
+(`packages/extension/esbuild.mjs`).
 
 A product with its own `node_modules` also pins GLSP, Sprotty and inversify to
 the platform's copy, so the bundle has one inversify realm (chisel-ide's

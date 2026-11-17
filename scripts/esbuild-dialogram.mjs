@@ -10,7 +10,7 @@
  *
  * A product imports this from its Dialogram checkout:
  *
- *     const { dialogramAlias, writeLegacyDecoratorBundles } =
+ *     const { dialogramAlias, dialogramPackagesOnly, writeLegacyDecoratorBundles } =
  *         await import(pathToFileURL(path.join(dialogramRoot, 'scripts/esbuild-dialogram.mjs')).href);
  */
 import * as fs from 'node:fs';
@@ -30,6 +30,31 @@ export function dialogramAlias(packagesDir) {
             .filter(pkg => fs.existsSync(path.join(packagesDir, pkg, 'src')))
             .map(pkg => [`@dialogram/${pkg}`, path.join(packagesDir, pkg, 'src')])
     );
+}
+
+/**
+ * An esbuild plugin that refuses a `@dialogram/<pkg>` with no sources under `packagesDir`. Unaliased,
+ * esbuild would look for it in `node_modules`, which in a product links to whatever Dialogram
+ * checkout it was installed from, not necessarily this one: two platform copies in one bundle. A
+ * known package passes on to the alias (plugins see an import before the alias does).
+ *
+ * @param {string} packagesDir the checkout's `packages` folder
+ * @returns {import('esbuild').Plugin}
+ */
+export function dialogramPackagesOnly(packagesDir) {
+    const known = new Set(Object.keys(dialogramAlias(packagesDir)));
+    return {
+        name: 'dialogram-packages-only',
+        setup(build) {
+            build.onResolve({ filter: /^@dialogram\// }, args => {
+                const pkg = args.path.split('/').slice(0, 2).join('/');
+                if (known.has(pkg)) {
+                    return undefined;
+                }
+                return { errors: [{ text: `${pkg} has no sources under ${packagesDir} (imported as '${args.path}').` }] };
+            });
+        }
+    };
 }
 
 /** esbuild's helper for standard decorators, by its kind names, which survive `--minify`. */
@@ -88,12 +113,33 @@ export function writeLegacyDecoratorBundles({ relativeTo = process.cwd() } = {})
                 if (errors.length > 0) {
                     return { errors };
                 }
-                await Promise.all(result.outputFiles.map(async file => {
-                    await fs.promises.mkdir(path.dirname(file.path), { recursive: true });
-                    await fs.promises.writeFile(file.path, file.contents);
-                }));
+                await Promise.all(result.outputFiles.map(file => writeIfChanged(file.path, file.contents)));
                 return undefined;
             });
         }
     };
+}
+
+/**
+ * Write `contents` to `file` unless it holds them already, as esbuild's own writer does, so a
+ * watcher (a dev host, a webview) is not woken by a rebuild that changed nothing. A change is
+ * written whole or not at all: to a file beside it, then renamed over it, so a reader never sees
+ * half a bundle.
+ *
+ * @param {string} file
+ * @param {Uint8Array} contents
+ */
+async function writeIfChanged(file, contents) {
+    try {
+        const stat = await fs.promises.stat(file);
+        if (stat.size === contents.byteLength && Buffer.compare(await fs.promises.readFile(file), contents) === 0) {
+            return;
+        }
+    } catch {
+        // Not written yet.
+    }
+    await fs.promises.mkdir(path.dirname(file), { recursive: true });
+    const partial = `${file}.${process.pid}.partial`;
+    await fs.promises.writeFile(partial, contents);
+    await fs.promises.rename(partial, file);
 }

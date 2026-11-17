@@ -3,6 +3,9 @@ import type { Plugin } from 'esbuild';
 /** esbuild's `alias` for `@dialogram/<pkg>[/<subpath>]`: each package with a `src` folder, to it. */
 export function dialogramAlias(packagesDir: string): Record<string, string>;
 
+/** Refuses a `@dialogram/<pkg>` with no sources under `packagesDir`, rather than resolve it elsewhere. */
+export function dialogramPackagesOnly(packagesDir: string): Plugin;
+
 /** esbuild's helper for standard decorators, by its kind names, which survive `--minify`. */
 export const STANDARD_DECORATOR_HELPER: RegExp;
 

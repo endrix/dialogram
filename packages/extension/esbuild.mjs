@@ -3,7 +3,7 @@ import * as esbuild from 'esbuild';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dialogramAlias, writeLegacyDecoratorBundles } from '../../scripts/esbuild-dialogram.mjs';
+import { dialogramAlias, dialogramPackagesOnly, writeLegacyDecoratorBundles } from '../../scripts/esbuild-dialogram.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const watch = process.argv.includes('--watch');
@@ -59,6 +59,7 @@ const srcDirs = {
 // packages' source .ts files through an alias, and a bundle is written only when it keeps the
 // legacy decorators the packages' tsconfigs ask for: see scripts/esbuild-dialogram.mjs.
 const workspaceAlias = dialogramAlias(path.resolve(__dirname, '..'));
+const packagesOnly = dialogramPackagesOnly(path.resolve(__dirname, '..'));
 const writeBundles = writeLegacyDecoratorBundles({ relativeTo: __dirname });
 
 // Host entry: returns the DialogramApi from activate().
@@ -77,7 +78,7 @@ const hostCtx = await esbuild.context({
     minify,
     alias: workspaceAlias,
     write: false,
-    plugins: [writeBundles, ...plugins]
+    plugins: [packagesOnly, writeBundles, ...plugins]
 });
 
 // libavoid (WASM), vendored at vendor/libavoid — see its README for why it is
@@ -126,7 +127,7 @@ const platformCtx = await esbuild.context({
     minify,
     alias: workspaceAlias,
     write: false,
-    plugins: [writeBundles, ...plugins]
+    plugins: [packagesOnly, writeBundles, ...plugins]
 });
 
 // GLSP diagram client bundle (runs in consumer webviews, browser IIFE)
@@ -147,7 +148,7 @@ const glspClientCtx = await esbuild.context({
     minify,
     alias: workspaceAlias,
     write: false,
-    plugins: [writeBundles, ...plugins],
+    plugins: [packagesOnly, writeBundles, ...plugins],
     loader: {
         '.css': 'css',
         '.ttf': 'dataurl',
@@ -173,9 +174,10 @@ if (watch) {
     for (const result of results) {
         if (result.status === 'rejected') {
             process.exitCode = 1;
-            // esbuild has printed a build's own errors; anything else it has not.
-            if (!Array.isArray(result.reason?.errors)) {
-                console.error(result.reason);
+            // esbuild has printed a build's own errors; anything else (a failure with none, an
+            // exception, a cancel) it has not.
+            if (!(result.reason?.errors?.length > 0)) {
+                console.error(result.reason ?? 'The build failed.');
             }
         }
     }
