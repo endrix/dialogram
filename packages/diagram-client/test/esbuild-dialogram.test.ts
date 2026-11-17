@@ -88,10 +88,16 @@ describe('the platform build', () => {
             await ctx.rebuild();
             expect(seen).toHaveLength(1);
             expect(seen[0]).toMatch(/answer = 41/);
-            // The writer compares with what it last wrote; a file deleted since is written again.
+            // The writer compares with what it last wrote; a file deleted since is written again,
+            // and so is one another build wrote over with the same size.
             fs.rmSync(out);
             await ctx.rebuild();
             expect(seen[1]).toMatch(/answer = 41/);
+            const original = fs.readFileSync(out, 'utf8');
+            fs.writeFileSync(out, original.replace('answer = 41', 'answer = 99'));
+            fs.utimesSync(out, new Date(0), new Date(0));
+            await ctx.rebuild();
+            expect(seen[2]).toBe(original);
         } finally {
             await ctx.dispose();
         }
@@ -116,8 +122,39 @@ describe('the platform build', () => {
             tsconfigRaw: standard
         }, { packagesDir: PACKAGES, inMemory: true }));
         await expect(unnamed).rejects.toMatchObject({
-            errors: [expect.objectContaining({ text: expect.stringContaining('was compiled with standard decorators') })]
+            errors: [expect.objectContaining({ text: expect.stringMatching(/^The bundle: .* was compiled with standard decorators/) })]
         });
+    }, 60_000);
+
+    it("checks again what the build's own onEnd changed, before writing it", async () => {
+        const dir = freshDir();
+        const decorated = 'const mark = (..._: unknown[]): any => undefined;\n@mark class Marked {}\nexport { Marked };';
+        const standard = await esbuild.build({
+            stdin: { contents: decorated, loader: 'ts' }, bundle: true, write: false, target: 'ES2017', logLevel: 'silent',
+            tsconfigRaw: { compilerOptions: { experimentalDecorators: false } }
+        });
+        // A post-processor that swaps the bundle for one with a standard decorator.
+        const swap: esbuild.Plugin = {
+            name: 'swap',
+            setup(b) {
+                b.onEnd(result => {
+                    const file = result.outputFiles![0];
+                    result.outputFiles![0] = { ...file, path: file.path, contents: standard.outputFiles[0].contents, text: standard.outputFiles[0].text };
+                });
+            }
+        };
+        await expect(build(dir, 'export const answer = 41;', { plugins: [swap] })).rejects.toMatchObject({
+            errors: [expect.objectContaining({ text: expect.stringContaining('stdin.js not written') })]
+        });
+        expect(fs.readdirSync(dir)).toEqual([]);
+    }, 60_000);
+
+    it('warns, rather than fails, when onWritten throws after the write', async () => {
+        const dir = freshDir();
+        const built = await build(dir, 'export const answer = 41;', { onWritten: () => { throw new Error('no dev host'); } });
+        expect(built.errors).toEqual([]);
+        expect(built.warnings.map(warning => warning.text)).toEqual([expect.stringContaining('no dev host')]);
+        expect(fs.readdirSync(dir)).toEqual(['stdin.js']);
     }, 60_000);
 
     it("writes nothing when the build's own onEnd fails it", async () => {
@@ -166,6 +203,15 @@ describe('the platform build', () => {
         // As does a build that keeps every package it does not alias external.
         const kept = await build(dir, "export * from '@dialogram/runtime-api';", { packages: 'external', inMemory: true });
         expect(kept.outputFiles![0].text).toContain('@dialogram/runtime-api');
+        // And one a plugin of the build marks external as it starts.
+        const marks: esbuild.Plugin = {
+            name: 'marks',
+            setup(b) {
+                b.initialOptions.external = [...(b.initialOptions.external ?? []), '@dialogram/runtime-*'];
+            }
+        };
+        const marked = await build(dir, "export * from '@dialogram/runtime-api';", { plugins: [marks], inMemory: true });
+        expect(marked.outputFiles![0].text).toContain('@dialogram/runtime-api');
     }, 60_000);
 
     it('lets a plugin of the build serve a @dialogram path of its own', async () => {

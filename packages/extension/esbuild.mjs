@@ -3,7 +3,7 @@ import * as esbuild from 'esbuild';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dialogramBuild } from '../../scripts/esbuild-dialogram.mjs';
+import { dialogramBuild, reportBuilds } from '../../scripts/esbuild-dialogram.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const watch = process.argv.includes('--watch');
@@ -146,14 +146,5 @@ if (watch) {
     // cancels a build still running.
     const results = await Promise.allSettled(contexts.map(ctx => ctx.rebuild()));
     await Promise.all(contexts.map(ctx => ctx.dispose()));
-    for (const result of results) {
-        if (result.status === 'rejected') {
-            process.exitCode = 1;
-            // esbuild has printed a build's own errors; anything else (a failure with none, an
-            // exception, a cancel) it has not.
-            if (!(Array.isArray(result.reason?.errors) && result.reason.errors.length > 0)) {
-                console.error(result.reason ?? 'The build failed.');
-            }
-        }
-    }
+    reportBuilds(results);
 }

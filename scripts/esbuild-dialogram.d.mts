@@ -10,11 +10,11 @@ export function dialogramAlias(packagesDir: string): Record<string, string>;
  */
 export function dialogramBuild(
     options: BuildOptions,
-    platform: { packagesDir: string; relativeTo?: string; inMemory?: boolean; onWritten?: (result: BuildResult) => void }
+    platform: { packagesDir: string; relativeTo?: string; inMemory?: boolean; onWritten?: (result: BuildResult) => void | Promise<void> }
 ): BuildOptions & { write: false; alias: Record<string, string>; plugins: Plugin[] };
 
-/** Refuses an import of a `@dialogram/` path `alias` does not map and `external` does not cover. */
-export function dialogramPackagesOnly(alias: Record<string, string>, options?: { external?: string[] }): Plugin;
+/** Refuses an import of a `@dialogram/` path `alias` does not map and the build does not keep external. */
+export function dialogramPackagesOnly(alias: Record<string, string>): Plugin;
 
 /** esbuild's helper for standard decorators, by its kind names, which survive `--minify`. */
 export const STANDARD_DECORATOR_HELPER: RegExp;
@@ -23,7 +23,10 @@ export const STANDARD_DECORATOR_HELPER: RegExp;
 export function standardDecoratorsIn(text: string): string[];
 
 /** Fails a build whose code output has a module compiled with standard decorators; writes nothing. */
-export function legacyDecoratorsOnly(options?: { relativeTo?: string }): Plugin;
+export function legacyDecoratorsOnly(options?: { relativeTo?: string; written?: boolean }): Plugin;
 
 /** For a build with `write: false`, last among its plugins: writes the changed outputs of a build no `onEnd` failed, then calls `onWritten`. */
-export function writeBundles(options?: { write?: boolean; onWritten?: (result: BuildResult) => void }): Plugin;
+export function writeBundles(options?: { write?: boolean; relativeTo?: string; onWritten?: (result: BuildResult) => void | Promise<void> }): Plugin;
+
+/** Ends a one-shot build of several bundles: sets the exit code for a failure, prints what esbuild did not. */
+export function reportBuilds(results: PromiseSettledResult<unknown>[]): boolean;
