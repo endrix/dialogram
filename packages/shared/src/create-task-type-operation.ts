@@ -12,9 +12,10 @@ import type { Action } from '@eclipse-glsp/server';
  * (sidecar-toolkit) and the MCP operation tool (diagram-server) import the KIND and
  * factory from here, so the operation kind is defined exactly once.
  *
- * The Python sidecar signature is `create_task_type(*, kind, name)` — it accepts only
- * `kind` and `name` — so the operation carries just the type name; the reversible
- * handler pins the neutral task `kind` when it invokes the sidecar.
+ * The Python sidecar signature is `create_task_type(*, kind, name)`. The operation
+ * carries the type name and, optionally, its kind (`typeKind`, a word of the
+ * product's: the decorator name for wfpy); without one the handler asks for the
+ * neutral task kind, as it always did.
  */
 export namespace CreateTaskTypeOperation {
     export const KIND = 'dialogram.createTaskType';
@@ -22,10 +23,12 @@ export namespace CreateTaskTypeOperation {
     export interface Operation extends Action {
         kind: typeof KIND;
         name: string;
+        /** The kind of type to make (`agent`, `viewer`, `workflow`, …); the task kind when absent. */
+        typeKind?: string;
     }
 
-    export function create(args: { name: string }): Operation {
-        return { kind: KIND, name: args.name };
+    export function create(args: { name: string; typeKind?: string }): Operation {
+        return { kind: KIND, name: args.name, ...(args.typeKind ? { typeKind: args.typeKind } : {}) };
     }
 
     export function is(action: unknown): action is Operation {

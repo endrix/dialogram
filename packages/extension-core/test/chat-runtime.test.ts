@@ -148,6 +148,21 @@ describe('unified runtime absorbed features', () => {
         expect(sys!.payload.data.role).toBe('system');
     });
 
+    it('a slash command ends its turn, so the panel stops streaming and send is send again', async () => {
+        const { runtime, posts } = makeRuntime({
+            slashCommands: [
+                { command: 'ping', description: 't', modes: ['build'], handler: async () => ({ success: true }) },
+                { command: 'boom', description: 't', modes: ['build'], handler: async () => ({ success: false, error: 'nope' }) }
+            ]
+        });
+        for (const text of ['/ping', '/boom']) {
+            const before = posts.length;
+            await runtime.handleMessage('file:///ws/wf.py', { type: 'chat.sendMessage', data: { text, mode: 'build' } });
+            const types = posts.slice(before).map(p => p.payload.type);
+            expect(types.indexOf('chat.turnEnd'), text).toBeGreaterThan(types.indexOf('chat.message'));
+        }
+    });
+
     it('slash failure posts a system error message, not a thrown error', async () => {
         const { runtime, posts } = makeRuntime({
             slashCommands: [

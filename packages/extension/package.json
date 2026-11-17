@@ -26,11 +26,6 @@
                     "type": "boolean",
                     "description": "Automatically re-run layout after the chat agent edits the diagram.",
                     "default": false
-                },
-                "dialogram.chat.checkSourceRevision": {
-                    "type": "boolean",
-                    "description": "Reject chat edits when the source file changed since the last read (optimistic concurrency).",
-                    "default": false
                 }
             }
         }

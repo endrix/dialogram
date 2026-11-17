@@ -1,4 +1,5 @@
-import { injectable } from 'inversify';
+import { inject, injectable, optional } from 'inversify';
+import { AgentEditOutcomeSink, isEditOp } from '@dialogram/diagram-server/server/agent-edit-outcome';
 import * as z from 'zod/v4';
 import {
     McpDiagramScopedInputSchema,
@@ -18,7 +19,11 @@ import { CreateTaskTypeOperation } from '@dialogram/shared';
  * silently dropped).
  */
 export const CreateTaskTypeInputSchema = McpDiagramScopedInputSchema.extend({
-    name: z.string().describe('Name of the new task type to scaffold (a class added to the source).')
+    name: z.string().describe('Name of the new task type to scaffold (a class added to the source).'),
+    kind: z.string().optional().describe(
+        "The kind of type: the source's own word for it (for a decorator-based language, the decorator: " +
+        'task, tool, agent, viewer, source, workflow). Default: task.'
+    )
 });
 export type CreateTaskTypeInput = z.infer<typeof CreateTaskTypeInputSchema>;
 
@@ -36,13 +41,30 @@ export class CreateTaskTypeMcpToolHandler extends OperationMcpDiagramToolHandler
     readonly name = CreateTaskTypeMcpToolHandler.NAME;
     override readonly title = 'Create Task Type';
     readonly description =
-        'Scaffold a new task type in the underlying source. Provide the new type `name`; a class ' +
-        'is added to the source via a reversible edit. This modifies the source and is undoable via ' +
-        "the editor's undo. Requires user approval.";
+        'Scaffold a new type in the underlying source. Provide the new type `name` and, for other ' +
+        'than a plain task, its `kind`; the definition is added to the source via a reversible edit. ' +
+        "The result says it was made, or the source's reason it was not (a name taken, say). This " +
+        "modifies the source and is undoable via the editor's undo. Requires user approval.";
     readonly inputSchema = CreateTaskTypeInputSchema;
 
-    protected async createResult({ name }: CreateTaskTypeInput): Promise<McpToolResult> {
-        await this.actionDispatcher.dispatch(CreateTaskTypeOperation.create({ name }));
-        return this.success(`Scaffolded task type '${name}'. Undo via the editor if unintended.`);
+    @inject(AgentEditOutcomeSink)
+    @optional()
+    protected editOutcomes?: AgentEditOutcomeSink;
+
+    protected async createResult({ name, kind }: CreateTaskTypeInput): Promise<McpToolResult> {
+        this.editOutcomes?.reset();
+        await this.actionDispatcher.dispatch(CreateTaskTypeOperation.create({ name, typeKind: kind }));
+        const label = `${kind?.trim() || 'task'} type '${name}'`;
+        if (!this.editOutcomes) {
+            return this.success(`Scaffolded ${label}. Undo via the editor if unintended.`);
+        }
+        const answer = this.editOutcomes.take().find(outcome => isEditOp(outcome.op, 'createTaskType', 'createWorkflowType'));
+        if (!answer) {
+            return this.error(`The ${label} was not created: the diagram could not ask the source for it.`);
+        }
+        if (!answer.ok) {
+            return this.error(`The ${label} was not created: ${answer.message ?? 'refused.'}`);
+        }
+        return this.success(`Created the ${label}. Undo via the editor if unintended.`);
     }
 }

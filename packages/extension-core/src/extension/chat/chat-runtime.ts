@@ -365,7 +365,7 @@ export class ChatRuntime {
    * fall back to the read-only registry MCP server only.
    *
    * Read from the core `dialogram.chat` section like the sibling core chat
-   * settings `autoLayoutAfterEdits` / `checkSourceRevision`. Reading it off the
+   * setting `autoLayoutAfterEdits`. Reading it off the
    * per-profile `settingsSection` (`<ns>.chat`) would be wrong: this is a
    * core-runtime rollback lever, not profile behaviour.
    */
@@ -768,6 +768,9 @@ export class ChatRuntime {
               mode,
             },
           });
+          // A slash command is a turn of its own: the panel shows it streaming
+          // until told it ended, and the next click on send would cancel it.
+          this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
           return;
         }
         if (resolved && resolved.contribution.handler) {
@@ -799,6 +802,7 @@ export class ChatRuntime {
               mode,
             },
           });
+          this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
           return;
         }
         // Pass-through slash suggestions and natural language both go to the agent.

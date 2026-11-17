@@ -59,6 +59,7 @@ export async function activateProfileRuntime(
         editBackend: profile.editBackend,
         getEditorProvider: () => glsp.editorProvider,
         log: (m) => log(m),
+        mcpServerUrl: glsp.mcpServerUrl,
       });
     }
     const config = assembleChatRuntimeConfig(
