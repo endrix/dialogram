@@ -14,6 +14,8 @@ import { describe, expect, it } from 'vitest';
 import {
     CreateEdgesMcpToolHandler,
     CreateNodesMcpToolHandler,
+    DeleteElementsMcpToolHandler,
+    ModifyNodesMcpToolHandler,
     RedoMcpToolHandler,
     UndoMcpToolHandler
 } from '@eclipse-glsp/server-mcp';
@@ -23,8 +25,14 @@ import {
 } from '../src/server/mcp-diagram-module';
 import { AgentDispatchCreateNodesMcpToolHandler } from '../src/server/create-nodes-mcp-tool-handler';
 import { AgentDispatchCreateEdgesMcpToolHandler } from '../src/server/create-edges-mcp-tool-handler';
+import {
+    AgentDispatchDeleteElementsMcpToolHandler,
+    AgentDispatchModifyNodesMcpToolHandler,
+    NamedNodeMcpLabelProvider,
+    PaletteElementTypesProvider
+} from '../src/server/mcp-named-elements';
 import type { PlatformMcpTool } from '../src/server/mcp-platform-tool-adapter';
-import { GGraph, GNode, GPort } from '@eclipse-glsp/server';
+import { GGraph, GLabel, GNode, GPort } from '@eclipse-glsp/server';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 
 function tool(name: string, mutates?: boolean): PlatformMcpTool {
@@ -146,6 +154,14 @@ describe('DiagramMcpModule undo/redo tool exclusion (host owns undo)', () => {
         const ctors = resolveToolHandlerCtors(new DiagramMcpModule());
         expect(ctors).not.toContain(CreateEdgesMcpToolHandler);
         expect(ctors).toContain(AgentDispatchCreateEdgesMcpToolHandler);
+    });
+
+    it('the module puts the named-element tools in place of the stock ones', () => {
+        const ctors = resolveToolHandlerCtors(new DiagramMcpModule());
+        expect(ctors).not.toContain(DeleteElementsMcpToolHandler);
+        expect(ctors).not.toContain(ModifyNodesMcpToolHandler);
+        expect(ctors).toContain(AgentDispatchDeleteElementsMcpToolHandler);
+        expect(ctors).toContain(AgentDispatchModifyNodesMcpToolHandler);
     });
 });
 
@@ -414,4 +430,147 @@ describe('AgentDispatchCreateEdgesMcpToolHandler (name-addressable endpoints)', 
             cap.restore();
         }
     });
+});
+
+describe('agent edits say what the producer answered', () => {
+    function stubSuper<T extends { prototype: any }>(ctor: T, onCall: (input: any) => void = () => {}): () => void {
+        const proto = ctor.prototype as { createResult: (input: unknown) => Promise<unknown> };
+        const original = proto.createResult;
+        proto.createResult = async (input: unknown) => {
+            onCall(input);
+            return { content: [{ type: 'text', text: 'stock' }] };
+        };
+        return () => { proto.createResult = original; };
+    }
+
+    /** A sink the stubbed dispatch fills, one batch of answers per call. */
+    function scriptedSink(batches: Array<Array<{ op: string; ok: boolean; message?: string }>>) {
+        let current: Array<{ op: string; ok: boolean; message?: string }> = [];
+        return {
+            reset: () => { current = []; },
+            take: () => current,
+            next: () => { current = batches.shift() ?? []; }
+        };
+    }
+
+    it('create-edges reports each edge: made, or refused with the reason', async () => {
+        const sink = scriptedSink([
+            [{ op: 'wfpy.connect', ok: true }],
+            [{ op: 'wfpy.connect', ok: false, message: 'Port In of b is already connected.' }]
+        ]);
+        const restore = stubSuper(CreateEdgesMcpToolHandler, () => sink.next());
+        try {
+            const handler = new AgentDispatchCreateEdgesMcpToolHandler();
+            let marked = 0;
+            (handler as any).agentSignal = { markPending: () => { marked += 1; } };
+            (handler as any).editOutcomes = sink;
+            const result = await (handler as any).createResult({
+                sessionId: 's',
+                edges: [
+                    { elementTypeId: 'edge', sourceElementId: 'a1', targetElementId: 'b1' },
+                    { elementTypeId: 'edge', sourceElementId: 'a2', targetElementId: 'b2' }
+                ]
+            });
+            const text = result.content.map((part: any) => part.text).join('\n');
+            expect(result.isError).toBe(true);
+            expect(text).toContain('Connected 1 edge(s):\n- a1 → b1');
+            expect(text).toContain('a2 → b2: Port In of b is already connected.');
+            expect(marked).toBe(1);
+        } finally {
+            restore();
+        }
+    });
+
+    it('create-edges says an edge that never reached the producer was not made', async () => {
+        const restore = stubSuper(CreateEdgesMcpToolHandler);
+        try {
+            const handler = new AgentDispatchCreateEdgesMcpToolHandler();
+            (handler as any).agentSignal = { markPending: () => {} };
+            (handler as any).editOutcomes = scriptedSink([]);
+            const result = await (handler as any).createResult({
+                sessionId: 's',
+                edges: [{ elementTypeId: 'edge', sourceElementId: 'a1', targetElementId: 'b1' }]
+            });
+            expect(result.isError).toBe(true);
+            expect(result.content[0].text).toContain('a1 → b1: not connected. stock');
+        } finally {
+            restore();
+        }
+    });
+
+    it('delete-elements takes a node by its name and counts what the producer deleted', async () => {
+        let given: any;
+        const sink = scriptedSink([[{ op: 'wfpy.deleteNode', ok: true }]]);
+        const restore = stubSuper(DeleteElementsMcpToolHandler, input => { given = input; sink.next(); });
+        try {
+            const handler = new AgentDispatchDeleteElementsMcpToolHandler();
+            const splitter = GNode.builder().id('n_splitter').type(WorkflowDiagramTypes.NODE_ACTOR)
+                .addArg(WorkflowDiagramMetadata.ENTITY_NAME, 'splitter').build();
+            const root = GGraph.builder().id('root').addChildren(splitter).build();
+            (handler as any).modelState = { root, index: { find: (id: string) => (id === 'n_splitter' ? splitter : undefined) } };
+            (handler as any).aliasService = { lookup: (id: string) => id };
+            (handler as any).encodeIds = (ids: string[]) => ids.map(id => `alias:${id}`);
+            (handler as any).agentSignal = { markPending: () => {} };
+            (handler as any).editOutcomes = sink;
+            const result = await (handler as any).createResult({ sessionId: 's', elementIds: ['splitter'] });
+            expect(given.elementIds).toEqual(['alias:n_splitter']);
+            expect(result.isError).toBeFalsy();
+            expect(result.content[0].text).toContain('Deleted splitter (1 edit(s) to the source).');
+        } finally {
+            restore();
+        }
+    });
+
+    it('modify-nodes text that the producer refuses comes back as an error with its reason', async () => {
+        const sink = scriptedSink([[{ op: 'wfpy.renameNode', ok: false, message: "'counter' is already a node of this workflow" }]]);
+        const restore = stubSuper(ModifyNodesMcpToolHandler, () => sink.next());
+        try {
+            const handler = new AgentDispatchModifyNodesMcpToolHandler();
+            (handler as any).modelState = { root: GGraph.builder().id('root').build(), index: { find: () => ({}) } };
+            (handler as any).aliasService = { lookup: (id: string) => id };
+            (handler as any).editOutcomes = sink;
+            const result = await (handler as any).createResult({ sessionId: 's', nodes: [{ elementId: 'n1', text: 'counter' }] });
+            expect(result.isError).toBe(true);
+            expect(result.content[0].text).toContain("'counter' is already a node of this workflow");
+        } finally {
+            restore();
+        }
+    });
+
+    it("a node's label is the name in its header, not a direct child", () => {
+        const name = new GLabel();
+        name.id = 'n1_name';
+        name.type = WorkflowDiagramTypes.LABEL_NAME;
+        const header = GNode.builder().id('n1_header').type('comp:header').build();
+        header.children.push(name);
+        name.parent = header;
+        const node = GNode.builder().id('n1').type(WorkflowDiagramTypes.NODE_ACTOR).addChildren(header).build();
+        expect(new NamedNodeMcpLabelProvider().getLabel(node)?.id).toBe('n1_name');
+    });
+
+    it('element types are labelled with the palette rows that share them, and the args that pick each', () => {
+        const provider = new PaletteElementTypesProvider();
+        (provider as any).operationHandlerRegistry = { getAll: () => [] };
+        const base = { nodeTypes: [{ id: 'node:external-actor', label: 'Create Node' }, { id: 'node:actor', label: 'Create Node' }], edgeTypes: [] };
+        const proto = Object.getPrototypeOf(PaletteElementTypesProvider.prototype);
+        const original = proto.get;
+        proto.get = () => base;
+        try {
+            (provider as any).storageOptions = {
+                entityPaletteItems: [
+                    { elementTypeId: 'node:actor', label: 'Task', description: 'Create a Task instance' },
+                    { elementTypeId: 'node:external-actor', label: 'Tool', description: 'An external tool' },
+                    { elementTypeId: 'node:external-actor', label: 'Agent', description: 'An agent', args: { agentTask: true } }
+                ]
+            };
+            const types = provider.get();
+            const external = types.nodeTypes.find(entry => entry.id === 'node:external-actor')!;
+            expect(external.label).toBe('Tool / Agent');
+            expect(external.description).toBe('Tool: An external tool; Agent (args {"agentTask":true}): An agent');
+            expect(types.nodeTypes.find(entry => entry.id === 'node:actor')!.label).toBe('Task');
+        } finally {
+            proto.get = original;
+        }
+    });
+
 });

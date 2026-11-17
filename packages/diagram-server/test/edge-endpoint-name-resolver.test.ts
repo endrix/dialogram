@@ -42,7 +42,17 @@ function buildRoot() {
         .addChildren(dupA, dupB)
         .build();
 
-    return GGraph.builder().id('root').addChildren(producer, consumer, dup).build();
+    // The diagram's own input port: a boundary node with no entity name, its port inside.
+    const textFilePort = GPort.builder().id('wf.TextFile.p').type(WorkflowDiagramTypes.PORT_OUTPUT)
+        .addArg(WorkflowDiagramMetadata.PORT_NAME, 'TextFile')
+        .addArg(WorkflowDiagramMetadata.PORT_DIRECTION, 'out')
+        .build();
+    const textFile = GNode.builder().id('wf.TextFile').type(WorkflowDiagramTypes.NODE_BOUNDARY_INPUT)
+        .addArg(WorkflowDiagramMetadata.PORT_NAME, 'TextFile')
+        .addChildren(textFilePort)
+        .build();
+
+    return GGraph.builder().id('root').addChildren(producer, consumer, dup, textFile).build();
 }
 
 describe('resolveEndpointElementId', () => {
@@ -88,5 +98,17 @@ describe('resolveEndpointElementId', () => {
         expect(message).toMatch(/ambiguous/i);
         expect(message).toContain('dup.p.a');
         expect(message).toContain('dup.p.b');
+    });
+
+    it("resolves a bare name to one of the diagram's own ports", () => {
+        const root = buildRoot();
+        expect(resolveEndpointElementId(root, 'TextFile')).toEqual({ ok: true, elementId: 'wf.TextFile.p' });
+    });
+
+    it("refuses a bare name that is no diagram port, naming the diagram's ports", () => {
+        const result = resolveEndpointElementId(buildRoot(), 'producer');
+        expect(result.ok).toBe(false);
+        expect(result.message).toContain("No diagram port named 'producer'");
+        expect(result.message).toContain('TextFile');
     });
 });

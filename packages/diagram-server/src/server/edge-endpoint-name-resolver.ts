@@ -19,6 +19,8 @@ interface DiscoveredPort {
     elementId: string;
     portName: string;
     ownerName: string | undefined;
+    /** Whether the owner is a boundary node: a port of the diagram itself (a workflow's input or output). */
+    ownerIsBoundary: boolean;
     direction: string | undefined;
 }
 
@@ -44,26 +46,33 @@ function argString(element: GModelElement, key: string): string | undefined {
 /** Collect every port in the tree tagged with the name of its nearest owning node. */
 function collectPorts(root: GModelRoot): DiscoveredPort[] {
     const ports: DiscoveredPort[] = [];
-    const visit = (element: GModelElement, ownerName: string | undefined): void => {
+    const visit = (element: GModelElement, ownerName: string | undefined, ownerIsBoundary: boolean): void => {
         const type = element.type;
         let currentOwner = ownerName;
+        let currentIsBoundary = ownerIsBoundary;
         if (typeof type === 'string' && type.startsWith('node:')) {
             // Task/actor nodes carry an instance name; boundary nodes carry a port name identity.
-            currentOwner = argString(element, ENTITY_NAME) ?? argString(element, PORT_NAME) ?? currentOwner;
+            const entity = argString(element, ENTITY_NAME);
+            const boundary = entity ? undefined : argString(element, PORT_NAME);
+            if (entity || boundary) {
+                currentOwner = entity ?? boundary;
+                currentIsBoundary = !entity;
+            }
         }
         if (typeof type === 'string' && type.startsWith('port:')) {
             ports.push({
                 elementId: element.id,
                 portName: argString(element, PORT_NAME) ?? '',
                 ownerName: currentOwner,
+                ownerIsBoundary: currentIsBoundary,
                 direction: argString(element, PORT_DIRECTION)
             });
         }
         for (const child of (element.children ?? []) as GModelElement[]) {
-            visit(child, currentOwner);
+            visit(child, currentOwner, currentIsBoundary);
         }
     };
-    visit(root, undefined);
+    visit(root, undefined, false);
     return ports;
 }
 
@@ -79,17 +88,20 @@ export function looksLikeNameSpec(spec: string): boolean {
  */
 export function resolveEndpointElementId(root: GModelRoot, spec: string): EndpointResolution {
     const trimmed = spec.trim();
+    const ports = collectPorts(root);
     const dot = trimmed.indexOf('.');
+    if (dot < 0 && trimmed !== '') {
+        return resolveDiagramPort(ports, trimmed);
+    }
     if (dot <= 0 || dot >= trimmed.length - 1) {
         return {
             ok: false,
-            message: `Malformed endpoint '${spec}': expected 'nodeName.portName' (e.g. 'producer.out').`
+            message: `Malformed endpoint '${spec}': expected 'nodeName.portName' (e.g. 'producer.out'), or the name of one of the diagram's own ports.`
         };
     }
     const nodeName = trimmed.slice(0, dot);
     const portName = trimmed.slice(dot + 1);
 
-    const ports = collectPorts(root);
     const nodePorts = ports.filter((port) => port.ownerName === nodeName);
     if (nodePorts.length === 0) {
         const knownNodes = [...new Set(ports.map((port) => port.ownerName).filter((name): name is string => !!name))].sort();
@@ -111,4 +123,22 @@ export function resolveEndpointElementId(root: GModelRoot, spec: string): Endpoi
         };
     }
     return { ok: true, elementId: matches[0].elementId };
+}
+
+/**
+ * A bare name is one of the diagram's own ports (a workflow's input or output, drawn as a
+ * boundary node): it has no node to name, so `nodeName.portName` cannot address it.
+ */
+function resolveDiagramPort(ports: readonly DiscoveredPort[], name: string): EndpointResolution {
+    const matches = ports.filter((port) => port.ownerIsBoundary && port.ownerName === name);
+    if (matches.length === 1) {
+        return { ok: true, elementId: matches[0].elementId };
+    }
+    if (matches.length > 1) {
+        const ids = matches.map((port) => `${port.elementId}${port.direction ? ` (${port.direction})` : ''}`).join(', ');
+        return { ok: false, message: `The diagram port '${name}' is ambiguous — ${matches.length} matching ports [${ids}]. Pass the raw element id instead.` };
+    }
+    const own = [...new Set(ports.filter((port) => port.ownerIsBoundary).map((port) => port.ownerName).filter((each): each is string => !!each))].sort();
+    const known = own.length > 0 ? ` The diagram's own ports: ${own.join(', ')}.` : ' The diagram has no ports of its own.';
+    return { ok: false, message: `No diagram port named '${name}'; a node's port is 'nodeName.portName'.${known}` };
 }

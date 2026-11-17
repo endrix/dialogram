@@ -1,4 +1,5 @@
-import { inject, injectable } from 'inversify';
+import { inject, injectable, optional } from 'inversify';
+import { AgentEditOutcomeSink } from '@dialogram/diagram-server/server/agent-edit-outcome';
 import * as vscode from 'vscode';
 import { URI } from 'vscode-uri';
 import { SidecarRuntimeService, type CreateNodeStrings, type CreateNodeBehavior, CreateNodeVariant } from '../sidecar-runtime-config';
@@ -12,6 +13,11 @@ export type SidecarInvocationResult = SidecarOpResult;
 export class SidecarInvoker {
     /** What each sidecar command says it can do, asked once per session. */
     private readonly capabilitiesByCommand = new Map<string, Promise<SidecarCapabilities | undefined>>();
+
+    /** Where an agent's diagram tool reads what its edits were answered (see AgentEditOutcomeSink). */
+    @inject(AgentEditOutcomeSink)
+    @optional()
+    protected readonly editOutcomes?: AgentEditOutcomeSink;
 
     constructor(
         @inject(SidecarRuntimeService)
@@ -63,7 +69,9 @@ export class SidecarInvoker {
     }
 
     async sendSidecarOpDetailed(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<SidecarInvocationResult> {
-        return this.invokeSidecar(sourceUri, payload);
+        const result = await this.invokeSidecar(sourceUri, payload);
+        this.editOutcomes?.record({ op: payload.op, ok: result.ok, ...(result.ok ? {} : { message: result.message }) });
+        return result;
     }
 
     async sendSidecarListDetailed(sourceUri: string, payload: { op: string; args: Record<string, unknown> }): Promise<SidecarInvocationResult> {
