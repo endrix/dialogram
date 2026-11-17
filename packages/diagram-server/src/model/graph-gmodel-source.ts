@@ -1,6 +1,6 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
 import { parseBadgesMeta, parseFactsMeta, parseLinesMeta, parseViewsMeta, textColumns, type UnitBadge } from '../server/graph-load-request-options';
-import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
+import { BoundaryPortGeometry, isBoundaryNodeType, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findLoopEdges } from './feedback-edges';
 import { arrangeGroupRows, groupLayoutOptions, isGroupRow, splitEdgesAtGroups } from './group-edges';
@@ -190,7 +190,7 @@ function markFeedbackEdges(children: GModelElement[]): void {
         }
         const isNode = !isEdge(element) && element.type !== WorkflowDiagramTypes.GRAPH;
         const nodeId = isNode ? element.id : owner;
-        const isBoundary = isNode ? BOUNDARY_NODE_TYPES.has(element.type) : boundary;
+        const isBoundary = isNode ? isBoundaryNodeType(element.type) : boundary;
         if (owner !== undefined) {
             ownerByEndpoint.set(element.id, owner);
             if (boundary) {
@@ -264,11 +264,6 @@ function markFeedbackEdges(children: GModelElement[]): void {
     }
 }
 
-/** The node types of the unit's boundary: its ports, one by one or as a bus. */
-const BOUNDARY_NODE_TYPES: ReadonlySet<string> = new Set([
-    WorkflowDiagramTypes.NODE_BOUNDARY_INPUT,
-    WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT
-]);
 
 /** What an end on the unit's boundary is suffixed with: one node for what enters it, one for what leaves. */
 const INTO_BOUNDARY = '\u0000in';

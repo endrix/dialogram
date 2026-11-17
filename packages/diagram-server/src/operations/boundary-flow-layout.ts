@@ -1,5 +1,5 @@
 import { GPort, LayoutEngine } from '@eclipse-glsp/server';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { isBoundaryNodeType, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { clearAllEdgeRoutingPoints } from '../routing/clear-edge-routes';
 
 /**
@@ -135,7 +135,7 @@ export function releaseBoundaryNodeConstraints(root: any): Map<string, Record<st
             return;
         }
         const type = element.type as string | undefined;
-        if (type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+        if (isBoundaryNodeType(type)) {
             const nodeId = String(element.id);
             const previousLayoutOptions = element.layoutOptions as Record<string, unknown> | undefined;
             previousLayoutOptionsByNodeId.set(nodeId, previousLayoutOptions ? { ...previousLayoutOptions } : undefined);
