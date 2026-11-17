@@ -67,6 +67,8 @@ describe('an argument written over several lines', () => {
         panel.show(node());
         const fields = [...section('Instance Parameters')!.querySelectorAll('textarea.pp-input')] as HTMLTextAreaElement[];
         expect(fields.map(field => field.value)).toEqual([PROMPT, CALL]);
+        // As tall as its lines, not the one-line control the class makes it.
+        expect(fields.map(field => [field.getAttribute('rows'), field.style.height])).toEqual([['2', 'auto'], ['4', 'auto']]);
         const update = fields[1].closest('.pp-arow')!.querySelector('button[title="Update"]') as HTMLButtonElement;
         update.click();
         await tick();
