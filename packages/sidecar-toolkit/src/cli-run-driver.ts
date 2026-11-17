@@ -1321,6 +1321,10 @@ export class CliRunDriver {
         let streamBatch: RunStreamEvent[] = [];
         let streamFlushTimer: ReturnType<typeof setInterval> | undefined;
         let streamEventCount = 0;
+        // Whether the runtime closed its own stream. A stopped (killed) or
+        // crashed run never does, and the diagram's chat would show its agents
+        // streaming for good: the driver closes it for them.
+        let streamClosed = false;
         // Permanent, ungated host breadcrumbs (console.log so a webview/console
         // paste captures them — the extension host relays console.log). Every hop
         // of the run-stream pipeline logs, mirroring the client-side `[wf-lang
@@ -1347,6 +1351,9 @@ export class CliRunDriver {
             streamClient = new RunEventStreamClient({
                 discoveryFilePath,
                 onEvent: (event) => {
+                    if (event.type === 'run.finished' || event.type === 'run.stream.closing') {
+                        streamClosed = true;
+                    }
                     streamBatch.push(event);
                     hostLog(`SSE event #${++streamEventCount} type=${String(event.type)}`);
                 },
@@ -1364,8 +1371,13 @@ export class CliRunDriver {
                 streamFlushTimer = undefined;
             }
             flushStreamEvents();
+            const started = streamClient !== undefined;
             streamClient?.stop();
             streamClient = undefined;
+            if (started && !streamClosed) {
+                streamClosed = true;
+                this.host.overlay.emitEvents(sourceUri.toString(), [{ type: 'run.stream.closing', reason: 'the run ended without closing its stream' }]);
+            }
             this.stopElicitSocket();
         };
 

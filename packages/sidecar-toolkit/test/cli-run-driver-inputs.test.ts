@@ -31,6 +31,8 @@ import { CliRunDriver, plannedRunOf, runFromChatCommandId, runInputValue, type C
 
 const RUN_CMD = 'test.inputs.runWorkflow';
 
+let emitted: Array<{ uri: string; events: any[] }> = [];
+
 function makeDriver(planRun?: CliRunDriverConfig['planRun']) {
     const config: CliRunDriverConfig = {
         settingsNamespace: 'wfLang', customEditorViewType: 'workflow.networkDiagram',
@@ -46,7 +48,7 @@ function makeDriver(planRun?: CliRunDriverConfig['planRun']) {
         planRun
     };
     const driver = new CliRunDriver(config, {
-        overlay: { emitEvents: () => {} },
+        overlay: { emitEvents: (uri: string, events: any[]) => { emitted.push({ uri, events }); } },
         requestRefresh: () => {},
         output: { show: () => {}, append: () => {}, appendLine: () => {} }
     } as any);
@@ -64,6 +66,7 @@ const tempDirs: string[] = [];
 beforeEach(() => {
     resetRegisteredCommands();
     spawns.length = 0;
+    emitted = [];
     finished = [];
     typed = [];
     picked = '/data/in.txt';
@@ -202,6 +205,14 @@ describe("the chat's run", () => {
         expect(after(spawns[0], '--input')).toEqual(['Text="hi"']);
         expect((vscode.window as any).showInputBox).not.toHaveBeenCalled();
         expect(said).toMatch(/^The run of shout finished/);
+    });
+});
+
+describe('the end of a run', () => {
+    it("closes the run's stream when the runtime did not, so no agent shows streaming for good", async () => {
+        makeDriver(async () => undefined);
+        await run({ sourceUri: sourceFile() });
+        expect(emitted.flatMap(batch => batch.events).map(event => event.type)).toContain('run.stream.closing');
     });
 });
 
