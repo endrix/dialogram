@@ -13,9 +13,10 @@ import type { DiagramProfile } from '../src/api';
 
 vi.mock('@eclipse-glsp/vscode-integration', () => ({
     GlspEditorProvider: class {
-        onDidChangeCustomDocument: unknown;
-        constructor(protected readonly glspVscodeConnector: any) {
-            this.onDidChangeCustomDocument = glspVscodeConnector?.onDidChangeCustomDocument;
+        constructor(protected readonly glspVscodeConnector: any) {}
+        // A getter, as in the real base: a provider may override it.
+        get onDidChangeCustomDocument(): unknown {
+            return this.glspVscodeConnector?.onDidChangeCustomDocument;
         }
     },
     GlspVscodeConnector: class {}

@@ -13,9 +13,10 @@ import type { DiagramProfile } from '../src/api';
 
 vi.mock('@eclipse-glsp/vscode-integration', () => ({
     GlspEditorProvider: class {
-        onDidChangeCustomDocument: unknown;
-        constructor(protected readonly glspVscodeConnector: any) {
-            this.onDidChangeCustomDocument = glspVscodeConnector?.onDidChangeCustomDocument;
+        constructor(protected readonly glspVscodeConnector: any) {}
+        // A getter, as in the real base: a provider may override it.
+        get onDidChangeCustomDocument(): unknown {
+            return this.glspVscodeConnector?.onDidChangeCustomDocument;
         }
     },
     GlspVscodeConnector: class {}
@@ -116,3 +117,22 @@ describe('the node families, as the webview sees them', () => {
         expect(clientBehaviorFor(PROFILE)).not.toHaveProperty('nodeFamilies');
     });
 });
+
+describe('the diagram document', () => {
+    it('is never reported changed: every edit is on disk when it is made', () => {
+        const fired: unknown[] = [];
+        const connector = {
+            // What GLSP fires for every operation, an auto-layout included.
+            onDidChangeCustomDocument: (listener: (e: unknown) => void) => {
+                listener({ document: {} });
+                return { dispose() {} };
+            },
+            dispatchAction: () => {}
+        } as any;
+        const provider = new WorkflowEditorProvider({ subscriptions: [] } as any, connector, PROFILE, vscode.Uri.file('/fake-ext'));
+        provider.onDidChangeCustomDocument(e => fired.push(e));
+        expect(fired).toEqual([]);
+        expect(provider.onDidChangeCustomDocument).not.toBe(connector.onDidChangeCustomDocument);
+    });
+});
+
