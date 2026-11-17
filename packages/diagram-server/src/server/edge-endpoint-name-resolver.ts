@@ -12,7 +12,7 @@
  * product vocabulary.
  */
 import type { GModelElement, GModelRoot } from '@eclipse-glsp/server';
-import { WorkflowDiagramMetadata } from '@dialogram/shared';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 
 /** One `nodeName.portName` candidate discovered in the model tree. */
 interface DiscoveredPort {
@@ -37,6 +37,7 @@ export interface EndpointResolution {
 const ENTITY_NAME = WorkflowDiagramMetadata.ENTITY_NAME;
 const PORT_NAME = WorkflowDiagramMetadata.PORT_NAME;
 const PORT_DIRECTION = WorkflowDiagramMetadata.PORT_DIRECTION;
+const BOUNDARY_NODE_TYPES = new Set<string>([WorkflowDiagramTypes.NODE_BOUNDARY_INPUT, WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT]);
 
 function argString(element: GModelElement, key: string): string | undefined {
     const value = (element as { args?: Record<string, unknown> }).args?.[key];
@@ -51,9 +52,13 @@ function collectPorts(root: GModelRoot): DiscoveredPort[] {
         let currentOwner = ownerName;
         let currentIsBoundary = ownerIsBoundary;
         if (typeof type === 'string' && type.startsWith('node:')) {
-            // Task/actor nodes carry an instance name; boundary nodes carry a port name identity.
-            const entity = argString(element, ENTITY_NAME);
-            const boundary = entity ? undefined : argString(element, PORT_NAME);
+            // Task/actor nodes carry an instance name; a boundary node is one of the diagram's own
+            // ports, by its type. The model builder gives it the port's name as its entity name
+            // too, so an entity name alone does not tell: taken for one, a workflow's input was
+            // never found by name ("The diagram has no ports of its own").
+            const isBoundary = BOUNDARY_NODE_TYPES.has(type);
+            const entity = isBoundary ? undefined : argString(element, ENTITY_NAME);
+            const boundary = entity ? undefined : (argString(element, PORT_NAME) ?? argString(element, ENTITY_NAME));
             if (entity || boundary) {
                 currentOwner = entity ?? boundary;
                 currentIsBoundary = !entity;
