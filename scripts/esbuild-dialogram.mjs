@@ -8,10 +8,11 @@
  * the bundle loaded ("Cannot read properties of undefined (reading 'prototype')"). It showed only
  * once a decorated module was first imported by package name, so a plugin could seem to work.
  *
- * A product imports this from its Dialogram checkout:
+ * A product imports this from its Dialogram checkout and wraps each build's options:
  *
- *     const { dialogramAlias, dialogramPackagesOnly, writeLegacyDecoratorBundles } =
+ *     const { dialogramBuild } =
  *         await import(pathToFileURL(path.join(dialogramRoot, 'scripts/esbuild-dialogram.mjs')).href);
+ *     await esbuild.build(dialogramBuild(options, { packagesDir: path.join(dialogramRoot, 'packages') }));
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -33,25 +34,58 @@ export function dialogramAlias(packagesDir) {
 }
 
 /**
- * An esbuild plugin that refuses a `@dialogram/<pkg>` with no sources under `packagesDir`. Unaliased,
+ * esbuild options for a build of Dialogram's sources, the way the platform builds them:
+ *
+ * - `alias` maps `@dialogram/<pkg>` to the checkout's sources (the build's own entries win);
+ * - an import of a `@dialogram/` path the alias lacks is refused, after the build's own plugins
+ *   (one may serve such a path itself);
+ * - unless `inMemory`, the bundle is written by {@link writeLegacyDecoratorBundles}, first among the
+ *   plugins, so a later `onEnd` (a "build succeeded" line) sees its refusal.
+ *
+ * `inMemory` leaves the outputs in the result's `outputFiles` (a test reads them).
+ *
+ * @param {import('esbuild').BuildOptions} options
+ * @param {{ packagesDir: string, relativeTo?: string, inMemory?: boolean }} platform
+ * @returns {import('esbuild').BuildOptions}
+ */
+export function dialogramBuild(options, { packagesDir, relativeTo, inMemory = false }) {
+    const alias = { ...dialogramAlias(packagesDir), ...(options.alias ?? {}) };
+    return {
+        ...options,
+        alias,
+        write: false,
+        plugins: [
+            ...(inMemory ? [] : [writeLegacyDecoratorBundles({ relativeTo })]),
+            ...(options.plugins ?? []),
+            dialogramPackagesOnly(alias)
+        ]
+    };
+}
+
+/**
+ * An esbuild plugin that refuses an import of a `@dialogram/` path `alias` does not map. Unaliased,
  * esbuild would look for it in `node_modules`, which in a product links to whatever Dialogram
  * checkout it was installed from, not necessarily this one: two platform copies in one bundle. A
- * known package passes on to the alias (plugins see an import before the alias does).
+ * mapped path passes on to the alias (plugins see an import before the alias does).
  *
- * @param {string} packagesDir the checkout's `packages` folder
+ * @param {Record<string, string>} alias the build's alias
  * @returns {import('esbuild').Plugin}
  */
-export function dialogramPackagesOnly(packagesDir) {
-    const known = new Set(Object.keys(dialogramAlias(packagesDir)));
+export function dialogramPackagesOnly(alias) {
+    const known = Object.keys(alias).filter(key => key.startsWith('@dialogram/'));
     return {
         name: 'dialogram-packages-only',
         setup(build) {
             build.onResolve({ filter: /^@dialogram\// }, args => {
-                const pkg = args.path.split('/').slice(0, 2).join('/');
-                if (known.has(pkg)) {
+                if (known.some(key => args.path === key || args.path.startsWith(`${key}/`))) {
                     return undefined;
                 }
-                return { errors: [{ text: `${pkg} has no sources under ${packagesDir} (imported as '${args.path}').` }] };
+                return {
+                    errors: [{
+                        text: `'${args.path}' is none of the platform's packages (${known.join(', ')}): `
+                            + 'not taken from node_modules, which may be another Dialogram checkout.'
+                    }]
+                };
             });
         }
     };
@@ -122,9 +156,9 @@ export function writeLegacyDecoratorBundles({ relativeTo = process.cwd() } = {})
 
 /**
  * Write `contents` to `file` unless it holds them already, as esbuild's own writer does, so a
- * watcher (a dev host, a webview) is not woken by a rebuild that changed nothing. A change is
- * written whole or not at all: to a file beside it, then renamed over it, so a reader never sees
- * half a bundle.
+ * watcher (a dev host, a webview) is not woken by a rebuild that changed nothing. Written in place,
+ * as esbuild writes too: a linked output stays linked, a watcher of the file keeps its file, and a
+ * file a reader holds open (Windows) is not swapped from under it.
  *
  * @param {string} file
  * @param {Uint8Array} contents
@@ -139,7 +173,5 @@ async function writeIfChanged(file, contents) {
         // Not written yet.
     }
     await fs.promises.mkdir(path.dirname(file), { recursive: true });
-    const partial = `${file}.${process.pid}.partial`;
-    await fs.promises.writeFile(partial, contents);
-    await fs.promises.rename(partial, file);
+    await fs.promises.writeFile(file, contents);
 }

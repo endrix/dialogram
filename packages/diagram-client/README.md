@@ -123,17 +123,13 @@ to the package sources itself. That is what makes the path imports in §4
 `@dialogram/diagram-client/diagram-client.css`) resolve:
 
 ```js
-const { dialogramAlias, dialogramPackagesOnly, writeLegacyDecoratorBundles } = await import(
+const { dialogramBuild } = await import(
     pathToFileURL(path.join(dialogramRoot, 'scripts/esbuild-dialogram.mjs')).href
 );
-const dialogramPackages = path.join(dialogramRoot, 'packages');
 
-await esbuild.build({
-    // ...the options above, and:
-    alias: dialogramAlias(dialogramPackages),
-    write: false,                                   // the plugin writes what passes
-    plugins: [dialogramPackagesOnly(dialogramPackages), writeLegacyDecoratorBundles()]
-});
+await esbuild.build(dialogramBuild({
+    // ...the options above, your own plugins among them
+}, { packagesDir: path.join(dialogramRoot, 'packages') }));
 ```
 
 Use esbuild's `alias`, not an `onResolve` plugin. esbuild applies a
@@ -142,12 +138,14 @@ resolves is compiled without the package's `experimentalDecorators`, with
 standard decorators, and inversify's property `@inject` throws when the bundle
 loads ("Cannot read properties of undefined (reading 'prototype')"). It shows
 only once a decorated module is first imported by package name, which is why a
-plugin can seem to work. `writeLegacyDecoratorBundles` fails the build, naming
-the module, rather than write such a bundle, and leaves an unchanged one alone.
-`dialogramPackagesOnly` refuses a `@dialogram/<pkg>` with no sources in this
-checkout, which esbuild would otherwise look for in `node_modules` (another
-checkout, perhaps). The extension's own build uses all three
-(`packages/extension/esbuild.mjs`).
+plugin can seem to work. `dialogramBuild` adds the alias (`dialogramAlias`)
+and two plugins around yours. The first writes the bundle: it fails the build,
+naming the module, rather than write one with standard decorators, and leaves
+an unchanged file alone. The last refuses a `@dialogram/` path the alias does
+not map, which esbuild would otherwise look for in `node_modules` (another
+checkout, perhaps); a plugin of yours that serves such a path runs before it.
+`{ inMemory: true }` leaves the outputs in `outputFiles` instead. The
+extension's own build and the SVG renderer build this way.
 
 A product with its own `node_modules` also pins GLSP, Sprotty and inversify to
 the platform's copy, so the bundle has one inversify realm (chisel-ide's

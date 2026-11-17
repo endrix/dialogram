@@ -24,7 +24,7 @@
  * needs. A product imports it by path, `@dialogram/diagram-client/stock-starter`,
  * which resolves through the build's Dialogram alias: the package has no
  * `exports` map, so the bundler must map `@dialogram/<pkg>/<subpath>` to
- * `packages/<pkg>/src/<subpath>.ts` (`dialogramAlias` in
+ * `packages/<pkg>/src/<subpath>.ts` (`dialogramBuild` in
  * scripts/esbuild-dialogram.mjs; README §3).
  */
 

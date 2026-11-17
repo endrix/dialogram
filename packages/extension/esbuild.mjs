@@ -3,7 +3,7 @@ import * as esbuild from 'esbuild';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dialogramAlias, dialogramPackagesOnly, writeLegacyDecoratorBundles } from '../../scripts/esbuild-dialogram.mjs';
+import { dialogramBuild } from '../../scripts/esbuild-dialogram.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const watch = process.argv.includes('--watch');
@@ -46,24 +46,13 @@ const plugins = [{
     },
 }];
 
-// Resolve workspace package source directories for esbuild
-const srcDirs = {
-    'shared': path.resolve(__dirname, '../shared/src'),
-    'diagram-server': path.resolve(__dirname, '../diagram-server/src'),
-    'diagram-client': path.resolve(__dirname, '../diagram-client/src'),
-    'extension-core': path.resolve(__dirname, '../extension-core/src'),
-    'sidecar-toolkit': path.resolve(__dirname, '../sidecar-toolkit/src'),
-};
-
 // @dialogram/* imports (subpaths too, such as @dialogram/extension-core/api) resolve to the
 // packages' source .ts files through an alias, and a bundle is written only when it keeps the
 // legacy decorators the packages' tsconfigs ask for: see scripts/esbuild-dialogram.mjs.
-const workspaceAlias = dialogramAlias(path.resolve(__dirname, '..'));
-const packagesOnly = dialogramPackagesOnly(path.resolve(__dirname, '..'));
-const writeBundles = writeLegacyDecoratorBundles({ relativeTo: __dirname });
+const platform = { packagesDir: path.resolve(__dirname, '..'), relativeTo: __dirname };
 
 // Host entry: returns the DialogramApi from activate().
-const hostCtx = await esbuild.context({
+const hostCtx = await esbuild.context(dialogramBuild({
     banner: stampBanner('host main.cjs'),
     entryPoints: ['src/main.ts'],
     outdir: 'out',
@@ -76,10 +65,8 @@ const hostCtx = await esbuild.context({
     platform: 'node',
     sourcemap: !minify,
     minify,
-    alias: workspaceAlias,
-    write: false,
-    plugins: [packagesOnly, writeBundles, ...plugins]
-});
+    plugins
+}, platform));
 
 // libavoid (WASM), vendored at vendor/libavoid — see its README for why it is
 // built from source rather than taken from npm (the published package generates
@@ -113,7 +100,7 @@ if (fs.existsSync(libavoidVendor)) {
 // (see src/platform-entry.ts — DI-decorated classes cannot cross bundles).
 // Loaded by the host once per process. Profile isolation is provided by
 // per-profile ChatProfileRuntime, ChatBackend, and GlspIntegrationHandle instances.
-const platformCtx = await esbuild.context({
+const platformCtx = await esbuild.context(dialogramBuild({
     banner: stampBanner('platform.cjs'),
     entryPoints: ['src/platform-entry.ts'],
     outfile: 'dist/platform.cjs',
@@ -125,20 +112,18 @@ const platformCtx = await esbuild.context({
     platform: 'node',
     sourcemap: !minify,
     minify,
-    alias: workspaceAlias,
-    write: false,
-    plugins: [packagesOnly, writeBundles, ...plugins]
-});
+    plugins
+}, platform));
 
 // GLSP diagram client bundle (runs in consumer webviews, browser IIFE)
-const glspClientCtx = await esbuild.context({
+const glspClientCtx = await esbuild.context(dialogramBuild({
     // libavoid must NOT be inlined here. esbuild rewrites `import.meta` to `{}`
     // in an IIFE, and emscripten's browser build derives its script directory
     // from `import.meta.url` — undefined, so the module aborts at init and every
     // later error reads "program has already aborted!". It is loaded at runtime
     // as a real ES module instead; see libavoid-loader.ts.
     banner: stampBanner('webview diagram-client.js'),
-    entryPoints: [path.join(srcDirs['diagram-client'], 'diagram-client.ts')],
+    entryPoints: [path.resolve(__dirname, '../diagram-client/src/diagram-client.ts')],
     outdir: 'dist/webview',
     bundle: true,
     target: 'ES2017',
@@ -146,9 +131,7 @@ const glspClientCtx = await esbuild.context({
     platform: 'browser',
     sourcemap: false,
     minify,
-    alias: workspaceAlias,
-    write: false,
-    plugins: [packagesOnly, writeBundles, ...plugins],
+    plugins,
     loader: {
         '.css': 'css',
         '.ttf': 'dataurl',
@@ -161,7 +144,7 @@ const glspClientCtx = await esbuild.context({
         'process.env.NODE_ENV': '"production"',
         'global': 'window'
     }
-});
+}, platform));
 
 const contexts = [hostCtx, platformCtx, glspClientCtx];
 if (watch) {
@@ -176,7 +159,7 @@ if (watch) {
             process.exitCode = 1;
             // esbuild has printed a build's own errors; anything else (a failure with none, an
             // exception, a cancel) it has not.
-            if (!(result.reason?.errors?.length > 0)) {
+            if (!(Array.isArray(result.reason?.errors) && result.reason.errors.length > 0)) {
                 console.error(result.reason ?? 'The build failed.');
             }
         }
