@@ -42,17 +42,38 @@ function buildRoot() {
         .addChildren(dupA, dupB)
         .build();
 
-    // The diagram's own input port: a boundary node with no entity name, its port inside.
+    // The diagram's own input port, as the model builder (graph-gmodel-source) makes it: a
+    // boundary node whose entity name is the port's name too, its port inside.
     const textFilePort = GPort.builder().id('wf.TextFile.p').type(WorkflowDiagramTypes.PORT_OUTPUT)
         .addArg(WorkflowDiagramMetadata.PORT_NAME, 'TextFile')
         .addArg(WorkflowDiagramMetadata.PORT_DIRECTION, 'out')
         .build();
     const textFile = GNode.builder().id('wf.TextFile').type(WorkflowDiagramTypes.NODE_BOUNDARY_INPUT)
+        .addArg(WorkflowDiagramMetadata.ENTITY_NAME, 'TextFile')
+        .addArg(WorkflowDiagramMetadata.ENTITY_TYPE, 'Port')
         .addArg(WorkflowDiagramMetadata.PORT_NAME, 'TextFile')
         .addChildren(textFilePort)
         .build();
+    // An output of the diagram, from a producer that names it by its port name only.
+    const reportPort = GPort.builder().id('wf.Report.p').type(WorkflowDiagramTypes.PORT_INPUT)
+        .addArg(WorkflowDiagramMetadata.PORT_DIRECTION, 'in')
+        .build();
+    const report = GNode.builder().id('wf.Report').type(WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT)
+        .addArg(WorkflowDiagramMetadata.PORT_NAME, 'Report')
+        .addChildren(reportPort)
+        .build();
 
-    return GGraph.builder().id('root').addChildren(producer, consumer, dup, textFile).build();
+    // A diagram port whose names all differ: entity 'rst_label', node port 'reset', its port 'rst_n'.
+    const resetPort = GPort.builder().id('wf.rst.p').type(WorkflowDiagramTypes.PORT_OUTPUT)
+        .addArg(WorkflowDiagramMetadata.PORT_NAME, 'rst_n')
+        .build();
+    const reset = GNode.builder().id('wf.rst').type(WorkflowDiagramTypes.NODE_BOUNDARY_INPUT)
+        .addArg(WorkflowDiagramMetadata.ENTITY_NAME, 'rst_label')
+        .addArg(WorkflowDiagramMetadata.PORT_NAME, 'reset')
+        .addChildren(resetPort)
+        .build();
+
+    return GGraph.builder().id('root').addChildren(producer, consumer, dup, textFile, report, reset).build();
 }
 
 describe('resolveEndpointElementId', () => {
@@ -110,5 +131,25 @@ describe('resolveEndpointElementId', () => {
         expect(result.ok).toBe(false);
         expect(result.message).toContain("No diagram port named 'producer'");
         expect(result.message).toContain('TextFile');
+        expect(result.message).toContain('Report');
+    });
+
+    // The builder gives a workflow's input node the port's name as its entity name; taken for an
+    // ordinary node, it was never found by name, and create-edges said the diagram had no ports.
+    it("resolves a diagram port whose node carries an entity name, and one named by its port name only", () => {
+        const root = buildRoot();
+        expect(resolveEndpointElementId(root, 'TextFile')).toEqual({ ok: true, elementId: 'wf.TextFile.p' });
+        expect(resolveEndpointElementId(root, 'Report')).toEqual({ ok: true, elementId: 'wf.Report.p' });
+    });
+
+    it("finds a diagram port by its port name, and by its entity name in a dotted spec", () => {
+        const root = buildRoot();
+        expect(resolveEndpointElementId(root, 'reset')).toEqual({ ok: true, elementId: 'wf.rst.p' });
+        // Only the node's name: a name its inner port has would make others ambiguous.
+        expect(resolveEndpointElementId(root, 'rst_n').ok).toBe(false);
+        expect(resolveEndpointElementId(root, 'rst_label.rst_n')).toEqual({ ok: true, elementId: 'wf.rst.p' });
+        expect(resolveEndpointElementId(root, 'TextFile.TextFile')).toEqual({ ok: true, elementId: 'wf.TextFile.p' });
+        // And the names it accepts are the names it lists.
+        expect(resolveEndpointElementId(root, 'nobody.x').message).toContain('rst_label');
     });
 });

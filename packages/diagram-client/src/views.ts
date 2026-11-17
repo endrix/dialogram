@@ -43,7 +43,7 @@ import { PORT_BUS_TOGGLE_ATTR } from './port-bus-toggle';
 import { clientBehavior } from './profile';
 import { captionIsShared, carriedTextOf } from './edge-caption-sharing';
 import { isEdgeHiddenForDrag, isIncidentEdgeInActiveDrag, routeReachesPorts } from './elk-live-drag-router';
-import { BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide } from '@dialogram/shared';
+import { isBoundaryNodeType, BoundaryPortGeometry, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide } from '@dialogram/shared';
 import { renderSymbolBody, symbolPinsOf } from './symbol-views';
 import { NODE_OPEN_TOGGLE_RADIUS_PX, nodeOpenToggle } from './node-open-toggle';
 import { nodeLinesHeight, nodeLinesOf, renderNodeLines } from './node-lines';
@@ -946,8 +946,7 @@ function endsAtBoundaryPort(edge: Readonly<SEdgeImpl>): boolean {
     }
     let element: any = (edge as any).target;
     while (element) {
-        if (element.type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT
-            || element.type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+        if (isBoundaryNodeType(element.type)) {
             return true;
         }
         element = element.parent;

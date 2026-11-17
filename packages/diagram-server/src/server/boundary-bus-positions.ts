@@ -21,7 +21,7 @@
  * out of what is returned: the bus may sit on one of them, and a layout with
  * two nodes on one spot counts as unusable too.
  */
-import { BoundaryPortGeometry, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { BoundaryPortGeometry, isBoundaryNodeType, WorkflowDiagramMetadata } from '@dialogram/shared';
 import { nodeLayoutKeyOf } from './layout-snapshot';
 
 type Point = { x: number; y: number };
@@ -29,7 +29,7 @@ type Point = { x: number; y: number };
 /** The members' node ids of a boundary node standing for a bundle of the unit's ports. */
 export function boundaryBusMembersOf(element: unknown): string[] | undefined {
     const type = (element as { type?: unknown })?.type;
-    if (type !== WorkflowDiagramTypes.NODE_BOUNDARY_INPUT && type !== WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+    if (!isBoundaryNodeType(type)) {
         return undefined;
     }
     const members = (element as { args?: Record<string, unknown> }).args?.[WorkflowDiagramMetadata.BOUNDARY_BUS_MEMBERS];

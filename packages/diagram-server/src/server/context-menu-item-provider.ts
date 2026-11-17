@@ -9,6 +9,7 @@ import {
     Point
 } from '@eclipse-glsp/protocol';
 import {
+    isBoundaryNodeType,
     hierarchyTrailTo,
     WorkflowDiagramMetadata,
     WorkflowDiagramTypes,
@@ -291,7 +292,7 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
             let current: any = element;
             while (current) {
                 const t = (current as any).type as string | undefined;
-                if (t === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || t === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+                if (isBoundaryNodeType(t)) {
                     return current;
                 }
                 current = current.parent;
@@ -313,7 +314,7 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
         }
 
         // A network's own port: rename.
-        if (elementType === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || elementType === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+        if (isBoundaryNodeType(elementType)) {
             const portName = elementArgs?.[WorkflowDiagramMetadata.PORT_NAME];
             if (typeof portName === 'string') {
                 items.push({
@@ -437,8 +438,7 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
             elementType === WorkflowDiagramTypes.NODE_ACTOR ||
             elementType === WorkflowDiagramTypes.NODE_NETWORK ||
             elementType === WorkflowDiagramTypes.NODE_EXTERNAL_ACTOR ||
-            elementType === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT ||
-            elementType === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT
+            isBoundaryNodeType(elementType)
         ) {
             items.push({
                 id: 'dialogram.duplicate',

@@ -1,6 +1,6 @@
 import type { Args } from '@eclipse-glsp/protocol';
 import type { ModelState } from '@eclipse-glsp/server';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes, type DiagramClipboardItem, type DiagramClipboardPayload } from '@dialogram/shared';
+import { isBoundaryNodeType, WorkflowDiagramMetadata, WorkflowDiagramTypes, type DiagramClipboardItem, type DiagramClipboardPayload } from '@dialogram/shared';
 
 export { clipboardDataFromPayload, parseClipboardPayload, type DiagramClipboardItem, type DiagramClipboardPayload } from '@dialogram/shared';
 
@@ -62,7 +62,7 @@ export function buildClipboardPayload(modelState: ModelState, sourceUri: string,
             continue;
         }
 
-        if (elementTypeId === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || elementTypeId === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+        if (isBoundaryNodeType(elementTypeId)) {
             const portName = args?.[WorkflowDiagramMetadata.PORT_NAME];
             const portType = args?.[WorkflowDiagramMetadata.PORT_TYPE];
             if (typeof portName === 'string' && portName.trim() !== '') {

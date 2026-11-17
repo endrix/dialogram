@@ -1,5 +1,5 @@
 import { injectable } from 'inversify';
-import { nextFreeName, parseClipboardPayload, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { isBoundaryNodeType, nextFreeName, parseClipboardPayload, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 
 export type PendingSelection = {
     entityNames: string[];
@@ -45,7 +45,7 @@ function collectUsedNames(modelRoot: any): { entities: Set<string>; boundaryPort
             }
         }
 
-        if (type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+        if (isBoundaryNodeType(type)) {
             const name = args[WorkflowDiagramMetadata.PORT_NAME];
             if (typeof name === 'string' && name.trim()) {
                 boundaryPorts.add(name);
@@ -77,7 +77,7 @@ function findIdsToSelect(modelRoot: any, pending: PendingSelection): string[] {
             }
         }
 
-        if (type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+        if (isBoundaryNodeType(type)) {
             const name = args[WorkflowDiagramMetadata.PORT_NAME];
             if (typeof name === 'string' && wantedPorts.has(name)) {
                 ids.push(el.id);
@@ -152,7 +152,7 @@ export class PostEditSelectionService {
                 }
             }
 
-            if (type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+            if (isBoundaryNodeType(type)) {
                 const name = args[WorkflowDiagramMetadata.PORT_NAME];
                 if (typeof name === 'string' && name.trim()) {
                     boundaryPortNames.push(generateUnique(name, usedPorts));

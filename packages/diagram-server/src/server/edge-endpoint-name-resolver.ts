@@ -12,14 +12,16 @@
  * product vocabulary.
  */
 import type { GModelElement, GModelRoot } from '@eclipse-glsp/server';
-import { WorkflowDiagramMetadata } from '@dialogram/shared';
+import { isBoundaryNodeType, WorkflowDiagramMetadata } from '@dialogram/shared';
 
 /** One `nodeName.portName` candidate discovered in the model tree. */
 interface DiscoveredPort {
     elementId: string;
     portName: string;
     ownerName: string | undefined;
-    /** Whether the owner is a boundary node: a port of the diagram itself (a workflow's input or output). */
+    /** The owner's entity name, when it is not its name here (a boundary node's): a dotted spec may use it. */
+    ownerEntityName: string | undefined;
+    /** Whether the owner is one of the diagram's own ports (a workflow's input or output): a boundary node. */
     ownerIsBoundary: boolean;
     direction: string | undefined;
 }
@@ -46,17 +48,29 @@ function argString(element: GModelElement, key: string): string | undefined {
 /** Collect every port in the tree tagged with the name of its nearest owning node. */
 function collectPorts(root: GModelRoot): DiscoveredPort[] {
     const ports: DiscoveredPort[] = [];
-    const visit = (element: GModelElement, ownerName: string | undefined, ownerIsBoundary: boolean): void => {
+    const visit = (
+        element: GModelElement,
+        ownerName: string | undefined,
+        ownerEntityName: string | undefined,
+        ownerIsBoundary: boolean
+    ): void => {
         const type = element.type;
         let currentOwner = ownerName;
+        let currentEntityName = ownerEntityName;
         let currentIsBoundary = ownerIsBoundary;
         if (typeof type === 'string' && type.startsWith('node:')) {
-            // Task/actor nodes carry an instance name; boundary nodes carry a port name identity.
+            // Task/actor nodes carry an instance name. One of the diagram's own ports is a boundary
+            // node, told by its type alone: the model builder gives it the port's name as its
+            // entity name too, so "no entity name" did not tell, and a workflow's input was never
+            // found by name. (The builder puts boundary nodes at the diagram's top level only.)
+            const ownPort = isBoundaryNodeType(type);
             const entity = argString(element, ENTITY_NAME);
-            const boundary = entity ? undefined : argString(element, PORT_NAME);
-            if (entity || boundary) {
-                currentOwner = entity ?? boundary;
-                currentIsBoundary = !entity;
+            const portName = argString(element, PORT_NAME);
+            const name = ownPort ? (portName ?? entity) : (entity ?? portName);
+            if (name) {
+                currentOwner = name;
+                currentEntityName = entity !== name ? entity : undefined;
+                currentIsBoundary = ownPort;
             }
         }
         if (typeof type === 'string' && type.startsWith('port:')) {
@@ -64,15 +78,16 @@ function collectPorts(root: GModelRoot): DiscoveredPort[] {
                 elementId: element.id,
                 portName: argString(element, PORT_NAME) ?? '',
                 ownerName: currentOwner,
+                ownerEntityName: currentEntityName,
                 ownerIsBoundary: currentIsBoundary,
                 direction: argString(element, PORT_DIRECTION)
             });
         }
         for (const child of (element.children ?? []) as GModelElement[]) {
-            visit(child, currentOwner, currentIsBoundary);
+            visit(child, currentOwner, currentEntityName, currentIsBoundary);
         }
     };
-    visit(root, undefined, false);
+    visit(root, undefined, undefined, false);
     return ports;
 }
 
@@ -102,9 +117,10 @@ export function resolveEndpointElementId(root: GModelRoot, spec: string): Endpoi
     const nodeName = trimmed.slice(0, dot);
     const portName = trimmed.slice(dot + 1);
 
-    const nodePorts = ports.filter((port) => port.ownerName === nodeName);
+    const nodePorts = ports.filter((port) => port.ownerName === nodeName || port.ownerEntityName === nodeName);
     if (nodePorts.length === 0) {
-        const knownNodes = [...new Set(ports.map((port) => port.ownerName).filter((name): name is string => !!name))].sort();
+        // Every name a dotted spec accepts: a node's name, and a diagram port's entity name.
+        const knownNodes = [...new Set(ports.flatMap((port) => [port.ownerName, port.ownerEntityName]).filter((name): name is string => !!name))].sort();
         const known = knownNodes.length > 0 ? ` Known nodes: ${knownNodes.join(', ')}.` : '';
         return { ok: false, message: `No node named '${nodeName}' in the diagram.${known}` };
     }

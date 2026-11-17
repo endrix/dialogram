@@ -19,7 +19,7 @@ import {
     WorkflowRerouteEdgesAvoidOverlapsOperationHandler,
     WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND
 } from './reroute-edges-avoid-overlaps-handler';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { isBoundaryNodeType, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { WorkflowDiagramConstants, portSide } from '@dialogram/shared';
 import {
     isMovableNode,
@@ -595,8 +595,7 @@ export class WorkflowLayoutSerpentineMeshOperationHandler extends OperationHandl
     }
 
     private isBoundaryNode(element: any): boolean {
-        const type = element?.type as string | undefined;
-        return type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT;
+        return isBoundaryNodeType(element?.type);
     }
 
     private isBoundaryInputNode(element: any): boolean {

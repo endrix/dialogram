@@ -15,7 +15,7 @@ import { StatusAction } from '@eclipse-glsp/protocol';
 import { GlspElkLayoutEngine, ElkFactory, ElementFilter, LayoutConfigurator } from '@eclipse-glsp/layout-elk';
 import { ElkExtendedEdge, ElkNode, ElkPort, ElkShape } from 'elkjs';
 import { injectable } from 'inversify';
-import { WorkflowDiagramTypes, WORKFLOW_LAYOUT_PERSISTENCE_KEY } from '@dialogram/shared';
+import { isBoundaryNodeType, WorkflowDiagramTypes, WORKFLOW_LAYOUT_PERSISTENCE_KEY } from '@dialogram/shared';
 import { WorkflowDiagramConstants, WorkflowDiagramMetadata, portRowOffset, portSide, type PortSide } from '@dialogram/shared';
 import {
     AUTOMATON_MARGIN_PX, AUTOMATON_SPREADS, PORT_COLUMN_GAP_PX, automatonClutter, automatonDrawingBox, automatonElkGraph, automatonGeometryInputs,
@@ -258,7 +258,7 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
     }
 
     private isUnitPort(node: GNode): boolean {
-        return node.type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT || node.type === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT;
+        return isBoundaryNodeType(node.type);
     }
 
     /**
@@ -376,8 +376,7 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         return node.type !== WorkflowDiagramTypes.NODE_STRUCTURE_IF
             && node.type !== WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH
             && node.type !== WorkflowDiagramTypes.NODE_GROUP
-            && node.type !== WorkflowDiagramTypes.NODE_BOUNDARY_INPUT
-            && node.type !== WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT;
+            && !isBoundaryNodeType(node.type);
     }
 
     /**
@@ -959,8 +958,7 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         // We apply only position here and restore the original size afterwards.
         if (shape instanceof GNode) {
             const nodeType = shape.type;
-            if (nodeType === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT ||
-                nodeType === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT) {
+            if (isBoundaryNodeType(nodeType)) {
                 const savedSize = shape.size ? { ...shape.size } : undefined;
                 super.applyShape(shape, elkShape);
                 if (savedSize) {

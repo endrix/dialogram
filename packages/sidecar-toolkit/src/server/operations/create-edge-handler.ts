@@ -2,7 +2,7 @@ import { CreateEdgeOperation, TriggerEdgeCreationAction } from '@eclipse-glsp/pr
 import { OperationHandler, MaybePromise, GPort, ModelState, Command } from '@eclipse-glsp/server';
 import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { isBoundaryNodeType, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 
 import { ReversibleWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-workspace-edit-command';
 import { SidecarInvoker } from './sidecar-invoker';
@@ -172,8 +172,7 @@ export class CreateEdgeOperationHandler extends OperationHandler {
 
         const parentType = parent.type as string | undefined;
         const isBoundary =
-            parentType === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT ||
-            parentType === WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT;
+            isBoundaryNodeType(parentType);
 
         if (isBoundary) {
             return {

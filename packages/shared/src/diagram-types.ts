@@ -98,6 +98,20 @@ export namespace WorkflowDiagramTypes {
 }
 
 /**
+ * The node types of a unit's boundary: its own ports, one by one or as a bus. The one list an
+ * "is this a boundary node" check reads, so a further boundary type is added once.
+ */
+export const BOUNDARY_NODE_TYPES: ReadonlySet<string> = new Set([
+    WorkflowDiagramTypes.NODE_BOUNDARY_INPUT,
+    WorkflowDiagramTypes.NODE_BOUNDARY_OUTPUT
+]);
+
+/** Whether `type` is a boundary node's: one of a unit's own ports. (Not a type predicate: false would narrow a string to `never`.) */
+export function isBoundaryNodeType(type: unknown): boolean {
+    return typeof type === 'string' && BOUNDARY_NODE_TYPES.has(type);
+}
+
+/**
  * CSS class names for Workflow diagram styling
  */
 export namespace WorkflowDiagramCss {
