@@ -51,9 +51,11 @@ export class DuplicateOperationHandler extends OperationHandler {
                     args: { workflow: workflowName }
                 });
                 const taken = new Set((takenResp?.diagnostic?.names as string[] | undefined) ?? []);
-                if (!await recreateItems(this.sidecar, sourceUri, workflowName, payload, taken)) {
+                const fileBeforeWrite = await recreateItems(this.sidecar, sourceUri, workflowName, payload, taken);
+                if (fileBeforeWrite === undefined) {
                     return undefined;
                 }
+                (command as any)._fileBeforeWrite = fileBeforeWrite;
                 const afterText = await readAuthoritativeSourceText(vscodeUri);
                 (command as any)._sourceBeforeText = beforeText;
                 (command as any)._sourceAfterText = afterText;

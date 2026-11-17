@@ -42,9 +42,10 @@ function sameFile(a: string, b: string): boolean {
 
 /**
  * Make `payload`'s items in `workflowName` of `sourceUri`, the entities under
- * names not in `taken`. False when a step was refused (the file is back as
- * it was, and the refusal has been said) or a question was escaped (nothing
- * was written).
+ * names not in `taken`: the file as it was on disk when the writing began,
+ * after every question, which is what an undo puts back. Nothing when a
+ * step was refused (the file is back as it was, and the refusal has been
+ * said) or a question was escaped (nothing was written).
  */
 export async function recreateItems(
     sidecar: Sidecar,
@@ -52,7 +53,7 @@ export async function recreateItems(
     workflowName: string | undefined,
     payload: DiagramClipboardPayload,
     taken: Set<string>
-): Promise<boolean> {
+): Promise<string | undefined> {
     const here = sameFile(payload.sourceUri, sourceUri);
     const withExpressions = await sidecar.hasFeature(sourceUri, CREATE_NODE_EXPRESSIONS);
     const renamed = new Map<string, string>();
@@ -61,6 +62,8 @@ export async function recreateItems(
 
     // Each entity's name and arguments, settled before anything is written.
     const made = new Map<object, { name: string; expressions?: Record<string, string> }>();
+    // What a type cannot be made without, asked of the producer once per type.
+    const requiredOf = new Map<string, ReturnType<typeof requiredParametersOf>>();
     for (const item of payload.items) {
         if (item.kind !== 'entity') {
             continue;
@@ -72,12 +75,15 @@ export async function recreateItems(
         let expressions: Record<string, string> = { ...original };
         if (withExpressions && !here) {
             expressions = Object.fromEntries(Object.entries(original).filter(([, text]) => LITERAL.test(text.trim())));
-            const missing = ((await requiredParametersOf(sidecar, sourceUri, item.typeName)) ?? [])
+            if (!requiredOf.has(item.typeName)) {
+                requiredOf.set(item.typeName, requiredParametersOf(sidecar, sourceUri, item.typeName));
+            }
+            const missing = ((await requiredOf.get(item.typeName)) ?? [])
                 .filter(parameter => expressions[parameter.name] === undefined);
             if (missing.length > 0) {
                 const answers = await askArguments(name, item.typeName, missing, original);
                 if (!answers) {
-                    return false;
+                    return undefined;
                 }
                 Object.assign(expressions, answers);
             }
@@ -96,7 +102,7 @@ export async function recreateItems(
                 op: sidecar.sidecarOp('createNode'),
                 args: { workflow: workflowName, type: item.typeName, name, ...(expressions ? { expressions } : {}) }
             }, `'${name}' was not made.`)) {
-                return false;
+                return undefined;
             }
         } else if (item.kind === 'boundaryPort') {
             portsMade.add(item.portName);
@@ -104,7 +110,7 @@ export async function recreateItems(
                 op: sidecar.sidecarOp('createPort'),
                 args: { workflow: workflowName, direction: item.direction, portName: item.portName, portType: item.portType ?? 'Any' }
             }, `Port '${item.portName}' was not made.`)) {
-                return false;
+                return undefined;
             }
         }
     }
@@ -130,7 +136,7 @@ export async function recreateItems(
             op: sidecar.sidecarOp('connect'),
             args: { workflow: workflowName, from_port: fromPort, to_port: toPort }
         }, 'A connection was not made.')) {
-            return false;
+            return undefined;
         }
     }
 
@@ -139,5 +145,5 @@ export async function recreateItems(
         void vscode.window.showInformationMessage(`Made without ${leftOut.join(', ')}: ${several ? 'these name' : 'it names'} `
             + `what the file it was copied from binds, maybe nothing here. Give ${several ? 'them' : 'it'} here if needed.`);
     }
-    return true;
+    return steps.textBefore;
 }

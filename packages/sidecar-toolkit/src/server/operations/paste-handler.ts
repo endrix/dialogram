@@ -55,9 +55,11 @@ export class PasteOperationHandler extends OperationHandler {
         });
         const taken = new Set((takenResp?.diagnostic?.names as string[] | undefined) ?? []);
         const beforeText = (await vscode.workspace.openTextDocument(vscode.Uri.parse(sourceUri))).getText();
-        if (!await recreateItems(this.sidecar, sourceUri, workflowName, payload, taken)) {
+        const fileBeforeWrite = await recreateItems(this.sidecar, sourceUri, workflowName, payload, taken);
+        if (fileBeforeWrite === undefined) {
             return undefined;
         }
+        (command as any)._fileBeforeWrite = fileBeforeWrite;
         const afterText = await readAuthoritativeSourceText(vscode.Uri.parse(sourceUri));
         (command as any)._sourceBeforeText = beforeText;
         (command as any)._sourceAfterText = afterText;

@@ -471,6 +471,8 @@ export class CreateNodeOperationHandler extends OperationHandler {
                 // Where the palette was clicked, saved before the producer
                 // writes, so the diagram the write brings draws it there.
                 const placed = await this.placeAt(operation.location, entityName);
+                // The file as it is now, after every question: what undo puts back.
+                (command as any)._fileBeforeWrite = await readAuthoritativeSourceText(vscodeUri);
                 let result: SidecarInvocationResult;
                 try {
                     result = await this.sendSidecarOpDetailed(sourceUri, {

@@ -52,6 +52,7 @@ async function recreate(
     options: { required?: string[]; typed?: (box: { prompt?: string; value?: string }) => string | undefined; made?: boolean } = {}
 ) {
     const sent: Array<{ op: string; args: Record<string, unknown> }> = [];
+    const listed: string[] = [];
     const asked: Array<{ title?: string; prompt?: string; value?: string }> = [];
     windowAny.showInputBox = async (box: any) => {
         asked.push({ title: box?.title, prompt: box?.prompt, value: box?.value });
@@ -60,7 +61,7 @@ async function recreate(
     const sidecar = {
         sidecarOp: (op: string) => `wfpy.${op}`,
         hasFeature: async () => true,
-        sendSidecarListDetailed: async () => ({
+        sendSidecarListDetailed: async (_uri: string, request: { op: string }) => (listed.push(request.op), {
             ok: true,
             response: { diagnostic: { parameters: [...(options.required ?? []).map(name => ({ name, type: 'str' })), { name: 'size', type: 'int', defaultValue: '1' }] } }
         }),
@@ -70,15 +71,15 @@ async function recreate(
         }
     };
     const said = await saying(async said => {
-        expect(await recreateItems(sidecar as any, into, 'flow', { version: 1, sourceUri: copiedFrom, items }, new Set(['a', 'b', 'c'])))
-            .toBe(options.made ?? true);
+        const before = await recreateItems(sidecar as any, into, 'flow', { version: 1, sourceUri: copiedFrom, items }, new Set(['a', 'b', 'c']));
+        expect(before !== undefined).toBe(options.made ?? true);
         return said;
     });
     const connects = sent.filter(each => each.op === 'wfpy.connect').map(each => {
         const end = (port: any) => port.type === 'workflow' ? `"${port.name}"` : `${port.actor}.${port.port}`;
         return `${end(each.args.from_port)} -> ${end(each.args.to_port)}`;
     });
-    return { sent, said, connects, asked };
+    return { sent, said, connects, asked, listed };
 }
 
 describe('items made again in the file they were copied from', () => {
@@ -132,5 +133,13 @@ describe('an entity made in another file, of a type it cannot be made without an
             required: ['text'], typed: () => undefined, made: false
         });
         expect(sent).toEqual([]);
+    });
+});
+
+describe('several entities of one type made in another file', () => {
+    it('ask the producer what the type takes once', async () => {
+        const { listed, sent } = await recreate(['a', 'b', 'c'].map(name => entity(name, { size: '2' })), file('top.py'), file('other.py'));
+        expect(listed).toEqual(['wfpy.typeParameters']);
+        expect(sent).toHaveLength(3);
     });
 });

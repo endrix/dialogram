@@ -37,6 +37,11 @@ export class SidecarSteps {
         private readonly before: string
     ) {}
 
+    /** The file as it was on disk when the steps began. */
+    get textBefore(): string {
+        return this.before;
+    }
+
     /** Before the first step: the file as it is on disk, to be put back if a step is refused. */
     static async begin(sidecar: Sender, sourceUri: string): Promise<SidecarSteps> {
         return new SidecarSteps(sidecar, sourceUri, await readAuthoritativeSourceText(vscode.Uri.parse(sourceUri)));

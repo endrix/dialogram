@@ -19,8 +19,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { CutOperation } from '@eclipse-glsp/protocol';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes, WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
+import * as vscode from 'vscode';
+import { CutOperation, PasteOperation } from '@eclipse-glsp/protocol';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes, WORKFLOW_NETWORK_MODEL_KEY, clipboardDataFromPayload } from '@dialogram/shared';
+import { PasteOperationHandler } from '../src/server/operations/paste-handler.js';
 import { CutOperationHandler } from '../src/server/operations/cut-handler.js';
 import { DuplicateOperationHandler } from '../src/server/operations/duplicate-handler.js';
 import { UpdateEntityParameterOperationHandler } from '../src/server/operations/update-entity-parameter-handler.js';
@@ -145,6 +147,55 @@ describe('a refusal’s reason', () => {
             return said;
         });
         expect(said).toEqual(["'t' is made in a loop: take it out there first. Nothing was changed."]);
+    });
+});
+
+describe('a paste whose question was open while the file was saved', () => {
+    it('undoes the paste, not what was saved meanwhile', async () => {
+        const at = dir();
+        const target = path.join(at, 'other.py');
+        writeFileSync(target, FLOW);
+        const uri = pathToFileURL(target).href;
+        const state = {
+            sourceUri: uri,
+            root: { args: { sourceUri: uri, 'wf:workflowName': 'flow' } },
+            index: { get: () => undefined, find: () => undefined },
+            get: (key: string) => (key === WORKFLOW_NETWORK_MODEL_KEY ? { documentUri: uri } : undefined)
+        };
+        const handler = new PasteOperationHandler() as any;
+        handler.modelState = state;
+        handler.sidecar = {
+            sidecarOp: (op: string) => `wfpy.${op}`,
+            hasFeature: async () => true,
+            undoLabelSuffix: () => '',
+            sendSidecarList: async () => ({ diagnostic: { names: [] } }),
+            sendSidecarListDetailed: async () => ({ ok: true, response: { diagnostic: { parameters: [{ name: 'text', type: 'str' }] } } }),
+            sendSidecarOpDetailed: async (_uri: string, payload: any) => {
+                writeFileSync(target, readFileSync(target, 'utf8') + `${payload.args.name} = Text(text=${payload.args.expressions?.text})\n`);
+                return { ok: true };
+            }
+        };
+        const windowAny = vscode.window as any;
+        const saved = windowAny.showInputBox;
+        // While the question is open (it keeps focus out), the file is edited and saved.
+        windowAny.showInputBox = async () => {
+            writeFileSync(target, FLOW + 'USER_EDIT = 1\n');
+            return 'OTHER';
+        };
+        try {
+            const clipboardData = clipboardDataFromPayload({
+                version: 1,
+                sourceUri: pathToFileURL(path.join(dir(), 'top.py')).href,
+                items: [{ kind: 'entity', elementTypeId: WorkflowDiagramTypes.NODE_ACTOR, name: 'a', typeName: 'Text', expressions: { text: 'FRONT_OPTIONS' } }]
+            });
+            const stack = commandStack();
+            await onDisk(target, () => stack.execute(handler.createCommand(PasteOperation.create({ clipboardData, editorContext: { selectedElementIds: [] } as any }))));
+            expect(readFileSync(target, 'utf8')).toBe(FLOW + 'USER_EDIT = 1\na = Text(text=OTHER)\n');
+            await onDisk(target, () => stack.undo());
+            expect(readFileSync(target, 'utf8')).toBe(FLOW + 'USER_EDIT = 1\n');
+        } finally {
+            windowAny.showInputBox = saved;
+        }
     });
 });
 
