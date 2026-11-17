@@ -29,7 +29,9 @@ const freshDir = () => {
 function build(
     outdir: string,
     contents: string,
-    { plugins = [], tsconfigRaw, inMemory = false }: { plugins?: esbuild.Plugin[]; tsconfigRaw?: esbuild.TsconfigRaw; inMemory?: boolean } = {}
+    { plugins = [], tsconfigRaw, inMemory = false, external }: {
+        plugins?: esbuild.Plugin[]; tsconfigRaw?: esbuild.TsconfigRaw; inMemory?: boolean; external?: string[];
+    } = {}
 ) {
     return esbuild.build(dialogramBuild({
         stdin: { contents, resolveDir: __dirname, loader: 'ts', sourcefile: 'entry.ts' },
@@ -41,7 +43,8 @@ function build(
         logLevel: 'silent',
         metafile: true,
         plugins,
-        ...(tsconfigRaw ? { tsconfigRaw } : {})
+        ...(tsconfigRaw ? { tsconfigRaw } : {}),
+        ...(external ? { external } : {})
     }, { packagesDir: PACKAGES, relativeTo: outdir, inMemory }));
 }
 
@@ -66,15 +69,35 @@ describe('the platform build', () => {
         expect(fs.readdirSync(dir)).toEqual(['stdin.js']);
     }, 60_000);
 
-    it('fails a bundle with a standard decorator, and writes nothing', async () => {
+    it('fails a bundle with a standard decorator, written or in memory, and writes nothing', async () => {
         const dir = freshDir();
         const decorated = 'const mark = (..._: unknown[]): any => undefined;\n@mark class Marked {}\nexport { Marked };';
-        const built = build(dir, decorated, { tsconfigRaw: { compilerOptions: { experimentalDecorators: false } } });
-        await expect(built).rejects.toMatchObject({
-            errors: [expect.objectContaining({ text: expect.stringContaining('was compiled with standard decorators') })]
+        const standard = { compilerOptions: { experimentalDecorators: false } };
+        for (const inMemory of [false, true]) {
+            await expect(build(dir, decorated, { tsconfigRaw: standard, inMemory })).rejects.toMatchObject({
+                errors: [expect.objectContaining({ text: expect.stringContaining('was compiled with standard decorators') })]
+            });
+        }
+        expect(fs.readdirSync(dir)).toEqual([]);
+    }, 60_000);
+
+    it("writes nothing when the build's own onEnd fails it", async () => {
+        const dir = freshDir();
+        const budget: esbuild.Plugin = {
+            name: 'budget',
+            setup(b) {
+                b.onEnd(() => ({ errors: [{ text: 'over budget' }] }));
+            }
+        };
+        await expect(build(dir, 'export const answer = 41;', { plugins: [budget] })).rejects.toMatchObject({
+            errors: [expect.objectContaining({ text: 'over budget' })]
         });
         expect(fs.readdirSync(dir)).toEqual([]);
     }, 60_000);
+
+    it('refuses a `write` of its own rather than ignore it', () => {
+        expect(() => dialogramBuild({ write: true }, { packagesDir: PACKAGES })).toThrow(/leave `write` out/);
+    });
 
     it('builds a platform package from its sources, and refuses one the checkout lacks', async () => {
         const dir = freshDir();
@@ -86,6 +109,19 @@ describe('the platform build', () => {
         expect(Object.keys(known.metafile!.inputs).some(input => input.includes('shared/src/'))).toBe(true);
         // In memory: nothing on disk.
         expect(fs.readdirSync(dir)).toEqual([]);
+    }, 60_000);
+
+    it('maps packages by their names: the extension, published as `dialogram`, is none', async () => {
+        const alias = dialogramBuild({}, { packagesDir: PACKAGES }).alias;
+        expect(Object.keys(alias)).toContain('@dialogram/extension-core');
+        expect(Object.keys(alias)).not.toContain('@dialogram/extension');
+    });
+
+    it('leaves a @dialogram path the build marks external alone', async () => {
+        const dir = freshDir();
+        const built = await build(dir, "export * from '@dialogram/runtime-api';", { external: ['@dialogram/runtime-*'], inMemory: true });
+        expect(built.errors).toEqual([]);
+        expect(built.outputFiles![0].text).toContain('@dialogram/runtime-api');
     }, 60_000);
 
     it('lets a plugin of the build serve a @dialogram path of its own', async () => {

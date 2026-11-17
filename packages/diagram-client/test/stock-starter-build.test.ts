@@ -20,7 +20,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const PACKAGES = path.resolve(REPO_ROOT, 'packages');
 
-
 /** Bundle an entry file, or an entry module's own text (`{ contents }`). */
 async function build(entry: string | { contents: string }): Promise<{ js: string; css: string }> {
     // README §3's build, in memory.
@@ -30,7 +29,6 @@ async function build(entry: string | { contents: string }): Promise<{ js: string
             : { stdin: { contents: entry.contents, resolveDir: __dirname, loader: 'ts' as const, sourcefile: 'entry.ts' } }),
         absWorkingDir: REPO_ROOT,
         bundle: true,
-        write: false,
         outdir: 'stock-starter-build-out',
         format: 'iife',
         platform: 'browser',

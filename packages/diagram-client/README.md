@@ -139,12 +139,18 @@ standard decorators, and inversify's property `@inject` throws when the bundle
 loads ("Cannot read properties of undefined (reading 'prototype')"). It shows
 only once a decorated module is first imported by package name, which is why a
 plugin can seem to work. `dialogramBuild` adds the alias (`dialogramAlias`)
-and two plugins around yours. The first writes the bundle: it fails the build,
-naming the module, rather than write one with standard decorators, and leaves
-an unchanged file alone. The last refuses a `@dialogram/` path the alias does
-not map, which esbuild would otherwise look for in `node_modules` (another
-checkout, perhaps); a plugin of yours that serves such a path runs before it.
-`{ inMemory: true }` leaves the outputs in `outputFiles` instead. The
+and plugins around yours:
+- before them, a check that fails the build, naming the module, when one was
+  compiled with standard decorators;
+- after them, the refusal of a `@dialogram/` path the alias does not map and
+  `external` does not name, which esbuild would otherwise look for in
+  `node_modules` (another checkout, perhaps), so a plugin of yours may serve
+  such a path;
+- last, the write: only when no `onEnd` failed the build, and only the files
+  that changed, so a failed build leaves the last good bundle.
+
+The wrapper writes the bundle itself (leave `write` out); `{ inMemory: true }`
+leaves the outputs in `outputFiles` instead, checked all the same. The
 extension's own build and the SVG renderer build this way.
 
 A product with its own `node_modules` also pins GLSP, Sprotty and inversify to
