@@ -976,8 +976,8 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     }
 
     /**
-     * `@name(k=v, …)`: on one line when it fits one (88 columns, as Black
-     * and ruff write Python), one argument a line otherwise.
+     * `@name(k=v, …)`: on one line when it fits one (88 columns, the
+     * common formatters' width), one argument a line otherwise.
      */
     protected annotationTextOf(name: string, pairs: ReadonlyArray<readonly [string, string]>): string {
         if (pairs.length === 0) {

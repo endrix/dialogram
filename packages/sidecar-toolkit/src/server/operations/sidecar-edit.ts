@@ -65,7 +65,7 @@ export class SidecarSteps {
         } catch {
             restored = false;
         }
-        // A producer's reason may end without a stop (wfpy's do): one sentence.
+        // A producer's reason may end without a stop: one sentence.
         const said = (result.message ?? failed).trim();
         const reason = /[.!?]$/.test(said) ? said : `${said}.`;
         void vscode.window.showWarningMessage(restored
