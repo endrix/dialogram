@@ -63,36 +63,53 @@ const srcDirs = {
 const workspaceAlias = Object.fromEntries(Object.entries(srcDirs).map(([pkg, dir]) => [`@dialogram/${pkg}`, dir]));
 
 // Every bundle's decorators are the legacy ones the packages' tsconfigs ask for. A standard one
-// means a file was compiled without its tsconfig; say which, rather than fail at activation.
-const BUNDLES = ['out/main.cjs', 'dist/platform.cjs', 'dist/webview/diagram-client.js'];
-function standardDecorators() {
-    const found = [];
-    for (const bundle of BUNDLES) {
-        const file = path.resolve(__dirname, bundle);
-        if (!fs.existsSync(file)) {
-            continue;
-        }
-        let source = '';
-        for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
-            const origin = /^\s*\/\/ ((?:\.\.\/|src\/)\S+\.ts)$/.exec(line);
-            if (origin) {
-                source = origin[1];
-            } else if (line.includes('__decoratorStart(')) {
-                found.push(`${bundle}: ${source || '(unknown source)'}`);
-            }
+// means a module was compiled without its tsconfig, and inversify's property `@inject` throws
+// at load. Such a bundle fails the build, naming the module, and is not written: the contexts
+// build in memory (`write: false`) and this writes their outputs only when they pass, so the
+// bundle on disk (and in a watch's dev host) stays the last good one.
+const STANDARD_DECORATOR_HELPER = /\[\s*"class",\s*"method",\s*"getter",\s*"setter",\s*"accessor",\s*"field"/;
+function standardDecoratorsIn(text) {
+    // esbuild's helper for standard decorators; its kind names survive --minify.
+    if (!STANDARD_DECORATOR_HELPER.test(text)) {
+        return [];
+    }
+    // Unminified, each module is headed by a comment naming it, and each decorated class calls
+    // `__decoratorStart(`. Minified, neither is left.
+    const found = new Set();
+    let module = '';
+    for (const line of text.split('\n')) {
+        const origin = /^\s*\/\/ (\S+\.[cm]?[jt]sx?)$/.exec(line);
+        if (origin) {
+            module = origin[1];
+        } else if (line.includes('__decoratorStart(')) {
+            found.add(module || '(a module before the first module comment)');
         }
     }
-    return [...new Set(found)];
+    return found.size > 0 ? [...found] : ['a module (build without --minify to see which)'];
 }
-const decoratorGuard = {
-    name: 'legacy-decorators-only',
+const writeLegacyDecoratorBundles = {
+    name: 'write-legacy-decorator-bundles',
     setup(build) {
-        build.onEnd(() => {
-            if (watch) {
-                for (const each of standardDecorators()) {
-                    console.error(`[esbuild] standard decorators, compiled without its tsconfig: ${each}`);
-                }
+        build.onEnd(result => {
+            // A failed build has nothing to write, and says why itself.
+            if (result.errors.length > 0 || !result.outputFiles) {
+                return undefined;
             }
+            const errors = result.outputFiles
+                .filter(file => /\.[cm]?js$/.test(file.path))
+                .flatMap(file => standardDecoratorsIn(file.text).map(module => ({
+                    text: `${path.relative(__dirname, file.path)} not written: ${module} was compiled with standard `
+                        + `decorators, without its package's tsconfig (experimentalDecorators). Resolve it through `
+                        + `\`alias\`, not an onResolve plugin.`
+                })));
+            if (errors.length > 0) {
+                return { errors };
+            }
+            for (const file of result.outputFiles) {
+                fs.mkdirSync(path.dirname(file.path), { recursive: true });
+                fs.writeFileSync(file.path, file.contents);
+            }
+            return undefined;
         });
     }
 };
@@ -112,7 +129,8 @@ const hostCtx = await esbuild.context({
     sourcemap: !minify,
     minify,
     alias: workspaceAlias,
-    plugins: [...plugins, decoratorGuard]
+    write: false,
+    plugins: [writeLegacyDecoratorBundles, ...plugins]
 });
 
 // libavoid (WASM), vendored at vendor/libavoid — see its README for why it is
@@ -160,7 +178,8 @@ const platformCtx = await esbuild.context({
     sourcemap: !minify,
     minify,
     alias: workspaceAlias,
-    plugins: [...plugins, decoratorGuard]
+    write: false,
+    plugins: [writeLegacyDecoratorBundles, ...plugins]
 });
 
 // GLSP diagram client bundle (runs in consumer webviews, browser IIFE)
@@ -180,7 +199,8 @@ const glspClientCtx = await esbuild.context({
     sourcemap: false,
     minify,
     alias: workspaceAlias,
-    plugins: [...plugins, decoratorGuard],
+    write: false,
+    plugins: [writeLegacyDecoratorBundles, ...plugins],
     loader: {
         '.css': 'css',
         '.ttf': 'dataurl',
@@ -199,11 +219,12 @@ const contexts = [hostCtx, platformCtx, glspClientCtx];
 if (watch) {
     await Promise.all(contexts.map(ctx => ctx.watch()));
 } else {
-    await Promise.all(contexts.map(ctx => ctx.rebuild()));
-    contexts.forEach(ctx => ctx.dispose());
-    const standard = standardDecorators();
-    if (standard.length > 0) {
-        console.error(['[esbuild] standard decorators, compiled without its tsconfig:', ...standard].join('\n  '));
-        process.exit(1);
+    try {
+        await Promise.all(contexts.map(ctx => ctx.rebuild()));
+    } catch {
+        // esbuild has printed each error.
+        process.exitCode = 1;
+    } finally {
+        contexts.forEach(ctx => ctx.dispose());
     }
 }
