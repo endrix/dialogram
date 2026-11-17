@@ -53,11 +53,21 @@ export class AgentEditOutcomeSink {
             try {
                 return { value: await edit(), outcomes };
             } finally {
-                this.open = undefined;
+                // Only its own: a call that outlived its turn must not close the next one's.
+                if (this.open === outcomes) {
+                    this.open = undefined;
+                }
             }
         };
-        const result = this.queue.then(run, run);
+        // A call that never ends (a producer that hangs) holds the next one back only so long:
+        // after that the next runs, and the stuck call's late answers count for it.
+        const previous = this.queue;
+        const turn = Promise.race([previous, new Promise<void>(resolve => setTimeout(resolve, this.turnLimitMs).unref?.())]);
+        const result = turn.then(run, run);
         this.queue = result.catch(() => undefined);
         return result;
     }
+
+    /** How long a call waits for the one before it. */
+    turnLimitMs = 120_000;
 }

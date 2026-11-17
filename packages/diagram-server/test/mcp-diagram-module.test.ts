@@ -471,10 +471,30 @@ describe('agent edits say what the producer answered', () => {
                 ]
             });
             const text = result.content.map((part: any) => part.text).join('\n');
-            expect(result.isError).toBe(true);
+            // Some made: not an error, which would have the call repeated whole.
+            expect(result.isError).toBeFalsy();
+            expect(text).toMatch(/^Partly done: 1 of 2 edges made\. Do not repeat those/);
             expect(text).toContain('Connected 1 edge(s):\n- a1 → b1');
             expect(text).toContain('a2 → b2: Port In of b is already connected.');
             expect(marked).toBe(1);
+        } finally {
+            restore();
+        }
+    });
+
+    it('create-edges counts a transition between states, made by an op of its own', async () => {
+        const sink = scriptedSink([[{ op: 'calpy.addTransition', ok: true }]]);
+        const restore = stubSuper(CreateEdgesMcpToolHandler, () => sink.next());
+        try {
+            const handler = new AgentDispatchCreateEdgesMcpToolHandler();
+            (handler as any).agentSignal = { markPending: () => {} };
+            (handler as any).editOutcomes = sink;
+            const result = await (handler as any).createResult({
+                sessionId: 's',
+                edges: [{ elementTypeId: 'edge', sourceElementId: 's0', targetElementId: 's1' }]
+            });
+            expect(result.isError).toBeFalsy();
+            expect(result.content[0].text).toContain('Connected 1 edge(s):\n- s0 → s1');
         } finally {
             restore();
         }
@@ -517,6 +537,24 @@ describe('agent edits say what the producer answered', () => {
             expect(result.content[0].text).toContain('Deleted splitter (1 edit(s) to the source).');
         } finally {
             restore();
+        }
+    });
+
+    it('delete-elements takes a delete the model shows done, with no answer needed (held states)', async () => {
+        const proto = DeleteElementsMcpToolHandler.prototype as any;
+        const original = proto.createResult;
+        proto.createResult = async () => ({ content: [{ type: 'text', text: 'Successfully deleted 1 element(s)' }], structuredContent: { deletedCount: 1 } });
+        try {
+            const handler = new AgentDispatchDeleteElementsMcpToolHandler();
+            (handler as any).modelState = { root: GGraph.builder().id('root').build(), index: { find: () => ({}) } };
+            (handler as any).aliasService = { lookup: (id: string) => id };
+            (handler as any).agentSignal = { markPending: () => {} };
+            (handler as any).editOutcomes = scriptedSink([]);
+            const result = await (handler as any).createResult({ sessionId: 's', elementIds: ['held_s3'] });
+            expect(result.isError).toBeFalsy();
+            expect(result.content[0].text).toBe('Deleted held_s3.');
+        } finally {
+            proto.createResult = original;
         }
     });
 

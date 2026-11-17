@@ -112,9 +112,13 @@ export function createEditChatCapability(deps: EditChatCapabilityDeps): EditChat
      */
     const tools = deps.mcpServerUrl ? (deps.mcpClient ?? new GlspMcpClient(deps.mcpServerUrl)) : undefined;
 
-    /** The GLSP-MCP session of the diagram showing this file: the one in this editor, or any. */
-    const sessionFor = async (ctx: ChatCommandContext): Promise<string | undefined> => {
+    /** The GLSP-MCP session of the diagram showing this file: the one in this editor, or any; or why none. */
+    const sessionFor = async (ctx: ChatCommandContext): Promise<{ sessionId?: string; error?: string }> => {
         const listed = await tools!.callTool('session-info', {});
+        if (!listed.ok) {
+            // The tools did not answer: that, not a diagram to open, is what to say.
+            return { error: listed.text || "The diagram's tools did not answer." };
+        }
         const rows = (listed.structured?.sessions as Array<{ sessionId?: string; sourceUri?: string; readOnly?: boolean }> | undefined) ?? [];
         const shown = rows.filter(row => {
             try {
@@ -124,7 +128,7 @@ export function createEditChatCapability(deps: EditChatCapabilityDeps): EditChat
             }
         });
         const current = deps.getEditorProvider()?.getClientIdForDocumentUri?.(vscode.Uri.file(ctx.file));
-        return (shown.find(row => row.sessionId === current) ?? shown.find(row => !row.readOnly) ?? shown[0])?.sessionId;
+        return { sessionId: (shown.find(row => row.sessionId === current) ?? shown.find(row => !row.readOnly) ?? shown[0])?.sessionId };
     };
 
     /** One tool call on the diagram of the chat's file; its answer is the command's. */
@@ -142,7 +146,10 @@ export function createEditChatCapability(deps: EditChatCapabilityDeps): EditChat
                 error: `Slash commands edit through the diagram's tools, which the setting ${CORE_CHAT_SECTION}.useGlspMcp turns off. Ask in a message instead.`
             };
         }
-        const sessionId = await sessionFor(ctx);
+        const { sessionId, error } = await sessionFor(ctx);
+        if (error) {
+            return { success: false, error };
+        }
         if (!sessionId) {
             return { success: false, error: 'Open the diagram of this file: a slash command edits the diagram it shows.' };
         }

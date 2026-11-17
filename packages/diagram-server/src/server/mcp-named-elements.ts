@@ -118,6 +118,13 @@ export class AgentDispatchDeleteElementsMcpToolHandler extends DeleteElementsMcp
         const { value: stock, outcomes } = await this.editOutcomes.collect(() => super.createResult({ ...input, elementIds }));
         const answers = answersOf(outcomes);
         if (!answers) {
+            // No producer answer: either nothing reached the source, or the delete needed none
+            // (states the editor holds unwritten), which the model shows gone at once.
+            const inModel = (stock as { structuredContent?: { deletedCount?: unknown } }).structuredContent?.deletedCount;
+            if (typeof inModel === 'number' && inModel > 0) {
+                this.agentSignal?.markPending();
+                return this.success(`Deleted ${input.elementIds.join(', ')}.`);
+            }
             return this.error(`Nothing was deleted. ${textOf(stock)}`.trim());
         }
         if (answers.ok > 0) {

@@ -235,6 +235,13 @@ describe('slash contributions', () => {
         expect(result).toEqual({ success: false, error: "No node named 'nope' in the diagram." });
     });
 
+    it("says the diagram's tools did not answer, rather than asking to open a diagram that is open", async () => {
+        const { capability, tools } = makeCapability();
+        tools.callTool.mockImplementationOnce(async () => ({ ok: false, text: "The diagram's tools did not answer: ECONNREFUSED" }));
+        const result = await findCmd(capability, 'delete').handler({ _positional: ['a'] }, CTX);
+        expect(result).toEqual({ success: false, error: "The diagram's tools did not answer: ECONNREFUSED" });
+    });
+
     it('says so when no diagram shows the file', async () => {
         const { capability } = makeCapability(makeBackend(), makeProfile(), [], []);
         const result = await findCmd(capability, 'delete').handler({ _positional: ['a'] }, CTX);

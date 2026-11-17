@@ -156,6 +156,14 @@ describe('a run of the diagram', () => {
         expect((vscode.window as any).showInputBox.mock.calls[1][0].value).toBe('first');
     });
 
+    it("asks nothing of the plan for a namespace's run, which is not the diagram's workflow", async () => {
+        const planRun = vi.fn(async () => planned);
+        makeDriver(planRun);
+        await run({ sourceUri: sourceFile(), namespaceName: 'ns' });
+        expect(planRun).not.toHaveBeenCalled();
+        expect(after(spawns[0], '--input')).toEqual([]);
+    });
+
     it('runs as before when the plan cannot say', async () => {
         makeDriver(async () => undefined);
         await run({ sourceUri: sourceFile() });
@@ -202,6 +210,19 @@ describe("the chat's run", () => {
         makeDriver(async () => planned);
         const said = await fromChat({ file: fileOf(sourceFile()), inputs: { Text: 'hi', Doc: '', Txt: 'x' } });
         expect(said).toBe("Not started: shout has no input 'Txt'; its inputs are Text, Doc.");
+        expect(spawns).toEqual([]);
+    });
+
+    it('plans the file once, and starts nothing when it cannot be planned but inputs were given', async () => {
+        const planRun = vi.fn(async () => planned);
+        makeDriver(planRun);
+        await fromChat({ file: fileOf(sourceFile()), inputs: { Text: 'hi', Doc: '' }, waitSeconds: 5 });
+        expect(planRun).toHaveBeenCalledTimes(1);
+
+        spawns.length = 0;
+        makeDriver(async () => undefined);
+        const said = await fromChat({ file: fileOf(sourceFile()), inputs: { Text: 'hi' } });
+        expect(said).toContain('Not started: the workflow could not be planned');
         expect(spawns).toEqual([]);
     });
 

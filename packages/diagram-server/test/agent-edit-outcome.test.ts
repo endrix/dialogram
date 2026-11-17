@@ -38,6 +38,18 @@ describe('AgentEditOutcomeSink', () => {
         expect(b).toEqual({ value: 'second', outcomes: [{ op: 'p.deleteNode', ok: true }] });
     });
 
+    it('lets the next call run when one never ends, and keeps their answers apart', async () => {
+        const sink = new AgentEditOutcomeSink();
+        sink.turnLimitMs = 20;
+        void sink.collect(() => new Promise<never>(() => { /* a sidecar that hangs */ }));
+        const { value, outcomes } = await sink.collect(async () => {
+            sink.record({ op: 'p.connect', ok: true });
+            return 'next';
+        });
+        expect(value).toBe('next');
+        expect(outcomes).toEqual([{ op: 'p.connect', ok: true }]);
+    });
+
     it('lets the next call run after one that threw', async () => {
         const sink = new AgentEditOutcomeSink();
         await expect(sink.collect(async () => { throw new Error('boom'); })).rejects.toThrow('boom');

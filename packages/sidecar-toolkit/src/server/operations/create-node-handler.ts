@@ -498,12 +498,12 @@ export class CreateNodeOperationHandler extends OperationHandler {
                 let createdType: string | undefined;
                 if (!result.ok && headless && result.code === 'type_not_found' && (operation.args?.['createType'] === true || operation.args?.['createType'] === 'true') && !variant) {
                     const kind: WorkflowTypeKind = isWorkflow ? 'workflow' : isAgent ? 'agent' : isViewer ? 'viewer' : isExternal ? 'tool' : 'task';
+                    // As the wizard writes it: in this file only, so putting the file back
+                    // takes all of it back.
                     const made = await this.sendSidecarOpDetailed(sourceUri, isWorkflow
                         ? { op: this.sidecar.sidecarOp('createWorkflowType'), args: { name: finalTypeName } }
-                        : { op: this.sidecar.sidecarOp('createTaskType'), args: { kind, name: finalTypeName, updatePackageExports: true } });
+                        : { op: this.sidecar.sidecarOp('createTaskType'), args: { kind, name: finalTypeName } });
                     if (made.ok) {
-                        this.recordTypeListCacheHit(sourceUri, kind, finalTypeName);
-                        createdType = `${this.typeLabelForPicker(kind)} type '${finalTypeName}'`;
                         result = await this.sendSidecarOpDetailed(sourceUri, {
                             op: this.sidecar.sidecarOp('createNode'),
                             args: {
@@ -515,7 +515,10 @@ export class CreateNodeOperationHandler extends OperationHandler {
                                 ...(expressions ? { expressions } : {})
                             }
                         });
-                        if (!result.ok) {
+                        if (result.ok) {
+                            this.recordTypeListCacheHit(sourceUri, kind, finalTypeName);
+                            createdType = `${this.typeLabelForPicker(kind)} type '${finalTypeName}'`;
+                        } else {
                             // The type alone is not what was asked for: the file goes back.
                             await vscode.workspace.fs.writeFile(vscodeUri, new TextEncoder().encode((command as any)._fileBeforeWrite));
                         }

@@ -132,7 +132,9 @@ export class AgentDispatchCreateEdgesMcpToolHandler extends CreateEdgesMcpToolHa
             const { value: stock, outcomes } = await this.editOutcomes.collect(
                 () => super.createResult({ ...input, edges: [edge] } as Parameters<CreateEdgesMcpToolHandler['createResult']>[0])
             );
-            const answers = outcomes.filter(outcome => isEditOp(outcome.op, 'connect'));
+            // Every answer while the edge is made is the edge's: a connection, a transition
+            // between states, a view edge, each by its own op.
+            const answers = outcomes;
             if (answers.length === 0) {
                 // Nothing reached the producer: the diagram could not use these endpoints.
                 refused.push(`${label}: not connected. ${textOf(stock)}`.trim());
@@ -149,7 +151,15 @@ export class AgentDispatchCreateEdgesMcpToolHandler extends CreateEdgesMcpToolHa
             ...(made.length > 0 ? [`Connected ${made.length} edge(s):`, ...made.map(each => `- ${each}`)] : []),
             ...(refused.length > 0 ? [`Not connected (${refused.length}):`, ...refused.map(each => `- ${each}`)] : [])
         ];
-        return refused.length > 0 ? this.error(lines.join('\n')) : this.success(lines.join('\n'));
+        // An error only when nothing was made: a call that made some edges is not to be repeated
+        // whole, which would make those again.
+        if (made.length === 0) {
+            return this.error(lines.join('\n'));
+        }
+        if (refused.length > 0) {
+            lines.unshift(`Partly done: ${made.length} of ${made.length + refused.length} edges made. Do not repeat those; call again only for the ones not connected, once their reason is dealt with.`);
+        }
+        return this.success(lines.join('\n'));
     }
 
     /** How the agent named an edge: its name specs, or the ids it gave. */

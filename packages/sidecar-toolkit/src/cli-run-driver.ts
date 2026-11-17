@@ -60,6 +60,9 @@ type RunWorkflowArgs = {
     /** Ask for the inputs `inputs` leaves out (default true). A caller that
      *  cannot wait on a person (the chat's tool) passes false: those inputs get no token. */
     askInputs?: boolean;
+    /** The plan its caller already made (the chat's run checks the inputs against it), so the
+     *  file is not planned twice. */
+    planned?: PlannedRun;
 };
 
 /** What a run of a file needs to know before it starts, from the plan the diagram is drawn from. */
@@ -262,6 +265,8 @@ export class CliRunDriver {
     private askingForInputs = false;
     /** Told once when the run in progress ends: the chat's run waits on it. */
     private readonly runEndListeners = new Set<(end: RunEnd) => void>();
+    /** Told when a run's process has started: the chat's run times its wait from there. */
+    private readonly runStartListeners = new Set<() => void>();
 
     /** Always-on live-overlay watch: the driver owns the knowledge of the
      *  `run.wf-viewer.live.json` file (name, schema, out-dir resolution) that the
@@ -950,8 +955,14 @@ export class CliRunDriver {
             // run with no tokens that "finishes" with nothing to show.
             return 'Not started: runs here take no inputs from the chat. Start it again without `inputs`.';
         }
+        let planned: PlannedRun | undefined;
         if (this.config.planRun) {
-            const planned = await this.config.planRun(sourceUri, workflowName).catch(() => undefined);
+            planned = await this.config.planRun(sourceUri, workflowName).catch(() => undefined);
+            if (!planned && Object.keys(inputs).length > 0) {
+                // The plan names the inputs; without it the run would drop them all.
+                return 'Not started: the workflow could not be planned, so its inputs cannot be handed on. '
+                    + 'Call validate_workflow to see why, and fix that first.';
+            }
             workflowName ??= planned?.workflowName;
             const unknown = planned ? Object.keys(inputs).filter(name => !planned.inputs.some(input => input.name === name)) : [];
             if (unknown.length > 0) {
@@ -966,14 +977,28 @@ export class CliRunDriver {
                     + 'and ask the user for any you do not know.';
             }
         }
-        const ended = this.nextRunEnd(waitMs);
-        const started = this.runWorkflow({ sourceUri: sourceUri.toString(), workflowName, inputs, askInputs: false });
+        // The wait is timed from the run's start, not from the call: planning and resolving the
+        // CLI take their own time, and a run that never started is not "still going".
+        let ended: Promise<RunEnd | undefined> | undefined;
+        let onStart: (() => void) | undefined;
+        const begun = new Promise<void>(resolve => {
+            onStart = (): void => {
+                this.runStartListeners.delete(onStart!);
+                ended = this.nextRunEnd(waitMs);
+                resolve();
+            };
+            this.runStartListeners.add(onStart);
+        });
+        const started = this.runWorkflow({ sourceUri: sourceUri.toString(), workflowName, inputs, askInputs: false, planned });
         const early = await Promise.race([
-            ended.then(() => undefined),
-            started.then(result => (result && typeof result === 'object' && 'error' in result ? String((result as { error: unknown }).error) : undefined))
+            begun.then(() => undefined),
+            started.then(result => (result && typeof result === 'object' && 'error' in result
+                ? String((result as { error: unknown }).error)
+                : 'it ended before its process started.'))
         ]);
-        if (early !== undefined) {
-            return `The run did not start: ${early}`;
+        if (!ended) {
+            this.runStartListeners.delete(onStart!);
+            return `The run did not start: ${early ?? 'it ended before its process started.'}`;
         }
         return this.describeRunEnd(await ended, workflowName, waitMs);
     }
@@ -1107,7 +1132,9 @@ export class CliRunDriver {
         // token there and "finishes" with nothing to show.
         const inputArgs: string[] = [];
         const resuming = typeof args?.resumeFrom === 'string' && args.resumeFrom.trim() !== '';
-        if (!resuming && this.config.planRun) {
+        // A namespace's run is not the diagram's workflow: its inputs are not the plan's.
+        const namespaceOnly = Boolean(namespaceName) && !workflowName;
+        if (!resuming && !namespaceOnly && this.config.planRun) {
             if (this.askingForInputs) {
                 const message = 'A run is waiting for its inputs: answer or cancel it first.';
                 void vscode.window.showWarningMessage(message);
@@ -1115,7 +1142,7 @@ export class CliRunDriver {
             }
             this.askingForInputs = true;
             try {
-                const planned = await this.config.planRun(sourceUri, workflowName).catch(() => undefined);
+                const planned = args?.planned ?? await this.config.planRun(sourceUri, workflowName).catch(() => undefined);
                 if (!workflowName && !namespaceName && planned?.workflowName) {
                     workflowName = planned.workflowName;
                 }
@@ -1421,6 +1448,9 @@ export class CliRunDriver {
                             output,
                             stopRequested: false
                         };
+                        for (const listener of [...this.runStartListeners]) {
+                            listener();
+                        }
                     },
                     () => this.activeRun?.stopRequested === true,
                     (text) => {

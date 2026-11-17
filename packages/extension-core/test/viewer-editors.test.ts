@@ -157,6 +157,13 @@ describe('a command named for the kind of file', () => {
         expect(ranked).toHaveLength(all.length);
     });
 
+    it('takes a short extension as a word, not as the start of one', () => {
+        // `.c` once put every "Copy…" and "Close…" command first.
+        const copy = { id: 'x.copy', displayName: 'Copy', commands: [{ command: 'copy.view', title: 'Copy: View Clipboard' }] };
+        const all = discoverViewerEditors([markdown, copy]);
+        expect(rankForFile(all, 'main.c')).toEqual(all);
+    });
+
     it('is not moved for a file of another kind', () => {
         const all = discoverViewerEditors([markdown, htmlPreview]);
         expect(rankForFile(all, 'plot.csv')).toEqual(all);
