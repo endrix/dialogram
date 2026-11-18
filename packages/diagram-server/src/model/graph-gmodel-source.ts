@@ -523,7 +523,7 @@ export class GraphGModelSource {
             const linesWidth = lines.length === 0 ? 0 : 2 * WorkflowDiagramConstants.NODE_LINE_PADDING_PX
                 + lineColumnWidth * Math.max(...lines.map(line => textColumns(line.text)));
             const pinNameWidth = (ps: PyGraphPort[]): number => Math.max(0, ...ps.map(p =>
-                this.estimateLabelSize(p.pins?.[0] ?? p.name, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX).width));
+                this.estimateLabelSize(registerPinName(p), WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX).width));
             // Under a symbol, its caption: a register's name; any symbol's the
             // producer gives (`meta.caption`, a library mux's instance name).
             const producerCaption = typeof node.meta?.['caption'] === 'string' && node.meta['caption'] ? node.meta['caption'] as string : undefined;
@@ -932,7 +932,7 @@ export class GraphGModelSource {
                             east ? outputs.length : rowInputs.length, east ? idx : rowInputs.indexOf(port)) - boxH / 2;
                 // A register's pins are named by what they are (`d`, `en`, `q`);
                 // a gate's pins say nothing a wire does not, and are hidden.
-                const labelText = symbolKind === 'register' && port.pins?.length ? port.pins[0] : port.name;
+                const labelText = symbolKind === 'register' ? registerPinName(port) : port.name;
                 const labelSize = this.estimateLabelSize(labelText, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX);
                 // A gate's pin names are hidden and take no room in its body.
                 const labelBoxWidth = symbolKind === 'register' ? labelSize.width
@@ -2348,4 +2348,14 @@ function ownedEnd(raw: string, owners: ReadonlyMap<string, PortOwner>, nodes: re
         }
     }
     return undefined;
+}
+
+/**
+ * What a register's pin is called on its body: what it is (`d`, `en`, `q`),
+ * and, of a bus opened on it, the field it carries. A register of a bundle
+ * has a `d` per field: the bus is the `d`, and each member says which field
+ * it is, where a column of `d`s said nothing.
+ */
+function registerPinName(port: PyGraphPort): string {
+    return port.pins?.length && !port.busMember ? port.pins[0] : port.name;
 }

@@ -151,6 +151,32 @@ describe('symbol nodes, in the corners', () => {
         expect(node.size.width).toBeGreaterThan(SymbolGeometry.size('register', 2, 1).width);
     });
 
+    it('name the members of a bus opened on a register by the field each carries', () => {
+        // A register of a bundle: a `d` and a `q` per field, a bus each way.
+        const field = (name: string, direction: 'in' | 'out', pin: string, group: string) =>
+            ({ ...port('n:reg', `${group}.${name}`, direction, [pin]), name, group });
+        const doc: PyGraphDocument = { version: '1', graph: { id: 'top', edges: [], nodes: [{
+            id: 'n:reg', kind: 'reg', label: 'slot', scope: 'root',
+            ports: [field('valid', 'in', 'd', 'in'), field('bits_addr', 'in', 'd', 'in'),
+                field('valid', 'out', 'q', 'out'), field('bits_addr', 'out', 'q', 'out')],
+            meta: { symbol: 'register' }
+        }] } };
+        const label = (gnode: any, name: string) => ports(gnode).find((p: any) => p.args[WorkflowDiagramMetadata.PORT_NAME] === name)?.children[0].text;
+
+        const closed = new GraphGModelSource().transform(doc).graph.children
+            .find((c: any) => c.args?.[WorkflowDiagramMetadata.SYMBOL] === 'register');
+        expect(label(closed, 'in')).toBe('d');
+        expect(label(closed, 'out')).toBe('q');
+
+        const open = new GraphGModelSource().transform(doc, { portBuses: { isExpanded: () => true } }).graph.children
+            .find((c: any) => c.args?.[WorkflowDiagramMetadata.SYMBOL] === 'register');
+        const members = ports(open).filter((p: any) => p.cssClasses.includes(WorkflowDiagramCss.PORT_BUS_MEMBER))
+            .map((p: any) => p.children[0].text);
+        expect(members.sort()).toEqual(['bits_addr', 'bits_addr', 'valid', 'valid']);
+        // And the body is wide enough for them.
+        expect(open.size.width).toBeGreaterThan(closed.size.width);
+    });
+
     it('stay a box with badges, which live in a header', () => {
         const graph = transform([{
             id: 'n:and', kind: 'logic', label: 'a & b', scope: 'root',

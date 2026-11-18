@@ -615,6 +615,12 @@ it no longer has.
 
 ### Changed
 
+- **The members of a bus opened on a register are named by the field each
+  carries.** A register's pins are named by what they are (`d`, `en`, `q`),
+  and a register of a bundle (chisel-ide's signal view) has a `d` and a `q`
+  per field: opened, its bus was a column of `d`s that said nothing. The bus
+  itself is still the `d`; each member is named as its port is, and the body
+  is as wide as the longest.
 - **A wire outside the viewport is not drawn**, as a node outside it is
   not; one within a few pixels of it still is, since its arrowhead and its
   caption reach further than its route. Of a diagram's thousands of wires
