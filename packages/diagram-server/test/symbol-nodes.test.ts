@@ -4,7 +4,7 @@
  * mux's select below its data), a register's pins named by what they are.
  */
 import { describe, expect, it } from 'vitest';
-import { estimatePinLabelSize, estimatePortLabelBox, estimatePortLabelSize, estimateTextSize, portLabelParts, SymbolGeometry, WorkflowDiagramConstants, WorkflowDiagramCss, WorkflowDiagramMetadata } from '@dialogram/shared';
+import { estimatePinLabelBox, estimatePinLabelSize, estimatePortLabelSize, estimateTextSize, portLabelParts, portLabelX, portLabelY, SymbolGeometry, WorkflowDiagramConstants, WorkflowDiagramCss, WorkflowDiagramMetadata } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument, type PyGraphNode } from '../src/model/graph-gmodel-source';
 
 const port = (node: string, name: string, direction: 'in' | 'out', pins?: string[]) =>
@@ -29,6 +29,14 @@ const registerOf = (fields: ReturnType<typeof field>[]): PyGraphDocument => ({ v
 const registerNode = (doc: PyGraphDocument, open: boolean): any => new GraphGModelSource()
     .transform(doc, open ? { portBuses: { isExpanded: () => true } } : undefined).graph.children
     .find((c: any) => c.args?.[WorkflowDiagramMetadata.SYMBOL] === 'register');
+
+/** A mux's inputs top to bottom, a bus's members indented under it. */
+const muxInputs = (doc: PyGraphDocument, open: boolean): string[] => ports(new GraphGModelSource()
+    .transform(doc, open ? { portBuses: { isExpanded: () => true } } : undefined).graph.children
+    .find((c: any) => c.args?.[WorkflowDiagramMetadata.SYMBOL] === 'mux'))
+    .filter((p: any) => p.position.x < 0)
+    .sort((a: any, b: any) => a.position.y - b.position.y)
+    .map((p: any) => `${p.args[WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF] ? '  ' : ''}${p.args[WorkflowDiagramMetadata.PORT_NAME]}`);
 
 const label = (gnode: any, name: string): string | undefined =>
     ports(gnode).find((p: any) => p.args[WorkflowDiagramMetadata.PORT_NAME] === name)?.children[0].text;
@@ -302,6 +310,47 @@ describe('symbol nodes, in the corners', () => {
         }
     });
 
+    it('name a bus by the pin its members are on first, never by one only behind it', () => {
+        // Two fields on `d` that also feed the enable, and one on `srst`:
+        // the bus is `d`, which two members are on first. Counted by every
+        // pin, it was `en`, which none is on first, and each member said
+        // its pin before its name.
+        const member = (name: string, pins: string[]) => ({ ...port('n:reg', `in.${name}`, 'in', pins), name, group: 'in' });
+        const doc = registerOf([member('a', ['d', 'en']) as any, member('b', ['d', 'en']), member('c', ['srst', 'en']),
+            field('a', 'out', 'q', 'out'), field('b', 'out', 'q', 'out')]);
+        expect(label(registerNode(doc, false), 'in')).toBe('d');
+        const open = registerNode(doc, true);
+        const pinOf = (name: string) => ports(open).find((p: any) => p.position.x < 0 && p.children[0].text === name)
+            ?.children[0].args[WorkflowDiagramMetadata.PORT_LABEL_PIN];
+        expect(['a', 'b', 'c'].map(pinOf)).toEqual([undefined, undefined, 'srst']);
+    });
+
+    it('place a bus by the pin it is named after, not by a member at the select', () => {
+        // A mux's bus of two data members and one at its select: named `b`,
+        // it sits with the data, above the select, its members under it.
+        const member = (name: string, pin: string) => ({ ...port('n:mux', `x.${name}`, 'in', [pin]), name, group: 'x' });
+        const doc: PyGraphDocument = { version: '1', graph: { id: 'top', edges: [], nodes: [{
+            id: 'n:mux', kind: 'logic', label: 'm', scope: 'root', meta: { symbol: 'mux' },
+            ports: [port('n:mux', 'a', 'in', ['a']), port('n:mux', 'sel', 'in', ['s']),
+                member('p', 'b'), member('q', 'b'), member('r', 's'), port('n:mux', 'y', 'out', ['y'])]
+        }] } };
+        expect(muxInputs(doc, true)).toEqual(['a', 'x', '  p', '  q', '  r', 'sel']);
+        expect(muxInputs(doc, false)).toEqual(['a', 'x', 'sel']);
+    });
+
+    it('place a mux bus whose members share a pin where main did', () => {
+        // Its members all on `b`: the bus is ranked by `b`, as main ranked it
+        // by its pins, and its members follow it in their order.
+        const member = (name: string) => ({ ...port('n:mux', `x.${name}`, 'in', ['b']), name, group: 'x' });
+        const doc: PyGraphDocument = { version: '1', graph: { id: 'top', edges: [], nodes: [{
+            id: 'n:mux', kind: 'logic', label: 'm', scope: 'root', meta: { symbol: 'mux' },
+            ports: [member('p'), member('q'), port('n:mux', 'a', 'in', ['a']), port('n:mux', 'sel', 'in', ['s']),
+                port('n:mux', 'y', 'out', ['y'])]
+        }] } };
+        expect(muxInputs(doc, true)).toEqual(['a', 'x', '  p', '  q', 'sel']);
+        expect(muxInputs(doc, false)).toEqual(['a', 'x', 'sel']);
+    });
+
     it('size a pin said before a name as it is drawn: the pin, the gap, the name', () => {
         const parts = portLabelParts('valid', 'en');
         expect(parts.map(part => part.text)).toEqual(['en', 'valid']);
@@ -359,10 +408,36 @@ describe('port names before the client measures them', () => {
 
     it('are estimated as the server sized them when they are a symbol pin, with their slot', () => {
         const member = { cssClasses: [WorkflowDiagramCss.SYMBOL_PIN], args: { [WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF]: 'in' } };
-        const box = estimatePortLabelBox(member, { text: 'valid', args: { [WorkflowDiagramMetadata.PORT_LABEL_PIN]: 'en' } });
+        const box = estimatePinLabelBox(member, { text: 'valid', args: { [WorkflowDiagramMetadata.PORT_LABEL_PIN]: 'en' } });
         expect(box).toEqual({ width: textWidth('valid', 'en') + WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX,
             height: estimatePinLabelSize('valid').height, slot: WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX });
-        expect(estimatePortLabelBox({ args: {} }, { text: 'abc' })).toEqual({ ...estimatePortLabelSize('abc'), slot: 0 });
+    });
+
+    it('are placed before they are measured as they always were when they are no symbol pin, an open bus’s too', async () => {
+        // A box with a bus each way, open: placed with no size, as on a
+        // reopen, each name lands where main put it, by `estimatePortLabelSize`
+        // alone. The client draws the slot inside that box until it measures.
+        const { placePortLabel } = await import('../src/server/port-labels');
+        const member = (name: string, direction: 'in' | 'out') =>
+            ({ ...port('n:box', `${direction}.${name}`, direction), name, group: direction });
+        const doc: PyGraphDocument = { version: '1', graph: { id: 'top', edges: [], nodes: [{
+            id: 'n:box', kind: 'logic', label: 'box', scope: 'root',
+            ports: [member('a', 'in'), member('b', 'in'), member('sum', 'out'), member('carry', 'out')]
+        }] } };
+        const box = new GraphGModelSource().transform(doc, { portBuses: { isExpanded: () => true } }).graph.children
+            .find((c: any) => c.id === 'box');
+        const placed = ports(box);
+        expect(placed.length).toBe(6);
+        for (const gport of placed) {
+            const label = { ...gport.children[0], size: undefined };
+            placePortLabel(label, gport, 3);
+            const east = gport.args[WorkflowDiagramMetadata.PORT_DIRECTION] === 'output';
+            const main = estimatePortLabelSize(label.text);
+            expect(label.position, label.text).toEqual({
+                x: portLabelX(east, gport.size.width, main.width, 3),
+                y: portLabelY(gport.size.height, main.height)
+            });
+        }
     });
 
     it('are placed before they are measured where the server sized them', async () => {

@@ -138,9 +138,10 @@ export function bundlePorts(
             // (a channel's payload), and the two must not share an id.
             const busId = `bus:${node.id}:${busKey}`;
             // On a node drawn as a symbol, the bus sits where its members' pins
-            // do, and is named by the pin most of them are (a register's `d`,
-            // beside the one member that is its `en`).
-            const memberPins = pinsByCount(members);
+            // do, and is named by the pin most of them are first (a register's
+            // `d`, beside the one member that is its `en`).
+            const symbol = SymbolGeometry.isKind(node.meta?.['symbol']);
+            const memberPins = symbol ? pinsByCount(members) : [...new Set(members.flatMap(m => m.pins ?? []))];
             ports.push({
                 id: busId,
                 name: group,
@@ -153,7 +154,7 @@ export function bundlePorts(
             for (const member of members) {
                 memberOf.set(member.id, { busId, expanded });
                 if (expanded) {
-                    ports.push({ ...member, busMember: group, ...(memberPins.length ? { busPins: memberPins } : {}) });
+                    ports.push({ ...member, busMember: group, ...(symbol && memberPins.length ? { busPins: memberPins } : {}) });
                 }
             }
         }
@@ -170,13 +171,15 @@ export function bundlePorts(
 }
 
 /**
- * The pins of `members`, the one most of them are on first. A tie goes to the
- * pin a symbol lists first (`d` before `en`), so the order of a bundle's
- * fields does not move its bus; pins no symbol lists keep the order met.
+ * The pins `members` are on first, the one most of them are on first. A
+ * member is named by its first pin (`registerPinLabel`), so a pin that is no
+ * member's first never names the bus. A tie goes to the pin a symbol lists
+ * first (`d` before `en`), so the order of a bundle's fields does not move
+ * its bus; pins no symbol lists keep the order met.
  */
 function pinsByCount(members: readonly PyGraphPort[]): string[] {
     const counts = new Map<string, number>();
-    for (const pin of members.flatMap(m => m.pins ?? [])) {
+    for (const pin of members.flatMap(m => m.pins?.slice(0, 1) ?? [])) {
         counts.set(pin, (counts.get(pin) ?? 0) + 1);
     }
     return [...counts.keys()].sort((a, b) =>

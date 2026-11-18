@@ -446,9 +446,11 @@ export class GraphGModelSource {
                 ? node.meta['symbol'] as SymbolKind
                 : undefined;
             // An open bus's members are drawn under it, inside its rail: ranked
-            // with their bus (by its pins), then by their own pins. A member
-            // ranked by its own pin alone left its bus (an `en` member above
-            // the `d` bus it is in).
+            // with their bus, then by their own pins. A member ranked by its
+            // own pin alone left its bus (an `en` member above the `d` bus it
+            // is in). A bus is ranked by the pin it is named after, the one
+            // most of its members are on first: by all its pins, one member
+            // at a mux's select put it there (`pinRank` takes `s` first).
             const bySymbolPin = (ps: PyGraphPort[]): PyGraphPort[] => {
                 if (!symbolKind) {
                     return ps;
@@ -464,7 +466,7 @@ export class GraphGModelSource {
                     const at = p.busMember !== undefined ? busAt.get(p.busMember) ?? k : k;
                     return {
                         p, k, at,
-                        rank: SymbolGeometry.pinRank(ps[at].pins),
+                        rank: SymbolGeometry.pinRank(ps[at].bus ? ps[at].pins?.slice(0, 1) : ps[at].pins),
                         own: at === k ? -1 : SymbolGeometry.pinRank(p.pins)
                     };
                 }).sort((a, b) => (a.rank - b.rank) || (a.at - b.at) || (a.own - b.own) || (a.k - b.k)).map(e => e.p);
@@ -2375,7 +2377,7 @@ function registerPinLabel(port: PyGraphPort): { text: string; pin?: string } {
     if (!pin) {
         return { text: port.name };
     }
-    if (!port.busMember) {
+    if (port.busMember === undefined) {
         return { text: pin };
     }
     return pin === port.busPins?.[0] ? { text: port.name } : { text: port.name, pin };

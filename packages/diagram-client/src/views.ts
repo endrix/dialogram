@@ -50,7 +50,7 @@ import { nodeLinesHeight, nodeLinesOf, renderNodeLines } from './node-lines';
 import { listRowOf, renderListRow } from './list-row-view';
 import { GROUP_INITIAL_MARK_ROOM_PX, groupInitialMark, isGroupInitial } from './group-initial-mark';
 import { isDrawnBackwards } from './feedback-direction';
-import { WorkflowDiagramConstants, estimatePortLabelBox, portLabelParts } from '@dialogram/shared';
+import { WorkflowDiagramConstants, estimatePinLabelBox, estimatePortLabelSize, portLabelParts } from '@dialogram/shared';
 
 /** Walk to the model root; the drag-active window is tracked per root. */
 function rootOfEdge(element: any): any {
@@ -2413,6 +2413,8 @@ export class WorkflowLabelView implements IView {
             // For output labels with text-anchor:end, the text "ends" at x.
             // ELK positions the label box so that its RIGHT edge is at the port.
             // So we need to set x = labelWidth so text ends at the right edge of the box.
+            // The same estimate the server sized the label with, until the client has measured it.
+            const estimateLabelSizeFallback = estimatePortLabelSize;
 
             const labelWRaw = label.size?.width ?? label.bounds?.width ?? 0;
             const labelHRaw = label.size?.height ?? label.bounds?.height ?? 0;
@@ -2421,16 +2423,21 @@ export class WorkflowLabelView implements IView {
             // A bus keeps an inset beside the port for its larger dot, and a
             // member of an open one a slot for its rail, so its name sits under
             // the bundle's, one step in. The server sized the box for it.
+            const busGroup = parentPort?.args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP] as string | undefined;
             const busMemberOf = parentPort?.args?.[WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF] as string | undefined;
+            const slot = busGroup
+                ? WorkflowDiagramConstants.PORT_BUS_LABEL_INSET_PX
+                : busMemberOf ? WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX : 0;
+            const estimate = estimateLabelSizeFallback(label.text || '');
             // A symbol's pin said before the name, apart from it: a register's
-            // `en` among the `d`s of its bus. The server sized the box for both.
+            // `en` among the `d`s of its bus. Until the client has measured
+            // it, its box is the one the server sized and placed
+            // (`estimatePinLabelBox`), the pin and the slot with the name.
             const pin = (label as any).args?.[WorkflowDiagramMetadata.PORT_LABEL_PIN] as string | undefined;
-            // Until the client has measured it, as the server places it
-            // (`port-labels.ts`): the box, slot and all.
-            const estimate = estimatePortLabelBox(parentPort, label as any);
-            const slot = estimate.slot;
-            const labelW = labelWRaw > 0 ? labelWRaw : estimate.width;
-            const labelH = labelHRaw > 0 ? labelHRaw : estimate.height;
+            const symbolPin = Array.isArray(parentPort?.cssClasses) && parentPort.cssClasses.includes(WorkflowDiagramCss.SYMBOL_PIN);
+            const pinBox = symbolPin ? estimatePinLabelBox(parentPort, label as any) : undefined;
+            const labelW = labelWRaw > 0 ? labelWRaw : pinBox ? pinBox.width : estimate.width + slot;
+            const labelH = labelHRaw > 0 ? labelHRaw : (pinBox ?? estimate).height;
             const textX = isOutput ? labelW - slot : slot;
             const textY = Math.round(labelH / 2);
             // The slot is drawn, not only left: the client measures a label by

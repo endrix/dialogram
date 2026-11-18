@@ -4,7 +4,7 @@
  * placement on every submit, and the client's view.
  */
 import { WorkflowDiagramConstants } from './diagram-constants';
-import { WorkflowDiagramCss, WorkflowDiagramMetadata } from './diagram-types';
+import { WorkflowDiagramMetadata } from './diagram-types';
 
 /** Whether a character takes two columns of a fixed-width font: East Asian wide and fullwidth forms, emoji. */
 function isWide(codePoint: number): boolean {
@@ -106,21 +106,18 @@ export function portLabelSlot(port: { bus: boolean; busMember: boolean }): numbe
 }
 
 /**
- * A port label's box before the client has measured it, the same on the
- * server, which places it (`port-labels.ts`), and in the client, which draws
- * it: a symbol's pin name as the server sized it, the pin said before it; any
- * other port's name by `estimatePortLabelSize`; and in front of either, the
- * port's slot (`portLabelSlot`). Read from the model, as both sides have it.
+ * A symbol pin's name's box before the client has measured it, the same on
+ * the server, which places it (`port-labels.ts`), and in the client, which
+ * draws it: as the server sized it, the pin said before it, and in front of
+ * it the port's slot (`portLabelSlot`). Read from the model, as both sides
+ * have it. Any other port's label is estimated by `estimatePortLabelSize`, as
+ * it always was.
  */
-export function estimatePortLabelBox(
-    port: { cssClasses?: readonly string[]; args?: Record<string, unknown> } | undefined,
+export function estimatePinLabelBox(
+    port: { args?: Record<string, unknown> } | undefined,
     label: { text?: string; args?: Record<string, unknown> }
 ): { width: number; height: number; slot: number } {
-    const text = label.text ?? '';
-    const symbolPin = Array.isArray(port?.cssClasses) && port!.cssClasses!.includes(WorkflowDiagramCss.SYMBOL_PIN);
-    const size = symbolPin
-        ? estimatePinLabelSize(text, label.args?.[WorkflowDiagramMetadata.PORT_LABEL_PIN] as string | undefined)
-        : estimatePortLabelSize(text);
+    const size = estimatePinLabelSize(label.text ?? '', label.args?.[WorkflowDiagramMetadata.PORT_LABEL_PIN] as string | undefined);
     const slot = portLabelSlot({
         bus: port?.args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP] !== undefined,
         busMember: port?.args?.[WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF] !== undefined
