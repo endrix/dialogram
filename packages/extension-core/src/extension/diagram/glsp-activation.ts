@@ -732,6 +732,14 @@ export async function activateGlspIntegration(
                                     }
                                 });
                                 glspVscodeConnector.dispatchAction(request, clientId);
+                                // On record as what that editor shows now: the
+                                // host asked for it, and the diagram did not.
+                                provider.recordHostView(targetUri, {
+                                    sourceUri,
+                                    ...(networkName && networkName !== '' ? { networkName } : {}),
+                                    ...(typeof navTrail === 'string' ? { navTrail } : {}),
+                                    ...(requestedRunId ? { runId: requestedRunId } : {})
+                                });
                                 rememberRecentNavigation(state, sourceRaw, {
                                     ...(networkName && networkName !== '' ? { networkName } : {}),
                                     ...(typeof navTrail === 'string' ? { navTrail } : {}),

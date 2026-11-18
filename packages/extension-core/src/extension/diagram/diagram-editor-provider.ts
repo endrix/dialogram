@@ -704,19 +704,45 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     }
 
     /**
-     * What a refresh the HOST asks for is a refresh of: which file, under
-     * which name, by which trail. The refresh command's half of what
-     * {@link dispatchModelRefresh} does for a save.
+     * The view the HOST put in an editor, recorded as what that editor shows.
      *
-     * A REFRESH is of the view the editor shows. Navigating in place that can
-     * be a workflow in another file than the editor's own document, and asked
-     * of the document under that view's name and trail it is a view the
-     * document does not have: the producer refuses it, or draws it as a
-     * different view, kept under a different layout. A caller may name the
-     * view it means (the diagram's own controls do); a name that is not the
-     * one on record is asked of the document as it always was, since the
-     * record is only of what the DIAGRAM asked for, and a view the host put
-     * there is not in it.
+     * The record is otherwise written when the diagram asks for a model. A
+     * view the host sends an editor that already exists (the definition of a
+     * workflow opened from another editor, with the crumbs of the way there)
+     * is asked for by the host, and was not on record: the next save
+     * refreshed the view before it. What is absent here is absent from the
+     * view: a view asked for by no name has none.
+     */
+    recordHostView(
+        documentUri: vscode.Uri | string,
+        view: { sourceUri: string; networkName?: string; navTrail?: string; runId?: string }
+    ): void {
+        this.setRefreshContext(documentUri, {
+            shownSourceUri: view.sourceUri,
+            networkName: view.networkName?.trim() || undefined,
+            navTrail: view.navTrail?.trim() || undefined,
+            runId: view.runId?.trim() || undefined
+        });
+    }
+
+    /**
+     * What a refresh the HOST asks for is a refresh of: which file, under
+     * which name, by which trail, of which run. The refresh command's half of
+     * what {@link dispatchModelRefresh} does for a save.
+     *
+     * A REFRESH never changes which view an editor shows: it is of the view
+     * on record, in the file that view is of. Navigating in place that can be
+     * a workflow in another file than the editor's own document, and asked of
+     * the document under that view's name and trail it is a view the document
+     * does not have: the producer refuses it, or draws it as a different
+     * view, kept under a different layout.
+     *
+     * A caller may say which view it means (`fallbackName`; the diagram's own
+     * controls name the view they are on). That is taken only where there is
+     * no name on record: an editor that has shown nothing but its default, or
+     * a view put there in a way that left no record. Where there is a name on
+     * record, the record is what the editor shows, and a name that differs is
+     * about another editor, or about a view the reader has already left.
      *
      * An OPEN (`open`, the open commands on an editor that exists already) is
      * of a graph of the editor's document, as its root, whatever is on
@@ -729,32 +755,28 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      */
     hostRefreshTarget(
         documentUri: vscode.Uri | string,
-        request: { workflowName?: string; open?: boolean } = {}
-    ): { sourceUri: string; networkName?: string; navTrail?: string } {
+        request: { open?: string; fallbackName?: string } = {}
+    ): { sourceUri: string; networkName?: string; navTrail?: string; runId?: string } {
         const own = typeof documentUri === 'string' ? documentUri : documentUri.toString();
         const context = this.getRefreshContext(documentUri);
-        const named = typeof request.workflowName === 'string' ? request.workflowName.trim() : '';
         const shown = typeof context?.shownSourceUri === 'string' && context.shownSourceUri.trim() !== ''
             ? context.shownSourceUri
             : undefined;
-        if (request.open && named !== '') {
-            const navTrail = JSON.stringify([{ sourceUri: own, workflowName: named }]);
-            const sameGraph = context?.networkName === named
+        const opened = typeof request.open === 'string' ? request.open.trim() : '';
+        if (opened !== '') {
+            const navTrail = JSON.stringify([{ sourceUri: own, workflowName: opened }]);
+            const sameGraph = context?.networkName === opened
                 && this.canonicalizeUriString(shown ?? own) === this.canonicalizeUriString(own);
-            this.setRefreshContext(documentUri, {
-                shownSourceUri: own,
-                networkName: named,
-                navTrail,
-                ...(sameGraph ? {} : { runId: undefined })
-            });
-            return { sourceUri: own, networkName: named, navTrail };
+            const runId = sameGraph ? context?.runId : undefined;
+            this.setRefreshContext(documentUri, { shownSourceUri: own, networkName: opened, navTrail, runId });
+            return { sourceUri: own, networkName: opened, navTrail, ...(runId ? { runId } : {}) };
         }
-        const onScreen = named === '' || named === context?.networkName;
-        const networkName = named !== '' ? named : context?.networkName;
+        const networkName = context?.networkName ?? (request.fallbackName?.trim() || undefined);
         return {
-            sourceUri: onScreen && shown ? shown : own,
+            sourceUri: shown ?? own,
             ...(networkName ? { networkName } : {}),
-            ...(context?.navTrail ? { navTrail: context.navTrail } : {})
+            ...(context?.navTrail ? { navTrail: context.navTrail } : {}),
+            ...(context?.runId ? { runId: context.runId } : {})
         };
     }
 
@@ -766,6 +788,12 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     refreshFromHost(
         uri: vscode.Uri | string,
         options: {
+            /**
+             * For a refresh, the view the caller means: taken where the one
+             * editor asked has no name on record, and not at all when several
+             * are asked, since it is the view of one of them at most. For an
+             * open, the graph to open.
+             */
             workflowName?: string;
             /** The graph named is to be opened, as the root of the editor opened on `uri`. */
             open?: boolean;
@@ -776,9 +804,11 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             queueTraceVisible?: boolean;
         } = {}
     ): number {
+        const named = typeof options.workflowName === 'string' ? options.workflowName.trim() : '';
+        const opening = options.open === true && named !== '';
         // An open is of the editor opened on the file. A refresh is of every view of it.
         const own = this.canonicalizeUriString(uri);
-        const editors = options.open ? (this.uriToClientId.has(own) ? [own] : []) : this.editorsOf(uri);
+        const editors = opening ? (this.uriToClientId.has(own) ? [own] : []) : this.editorsOf(uri);
         let asked = 0;
         for (const editorUri of editors) {
             const clientId = this.uriToClientId.get(editorUri);
@@ -786,9 +816,8 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
                 continue;
             }
             const target = this.hostRefreshTarget(
-                // The caller's own spelling of the document where it is the document: it is what a crumb is made of.
-                editorUri === own && typeof uri !== 'string' ? uri : editorUri,
-                { workflowName: options.workflowName, open: options.open }
+                editorUri,
+                opening ? { open: named } : { fallbackName: editors.length === 1 ? named : undefined }
             );
             const action = RequestModelAction.create({
                 requestId: 'refresh-queue-visibility-' + Date.now(),
@@ -804,7 +833,10 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
                     // reload, which re-acquires and re-runs bounds as required for correctness.
                     ...(options.agentContextOnly ? { agentContextOnly: true } : {}),
                     ...(target.networkName ? { networkName: target.networkName } : {}),
-                    ...(target.navTrail ? { 'wf:navTrail': target.navTrail } : {})
+                    ...(target.navTrail ? { 'wf:navTrail': target.navTrail } : {}),
+                    // The run on screen, as a save sends it: without it the
+                    // server shows the latest, and the next save the one before.
+                    ...(target.runId ? { [RUN_ID_ARG]: target.runId } : {})
                 }
             });
             if (options.reveal) {

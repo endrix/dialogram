@@ -914,13 +914,21 @@ it no longer has.
   nested view's name and trail: a view that document does not have, refused by
   a producer that reads one file at a time and drawn as a different view, under
   a different layout and one crumb deeper, by one that does not. It asks the
-  file the view is of, as a save already did.
+  file the view is of, as a save already did, and for the run that is on
+  screen, which no host refresh sent: the overlay went to the latest run and
+  back to the selected one at the next save.
+- **A refresh never changes which view an editor shows.** A caller may name
+  the view it means (the diagram's own controls do). That name was sent as the
+  view to show: it undid a navigation that was still on its way, and could move
+  an editor to a view another editor was on. It is taken only where the editor
+  has no name on record.
 - **A refresh named by a file reaches the editors that show it.** A view names
   itself by the file it is of, and the command looked that file up as an
   editor's document only: the refresh of a nested view of another file (the
   diagram's own queue-trace toggle, a product's refresh of the file it has just
   worked on) reached nobody, or the editor opened on that file and not the one
-  that asked. Every editor opened on the file or showing it in place is asked.
+  that asked. Every editor opened on the file or showing it in place is asked,
+  each for the view it has.
 - **A graph opened by name in a diagram that is already open is its root.**
   The open command on an open editor (the way a product moves between the
   graphs of one file) sent the name with the trail of the view that was on
@@ -929,6 +937,11 @@ it no longer has.
   carries a trail of the view itself, which starts the crumbs over, and the
   editor remembers it as what it shows; a run selected in another graph is not
   carried over (`WorkflowEditorProvider.refreshFromHost`, `hostRefreshTarget`).
+- **A view the host puts in an editor that exists already is on record.** A
+  definition opened from another editor, into the editor its file already had,
+  is asked for by the host, and the record of what an editor shows was written
+  only when the diagram asked: the next save refreshed the view before it
+  (`recordHostView`).
 
 - **A source too large for a text document opens as a diagram.** VS Code does
   not hand a file over 50 MB to extensions as text: `activeTextEditor` is
