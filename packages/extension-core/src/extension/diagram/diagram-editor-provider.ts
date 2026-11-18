@@ -10,7 +10,7 @@ import { RequestModelAction } from '@eclipse-glsp/protocol';
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import { statSync } from 'node:fs';
-import { WORKFLOW_DIAGRAM_TYPE } from '@dialogram/shared';
+import { RevealNodeAction, WORKFLOW_DIAGRAM_TYPE } from '@dialogram/shared';
 import { type DiagramClientBehavior, type DiagramProfile } from '../../api';
 import { listAcpConnectors, workspaceDirFor } from '../chat/acp-connectors';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
@@ -18,6 +18,19 @@ import { matchesSourceExtension, sourceWatchGlobs } from './source-extensions';
 import { inPlace, openColumnFor } from './open-in-place';
 
 const RUN_ID_ARG = 'wf:runId';
+
+/** How many crumbs a trail has; none for no trail, or one that cannot be read. */
+function crumbCount(navTrail: string | undefined): number {
+    if (typeof navTrail !== 'string' || navTrail.trim() === '') {
+        return 0;
+    }
+    try {
+        const parsed: unknown = JSON.parse(navTrail);
+        return Array.isArray(parsed) ? parsed.length : 0;
+    } catch {
+        return 0;
+    }
+}
 
 /**
  * Source of live-overlay signatures, injected by the host (glsp-activation wires
@@ -681,6 +694,185 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         }
 
         this.uriToRefreshContext.set(key, next);
+    }
+
+    /**
+     * The editors a refresh named by a file is a refresh of: the one opened on
+     * that file, and every one showing it in place. A view names itself by the
+     * file it is of, which navigating in place is not always its editor's
+     * document; looked up as a document only, a refresh of a nested view of
+     * another file reached nobody, or the editor of that file and not the one
+     * that asked.
+     */
+    editorsOf(uri: vscode.Uri | string): string[] {
+        const wanted = this.canonicalizeUriString(uri);
+        const editors: string[] = [];
+        for (const editorUri of this.uriToClientId.keys()) {
+            const shown = this.uriToRefreshContext.get(editorUri)?.shownSourceUri;
+            if (editorUri === wanted || (typeof shown === 'string' && this.canonicalizeUriString(shown) === wanted)) {
+                editors.push(editorUri);
+            }
+        }
+        return editors;
+    }
+
+    /**
+     * The view the HOST put in an editor, recorded as what that editor shows.
+     *
+     * The record is otherwise written when the diagram asks for a model. A
+     * view the host sends an editor that already exists (the definition of a
+     * workflow opened from another editor, with the crumbs of the way there)
+     * is asked for by the host, and was not on record: the next save
+     * refreshed the view before it. What is absent here is absent from the
+     * view: a view asked for by no name has none.
+     */
+    recordHostView(
+        documentUri: vscode.Uri | string,
+        view: { sourceUri: string; networkName?: string; navTrail?: string; runId?: string }
+    ): void {
+        this.setRefreshContext(documentUri, {
+            shownSourceUri: view.sourceUri,
+            networkName: view.networkName?.trim() || undefined,
+            navTrail: view.navTrail?.trim() || undefined,
+            runId: view.runId?.trim() || undefined
+        });
+    }
+
+    /**
+     * What a refresh the HOST asks for is a refresh of: which file, under
+     * which name, by which trail. The refresh command's half of what
+     * {@link dispatchModelRefresh} does for a save.
+     *
+     * Not of which run: a host refresh names none, as it never did, and the
+     * server shows the latest. The run on record is the one the DIAGRAM last
+     * asked for, and a run started since is shown without the record
+     * hearing of it: sent along, the record would take the overlay back to
+     * the run before.
+     *
+     * A REFRESH never changes which view an editor shows: it is of the view
+     * on record, in the file that view is of. Navigating in place that can be
+     * a workflow in another file than the editor's own document, and asked of
+     * the document under that view's name and trail it is a view the document
+     * does not have: the producer refuses it, or draws it as a different
+     * view, kept under a different layout.
+     *
+     * A caller may say which view it means (`fallbackName`; the diagram's own
+     * controls name the view they are on). That is taken only where there is
+     * no name on record: an editor that has shown nothing but its default, or
+     * a view put there in a way that left no record. Where there is a name on
+     * record, the record is what the editor shows, and a name that differs is
+     * about another editor, or about a view the reader has already left.
+     *
+     * An OPEN (`open`, the open commands on an editor that exists already) is
+     * of a graph of the editor's document, as its root, whatever is on
+     * screen: the trail that came before led to the view that was there, and
+     * sent along it would file the new view under crumbs it was not reached
+     * by. The trail is the view itself, which is also what tells the diagram
+     * to start its crumbs over. It is remembered as what the editor shows, so
+     * that the next save refreshes it and not the view before; the run on
+     * record stays there only when the graph opened is the root that was
+     * already shown, since a run is a run of a graph.
+     */
+    hostRefreshTarget(
+        documentUri: vscode.Uri | string,
+        request: { open?: string; fallbackName?: string } = {}
+    ): { sourceUri: string; networkName?: string; navTrail?: string } {
+        const own = typeof documentUri === 'string' ? documentUri : documentUri.toString();
+        const context = this.getRefreshContext(documentUri);
+        const shown = typeof context?.shownSourceUri === 'string' && context.shownSourceUri.trim() !== ''
+            ? context.shownSourceUri
+            : undefined;
+        const opened = typeof request.open === 'string' ? request.open.trim() : '';
+        if (opened !== '') {
+            const navTrail = JSON.stringify([{ sourceUri: own, workflowName: opened }]);
+            // The root that is on record already: the name, in the editor's own
+            // file, and not as an instance further down (a view of that name
+            // three crumbs deep is another graph's part, with that graph's run).
+            const sameRoot = context?.networkName === opened
+                && this.canonicalizeUriString(shown ?? own) === this.canonicalizeUriString(own)
+                && crumbCount(context?.navTrail) <= 1;
+            this.setRefreshContext(documentUri, {
+                shownSourceUri: own,
+                networkName: opened,
+                navTrail,
+                ...(sameRoot ? {} : { runId: undefined })
+            });
+            return { sourceUri: own, networkName: opened, navTrail };
+        }
+        const networkName = context?.networkName ?? (request.fallbackName?.trim() || undefined);
+        return {
+            sourceUri: shown ?? own,
+            ...(networkName ? { networkName } : {}),
+            ...(context?.navTrail ? { navTrail: context.navTrail } : {})
+        };
+    }
+
+    /**
+     * Ask again for the model of every editor a refresh of `uri` is a refresh
+     * of, or open a graph by name in the editor opened on it. Returns how
+     * many editors were asked.
+     */
+    refreshFromHost(
+        uri: vscode.Uri | string,
+        options: {
+            /**
+             * For a refresh, the view the caller means: taken where the one
+             * editor asked has no name on record, and not at all when several
+             * are asked, since it is the view of one of them at most. For an
+             * open, the graph to open.
+             */
+            workflowName?: string;
+            /** The graph named is to be opened, as the root of the editor opened on `uri`. */
+            open?: boolean;
+            /** Only what lies over the graph changed: see the fast path in the model handler. */
+            agentContextOnly?: boolean;
+            /** The label of a node to select and centre when the model that has it arrives. */
+            reveal?: string;
+            queueTraceVisible?: boolean;
+        } = {}
+    ): number {
+        const named = typeof options.workflowName === 'string' ? options.workflowName.trim() : '';
+        const opening = options.open === true && named !== '';
+        // An open is of the editor opened on the file. A refresh is of every view of it.
+        const own = this.canonicalizeUriString(uri);
+        const editors = opening ? (this.uriToClientId.has(own) ? [own] : []) : this.editorsOf(uri);
+        let asked = 0;
+        for (const editorUri of editors) {
+            const clientId = this.uriToClientId.get(editorUri);
+            if (!clientId) {
+                continue;
+            }
+            const target = this.hostRefreshTarget(
+                editorUri,
+                opening ? { open: named } : { fallbackName: editors.length === 1 ? named : undefined }
+            );
+            const action = RequestModelAction.create({
+                requestId: 'refresh-queue-visibility-' + Date.now(),
+                options: {
+                    sourceUri: target.sourceUri,
+                    diagramType: this.diagramType,
+                    ...(typeof options.queueTraceVisible === 'boolean' ? { queueTraceVisible: options.queueTraceVisible } : {}),
+                    // Queue-trace visibility toggles only re-apply the queue-trace overlay (edge glow /
+                    // queue-depth args) onto the unchanged graph — no node/edge/position change — so this
+                    // redelivery can rebuild off the warm plan cache and skip the RequestBounds round-trip
+                    // via the agent-context-only fast path. Callers that may change the source (rename) or
+                    // want a fresh re-plan (the generic refresh command) leave this unset and pay the full
+                    // reload, which re-acquires and re-runs bounds as required for correctness.
+                    ...(options.agentContextOnly ? { agentContextOnly: true } : {}),
+                    ...(target.networkName ? { networkName: target.networkName } : {}),
+                    ...(target.navTrail ? { 'wf:navTrail': target.navTrail } : {})
+                }
+            });
+            if (options.reveal) {
+                // Named before the model is asked for: the diagram selects and
+                // centres the node when the model that has it comes in. What a
+                // product's command added is not always where the view is.
+                this.glspVscodeConnector.dispatchAction(RevealNodeAction.create(options.reveal), clientId);
+            }
+            this.glspVscodeConnector.dispatchAction(action, clientId);
+            asked += 1;
+        }
+        return asked;
     }
 
     getRefreshContext(documentUri: vscode.Uri | string): { networkName?: string; navTrail?: string; queueTraceVisible?: boolean; runId?: string; shownSourceUri?: string } | undefined {
