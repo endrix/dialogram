@@ -357,6 +357,11 @@ export namespace WorkflowDiagramMetadata {
     export const PORT_BUS_MEMBERS = 'cal:portBusMembers';
     /** On a port: the bundle whose open header it is drawn under. */
     export const PORT_BUS_MEMBER_OF = 'cal:portBusMemberOf';
+    /**
+     * On a port's label: the symbol pin said before the name, drawn apart
+     * from it (a register's `en` among the `d`s of the bus it is in).
+     */
+    export const PORT_LABEL_PIN = 'cal:portLabelPin';
     /** On a bus edge: how many connections it stands for. */
     export const EDGE_BUS_MEMBERS = 'cal:edgeBusMembers';
     /**

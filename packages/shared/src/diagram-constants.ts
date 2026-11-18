@@ -41,6 +41,8 @@ export const WorkflowDiagramConstants = {
     PORT_BUS_DOT_RADIUS_PX: 5,
     PORT_BUS_LABEL_INSET_PX: 2,
     PORT_BUS_RAIL_SLOT_PX: 12,
+    /** Between a symbol pin said before a port's name and the name (`portLabelParts`). */
+    PORT_LABEL_PIN_GAP_PX: 4,
 
     // Vertical band reserved below a node for its italic type label (the
     // `wf:footerTypeLabel`), when it has one.

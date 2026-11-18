@@ -50,7 +50,7 @@ import { nodeLinesHeight, nodeLinesOf, renderNodeLines } from './node-lines';
 import { listRowOf, renderListRow } from './list-row-view';
 import { GROUP_INITIAL_MARK_ROOM_PX, groupInitialMark, isGroupInitial } from './group-initial-mark';
 import { isDrawnBackwards } from './feedback-direction';
-import { WorkflowDiagramConstants, estimatePortLabelSize } from '@dialogram/shared';
+import { WorkflowDiagramConstants, estimatePinLabelBox, estimatePortLabelSize, portLabelParts } from '@dialogram/shared';
 
 /** Walk to the model root; the drag-active window is tracked per root. */
 function rootOfEdge(element: any): any {
@@ -2429,8 +2429,15 @@ export class WorkflowLabelView implements IView {
                 ? WorkflowDiagramConstants.PORT_BUS_LABEL_INSET_PX
                 : busMemberOf ? WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX : 0;
             const estimate = estimateLabelSizeFallback(label.text || '');
-            const labelW = labelWRaw > 0 ? labelWRaw : estimate.width + slot;
-            const labelH = labelHRaw > 0 ? labelHRaw : estimate.height;
+            // A symbol's pin said before the name, apart from it: a register's
+            // `en` among the `d`s of its bus. Until the client has measured
+            // it, its box is the one the server sized and placed
+            // (`estimatePinLabelBox`), the pin and the slot with the name.
+            const pin = (label as any).args?.[WorkflowDiagramMetadata.PORT_LABEL_PIN] as string | undefined;
+            const symbolPin = Array.isArray(parentPort?.cssClasses) && parentPort.cssClasses.includes(WorkflowDiagramCss.SYMBOL_PIN);
+            const pinBox = symbolPin ? estimatePinLabelBox(parentPort, label as any) : undefined;
+            const labelW = labelWRaw > 0 ? labelWRaw : pinBox ? pinBox.width : estimate.width + slot;
+            const labelH = labelHRaw > 0 ? labelHRaw : (pinBox ?? estimate).height;
             const textX = isOutput ? labelW - slot : slot;
             const textY = Math.round(labelH / 2);
             // The slot is drawn, not only left: the client measures a label by
@@ -2474,7 +2481,11 @@ export class WorkflowLabelView implements IView {
                         // Vertically center glyphs within the label box.
                         'dominant-baseline': 'middle'
                     }
-                }, label.text || '')
+                }, ...(pin
+                    ? portLabelParts(label.text || '', pin).map(part => svg('tspan', part.pin
+                        ? { class: { 'port-label-pin': true } }
+                        : { attrs: { dx: part.dx } }, part.text))
+                    : [label.text || '']))
             );
         }
 

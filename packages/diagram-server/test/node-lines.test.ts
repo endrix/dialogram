@@ -13,7 +13,8 @@ import { describe, expect, it } from 'vitest';
 import { WorkflowDiagramConstants, WorkflowDiagramMetadata } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument } from '../src/model/graph-gmodel-source';
 import { portBusStateOf } from '../src/model/port-bundles';
-import { parseLinesMeta, textColumns } from '../src/server/graph-load-request-options';
+import { textColumns } from '@dialogram/shared';
+import { parseLinesMeta } from '../src/server/graph-load-request-options';
 import { ToggleNodeOpenOperation } from '@dialogram/shared';
 
 type Element = { id: string; args?: Record<string, unknown>; size?: { width: number; height: number } };

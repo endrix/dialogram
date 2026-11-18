@@ -615,6 +615,29 @@ it no longer has.
 
 ### Changed
 
+- **The members of a bus opened on a register are named by the field each
+  carries.** A register's pins are named by what they are (`d`, `en`, `q`),
+  and a register of a bundle (chisel-ide's signal view) has a `d` and a `q`
+  per field: opened, its bus was a column of `d`s that said nothing. The bus
+  is named by the pin most of its members are on first (the `d`), and
+  placed by it; each member is
+  named as its port is, and one on another pin says which, the pin set
+  apart before the name (*en* `valid`), so no name can be taken for it. A
+  tie between pins goes to the one a register lists first, so the order of
+  the fields does not move the bus. The members stay under their bus,
+  ranked with it and then by their own pins. A bus is never at the clock's
+  wedge, whatever its members are on: it and they are on the rows, in its
+  rail, and a member on another pin says which (*clk* `tick`); only a port
+  of the register's own on `clk` is at the wedge. The body is as wide as
+  the longest names side by side, with the rail each member's name has in
+  front of it. A register's names are estimated as they are drawn, the pin,
+  a 4 px gap and the name (`portLabelParts`, one helper the server and the
+  client share), by columns, a wide character two; every other estimate is
+  as it was. Before it is measured, a register's pin name is placed by one
+  estimate of its box, slot and all, on the server and in the client
+  (`estimatePinLabelBox`). All of this is of a symbol's pins: every other
+  port, and every bus of a node that is no symbol, is sized, named and
+  placed as before.
 - **A wire outside the viewport is not drawn**, as a node outside it is
   not; one within a few pixels of it still is, since its arrowhead and its
   caption reach further than its route. Of a diagram's thousands of wires
