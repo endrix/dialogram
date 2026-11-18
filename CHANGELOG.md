@@ -82,21 +82,29 @@ it no longer has.
   that the canvas was empty. It now shows a turning circle with, under it,
   what is being done, how big the job is, and from two seconds on for how
   long (`loading-indicator.ts`; the MLIR viewer had it first). In the middle
-  while the canvas is empty; as a pill at the top once a diagram is on screen
-  and another is on its way (a view opened from the outline, a refresh), and
-  then only when the wait passes 300 ms. It reports and never blocks, and
-  goes away when the model arrives.
+  until the first model is drawn; from then on as a pill near the top (a view
+  opened from the outline, a refresh, a file that could not be drawn being
+  read again), and then only when the wait passes 300 ms. It reports and
+  never blocks.
   - The platform says its own steps: opening, reading the file, drawing
     ("177 nodes, 565 edges"), laying out, routing.
   - What is inside "reading the file" is the product's to say:
     `getGraph` is handed `options.progress`, to call with a `LoadProgress`
     (`message`, and an optional `detail`) before anything that can take a
     second: a compiler, a build, a server being started. Absent on a load
-    nobody is waiting on, so it is called as `options.progress?.(...)`.
+    nobody is waiting on, so it is called as `options.progress?.(...)`, and
+    not listened to once `getGraph` has answered.
   - The words go from the server to the host (`loadProgress` on
     `createWorkflowGlspVscodeServer`) and from there to the webview as a
     message of their own (`dialogram.loading`), so that they arrive while the
     model is being asked for and not behind it.
+  - The end of the wait is said the same way, by the session's
+    `LoadProgressReporter`: `done` with `model` when the model the reader is
+    waiting for is about to be sent, and the indicator goes at that model;
+    `done` alone when the load failed or had nothing to draw, and it goes at
+    once. A model by itself does not end a wait the host has spoken of: a
+    refresh made behind the reader's back lands in the middle of a first
+    open, whose layout is still running.
   - Every product on the stock client has it: the stock starter raises it,
     and so does `workflowFeaturesModule`, for a product whose starter is its
     own. A client that takes neither (the MLIR viewer) is as it was.
@@ -104,7 +112,8 @@ it no longer has.
     overlay, and the host's own refreshes behind the reader's back.
   - Where the host shows this, GLSP's "Model loading in progress" notice is
     not started: it was a second, vaguer word for the same wait.
-
+  - A screen reader is told each step through a status region that is always
+    in the page, and not the seconds.
 - **A graph that grows keeps its picture still.** A producer may say its
   graph grows a step at a time (`graph.meta.incremental`): a schematic of a
   netlist that starts from one cell and takes in a pin's fan-in when asked.

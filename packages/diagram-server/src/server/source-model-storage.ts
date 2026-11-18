@@ -8,7 +8,6 @@ import 'reflect-metadata';
 
 import {
     ActionDispatcher,
-    ClientId,
     GModelRoot,
     GNode,
     GEdge,
@@ -20,7 +19,7 @@ import { RequestModelAction, SaveModelAction } from '@eclipse-glsp/protocol';
 import { inject, injectable, optional } from 'inversify';
 import { URI } from 'vscode-uri';
 import { instanceLayoutFor, type LayoutTarget, viewKey } from './layout-target';
-import { errorInView, normalizeLoadProgress, parseNodeActions, type LoadProgress, type LoadingUpdate } from '@dialogram/shared';
+import { errorInView, normalizeLoadProgress, parseNodeActions, type LoadProgress } from '@dialogram/shared';
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import {
@@ -43,7 +42,7 @@ import { tunedLayoutOptions } from '../operations/layout-tuned-handler';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
-import { LOAD_PROGRESS_SINK, type LoadProgressSink, counted, isBackgroundLoad, tellLoading } from './load-progress';
+import { LoadProgressReporter, counted, isBackgroundLoad } from './load-progress';
 import { convertToGModelRoot } from './gmodel-convert';
 import { applyPersistedEdgeRoutes } from '../routing/persisted-edge-routes';
 import { relativeToParent, restoreGroupGeometry } from './group-geometry';
@@ -349,17 +348,12 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
     protected agentEditSignal?: AgentStructuralEditSignal;
 
     /**
-     * Where this session says what its load is doing, and which client it is
-     * saying it for (see `load-progress.ts`). Both `@optional()`: tests build
-     * this class by hand, and a host need not show progress.
+     * Where this session says what its reader is waiting for (see
+     * `load-progress.ts`). `@optional()`: tests build this class by hand.
      */
-    @inject(LOAD_PROGRESS_SINK)
+    @inject(LoadProgressReporter)
     @optional()
-    protected loadProgressSink?: LoadProgressSink;
-
-    @inject(ClientId)
-    @optional()
-    protected clientId?: string;
+    protected loadProgress?: LoadProgressReporter;
 
     private ensureModelSource(): DiagramModelSource | undefined {
         return this.injectedModelSource;
@@ -428,35 +422,47 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         }
         // What this load is doing, for the reader waiting on it; not for a
         // load nobody is waiting on (see `isBackgroundLoad`).
-        const watched = !isBackgroundLoad(action.requestId, action.options);
-        const tell = (update: LoadingUpdate): void => {
+        const reporter = this.loadProgress;
+        const watched = reporter?.telling === true && !isBackgroundLoad(action.requestId, action.options);
+        const say = (progress: LoadProgress): void => {
             if (watched) {
-                tellLoading(this.loadProgressSink, this.clientId, update);
+                reporter?.say(progress);
             }
         };
-        tell({ state: 'progress', message: `Reading ${path.basename(workflowFilePath)}` });
+        say({ message: `Reading ${path.basename(workflowFilePath)}` });
         try {
-            const doc = modelSource
-                ? await modelSource.getGraph(sourceUri, {
-                      requestOptions: opts,
-                      // What is inside "reading" is the product's to say.
-                      ...(watched && this.loadProgressSink
-                          ? {
-                                progress: (said: LoadProgress) => {
-                                    const progress = normalizeLoadProgress(said);
-                                    if (progress) {
-                                        tell({ state: 'progress', ...progress });
+            // What is inside "reading" is the product's to say, for as long
+            // as it is reading: a product that goes on talking after it has
+            // answered (the output of a build it gave up on) is reporting on
+            // nothing this diagram is waiting for.
+            let reading = true;
+            let doc: GraphDocument | undefined;
+            try {
+                doc = modelSource
+                    ? await modelSource.getGraph(sourceUri, {
+                          requestOptions: opts,
+                          ...(watched
+                              ? {
+                                    progress: (said: LoadProgress) => {
+                                        const progress = reading ? normalizeLoadProgress(said) : undefined;
+                                        if (progress) {
+                                            say(progress);
+                                        }
                                     }
                                 }
-                            }
-                          : {})
-                  })
-                : this.buildNoModelSourceDocument(workflowFilePath);
+                              : {})
+                      })
+                    : this.buildNoModelSourceDocument(workflowFilePath);
+            } finally {
+                reading = false;
+            }
             perf.mark('acquire');
             if (!doc) {
-                // Nothing to draw anew. Said, because what ends a wait is a
-                // model, and this load has none of its own.
-                tell({ state: 'done' });
+                // Nothing to draw anew, so no model of this load's to end
+                // the wait at.
+                if (watched) {
+                    reporter?.endWithoutModel();
+                }
                 return;
             }
             // The model source pre-normalizes its diagnostics onto `doc.diagnostics` (walking its own
@@ -466,11 +472,13 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             // breadcrumb-trail retry); `finishLoadFromDoc` needs those resolved options for layout/id.
             const resolvedOptions = (doc as { resolvedOptions?: Record<string, unknown> }).resolvedOptions ?? opts;
             this.lastDocument = { doc, sourceUri, filePath: workflowFilePath, opts: resolvedOptions };
-            tell({ state: 'progress', message: 'Drawing the diagram', detail: sizeOfGraph(doc) });
+            say({ message: 'Drawing the diagram', detail: sizeOfGraph(doc) });
             await this.finishLoadFromDoc(doc, sourceUri, workflowFilePath, resolvedOptions, perf);
         } catch (error) {
             // No model follows a load that failed, so nothing else would end the wait.
-            tell({ state: 'done' });
+            if (watched) {
+                reporter?.endWithoutModel();
+            }
             throw error;
         }
     }

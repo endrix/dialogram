@@ -3,16 +3,18 @@
  * The loading indicator: where it is, what it says, and when it goes away.
  *
  * It is the answer to an empty canvas that says nothing, so the cases are the
- * waits a reader has: a first open (the middle of the canvas, at once), a view
- * opened while another is on screen (a pill, and only when the wait is long
- * enough to be one), and the two ways a wait ends: the model, or the host
- * saying there will be none.
+ * waits a reader has: a first open (the middle of the canvas, at once), a load
+ * once something has been drawn (a pill, and only when the wait is long
+ * enough to be one), and the ways a wait ends: the host saying it is over
+ * with its model on the way, the host saying it is over with none, and, for a
+ * host that says nothing, the model itself.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LOADING_MESSAGE_TYPE, type LoadingMessage } from '@dialogram/shared';
 import {
     BUSY_DELAY_MS,
     LoadingIndicatorModelListener,
+    MODEL_GRACE_MS,
     applyLoadingUpdate,
     installLoadingIndicator,
     isLoadingVisible,
@@ -21,15 +23,18 @@ import {
 } from '../src/loading-indicator';
 
 const indicator = (): HTMLElement | null => document.getElementById('workflow-loading');
+const announcer = (): HTMLElement | null => document.getElementById('workflow-loading-announcer');
 const said = (part: 'message' | 'detail' | 'elapsed'): string =>
     indicator()?.querySelector(`.workflow-loading-${part}`)?.textContent ?? '';
 const isPill = (): boolean => indicator()?.classList.contains('workflow-loading-pill') === true;
 
-/** A model as the listener sees it: the root GLSP starts with, an empty diagram, a diagram. */
+/** A model as the listener sees it: the root GLSP starts with, a diagram, a view that could not be drawn, an empty one. */
 const emptyRoot = { type: 'NONE', id: 'EMPTY', children: [] } as never;
 const drawnRoot = { type: 'graph', id: 'g', children: [{ id: 'n1' }] } as never;
-const failureRoot = { type: 'graph', id: 'g', children: [] } as never;
+const failureRoot = { type: 'graph', id: 'g', children: [{ id: 'error' }] } as never;
+const nothingRoot = { type: 'graph', id: 'g', children: [] } as never;
 
+const model = (root: never = drawnRoot): void => new LoadingIndicatorModelListener().modelRootChanged(root);
 const post = (message: unknown): void => {
     window.dispatchEvent(new MessageEvent('message', { data: message }));
 };
@@ -37,6 +42,8 @@ const progress = (message: string, detail?: string): LoadingMessage => ({
     type: LOADING_MESSAGE_TYPE,
     payload: { state: 'progress', message, ...(detail !== undefined ? { detail } : {}) }
 });
+const over: LoadingMessage = { type: LOADING_MESSAGE_TYPE, payload: { state: 'done' } };
+const overWithModel: LoadingMessage = { type: LOADING_MESSAGE_TYPE, payload: { state: 'done', model: true } };
 
 beforeEach(() => {
     vi.useFakeTimers();
@@ -56,8 +63,6 @@ describe('a diagram that is being opened', () => {
         expect(indicator()?.hidden).toBe(false);
         expect(isPill()).toBe(false);
         expect(said('message')).toBe('Opening the diagram');
-        // Said to a screen reader as it changes, without taking the focus.
-        expect(indicator()?.getAttribute('role')).toBe('status');
     });
 
     it('says what the host says it is doing, and how big the job is', () => {
@@ -83,29 +88,11 @@ describe('a diagram that is being opened', () => {
         // nothing.
         installLoadingIndicator();
 
-        new LoadingIndicatorModelListener().modelRootChanged(emptyRoot);
+        model(emptyRoot);
 
         expect(isLoadingVisible()).toBe(true);
         post(progress('Reading Top.fir'));
         expect(said('message')).toBe('Reading Top.fir');
-    });
-
-    it('goes away when the model arrives', () => {
-        installLoadingIndicator();
-        post(progress('Laying out the diagram'));
-
-        new LoadingIndicatorModelListener().modelRootChanged(drawnRoot);
-
-        expect(isLoadingVisible()).toBe(false);
-        expect(indicator()?.hidden).toBe(true);
-    });
-
-    it('goes away when the host says the load ended with nothing to draw', () => {
-        installLoadingIndicator();
-
-        post({ type: LOADING_MESSAGE_TYPE, payload: { state: 'done' } });
-
-        expect(isLoadingVisible()).toBe(false);
     });
 
     it('is raised once: a second starter does not put the opening words back', () => {
@@ -131,6 +118,118 @@ describe('a diagram that is being opened', () => {
         post(null);
 
         expect(said('message')).toBe('Opening the diagram');
+    });
+});
+
+describe('when the wait is over', () => {
+    it('goes away at the model the host said was on its way, and not before', () => {
+        // Said before the model is sent: the indicator stays until there is
+        // a picture to look at in its place.
+        installLoadingIndicator();
+        post(progress('Laying out the diagram'));
+
+        post(overWithModel);
+        expect(isLoadingVisible()).toBe(true);
+
+        model();
+        expect(isLoadingVisible()).toBe(false);
+        expect(indicator()?.hidden).toBe(true);
+    });
+
+    it('goes away by itself if that model never arrives', () => {
+        installLoadingIndicator();
+        post(progress('Laying out the diagram'));
+        post(overWithModel);
+
+        vi.advanceTimersByTime(MODEL_GRACE_MS - 1);
+        expect(isLoadingVisible()).toBe(true);
+        vi.advanceTimersByTime(1);
+        expect(isLoadingVisible()).toBe(false);
+    });
+
+    it('goes away at once when the host says it ended with nothing to draw', () => {
+        installLoadingIndicator();
+        post(progress('Reading Top.fir'));
+
+        post(over);
+
+        expect(isLoadingVisible()).toBe(false);
+    });
+
+    it('does not go away at a model that is not the one being waited for', () => {
+        // A refresh the host makes behind the reader's back lands in the
+        // middle of a first open, with a model of its own. The layout the
+        // reader is waiting for is still running, and the indicator going
+        // down with that model left the rest of the wait unexplained.
+        installLoadingIndicator();
+        post(progress('Reading Top.fir'));
+
+        model();
+
+        expect(isLoadingVisible()).toBe(true);
+        // But there is a picture now, and the indicator is out of its way.
+        expect(isPill()).toBe(true);
+
+        post(progress('Laying out the diagram', '177 nodes, 565 edges'));
+        expect(said('message')).toBe('Laying out the diagram');
+        post(overWithModel);
+        model();
+        expect(isLoadingVisible()).toBe(false);
+    });
+
+    it('goes away at the model for a host that says nothing', () => {
+        // A host from before the indicator, or one that shows no progress:
+        // the model is all there is to go by.
+        installLoadingIndicator();
+
+        model();
+
+        expect(isLoadingVisible()).toBe(false);
+    });
+
+    it('stays for a wait that begins as the one before it ends', () => {
+        installLoadingIndicator();
+        post(progress('Laying out the diagram'));
+        post(overWithModel);
+
+        post(progress('Reading Core.fir'));
+        vi.advanceTimersByTime(MODEL_GRACE_MS);
+
+        expect(isLoadingVisible()).toBe(true);
+        expect(said('message')).toBe('Reading Core.fir');
+    });
+});
+
+describe('what a screen reader is told', () => {
+    it('is in a status region that is always there, and only its words change', () => {
+        // A region shown and given its words in the same breath is not
+        // reliably read out.
+        installLoadingIndicator();
+
+        expect(announcer()?.getAttribute('role')).toBe('status');
+        expect(announcer()?.getAttribute('aria-live')).toBe('polite');
+        expect(announcer()?.hidden).toBe(false);
+        // The picture of it is for the eye.
+        expect(indicator()?.getAttribute('aria-hidden')).toBe('true');
+        expect(announcer()?.textContent).toBe('Opening the diagram');
+    });
+
+    it('is each step, with how big the job is, and not the clock', () => {
+        installLoadingIndicator();
+
+        post(progress('Laying out the diagram', '177 nodes, 565 edges'));
+        vi.advanceTimersByTime(10_000);
+
+        expect(announcer()?.textContent).toBe('Laying out the diagram, 177 nodes, 565 edges');
+    });
+
+    it('is nothing once the wait is over', () => {
+        installLoadingIndicator();
+        post(progress('Reading Top.fir'));
+
+        post(over);
+
+        expect(announcer()?.textContent).toBe('');
     });
 });
 
@@ -162,22 +261,20 @@ describe('counting the wait', () => {
     it('starts over for the next wait', () => {
         installLoadingIndicator();
         vi.advanceTimersByTime(7_000);
-        new LoadingIndicatorModelListener().modelRootChanged(failureRoot);
+        model();
         expect(said('elapsed')).toBe('');
 
-        // Nothing was drawn, so the next load is in the middle again, and new.
         post(progress('Reading Top.fir'));
-        expect(isLoadingVisible()).toBe(true);
-        expect(isPill()).toBe(false);
-        vi.advanceTimersByTime(2_000);
+        vi.advanceTimersByTime(BUSY_DELAY_MS + 2_000);
+
         expect(said('elapsed')).toBe('2 s');
     });
 });
 
-describe('a load while a diagram is on screen', () => {
-    const withDiagram = (): void => {
+describe('a load once something has been drawn', () => {
+    const withDiagram = (root: never = drawnRoot): void => {
         installLoadingIndicator();
-        new LoadingIndicatorModelListener().modelRootChanged(drawnRoot);
+        model(root);
     };
 
     it('is not said if it is over before it would be noticed', () => {
@@ -187,7 +284,8 @@ describe('a load while a diagram is on screen', () => {
         vi.advanceTimersByTime(BUSY_DELAY_MS - 1);
         expect(isLoadingVisible()).toBe(false);
 
-        new LoadingIndicatorModelListener().modelRootChanged(drawnRoot);
+        post(overWithModel);
+        model();
         vi.advanceTimersByTime(5_000);
         expect(isLoadingVisible()).toBe(false);
     });
@@ -201,6 +299,22 @@ describe('a load while a diagram is on screen', () => {
         expect(isLoadingVisible()).toBe(true);
         expect(isPill()).toBe(true);
         expect(said('message')).toBe('Reading Top.fir');
+    });
+
+    it('is a pill over a view that could not be drawn, too, and over an empty one', () => {
+        // The card that says why a file cannot be drawn is what is on screen,
+        // and the file is read again at every pause in the typing. The
+        // indicator in the middle, at once, flashed over that card each time.
+        for (const root of [failureRoot, nothingRoot]) {
+            resetLoadingIndicatorForTests();
+            withDiagram(root);
+
+            post(progress('Reading x.py'));
+            expect(isLoadingVisible(), 'not at once').toBe(false);
+
+            vi.advanceTimersByTime(BUSY_DELAY_MS);
+            expect(isPill()).toBe(true);
+        }
     });
 
     it('says the latest step when it appears, not the first', () => {
@@ -220,22 +334,24 @@ describe('a load while a diagram is on screen', () => {
         post(progress('Reading Top.fir'));
         vi.advanceTimersByTime(BUSY_DELAY_MS);
 
-        new LoadingIndicatorModelListener().modelRootChanged(drawnRoot);
+        post(overWithModel);
+        model();
 
         expect(isLoadingVisible()).toBe(false);
-        // And is in the middle again only if the canvas is empty.
-        post(progress('Reading Core.fir'));
-        vi.advanceTimersByTime(BUSY_DELAY_MS);
-        expect(isPill()).toBe(true);
     });
 
-    it('does not appear after the host has said the load is over', () => {
+    it('does not appear once the host has said the wait is over, either way', () => {
         withDiagram();
-        post(progress('Reading Top.fir'));
 
+        post(progress('Reading Top.fir'));
         applyLoadingUpdate({ state: 'done' });
         vi.advanceTimersByTime(5_000);
+        expect(isLoadingVisible()).toBe(false);
 
+        // With the model on its way: a pill for the moment before it lands is a blink.
+        post(progress('Reading Top.fir'));
+        post(overWithModel);
+        vi.advanceTimersByTime(BUSY_DELAY_MS);
         expect(isLoadingVisible()).toBe(false);
     });
 });
@@ -248,8 +364,10 @@ describe('without a page', () => {
             expect(() => {
                 installLoadingIndicator();
                 loadingProgress('Reading Top.fir');
-                new LoadingIndicatorModelListener().modelRootChanged(drawnRoot);
+                applyLoadingUpdate({ state: 'done', model: true });
+                model();
             }).not.toThrow();
+            expect(isLoadingVisible()).toBe(false);
         } finally {
             (globalThis as { document?: unknown }).document = page;
         }

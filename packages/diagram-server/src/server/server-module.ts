@@ -39,7 +39,7 @@ import { WorkflowRerouteEdgesAvoidOverlapsOperationHandler } from '../operations
 import { WorkflowLayoutBoundaryFlowOperationHandler } from '../operations/layout-boundary-flow-handler';
 import { DIAGRAM_MODEL_SOURCE } from './model-source-token';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
-import { LOAD_PROGRESS_SINK, type LoadProgressSink } from './load-progress';
+import { LOAD_PROGRESS_SINK, LoadProgressReporter, type LoadProgressSink } from './load-progress';
 import { createElkFactory, type ElkServerOptions } from './elk-server/index';
 import { WorkflowServerLogger } from './disposed-request-logger';
 
@@ -243,17 +243,20 @@ export function createWorkflowServerModules(
         additionalModules.push(storageOptionsModule);
     }
 
-    // Where a load says what it is doing: the host's, when it gave one.
+    // Where a session says what its reader is waiting for: one reporter per
+    // session, since a wait is several requests long, and the host's sink
+    // when it gave one. Without a sink the reporter says nothing.
     const loadProgress = options?.loadProgress;
-    if (loadProgress) {
-        additionalModules.push(
-            new ContainerModule((bind, _unbind, isBound) => {
-                if (!isBound(LOAD_PROGRESS_SINK)) {
-                    bind(LOAD_PROGRESS_SINK).toConstantValue(loadProgress);
-                }
-            })
-        );
-    }
+    additionalModules.push(
+        new ContainerModule((bind, _unbind, isBound) => {
+            if (loadProgress && !isBound(LOAD_PROGRESS_SINK)) {
+                bind(LOAD_PROGRESS_SINK).toConstantValue(loadProgress);
+            }
+            if (!isBound(LoadProgressReporter)) {
+                bind(LoadProgressReporter).toSelf().inSingletonScope();
+            }
+        })
+    );
 
     // DI modules contributed by the consuming extension (e.g. the language toolkit's model module
     // binding the runtime config + service + invoker the moved operation handlers depend on).

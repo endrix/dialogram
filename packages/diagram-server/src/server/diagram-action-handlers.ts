@@ -9,7 +9,6 @@ import 'reflect-metadata';
 
 import {
     ActionHandler,
-    ClientId,
     CommandStack,
     DiagramConfiguration,
     GEdge,
@@ -54,7 +53,7 @@ import {
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { placePortLabel, placePortLabels, portLabelGapOf } from './port-labels';
 import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
-import { LOAD_PROGRESS_SINK, type LoadProgressSink, counted, tellLoading } from './load-progress';
+import { LoadProgressReporter, counted, isBackgroundLoad } from './load-progress';
 import {
     WorkflowRerouteEdgesAvoidOverlapsOperationHandler,
     WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND
@@ -97,21 +96,20 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
     protected agentEditSignal?: AgentStructuralEditSignal;
 
     /**
-     * Where the layout says that it is running, and for which client (see
-     * `load-progress.ts`). A first layout is the other long step of a first
-     * open, after the reading, and ELK on a few hundred nodes is seconds.
+     * Where the layout says that it is running, and where the wait is said
+     * to be over (see `load-progress.ts`). A first layout is the other long
+     * step of a first open, after the reading, and ELK on a few hundred
+     * nodes is seconds. And this handler is where a wait ends: whatever the
+     * reader was waiting for, a load or the layout after an edit, its model
+     * leaves from here.
      */
-    @inject(LOAD_PROGRESS_SINK)
+    @inject(LoadProgressReporter)
     @optional()
-    protected loadProgressSink?: LoadProgressSink;
+    protected loadProgress?: LoadProgressReporter;
 
-    @inject(ClientId)
-    @optional()
-    protected clientId?: string;
-
-    /** "Laying out the diagram", with how much there is of it. The model this submit ends in takes it down. */
+    /** "Laying out the diagram", with how much there is of it. */
     private tellLayingOut(message: string, modelState: ModelState): void {
-        if (!this.loadProgressSink) {
+        if (!this.loadProgress?.telling) {
             return;
         }
         let nodes = 0;
@@ -125,14 +123,29 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             element.children.forEach(count);
         };
         count(modelState.root);
-        tellLoading(this.loadProgressSink, this.clientId, {
-            state: 'progress',
-            message,
-            detail: `${counted(nodes, 'node')}, ${counted(edges, 'edge')}`
-        });
+        this.loadProgress.say({ message, detail: `${counted(nodes, 'node')}, ${counted(edges, 'edge')}` });
     }
 
+    /**
+     * Submit the model, and say that the wait for it is over.
+     *
+     * Said here because this is where the model the reader is waiting for
+     * leaves, whatever came before it: said before it is sent, so that the
+     * diagram keeps its indicator until the picture is there. And said when
+     * the submit fails, since then no model will end it.
+     */
     override async submitModelDirectly(reason?: DirtyStateChangeReason): Promise<Action[]> {
+        try {
+            const actions = await this.submitLaidOut(reason);
+            this.loadProgress?.endWithModel();
+            return actions;
+        } catch (error) {
+            this.loadProgress?.endWithoutModel();
+            throw error;
+        }
+    }
+
+    private async submitLaidOut(reason?: DirtyStateChangeReason): Promise<Action[]> {
         const layoutEngine = (this as any).layoutEngine as LayoutEngine | undefined;
         const diagramConfiguration = (this as any).diagramConfiguration as DiagramConfiguration;
         const modelState = (this as any).modelState as ModelState;
@@ -709,11 +722,35 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
      * canvas, and is not started: one indicator, which says what is
      * happening.
      */
-    @inject(LOAD_PROGRESS_SINK)
+    @inject(LoadProgressReporter)
     @optional()
-    protected loadProgressSink?: LoadProgressSink;
+    protected loadProgress?: LoadProgressReporter;
 
+    /**
+     * Load, as a request the reader is waiting on or as one they are not.
+     *
+     * One nobody is waiting on says nothing and ends nothing: its model can
+     * arrive in the middle of a load the reader IS waiting on, whose layout
+     * is still to come. One the reader is waiting on says so when it fails
+     * anywhere on the way, since then no model will.
+     */
     override async execute(action: RequestModelAction): Promise<Action[]> {
+        const reporter = this.loadProgress;
+        if (!reporter) {
+            return this.load(action);
+        }
+        if (isBackgroundLoad(action.requestId, action.options)) {
+            return reporter.inBackground(() => this.load(action));
+        }
+        try {
+            return await this.load(action);
+        } catch (error) {
+            reporter.endWithoutModel();
+            throw error;
+        }
+    }
+
+    private async load(action: RequestModelAction): Promise<Action[]> {
         const requestId = action.requestId ?? '';
         const isPolling = requestId.startsWith('refresh-during-run-') ||
             requestId.startsWith('refresh-live-overlay-') ||
@@ -721,7 +758,7 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
             requestId.startsWith('refresh-agent-ctx-') ||
             requestId.startsWith('refresh-caller-refs-');
         const isAgentCtxOnly = Boolean(action.options?.agentContextOnly);
-        this.startingSilently = isPolling || this.loadProgressSink !== undefined;
+        this.startingSilently = isPolling || this.loadProgress?.listened === true;
         if (isPolling) {
             console.log(`[WorkflowRequestModelActionHandler] polling refresh: ${requestId.slice(0, 40)} agentOnly=${isAgentCtxOnly}`);
         }
@@ -908,7 +945,24 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
         return process.env.WORKFLOW_DIAGRAM_DEBUG === '1';
     }
 
+    /** Where a wait that ends in the sizes the diagram measured is said to be over, when applying them fails. */
+    @inject(LoadProgressReporter)
+    @optional()
+    protected loadProgress?: LoadProgressReporter;
+
     async execute(action: ComputedBoundsAction): Promise<Action[]> {
+        try {
+            return await this.applyComputedBounds(action);
+        } catch (error) {
+            // The submit that follows the sizes is what ends a wait; a throw
+            // before it would leave the diagram counting the seconds of a
+            // load that is over.
+            this.loadProgress?.endWithoutModel();
+            throw error;
+        }
+    }
+
+    private async applyComputedBounds(action: ComputedBoundsAction): Promise<Action[]> {
         const model = this.modelState.root;
         // `ComputedBoundsAction.revision` is optional in the GLSP protocol. Most clients include it,
         // but if it's missing we still want to apply bounds; otherwise client-side layouting may

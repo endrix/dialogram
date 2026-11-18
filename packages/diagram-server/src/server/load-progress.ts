@@ -1,16 +1,20 @@
 /**
- * Where the server says what a client's load is doing.
+ * Where the server says what a client's reader is waiting for.
  *
  * The server runs in the extension host and has no way to the webview but
  * diagram actions, which wait behind the model request they would be
  * reporting on. The host has the webview, so the host is handed the words
  * (`createWorkflowGlspVscodeServer({ loadProgress })`) and posts them.
  *
- * Bound per server, used per session: a session says which client it is
- * (`ClientId`), and the host knows which webview that is.
+ * The sink is bound per server; a session says which client it is
+ * (`ClientId`), and the host knows which webview that is. What a session says
+ * goes through its {@link LoadProgressReporter}, which also knows when the
+ * wait is over.
  */
 
-import type { LoadingUpdate } from '@dialogram/shared';
+import { ClientId } from '@eclipse-glsp/server';
+import { inject, injectable, optional } from 'inversify';
+import type { LoadProgress, LoadingUpdate } from '@dialogram/shared';
 
 /** The host's side: post `update` to the diagram of the client `clientId`. */
 export type LoadProgressSink = (clientId: string, update: LoadingUpdate) => void;
@@ -58,4 +62,86 @@ export function isBackgroundLoad(requestId: string | undefined, options: Record<
 /** "1 node", "177 nodes": a count with its noun, for a detail line. */
 export function counted(count: number, noun: string): string {
     return `${count.toLocaleString('en-US')} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * What one session says of what its reader is waiting for, and when that is
+ * over.
+ *
+ * A wait is not one request. A first open is a load, a round trip to the
+ * diagram for the sizes of things, a layout, and only then a model; a view
+ * with a layout of its own is a load and a model. And in the middle of
+ * either, a request nobody is waiting on can come and go with a model of its
+ * own. So the end of a wait is said here, by the code that knows it:
+ *
+ *  - the submit that sends the model the reader is waiting for
+ *    ({@link endWithModel}), said before that model is sent, so that the
+ *    indicator stays until there is a picture in its place;
+ *  - a failure, anywhere on the way ({@link endWithoutModel}).
+ *
+ * A request nobody is waiting on is handled {@link inBackground}: what it
+ * does is not said, and what it ends is not the reader's wait.
+ */
+@injectable()
+export class LoadProgressReporter {
+    @inject(LOAD_PROGRESS_SINK)
+    @optional()
+    protected sink?: LoadProgressSink;
+
+    @inject(ClientId)
+    @optional()
+    protected clientId?: string;
+
+    /** Something has been said that has not been ended. */
+    private said = false;
+
+    /** How many requests nobody is waiting on are being handled now. */
+    private background = 0;
+
+    /** Whether anything said now would reach a reader: a product is handed something to say its part with only then. */
+    get telling(): boolean {
+        return this.sink !== undefined && this.clientId !== undefined && this.background === 0;
+    }
+
+    /** Whether the host shows what is said here at all. */
+    get listened(): boolean {
+        return this.sink !== undefined;
+    }
+
+    /** What is being done now. */
+    say(progress: LoadProgress): void {
+        if (!this.telling) {
+            return;
+        }
+        this.said = true;
+        tellLoading(this.sink, this.clientId, { state: 'progress', ...progress });
+    }
+
+    /** What was being waited for is over, and its model is about to be sent. */
+    endWithModel(): void {
+        this.end({ state: 'done', model: true });
+    }
+
+    /** What was being waited for is over, with no model to show for it. */
+    endWithoutModel(): void {
+        this.end({ state: 'done' });
+    }
+
+    private end(update: LoadingUpdate): void {
+        if (!this.telling || !this.said) {
+            return;
+        }
+        this.said = false;
+        tellLoading(this.sink, this.clientId, update);
+    }
+
+    /** Handle a request nobody is waiting on. */
+    async inBackground<T>(work: () => Promise<T>): Promise<T> {
+        this.background += 1;
+        try {
+            return await work();
+        } finally {
+            this.background -= 1;
+        }
+    }
 }

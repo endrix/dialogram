@@ -15,7 +15,7 @@
  * diagram's webview as a message of their own ({@link LOADING_MESSAGE_TYPE}),
  * and not as a diagram action: an action sent while the first model is being
  * asked for waits behind it, and would arrive when there is nothing left to
- * report.
+ * report. The end of the wait travels the same way ({@link LoadingUpdate}).
  */
 
 /** One thing a load is doing. */
@@ -26,15 +26,24 @@ export interface LoadProgress {
     detail?: string;
 }
 
-/** What the host tells a diagram about its load: what it is doing, or that it has ended with nothing to draw. */
+/** What the host tells a diagram about what its reader is waiting for: what is being done, or that it is over. */
 export type LoadingUpdate =
     | ({ state: 'progress' } & LoadProgress)
     /**
-     * The load is over and no model follows: it failed, or there was nothing
-     * to draw again. A load that ends in a model says nothing: the model
-     * arriving is the end.
+     * It is over.
+     *
+     * With `model`, its model is on its way to the diagram and is what the
+     * wait ends at: said before the model is sent, so that the indicator
+     * stays up until there is a picture to look at in its place. Without, no
+     * model follows (the load failed, or had nothing to draw anew) and the
+     * wait ends here.
+     *
+     * A model by itself is not the end. Others arrive while a load is on its
+     * way: a refresh the host makes behind the reader's back lands in the
+     * middle of a first open, and the layout the reader is waiting for is
+     * still running.
      */
-    | { state: 'done' };
+    | { state: 'done'; model?: boolean };
 
 /** The `type` of the message a diagram's webview is posted about its load. */
 export const LOADING_MESSAGE_TYPE = 'dialogram.loading';

@@ -9,13 +9,14 @@
  *
  * One element, in two places:
  *
- *  - in the MIDDLE while there is no diagram on screen: the first open, and a
- *    view that could not be drawn being asked for again;
- *  - as a PILL at the top while a diagram is on screen and another is on its
- *    way (a view opened from the outline, a refresh after a save). The reader
- *    is looking at something and would rather not have it covered. The pill
- *    waits {@link BUSY_DELAY_MS} before it appears: most loads are over by
- *    then, and a pill that blinks on every one of them is noise.
+ *  - in the MIDDLE until this webview has drawn its first model: the first
+ *    open, when the canvas is empty and there is nothing else to look at;
+ *  - as a PILL near the top from then on, whatever that model was: another
+ *    view on its way (opened from the outline, a refresh after a save), or a
+ *    file that could not be drawn being read again, whose card says why and
+ *    is not to be covered. The pill waits {@link BUSY_DELAY_MS} before it
+ *    appears: most loads are over by then, and a pill that blinks on every
+ *    one of them, at every pause in the typing, is noise.
  *
  * It reports and never blocks (`pointer-events: none`): the work is the
  * host's, the webview stays free, and the reader can go on panning.
@@ -29,10 +30,16 @@
  *
  * ## When it goes away
  *
- * When the model arrives. The load is what is being waited for, so its model
- * IS the end of the wait: no timer, and no way for the indicator to outlive
- * the work or to give up before it. A load that ends without a model (it
- * failed) says so itself (`state: 'done'`).
+ * When the host says the wait is over. With a model on its way (`done`,
+ * `model`), at that model: the indicator stays until there is a picture in
+ * its place. With none (`done`), at once.
+ *
+ * A model alone is not the end, once the host has spoken. Others arrive while
+ * a load is on its way: a refresh the host makes behind the reader's back
+ * lands in the middle of a first open whose layout is still running, and the
+ * indicator going down with it left the rest of the wait unexplained. Before
+ * the host has said anything (a host that says nothing at all, an older one),
+ * a model is all there is to go by, and it does end the wait.
  */
 
 import { injectable } from 'inversify';
@@ -40,9 +47,18 @@ import type { GModelRoot, IGModelRootListener } from '@eclipse-glsp/client';
 import { isLoadingMessage, type LoadingUpdate } from '@dialogram/shared';
 
 const INDICATOR_ID = 'workflow-loading';
+const ANNOUNCER_ID = 'workflow-loading-announcer';
 
 /** How long a load behind a diagram that is on screen may take before it is said. */
 export const BUSY_DELAY_MS = 300;
+
+/**
+ * How long the indicator waits for the model the host said was on its way.
+ * The model follows in the same breath; this is for the one that never
+ * arrives, so that the indicator does not count the seconds of a wait that
+ * is over.
+ */
+export const MODEL_GRACE_MS = 5_000;
 
 /** From how many seconds the wait is counted out loud: a load of a second needs no stopwatch. */
 const CLOCK_FROM_SECONDS = 2;
@@ -52,7 +68,16 @@ const EMPTY_ROOT_TYPE = 'NONE';
 
 type Mode = 'center' | 'pill';
 
-let diagramOnScreen = false;
+/** This webview has drawn a model: from here on the indicator keeps out of the way. */
+let drawnOnce = false;
+/** Something is being waited for. */
+let waiting = false;
+/** The host has said something of this wait, so the host will say when it is over. */
+let hostSpoke = false;
+/** The host has said it is over, and that its model is on its way. */
+let ending = false;
+let endTimer: ReturnType<typeof setTimeout> | undefined;
+
 let visible = false;
 let pendingShow: ReturnType<typeof setTimeout> | undefined;
 /** What a pill not yet shown will say when it is. */
@@ -74,15 +99,13 @@ function ensureIndicator(): HTMLElement | undefined {
     indicator.id = INDICATOR_ID;
     indicator.className = 'workflow-loading';
     indicator.hidden = true;
-    // Said to a screen reader as it changes, without taking the focus.
-    indicator.setAttribute('role', 'status');
-    indicator.setAttribute('aria-live', 'polite');
+    // For the eye. What a screen reader is told is the announcer's, below.
+    indicator.setAttribute('aria-hidden', 'true');
 
     const card = document.createElement('div');
     card.className = 'workflow-loading-card';
     const spinner = document.createElement('div');
     spinner.className = 'workflow-loading-spinner';
-    spinner.setAttribute('aria-hidden', 'true');
     const text = document.createElement('div');
     text.className = 'workflow-loading-text';
     for (const part of ['message', 'detail', 'elapsed']) {
@@ -90,16 +113,31 @@ function ensureIndicator(): HTMLElement | undefined {
         line.className = `workflow-loading-${part}`;
         text.appendChild(line);
     }
-    // The clock is for the eye: read out every second it would be all a screen reader says.
-    text.lastElementChild?.setAttribute('aria-hidden', 'true');
     card.append(spinner, text);
     indicator.appendChild(card);
     document.body.appendChild(indicator);
+
+    // A status region that is always there, and only its words change. One
+    // that is shown and given its words in the same breath is not reliably
+    // read out; and the clock, read out every second, would be all that is.
+    const announcer = document.createElement('div');
+    announcer.id = ANNOUNCER_ID;
+    announcer.className = 'workflow-loading-announcer';
+    announcer.setAttribute('role', 'status');
+    announcer.setAttribute('aria-live', 'polite');
+    document.body.appendChild(announcer);
     return indicator;
 }
 
 function line(part: 'message' | 'detail' | 'elapsed'): Element | null {
     return typeof document === 'undefined' ? null : document.querySelector(`#${INDICATOR_ID} .workflow-loading-${part}`);
+}
+
+function announce(words: string): void {
+    const announcer = typeof document === 'undefined' ? null : document.getElementById(ANNOUNCER_ID);
+    if (announcer && announcer.textContent !== words) {
+        announcer.textContent = words;
+    }
 }
 
 function write(message: string, detail: string): void {
@@ -111,6 +149,7 @@ function write(message: string, detail: string): void {
     if (detailLine && detailLine.textContent !== detail) {
         detailLine.textContent = detail;
     }
+    announce(detail === '' ? message : `${message}, ${detail}`);
 }
 
 function show(mode: Mode, message: string, detail: string): void {
@@ -120,12 +159,12 @@ function show(mode: Mode, message: string, detail: string): void {
     }
     cancelPendingShow();
     indicator.classList.toggle('workflow-loading-pill', mode === 'pill');
-    write(message, detail);
     if (!visible) {
         visible = true;
         indicator.hidden = false;
         startClock();
     }
+    write(message, detail);
 }
 
 function hide(): void {
@@ -136,6 +175,7 @@ function hide(): void {
     if (indicator) {
         indicator.hidden = true;
     }
+    announce('');
 }
 
 function cancelPendingShow(): void {
@@ -146,19 +186,31 @@ function cancelPendingShow(): void {
     pendingText = undefined;
 }
 
+function cancelEnding(): void {
+    ending = false;
+    if (endTimer !== undefined) {
+        clearTimeout(endTimer);
+        endTimer = undefined;
+    }
+}
+
 /**
- * A load says what it is doing.
+ * Something is being waited for, and this is what is being done about it.
  *
- * Shown at once when nothing is on screen, since nothing is exactly what
- * there is to look at. With a diagram on screen it waits {@link BUSY_DELAY_MS}
- * first, and what it then says is the latest thing said.
+ * Shown at once while this webview has drawn nothing, since nothing is
+ * exactly what there is to look at. After that it waits
+ * {@link BUSY_DELAY_MS} first, and what it then says is the latest thing
+ * said.
  */
 export function loadingProgress(message: string, detail = ''): void {
+    waiting = true;
+    // A step said after the end was announced is a new wait's.
+    cancelEnding();
     if (visible) {
         write(message, detail);
         return;
     }
-    if (!diagramOnScreen) {
+    if (!drawnOnce) {
         show('center', message, detail);
         return;
     }
@@ -175,18 +227,34 @@ export function loadingProgress(message: string, detail = ''): void {
     }
 }
 
-/** A load is over, with a model or without one. */
+/** The wait is over. */
 export function loadingEnded(): void {
     hide();
+    cancelEnding();
+    waiting = false;
+    hostSpoke = false;
 }
 
-/** What the host posted about a load. */
+/** What the host posted about what the reader is waiting for. */
 export function applyLoadingUpdate(update: LoadingUpdate): void {
-    if (update.state === 'done') {
-        loadingEnded();
-    } else {
+    if (update.state === 'progress') {
+        hostSpoke = true;
         loadingProgress(update.message, update.detail ?? '');
+        return;
     }
+    if (update.model !== true || !waiting) {
+        loadingEnded();
+        return;
+    }
+    // Over, with its model on its way: the indicator goes when the model is
+    // there, or after a while if it never is. One that has not appeared yet
+    // has no reason to now.
+    hostSpoke = true;
+    cancelPendingShow();
+    cancelEnding();
+    ending = true;
+    endTimer = setTimeout(loadingEnded, MODEL_GRACE_MS);
+    (endTimer as { unref?: () => void }).unref?.();
 }
 
 /** Whether the indicator is up. For tests and for whoever would otherwise put a second one beside it. */
@@ -211,8 +279,8 @@ export function installLoadingIndicator(openingMessage = 'Opening the diagram'):
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
         window.addEventListener('message', onMessage);
     }
-    if (!diagramOnScreen && !visible) {
-        show('center', openingMessage, '');
+    if (!drawnOnce && !visible) {
+        loadingProgress(openingMessage);
     }
 }
 
@@ -223,7 +291,7 @@ function onMessage(event: MessageEvent): void {
 }
 
 /**
- * The model arrived, which is what was being waited for.
+ * A model has been drawn.
  *
  * Bound as an `IGModelRootListener`, which GLSP calls after every model it
  * has processed. The first of those is not a model: it is the empty root the
@@ -236,7 +304,16 @@ export class LoadingIndicatorModelListener implements IGModelRootListener {
         if (root.type === EMPTY_ROOT_TYPE) {
             return;
         }
-        diagramOnScreen = root.children.length > 0;
+        drawnOnce = true;
+        if (waiting && hostSpoke && !ending) {
+            // Not the model this wait is for: the host has not said the wait
+            // is over. But there is a picture now, so the indicator gets out
+            // of its way.
+            if (visible) {
+                document.getElementById(INDICATOR_ID)?.classList.add('workflow-loading-pill');
+            }
+            return;
+        }
         loadingEnded();
     }
 }
@@ -281,13 +358,14 @@ function stopClock(): void {
 
 /** Forget everything: for tests, which share the module between cases. */
 export function resetLoadingIndicatorForTests(): void {
-    hide();
-    diagramOnScreen = false;
+    loadingEnded();
+    drawnOnce = false;
     if (installed && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
         window.removeEventListener('message', onMessage);
     }
     installed = false;
     if (typeof document !== 'undefined') {
         document.getElementById(INDICATOR_ID)?.remove();
+        document.getElementById(ANNOUNCER_ID)?.remove();
     }
 }
