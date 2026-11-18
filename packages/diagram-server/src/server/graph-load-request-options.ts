@@ -174,9 +174,6 @@ const CLASS_NAME = /^[a-z][a-z0-9-]*$/;
  */
 const NOT_FOR_A_LINE = /[\u0000-\u001f\u007f-\u009f\u200b\u2028\u2029\u202a-\u202e\u2060\u2066-\u2069\ufeff]/g;
 
-/** The columns a text takes in a fixed-width font: one estimate, the platform's (`port-label-geometry.ts`). */
-export { textColumns };
-
 /** `text` cut to `max` columns, an ellipsis in the place of what is cut. By character, never through one. */
 function cutToColumns(text: string, max: number): string {
     if (textColumns(text) <= max) {

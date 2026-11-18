@@ -50,7 +50,7 @@ import { nodeLinesHeight, nodeLinesOf, renderNodeLines } from './node-lines';
 import { listRowOf, renderListRow } from './list-row-view';
 import { GROUP_INITIAL_MARK_ROOM_PX, groupInitialMark, isGroupInitial } from './group-initial-mark';
 import { isDrawnBackwards } from './feedback-direction';
-import { WorkflowDiagramConstants, estimatePortLabelSize } from '@dialogram/shared';
+import { WorkflowDiagramConstants, estimatePortLabelSize, portLabelParts } from '@dialogram/shared';
 
 /** Walk to the model root; the drag-active window is tracked per root. */
 function rootOfEdge(element: any): any {
@@ -2413,8 +2413,6 @@ export class WorkflowLabelView implements IView {
             // For output labels with text-anchor:end, the text "ends" at x.
             // ELK positions the label box so that its RIGHT edge is at the port.
             // So we need to set x = labelWidth so text ends at the right edge of the box.
-            // The same estimate the server sized the label with, until the client has measured it.
-            const estimateLabelSizeFallback = estimatePortLabelSize;
 
             const labelWRaw = label.size?.width ?? label.bounds?.width ?? 0;
             const labelHRaw = label.size?.height ?? label.bounds?.height ?? 0;
@@ -2431,7 +2429,11 @@ export class WorkflowLabelView implements IView {
             const slot = busGroup
                 ? WorkflowDiagramConstants.PORT_BUS_LABEL_INSET_PX
                 : busMemberOf ? WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX : 0;
-            const estimate = estimateLabelSizeFallback(pin ? `${pin} ${label.text || ''}` : label.text || '');
+            // Until the client has measured it: a symbol's pin name as the
+            // server sized it, any other port's name by the platform's estimate,
+            // as the server places it (`port-labels.ts`).
+            const symbolPin = Array.isArray(parentPort?.cssClasses) && parentPort.cssClasses.includes(WorkflowDiagramCss.SYMBOL_PIN);
+            const estimate = estimatePortLabelSize(label.text || '', symbolPin ? { pin } : undefined);
             const labelW = labelWRaw > 0 ? labelWRaw : estimate.width + slot;
             const labelH = labelHRaw > 0 ? labelHRaw : estimate.height;
             const textX = isOutput ? labelW - slot : slot;
@@ -2478,7 +2480,9 @@ export class WorkflowLabelView implements IView {
                         'dominant-baseline': 'middle'
                     }
                 }, ...(pin
-                    ? [svg('tspan', { class: { 'port-label-pin': true } }, pin), svg('tspan', { attrs: { dx: 4 } }, label.text || '')]
+                    ? portLabelParts(label.text || '', pin).map(part => svg('tspan', part.pin
+                        ? { class: { 'port-label-pin': true } }
+                        : { attrs: { dx: part.dx } }, part.text))
                     : [label.text || '']))
             );
         }

@@ -30,7 +30,7 @@ export function textColumns(text: string): number {
 /**
  * A text's box before the client has measured it: a fixed width per column
  * (a producer's names are any text, and a wide character is two), a line's
- * height. The one estimate, for the server's model and the client's view.
+ * height. The server sizes its nodes by it.
  */
 export function estimateTextSize(text: string, fontSizePx: number): { width: number; height: number } {
     const columnWidth = Math.max(5, Math.round(fontSizePx * 0.6));
@@ -40,9 +40,52 @@ export function estimateTextSize(text: string, fontSizePx: number): { width: num
     };
 }
 
-/** A port name's box before the client has measured it. */
-export function estimatePortLabelSize(text: string): { width: number; height: number } {
-    return estimateTextSize(text, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX);
+/** One part of a port's label as it is drawn: its text, whether it is the pin, how far it is set from the part before. */
+export interface PortLabelPart {
+    text: string;
+    pin: boolean;
+    dx: number;
+}
+
+/**
+ * A port's label as it is drawn: its name, or the symbol pin said before it
+ * (`cal:portLabelPin`, a register's `en` among the `d`s of its bus) and then
+ * the name, `PORT_LABEL_PIN_GAP_PX` apart. The server sizes the label by these
+ * parts and the client draws them.
+ */
+export function portLabelParts(name: string, pin?: string): PortLabelPart[] {
+    return pin
+        ? [{ text: pin, pin: true, dx: 0 }, { text: name, pin: false, dx: WorkflowDiagramConstants.PORT_LABEL_PIN_GAP_PX }]
+        : [{ text: name, pin: false, dx: 0 }];
+}
+
+/** A symbol pin's name before the client has measured it, and the pin said before it: as the server sizes a symbol's body. */
+export function estimatePinLabelSize(name: string, pin?: string): { width: number; height: number } {
+    const fontSizePx = WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX;
+    return {
+        width: portLabelParts(name, pin).reduce((width, part) => width + part.dx + estimateTextSize(part.text, fontSizePx).width, 0),
+        height: estimateTextSize(name, fontSizePx).height
+    };
+}
+
+/**
+ * A port name's box before the client has measured it, as the client draws it
+ * and the server places it until then. A symbol's pin (`symbol`, with the pin
+ * said before the name if there is one) is as the server sized it; any other
+ * port's name keeps the estimate every product's labels have been placed by:
+ * 0.7 of the font a column, 3 px each side.
+ */
+export function estimatePortLabelSize(text: string, symbol?: { pin?: string }): { width: number; height: number } {
+    if (symbol) {
+        return estimatePinLabelSize(text, symbol.pin);
+    }
+    const fontSizePx = WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX;
+    const avgCharWidth = fontSizePx * 0.7;
+    const padding = 3;
+    return {
+        width: Math.max(1, Math.ceil(textColumns(text) * avgCharWidth + padding * 2)),
+        height: Math.max(1, Math.ceil(fontSizePx * 1.25))
+    };
 }
 
 /**

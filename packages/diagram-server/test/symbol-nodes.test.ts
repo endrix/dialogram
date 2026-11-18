@@ -4,7 +4,7 @@
  * mux's select below its data), a register's pins named by what they are.
  */
 import { describe, expect, it } from 'vitest';
-import { estimatePortLabelSize, SymbolGeometry, WorkflowDiagramConstants, WorkflowDiagramCss, WorkflowDiagramMetadata } from '@dialogram/shared';
+import { estimatePinLabelSize, estimatePortLabelSize, estimateTextSize, portLabelParts, SymbolGeometry, WorkflowDiagramConstants, WorkflowDiagramCss, WorkflowDiagramMetadata } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument, type PyGraphNode } from '../src/model/graph-gmodel-source';
 
 const port = (node: string, name: string, direction: 'in' | 'out', pins?: string[]) =>
@@ -33,8 +33,8 @@ const registerNode = (doc: PyGraphDocument, open: boolean): any => new GraphGMod
 const label = (gnode: any, name: string): string | undefined =>
     ports(gnode).find((p: any) => p.args[WorkflowDiagramMetadata.PORT_NAME] === name)?.children[0].text;
 
-/** A name's width as the platform estimates it, on the server and in the client alike. */
-const textWidth = (text: string): number => estimatePortLabelSize(text).width;
+/** A register pin's name's width as the platform estimates it, on the server and in the client alike. */
+const textWidth = (text: string, pin?: string): number => estimatePinLabelSize(text, pin).width;
 
 describe('symbol nodes', () => {
     it('are sized by the symbol, have no header, and put their pins on the body', () => {
@@ -209,7 +209,7 @@ describe('symbol nodes, in the corners', () => {
         expect(members.map((p: any) => p.children[0].text).sort()).toEqual(['addr', 'data', 'valid']);
         expect(['addr', 'data', 'valid'].map(pinOf)).toEqual([undefined, undefined, 'en']);
         const valid = members.find((p: any) => p.children[0].text === 'valid').children[0];
-        expect(valid.size.width).toBeGreaterThanOrEqual(textWidth('en valid') + WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX);
+        expect(valid.size.width).toBeGreaterThanOrEqual(textWidth('valid', 'en') + WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX);
     });
 
     it('draw an open bus’s members under it, whatever pins they are on', () => {
@@ -226,6 +226,43 @@ describe('symbol nodes, in the corners', () => {
         // The `x` bus (`d`) first, its members under it; then the `in` bus
         // (`en`), its `d` member and then its enables under it.
         expect(west).toEqual(['x', '  x', '  y', 'in', '  addr', '  valid', '  ready']);
+    });
+
+    it('keep a bus with one clock member among its fields on the rows, the member with it', () => {
+        // Two fields on `d` and one on the clock: the bus is named `d`, so it
+        // is no clock, and its `clk` member stays inside its rail.
+        const doc = registerOf([field('a', 'in', 'd', 'in'), field('b', 'in', 'd', 'in'), field('tick', 'in', 'clk', 'in'),
+            field('a', 'out', 'q', 'out'), field('b', 'out', 'q', 'out')]);
+        const west = (gnode: any) => ports(gnode).filter((p: any) => p.position.x < 0)
+            .sort((a: any, b: any) => a.position.y - b.position.y);
+        const closed = registerNode(doc, false);
+        expect(label(closed, 'in')).toBe('d');
+        const open = registerNode(doc, true);
+        expect(west(open).map((p: any) => `${p.args[WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF] ? '  ' : ''}${p.args[WorkflowDiagramMetadata.PORT_NAME]}`))
+            .toEqual(['in', '  a', '  b', '  tick']);
+        // One row each, a row apart: the rail runs from the header down its members.
+        const centres = west(open).map((p: any) => p.position.y + p.size.height / 2);
+        const steps = centres.slice(1).map((y: number, k: number) => y - centres[k]);
+        expect(new Set(steps).size).toBe(1);
+        expect(label(open, 'tick')).toBe('tick');
+    });
+
+    it('name a bus whose pins tie by the one a register lists first, in any order of its fields', () => {
+        for (const [first, second] of [['en', 'd'], ['d', 'en']]) {
+            const doc = registerOf([field('p', 'in', first, 'in'), field('r', 'in', second, 'in'),
+                field('p', 'out', 'q', 'out'), field('r', 'out', 'q', 'out')]);
+            expect(label(registerNode(doc, false), 'in')).toBe('d');
+        }
+    });
+
+    it('size a pin said before a name as it is drawn: the pin, the gap, the name', () => {
+        const parts = portLabelParts('valid', 'en');
+        expect(parts.map(part => part.text)).toEqual(['en', 'valid']);
+        expect(parts[1].dx).toBe(WorkflowDiagramConstants.PORT_LABEL_PIN_GAP_PX);
+        const font = WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX;
+        expect(estimatePinLabelSize('valid', 'en').width).toBe(estimateTextSize('en', font).width
+            + WorkflowDiagramConstants.PORT_LABEL_PIN_GAP_PX + estimateTextSize('valid', font).width);
+        expect(estimatePinLabelSize('valid').width).toBe(estimateTextSize('valid', font).width);
     });
 
     it('give a name of wide characters the columns it takes', () => {
@@ -255,6 +292,20 @@ describe('symbol nodes, in the corners', () => {
         const mux = SymbolGeometry.size('mux', 3, 1);
         expect(SymbolGeometry.frontX('mux', mux.width, mux.height, mux.height / 2)).toBe(mux.width - SymbolGeometry.STUB_PX);
         expect(SymbolGeometry.frontX('mux', mux.width, mux.height, 1)).toBeLessThan(mux.width - SymbolGeometry.STUB_PX);
+    });
+});
+
+describe('port names before the client measures them', () => {
+    it('are estimated as they always were, by columns, when they are no symbol pin', () => {
+        // 0.7 of the font per column and 3 px each side; a line and a quarter
+        // high. Every product's labels are placed by it until measured.
+        expect(estimatePortLabelSize('abc')).toEqual({ width: Math.ceil(3 * 12 * 0.7 + 6), height: 15 });
+        expect(estimatePortLabelSize('時間').width).toBe(estimatePortLabelSize('abcd').width);
+    });
+
+    it('are estimated as the server sized them when they are a symbol pin', () => {
+        expect(estimatePortLabelSize('valid', { pin: 'en' })).toEqual(estimatePinLabelSize('valid', 'en'));
+        expect(estimatePortLabelSize('d', {})).toEqual(estimatePinLabelSize('d'));
     });
 });
 

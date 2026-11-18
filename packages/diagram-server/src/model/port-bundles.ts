@@ -18,7 +18,7 @@
  * like any other from there on, and an edge between two of them an edge, so
  * the layout, the routers and the views need nothing of their own for it.
  */
-import { normalizePortSide, type PortSide } from '@dialogram/shared';
+import { normalizePortSide, SymbolGeometry, type PortSide } from '@dialogram/shared';
 import type { PyGraphDocument, PyGraphEdge, PyGraphNode, PyGraphPort } from './graph-gmodel-source';
 import { stableNodeId, stableNodeIds, type StableNodeIds } from './stable-ids';
 
@@ -169,14 +169,18 @@ export function bundlePorts(
     return { ...doc, graph: { ...doc.graph, nodes: withBoundaries, edges } };
 }
 
-/** The pins of `members`, the one most of them are on first; a tie in the order met. */
+/**
+ * The pins of `members`, the one most of them are on first. A tie goes to the
+ * pin a symbol lists first (`d` before `en`), so the order of a bundle's
+ * fields does not move its bus; pins no symbol lists keep the order met.
+ */
 function pinsByCount(members: readonly PyGraphPort[]): string[] {
     const counts = new Map<string, number>();
     for (const pin of members.flatMap(m => m.pins ?? [])) {
         counts.set(pin, (counts.get(pin) ?? 0) + 1);
     }
-    // A stable sort: a tie keeps the order the pins were met in.
-    return [...counts.keys()].sort((a, b) => counts.get(b)! - counts.get(a)!);
+    return [...counts.keys()].sort((a, b) =>
+        (counts.get(b)! - counts.get(a)!) || (SymbolGeometry.pinRank([a]) - SymbolGeometry.pinRank([b])));
 }
 
 /**
