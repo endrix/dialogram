@@ -12,6 +12,7 @@ export * from './port-stub';
 export * from './boundary-port-geometry';
 export * from './binding-keys';
 export * from './diagram-seams';
+export * from './loading';
 export * from './hierarchy';
 export * from './chat-seams';
 export * from './create-task-type-operation';

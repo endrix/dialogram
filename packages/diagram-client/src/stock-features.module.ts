@@ -38,6 +38,7 @@ import { ReadOnlyViewMarker } from './read-only-view';
 import { NodeActionActionHandler } from './node-actions';
 import { NodeActionAction, RevealNodeAction } from '@dialogram/shared';
 import { preloadLibavoid } from './libavoid-loader';
+import { LoadingIndicatorModelListener, installLoadingIndicator } from './loading-indicator';
 import {
     WorkflowPromptLabelEditAction,
     WorkflowPromptLabelEditActionHandler,
@@ -90,6 +91,14 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     // Hides the palette's tools while the view shown is read-only.
     bind(ReadOnlyViewMarker).toSelf().inSingletonScope();
     bind(TYPES.IGModelRootListener).toService(ReadOnlyViewMarker);
+
+    // The loading indicator: raised here for a product that starts the
+    // diagram with a starter of its own (the stock starter has raised it
+    // already, and a second call does nothing), and taken down when the model
+    // it was waiting for arrives.
+    installLoadingIndicator();
+    bind(LoadingIndicatorModelListener).toSelf().inSingletonScope();
+    bind(TYPES.IGModelRootListener).toService(LoadingIndicatorModelListener);
 
     // Register integrated chat panel (slides up from bottom of diagram).
     // Bound as an IDiagramStartup so GLSP eagerly instantiates it on diagram

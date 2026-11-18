@@ -46,6 +46,8 @@
  * changes: the graph is drawn by `DetailGraphView` (GLSP's `GGraphView`, its svg marked with the
  * level of detail of the zoom, zoom-detail.ts), and `label:boundary:type` is bound to
  * the non-editable `BoundaryLabel`, because editing it renamed the port.
+ * The loading indicator's model-root listener is here too (bound to itself and as a listener): it
+ * takes the indicator down when the model it was waiting for arrives.
  * The oracle still does its job: it fails on any binding this composition gains
  * or loses, and updating the fixture is the deliberate act of accepting one.
  * Regenerate it only after confirming the diff contains exactly the bindings the

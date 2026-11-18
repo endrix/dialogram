@@ -38,6 +38,7 @@ import { installToolPaletteHeaderControls } from './tool-palette-header-controls
 import { installSvgExportRequests } from './svg-export-command';
 import { installDiagramWebviewChannel } from './webview-channel';
 import { installExecutionOverlayRouting } from './execution-overlay-message-bridge';
+import { installLoadingIndicator } from './loading-indicator';
 
 export interface StockDiagramOptions {
     /**
@@ -99,6 +100,9 @@ export function startStockDiagram(options: StockDiagramOptions = {}): void {
     }
     started = true;
     installContextMenuDebug();
+    // Before anything else: from here to the first model is the longest the
+    // reader waits, and the canvas is empty for all of it.
+    installLoadingIndicator();
 
     new StockDiagramStarter(options.features ?? []);
 

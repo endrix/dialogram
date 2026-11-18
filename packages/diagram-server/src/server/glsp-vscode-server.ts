@@ -17,6 +17,7 @@ import type { EditStrategy, DiagramModelSource } from '@dialogram/shared';
 import type { StorageRuntimeOptions } from './storage-runtime-options';
 import type { ElkServerOptions } from './elk-server/index';
 import type { McpServerModuleOptions } from './mcp-diagram-module';
+import type { LoadProgressSink } from './load-progress';
 
 /**
  * NodeGlspVscodeServer that gates client→server forwarding on the per-client
@@ -56,6 +57,8 @@ export interface WorkflowGlspVscodeServerOptions extends Partial<Omit<NodeGlspVs
     mcp?: McpServerModuleOptions;
     /** Large graphs on the Java ELK server; absent, elkjs lays out everything (see server-module.ts). */
     elkServer?: ElkServerOptions;
+    /** What each client's load is doing, for the host to post to its diagram (see load-progress.ts). */
+    loadProgress?: LoadProgressSink;
 }
 
 /**
@@ -97,7 +100,8 @@ export function createWorkflowGlspVscodeServer(
             edits: mergedOptions.edits,
             diagramModuleFactory: mergedOptions.diagramModuleFactory,
             mcp: mergedOptions.mcp,
-            elkServer: mergedOptions.elkServer
+            elkServer: mergedOptions.elkServer,
+            loadProgress: mergedOptions.loadProgress
         })
     });
     return server;

@@ -373,6 +373,7 @@ export async function activateGlspIntegration(
     // here. See `profile-storage-options.ts` for the one case that is not a
     // straight pass-through.
     const storageOptions = composeStorageRuntimeOptions(profile);
+    let loadProgressTarget: Pick<WorkflowEditorProvider, 'postLoading'> | undefined;
 
     // Large graphs on the product's Java ELK server, as its settings choose.
     const layoutSettings = vscode.workspace.getConfiguration(profile.settingsNamespace);
@@ -400,7 +401,10 @@ export async function activateGlspIntegration(
         // Wire-level opt-in: a distinct server name per profile so two installed consumers
         // never collide on the built-in MCP host registry.
         mcpServer: mcpEnabled ? { name: `glsp-${profile.key}` } : undefined,
-        elkServer
+        elkServer,
+        // What a load is doing, shown in the diagram that is waiting for it.
+        // The provider is made further down; by the first load it is there.
+        loadProgress: (clientId, update) => loadProgressTarget?.postLoading(clientId, update)
     });
 
     // Start the server
@@ -953,6 +957,7 @@ export async function activateGlspIntegration(
         profile,
         assetsUri
     );
+    loadProgressTarget = editorProvider;
 
     // Configure default GLSP commands (undo, redo, copy, paste, etc.)
     configureDefaultCommands({

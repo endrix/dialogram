@@ -13,6 +13,7 @@ import {
     DiagramConfiguration,
     GEdge,
     GLabel,
+    GModelElement,
     GModelIndex,
     GModelRecordingCommand,
     GModelRoot,
@@ -52,6 +53,7 @@ import {
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { placePortLabel, placePortLabels, portLabelGapOf } from './port-labels';
 import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
+import { LoadProgressReporter, counted, isBackgroundLoad } from './load-progress';
 import {
     WorkflowRerouteEdgesAvoidOverlapsOperationHandler,
     WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND
@@ -93,7 +95,74 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
     @optional()
     protected agentEditSignal?: AgentStructuralEditSignal;
 
+    /**
+     * Where the layout says that it is running, and where the wait is said
+     * to be over (see `load-progress.ts`). A first layout is the other long
+     * step of a first open, after the reading, and ELK on a few hundred
+     * nodes is seconds. And this handler is where a wait ends: whatever the
+     * reader was waiting for, a load or the layout after an edit, its model
+     * leaves from here.
+     */
+    @inject(LoadProgressReporter)
+    @optional()
+    protected loadProgress?: LoadProgressReporter;
+
+    /** "Laying out the diagram", with how much there is of it. */
+    private tellLayingOut(message: string, modelState: ModelState): void {
+        if (!this.loadProgress?.telling) {
+            return;
+        }
+        let nodes = 0;
+        let edges = 0;
+        const count = (element: GModelElement): void => {
+            if (element instanceof GNode) {
+                nodes += 1;
+            } else if (element instanceof GEdge) {
+                edges += 1;
+            }
+            element.children.forEach(count);
+        };
+        count(modelState.root);
+        this.loadProgress.say({ message, detail: `${counted(nodes, 'node')}, ${counted(edges, 'edge')}` });
+    }
+
+    /**
+     * Submit the model, and say that the wait for it is over.
+     *
+     * Said here because this is where the model the reader is waiting for
+     * leaves, whatever came before it: said before it is sent, so that the
+     * diagram keeps its indicator until the picture is there. And said when
+     * the submit fails, since then no model will end it.
+     */
     override async submitModelDirectly(reason?: DirtyStateChangeReason): Promise<Action[]> {
+        try {
+            const actions = await this.submitLaidOut(reason, false);
+            this.loadProgress?.endWithModel();
+            return actions;
+        } catch (error) {
+            this.loadProgress?.endWithoutModel();
+            throw error;
+        }
+    }
+
+    /**
+     * Submit the model for a request nobody is waiting on: nothing is said of
+     * it, and its model ends nobody's wait.
+     *
+     * Such a request can run alongside one the reader IS waiting on (see
+     * `LoadProgressReporter`), so this is said by the caller, here, and not
+     * kept as a state of the session.
+     */
+    async submitQuietly(reason?: DirtyStateChangeReason): Promise<Action[]> {
+        return this.submitLaidOut(reason, true);
+    }
+
+    private async submitLaidOut(reason: DirtyStateChangeReason | undefined, quiet: boolean): Promise<Action[]> {
+        const tellLayingOut = (message: string, state: ModelState): void => {
+            if (!quiet) {
+                this.tellLayingOut(message, state);
+            }
+        };
         const layoutEngine = (this as any).layoutEngine as LayoutEngine | undefined;
         const diagramConfiguration = (this as any).diagramConfiguration as DiagramConfiguration;
         const modelState = (this as any).modelState as ModelState;
@@ -117,6 +186,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
 
             console.log('[WorkflowModelSubmissionHandler] Running initial ELK layout for:', layoutMeta.networkId);
+            tellLayingOut('Laying out the diagram', modelState);
             try {
                 const _elk0 = perfNow();
                 // Parity with the manual auto-layout path (`dialogram.layoutBoundaryFlow`):
@@ -191,6 +261,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
                 console.log(`[agent-auto-layout] branch=1c-i RUN boundary-flow net=${layoutMeta.networkId}`);
             }
             console.log('[WorkflowModelSubmissionHandler] Auto-layout after agent structural edit for:', layoutMeta.networkId);
+            tellLayingOut('Laying out the diagram', modelState);
             try {
                 await this.runBoundaryFlowAndPersist(modelState, layoutEngine);
                 console.log('[WorkflowModelSubmissionHandler] Agent auto-layout completed');
@@ -237,6 +308,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             !didBootstrapReroute
         ) {
             console.log('[WorkflowModelSubmissionHandler] Running bootstrap edge reroute for:', layoutMeta.networkId);
+            tellLayingOut('Routing the connections', modelState);
             try {
                 const _reroute0 = perfNow();
                 await this.rerouteHandler.runReroute({
@@ -660,15 +732,47 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
      */
     private startingSilently = false;
 
+    /**
+     * The host shows what a load is doing in the diagram itself (see
+     * `load-progress.ts`). Where it does, "Model loading in progress" is a
+     * second, vaguer notice of the same wait, in another corner of the same
+     * canvas, and is not started: one indicator, which says what is
+     * happening.
+     */
+    @inject(LoadProgressReporter)
+    @optional()
+    protected loadProgress?: LoadProgressReporter;
+
+    /**
+     * Load, as a request the reader is waiting on or as one they are not.
+     *
+     * One nobody is waiting on says nothing and ends nothing: its model can
+     * arrive in the middle of a load the reader IS waiting on, whose layout
+     * is still to come. One the reader is waiting on says so when it fails
+     * anywhere on the way, since then no model will.
+     */
     override async execute(action: RequestModelAction): Promise<Action[]> {
+        try {
+            return await this.load(action);
+        } catch (error) {
+            if (!isBackgroundLoad(action.requestId, action.options)) {
+                this.loadProgress?.endWithoutModel();
+            }
+            throw error;
+        }
+    }
+
+    private async load(action: RequestModelAction): Promise<Action[]> {
         const requestId = action.requestId ?? '';
         const isPolling = requestId.startsWith('refresh-during-run-') ||
             requestId.startsWith('refresh-live-overlay-') ||
             requestId.startsWith('refresh-queue-visibility-') ||
             requestId.startsWith('refresh-agent-ctx-') ||
             requestId.startsWith('refresh-caller-refs-');
+        // One reading of the flag with `isBackgroundLoad`, which is what
+        // keeps the storage silent for the load this path submits quietly.
         const isAgentCtxOnly = Boolean(action.options?.agentContextOnly);
-        this.startingSilently = isPolling;
+        this.startingSilently = isPolling || this.loadProgress?.listened === true;
         if (isPolling) {
             console.log(`[WorkflowRequestModelActionHandler] polling refresh: ${requestId.slice(0, 40)} agentOnly=${isAgentCtxOnly}`);
         }
@@ -683,7 +787,14 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
                 // in-flight ComputedBoundsAction from a concurrent full refresh,
                 // causing perpetual model invalidation (the diagram never updates).
                 await this.sourceModelStorage.loadSourceModel(action);
-                const actions = await this.submissionHandler.submitModelDirectly();
+                // Quietly: this request is nobody's wait, and it can run
+                // while the reader's own load is still on its way to a model.
+                const submission = this.submissionHandler as ModelSubmissionHandler & {
+                    submitQuietly?: () => Promise<Action[]>;
+                };
+                const actions = await (submission.submitQuietly
+                    ? submission.submitQuietly()
+                    : submission.submitModelDirectly());
                 console.log(`[WorkflowRequestModelActionHandler] agent-ctx-only: submitted directly, ${actions.length} actions`);
                 return actions;
             }
@@ -855,7 +966,24 @@ export class WorkflowComputedBoundsActionHandler implements ActionHandler {
         return process.env.WORKFLOW_DIAGRAM_DEBUG === '1';
     }
 
+    /** Where a wait that ends in the sizes the diagram measured is said to be over, when applying them fails. */
+    @inject(LoadProgressReporter)
+    @optional()
+    protected loadProgress?: LoadProgressReporter;
+
     async execute(action: ComputedBoundsAction): Promise<Action[]> {
+        try {
+            return await this.applyComputedBounds(action);
+        } catch (error) {
+            // The submit that follows the sizes is what ends a wait; a throw
+            // before it would leave the diagram counting the seconds of a
+            // load that is over.
+            this.loadProgress?.endWithoutModel();
+            throw error;
+        }
+    }
+
+    private async applyComputedBounds(action: ComputedBoundsAction): Promise<Action[]> {
         const model = this.modelState.root;
         // `ComputedBoundsAction.revision` is optional in the GLSP protocol. Most clients include it,
         // but if it's missing we still want to apply bounds; otherwise client-side layouting may
