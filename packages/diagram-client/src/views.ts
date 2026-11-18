@@ -1381,6 +1381,49 @@ export class WorkflowOutputPortView extends ShapeView {
 }
 
 /**
+ * Whether any of a route is on the canvas: its box, carried up through the
+ * edge's ancestors to the canvas (the root's step applies the scroll and the
+ * zoom), against the canvas's own. Yes whenever that cannot be said (the
+ * hidden render, a canvas not measured yet), so nothing is ever left out for
+ * want of knowing.
+ */
+export function routeInView(
+    edge: unknown,
+    route: ReadonlyArray<{ x: number; y: number }>,
+    context: { targetKind?: string } | undefined
+): boolean {
+    if (context?.targetKind === 'hidden' || route.length === 0) {
+        return true;
+    }
+    const canvas = (edge as { root?: { canvasBounds?: { width: number; height: number } } }).root?.canvasBounds;
+    if (!canvas || !(canvas.width > 0) || !(canvas.height > 0)) {
+        return true;
+    }
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const point of route) {
+        minX = Math.min(minX, point.x);
+        minY = Math.min(minY, point.y);
+        maxX = Math.max(maxX, point.x);
+        maxY = Math.max(maxY, point.y);
+    }
+    if (![minX, minY, maxX, maxY].every(Number.isFinite)) {
+        return true;
+    }
+    let box = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+    let parent = (edge as { parent?: unknown }).parent as { localToParent?: (b: typeof box) => typeof box; parent?: unknown } | undefined;
+    while (parent) {
+        if (typeof parent.localToParent === 'function') {
+            box = parent.localToParent(box);
+        }
+        parent = parent.parent as typeof parent;
+    }
+    return box.x <= canvas.width && box.x + box.width >= 0 && box.y <= canvas.height && box.y + box.height >= 0;
+}
+
+/**
  * Edge view - orthogonal routing with arrows
  */
 @injectable()
@@ -1584,6 +1627,14 @@ export class WorkflowEdgeView extends PolylineEdgeView {
 
         if (!Array.isArray(safeRoute) || safeRoute.length < 2) {
             return svg('g', {});
+        }
+
+        // A wire wholly outside the viewport is not drawn, as a node outside
+        // it is not: of a diagram's thousands of wires most are out of sight,
+        // and every pan and zoom draws the model again. The hidden render,
+        // which measures, and an export draw every one.
+        if (!routeInView(edge, safeRoute, context)) {
+            return undefined;
         }
 
         const visualRouteState = this.computeVisualRoute(edge as any, safeRoute as any);

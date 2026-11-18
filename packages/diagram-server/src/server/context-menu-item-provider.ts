@@ -11,6 +11,8 @@ import {
 import {
     isBoundaryNodeType,
     hierarchyTrailTo,
+    NodeActionAction,
+    parseNodeActions,
     WorkflowDiagramMetadata,
     WorkflowDiagramTypes,
     type HierarchyCrumb,
@@ -287,6 +289,37 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
                 }));
             }
         }
+
+        // What the producer offers on this node, or on the canvas
+        // (`meta.actions`, node-actions.ts): first in the menu, in its order.
+        // The product's command carries them out; the client drops the item's
+        // action when the product names none.
+        const offered = (() => {
+            if (element === this.modelState.root) {
+                return { actions: parseNodeActions(elementArgs?.[WorkflowDiagramMetadata.ACTIONS]), elementId: undefined };
+            }
+            // A port or a label selected stands for its node.
+            let current: any = element;
+            while (current && current !== this.modelState.root) {
+                const meta = (current.args as Args | undefined)?.[WorkflowDiagramMetadata.NODE_META] as unknown;
+                if (meta && typeof meta === 'object') {
+                    return { actions: parseNodeActions((meta as Record<string, unknown>)['actions']), elementId: String(current.id) };
+                }
+                current = current.parent;
+            }
+            return { actions: [], elementId: undefined };
+        })();
+        offered.actions.filter(action => action.menu !== false).forEach((action, index) => items.push({
+            id: `${NodeActionAction.KIND}.${action.id}`,
+            label: action.label,
+            sortString: `a0${String(index).padStart(2, '0')}`,
+            group: 'producer',
+            actions: [{
+                kind: NodeActionAction.KIND,
+                action: action.id,
+                ...(offered.elementId ? { elementId: offered.elementId } : {})
+            } as any]
+        }));
 
         const boundaryAncestor = (() => {
             let current: any = element;

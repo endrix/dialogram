@@ -33,6 +33,8 @@ export interface LayoutPersistenceMeta {
     unroutedEdgeIds?: string[];
     /** Route `unroutedEdgeIds` without saving: the view shows its fallback's layout. */
     unroutedEdgesUnsaved?: boolean;
+    /** The graph grows a step at a time (`graph.meta.incremental`): new nodes go beside their neighbours. */
+    incremental?: boolean;
     [key: string]: unknown;
 }
 

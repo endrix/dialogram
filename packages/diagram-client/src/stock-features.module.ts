@@ -33,8 +33,10 @@ import {
     StatusSourceContextMenuItemProvider
 } from './status-source-menu';
 import { HierarchyOutlinePanel } from './hierarchy-outline';
-import { FocusAfterLoadService } from './focus-after-load';
+import { FocusAfterLoadService, RevealNodeActionHandler } from './focus-after-load';
 import { ReadOnlyViewMarker } from './read-only-view';
+import { NodeActionActionHandler } from './node-actions';
+import { NodeActionAction, RevealNodeAction } from '@dialogram/shared';
 import { preloadLibavoid } from './libavoid-loader';
 import {
     WorkflowPromptLabelEditAction,
@@ -148,6 +150,9 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     configureActionHandler(context, WorkflowOpenInOwnEditorAction.KIND, WorkflowOpenInOwnEditorActionHandler);
     configureActionHandler(context, WorkflowGoToErrorAction.KIND, WorkflowGoToErrorActionHandler);
     configureActionHandler(context, WorkflowOpenViewAction.KIND, WorkflowOpenViewActionHandler);
+    // What a producer offers on a node or the canvas, to the product's command.
+    configureActionHandler(context, NodeActionAction.KIND, NodeActionActionHandler);
+    configureActionHandler(context, RevealNodeAction.KIND, RevealNodeActionHandler);
     configureActionHandler(context, WorkflowEditParametersAction.KIND, WorkflowEditParametersActionHandler);
     configureActionHandler(context, WorkflowEditAnnotationsAction.KIND, WorkflowEditAnnotationsActionHandler);
 

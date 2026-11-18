@@ -24,6 +24,7 @@ export * from './port-bus';
 export * from './port-label-geometry';
 export * from './symbol-geometry';
 export * from './node-open';
+export * from './node-actions';
 export * from './transition-label';
 export * from './prompt-words';
 // The shapes of an automaton's transitions; `Box` and `Point` under names

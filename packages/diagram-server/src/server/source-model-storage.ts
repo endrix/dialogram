@@ -19,7 +19,7 @@ import { RequestModelAction, SaveModelAction } from '@eclipse-glsp/protocol';
 import { inject, injectable, optional } from 'inversify';
 import { URI } from 'vscode-uri';
 import { instanceLayoutFor, type LayoutTarget, viewKey } from './layout-target';
-import { errorInView } from '@dialogram/shared';
+import { errorInView, parseNodeActions } from '@dialogram/shared';
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import {
@@ -35,6 +35,7 @@ import {
     type WorkflowCallerReference
 } from '@dialogram/shared';
 import { GraphGModelSource } from '../model/graph-gmodel-source';
+import { FileMemo } from '../services/file-memo';
 import { portBusStateOf } from '../model/port-bundles';
 import { allowsStateEdits, placeHeldStates, withUnwrittenStates } from '../model/unwritten-states';
 import { tunedLayoutOptions } from '../operations/layout-tuned-handler';
@@ -109,13 +110,47 @@ const RUN_OUTPUT_FALLBACK_MAX_RESULTS = 50;
  * better side of the trade: an arrangement the reader chose is worth less than
  * a diagram they can read, the result is persisted immediately so it happens
  * once, and this failure is at least visible where the other was silent.
+ *
+ * A graph whose producer says it grows (`graph.meta.incremental`) is the
+ * exception, and the reason is the same one turned round: it gains nodes at
+ * every step by design, and laying it out again each time would move what
+ * the reader has just read. Its saved layout is used as long as it places
+ * some node (`placedNodeCount`); the nodes it does not place are put beside
+ * their neighbours once the client has measured them
+ * (incremental-placement.ts), so none is left at the origin.
  */
 export function savedLayoutIsUsable(
     hasSavedPositions: boolean,
     unpositionedNodeCount: number,
-    coincidentNodeCount = 0
+    coincidentNodeCount = 0,
+    placedNodeCount?: number
 ): boolean {
+    if (placedNodeCount !== undefined) {
+        return hasSavedPositions && placedNodeCount > 0 && coincidentNodeCount === 0;
+    }
     return hasSavedPositions && unpositionedNodeCount === 0 && coincidentNodeCount === 0;
+}
+
+/**
+ * What a product's analysis says of a large file's text, kept by product (its
+ * operation prefix) so every editor of the file shares one reading.
+ */
+const RELATIONSHIP_MEMOS = new Map<string, FileMemo<WorkflowRelationshipInfo>>();
+const DEFINITION_RANGE_MEMOS = new Map<string, FileMemo<unknown>>();
+
+function memoFor<T>(memos: Map<string, FileMemo<T>>, product: string | undefined, make: () => FileMemo<T>): FileMemo<T> {
+    const key = product ?? '';
+    let memo = memos.get(key);
+    if (!memo) {
+        memo = make();
+        memos.set(key, memo);
+    }
+    return memo;
+}
+
+/** Whether a document's producer says its graph grows a step at a time (`graph.meta.incremental`). */
+export function graphGrows(doc: { graph?: { meta?: Record<string, unknown> } } | undefined): boolean {
+    return doc?.graph?.meta?.['incremental'] === true;
 }
 
 /**
@@ -631,10 +666,14 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             countMissing((diagramModel as any).graph);
         }
 
+        // A graph that grows keeps the places it has and gets places for the
+        // rest; any other is laid out afresh for want of one.
+        const grows = graphGrows(doc as any);
         const hasPersistedLayout = savedLayoutIsUsable(
             loadedLayoutPositions !== undefined,
             unpositionedNodeCount,
-            countCoincidentNodes(loadedLayoutPositions?.values() ?? [])
+            countCoincidentNodes(loadedLayoutPositions?.values() ?? []),
+            grows ? totalNodeCount - unpositionedNodeCount : undefined
         );
         const hasPersistedEdgeRoutesEffective = hasPersistedLayout && hasPersistedEdgeRoutes;
 
@@ -654,6 +693,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             // above can be read back from the state rather than recomputed from
             // the model when this goes wrong again.
             totalNodeCount,
+            // The nodes without a place are put beside their neighbours, not under the diagram.
+            incremental: grows,
         });
 
         // Advance the agent auto-layout reload generation: a marked agent structural edit becomes
@@ -696,20 +737,20 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         if (unitViews) {
             (gmodelRoot as any).args[WorkflowDiagramMetadata.VIEWS] = unitViews;
         }
+        // What the producer offers on the canvas, for its context menu.
+        const canvasActions = parseNodeActions(doc?.graph?.meta?.['actions']);
+        if (canvasActions.length > 0) {
+            (gmodelRoot as any).args[WorkflowDiagramMetadata.ACTIONS] = canvasActions;
+        }
         (gmodelRoot as any).args['sourceUri'] = sourceUri;
         (gmodelRoot as any).args['wf:workflowFile'] = workflowFilePath;
         // What the view was asked for by, for an edit made in it to name the same.
         (gmodelRoot as any).args[WorkflowDiagramMetadata.VIEW_REQUEST] = viewRequestOf(opts);
         if (workflowName) {
-            try {
-                const sourceText = await (await import('fs/promises')).readFile(workflowFilePath, 'utf-8');
-                const workflowDefinitionRange = this.ensureModelSource()?.analysis?.resolveWorkflowDefinitionRange(sourceText, workflowName);
-                if (workflowDefinitionRange) {
-                    (gmodelRoot as any).args['wf:workflowSourceUri'] = workflowFilePath;
-                    (gmodelRoot as any).args['wf:workflowSourceRange'] = workflowDefinitionRange;
-                }
-            } catch {
-                // Keep the graph-provided metadata when the source file cannot be read.
+            const workflowDefinitionRange = await this.getWorkflowDefinitionRange(workflowFilePath, workflowName);
+            if (workflowDefinitionRange) {
+                (gmodelRoot as any).args['wf:workflowSourceUri'] = workflowFilePath;
+                (gmodelRoot as any).args['wf:workflowSourceRange'] = workflowDefinitionRange;
             }
         }
         perf?.mark('wfRange');
@@ -781,7 +822,9 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 return [edge?.sourceId, edge?.targetId].some(end =>
                     typeof (index.find(end) as any)?.args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP] === 'string');
             };
-            const unroutedEdgeIds = unrouted.filter(atBus);
+            // In a graph that grows every edge without a route is a new one:
+            // the wires of the nodes it gained.
+            const unroutedEdgeIds = grows ? unrouted : unrouted.filter(atBus);
             const meta = this.modelState.get(WORKFLOW_LAYOUT_PERSISTENCE_KEY) as Record<string, unknown> | undefined;
             if (meta && unroutedEdgeIds.length > 0) {
                 meta['unroutedEdgeIds'] = unroutedEdgeIds;
@@ -840,18 +883,38 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         perf?.emitOpenBreadcrumb(nextBuildCount(workflowFilePath), { nodes: nodeCount, edges: edgeCount });
     }
 
+    /**
+     * What a file's units are to each other. A large file is read for it once
+     * while it stays as it was (file-memo.ts), whichever editor asks: the
+     * answer is the product's analysis of the text, so it is kept by product.
+     */
     private async getWorkflowRelationshipInfo(filePath: string): Promise<WorkflowRelationshipInfo> {
-        try {
-            const sourceText = await fs.readFile(filePath, 'utf-8');
-            return this.ensureModelSource()?.analysis?.analyzeWorkflowRelationships(sourceText)
-                ?? { workflowNames: [], entryWorkflowNames: [], callersByWorkflow: {} };
-        } catch {
-            return {
-                workflowNames: [],
-                entryWorkflowNames: [],
-                callersByWorkflow: {}
-            };
-        }
+        return memoFor(RELATIONSHIP_MEMOS, this.storageOptions?.operationPrefix, () => new FileMemo<WorkflowRelationshipInfo>(async file => {
+            try {
+                const sourceText = await fs.readFile(file, 'utf-8');
+                return this.ensureModelSource()?.analysis?.analyzeWorkflowRelationships(sourceText)
+                    ?? { workflowNames: [], entryWorkflowNames: [], callersByWorkflow: {} };
+            } catch {
+                return {
+                    workflowNames: [],
+                    entryWorkflowNames: [],
+                    callersByWorkflow: {}
+                };
+            }
+        })).get(filePath);
+    }
+
+    /** Where a unit is written in its file, as a range; kept the same way. `undefined` when it cannot be said. */
+    private async getWorkflowDefinitionRange(filePath: string, workflowName: string): Promise<unknown> {
+        return memoFor(DEFINITION_RANGE_MEMOS, this.storageOptions?.operationPrefix, () => new FileMemo<unknown>(async (file, name) => {
+            try {
+                const sourceText = await fs.readFile(file, 'utf-8');
+                return this.ensureModelSource()?.analysis?.resolveWorkflowDefinitionRange(sourceText, name);
+            } catch {
+                // Keep the graph-provided metadata when the source file cannot be read.
+                return undefined;
+            }
+        })).get(filePath, workflowName);
     }
 
     private async getWorkflowCallerReferences(

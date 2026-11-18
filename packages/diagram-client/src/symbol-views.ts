@@ -1,5 +1,6 @@
 /**
- * The body of a node drawn as a symbol: a gate's IEEE shape, a mux's
+ * The body of a node drawn as a symbol: a gate's IEEE shape (a bubble on the
+ * output of one that inverts), a buffer's triangle, a mux's
  * trapezoid, a register's box with its clock wedge, an operator's box with its
  * glyph, and each pin's stub between the box's edge and the body.
  *
@@ -51,22 +52,25 @@ export function symbolPinsOf(children: readonly unknown[], width: number): Symbo
 /** The body's outline, for the kinds drawn as one closed shape. */
 export function symbolPath(kind: SymbolKind, width: number, height: number): string {
     const stub = SymbolGeometry.STUB_PX;
-    const bubble = kind === 'not' || kind === 'xnor' ? 2 * SymbolGeometry.BUBBLE_RADIUS_PX : 0;
+    const bubble = SymbolGeometry.hasBubble(kind) ? 2 * SymbolGeometry.BUBBLE_RADIUS_PX : 0;
     const left = stub + (kind === 'xor' || kind === 'xnor' ? SymbolGeometry.XOR_GAP_PX : 0);
     const right = width - stub - bubble;
     const w = right - left;
     const mid = height / 2;
     switch (kind) {
         case 'and':
+        case 'nand':
             // Flat back, a half-ellipse front.
             return `M ${left} 0 H ${left + w / 2} A ${w / 2} ${mid} 0 0 1 ${left + w / 2} ${height} H ${left} Z`;
         case 'or':
+        case 'nor':
         case 'xor':
         case 'xnor':
             return SymbolGeometry.backCurvePath(kind, left, height)
                 + ` Q ${left + w * 0.65} ${height} ${right} ${mid}`
                 + ` Q ${left + w * 0.65} 0 ${left} 0 Z`;
         case 'not':
+        case 'buf':
             return `M ${left} 0 L ${right} ${mid} L ${left} ${height} Z`;
         case 'mux':
             // Wide where the data come in, narrow where the result leaves.
@@ -99,7 +103,7 @@ export function renderSymbolBody(
     if (kind === 'xor' || kind === 'xnor') {
         out.push(svg('path', { class: { 'symbol-line': true }, attrs: { d: SymbolGeometry.backCurvePath(kind, stub, height) } }));
     }
-    if (kind === 'not' || kind === 'xnor') {
+    if (SymbolGeometry.hasBubble(kind)) {
         const r = SymbolGeometry.BUBBLE_RADIUS_PX;
         out.push(svg('circle', {
             class: { 'symbol-body': true, 'symbol-bubble': true },

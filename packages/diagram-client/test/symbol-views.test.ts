@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { SymbolGeometry } from '@dialogram/shared';
+import { SymbolGeometry, type SymbolKind } from '@dialogram/shared';
 import { renderSymbolBody, symbolPath, symbolPinsOf } from '../src/symbol-views';
 
 /** What the test stub's `svg` returns (test/glsp-stub.ts). */
@@ -83,6 +83,24 @@ describe('symbol views', () => {
         expect(texts(op)).toEqual(['==']);
         const reg = renderSymbolBody('register', SymbolGeometry.size('register', 2, 1), { west: [], east: [] }, undefined, 'count') as unknown as Drawn[];
         expect(texts(reg)).toEqual(['count']);
+    });
+
+    it('draw a bubble on the output of every gate that inverts, and none on a buffer', () => {
+        const bubbles = (kind: SymbolKind) => (renderSymbolBody(kind, SymbolGeometry.size(kind, 2, 1), { west: [], east: [] }) as unknown as Drawn[])
+            .filter(n => n.props?.class?.['symbol-bubble']).length;
+        expect((['not', 'nand', 'nor', 'xnor'] as SymbolKind[]).map(bubbles)).toEqual([1, 1, 1, 1]);
+        expect((['and', 'or', 'xor', 'buf', 'mux', 'register'] as SymbolKind[]).map(bubbles)).toEqual([0, 0, 0, 0, 0, 0]);
+        // A NAND is an AND and a NOR an OR, each with room for the bubble: the body's shape is the same.
+        const height = SymbolGeometry.size('nand', 2, 1).height;
+        expect(SymbolGeometry.backX('nand', height, height / 4)).toBe(SymbolGeometry.STUB_PX);
+        expect(SymbolGeometry.backX('nor', height, height / 2)).toBeGreaterThan(SymbolGeometry.STUB_PX);
+        // The output's stub starts past the bubble, at the box's edge less the stub.
+        for (const kind of ['nand', 'nor'] as SymbolKind[]) {
+            const { width } = SymbolGeometry.size(kind, 2, 1);
+            expect(SymbolGeometry.frontX(kind, width, height, height / 2)).toBe(width - SymbolGeometry.STUB_PX);
+        }
+        // A buffer is a NOT without its bubble, so narrower by it.
+        expect(SymbolGeometry.BODY.not.width - SymbolGeometry.BODY.buf.width).toBe(2 * SymbolGeometry.BUBBLE_RADIUS_PX);
     });
 
     it('draw a captioned mux’s body above its caption', () => {

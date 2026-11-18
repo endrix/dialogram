@@ -59,6 +59,7 @@ import {
 import { clearAllEdgeRoutingPoints } from '../routing/clear-edge-routes';
 import { releaseBoundaryNodeConstraints, restoreNodeLayoutOptions, runBoundaryFlowLayout } from '../operations/boundary-flow-layout';
 import { perfNow } from './graph-load-perf';
+import { type FreshNode, type NodeLink, type PlacedNode, placeBesideNeighbours, routeCrosses } from './incremental-placement';
 import {
     isMovableNode,
     type LayoutPersistenceMeta,
@@ -210,6 +211,17 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
             console.log(`[WorkflowModelSubmissionHandler] Placing ${layoutMeta.unpositionedNodeCount} newly added node(s)...`);
             try {
+                if (layoutMeta.incremental) {
+                    // A graph that grows: each new node beside the node it is
+                    // wired to, the rest where they were, and only the wires
+                    // this touches routed again (1d below).
+                    const toRoute = await this.placeGrowth(layoutMeta.workflowFilePath, layoutMeta.networkId, modelState.root);
+                    if (toRoute.length > 0) {
+                        layoutMeta.unroutedEdgeIds = [...new Set([...(layoutMeta.unroutedEdgeIds ?? []), ...toRoute])];
+                        modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
+                    }
+                }
+                // Whatever is still without a place (a node inside a group) is parked under the diagram.
                 await this.placeNewNodes(layoutMeta.workflowFilePath, layoutMeta.networkId, modelState.root);
                 console.log('[WorkflowModelSubmissionHandler] New node placement completed');
             } catch (error) {
@@ -327,6 +339,108 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
         await runBoundaryFlowLayout(modelState.root, layoutEngine);
         // From now on, treat it as persisted.
         await persistLayout(modelState, this.layoutPersistence, { layoutPerformed: true });
+    }
+
+    /**
+     * In a graph that grows, puts each node the saved layout does not place
+     * beside the node it is wired to (incremental-placement.ts), leaves every
+     * other node where it is, and saves the places. Only the root's own nodes:
+     * one inside a group is left to `placeNewNodes`.
+     *
+     * Returns the edges to route: those of the new nodes, and those whose
+     * saved route a new node now sits on, their route cleared.
+     */
+    private async placeGrowth(workflowFilePath: string, networkId: string, root: GModelRoot): Promise<string[]> {
+        const saved = await this.layoutPersistence.loadLayout(workflowFilePath, networkId)
+            ?? new Map<string, { x: number; y: number }>();
+        const placed: PlacedNode[] = [];
+        const fresh: Array<FreshNode & { key: string; element: any }> = [];
+        const topNodes = new Map<string, any>();
+        for (const child of ((root as any).children ?? []) as any[]) {
+            if (!isMovableNode(child)) {
+                continue;
+            }
+            const key = nodeLayoutKeyOf(child);
+            if (key === undefined) {
+                continue;
+            }
+            const id = String(child.id);
+            const width = Number(child.size?.width) || 160;
+            const height = Number(child.size?.height) || 60;
+            topNodes.set(id, child);
+            if (saved.has(key)) {
+                placed.push({ id, x: Number(child.position?.x) || 0, y: Number(child.position?.y) || 0, width, height });
+            } else {
+                fresh.push({ id, key, element: child, width, height });
+            }
+        }
+        if (fresh.length === 0 || placed.length === 0) {
+            return [];
+        }
+
+        // Each wire between two of the root's nodes, with the height of its port inside each.
+        const index = new GModelIndex();
+        index.indexRoot(root);
+        const endOf = (portId: unknown): { node: string; y: number } | undefined => {
+            let element: any = typeof portId === 'string' ? index.find(portId) : undefined;
+            if (!element) {
+                return undefined;
+            }
+            // The middle of the port, down from the top of the root's node it is on.
+            let y = (Number(element.size?.height) || 0) / 2;
+            while (element && !topNodes.has(String(element.id))) {
+                y += Number(element.position?.y) || 0;
+                element = element.parent;
+            }
+            return element ? { node: String(element.id), y } : undefined;
+        };
+        const links: NodeLink[] = [];
+        const edges: any[] = [];
+        const collectEdges = (element: any): void => {
+            if (element instanceof GEdge || (typeof element?.type === 'string' && element.type.startsWith('edge'))) {
+                edges.push(element);
+            }
+            for (const child of (element?.children ?? []) as any[]) {
+                collectEdges(child);
+            }
+        };
+        collectEdges(root);
+        for (const edge of edges) {
+            const from = endOf(edge.sourceId);
+            const to = endOf(edge.targetId);
+            if (from && to) {
+                links.push({ from: from.node, to: to.node, fromY: from.y, toY: to.y });
+            }
+        }
+
+        const positions = placeBesideNeighbours(placed, fresh, links);
+        const merged = new Map<string, { x: number; y: number }>(saved);
+        const freshIds = new Set<string>();
+        const boxes: Array<{ x: number; y: number; width: number; height: number }> = [];
+        for (const node of fresh) {
+            const position = positions.get(node.id);
+            if (!position) {
+                continue;
+            }
+            node.element.position = { x: position.x, y: position.y };
+            merged.set(node.key, { x: position.x, y: position.y });
+            freshIds.add(node.id);
+            boxes.push({ x: position.x, y: position.y, width: node.width, height: node.height });
+        }
+        await this.layoutPersistence.saveLayoutImmediate(workflowFilePath, networkId, merged, undefined);
+
+        const toRoute: string[] = [];
+        for (const edge of edges) {
+            const ends = [endOf(edge.sourceId)?.node, endOf(edge.targetId)?.node];
+            const points = Array.isArray(edge.routingPoints) ? edge.routingPoints as Array<{ x: number; y: number }> : [];
+            const touches = ends.some(end => end !== undefined && freshIds.has(end));
+            if (touches || (points.length >= 2 && boxes.some(box => routeCrosses(points, box)))) {
+                edge.routingPoints = [];
+                toRoute.push(String(edge.id));
+            }
+        }
+        console.log(`[WorkflowModelSubmissionHandler] Placed ${freshIds.size} new node(s) beside their neighbours; ${toRoute.length} edge(s) to route.`);
+        return toRoute;
     }
 
     /**

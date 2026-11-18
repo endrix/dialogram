@@ -357,6 +357,16 @@
         "op": "actionHandler"
     },
     {
+        "handler": "NodeActionActionHandler",
+        "kind": "dialogram.nodeAction",
+        "op": "actionHandler"
+    },
+    {
+        "handler": "RevealNodeActionHandler",
+        "kind": "dialogram.revealNode",
+        "op": "actionHandler"
+    },
+    {
         "id": "FocusAfterLoadService",
         "op": "bind",
         "scope": "singleton",

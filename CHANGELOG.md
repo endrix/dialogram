@@ -77,6 +77,52 @@ it no longer has.
 
 ### Added
 
+- **A graph that grows keeps its picture still.** A producer may say its
+  graph grows a step at a time (`graph.meta.incremental`): a schematic of a
+  netlist that starts from one cell and takes in a pin's fan-in when asked.
+  For such a graph a saved layout is used as long as it places some node,
+  where any other graph is laid out afresh for want of one place. The nodes
+  it does not place are put beside the nodes they are wired to once the
+  client has measured them (`incremental-placement.ts`): a node that drives
+  a placed one in the column to its left, a node a placed one drives in the
+  column to its right, at the height that makes the wire straight, and where
+  that place is taken at the nearest free one, along the column or a column
+  further out. A node placed this way is a neighbour for the next, so a
+  chain unrolls a column at a time; a pin's fan-out reads top to bottom as
+  the pins do. A piece wired to nothing placed (a cell picked from a list,
+  with the stubs of its pins) is started under the diagram from the node of
+  it with the most wires, set in and down by the room its neighbours take,
+  and grows from there as the rest does; a node wired to nothing at all is
+  parked under the diagram. Nothing already placed moves. Only the wires this touches are routed: the
+  new nodes' own, and those whose saved route a new node now sits on. A
+  graph that grows with no node placed yet is laid out whole, as any graph
+  is on its first open; Layout Diagram still tidies the whole picture.
+- **What a producer offers on a node, carried to the product's command.** A
+  node's `meta.actions`, and the graph's for the canvas, list what a reader
+  can do that the platform has no word for, each an `id` of the producer's
+  own and the `label` a menu shows. The context menu lists them first, in
+  the producer's order, on the node and on any port or label of it; an
+  action marked `doubleClick: "node"` is what a double-click on the node
+  does, one marked `"port"` what a double-click on one of its ports does
+  (`menu: false` keeps it off the menu), in place of anything the platform
+  would open. The product names the one VS Code command that carries them
+  out (`clientBehavior.nodeActionCommand`), called with a
+  `NodeActionRequest`: the action's id, the file and unit shown, the
+  producer's id of the node, its label and meta, and the port clicked. The
+  document says what is on offer and the product what runs: a graph cannot
+  name a command. Without the command nothing is offered.
+- **A refresh can name the node to go to.** The refresh command
+  (`commands.refreshDiagramModel`) takes `reveal`, the label of a node: the
+  diagram selects and centres it, keeping its zoom, when the model that has
+  it arrives (`RevealNodeAction`, `dialogram.revealNode`). What a product's
+  command added is not always where the view is: a cell picked from a list
+  lands under the diagram. A name no node answers to within twenty seconds
+  is forgotten, so a later load does not move the view for it.
+- **NAND, NOR and buffer symbols.** `meta.symbol` takes `nand`, `nor` and
+  `buf` beside the gates it had: an AND and an OR with a bubble on the
+  output, and a NOT's triangle without one (`SymbolGeometry.hasBubble`,
+  `hasCurvedBack`).
+
 - **A read-only view may let its transitions be drawn and deleted.** A
   producer that says so (`graph.meta.edits: ["transition"]`, with what may
   take one in `graph.meta.transitionLabels` and each state's name in what
@@ -517,6 +563,20 @@ it no longer has.
   feedback, so it survives a relayout or an edit.
 
 ### Changed
+
+- **A wire outside the viewport is not drawn**, as a node outside it is
+  not. Of a diagram's thousands of wires most are out of sight, and every
+  pan and zoom draws the model again; the hidden render, which measures,
+  and an export still draw every one (`routeInView`).
+- **A large source is read once while it stays as it was.** A diagram's load
+  asked several things of its source's whole text, each a read of the file:
+  its hash for the plan and hierarchy caches, the units it declares, what
+  they are to each other, where the one shown is written. For a file of a
+  megabyte or more each answer is now kept, by product, for as long as the
+  file's size, modification time and inode stay the same (`file-memo.ts`);
+  a smaller file is read every time, as before. A 414 MB netlist's diagram
+  loads in a quarter of a second after its first open, where every load
+  took fifteen.
 
 - **A feedback loop is highlighted where the drawing runs back.** The
   server put the platform's highlight on one edge per loop, the one that
