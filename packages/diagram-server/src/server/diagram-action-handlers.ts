@@ -769,6 +769,8 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
             requestId.startsWith('refresh-queue-visibility-') ||
             requestId.startsWith('refresh-agent-ctx-') ||
             requestId.startsWith('refresh-caller-refs-');
+        // One reading of the flag with `isBackgroundLoad`, which is what
+        // keeps the storage silent for the load this path submits quietly.
         const isAgentCtxOnly = Boolean(action.options?.agentContextOnly);
         this.startingSilently = isPolling || this.loadProgress?.listened === true;
         if (isPolling) {

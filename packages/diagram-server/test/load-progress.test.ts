@@ -137,6 +137,16 @@ describe('which loads a reader is waiting on', () => {
         }
         expect(isBackgroundLoad('refresh-queue-visibility-1', { agentContextOnly: true })).toBe(true);
     });
+
+    it('read the flag as the model handler does', () => {
+        // Any truthy value takes the handler's fast path, whose submit is
+        // the quiet one. Read more strictly here, such a load was spoken for
+        // by the storage and ended by nobody.
+        expect(isBackgroundLoad('refresh-1', { agentContextOnly: 'true' })).toBe(true);
+        expect(isBackgroundLoad('refresh-1', { agentContextOnly: 1 })).toBe(true);
+        expect(isBackgroundLoad('refresh-1', { agentContextOnly: false })).toBe(false);
+        expect(isBackgroundLoad('refresh-1', { agentContextOnly: '' })).toBe(false);
+    });
 });
 
 describe('a session saying what its reader is waiting for', () => {
@@ -182,17 +192,20 @@ describe('a session saying what its reader is waiting for', () => {
         expect(told).toHaveLength(2);
     });
 
-    it('keeps no account of requests nobody is waiting on', () => {
+    it('ends a wait whatever else the session is in the middle of', () => {
         // Whether a request is the reader's is the caller's to know, call by
         // call: the session does not handle one request at a time, and a
         // "background request in flight" kept here once made the reader's own
-        // end look like the background's. Here, whatever is said is said, and
-        // whatever is ended is ended.
+        // end look like the background's. Here whatever is said is said, and
+        // whatever is ended is ended, with nothing to be in the middle of.
         const told: LoadingUpdate[] = [];
         const reporter = reporterTo(told);
 
+        reporter.say({ message: 'Reading Top.fir' });
         expect(reporter.telling).toBe(true);
-        expect('inBackground' in reporter).toBe(false);
+        reporter.endWithModel();
+
+        expect(told.at(-1)).toEqual({ state: 'done', model: true });
     });
 
     it('says nothing on a host that shows no progress, or before it knows its client', () => {
@@ -321,9 +334,11 @@ describe('a load', () => {
         expect(told.at(-1)).toEqual({ state: 'done' });
     });
 
-    it('leaves the end to the submit that follows when there is nothing to draw anew', async () => {
-        // The handler submits what there was, and a model follows: said to
-        // be over here, the indicator went one round trip before it.
+    it('does not say the wait is over when there is nothing to draw anew', async () => {
+        // The handler goes on to submit what there was, and a model follows:
+        // said to be over here, the indicator went one round trip before it.
+        // (That the handler ends it, at that model or at the failure of a
+        // first load with nothing to submit, is its own suite's.)
         const { load, told, built } = storageWith(async () => undefined);
 
         await load('refresh-1');

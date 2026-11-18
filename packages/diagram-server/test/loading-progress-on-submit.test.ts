@@ -187,7 +187,11 @@ describe('the end of a wait', () => {
     });
 });
 
-function requestHarness(reporter: LoadProgressReporter | undefined, loadSourceModel: () => Promise<void> = async () => {}) {
+function requestHarness(
+    reporter: LoadProgressReporter | undefined,
+    loadSourceModel: () => Promise<void> = async () => {},
+    submitInitialModel: () => Promise<unknown[]> = async () => []
+) {
     const statuses: StatusAction[] = [];
     const handler = new WorkflowRequestModelActionHandler() as any;
     handler.logger = { debug: () => {} };
@@ -204,7 +208,7 @@ function requestHarness(reporter: LoadProgressReporter | undefined, loadSourceMo
     handler.progressService = { start: () => ({ end: () => undefined }) };
     const submits: string[] = [];
     handler.submissionHandler = {
-        submitInitialModel: async () => [],
+        submitInitialModel,
         // As the real one: the end of whatever was being waited for.
         submitModelDirectly: async () => {
             submits.push('ending the wait');
@@ -248,6 +252,52 @@ describe('a request for the model', () => {
         await expect(handler.execute({ kind: 'requestModel', requestId: 'refresh-live-overlay-1' } as any)).rejects.toBe(failure);
 
         expect(told).toEqual([{ state: 'progress', message: 'Reading top.fir' }]);
+    });
+
+    it('made behind the reader’s back and still at work does not hold the reader’s end back', async () => {
+        // That request is dispatched from inside the load that started the
+        // search for callers and runs alongside the queue. While it reads,
+        // the sizes the diagram measured come back and the reader's model
+        // leaves. A count of such requests kept per session swallowed that
+        // end, and the indicator counted on for good.
+        const told: LoadingUpdate[] = [];
+        const reporter = reporterTo(told);
+        reporter.say({ message: 'Reading top.fir' });
+        let finish!: () => void;
+        const reading = new Promise<void>(resolve => { finish = resolve; });
+        const { handler, submits } = requestHarness(reporter, () => reading);
+
+        const behind = handler.execute({
+            kind: 'requestModel',
+            requestId: 'refresh-caller-refs-1',
+            options: { agentContextOnly: true }
+        } as any);
+        // Meanwhile, from the queue: the reader's own submit.
+        await handler.submissionHandler.submitModelDirectly();
+
+        expect(told.at(-1)).toEqual({ state: 'done', model: true });
+        finish();
+        await behind;
+        expect(submits).toEqual(['ending the wait', 'quietly']);
+        expect(told.filter(update => update.state === 'done')).toHaveLength(1);
+    });
+
+    it('ends the wait of a load with nothing to draw and nothing to submit', async () => {
+        // The first load of a session whose file has no graph to give: the
+        // storage has said it is reading, there is no model to submit, and
+        // the submit fails for want of one. No model will end this wait.
+        const told: LoadingUpdate[] = [];
+        const reporter = reporterTo(told);
+        const noRoot = new TypeError("Cannot set properties of undefined (setting 'revision')");
+        const { handler } = requestHarness(
+            reporter,
+            async () => { reporter.say({ message: 'Reading top.fir' }); },
+            async () => { throw noRoot; }
+        );
+
+        await expect(handler.execute({ kind: 'requestModel', requestId: 'open-1' } as any)).rejects.toBe(noRoot);
+
+        expect(told).toEqual([{ state: 'progress', message: 'Reading top.fir' }, { state: 'done' }]);
     });
 
     it('says the wait is over when the load fails, anywhere on the way', async () => {

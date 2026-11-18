@@ -51,7 +51,10 @@ export function tellLoading(sink: LoadProgressSink | undefined, clientId: string
 export function isBackgroundLoad(requestId: string | undefined, options: Record<string, unknown> | undefined): boolean {
     const id = requestId ?? '';
     return (
-        options?.agentContextOnly === true ||
+        // As the model handler reads it (any truthy value takes its fast
+        // path, whose submit is the quiet one): a load the storage spoke for
+        // and the submit did not end would count its seconds for good.
+        Boolean(options?.agentContextOnly) ||
         id.startsWith('refresh-during-run-') ||
         id.startsWith('refresh-live-overlay-') ||
         id.startsWith('refresh-agent-ctx-') ||
