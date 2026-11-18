@@ -4,7 +4,7 @@
  * mux's select below its data), a register's pins named by what they are.
  */
 import { describe, expect, it } from 'vitest';
-import { SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramMetadata } from '@dialogram/shared';
+import { SymbolGeometry, WorkflowDiagramConstants, WorkflowDiagramCss, WorkflowDiagramMetadata } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument, type PyGraphNode } from '../src/model/graph-gmodel-source';
 
 const port = (node: string, name: string, direction: 'in' | 'out', pins?: string[]) =>
@@ -16,6 +16,26 @@ function transform(nodes: PyGraphNode[]): any {
 }
 
 const ports = (gnode: any) => gnode.children.filter((c: any) => typeof c.type === 'string' && c.type.startsWith('port'));
+
+/** A field of a bundle register: a port on one of its pins, a member of `group`. */
+const field = (name: string, direction: 'in' | 'out', pin: string, group: string) =>
+    ({ ...port('n:reg', `${group}.${name}`, direction, [pin]), name, group });
+
+const registerOf = (fields: ReturnType<typeof field>[]): PyGraphDocument => ({ version: '1', graph: { id: 'top', edges: [], nodes: [{
+    id: 'n:reg', kind: 'reg', label: 'slot', scope: 'root', ports: fields, meta: { symbol: 'register' }
+}] } });
+
+/** The register of `doc`, its buses open or closed. */
+const registerNode = (doc: PyGraphDocument, open: boolean): any => new GraphGModelSource()
+    .transform(doc, open ? { portBuses: { isExpanded: () => true } } : undefined).graph.children
+    .find((c: any) => c.args?.[WorkflowDiagramMetadata.SYMBOL] === 'register');
+
+const label = (gnode: any, name: string): string | undefined =>
+    ports(gnode).find((p: any) => p.args[WorkflowDiagramMetadata.PORT_NAME] === name)?.children[0].text;
+
+/** A name's width as the server estimates it: a fixed width per column. */
+const textWidth = (text: string): number =>
+    text.length * Math.max(5, Math.round(WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX * 0.6));
 
 describe('symbol nodes', () => {
     it('are sized by the symbol, have no header, and put their pins on the body', () => {
@@ -153,28 +173,48 @@ describe('symbol nodes, in the corners', () => {
 
     it('name the members of a bus opened on a register by the field each carries', () => {
         // A register of a bundle: a `d` and a `q` per field, a bus each way.
-        const field = (name: string, direction: 'in' | 'out', pin: string, group: string) =>
-            ({ ...port('n:reg', `${group}.${name}`, direction, [pin]), name, group });
-        const doc: PyGraphDocument = { version: '1', graph: { id: 'top', edges: [], nodes: [{
-            id: 'n:reg', kind: 'reg', label: 'slot', scope: 'root',
-            ports: [field('valid', 'in', 'd', 'in'), field('bits_addr', 'in', 'd', 'in'),
-                field('valid', 'out', 'q', 'out'), field('bits_addr', 'out', 'q', 'out')],
-            meta: { symbol: 'register' }
-        }] } };
-        const label = (gnode: any, name: string) => ports(gnode).find((p: any) => p.args[WorkflowDiagramMetadata.PORT_NAME] === name)?.children[0].text;
-
-        const closed = new GraphGModelSource().transform(doc).graph.children
-            .find((c: any) => c.args?.[WorkflowDiagramMetadata.SYMBOL] === 'register');
+        const doc = registerOf([field('valid', 'in', 'd', 'in'), field('bits_speculative_child', 'in', 'd', 'in'),
+            field('valid', 'out', 'q', 'out'), field('bits_speculative_child', 'out', 'q', 'out')]);
+        const closed = registerNode(doc, false);
         expect(label(closed, 'in')).toBe('d');
         expect(label(closed, 'out')).toBe('q');
 
-        const open = new GraphGModelSource().transform(doc, { portBuses: { isExpanded: () => true } }).graph.children
-            .find((c: any) => c.args?.[WorkflowDiagramMetadata.SYMBOL] === 'register');
-        const members = ports(open).filter((p: any) => p.cssClasses.includes(WorkflowDiagramCss.PORT_BUS_MEMBER))
-            .map((p: any) => p.children[0].text);
-        expect(members.sort()).toEqual(['bits_addr', 'bits_addr', 'valid', 'valid']);
-        // And the body is wide enough for them.
+        const open = registerNode(doc, true);
+        const members = ports(open).filter((p: any) => p.cssClasses.includes(WorkflowDiagramCss.PORT_BUS_MEMBER));
+        expect(members.map((p: any) => p.children[0].text).sort())
+            .toEqual(['bits_speculative_child', 'bits_speculative_child', 'valid', 'valid']);
+        // Each name's box holds the rail the client draws in front of it.
+        for (const member of members) {
+            const name = member.children[0];
+            expect(name.size.width).toBeGreaterThanOrEqual(textWidth(name.text) + WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX);
+        }
+        // And the body holds the widest input name and the widest output
+        // name side by side, slots and all, without the two meeting.
+        const widest = (east: boolean) => Math.max(...ports(open)
+            .filter((p: any) => (p.position.x > 0) === east).map((p: any) => p.children[0].size.width));
+        expect(open.size.width).toBeGreaterThanOrEqual(2 * SymbolGeometry.STUB_PX
+            + widest(false) + widest(true) + 2 * SymbolGeometry.PIN_NAME_INSET_PX + SymbolGeometry.PIN_NAME_SPACING_PX);
         expect(open.size.width).toBeGreaterThan(closed.size.width);
+    });
+
+    it('name a member on another pin than its bus by that pin as well', () => {
+        // A bundle of fields written together, and its `valid` the enable.
+        const doc = registerOf([field('valid', 'in', 'en', 'in'), field('addr', 'in', 'd', 'in'), field('data', 'in', 'd', 'in'),
+            field('addr', 'out', 'q', 'out'), field('data', 'out', 'q', 'out')]);
+        // The bus is named by the pin most of its members are.
+        expect(label(registerNode(doc, false), 'in')).toBe('d');
+        const open = registerNode(doc, true);
+        const names = ports(open).filter((p: any) => p.cssClasses.includes(WorkflowDiagramCss.PORT_BUS_MEMBER) && p.position.x < 0)
+            .map((p: any) => p.children[0].text);
+        expect(names.sort()).toEqual(['addr', 'data', 'en: valid']);
+    });
+
+    it('give a name of wide characters the columns it takes', () => {
+        // A producer's names are any text: a wide character is two columns.
+        const reg = registerNode(registerOf([field('時間', 'in', 'd', 'in'), field('abcd', 'in', 'd', 'in'),
+            field('x', 'out', 'q', 'out'), field('y', 'out', 'q', 'out')]), true);
+        const box = (text: string) => ports(reg).find((p: any) => p.children[0].text === text).children[0].size.width;
+        expect(box('時間')).toBe(box('abcd'));
     });
 
     it('stay a box with badges, which live in a header', () => {

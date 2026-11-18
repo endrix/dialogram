@@ -137,8 +137,10 @@ export function bundlePorts(
             // Not a port name: a member may be named exactly like its bundle
             // (a channel's payload), and the two must not share an id.
             const busId = `bus:${node.id}:${busKey}`;
-            // On a node drawn as a symbol, the bus sits where its members' pins do.
-            const memberPins = [...new Set(members.flatMap(m => m.pins ?? []))];
+            // On a node drawn as a symbol, the bus sits where its members' pins
+            // do, and is named by the pin most of them are (a register's `d`,
+            // beside the one member that is its `en`).
+            const memberPins = pinsByCount(members);
             ports.push({
                 id: busId,
                 name: group,
@@ -165,6 +167,16 @@ export function bundlePorts(
 
     const edges = mergeBusEdges(doc.graph.edges, memberOf);
     return { ...doc, graph: { ...doc.graph, nodes: withBoundaries, edges } };
+}
+
+/** The pins of `members`, the one most of them are on first; a tie in the order met. */
+function pinsByCount(members: readonly PyGraphPort[]): string[] {
+    const counts = new Map<string, number>();
+    for (const pin of members.flatMap(m => m.pins ?? [])) {
+        counts.set(pin, (counts.get(pin) ?? 0) + 1);
+    }
+    // A stable sort: a tie keeps the order the pins were met in.
+    return [...counts.keys()].sort((a, b) => counts.get(b)! - counts.get(a)!);
 }
 
 /**
