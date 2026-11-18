@@ -11,7 +11,8 @@ with products built against it: its API removals (#127, #129), the stock
 bundle's dropping the agent workflow UI (#137) and the `@viewer` opener
 (#141), and the server's no longer answering agent discovery (#139), need a
 product still at 0.8 to fail its version check rather than run against what
-it no longer has.
+it no longer has; and a product that uses its profile's `runCli` needs a
+platform that hands it one.
 
 ### Removed
 
@@ -76,6 +77,30 @@ it no longer has.
   MCP persona option no caller set.
 
 ### Added
+
+- **A product's host code runs its CLI as a run does.** The profile
+  `createSidecarDiagramProfile` returns has `runCli(file, args, { timeoutMs })`
+  where the CLI runs a diagram (not with `cliRuns: false`). It starts the CLI
+  exactly as a run of `file` starts it: the command setting scoped to the
+  file, its default when blank, `-m <module>` for an interpreter, from the
+  run root. At the deadline it is stopped: on POSIX it leads its own process
+  group and the whole group is stopped, on Windows only the CLI itself. The
+  deadline is `timeoutMs` when positive, else the graph-load deadline for
+  the file. It never throws, and answers `CliRunResult`: `exitCode`,
+  `stdout` and `stderr`, and a `failure` (`no-command`, `start`, `timeout`,
+  or `internal` when the toolkit could not work out how to start it, a
+  setting it could not read for instance) with a `message` when the CLI did
+  not run to its end, and the `cwd` it was started in; an exit other than 0
+  is the CLI's answer, not a failure. A product asks the CLI
+  what a run would find instead of copying the rules for where and how a run
+  starts, which stay the toolkit's own (`cli-invocation.ts` and
+  `run-root.ts`, which the run driver now calls too). The profile's other
+  CLI starts (the `cli-plan` graph export, a status source) do not go
+  through it yet.
+  - A run whose CLI setting and default are both blank says only that
+    (`Cannot run: ... names no command`); it no longer names a workspace
+    folder, `package.json` or `.git`, which cannot cause it, and no longer
+    looks for the run root first.
 
 - **A diagram that is loading says so, and says what it is doing.** A large
   design takes seconds to read and seconds more to lay out, and for all of
@@ -968,6 +993,14 @@ it no longer has.
 
 ### Fixed
 
+- **A child process's output keeps a character split between two reads.**
+  `runChildProcess` added each chunk as a string, so a UTF-8 character the
+  pipe delivered in two pieces became two replacement characters. Output is
+  now decoded as a stream.
+- **A deadline longer than about 24.8 days no longer stops a child at
+  once.** Node fires a timer set beyond 2^31-1 ms after 1 ms; a longer
+  deadline, given or from the graph-load setting, now waits the longest a
+  timer holds.
 - **The refresh command refreshes the view that is on screen.** Navigating in
   place, that can be a workflow in another file than the editor's document.
   The command (`commands.refreshDiagramModel`, a product's "Refresh Diagram"

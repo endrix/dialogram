@@ -81,6 +81,28 @@ describe('runChildProcess', () => {
     it('has a default deadline, so a caller that forgets one is still bounded', () => {
         expect(DEFAULT_CHILD_TIMEOUT_MS).toBeGreaterThan(0);
     });
+
+    it('reads a character written in two pieces as that character', async () => {
+        // The pipe hands over what was written when it was written: `é` and `€`
+        // arrive split across two chunks, and each half alone is no character.
+        const result = await node(
+            'process.stdout.write(Buffer.from([0xc3])); process.stderr.write(Buffer.from([0xe2, 0x82]));' +
+            'setTimeout(() => { process.stdout.write(Buffer.from([0xa9])); process.stderr.write(Buffer.from([0xac])); }, 150);'
+        );
+
+        expect(result.stdout).toBe('é');
+        expect(result.stderr).toBe('€');
+    });
+
+    it('keeps a deadline longer than a timer holds, rather than stopping the command at once', async () => {
+        // Node fires a timer set beyond 2^31-1 ms after 1 ms.
+        const result = await node('setTimeout(() => process.stdout.write("done"), 300);', 2 ** 31 + 1_000);
+
+        expect(result.timedOut).toBe(false);
+        expect(result.code).toBe(0);
+        expect(result.stdout).toBe('done');
+        expect(result.timeoutMs).toBeLessThanOrEqual(2 ** 31 - 1);
+    });
 });
 
 describe('describeChildFailure', () => {

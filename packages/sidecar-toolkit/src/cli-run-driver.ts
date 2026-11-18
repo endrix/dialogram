@@ -27,7 +27,7 @@
  * headline case (run started before the diagram opens) is fully covered.
  */
 import * as vscode from 'vscode';
-import { getCliInvocation } from './server/sidecar-runtime-config';
+import { noCliCommandMessage, resolveCliInvocation } from './cli-invocation.js';
 import { fileExists } from './server/source-files';
 import * as cp from 'node:child_process';
 import { unlinkSync } from 'node:fs';
@@ -544,30 +544,6 @@ export class CliRunDriver {
         return path.resolve(fileDir, raw);
     }
 
-    private async resolveRunRoot(forUri: vscode.Uri): Promise<string | undefined> {
-        const wsFolder = vscode.workspace.getWorkspaceFolder(forUri) ?? vscode.workspace.workspaceFolders?.[0];
-        const base = wsFolder ? wsFolder.uri.fsPath : path.dirname(forUri.fsPath);
-        const projectRoot = await this.findProjectRoot(base);
-        return projectRoot ?? base;
-    }
-
-    private async findProjectRoot(startDir: string): Promise<string | undefined> {
-        let current = startDir;
-        for (;;) {
-            const pkg = path.resolve(current, 'package.json');
-            const gitDir = path.resolve(current, '.git');
-            if (await fileExists(pkg) || await fileExists(gitDir)) {
-                return current;
-            }
-            const parent = path.dirname(current);
-            if (parent === current) {
-                break;
-            }
-            current = parent;
-        }
-        return undefined;
-    }
-
     private elicitSourceUri: string | undefined;
     private elicitServer: net.Server | undefined;
     private elicitSocketPath: string | undefined;
@@ -678,21 +654,6 @@ export class CliRunDriver {
         return answer;
     }
 
-    private async resolveCliInvocation(forUri: vscode.Uri, isPython: boolean): Promise<{ cmd: string; argsPrefix: string[]; cwd: string } | undefined> {
-        const startDir = await this.resolveRunRoot(forUri);
-        if (!startDir) {
-            return undefined;
-        }
-        // The one rule for the CLI command (`getCliInvocation`): the setting under the
-        // product's namespace, its default when blank, `-m <module>` when the command
-        // is a Python interpreter. The module form is for a Python source only.
-        const { cmd, argsPrefix } = getCliInvocation(this.config, vscode, forUri);
-        if (cmd.trim() === '') {
-            return undefined;
-        }
-        return { cmd, argsPrefix: isPython ? argsPrefix : [], cwd: startDir };
-    }
-
     /** The directory of the latest run of this workflow that started after `startedAfterMs`. */
     private async findLatestRunDir(opts: {
         baseOutDir: string;
@@ -764,7 +725,7 @@ export class CliRunDriver {
         return queueTracePath;
     }
 
-    private async runCli(
+    private async spawnRun(
         inv: { cmd: string; args: string[]; cwd: string },
         output: vscode.OutputChannel,
         onSpawn?: (child: cp.ChildProcessWithoutNullStreams) => void,
@@ -1174,10 +1135,10 @@ export class CliRunDriver {
         }
 
         const isPython = sourceUri.fsPath.endsWith('.py');
-        const cli = await this.resolveCliInvocation(sourceUri, isPython);
+        // The run root and the CLI by the rules `runCli` starts a product's CLI by too (`cli-invocation.ts`).
+        const cli = await resolveCliInvocation(this.config, sourceUri, isPython);
         if (!cli) {
-            const cliLabel = `${this.config.settingsNamespace}.${this.config.cliCommandSettingKey}`;
-            const message = `Cannot run: ${cliLabel} names no command, or no workspace folder, package.json or .git was found above the file.`;
+            const message = noCliCommandMessage(this.config);
             vscode.window.showErrorMessage(message);
             return { error: message };
         }
@@ -1436,7 +1397,7 @@ export class CliRunDriver {
                     refreshTimer = setInterval(() => void refreshDiagram(), 400);
                 }
                 startStream();
-                return await this.runCli(
+                return await this.spawnRun(
                     { cmd: cli.cmd, args: cliArgs, cwd: cli.cwd },
                     output,
                     (child) => {

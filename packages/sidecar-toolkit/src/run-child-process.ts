@@ -21,9 +21,9 @@
  *    sleep, a socket, a lock — hangs the child, and nothing here can tell that
  *    apart from slow work except by giving it a deadline.
  *  - It exits but leaves a grandchild holding the pipes, so `close` never comes.
- *    The child leads its own process group, so the deadline signals the whole
- *    tree; `exit` also settles after a short grace period even if `close` never
- *    arrives.
+ *    On POSIX the child leads its own process group, so the deadline signals
+ *    the whole tree; on Windows it signals the child alone. `exit` also settles
+ *    after a short grace period even if `close` never arrives.
  */
 import type { ChildProcess } from 'node:child_process';
 
@@ -40,6 +40,13 @@ export const DEFAULT_CHILD_TIMEOUT_MS = 60_000;
 /** Grace after SIGTERM before the group is signalled again with SIGKILL. */
 const SIGKILL_GRACE_MS = 5_000;
 
+/**
+ * The longest deadline kept. Node's timers hold at most 2^31-1 ms (about 24.8
+ * days) and fire a longer one after 1 ms, which would stop the command at once;
+ * a longer deadline is this one, so that the SIGKILL after it fits too.
+ */
+export const MAX_CHILD_TIMEOUT_MS = 2 ** 31 - 1 - SIGKILL_GRACE_MS;
+
 /** Grace after `exit` for `close` to arrive, before settling without it. */
 const CLOSE_GRACE_MS = 250;
 
@@ -48,7 +55,7 @@ export interface RunChildProcessOptions {
     input?: string;
     cwd?: string;
     env?: NodeJS.ProcessEnv;
-    /** Deadline in ms; defaults to {@link DEFAULT_CHILD_TIMEOUT_MS}. */
+    /** Deadline in ms; defaults to {@link DEFAULT_CHILD_TIMEOUT_MS}, at most {@link MAX_CHILD_TIMEOUT_MS}. */
     timeoutMs?: number;
 }
 
@@ -76,7 +83,7 @@ export async function runChildProcess(
     args: string[],
     options: RunChildProcessOptions = {}
 ): Promise<ChildProcessResult> {
-    const timeoutMs = options.timeoutMs ?? DEFAULT_CHILD_TIMEOUT_MS;
+    const timeoutMs = Math.min(options.timeoutMs ?? DEFAULT_CHILD_TIMEOUT_MS, MAX_CHILD_TIMEOUT_MS);
     const { spawn } = await import('node:child_process');
 
     return new Promise<ChildProcessResult>(resolve => {
@@ -171,8 +178,12 @@ export async function runChildProcess(
                 timeoutMs
             });
 
-        child.stdout?.on('data', chunk => (stdout += String(chunk)));
-        child.stderr?.on('data', chunk => (stderr += String(chunk)));
+        // Decoded as a stream: a character split between two chunks is that
+        // character, not two replacement characters.
+        child.stdout?.setEncoding('utf8');
+        child.stderr?.setEncoding('utf8');
+        child.stdout?.on('data', (chunk: string) => (stdout += chunk));
+        child.stderr?.on('data', (chunk: string) => (stderr += chunk));
 
         child.on('error', error => {
             settle({ code: -1, stdout, stderr, spawnError: error, timedOut, timeoutMs });

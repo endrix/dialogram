@@ -37,6 +37,7 @@ import {
 import { createSidecarEditBackend } from './chat-edit-backend.js';
 import { createPythonNavigationProvider } from './python-navigation.js';
 import { registerSidecarCommands } from './sidecar-commands.js';
+import { runCli, type CliRunResult } from './cli-invocation.js';
 import { registerPythonAnalysisPaths } from './python-analysis-paths-host.js';
 import { registerNewSourceFileCommand } from './new-source-file-command.js';
 import { createCliStatusSource, type SidecarStatusSourceInput } from './cli-status-source.js';
@@ -788,6 +789,13 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
         return { dispose: () => undefined };
     };
 
+    // The product's own host code runs its CLI as a run does (`cli-invocation.ts`),
+    // where the CLI runs at all: a CLI without `run` is not one to start.
+    const runCliOfProfile = runs
+        ? (file: vscode.Uri, args: readonly string[], options?: { timeoutMs?: number }): Promise<CliRunResult> =>
+            runCli(runtimeConfig, file, args, options)
+        : undefined;
+
     const profile = {
         key: input.key,
         displayName: input.displayName,
@@ -859,7 +867,15 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
         },
         runDriver,
         statusSource: input.statusSource ? createCliStatusSource(input.statusSource, runtimeConfig) : undefined,
-        newSourceFile
+        newSourceFile,
+        /**
+         * Run the product's CLI for `file` with `args`, started exactly as a
+         * run of the file starts it, stopped at the deadline
+         * (`options.timeoutMs`, else the graph-load deadline): on POSIX with
+         * all it started, on Windows the CLI alone. Never throws. Absent when
+         * the CLI runs no diagram (`cliRuns: false`).
+         */
+        runCli: runCliOfProfile
     };
     // Brand: assembled inside the platform bundle — DI fields may round-trip the API.
     Object.defineProperty(profile, Symbol.for('dialogram.platformAssembledProfile'), {

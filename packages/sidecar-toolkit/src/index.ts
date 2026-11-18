@@ -32,3 +32,5 @@ export {
 } from './server/sidecar-runtime-config.js';
 
 export { type RunQuestion, type RunAnswer } from './cli-run-driver.js';
+
+export { type CliRunResult } from './cli-invocation.js';
