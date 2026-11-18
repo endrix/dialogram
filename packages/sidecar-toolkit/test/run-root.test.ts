@@ -52,10 +52,20 @@ describe('the directory a run starts in', () => {
             workspaceFolders: [{ uri: Uri.file(path.join(root, 'work')) }]
         });
         expect(await resolveRunRoot(Uri.file(path.join(root, 'elsewhere', 'flows', 'main.py')) as any)).toBe(path.join(root, 'work'));
-        Object.assign(workspace, { getWorkspaceFolder: () => ({ uri: Uri.file(path.join(root, 'elsewhere')) }) });
-        // From the file's own folder up: `elsewhere` holds neither, `work` is not above it.
-        const found = await resolveRunRoot(Uri.file(path.join(root, 'elsewhere', 'flows', 'main.py')) as any);
-        expect(found === path.join(root, 'elsewhere') || !found.startsWith(root)).toBe(true);
+    });
+
+    it('is the workspace folder when it holds a package.json or a .git', async () => {
+        const root = tree({ '.git/HEAD': '', 'folder/package.json': '{}', 'folder/flows/main.py': '' });
+        Object.assign(workspace, { getWorkspaceFolder: () => ({ uri: Uri.file(path.join(root, 'folder')) }) });
+        expect(await resolveRunRoot(Uri.file(path.join(root, 'folder', 'flows', 'main.py')) as any)).toBe(path.join(root, 'folder'));
+    });
+
+    it('climbs above a workspace folder that holds neither, to the nearest directory that does', async () => {
+        // As the run driver always has: a `.git` above the workspace folder (a
+        // home directory kept in git, say) is where a run of a file in it starts.
+        const root = tree({ '.git/HEAD': '', 'folder/flows/main.py': '' });
+        Object.assign(workspace, { getWorkspaceFolder: () => ({ uri: Uri.file(path.join(root, 'folder')) }) });
+        expect(await resolveRunRoot(Uri.file(path.join(root, 'folder', 'flows', 'main.py')) as any)).toBe(root);
     });
 });
 

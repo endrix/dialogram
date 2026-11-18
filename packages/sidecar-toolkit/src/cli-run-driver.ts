@@ -1139,7 +1139,7 @@ export class CliRunDriver {
         const cli = await resolveCliInvocation(this.config, sourceUri, isPython);
         if (!cli) {
             const cliLabel = `${this.config.settingsNamespace}.${this.config.cliCommandSettingKey}`;
-            const message = `Cannot run: ${cliLabel} names no command, or no workspace folder, package.json or .git was found above the file.`;
+            const message = `Cannot run: ${cliLabel} names no command, and this extension has no default for it.`;
             vscode.window.showErrorMessage(message);
             return { error: message };
         }

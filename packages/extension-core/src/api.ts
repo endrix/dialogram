@@ -28,7 +28,7 @@ import type {
   NodeFamilySpec,
   ExecutionNodeState,
   ExecutionOverlaySink,
-  ToolQueryResult,
+  ToolOpResult,
 } from "@dialogram/shared";
 
 export type {
@@ -40,7 +40,7 @@ export type {
   EntityPaletteItemSpec,
   InProcessChatTool,
   NodeFamilySpec,
-  ToolQueryResult,
+  ToolOpResult,
 } from "@dialogram/shared";
 
 import type {
@@ -466,7 +466,7 @@ export interface DiagramProfile {
    * The profile's external tool and CLI, started as the diagram and the run
    * driver start them, for the product's own host code: handed back on
    * {@link DiagramProfileHandle.externalTool}. Set by a profile assembler
-   * whose profile has an edit tool.
+   * whose profile has either.
    */
   externalTool?: ExternalToolApi;
 }
@@ -478,32 +478,34 @@ export interface DiagramProfile {
  */
 export interface ExternalToolApi {
   /**
-   * Send `requests` to the profile's edit tool for `file` (absolute) in ONE
-   * start: one JSON line each, in order, then stdin closed; the command
-   * setting scoped to the file's folder, started where and with the
-   * environment the diagram's own requests for the file are, in its own
-   * process group, the whole group stopped at the deadline. Each `op` is
-   * bare: the profile's operation prefix is added. Never throws.
+   * Send one request to the profile's edit tool for `file` (absolute), as the
+   * diagram's own requests are sent and read: the command setting scoped to
+   * the file, started where and with the environment they are, in its own
+   * process group, the whole group stopped at the deadline (the profile's
+   * graph-load deadline for the file, unless `options.timeoutMs` says). The
+   * `op` is bare: the profile's operation prefix is added. Never throws.
+   * Absent for a profile without an edit tool (a read-only one).
    */
-  query(
+  query?(
     file: string,
-    requests: ReadonlyArray<{ op: string; args?: Record<string, unknown> }>,
+    request: { op: string; args?: Record<string, unknown> },
     options?: { timeoutMs?: number },
-  ): Promise<ToolQueryResult>;
+  ): Promise<ToolOpResult>;
   /**
    * The directory a run of `file` starts in, by the run driver's rule: from
    * the file's workspace folder (the first one when it is in none, its own
    * directory without any), the nearest directory holding a `package.json`
-   * or a `.git`; that folder when none does.
+   * or a `.git`; that folder when none does. Absent for a profile without a
+   * CLI.
    */
-  resolveRunRoot(file: vscode.Uri): Promise<string>;
+  resolveRunRoot?(file: vscode.Uri): Promise<string>;
   /**
    * The CLI as the run driver starts it for `file`: the setting scoped to the
-   * file's folder (its default when blank), the module form the run driver
-   * uses for an interpreter, and the run root as `cwd`. Undefined when the
-   * setting names no command.
+   * file's folder (the profile's default when blank), the module form the run
+   * driver uses for an interpreter, and the run root as `cwd`. Absent for a
+   * profile without a CLI.
    */
-  cliInvocation(file: vscode.Uri): Promise<{ cmd: string; argsPrefix: string[]; cwd: string } | undefined>;
+  cliInvocation?(file: vscode.Uri): Promise<{ cmd: string; argsPrefix: string[]; cwd: string }>;
 }
 
 /**

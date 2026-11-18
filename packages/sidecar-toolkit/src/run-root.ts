@@ -43,7 +43,8 @@ async function findProjectRoot(startDir: string): Promise<string | undefined> {
  * (`getCliInvocation`: the setting under the product's namespace scoped to
  * the file, its default when blank, `-m <module>` when the command is a
  * Python interpreter), the module form for a Python source only, from the
- * run root. Undefined when the setting names no command.
+ * run root. Undefined only when the setting and the profile's default are
+ * both blank: a profile without a CLI.
  */
 export async function resolveCliInvocation(
     config: CliCommandConfig,

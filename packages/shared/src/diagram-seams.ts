@@ -381,23 +381,24 @@ export interface ListRowCell {
 }
 
 /**
- * What several requests sent to one start of a profile's external tool got
- * back: every answer it gave, in order, and how the process ended. An answer
- * that refuses a request (`status: 'error'`) is an answer; `failure` is the
- * process's (it could not start, ran out of time, or exited non-zero), and
- * the answers given before it are kept.
+ * What one request to a profile's external tool got back, as the diagram's
+ * own requests are read: `ok` with the answer, or why not. A request the
+ * tool refused is `failure: 'rejected'`, with its answer in `response` and
+ * its `diagnostic.code` in `code`; the others are the process's.
  */
-export interface ToolQueryResult {
-    /** The command as started (the setting, its default when blank). */
-    command: string;
-    /** Where it was started, by the profile's rule for the file. A relative command is found from here. */
-    cwd: string;
-    /** Each stdout line that is a JSON object with a string `status`, in order; other lines (a log) are passed over. */
-    answers: unknown[];
-    /** The exit code; null when the process could not be started or was stopped at the deadline. */
-    exitCode: number | null;
-    failure?: 'start' | 'timeout' | 'exit';
-    /** For a person, when `failure` is set: the command, and its stderr for an exit. */
+export interface ToolOpResult {
+    ok: boolean;
+    /** The parsed answer, when the tool gave one. */
+    response?: any;
+    /** Why `ok` is false, for a person. */
     message?: string;
+    failure?: 'start' | 'timeout' | 'exit' | 'rejected' | 'invalid-json';
+    /** The answer's `diagnostic.code`, when the tool refused the request with one. */
+    code?: string;
     stderr?: string;
+    timedOut?: boolean;
+    /** The command as started (the setting scoped to the file, its default when blank). */
+    command: string;
+    /** Where it was started, by the profile's rule for the file: a relative command is found from here. */
+    cwd: string;
 }

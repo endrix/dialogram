@@ -81,23 +81,22 @@ needs a platform that hands it one.
 - **A product's host code asks its sidecar and CLI as the platform does.**
   `DiagramProfileHandle.externalTool` (`ExternalToolApi`) hands a product the
   profile's own rules instead of a copy of them, which drifts:
-  - `query(file, requests, { timeoutMs })` sends several requests to ONE
-    start of the profile's sidecar, one line each, and returns every answer
-    in order with how the process ended (`ToolQueryResult`: `answers`,
-    `exitCode`, `failure` `'start' | 'timeout' | 'exit'`, `message`,
-    `stderr`, and the `command` and `cwd` it started with). The command is
-    the setting scoped to the file, the ops get the profile's prefix, and the
-    process starts as every diagram request does (the file's package root,
-    first on `PYTHONPATH`, its own process group, stopped as a group at the
-    deadline), through the toolkit's new `invokeSidecarBatch` beside
-    `invokeSidecar`. For a sidecar slow to start that a product asks several
-    things at once; a refusal is an answer, not a failure.
+  - `query(file, { op, args }, { timeoutMs })` sends one request to the
+    profile's sidecar through `invokeSidecar`, as the diagram's own
+    requests are sent and read, and returns its result with the `command`
+    (the setting scoped to the file) and the `cwd` it started in
+    (`ToolOpResult`). The op gets the profile's prefix; the deadline is the
+    profile's graph-load deadline for the file unless `timeoutMs` says.
   - `resolveRunRoot(file)`, the directory a run starts in, and
     `cliInvocation(file)`, the CLI as the run driver starts it: the run
     driver's own rules, moved out of `CliRunDriver` into `run-root.ts`,
     which the driver now calls.
-  - Set by `createSidecarDiagramProfile` for a profile with a sidecar
-    (`DiagramProfile.externalTool`); absent for a read-only one.
+  - Set by `createSidecarDiagramProfile` (`DiagramProfile.externalTool`):
+    `query` for a profile with a sidecar, the other two for one with a CLI,
+    a read-only `cli-plan` profile included.
+  - A run whose CLI setting and default are both blank says only that
+    (`Cannot run: ... names no command`); it no longer names a workspace
+    folder, `package.json` or `.git`, which cannot cause it.
 
 - **A diagram that is loading says so, and says what it is doing.** A large
   design takes seconds to read and seconds more to lay out, and for all of

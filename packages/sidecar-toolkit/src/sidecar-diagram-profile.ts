@@ -12,6 +12,7 @@
  * result as `DiagramProfile` at the assignment site.
  */
 import type { DiagramClientAssets, DiagramCommandIds, EntityPaletteItemSpec, NodeFamilySpec, ProductClientBehavior } from '@dialogram/shared';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { DEFAULT_EXPORT_OP, invokeSidecarOp } from './sidecar-graph-export.js';
 import { createSourceReferenceContext } from './chat-source-reference.js';
@@ -37,7 +38,7 @@ import {
 import { createSidecarEditBackend } from './chat-edit-backend.js';
 import { createPythonNavigationProvider } from './python-navigation.js';
 import { registerSidecarCommands } from './sidecar-commands.js';
-import { invokeSidecarBatch } from './sidecar-transport.js';
+import { invokeSidecar, sidecarStartDirectory } from './sidecar-transport.js';
 import { resolveCliInvocation, resolveRunRoot } from './run-root.js';
 import { registerPythonAnalysisPaths } from './python-analysis-paths-host.js';
 import { registerNewSourceFileCommand } from './new-source-file-command.js';
@@ -792,19 +793,35 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
 
     // The product's own host code asks the sidecar and the CLI through the
     // rules the diagram and the run use (the command resolved here, the
-    // transport, the run root), not a copy of them. A profile without a
-    // sidecar hands none.
-    const externalTool = sidecarCommand
-        ? {
-            query: (file: string, requests: ReadonlyArray<{ op: string; args?: Record<string, unknown> }>, options?: { timeoutMs?: number }) =>
-                invokeSidecarBatch({
-                    command: resolveSidecarCommand(file),
+    // transport, the run root), not a copy of them: `query` where there is a
+    // sidecar, the run root and the CLI where there is a CLI.
+    const hasCli = nonBlank(input.cliCommandDefault) !== undefined;
+    const query = sidecarCommand
+        ? async (file: string, request: { op: string; args?: Record<string, unknown> }, options?: { timeoutMs?: number }) => {
+            const command = resolveSidecarCommand(file);
+            const [result, cwd] = await Promise.all([
+                invokeSidecar({
+                    command,
                     file,
-                    requests: requests.map(({ op, args }) => ({ op: `${input.sidecarOperationPrefix}.${op}`, args: args ?? {} })),
-                    timeoutMs: options?.timeoutMs
+                    op: `${input.sidecarOperationPrefix}.${request.op}`,
+                    args: request.args ?? {},
+                    timeoutMs: options?.timeoutMs ?? getGraphLoadTimeoutMs(runtimeConfig, vscode, vscode.Uri.file(file))
                 }),
-            resolveRunRoot: (file: vscode.Uri) => resolveRunRoot(file),
-            cliInvocation: (file: vscode.Uri) => resolveCliInvocation(runtimeConfig, file)
+                sidecarStartDirectory(file).catch(() => path.dirname(file))
+            ]);
+            return { ...result, command, cwd };
+        }
+        : undefined;
+    const externalTool = query || hasCli
+        ? {
+            ...(query ? { query } : {}),
+            ...(hasCli
+                ? {
+                    resolveRunRoot: (file: vscode.Uri) => resolveRunRoot(file),
+                    // The default is not blank, so neither is the command: there is always one.
+                    cliInvocation: async (file: vscode.Uri) => (await resolveCliInvocation(runtimeConfig, file))!
+                }
+                : {})
         }
         : undefined;
 
