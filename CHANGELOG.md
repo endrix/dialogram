@@ -87,21 +87,32 @@ it no longer has.
   a placed one in the column to its left, a node a placed one drives in the
   column to its right, at the height that makes the wire straight, and where
   that place is taken at the nearest free one, along the column or a column
-  further out. A node placed this way is a neighbour for the next, so a
+  further out, as many columns out as it takes: a pin that gains a thousand
+  loads fills column after column, and no node is put on another. A node
+  placed this way is a neighbour for the next, so a
   chain unrolls a column at a time; a pin's fan-out reads top to bottom as
   the pins do. A piece wired to nothing placed (a cell picked from a list,
   with the stubs of its pins) is started under the diagram from the node of
   it with the most wires, set in and down by the room its neighbours take,
   and grows from there as the rest does; a node wired to nothing at all is
-  parked under the diagram. Nothing already placed moves. Only the wires this touches are routed: the
-  new nodes' own, and those whose saved route a new node now sits on. A
+  parked under the diagram. A new member of a group goes under the group's
+  members, in the group, and the frame grows to hold it. Nothing already
+  placed moves. The nodes that have a place are the ones the load gave one,
+  from the view's own layout or, for a view shown on its fallback's, from
+  that: such a view gets a layout of its own when it grows, with every node
+  and wire where it was drawn and the new ones added. The place of a node
+  that is gone is dropped with it, so a node parked later is not put on it.
+  Only the wires this touches are routed: the new nodes' own, those whose
+  saved route a new node now sits on, and those at the frame of a group that
+  grew. A
   graph that grows with no node placed yet is laid out whole, as any graph
   is on its first open; Layout Diagram still tidies the whole picture.
 - **What a producer offers on a node, carried to the product's command.** A
   node's `meta.actions`, and the graph's for the canvas, list what a reader
   can do that the platform has no word for, each an `id` of the producer's
   own and the `label` a menu shows. The context menu lists them first, in
-  the producer's order, on the node and on any port or label of it; an
+  the producer's order, on the node and on any port or label of it, and on
+  the canvas before the unit's views; an
   action marked `doubleClick: "node"` is what a double-click on the node
   does, one marked `"port"` what a double-click on one of its ports does
   (`menu: false` keeps it off the menu), in place of anything the platform
@@ -110,11 +121,13 @@ it no longer has.
   `NodeActionRequest`: the action's id, the file and unit shown, the
   producer's id of the node, its label and meta, and the port clicked. The
   document says what is on offer and the product what runs: a graph cannot
-  name a command. Without the command nothing is offered.
+  name a command. Without the command nothing is offered: the client leaves
+  the entries out of the menu, and a double-click does what it did.
 - **A refresh can name the node to go to.** The refresh command
   (`commands.refreshDiagramModel`) takes `reveal`, the label of a node: the
-  diagram selects and centres it, keeping its zoom, when the model that has
-  it arrives (`RevealNodeAction`, `dialogram.revealNode`). What a product's
+  diagram selects it, in place of what was selected, and centres it, keeping
+  its zoom, when the model that has it arrives (`RevealNodeAction`,
+  `dialogram.revealNode`). What a product's
   command added is not always where the view is: a cell picked from a list
   lands under the diagram. A name no node answers to within twenty seconds
   is forgotten, so a later load does not move the view for it.
@@ -565,16 +578,21 @@ it no longer has.
 ### Changed
 
 - **A wire outside the viewport is not drawn**, as a node outside it is
-  not. Of a diagram's thousands of wires most are out of sight, and every
-  pan and zoom draws the model again; the hidden render, which measures,
-  and an export still draw every one (`routeInView`).
+  not; one within a few pixels of it still is, since its arrowhead and its
+  caption reach further than its route. Of a diagram's thousands of wires
+  most are out of sight, and every pan and zoom draws the model again; the
+  hidden render, which measures, still draws every one (`routeInView`).
+  Export as SVG copies the diagram on screen, so the file holds the wires in
+  sight, as it has always held the nodes in sight and no others.
 - **A large source is read once while it stays as it was.** A diagram's load
   asked several things of its source's whole text, each a read of the file:
   its hash for the plan and hierarchy caches, the units it declares, what
   they are to each other, where the one shown is written. For a file of a
   megabyte or more each answer is now kept, by product, for as long as the
   file's size, modification time and inode stay the same (`file-memo.ts`);
-  a smaller file is read every time, as before. A 414 MB netlist's diagram
+  a smaller file is read every time, as before. What is kept is an answer:
+  a read that failed is asked for again at the next load, and nothing of the
+  editor that first asked is held. A 414 MB netlist's diagram
   loads in a quarter of a second after its first open, where every load
   took fifteen.
 

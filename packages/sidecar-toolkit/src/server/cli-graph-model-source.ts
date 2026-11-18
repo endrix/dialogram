@@ -53,13 +53,7 @@ interface CachedPlan {
  * The units a file declares. A large file is read for them once while it
  * stays as it was (file-memo.ts), whichever editor asks.
  */
-const LOCAL_WORKFLOW_NAMES = new FileMemo<string[]>(async filePath => {
-    try {
-        return extractWorkflowDefinitionNames(await fs.readFile(filePath, 'utf-8'));
-    } catch {
-        return [];
-    }
-});
+const LOCAL_WORKFLOW_NAMES = new FileMemo<string[]>();
 
 /**
  * Acquires workflow graph documents via the runtime CLI's `plan --format graph`, falling back to
@@ -350,8 +344,13 @@ export class CliGraphModelSource implements DiagramModelSource {
         }
     }
 
+    /** A file that cannot be read declares nothing, and that is not kept: it is read again at the next ask. */
     private async getLocalWorkflowNames(filePath: string): Promise<string[]> {
-        return LOCAL_WORKFLOW_NAMES.get(filePath);
+        try {
+            return await LOCAL_WORKFLOW_NAMES.get(filePath, async () => extractWorkflowDefinitionNames(await fs.readFile(filePath, 'utf-8')));
+        } catch {
+            return [];
+        }
     }
 
     /** Cache key for a runtime plan: (file, workflow, sha256 of on-disk content). undefined if unreadable. */

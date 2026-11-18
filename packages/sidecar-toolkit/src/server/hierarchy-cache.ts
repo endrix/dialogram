@@ -106,16 +106,15 @@ export function definitionFiles(exported: unknown): string[] {
 }
 
 /** A large file is hashed once for as long as it stays as it was (file-memo.ts). */
-const hashes = new FileMemo<string | undefined>(async filePath => {
+const hashes = new FileMemo<string>();
+
+/** A file's hash; `undefined` for one that cannot be read, which is not kept: it is read again at the next ask. */
+export async function fileHash(filePath: string): Promise<string | undefined> {
     try {
-        return createHash('sha256').update(await fs.readFile(filePath)).digest('hex');
+        return await hashes.get(filePath, async () => createHash('sha256').update(await fs.readFile(filePath)).digest('hex'));
     } catch {
         return undefined;
     }
-});
-
-export async function fileHash(filePath: string): Promise<string | undefined> {
-    return hashes.get(filePath);
 }
 
 interface CachedHierarchy {

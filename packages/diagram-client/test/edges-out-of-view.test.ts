@@ -1,10 +1,11 @@
 /**
  * A wire wholly outside the viewport is not drawn (views.ts), as a node
  * outside it is not; the hidden render, which measures, draws every one.
+ * An export copies the SVG on screen, so it holds what is in sight.
  */
 import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
-import { WorkflowEdgeView } from '../src/views';
+import { ROUTE_IN_VIEW_MARGIN_PX, WorkflowEdgeView } from '../src/views';
 
 type Point = { x: number; y: number };
 
@@ -53,7 +54,15 @@ describe('a wire and the viewport', () => {
         expect(render(edge(inside, { x: 2000, y: 0 }))).toBeUndefined();
     });
 
-    it('is drawn all the same by the hidden render, which measures and exports', () => {
+    it('is drawn all the same by the hidden render, which measures', () => {
         expect(render(edge(below), 'hidden')).toBeDefined();
+    });
+
+    it('is drawn while it is only just out of sight: its arrowhead and its caption reach further than its route', () => {
+        const under = (by: number): Point[] => [{ x: 100, y: 600 + by }, { x: 300, y: 600 + by }];
+        expect(render(edge(under(ROUTE_IN_VIEW_MARGIN_PX - 1)))).toBeDefined();
+        expect(render(edge(under(ROUTE_IN_VIEW_MARGIN_PX + 1)))).toBeUndefined();
+        // The margin is in canvas pixels, whatever the zoom.
+        expect(render(edge(under(ROUTE_IN_VIEW_MARGIN_PX + 1), { x: 0, y: 0 }, 0.5))).toBeDefined();
     });
 });

@@ -68,8 +68,8 @@ describe('the context menu', () => {
         ]);
         expect(offered[0].actions).toEqual([{ kind: 'dialogram.nodeAction', action: 'expand-in', elementId: 'u1' }]);
         expect(offered.every((i: any) => i.group === 'producer')).toBe(true);
-        const sorted = [...items].sort((a: any, b: any) => String(a.sortString).localeCompare(String(b.sortString)));
-        expect(sorted.slice(0, 2).map((i: any) => i.id)).toEqual(offered.map((i: any) => i.id));
+        // First as returned: the menu is drawn in that order, nothing sorts it.
+        expect(items.slice(0, 2).map((i: any) => i.id)).toEqual(offered.map((i: any) => i.id));
     });
 
     it('offers them on a port or a label of the node too: it stands for its node', () => {
@@ -85,6 +85,20 @@ describe('the context menu', () => {
         const find = items.find((i: any) => i.id === 'dialogram.nodeAction.find');
         expect(find.label).toBe('Find in the Netlist...');
         expect(find.actions).toEqual([{ kind: 'dialogram.nodeAction', action: 'find' }]);
+    });
+
+    it('lists the canvas’s own before the views of the unit, in the producer’s order, as the items are returned', () => {
+        const canvas: any = {
+            id: 'root', type: 'graph', args: {
+                'wf:selectedWorkflow': 'top',
+                [WorkflowDiagramMetadata.VIEWS]: [{ id: 'schematic', label: 'Schematic' }, { id: 'synth', label: 'Synthesis' }],
+                [WorkflowDiagramMetadata.ACTIONS]: [{ id: 'find', label: 'Find in the Netlist...' }, { id: 'undo', label: 'Take the Last Step Back' }]
+            }
+        };
+        const labels = provider(canvas).getItems([], { x: 0, y: 0 }).map((i: any) => i.label);
+        expect(labels.slice(0, 2)).toEqual(['Find in the Netlist...', 'Take the Last Step Back']);
+        expect(labels.indexOf('Schematic')).toBeGreaterThan(1);
+        expect(labels.indexOf('Synthesis')).toBe(labels.indexOf('Schematic') + 1);
     });
 
     it('lists none for a node whose producer offers none', () => {

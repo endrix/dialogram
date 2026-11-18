@@ -12,7 +12,7 @@ import {
     type NodeLink,
     type PlacedNode
 } from '../src/server/incremental-placement';
-import { graphGrows, savedLayoutIsUsable } from '../src/server/source-model-storage';
+import { countCoincidentNodes, graphGrows, savedLayoutIsUsable } from '../src/server/source-model-storage';
 
 const box = (id: string, x: number, y: number, width = 60, height = 40): PlacedNode => ({ id, x, y, width, height });
 const fresh = (id: string, width = 60, height = 40): FreshNode => ({ id, width, height });
@@ -159,6 +159,42 @@ describe('incremental placement', () => {
                 }
             }
         }
+    });
+
+    it('never puts a node on another, however many one pin gains: the columns go on until there is room', () => {
+        // One pin, up to three thousand loads in one step: more than the columns near it hold.
+        for (const [count, width, height] of [[1200, 60, 40], [3000, 60, 40], [700, 160, 90]] as const) {
+            const placed = [box('clk', 0, 0)];
+            const loads = Array.from({ length: count }, (_, k) => fresh(`l${k}`, width, height));
+            const started = Date.now();
+            const at = placeBesideNeighbours(placed, loads, loads.map(l => link('clk', l.id)));
+            expect(Date.now() - started).toBeLessThan(8000);
+            expect(at.size).toBe(count);
+            // No two at one point (what a saved layout is thrown away for), and no two touching at all.
+            expect(countCoincidentNodes(at.values())).toBe(0);
+            const all = [...placed, ...loads.map(l => ({ id: l.id, ...at.get(l.id)!, width, height }))];
+            const cells = new Map<string, typeof all>();
+            let touching = 0;
+            for (const b of all) {
+                for (let cx = Math.floor(b.x / 400); cx <= Math.floor((b.x + b.width) / 400); cx++) {
+                    for (let cy = Math.floor(b.y / 400); cy <= Math.floor((b.y + b.height) / 400); cy++) {
+                        const key = `${cx},${cy}`;
+                        const cell = cells.get(key) ?? [];
+                        touching += cell.filter(other => other !== b && overlaps(b, other)).length;
+                        cell.push(b);
+                        cells.set(key, cell);
+                    }
+                }
+            }
+            expect(touching, `${count} loads of ${width}x${height}`).toBe(0);
+            // All to the right of the pin that drives them.
+            expect(Math.min(...[...at.values()].map(p => p.x))).toBe(60 + INCREMENTAL_GAP_X);
+        }
+    });
+
+    it('finds a place for a node of no size among nodes with no gap between them', () => {
+        const at = placeBesideNeighbours([box('a', 0, 0, 0, 0)], [fresh('b', 0, 0), fresh('c', 0, 0)], [link('a', 'b', 0, 0), link('a', 'c', 0, 0)], { gapX: 0, gapY: 0 });
+        expect(at.size).toBe(2);
     });
 
     it('says which saved routes a new node sits on', () => {

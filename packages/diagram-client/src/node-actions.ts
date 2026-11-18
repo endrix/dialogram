@@ -5,7 +5,10 @@
  * The server lists the actions in the context menu; a double-click does the
  * one the producer marked for it, on the node or on the port clicked. Either
  * way a `NodeActionAction` arrives here, and the handler calls the product's
- * command (`clientBehavior.nodeActionCommand`) with what it was made on. The
+ * command (`clientBehavior.nodeActionCommand`) with what it was made on.
+ * Which command a product names is the client's to know, not the server's,
+ * so it is here that a menu loses the entries no command would carry out
+ * (`offeredMenuItems`): without the command nothing is offered. The
  * command does the work in the host (a producer's CLI, usually) and asks for
  * the diagram again; nothing here changes the model. The command may name a
  * node for the reader to be shown (`RevealNodeAction`, focus-after-load.ts):
@@ -58,6 +61,22 @@ export function portNameOf(target: GModelElement | undefined): string | undefine
         current = (current as unknown as { parent?: GModelElement }).parent;
     }
     return undefined;
+}
+
+/**
+ * A context menu's items as the reader is offered them: what a producer
+ * lists is left out when the product names no command to carry it out. An
+ * entry that does nothing when clicked is worse than no entry.
+ */
+export function offeredMenuItems<T extends { actions?: readonly unknown[]; children?: T[] }>(items: readonly T[]): T[] {
+    if (clientBehavior().nodeActionCommand) {
+        return [...items];
+    }
+    return items
+        .filter(item => !(item.actions ?? []).some(action => NodeActionAction.is(action)))
+        .map(item => (Array.isArray(item.children) && item.children.length > 0
+            ? { ...item, children: offeredMenuItems(item.children) }
+            : item));
 }
 
 /**

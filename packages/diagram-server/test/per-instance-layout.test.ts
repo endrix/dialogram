@@ -103,6 +103,8 @@ describe('loading a nested view', () => {
         // command) reads it from here, so it saves where the view was read.
         expect(path.basename(layoutTargetOf(model).filePath)).toBe('top.py');
         expect(layoutTargetOf(model).networkId).toBe('top/b2/block');
+        // The places it gave are noted with it, and that they are its own.
+        expect([[...persistence.appliedPositions.keys()], persistence.layoutIsFallback]).toEqual([['n'], false]);
     });
 
     it('starts from the workflow’s standalone layout until it has its own, still saving per instance', async () => {
@@ -110,6 +112,9 @@ describe('loading a nested view', () => {
 
         expect(asked).toEqual(['top.py#top/b2/block', 'block.py#block']);
         expect(persistence.networkId).toBe('top/b2/block');
+        // The places are the standalone layout's: what a graph that grows places its new nodes among, since the
+        // view's own file has none (diagram-action-handlers.ts, `placeUnplacedNodes`).
+        expect([[...persistence.appliedPositions.keys()], persistence.layoutIsFallback]).toEqual([['n'], true]);
     });
 
     it('keeps one layout per workflow when nested files open in their own editors', async () => {

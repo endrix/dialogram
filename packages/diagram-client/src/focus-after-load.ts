@@ -41,9 +41,11 @@ export class FocusAfterLoadService {
             return; // not this view: keep waiting for the one that has it
         }
         this.pending = undefined;
-        // After the view has rendered it.
+        // After the view has rendered it. It becomes the selection, in place
+        // of what was selected: the node a step was taken from stays selected
+        // across the reload, and the reader would be shown two.
         setTimeout(() => {
-            void this.dispatcher.dispatch(SelectAction.create({ selectedElementsIDs: [id] }) as never);
+            void this.dispatcher.dispatch(SelectAction.create({ selectedElementsIDs: [id], deselectedElementsIDs: true }) as never);
             void this.dispatcher.dispatch(CenterAction.create([id], { animate: true, retainZoom: true }) as never);
         }, 0);
     }

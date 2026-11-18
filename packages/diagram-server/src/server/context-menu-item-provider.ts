@@ -271,29 +271,12 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
         const elementArgs: Args | undefined = (element as any).args;
         const navSymbolHint = navigationSymbolFromElement(element);
 
-        // The views the producer offers of the unit shown, besides the one on
-        // screen: on the canvas, for the workflow itself.
-        if (element === this.modelState.root) {
-            const rootViews = parseViewsMeta(elementArgs?.[WorkflowDiagramMetadata.VIEWS]);
-            const shownWorkflow = elementArgs?.['wf:selectedWorkflow'];
-            const shownView = parseViewArg(elementArgs?.[VIEW_ARG]);
-            if (rootViews && typeof shownWorkflow === 'string' && shownWorkflow.trim() !== '') {
-                rootViews.filter(view => view.id !== shownView).forEach((view, index) => items.push({
-                    id: `dialogram.openView.${view.id}`,
-                    label: view.label,
-                    // Last in the menu, under a separator: a view is a different
-                    // picture of the same thing, not an edit of it.
-                    sortString: `z${index}`,
-                    group: 'views',
-                    actions: [{ kind: OPEN_VIEW_KIND, view: view.id, label: view.label, uri: sourceUri, workflowName: shownWorkflow.trim() } as any]
-                }));
-            }
-        }
-
         // What the producer offers on this node, or on the canvas
         // (`meta.actions`, node-actions.ts): first in the menu, in its order.
-        // The product's command carries them out; the client drops the item's
-        // action when the product names none.
+        // The menu is drawn in the order the items are returned (nothing
+        // sorts it), so first here is first there. The product's command
+        // carries them out; the client leaves them out of the menu when the
+        // product names none (`offeredMenuItems`).
         const offered = (() => {
             if (element === this.modelState.root) {
                 return { actions: parseNodeActions(elementArgs?.[WorkflowDiagramMetadata.ACTIONS]), elementId: undefined };
@@ -320,6 +303,25 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
                 ...(offered.elementId ? { elementId: offered.elementId } : {})
             } as any]
         }));
+
+        // The views the producer offers of the unit shown, besides the one on
+        // screen: on the canvas, for the workflow itself.
+        if (element === this.modelState.root) {
+            const rootViews = parseViewsMeta(elementArgs?.[WorkflowDiagramMetadata.VIEWS]);
+            const shownWorkflow = elementArgs?.['wf:selectedWorkflow'];
+            const shownView = parseViewArg(elementArgs?.[VIEW_ARG]);
+            if (rootViews && typeof shownWorkflow === 'string' && shownWorkflow.trim() !== '') {
+                rootViews.filter(view => view.id !== shownView).forEach((view, index) => items.push({
+                    id: `dialogram.openView.${view.id}`,
+                    label: view.label,
+                    // Under a separator, after what the producer offers: a view is
+                    // a different picture of the same thing, not an edit of it.
+                    sortString: `z${index}`,
+                    group: 'views',
+                    actions: [{ kind: OPEN_VIEW_KIND, view: view.id, label: view.label, uri: sourceUri, workflowName: shownWorkflow.trim() } as any]
+                }));
+            }
+        }
 
         const boundaryAncestor = (() => {
             let current: any = element;

@@ -1380,12 +1380,17 @@ export class WorkflowOutputPortView extends ShapeView {
     }
 }
 
+/** How far outside the canvas a route still counts as in sight, in canvas pixels. */
+export const ROUTE_IN_VIEW_MARGIN_PX = 48;
+
 /**
  * Whether any of a route is on the canvas: its box, carried up through the
  * edge's ancestors to the canvas (the root's step applies the scroll and the
- * zoom), against the canvas's own. Yes whenever that cannot be said (the
- * hidden render, a canvas not measured yet), so nothing is ever left out for
- * want of knowing.
+ * zoom), against the canvas's own and a margin round it: a wire is more than
+ * its route (its stroke, its arrowhead, the caption beside it), and those of
+ * a wire a few pixels out would vanish while still in sight. Yes whenever it
+ * cannot be said (the hidden render, a canvas not measured yet), so nothing
+ * is ever left out for want of knowing.
  */
 export function routeInView(
     edge: unknown,
@@ -1420,7 +1425,9 @@ export function routeInView(
         }
         parent = parent.parent as typeof parent;
     }
-    return box.x <= canvas.width && box.x + box.width >= 0 && box.y <= canvas.height && box.y + box.height >= 0;
+    const margin = ROUTE_IN_VIEW_MARGIN_PX;
+    return box.x <= canvas.width + margin && box.x + box.width >= -margin
+        && box.y <= canvas.height + margin && box.y + box.height >= -margin;
 }
 
 /**
@@ -1632,7 +1639,9 @@ export class WorkflowEdgeView extends PolylineEdgeView {
         // A wire wholly outside the viewport is not drawn, as a node outside
         // it is not: of a diagram's thousands of wires most are out of sight,
         // and every pan and zoom draws the model again. The hidden render,
-        // which measures, and an export draw every one.
+        // which measures, draws every one. An export of the diagram on
+        // screen (svg-export.ts copies the SVG that is drawn) holds the wires
+        // in sight, as it holds the nodes in sight and no others.
         if (!routeInView(edge, safeRoute, context)) {
             return undefined;
         }

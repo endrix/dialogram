@@ -138,11 +138,11 @@ export function savedLayoutIsUsable(
 const RELATIONSHIP_MEMOS = new Map<string, FileMemo<WorkflowRelationshipInfo>>();
 const DEFINITION_RANGE_MEMOS = new Map<string, FileMemo<unknown>>();
 
-function memoFor<T>(memos: Map<string, FileMemo<T>>, product: string | undefined, make: () => FileMemo<T>): FileMemo<T> {
+function memoFor<T>(memos: Map<string, FileMemo<T>>, product: string | undefined): FileMemo<T> {
     const key = product ?? '';
     let memo = memos.get(key);
     if (!memo) {
-        memo = make();
+        memo = new FileMemo<T>();
         memos.set(key, memo);
     }
     return memo;
@@ -695,6 +695,9 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             totalNodeCount,
             // The nodes without a place are put beside their neighbours, not under the diagram.
             incremental: grows,
+            // Among the places given here, whichever layout they came from.
+            appliedPositions: loadedLayoutPositions,
+            layoutIsFallback: layoutIsFallbacks,
         });
 
         // Advance the agent auto-layout reload generation: a marked agent structural edit becomes
@@ -889,32 +892,47 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
      * answer is the product's analysis of the text, so it is kept by product.
      */
     private async getWorkflowRelationshipInfo(filePath: string): Promise<WorkflowRelationshipInfo> {
-        return memoFor(RELATIONSHIP_MEMOS, this.storageOptions?.operationPrefix, () => new FileMemo<WorkflowRelationshipInfo>(async file => {
-            try {
-                const sourceText = await fs.readFile(file, 'utf-8');
-                return this.ensureModelSource()?.analysis?.analyzeWorkflowRelationships(sourceText)
-                    ?? { workflowNames: [], entryWorkflowNames: [], callersByWorkflow: {} };
-            } catch {
-                return {
-                    workflowNames: [],
-                    entryWorkflowNames: [],
-                    callersByWorkflow: {}
-                };
-            }
-        })).get(filePath);
+        const none = (): WorkflowRelationshipInfo => ({ workflowNames: [], entryWorkflowNames: [], callersByWorkflow: {} });
+        // This session's own analysis, asked at this ask: the memo keeps answers, and nothing of who asked.
+        const analysis = this.ensureModelSource()?.analysis;
+        if (!analysis) {
+            return none();
+        }
+        try {
+            return await memoFor(RELATIONSHIP_MEMOS, this.storageOptions?.operationPrefix).get(filePath, async () => {
+                // A read that fails throws, and is not kept: the file is read again at the next ask.
+                const sourceText = await fs.readFile(filePath, 'utf-8');
+                // What the analysis makes of the text is the text's answer, whatever it is.
+                try {
+                    return analysis.analyzeWorkflowRelationships(sourceText) ?? none();
+                } catch {
+                    return none();
+                }
+            });
+        } catch {
+            return none();
+        }
     }
 
     /** Where a unit is written in its file, as a range; kept the same way. `undefined` when it cannot be said. */
     private async getWorkflowDefinitionRange(filePath: string, workflowName: string): Promise<unknown> {
-        return memoFor(DEFINITION_RANGE_MEMOS, this.storageOptions?.operationPrefix, () => new FileMemo<unknown>(async (file, name) => {
-            try {
-                const sourceText = await fs.readFile(file, 'utf-8');
-                return this.ensureModelSource()?.analysis?.resolveWorkflowDefinitionRange(sourceText, name);
-            } catch {
-                // Keep the graph-provided metadata when the source file cannot be read.
-                return undefined;
-            }
-        })).get(filePath, workflowName);
+        const analysis = this.ensureModelSource()?.analysis;
+        if (!analysis) {
+            return undefined;
+        }
+        try {
+            return await memoFor(DEFINITION_RANGE_MEMOS, this.storageOptions?.operationPrefix).get(filePath, async () => {
+                const sourceText = await fs.readFile(filePath, 'utf-8');
+                try {
+                    return analysis.resolveWorkflowDefinitionRange(sourceText, workflowName);
+                } catch {
+                    return undefined;
+                }
+            }, workflowName);
+        } catch {
+            // Keep the graph-provided metadata when the source file cannot be read.
+            return undefined;
+        }
     }
 
     private async getWorkflowCallerReferences(

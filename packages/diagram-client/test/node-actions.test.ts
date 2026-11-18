@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { RevealNodeAction } from '@dialogram/shared';
-import { doubleClickNodeAction, nodeActionRequest, nodeWithActions, portNameOf } from '../src/node-actions';
+import { doubleClickNodeAction, nodeActionRequest, nodeWithActions, offeredMenuItems, portNameOf } from '../src/node-actions';
 import { FocusAfterLoadService, RevealNodeActionHandler } from '../src/focus-after-load';
 import { WorkflowNetworkNavigationMouseListener } from '../src/network-navigation-mouse-listener';
 import { ViewerMouseListener } from '../src/viewer-mouse-listener';
@@ -117,6 +117,33 @@ describe('what the product’s command is called with', () => {
     });
 });
 
+describe('the context menu of a product', () => {
+    const items = [
+        { id: 'dialogram.nodeAction.expand-in', label: 'Expand Fan-in', actions: [{ kind: 'dialogram.nodeAction', action: 'expand-in', elementId: 'u1' }] },
+        { id: 'layout', label: 'Layout Diagram', actions: [{ kind: 'dialogram.layoutBoundaryFlow' }] },
+        {
+            id: 'more', label: 'More', actions: [], children: [
+                { id: 'dialogram.nodeAction.find', label: 'Find...', actions: [{ kind: 'dialogram.nodeAction', action: 'find' }] },
+                { id: 'fit', label: 'Fit', actions: [{ kind: 'fit' }] }
+            ]
+        }
+    ];
+
+    it('offers what a producer lists when the product names the command that carries it out', () => {
+        behavior({ nodeActionCommand: 'sv.netlist.nodeAction' });
+        expect(offeredMenuItems(items)).toEqual(items);
+    });
+
+    it('offers none of it without the command: an entry that would do nothing is not shown', () => {
+        behavior({});
+        expect(offeredMenuItems(items).map(i => [i.id, (i.children ?? []).map(c => c.id)])).toEqual([['layout', []], ['more', ['fit']]]);
+        behavior(undefined);
+        expect(offeredMenuItems(items).map(i => i.id)).toEqual(['layout', 'more']);
+        // What was handed in is left as it was.
+        expect(items[2].children).toHaveLength(2);
+    });
+});
+
 describe('a node the product’s command names to be shown', () => {
     it('is selected and centred when the model that has it comes in, and only then', async () => {
         const dispatched: any[] = [];
@@ -134,6 +161,9 @@ describe('a node the product’s command names to be shown', () => {
         await new Promise(resolve => setTimeout(resolve, 5));
         expect(dispatched.map(a => a.kind)).toEqual(['elementSelected', 'center']);
         expect(dispatched[0].selectedElementsIDs).toEqual([node.id]);
+        // In place of what was selected: the node the step was taken from stays selected across the reload,
+        // and adding to the selection would leave the reader with two.
+        expect(dispatched[0].deselectAll).toBe(true);
         expect(dispatched[1].elementIds).toEqual([node.id]);
         // Asked for once: a later model does not select it again.
         focus.modelRootChanged(root);

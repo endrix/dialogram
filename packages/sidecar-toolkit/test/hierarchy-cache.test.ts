@@ -11,7 +11,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { URI } from 'vscode-uri';
-import { HierarchyCache, findInstance, outlineOf, type HierarchyEntry } from '../src/server/hierarchy-cache';
+import { HierarchyCache, fileHash, findInstance, outlineOf, type HierarchyEntry } from '../src/server/hierarchy-cache';
 import { CliGraphModelSource } from '../src/server/cli-graph-model-source';
 
 const graph = (label: string) => ({ version: '1', graph: { id: `wf:${label}`, nodes: [{ id: label, label }], edges: [] } });
@@ -103,6 +103,27 @@ describe('the cache', () => {
     it('returns nothing for an export that failed or is not one', async () => {
         expect(await new HierarchyCache(async () => undefined).get('/w/top.py', 'top')).toBeUndefined();
         expect(await new HierarchyCache(async () => '{"graph": {}}').get('/w/top.py', 'top')).toBeUndefined();
+    });
+});
+
+describe('the hash of a large file', () => {
+    // A process that may read any file cannot make one unreadable.
+    it.skipIf(process.getuid?.() === 0)('is not remembered as missing after one read that failed', async () => {
+        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'file-hash-'));
+        try {
+            // Large enough for its hash to be kept while it stays as it was (file-memo.ts).
+            const file = path.join(dir, 'netlist.v');
+            await fs.writeFile(file, 'a'.repeat(1024 * 1024));
+            await fs.chmod(file, 0o000);
+            expect(await fileHash(file)).toBeUndefined();
+            // Readable again, its size, time and inode as they were: it is hashed, and the hash then kept.
+            await fs.chmod(file, 0o644);
+            const hash = await fileHash(file);
+            expect(hash).toMatch(/^[0-9a-f]{64}$/);
+            expect(await fileHash(file)).toBe(hash);
+        } finally {
+            await fs.rm(dir, { recursive: true, force: true });
+        }
     });
 });
 

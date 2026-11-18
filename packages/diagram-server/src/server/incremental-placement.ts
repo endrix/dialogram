@@ -13,7 +13,9 @@
  *   the wire between them straight;
  * - where that place is taken it goes to the nearest free one: along its
  *   column, above or below, or in the next column out when that is nearer
- *   than the column's own free place;
+ *   than the column's own free place, and as many columns out as it takes:
+ *   a pin with a thousand loads fills column after column, and no node is
+ *   ever put on another;
  * - a node placed this way is a neighbour the next can be placed beside, so
  *   a chain added in one step unrolls a column at a time;
  * - a piece wired to nothing placed (a cell picked from a list, with the
@@ -59,8 +61,6 @@ export interface PlacementOptions {
 export const INCREMENTAL_GAP_X = 70;
 export const INCREMENTAL_GAP_Y = 18;
 export const INCREMENTAL_REACH = 160;
-/** How many columns out from its neighbour a node may be put. */
-const COLUMNS = 6;
 /** What a column out costs, in column widths of sliding along the column. */
 const COLUMN_COST = 2;
 
@@ -184,39 +184,58 @@ export function placeBesideNeighbours(
         }
     });
 
+    // The columns found full, by where a search began and what it was for:
+    // nothing is ever taken away, so a full column stays full, and the next
+    // of a pin's thousand loads does not walk every full one again.
+    const fullColumns = new Map<string, number>();
+
     const place = (id: string, anchor: Anchor): void => {
         const size = sizes.get(id)!;
         const neighbour = at.get(anchor.other)!;
         const wanted = neighbour.y + anchor.otherY - anchor.ownY;
         const step = Math.max(6, gapY);
-        const stride = size.width + gapX;
+        const stride = Math.max(1, size.width + gapX);
         const first = anchor.drives ? neighbour.x - gapX - size.width : neighbour.x + neighbour.width + gapX;
+        const search = `${first}:${wanted}:${size.width}:${size.height}:${anchor.drives}`;
+        const from = fullColumns.get(search) ?? 0;
         // The nearest free place of each column, the node's own and the next
         // ones out; the one taken is the nearest overall, a column out
         // counting as twice its width: a pin's fan-out fills a column before
         // it starts the next, and a node keeps close to its pin rather than
-        // sliding the length of a full column to stay in it.
+        // sliding the length of a full column to stay in it. The columns go
+        // on until one has room: past the last node there is always room, so
+        // the search ends, and it never ends on a place that is taken.
         let best: { x: number; y: number; cost: number } | undefined;
-        for (let column = 0; column < COLUMNS; column++) {
+        let full = from;
+        for (let column = from; ; column++) {
             const x = first + (anchor.drives ? -column : column) * stride;
             const columnCost = column * stride * COLUMN_COST;
             if (best && columnCost >= best.cost) {
                 break;
             }
+            let found = false;
             for (let k = 0; k <= reach; k++) {
                 const cost = columnCost + k * step;
                 if (best && cost >= best.cost) {
+                    found = true; // not searched to its end: not known to be full
                     break;
                 }
                 const free = (k === 0 ? [wanted] : [wanted + k * step, wanted - k * step])
                     .find(y => !index.collides({ x, y, width: size.width, height: size.height }, gapX / 2, gapY));
                 if (free !== undefined) {
                     best = { x, y: free, cost };
+                    found = true;
                     break;
                 }
             }
+            if (!found && column === full) {
+                full = column + 1;
+            }
         }
-        const spot = best ? { x: best.x, y: best.y } : { x: first, y: wanted };
+        if (full > from) {
+            fullColumns.set(search, full);
+        }
+        const spot = { x: best!.x, y: best!.y };
         settle(id, { x: spot.x, y: spot.y, width: size.width, height: size.height });
         result.set(id, spot);
         pending.delete(id);

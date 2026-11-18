@@ -32,7 +32,8 @@ import { WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes
 type Point = { x: number; y: number };
 type Size = { width: number; height: number };
 
-function absolutePosition(element: GModelElement | undefined): Point {
+/** Where an element is drawn, from the root's corner: its own position and every parent's. What a layout file saves. */
+export function absolutePosition(element: GModelElement | undefined): Point {
     let x = 0;
     let y = 0;
     let current: any = element;
@@ -199,6 +200,64 @@ export function restoreGroupGeometry(root: GModelRoot, routes?: Map<string, Poin
             port.size = box;
         }
     }
+}
+
+/**
+ * Put the members of a container that have no place yet under the ones that
+ * have, in rows, and let the frames around them grow to hold them
+ * (`growGroupsToFit`). A member's position is its own, from the container's
+ * corner, as every model position is: a member given the root's coordinates
+ * is drawn outside its frame by the frame's own offset. In a group the first
+ * row starts below the header, inside the padding. Returns the groups that
+ * grew, whose edges need routing again.
+ */
+export function placeMembersUnder(
+    container: GModelElement,
+    fresh: readonly GModelElement[],
+    options: { gapX?: number; gapY?: number; perRow?: number } = {}
+): GNode[] {
+    const gapX = options.gapX ?? 70;
+    const gapY = options.gapY ?? 18;
+    const perRow = options.perRow ?? 6;
+    const pad = groupPadding(container);
+    const top = (isGroup(container) ? WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX : 0) + pad;
+    const unplaced = new Set<GModelElement>(fresh);
+    let left = Number.POSITIVE_INFINITY;
+    let foot = Number.NEGATIVE_INFINITY;
+    for (const child of ((container as any).children ?? []) as GModelElement[]) {
+        if (unplaced.has(child) || child instanceof GPort || child instanceof GEdge || !(child instanceof GNode)) {
+            continue;
+        }
+        const size = sizeOf(child) ?? { width: 0, height: 0 };
+        left = Math.min(left, child.position?.x ?? 0);
+        foot = Math.max(foot, (child.position?.y ?? 0) + size.height);
+    }
+    const startX = Number.isFinite(left) ? Math.max(left, 0) : pad;
+    let x = startX;
+    let y = Number.isFinite(foot) ? foot + 3 * gapY : top;
+    let rowHeight = 0;
+    let inRow = 0;
+    const grown: GNode[] = [];
+    for (const member of fresh) {
+        const size = sizeOf(member) ?? { width: 0, height: 0 };
+        (member as any).position = { x, y };
+        rowHeight = Math.max(rowHeight, size.height);
+        x += size.width + gapX;
+        if (++inRow >= perRow) {
+            x = startX;
+            y += rowHeight + gapY;
+            rowHeight = 0;
+            inRow = 0;
+        }
+        if (member instanceof GNode) {
+            for (const group of growGroupsToFit(member)) {
+                if (!grown.includes(group)) {
+                    grown.push(group);
+                }
+            }
+        }
+    }
+    return grown;
 }
 
 /**

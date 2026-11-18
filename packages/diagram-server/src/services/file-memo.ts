@@ -12,6 +12,17 @@
  * A smaller file is read every time, as it always was: reading it costs
  * nothing, and a file rewritten within one clock tick to the same length is
  * then never mistaken for itself.
+ *
+ * Two things a memo must not keep:
+ *
+ * - A failure. An answer is what `compute` returns; a read that failed is to
+ *   throw, and whoever asked turns that into the value it falls back on. A
+ *   compute that caught its own error and returned the fallback would have it
+ *   kept as the file's answer until the file changed: a file unreadable once
+ *   (permissions, too many open files) would stay unread.
+ * - Whoever asked. `compute` is given at every ask and used for that ask
+ *   alone, so a memo shared by every editor of a product holds answers and
+ *   nothing of the session that first asked.
  */
 import { promises as fs } from 'node:fs';
 
@@ -33,13 +44,15 @@ export async function largeFileStamp(filePath: string): Promise<string | undefin
 export class FileMemo<T> {
     private readonly kept = new Map<string, { stamp: string; value: Promise<T> }>();
 
-    /** `compute` answers for a file and, when the answer depends on one, a second input (`key`). */
-    constructor(private readonly compute: (filePath: string, key: string) => Promise<T>) {}
-
-    async get(filePath: string, key = ''): Promise<T> {
+    /**
+     * The answer for a file and, when it depends on one, a second input
+     * (`key`): the one kept while the file stays as it was, else what
+     * `compute` now says. `compute` throws when it cannot say.
+     */
+    async get(filePath: string, compute: () => Promise<T>, key = ''): Promise<T> {
         const stamp = await largeFileStamp(filePath);
         if (stamp === undefined) {
-            return this.compute(filePath, key);
+            return compute();
         }
         const id = `${filePath}\u0000${key}`;
         const hit = this.kept.get(id);
@@ -48,7 +61,7 @@ export class FileMemo<T> {
             this.kept.set(id, hit); // most recently used last
             return hit.value;
         }
-        const value = this.compute(filePath, key);
+        const value = compute();
         this.kept.set(id, { stamp, value });
         // An answer that failed is asked for again next time.
         value.catch(() => {

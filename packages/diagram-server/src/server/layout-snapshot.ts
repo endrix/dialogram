@@ -35,6 +35,15 @@ export interface LayoutPersistenceMeta {
     unroutedEdgesUnsaved?: boolean;
     /** The graph grows a step at a time (`graph.meta.incremental`): new nodes go beside their neighbours. */
     incremental?: boolean;
+    /**
+     * The places the load gave the nodes, by layout key, absolute: the view's
+     * own layout, or its fallback's when it has none of its own. What a
+     * growing graph's new nodes are placed among: the view's own file may
+     * hold none of them.
+     */
+    appliedPositions?: ReadonlyMap<string, Point>;
+    /** Those places are the fallback's: the view has no layout of its own yet. */
+    layoutIsFallback?: boolean;
     [key: string]: unknown;
 }
 

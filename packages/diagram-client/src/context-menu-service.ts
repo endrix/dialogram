@@ -7,6 +7,7 @@ import {
 } from '@eclipse-glsp/client';
 import { EditorContextService } from '@eclipse-glsp/client';
 import { inject, injectable } from 'inversify';
+import { offeredMenuItems } from './node-actions';
 import { PostEditSelectionService } from './post-edit-selection-service';
 
 type AnyMenuItem = {
@@ -59,7 +60,7 @@ export class WorkflowContextMenuService implements IContextMenuService {
         }
         this.hide();
 
-        const menuItems = this.flatten(items).filter(i => (i.label ?? '').trim().length > 0);
+        const menuItems = this.flatten(offeredMenuItems(items)).filter(i => (i.label ?? '').trim().length > 0);
         if (menuItems.length === 0) {
             if (debug) {
                 // eslint-disable-next-line no-console
