@@ -4,7 +4,11 @@
  * adapter used to own: live edits, storage options, chat operation prefix, watch
  * globs, and the openability check being present iff the input requests it.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { Uri } from './vscode-mock';
 import {
     createSidecarDiagramProfile,
     type SidecarProfileInput
@@ -245,5 +249,71 @@ describe('createSidecarDiagramProfile', () => {
 
     it('ships profile.mcp ON (the in-host GLSP-MCP server)', () => {
         expect(createSidecarDiagramProfile(baseInput()).mcp).toEqual({ enabled: true });
+    });
+});
+
+describe('the sidecar and CLI a profile hands the product', () => {
+    const temps: string[] = [];
+    afterEach(() => {
+        for (const dir of temps.splice(0)) {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    /** A sidecar that answers each request line with the op it was asked, then exits. */
+    function echoSidecar(): { dir: string; command: string } {
+        const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sidecar-host-')));
+        temps.push(dir);
+        const command = path.join(dir, 'echo-sidecar');
+        fs.writeFileSync(command, [
+            '#!/usr/bin/env node',
+            "let buf = '';",
+            "process.stdin.on('data', d => { buf += d; });",
+            "process.stdin.on('end', () => {",
+            "    console.log('a log line');",
+            "    for (const line of buf.split('\\n').filter(Boolean)) {",
+            "        const r = JSON.parse(line);",
+            "        console.log(JSON.stringify({ status: 'ok', diagnostic: { op: r.op, args: r.args, cwd: process.cwd() } }));",
+            '    }',
+            '});'
+        ].join('\n'));
+        fs.chmodSync(command, 0o755);
+        return { dir, command };
+    }
+
+    it.skipIf(process.platform === 'win32')('asks the profile’s sidecar several things in one start, the ops prefixed', async () => {
+        const { dir, command } = echoSidecar();
+        const p = createSidecarDiagramProfile(baseInput({ sidecarCommandDefault: command }));
+        const file = path.join(dir, 'flow.py');
+        fs.writeFileSync(file, '');
+        const result = await p.externalTool!.query(file, [{ op: 'getCapabilities' }, { op: 'agentSkills', args: { cwd: dir } }]);
+        expect(result).toEqual({
+            command,
+            cwd: dir,
+            answers: [
+                { status: 'ok', diagnostic: { op: 'wfpy.getCapabilities', args: {}, cwd: dir } },
+                { status: 'ok', diagnostic: { op: 'wfpy.agentSkills', args: { cwd: dir }, cwd: dir } }
+            ],
+            exitCode: 0
+        });
+    });
+
+    it('gives the run root and the CLI by the run driver’s rules', async () => {
+        const { dir } = echoSidecar();
+        fs.writeFileSync(path.join(dir, 'package.json'), '{}');
+        fs.mkdirSync(path.join(dir, 'flows'));
+        const file = Uri.file(path.join(dir, 'flows', 'main.py')) as any;
+        const p = createSidecarDiagramProfile(baseInput());
+        expect(await p.externalTool!.resolveRunRoot(file)).toBe(dir);
+        expect(await p.externalTool!.cliInvocation(file)).toEqual({ cmd: 'wfpy', argsPrefix: [], cwd: dir });
+    });
+
+    it('is none for a profile without a sidecar', () => {
+        const p = createSidecarDiagramProfile(baseInput({
+            readOnly: true,
+            sidecarCommandSettingKey: undefined,
+            sidecarCommandDefault: undefined
+        }));
+        expect(p.externalTool).toBeUndefined();
     });
 });

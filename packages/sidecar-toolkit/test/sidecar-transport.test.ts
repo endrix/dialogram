@@ -10,7 +10,7 @@ const child = vi.hoisted(() => ({
 }));
 vi.mock('../src/run-child-process.js', () => child);
 
-import { invokeSidecar } from '../src/sidecar-transport.js';
+import { invokeSidecar, invokeSidecarBatch } from '../src/sidecar-transport.js';
 
 const REQUEST = { command: 'x-sidecar', file: '/ws/flow.py', op: 'x.createNode', args: { name: 'n' } };
 
@@ -76,5 +76,65 @@ describe('invokeSidecar', () => {
         expect(child.runChildProcess.mock.calls[0][2].timeoutMs).toBe(20_000);
         child.runChildProcess.mockRejectedValue(new Error('spawn exploded'));
         expect(await invokeSidecar(REQUEST)).toEqual({ ok: false, failure: 'start', message: 'spawn exploded' });
+    });
+});
+
+describe('invokeSidecarBatch', () => {
+    const BATCH = {
+        command: 'x-sidecar',
+        file: '/ws/flow.py',
+        requests: [{ op: 'x.getCapabilities' }, { op: 'x.agentSkills', args: { cwd: '/ws' } }]
+    };
+
+    it('writes every request to one start, a line each in order, and reads every answer', async () => {
+        answers('starting\n{"status":"ok","diagnostic":{"features":{}}}\n[1]\n{"no":"status"}\n{"status":"error","message":"Unknown op: x.agentSkills"}\n');
+        const result = await invokeSidecarBatch(BATCH);
+        expect(child.runChildProcess).toHaveBeenCalledTimes(1);
+        const [command, args, options] = child.runChildProcess.mock.calls[0];
+        expect([command, args]).toEqual(['x-sidecar', []]);
+        expect(options.input).toBe(
+            JSON.stringify({ file: '/ws/flow.py', op: 'x.getCapabilities', args: {} }) + '\n'
+            + JSON.stringify({ file: '/ws/flow.py', op: 'x.agentSkills', args: { cwd: '/ws' } }) + '\n');
+        // Started as one request is: from the file's package root, first on PYTHONPATH.
+        expect(options.cwd).toBe('/ws');
+        expect(String(options.env.PYTHONPATH).startsWith('/ws')).toBe(true);
+        // A refusal is an answer; a log line, an array, an object without a status are not.
+        expect(result).toEqual({
+            command: 'x-sidecar',
+            cwd: '/ws',
+            answers: [
+                { status: 'ok', diagnostic: { features: {} } },
+                { status: 'error', message: 'Unknown op: x.agentSkills' }
+            ],
+            exitCode: 0
+        });
+    });
+
+    it('keeps what was answered before the process failed, and says how it ended', async () => {
+        answers('{"status":"ok"}\n', { code: 1, stderr: 'Traceback: boom\n', failure: 'x-sidecar: Traceback: boom' });
+        expect(await invokeSidecarBatch(BATCH)).toEqual({
+            command: 'x-sidecar',
+            cwd: '/ws',
+            answers: [{ status: 'ok' }],
+            exitCode: 1,
+            failure: 'exit',
+            message: 'x-sidecar: Traceback: boom',
+            stderr: 'Traceback: boom'
+        });
+    });
+
+    it('has no exit code for a process stopped at the deadline or never started, and passes the deadline on', async () => {
+        answers('', { code: -1, timedOut: true, failure: 'x-sidecar: no response after 1s' });
+        expect(await invokeSidecarBatch({ ...BATCH, timeoutMs: 1000 })).toMatchObject({ exitCode: null, failure: 'timeout', answers: [] });
+        expect(child.runChildProcess.mock.calls[0][2].timeoutMs).toBe(1000);
+        answers('', { code: -1, spawnError: new Error('ENOENT'), failure: 'x-sidecar: failed to start: ENOENT' });
+        expect(await invokeSidecarBatch(BATCH)).toMatchObject({ exitCode: null, failure: 'start', message: 'x-sidecar: failed to start: ENOENT' });
+    });
+
+    it('never throws', async () => {
+        child.runChildProcess.mockRejectedValue(new Error('spawn blew up'));
+        expect(await invokeSidecarBatch(BATCH)).toEqual({
+            command: 'x-sidecar', cwd: '/ws', answers: [], exitCode: null, failure: 'start', message: 'spawn blew up'
+        });
     });
 });

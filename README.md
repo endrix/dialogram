@@ -201,6 +201,11 @@ The returned `DiagramProfileHandle` exposes chat diagnostics plus two
 webview channels: `dispatchToWebview(uri, action)` (host→client GLSP action
 over the overlay bridge) and `postToWebview(uri, message)` (raw
 `webview.postMessage` for consumer-owned protocols such as cursor sync).
+For a sidecar profile it also carries `externalTool`: `query(file,
+requests)`, several requests to one start of the profile's sidecar, started
+as the diagram starts it; and `resolveRunRoot(file)` and
+`cliInvocation(file)`, where and with which command a run of the file
+starts. A product asks through these rather than copying the rules.
 
 ### API versioning
 

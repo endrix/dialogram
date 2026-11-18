@@ -37,6 +37,8 @@ import {
 import { createSidecarEditBackend } from './chat-edit-backend.js';
 import { createPythonNavigationProvider } from './python-navigation.js';
 import { registerSidecarCommands } from './sidecar-commands.js';
+import { invokeSidecarBatch } from './sidecar-transport.js';
+import { resolveCliInvocation, resolveRunRoot } from './run-root.js';
 import { registerPythonAnalysisPaths } from './python-analysis-paths-host.js';
 import { registerNewSourceFileCommand } from './new-source-file-command.js';
 import { createCliStatusSource, type SidecarStatusSourceInput } from './cli-status-source.js';
@@ -788,6 +790,24 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
         return { dispose: () => undefined };
     };
 
+    // The product's own host code asks the sidecar and the CLI through the
+    // rules the diagram and the run use (the command resolved here, the
+    // transport, the run root), not a copy of them. A profile without a
+    // sidecar hands none.
+    const externalTool = sidecarCommand
+        ? {
+            query: (file: string, requests: ReadonlyArray<{ op: string; args?: Record<string, unknown> }>, options?: { timeoutMs?: number }) =>
+                invokeSidecarBatch({
+                    command: resolveSidecarCommand(file),
+                    file,
+                    requests: requests.map(({ op, args }) => ({ op: `${input.sidecarOperationPrefix}.${op}`, args: args ?? {} })),
+                    timeoutMs: options?.timeoutMs
+                }),
+            resolveRunRoot: (file: vscode.Uri) => resolveRunRoot(file),
+            cliInvocation: (file: vscode.Uri) => resolveCliInvocation(runtimeConfig, file)
+        }
+        : undefined;
+
     const profile = {
         key: input.key,
         displayName: input.displayName,
@@ -859,7 +879,8 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
         },
         runDriver,
         statusSource: input.statusSource ? createCliStatusSource(input.statusSource, runtimeConfig) : undefined,
-        newSourceFile
+        newSourceFile,
+        externalTool
     };
     // Brand: assembled inside the platform bundle — DI fields may round-trip the API.
     Object.defineProperty(profile, Symbol.for('dialogram.platformAssembledProfile'), {

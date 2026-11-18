@@ -379,3 +379,25 @@ export interface ListRowCell {
     /** What kind of line, for the product's stylesheet: `list-row-cell-<kind>`. */
     kind?: string;
 }
+
+/**
+ * What several requests sent to one start of a profile's external tool got
+ * back: every answer it gave, in order, and how the process ended. An answer
+ * that refuses a request (`status: 'error'`) is an answer; `failure` is the
+ * process's (it could not start, ran out of time, or exited non-zero), and
+ * the answers given before it are kept.
+ */
+export interface ToolQueryResult {
+    /** The command as started (the setting, its default when blank). */
+    command: string;
+    /** Where it was started, by the profile's rule for the file. A relative command is found from here. */
+    cwd: string;
+    /** Each stdout line that is a JSON object with a string `status`, in order; other lines (a log) are passed over. */
+    answers: unknown[];
+    /** The exit code; null when the process could not be started or was stopped at the deadline. */
+    exitCode: number | null;
+    failure?: 'start' | 'timeout' | 'exit';
+    /** For a person, when `failure` is set: the command, and its stderr for an exit. */
+    message?: string;
+    stderr?: string;
+}

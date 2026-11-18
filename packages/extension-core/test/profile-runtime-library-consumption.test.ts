@@ -122,4 +122,15 @@ describe('activateProfileRuntime — library consumption (custom serverDiagramMo
         expect(hoisted.postToWebview).toHaveBeenCalledTimes(1);
         expect(hoisted.postToWebview).toHaveBeenCalledWith('file:///m.mlir', { type: 'mlir.syncCursor', line: 2 });
     });
+
+    it('hands the product the profile’s external tool, and none for a profile without one', async () => {
+        const externalTool = {
+            query: vi.fn(),
+            resolveRunRoot: vi.fn(),
+            cliInvocation: vi.fn()
+        };
+        const handle = await activateProfileRuntime(makeContext(), libraryProfile({ externalTool }));
+        expect(handle.externalTool).toBe(externalTool);
+        expect((await activateProfileRuntime(makeContext(), libraryProfile())).externalTool).toBeUndefined();
+    });
 });

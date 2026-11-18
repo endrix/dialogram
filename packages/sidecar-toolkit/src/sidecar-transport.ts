@@ -5,9 +5,11 @@
  * edit, the chat's edit backend and registry tools, the openability probe,
  * the graph export of the model source and the raw `sidecar.send` command all
  * send through here, so a sidecar that misbehaves is described the same way
- * wherever it was asked from.
+ * wherever it was asked from. A product that asks a slow-starting sidecar
+ * several things at once sends them to one process (`invokeSidecarBatch`).
  */
 import * as path from 'node:path';
+import type { ToolQueryResult } from '@dialogram/shared';
 import { describeChildFailure, runChildProcess } from './run-child-process.js';
 import { findPackageRootForFile, withPythonPackageRoot } from './server/source-files.js';
 
@@ -69,6 +71,12 @@ function parseAnswer(stdout: string): unknown {
     }
 }
 
+/** Where and with what environment a sidecar is started for `file`: its Python package root, first on `PYTHONPATH`. */
+async function sidecarStartFor(file: string): Promise<{ cwd: string; env: NodeJS.ProcessEnv }> {
+    const packageRoot = await findPackageRootForFile(file);
+    return { cwd: packageRoot ?? path.dirname(file), env: withPythonPackageRoot(process.env, packageRoot) };
+}
+
 /**
  * Send one request to a sidecar and read its answer. Never throws. The sidecar
  * runs from the file's Python package root with that root first on
@@ -78,11 +86,10 @@ function parseAnswer(stdout: string): unknown {
 export async function invokeSidecar(request: SidecarRequest): Promise<SidecarOpResult> {
     const { command, op } = request;
     try {
-        const packageRoot = await findPackageRootForFile(request.file);
+        const start = await sidecarStartFor(request.file);
         const result = await runChildProcess(command, [], {
             input: JSON.stringify({ file: request.file, op, args: request.args }) + '\n',
-            cwd: packageRoot ?? path.dirname(request.file),
-            env: withPythonPackageRoot(process.env, packageRoot),
+            ...start,
             ...(request.timeoutMs !== undefined ? { timeoutMs: request.timeoutMs } : {})
         });
         const stderr = result.stderr.trim() || undefined;
@@ -119,5 +126,83 @@ export async function invokeSidecar(request: SidecarRequest): Promise<SidecarOpR
         };
     } catch (error) {
         return { ok: false, failure: 'start', message: error instanceof Error ? error.message : `Unable to start sidecar for ${op}.` };
+    }
+}
+
+export interface SidecarBatchRequest {
+    /** The sidecar executable, as the setting resolved it. */
+    command: string;
+    /** The source file the requests are about, absolute. */
+    file: string;
+    /** In the order they are written; each op fully qualified, `<prefix>.<name>`. */
+    requests: ReadonlyArray<{ op: string; args?: Record<string, unknown> }>;
+    /** The deadline for the whole process; the child-process default when absent. */
+    timeoutMs?: number;
+}
+
+/**
+ * The answers in `stdout`, in order: each line that is a JSON object with a
+ * string `status`. Anything else a sidecar writes (a log line) is passed over.
+ */
+function answerLines(stdout: string): unknown[] {
+    const answers: unknown[] = [];
+    for (const line of stdout.split(/\r?\n/)) {
+        const text = line.trim();
+        if (!text.startsWith('{')) {
+            continue;
+        }
+        try {
+            const answer = JSON.parse(text);
+            if (answer && typeof answer === 'object' && !Array.isArray(answer) && typeof answer.status === 'string') {
+                answers.push(answer);
+            }
+        } catch {
+            // not an answer
+        }
+    }
+    return answers;
+}
+
+/**
+ * Send several requests to one start of a sidecar, one JSON line each, and
+ * read every answer: one process instead of one per request, for a sidecar
+ * slow to start that is asked several things at once. Started as
+ * {@link invokeSidecar} starts it. An answer with `status: 'error'` is in
+ * `answers` like any other; `failure` says only how the process ended, and
+ * the answers it gave before a failure are kept. Never throws.
+ */
+export async function invokeSidecarBatch(request: SidecarBatchRequest): Promise<ToolQueryResult> {
+    const { command, file } = request;
+    const fallbackCwd = path.dirname(file);
+    try {
+        const start = await sidecarStartFor(file);
+        const input = request.requests
+            .map(({ op, args }) => JSON.stringify({ file, op, args: args ?? {} }) + '\n')
+            .join('');
+        const result = await runChildProcess(command, [], {
+            input,
+            ...start,
+            ...(request.timeoutMs !== undefined ? { timeoutMs: request.timeoutMs } : {})
+        });
+        const stderr = result.stderr.trim() || undefined;
+        const failure = describeChildFailure(command, result);
+        const ended = result.spawnError ? 'start' : result.timedOut ? 'timeout' : failure ? 'exit' : undefined;
+        return {
+            command,
+            cwd: start.cwd,
+            answers: answerLines(result.stdout),
+            exitCode: result.spawnError || result.timedOut ? null : result.code,
+            ...(ended ? { failure: ended, message: failure } : {}),
+            ...(stderr ? { stderr } : {})
+        };
+    } catch (error) {
+        return {
+            command,
+            cwd: fallbackCwd,
+            answers: [],
+            exitCode: null,
+            failure: 'start',
+            message: error instanceof Error ? error.message : `Unable to start ${command}.`
+        };
     }
 }
