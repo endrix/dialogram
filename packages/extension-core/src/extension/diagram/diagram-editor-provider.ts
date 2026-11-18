@@ -10,7 +10,7 @@ import { RequestModelAction } from '@eclipse-glsp/protocol';
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import { statSync } from 'node:fs';
-import { RevealNodeAction, WORKFLOW_DIAGRAM_TYPE } from '@dialogram/shared';
+import { LOADING_MESSAGE_TYPE, RevealNodeAction, WORKFLOW_DIAGRAM_TYPE, type LoadingMessage, type LoadingUpdate } from '@dialogram/shared';
 import { type DiagramClientBehavior, type DiagramProfile } from '../../api';
 import { listAcpConnectors, workspaceDirFor } from '../chat/acp-connectors';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
@@ -1400,6 +1400,20 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             await vscode.commands.executeCommand('vscode.open', ...(column === undefined ? [target] : [target, { viewColumn: column }]));
         } else if (choice === reveal) {
             await vscode.commands.executeCommand('revealInExplorer', target);
+        }
+    }
+
+    /**
+     * What a client's load is doing, to the diagram that is waiting for it
+     * (diagram-client `loading-indicator.ts`). By client and not by source:
+     * a view opened in place is of another file than its editor's, and the
+     * webview is the editor's. A client that has gone is told nothing.
+     */
+    postLoading(clientId: string, update: LoadingUpdate): void {
+        const documentUri = this.getDocumentUriForClientId(clientId);
+        if (documentUri) {
+            const message: LoadingMessage = { type: LOADING_MESSAGE_TYPE, payload: update };
+            this.postToWebview(documentUri, message);
         }
     }
 

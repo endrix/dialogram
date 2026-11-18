@@ -1,3 +1,5 @@
+import type { LoadProgress } from './loading';
+
 /** Neutral, pre-normalized diagnostic a model source attaches to its GraphDocument. */
 export interface GraphDiagnostic {
     /** Absolute fs path or file URI the diagnostic belongs to (defaults to the graph's source). */
@@ -130,6 +132,18 @@ export interface HierarchyOutlineEntry {
 export interface ModelSourceOptions {
     /** The RequestModelAction options bag, passed through verbatim. */
     requestOptions: Record<string, unknown>;
+    /**
+     * Say what the load is doing, for the reader who is waiting on it: the
+     * diagram shows the latest thing said under a turning circle, and how
+     * long it has been (see `loading.ts`). Worth calling before anything that
+     * can take a second: a compiler, a build, a server being started.
+     *
+     * Call it as often as there is something new to say; it costs a message
+     * to the webview and never throws. Absent on a load nobody watches (a
+     * poll in the background, an older host, a test): call it as
+     * `options.progress?.(...)`.
+     */
+    progress?: (progress: LoadProgress) => void;
 }
 
 /** v2 seam: how a diagram gets its graph. Core ships NO implementation. */

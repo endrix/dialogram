@@ -8,6 +8,7 @@ import 'reflect-metadata';
 
 import {
     ActionDispatcher,
+    ClientId,
     GModelRoot,
     GNode,
     GEdge,
@@ -19,7 +20,7 @@ import { RequestModelAction, SaveModelAction } from '@eclipse-glsp/protocol';
 import { inject, injectable, optional } from 'inversify';
 import { URI } from 'vscode-uri';
 import { instanceLayoutFor, type LayoutTarget, viewKey } from './layout-target';
-import { errorInView, parseNodeActions } from '@dialogram/shared';
+import { errorInView, normalizeLoadProgress, parseNodeActions, type LoadProgress, type LoadingUpdate } from '@dialogram/shared';
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import {
@@ -42,6 +43,7 @@ import { tunedLayoutOptions } from '../operations/layout-tuned-handler';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
+import { LOAD_PROGRESS_SINK, type LoadProgressSink, counted, isBackgroundLoad, tellLoading } from './load-progress';
 import { convertToGModelRoot } from './gmodel-convert';
 import { applyPersistedEdgeRoutes } from '../routing/persisted-edge-routes';
 import { relativeToParent, restoreGroupGeometry } from './group-geometry';
@@ -202,6 +204,15 @@ function walkGEdges(element: { children?: unknown[] }, fn: (edge: GEdge) => void
     }
 }
 
+/** "177 nodes, 565 edges": how big a graph is, for the line under what is being done with it. */
+function sizeOfGraph(doc: GraphDocument): string {
+    // A document's graph is the producer's own shape; these two lists are what every one has.
+    const graph = doc.graph as { nodes?: unknown; edges?: unknown } | undefined;
+    const nodes = Array.isArray(graph?.nodes) ? graph.nodes.length : 0;
+    const edges = Array.isArray(graph?.edges) ? graph.edges.length : 0;
+    return nodes === 0 && edges === 0 ? '' : `${counted(nodes, 'node')}, ${counted(edges, 'edge')}`;
+}
+
 @injectable()
 export class WorkflowSourceModelStorage implements SourceModelStorage {
 
@@ -337,6 +348,19 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
     @optional()
     protected agentEditSignal?: AgentStructuralEditSignal;
 
+    /**
+     * Where this session says what its load is doing, and which client it is
+     * saying it for (see `load-progress.ts`). Both `@optional()`: tests build
+     * this class by hand, and a host need not show progress.
+     */
+    @inject(LOAD_PROGRESS_SINK)
+    @optional()
+    protected loadProgressSink?: LoadProgressSink;
+
+    @inject(ClientId)
+    @optional()
+    protected clientId?: string;
+
     private ensureModelSource(): DiagramModelSource | undefined {
         return this.injectedModelSource;
     }
@@ -402,21 +426,53 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         if (!modelSource) {
             console.warn('[WorkflowSourceModelStorage] No model source configured; rendering failure document.');
         }
-        const doc = modelSource
-            ? await modelSource.getGraph(sourceUri, { requestOptions: opts })
-            : this.buildNoModelSourceDocument(workflowFilePath);
-        perf.mark('acquire');
-        if (!doc) {
-            return;
+        // What this load is doing, for the reader waiting on it; not for a
+        // load nobody is waiting on (see `isBackgroundLoad`).
+        const watched = !isBackgroundLoad(action.requestId, action.options);
+        const tell = (update: LoadingUpdate): void => {
+            if (watched) {
+                tellLoading(this.loadProgressSink, this.clientId, update);
+            }
+        };
+        tell({ state: 'progress', message: `Reading ${path.basename(workflowFilePath)}` });
+        try {
+            const doc = modelSource
+                ? await modelSource.getGraph(sourceUri, {
+                      requestOptions: opts,
+                      // What is inside "reading" is the product's to say.
+                      ...(watched && this.loadProgressSink
+                          ? {
+                                progress: (said: LoadProgress) => {
+                                    const progress = normalizeLoadProgress(said);
+                                    if (progress) {
+                                        tell({ state: 'progress', ...progress });
+                                    }
+                                }
+                            }
+                          : {})
+                  })
+                : this.buildNoModelSourceDocument(workflowFilePath);
+            perf.mark('acquire');
+            if (!doc) {
+                // Nothing to draw anew. Said, because what ends a wait is a
+                // model, and this load has none of its own.
+                tell({ state: 'done' });
+                return;
+            }
+            // The model source pre-normalizes its diagnostics onto `doc.diagnostics` (walking its own
+            // pre-transform payload). Storage publishes them verbatim -- no product-shaped walking here.
+            void this.publishGraphDiagnostics(doc.diagnostics ?? [], workflowFilePath);
+            // The model source may resolve different request options than the caller passed (the
+            // breadcrumb-trail retry); `finishLoadFromDoc` needs those resolved options for layout/id.
+            const resolvedOptions = (doc as { resolvedOptions?: Record<string, unknown> }).resolvedOptions ?? opts;
+            this.lastDocument = { doc, sourceUri, filePath: workflowFilePath, opts: resolvedOptions };
+            tell({ state: 'progress', message: 'Drawing the diagram', detail: sizeOfGraph(doc) });
+            await this.finishLoadFromDoc(doc, sourceUri, workflowFilePath, resolvedOptions, perf);
+        } catch (error) {
+            // No model follows a load that failed, so nothing else would end the wait.
+            tell({ state: 'done' });
+            throw error;
         }
-        // The model source pre-normalizes its diagnostics onto `doc.diagnostics` (walking its own
-        // pre-transform payload). Storage publishes them verbatim -- no product-shaped walking here.
-        void this.publishGraphDiagnostics(doc.diagnostics ?? [], workflowFilePath);
-        // The model source may resolve different request options than the caller passed (the
-        // breadcrumb-trail retry); `finishLoadFromDoc` needs those resolved options for layout/id.
-        const resolvedOptions = (doc as { resolvedOptions?: Record<string, unknown> }).resolvedOptions ?? opts;
-        this.lastDocument = { doc, sourceUri, filePath: workflowFilePath, opts: resolvedOptions };
-        await this.finishLoadFromDoc(doc, sourceUri, workflowFilePath, resolvedOptions, perf);
     }
 
     /**

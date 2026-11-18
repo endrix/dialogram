@@ -77,6 +77,34 @@ it no longer has.
 
 ### Added
 
+- **A diagram that is loading says so, and says what it is doing.** A large
+  design takes seconds to read and seconds more to lay out, and for all of
+  that the canvas was empty. It now shows a turning circle with, under it,
+  what is being done, how big the job is, and from two seconds on for how
+  long (`loading-indicator.ts`; the MLIR viewer had it first). In the middle
+  while the canvas is empty; as a pill at the top once a diagram is on screen
+  and another is on its way (a view opened from the outline, a refresh), and
+  then only when the wait passes 300 ms. It reports and never blocks, and
+  goes away when the model arrives.
+  - The platform says its own steps: opening, reading the file, drawing
+    ("177 nodes, 565 edges"), laying out, routing.
+  - What is inside "reading the file" is the product's to say:
+    `getGraph` is handed `options.progress`, to call with a `LoadProgress`
+    (`message`, and an optional `detail`) before anything that can take a
+    second: a compiler, a build, a server being started. Absent on a load
+    nobody is waiting on, so it is called as `options.progress?.(...)`.
+  - The words go from the server to the host (`loadProgress` on
+    `createWorkflowGlspVscodeServer`) and from there to the webview as a
+    message of their own (`dialogram.loading`), so that they arrive while the
+    model is being asked for and not behind it.
+  - Every product on the stock client has it: the stock starter raises it,
+    and so does `workflowFeaturesModule`, for a product whose starter is its
+    own. A client that takes neither (the MLIR viewer) is as it was.
+  - Not for the loads nobody asked for: the polls that redraw a run's
+    overlay, and the host's own refreshes behind the reader's back.
+  - Where the host shows this, GLSP's "Model loading in progress" notice is
+    not started: it was a second, vaguer word for the same wait.
+
 - **A graph that grows keeps its picture still.** A producer may say its
   graph grows a step at a time (`graph.meta.incremental`): a schematic of a
   netlist that starts from one cell and takes in a pin's fan-in when asked.

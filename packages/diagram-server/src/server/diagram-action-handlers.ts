@@ -9,10 +9,12 @@ import 'reflect-metadata';
 
 import {
     ActionHandler,
+    ClientId,
     CommandStack,
     DiagramConfiguration,
     GEdge,
     GLabel,
+    GModelElement,
     GModelIndex,
     GModelRecordingCommand,
     GModelRoot,
@@ -52,6 +54,7 @@ import {
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { placePortLabel, placePortLabels, portLabelGapOf } from './port-labels';
 import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
+import { LOAD_PROGRESS_SINK, type LoadProgressSink, counted, tellLoading } from './load-progress';
 import {
     WorkflowRerouteEdgesAvoidOverlapsOperationHandler,
     WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND
@@ -93,6 +96,42 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
     @optional()
     protected agentEditSignal?: AgentStructuralEditSignal;
 
+    /**
+     * Where the layout says that it is running, and for which client (see
+     * `load-progress.ts`). A first layout is the other long step of a first
+     * open, after the reading, and ELK on a few hundred nodes is seconds.
+     */
+    @inject(LOAD_PROGRESS_SINK)
+    @optional()
+    protected loadProgressSink?: LoadProgressSink;
+
+    @inject(ClientId)
+    @optional()
+    protected clientId?: string;
+
+    /** "Laying out the diagram", with how much there is of it. The model this submit ends in takes it down. */
+    private tellLayingOut(message: string, modelState: ModelState): void {
+        if (!this.loadProgressSink) {
+            return;
+        }
+        let nodes = 0;
+        let edges = 0;
+        const count = (element: GModelElement): void => {
+            if (element instanceof GNode) {
+                nodes += 1;
+            } else if (element instanceof GEdge) {
+                edges += 1;
+            }
+            element.children.forEach(count);
+        };
+        count(modelState.root);
+        tellLoading(this.loadProgressSink, this.clientId, {
+            state: 'progress',
+            message,
+            detail: `${counted(nodes, 'node')}, ${counted(edges, 'edge')}`
+        });
+    }
+
     override async submitModelDirectly(reason?: DirtyStateChangeReason): Promise<Action[]> {
         const layoutEngine = (this as any).layoutEngine as LayoutEngine | undefined;
         const diagramConfiguration = (this as any).diagramConfiguration as DiagramConfiguration;
@@ -117,6 +156,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
 
             console.log('[WorkflowModelSubmissionHandler] Running initial ELK layout for:', layoutMeta.networkId);
+            this.tellLayingOut('Laying out the diagram', modelState);
             try {
                 const _elk0 = perfNow();
                 // Parity with the manual auto-layout path (`dialogram.layoutBoundaryFlow`):
@@ -191,6 +231,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
                 console.log(`[agent-auto-layout] branch=1c-i RUN boundary-flow net=${layoutMeta.networkId}`);
             }
             console.log('[WorkflowModelSubmissionHandler] Auto-layout after agent structural edit for:', layoutMeta.networkId);
+            this.tellLayingOut('Laying out the diagram', modelState);
             try {
                 await this.runBoundaryFlowAndPersist(modelState, layoutEngine);
                 console.log('[WorkflowModelSubmissionHandler] Agent auto-layout completed');
@@ -237,6 +278,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             !didBootstrapReroute
         ) {
             console.log('[WorkflowModelSubmissionHandler] Running bootstrap edge reroute for:', layoutMeta.networkId);
+            this.tellLayingOut('Routing the connections', modelState);
             try {
                 const _reroute0 = perfNow();
                 await this.rerouteHandler.runReroute({
@@ -660,6 +702,17 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
      */
     private startingSilently = false;
 
+    /**
+     * The host shows what a load is doing in the diagram itself (see
+     * `load-progress.ts`). Where it does, "Model loading in progress" is a
+     * second, vaguer notice of the same wait, in another corner of the same
+     * canvas, and is not started: one indicator, which says what is
+     * happening.
+     */
+    @inject(LOAD_PROGRESS_SINK)
+    @optional()
+    protected loadProgressSink?: LoadProgressSink;
+
     override async execute(action: RequestModelAction): Promise<Action[]> {
         const requestId = action.requestId ?? '';
         const isPolling = requestId.startsWith('refresh-during-run-') ||
@@ -668,7 +721,7 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
             requestId.startsWith('refresh-agent-ctx-') ||
             requestId.startsWith('refresh-caller-refs-');
         const isAgentCtxOnly = Boolean(action.options?.agentContextOnly);
-        this.startingSilently = isPolling;
+        this.startingSilently = isPolling || this.loadProgressSink !== undefined;
         if (isPolling) {
             console.log(`[WorkflowRequestModelActionHandler] polling refresh: ${requestId.slice(0, 40)} agentOnly=${isAgentCtxOnly}`);
         }

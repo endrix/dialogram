@@ -403,6 +403,17 @@
         "to": "service:ReadOnlyViewMarker"
     },
     {
+        "id": "LoadingIndicatorModelListener",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "id": "Symbol(stub.IGModelRootListener)",
+        "op": "bind",
+        "to": "service:LoadingIndicatorModelListener"
+    },
+    {
         "command": "SelectionTraceFeedbackCommand",
         "op": "command"
     },
