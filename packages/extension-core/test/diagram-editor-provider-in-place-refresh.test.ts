@@ -231,15 +231,18 @@ describe('a refresh the host asks for', () => {
         expect(dispatched).toEqual([]);
     });
 
-    it('keeps the run that is on screen', () => {
-        // Without it the server shows the latest run, and the next save, which
-        // does send it, the one before.
+    it('names no run, whatever run is on record', () => {
+        // The record has the run the diagram last asked for. A run started
+        // since is shown without the record hearing of it, so the run on
+        // record is not reliably the run on screen: sent along, it took the
+        // overlay back to the run before. The server shows the latest.
         const { provider, dispatched } = makeProvider();
         provider.setRefreshContext(ROOT, { shownSourceUri: ROOT.toString(), networkName: 'top', runId: 'r7' });
 
         provider.refreshFromHost(ROOT, { agentContextOnly: true });
+        provider.refreshFromHost(ROOT, { workflowName: 'top', open: true });
 
-        expect(requests(dispatched)['client-top']['wf:runId']).toBe('r7');
+        expect(dispatched.map(entry => entry.action.options['wf:runId'])).toEqual([undefined, undefined]);
     });
 
     it('names the node to go to before it asks for the model that has it', () => {
@@ -299,7 +302,7 @@ describe('a graph opened by name in an editor that is already open', () => {
         expect(options.queueTraceVisible).toBe(true);
     });
 
-    it('does not carry the run selected in another graph over to it', () => {
+    it('does not leave the run of another graph on record for the next save to send', () => {
         // A run is a run of a graph. Sent with another, it filters that
         // graph's overlay away and names a run it does not have.
         const { provider, dispatched } = makeProvider();
@@ -311,14 +314,29 @@ describe('a graph opened by name in an editor that is already open', () => {
         expect(dispatched.map(entry => entry.action.options['wf:runId'])).toEqual([undefined, undefined]);
     });
 
-    it('keeps the run of the same graph opened again, in what it asks and in what it remembers', () => {
-        const { provider, dispatched } = makeProvider();
+    it('leaves the record of the root that was already shown as it was', () => {
+        const { provider } = makeProvider();
         provider.setRefreshContext(ROOT, { shownSourceUri: ROOT.toString(), networkName: 'top', runId: 'r7' });
 
         provider.refreshFromHost(ROOT, { workflowName: 'top', open: true });
 
-        expect(dispatched[0].action.options['wf:runId']).toBe('r7');
         expect(provider.getRefreshContext(ROOT).runId).toBe('r7');
+    });
+
+    it('takes an instance of that name further down for another graph', () => {
+        // `top.py` also defines `sub`, shown as an instance under `top` with
+        // the run of `top` on record. Opened by name it is `sub` as a root,
+        // which has runs of its own.
+        const { provider } = makeProvider();
+        const nested = JSON.stringify([
+            { sourceUri: ROOT.toString(), workflowName: 'top' },
+            { sourceUri: ROOT.toString(), workflowName: 'sub', workflowInstanceName: 's1' }
+        ]);
+        provider.setRefreshContext(ROOT, { shownSourceUri: ROOT.toString(), networkName: 'sub', navTrail: nested, runId: 'r7' });
+
+        provider.refreshFromHost(ROOT, { workflowName: 'sub', open: true });
+
+        expect(provider.getRefreshContext(ROOT).runId).toBeUndefined();
     });
 
     it('is of the editor opened on the file, and of no editor that only shows it', () => {
@@ -357,6 +375,15 @@ describe('a view the host put in an editor', () => {
         expect(options['wf:navTrail']).toBe(trail);
         // A view put there with no run named has none.
         expect(options['wf:runId']).toBeUndefined();
+    });
+
+    it('keeps what is the editor’s and not the view’s', () => {
+        const { provider } = makeProvider();
+        provider.setRefreshContext(ROOT, { shownSourceUri: ROOT.toString(), networkName: 'top', queueTraceVisible: false });
+
+        provider.recordHostView(ROOT, { sourceUri: ROOT.toString(), networkName: 'helper' });
+
+        expect(provider.getRefreshContext(ROOT).queueTraceVisible).toBe(false);
     });
 
     it('has no name when it was asked for by none', () => {

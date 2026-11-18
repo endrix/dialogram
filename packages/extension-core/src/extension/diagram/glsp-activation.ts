@@ -688,6 +688,11 @@ export async function activateGlspIntegration(
                             });
                         }
 
+                        // Whether the request below is what shows the view: an
+                        // editor that exists takes it; one made just now by
+                        // `openWith` is not listening yet, and asks for itself.
+                        const targetWasOpen = editorProvider?.getClientIdForDocumentUri(targetUri) !== undefined;
+
                         // A diagram of that file already open in another group is the one shown.
                         await vscode.commands.executeCommand('vscode.openWith', ...openWithArguments(targetUri, profile.customEditorViewType));
 
@@ -734,12 +739,19 @@ export async function activateGlspIntegration(
                                 glspVscodeConnector.dispatchAction(request, clientId);
                                 // On record as what that editor shows now: the
                                 // host asked for it, and the diagram did not.
-                                provider.recordHostView(targetUri, {
-                                    sourceUri,
-                                    ...(networkName && networkName !== '' ? { networkName } : {}),
-                                    ...(typeof navTrail === 'string' ? { navTrail } : {}),
-                                    ...(requestedRunId ? { runId: requestedRunId } : {})
-                                });
+                                // Only for an editor that was there to take
+                                // it. A new one's own first request is what
+                                // shows its view, and records it; recorded
+                                // here, a view that request then missed would
+                                // be what the next save moved the editor to.
+                                if (targetWasOpen) {
+                                    provider.recordHostView(targetUri, {
+                                        sourceUri,
+                                        ...(networkName && networkName !== '' ? { networkName } : {}),
+                                        ...(typeof navTrail === 'string' ? { navTrail } : {}),
+                                        ...(requestedRunId ? { runId: requestedRunId } : {})
+                                    });
+                                }
                                 rememberRecentNavigation(state, sourceRaw, {
                                     ...(networkName && networkName !== '' ? { networkName } : {}),
                                     ...(typeof navTrail === 'string' ? { navTrail } : {}),

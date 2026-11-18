@@ -19,6 +19,19 @@ import { inPlace, openColumnFor } from './open-in-place';
 
 const RUN_ID_ARG = 'wf:runId';
 
+/** How many crumbs a trail has; none for no trail, or one that cannot be read. */
+function crumbCount(navTrail: string | undefined): number {
+    if (typeof navTrail !== 'string' || navTrail.trim() === '') {
+        return 0;
+    }
+    try {
+        const parsed: unknown = JSON.parse(navTrail);
+        return Array.isArray(parsed) ? parsed.length : 0;
+    } catch {
+        return 0;
+    }
+}
+
 /**
  * Source of live-overlay signatures, injected by the host (glsp-activation wires
  * this from the toolkit's `CliRunDriver`). The provider no longer reads
@@ -727,8 +740,14 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
 
     /**
      * What a refresh the HOST asks for is a refresh of: which file, under
-     * which name, by which trail, of which run. The refresh command's half of
-     * what {@link dispatchModelRefresh} does for a save.
+     * which name, by which trail. The refresh command's half of what
+     * {@link dispatchModelRefresh} does for a save.
+     *
+     * Not of which run: a host refresh names none, as it never did, and the
+     * server shows the latest. The run on record is the one the DIAGRAM last
+     * asked for, and a run started since is shown without the record
+     * hearing of it: sent along, the record would take the overlay back to
+     * the run before.
      *
      * A REFRESH never changes which view an editor shows: it is of the view
      * on record, in the file that view is of. Navigating in place that can be
@@ -750,13 +769,14 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      * sent along it would file the new view under crumbs it was not reached
      * by. The trail is the view itself, which is also what tells the diagram
      * to start its crumbs over. It is remembered as what the editor shows, so
-     * that the next save refreshes it and not the view before; a run selected
-     * in another graph is not carried over to it.
+     * that the next save refreshes it and not the view before; the run on
+     * record stays there only when the graph opened is the root that was
+     * already shown, since a run is a run of a graph.
      */
     hostRefreshTarget(
         documentUri: vscode.Uri | string,
         request: { open?: string; fallbackName?: string } = {}
-    ): { sourceUri: string; networkName?: string; navTrail?: string; runId?: string } {
+    ): { sourceUri: string; networkName?: string; navTrail?: string } {
         const own = typeof documentUri === 'string' ? documentUri : documentUri.toString();
         const context = this.getRefreshContext(documentUri);
         const shown = typeof context?.shownSourceUri === 'string' && context.shownSourceUri.trim() !== ''
@@ -765,18 +785,25 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         const opened = typeof request.open === 'string' ? request.open.trim() : '';
         if (opened !== '') {
             const navTrail = JSON.stringify([{ sourceUri: own, workflowName: opened }]);
-            const sameGraph = context?.networkName === opened
-                && this.canonicalizeUriString(shown ?? own) === this.canonicalizeUriString(own);
-            const runId = sameGraph ? context?.runId : undefined;
-            this.setRefreshContext(documentUri, { shownSourceUri: own, networkName: opened, navTrail, runId });
-            return { sourceUri: own, networkName: opened, navTrail, ...(runId ? { runId } : {}) };
+            // The root that is on record already: the name, in the editor's own
+            // file, and not as an instance further down (a view of that name
+            // three crumbs deep is another graph's part, with that graph's run).
+            const sameRoot = context?.networkName === opened
+                && this.canonicalizeUriString(shown ?? own) === this.canonicalizeUriString(own)
+                && crumbCount(context?.navTrail) <= 1;
+            this.setRefreshContext(documentUri, {
+                shownSourceUri: own,
+                networkName: opened,
+                navTrail,
+                ...(sameRoot ? {} : { runId: undefined })
+            });
+            return { sourceUri: own, networkName: opened, navTrail };
         }
         const networkName = context?.networkName ?? (request.fallbackName?.trim() || undefined);
         return {
             sourceUri: shown ?? own,
             ...(networkName ? { networkName } : {}),
-            ...(context?.navTrail ? { navTrail: context.navTrail } : {}),
-            ...(context?.runId ? { runId: context.runId } : {})
+            ...(context?.navTrail ? { navTrail: context.navTrail } : {})
         };
     }
 
@@ -833,10 +860,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
                     // reload, which re-acquires and re-runs bounds as required for correctness.
                     ...(options.agentContextOnly ? { agentContextOnly: true } : {}),
                     ...(target.networkName ? { networkName: target.networkName } : {}),
-                    ...(target.navTrail ? { 'wf:navTrail': target.navTrail } : {}),
-                    // The run on screen, as a save sends it: without it the
-                    // server shows the latest, and the next save the one before.
-                    ...(target.runId ? { [RUN_ID_ARG]: target.runId } : {})
+                    ...(target.navTrail ? { 'wf:navTrail': target.navTrail } : {})
                 }
             });
             if (options.reveal) {
