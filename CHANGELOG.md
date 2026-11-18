@@ -101,6 +101,62 @@ platform that hands it one.
     (`Cannot run: ... names no command`); it no longer names a workspace
     folder, `package.json` or `.git`, which cannot cause it, and no longer
     looks for the run root first.
+- **A product is told when a file's diagram opens and when it has closed**
+  (`DiagramProfile.onEditorOpened(uri)`, `onEditorClosed(uri)`): once when
+  the file's first diagram editor opens, and once when its last closes, not
+  when one of two closes. A product that keeps something per diagram (a
+  layout service, a worker, a cache) lets go of it there; one watched the
+  tabs itself to find out. Not called at window close. What the hook throws
+  or rejects with is logged, and the editor opens and closes all the same.
+- **A load nobody waits for any more is told so** (`ModelSourceOptions.signal`,
+  an `AbortSignal` beside `progress`). It is aborted when the diagram's
+  editor closes, and when a newer request for the same diagram arrives
+  while the load runs (a save, another view, a refresh): GLSP runs a
+  session's requests one at a time, so the newer one would otherwise wait
+  for the old to finish, and then draw over it. The reason says which
+  (an `AbortError`). A product stops its compiler, worker or request; the
+  platform draws nothing of an aborted load, whatever `getGraph` returns,
+  and does not end the loading indicator for it, which the newer load now
+  speaks for. A request nobody is waiting on (a run's overlay redrawn)
+  neither aborts a load nor is aborted by one, only by the editor closing.
+  The session's dispatcher sees the newer request arrive
+  (`LoadCancellingActionDispatcher`, bound by `WorkflowDiagramModule`; a
+  product's own diagram module gets it by extending that one).
+- **A product can say what its diagram is doing after the platform has
+  drawn it** (`DiagramProfileHandle.loading.report(uri, progress)`,
+  `loading.end(uri)`): a layout it streams in, a second pass. The same
+  indicator the platform's load uses, on every editor of the file, centred
+  while the diagram is empty and as a pill once it has a picture. A product
+  reached it through an internal import of the client's
+  `loading-indicator`.
+- **A product can put its own words in place of the platform's loading
+  steps, or none** (`DiagramProfile.loadPhaseWords(phase, words, facts)`,
+  with `phase` one of `reading`, `drawing`, `laying-out`, `routing`).
+  "Drawing the diagram, 1 node, 0 edges" is wrong for a product whose graph
+  is a frame round content it streams afterwards. Handed the step, the
+  platform's words and the file and counts they were made from, it returns
+  other words, `false` for nothing at that step, or nothing for the
+  platform's own. Threaded to the server as
+  `createWorkflowGlspVscodeServer({ loadPhaseWords })`.
+- **A product's "Go to source" can keep the diagram in sight**
+  (`ctx.revealRange(uri, range, { beside, preserveFocus })` in
+  `onWebviewMessage`). Where the file is not open in another group,
+  `revealRange` shows it in the active group, the diagram's, over the
+  diagram, so a product that wanted it beside opened it itself. With
+  `beside`, a file open in another group is shown there and any other in
+  the group beside, even where the diagram's group holds it in a tab behind;
+  `preserveFocus` leaves the focus on the diagram. Without options it shows
+  the file where it always did.
+- **A product can say which diagrams a changed file reloads**
+  (`DiagramProfile.watch.affects(changed, open)`). A change on disk to one of
+  a product's sources reloads every open diagram, and a change to any other
+  file its `watch.globs` name reloaded none: the watcher dropped every file
+  that was not a source, so a side file a product reads (a manifest, a
+  technology file) never reached its diagrams. With `affects`, every file the
+  globs see is asked about, and so is each save of a source in the editor;
+  the diagrams it names are reloaded, with the changed file's own. Changes
+  within the quarter-second debounce are taken together. Without it, nothing
+  changes.
 
 - **A diagram that is loading says so, and says what it is doing.** A large
   design takes seconds to read and seconds more to lay out, and for all of
@@ -663,6 +719,16 @@ platform that hands it one.
   (`estimatePinLabelBox`). All of this is of a symbol's pins: every other
   port, and every bus of a node that is no symbol, is sized, named and
   placed as before.
+- **The Problems panel names the product a graph diagnostic came from**: the
+  profile's `displayName` ("LEF/DEF Viewer", "SystemVerilog IDE"), where it
+  said `workflow` for every product. The display name because it is the one
+  name every profile has that is written for a reader, and the one that
+  heads the product's own output channels; `glspClientName` is a protocol
+  identifier, and `chat.fullName` names the chat. Threaded to the server as
+  `createWorkflowGlspVscodeServer({ diagnosticSource })`; a host that gives
+  none gets `workflow`, as before. A Problems filter typed as `workflow`
+  no longer matches.
+
 - **A wire outside the viewport is not drawn**, as a node outside it is
   not; one within a few pixels of it still is, since its arrowhead and its
   caption reach further than its route. Of a diagram's thousands of wires
@@ -1001,6 +1067,35 @@ platform that hands it one.
   once.** Node fires a timer set beyond 2^31-1 ms after 1 ms; a longer
   deadline, given or from the graph-load setting, now waits the longest a
   timer holds.
+- **Every diagram editor of a file is refreshed, and closing one leaves the
+  other working.** The editor provider kept one client per file: the
+  editor opened last took the entry, and the first of them to close deleted
+  it. With a diagram split ("View: Split Editor Right" makes a second
+  editor of the same file), the first editor stopped hearing saves as soon
+  as the second opened, and closing either left the other deaf to saves,
+  changes on disk, live previews and a run's overlay; the profile's
+  `postToWebview` and `dispatchToWebview` reached nothing. Editors are kept one by one, each with the view it shows
+  (which graph, which crumbs), and what is the file's (the overlay watch)
+  goes with its last editor. A save, a change on disk, a live preview, a
+  refresh, a run's overlay and a product's post reach every editor of the
+  file, each refreshed to its own view; a load's words go to the editor
+  whose load it is (they went to whichever had the entry). What goes to one
+  editor (opening a graph by name, Export as SVG, the grid, layout on
+  demand, the chat's edit session) goes to the active one, or else the one
+  used last. A run's replay goes to the editor that has just opened, not to
+  the one that saw it live. A chat reply goes to the panel that spoke last,
+  and to the other once that one's editor has closed, where it went to a
+  webview that was gone.
+- **The API's documentation says what crosses `activateDiagramProfile`.**
+  `api.ts` said that the functions in a profile's `chat` (tools, context
+  providers, slash commands) were safe only in library mode and never
+  populated over the API. They are passed through as written, and called:
+  every extension runs in the one extension-host realm and the profile
+  object is handed over as it is. Only DI objects do not cross, and the
+  boundary refuses them. A test calls each through the extension's own
+  `activate()` (`chat-functions-over-api.test.ts`).
+- **The READMEs give the API version as 0.8.0**, where they still said 0.4.0.
+
 - **The refresh command refreshes the view that is on screen.** Navigating in
   place, that can be a workflow in another file than the editor's document.
   The command (`commands.refreshDiagramModel`, a product's "Refresh Diagram"

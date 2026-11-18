@@ -38,8 +38,7 @@ function makeProvider() {
 }
 
 function registerClient(provider: WorkflowEditorProvider, uri: vscode.Uri, clientId: string): void {
-    const key = (provider as any).canonicalizeUriString(uri) as string;
-    (provider as any).uriToClientId.set(key, clientId);
+    (provider as any).trackEditor(uri, clientId);
 }
 
 const SOURCE = vscode.Uri.file('/repo/examples/python/mpeg4sp/decoder.py');

@@ -49,7 +49,8 @@ import { relativeToParent, restoreGroupGeometry } from './group-geometry';
 import { withBoundaryBusPositions } from './boundary-bus-positions';
 import { withOpenNodePositions } from '../model/open-nodes';
 import { PERF_ENABLED, perfNow, GraphLoadPerf, nextBuildCount } from './graph-load-perf';
-import { getGraphDiagnosticsCollection } from './graph-diagnostics';
+import { DEFAULT_DIAGNOSTIC_SOURCE, DIAGNOSTIC_SOURCE, getGraphDiagnosticsCollection } from './graph-diagnostics';
+import { LoadAbandoned, LoadCancellation } from './load-cancellation';
 import {
     NAV_TRAIL_ARG,
     RUN_ID_ARG,
@@ -204,11 +205,16 @@ function walkGEdges(element: { children?: unknown[] }, fn: (edge: GEdge) => void
 }
 
 /** "177 nodes, 565 edges": how big a graph is, for the line under what is being done with it. */
-function sizeOfGraph(doc: GraphDocument): string {
+function countOfGraph(doc: GraphDocument): { nodes: number; edges: number } {
     // A document's graph is the producer's own shape; these two lists are what every one has.
     const graph = doc.graph as { nodes?: unknown; edges?: unknown } | undefined;
     const nodes = Array.isArray(graph?.nodes) ? graph.nodes.length : 0;
     const edges = Array.isArray(graph?.edges) ? graph.edges.length : 0;
+    return { nodes, edges };
+}
+
+function sizeOfGraph(doc: GraphDocument): string {
+    const { nodes, edges } = countOfGraph(doc);
     return nodes === 0 && edges === 0 ? '' : `${counted(nodes, 'node')}, ${counted(edges, 'edge')}`;
 }
 
@@ -323,6 +329,20 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
     @optional()
     protected storageOptions?: StorageRuntimeOptions;
 
+    /** The product's name, for the Problems panel; absent, the platform's `workflow`. */
+    @inject(DIAGNOSTIC_SOURCE)
+    @optional()
+    protected diagnosticSource?: string;
+
+    /**
+     * The session's loads that can lose their reader (see `load-cancellation.ts`).
+     * `@optional()` for the tests that build the storage by hand: without it
+     * `getGraph` is handed no signal, as before.
+     */
+    @inject(LoadCancellation)
+    @optional()
+    protected loadCancellation?: LoadCancellation;
+
     /**
      * `DiagramModelSource` used to acquire graph documents and language-specific source analysis.
      * Injected the same way as `layoutPersistence` in the real DI container (see
@@ -423,18 +443,31 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         // What this load is doing, for the reader waiting on it; not for a
         // load nobody is waiting on (see `isBackgroundLoad`).
         const reporter = this.loadProgress;
-        const watched = reporter?.telling === true && !isBackgroundLoad(action.requestId, action.options);
+        const background = isBackgroundLoad(action.requestId, action.options);
+        const watched = reporter?.telling === true && !background;
         const say = (progress: LoadProgress): void => {
             if (watched) {
                 reporter?.say(progress);
             }
         };
-        say({ message: `Reading ${path.basename(workflowFilePath)}` });
+        if (watched) {
+            reporter?.sayPhase(
+                'reading',
+                { message: `Reading ${path.basename(workflowFilePath)}` },
+                { file: workflowFilePath }
+            );
+        }
+        // Whether anybody still wants this graph: aborted when the editor
+        // closes, or when the reader asks for another before it has come.
+        const signal = this.loadCancellation?.begin(!background);
+        const abandoned = (): LoadAbandoned | undefined =>
+            signal?.aborted ? new LoadAbandoned(LoadCancellation.why(signal)) : undefined;
         try {
             // What is inside "reading" is the product's to say, for as long
             // as it is reading: a product that goes on talking after it has
             // answered (the output of a build it gave up on) is reporting on
-            // nothing this diagram is waiting for.
+            // nothing this diagram is waiting for. Nor after its load was
+            // abandoned: the words would be laid over the newer load's.
             let reading = true;
             let doc: GraphDocument | undefined;
             try {
@@ -444,17 +477,28 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                           ...(watched
                               ? {
                                     progress: (said: LoadProgress) => {
-                                        const progress = reading ? normalizeLoadProgress(said) : undefined;
+                                        const progress = reading && !signal?.aborted ? normalizeLoadProgress(said) : undefined;
                                         if (progress) {
                                             say(progress);
                                         }
                                     }
                                 }
-                              : {})
+                              : {}),
+                          ...(signal ? { signal } : {})
                       })
                     : this.buildNoModelSourceDocument(workflowFilePath);
+            } catch (error) {
+                // A producer that stops when told to may well throw: that is
+                // the abandonment, not a failure to show the reader.
+                throw abandoned() ?? error;
             } finally {
                 reading = false;
+            }
+            // Whatever came back of an abandoned load is drawn for nobody, and
+            // would be drawn over the newer load's graph.
+            const gone = abandoned();
+            if (gone) {
+                throw gone;
             }
             perf.mark('acquire');
             if (!doc) {
@@ -472,14 +516,27 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             // breadcrumb-trail retry); `finishLoadFromDoc` needs those resolved options for layout/id.
             const resolvedOptions = (doc as { resolvedOptions?: Record<string, unknown> }).resolvedOptions ?? opts;
             this.lastDocument = { doc, sourceUri, filePath: workflowFilePath, opts: resolvedOptions };
-            say({ message: 'Drawing the diagram', detail: sizeOfGraph(doc) });
+            if (watched) {
+                const size = countOfGraph(doc);
+                reporter?.sayPhase(
+                    'drawing',
+                    { message: 'Drawing the diagram', detail: sizeOfGraph(doc) },
+                    { file: workflowFilePath, ...size }
+                );
+            }
             await this.finishLoadFromDoc(doc, sourceUri, workflowFilePath, resolvedOptions, perf);
         } catch (error) {
-            // No model follows a load that failed, so nothing else would end the wait.
-            if (watched) {
+            // No model follows a load that failed, so nothing else would end the
+            // wait. One that was abandoned is not this load's to end: a newer
+            // load has the indicator now, or there is no diagram to show it.
+            if (watched && !(error instanceof LoadAbandoned)) {
                 reporter?.endWithoutModel();
             }
             throw error;
+        } finally {
+            if (signal) {
+                this.loadCancellation?.end(signal);
+            }
         }
     }
 
@@ -537,7 +594,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             // an invisible caret). VS Code clamps the end character to the actual line length.
             const endCol = Number.MAX_SAFE_INTEGER;
             const diag = new vscode.Diagnostic(new vscode.Range(ln, startCol, ln, endCol), diagnostic.message, severityOf(diagnostic.severity));
-            diag.source = 'workflow';
+            diag.source = this.diagnosticSource ?? DEFAULT_DIAGNOSTIC_SOURCE;
             if (typeof diagnostic.code === 'string' && diagnostic.code.trim() !== '') {
                 diag.code = diagnostic.code.trim();
             }

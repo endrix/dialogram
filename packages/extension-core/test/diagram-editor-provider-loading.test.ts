@@ -33,10 +33,8 @@ function makeProvider() {
     const provider: any = new WorkflowEditorProvider(context, connector, {} as unknown as DiagramProfile);
     const posted = new Map<string, unknown[]>();
     const open = (uri: vscode.Uri, clientId: string): void => {
-        const key = provider.canonicalizeUriString(uri);
         posted.set(clientId, []);
-        provider.uriToClientId.set(key, clientId);
-        provider.uriToWebview.set(key, { postMessage: async (message: unknown) => posted.get(clientId)!.push(message) });
+        provider.trackEditor(uri, clientId, { postMessage: async (message: unknown) => posted.get(clientId)!.push(message) });
     };
     return { provider, posted, open };
 }

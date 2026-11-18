@@ -10,8 +10,8 @@ import { RequestModelAction } from '@eclipse-glsp/protocol';
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import { statSync } from 'node:fs';
-import { LOADING_MESSAGE_TYPE, RevealNodeAction, WORKFLOW_DIAGRAM_TYPE, type LoadingMessage, type LoadingUpdate } from '@dialogram/shared';
-import { type DiagramClientBehavior, type DiagramProfile } from '../../api';
+import { LOADING_MESSAGE_TYPE, RevealNodeAction, WORKFLOW_DIAGRAM_TYPE, normalizeLoadProgress, type LoadProgress, type LoadingMessage, type LoadingUpdate } from '@dialogram/shared';
+import { type DiagramClientBehavior, type DiagramProfile, type DiagramWatchAffects, type RevealRangeOptions } from '../../api';
 import { listAcpConnectors, workspaceDirFor } from '../chat/acp-connectors';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
 import { matchesSourceExtension, sourceWatchGlobs } from './source-extensions';
@@ -30,6 +30,38 @@ function crumbCount(navTrail: string | undefined): number {
     } catch {
         return 0;
     }
+}
+
+/** What an editor shows, which its refreshes ask for again: the view, not only the file. */
+export interface DiagramViewRecord {
+    networkName?: string;
+    navTrail?: string;
+    queueTraceVisible?: boolean;
+    runId?: string;
+    shownSourceUri?: string;
+}
+
+/**
+ * One diagram editor: a webview panel on a document, with its GLSP client.
+ *
+ * A file can have more than one: "View: Split Editor Right" on a diagram
+ * makes a second editor of the same file, with a panel and a client of its
+ * own, and either can be closed first. What is kept per editor
+ * is everything an editor has of its own: its client, its webview, and the
+ * view it shows (navigating in place, which graph of which file under which
+ * crumbs).
+ */
+interface DiagramEditor {
+    clientId: string;
+    /** The document's canonical key ({@link normalizeSourceUriKey}). */
+    documentKey: string;
+    /** The document's URI as VS Code spells it: what a product is handed. */
+    documentUri: string;
+    webview?: vscode.Webview;
+    panel?: vscode.WebviewPanel;
+    view?: DiagramViewRecord;
+    /** Rises each time the editor opens or becomes active: which of a file's editors was used last. */
+    lastActive: number;
 }
 
 /**
@@ -80,10 +112,15 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         return this.neverChanges.event;
     }
 
-    private uriToClientId = new Map<string, string>();
-    /** Per-URI webview handles, for the profile's raw `postToWebview` channel. */
-    private uriToWebview = new Map<string, vscode.Webview>();
-    private uriToRefreshContext = new Map<string, { networkName?: string; navTrail?: string; queueTraceVisible?: boolean; runId?: string; shownSourceUri?: string }>();
+    /**
+     * Every diagram editor open, by its client. Kept per editor and not per
+     * file: one entry per file, written by each editor that opened and deleted
+     * by any that closed, took the entry of the editor left open with it, and
+     * that editor stopped hearing saves and changes on disk.
+     */
+    private readonly editors = new Map<string, DiagramEditor>();
+    private activity = 0;
+    /** The run's overlay signature, by file: it is the file's run, whichever editors show it. */
     private uriToLiveOverlaySignature = new Map<string, string | undefined>();
 
     /**
@@ -96,6 +133,14 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      */
     private readonly registerClientEmitter = new vscode.EventEmitter<string>();
     readonly onDidRegisterClient: vscode.Event<string> = this.registerClientEmitter.event;
+
+    /**
+     * The same, with the client that registered: what is replayed goes to
+     * the editor that is new, and not to the file's other editor, which has
+     * it already.
+     */
+    private readonly registerEditorEmitter = new vscode.EventEmitter<{ uri: string; clientId: string }>();
+    readonly onDidRegisterEditor: vscode.Event<{ uri: string; clientId: string }> = this.registerEditorEmitter.event;
 
     /** Injected live-overlay signature source (the run driver). The provider drives
      *  live-execution glow purely off the signatures this source publishes; the
@@ -112,6 +157,8 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
 
     /** Debounce timer for external (on-disk) source changes picked up by the watcher. */
     private externalRefreshTimer?: NodeJS.Timeout;
+    /** The files changed on disk within the debounce window: for a profile that says which diagrams each affects. */
+    private readonly pendingExternalChanges = new Set<string>();
     /** When each source file was last saved through the editor, to skip the watcher's
      *  duplicate refresh for an in-editor save (the save handler already refreshed). */
     private lastSavedAt = new Map<string, number>();
@@ -176,7 +223,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     ) {
         super(glspVscodeConnector);
 
-        extensionContext.subscriptions.push(this.registerClientEmitter);
+        extensionContext.subscriptions.push(this.registerClientEmitter, this.registerEditorEmitter);
 
         // Listen for document changes for live preview (debounced)
         extensionContext.subscriptions.push(
@@ -229,28 +276,45 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         _token: vscode.CancellationToken,
         clientId: string
     ): void {
-        // Track the client ID for this document
-        const canonicalDocumentUri = this.canonicalizeUriString(document.uri);
-        this.uriToClientId.set(canonicalDocumentUri, clientId);
-        this.uriToWebview.set(canonicalDocumentUri, webviewPanel.webview);
+        // Track this editor. Its file may have another already.
+        const { key: canonicalDocumentUri, first } = this.trackEditor(document.uri, clientId, webviewPanel.webview, webviewPanel);
 
-        // Ask the injected source (run driver) to poll this diagram's live overlay.
-        this.startLiveOverlayWatch(canonicalDocumentUri, document.uri);
+        // Ask the injected source (run driver) to poll this diagram's live overlay:
+        // once per file, for as long as any editor shows it.
+        if (first) {
+            this.startLiveOverlayWatch(canonicalDocumentUri, document.uri);
+        }
 
         // Announce the (re)registration so the host can replay any buffered
         // execution-overlay events for this source into the (re)opened webview.
         // Fired synchronously here: the drain runs before any later live batch on
         // the single-threaded host loop, preserving replay-before-live order.
         this.registerClientEmitter.fire(document.uri.toString());
+        this.registerEditorEmitter.fire({ uri: document.uri.toString(), clientId });
 
-        // Clean up when webview is disposed
-        webviewPanel.onDidDispose(() => {
-            this.uriToClientId.delete(canonicalDocumentUri);
-            this.uriToWebview.delete(canonicalDocumentUri);
-            this.uriToRefreshContext.delete(canonicalDocumentUri);
-            this.uriToLiveOverlaySignature.delete(canonicalDocumentUri);
-            this.stopLiveOverlayWatch(canonicalDocumentUri);
+        // Which of a file's editors was used last: the one a command for "the"
+        // diagram of the file goes to when neither is focused.
+        webviewPanel.onDidChangeViewState?.(event => {
+            const editor = this.editors.get(clientId);
+            if (editor && event.webviewPanel.active) {
+                editor.lastActive = ++this.activity;
+            }
         });
+
+        // Clean up when webview is disposed: this editor's entry, and what is
+        // the file's only with its last editor.
+        webviewPanel.onDidDispose(() => {
+            const gone = this.untrackEditor(clientId);
+            if (gone?.last) {
+                this.uriToLiveOverlaySignature.delete(canonicalDocumentUri);
+                this.stopLiveOverlayWatch(canonicalDocumentUri);
+                this.tellProfile('onEditorClosed', document.uri.toString());
+            }
+        });
+
+        if (first) {
+            this.tellProfile('onEditorOpened', document.uri.toString());
+        }
 
         const webview = webviewPanel.webview;
 
@@ -436,7 +500,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
                         postToWebview: (msg: unknown) => {
                             void webview.postMessage(msg);
                         },
-                        revealRange: (uriStr, range) => this.revealRange(uriStr, range)
+                        revealRange: (uriStr, range, options) => this.revealRange(uriStr, range, options)
                     });
                     return;
                 }
@@ -492,13 +556,9 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         }
 
         // Refresh all open diagrams on save so cross-file references (including sibling/deep imports)
-        // pick up persisted changes immediately.
-        for (const [sourceUri, clientId] of this.uriToClientId) {
-            console.log(`[WorkflowEditorProvider] Document saved: ${document.uri}. Triggering diagram update for client: ${clientId} (source: ${sourceUri})`);
-            this.dispatchModelRefresh(clientId, sourceUri, {
-                forceReloadFromDisk: true
-            });
-        }
+        // pick up persisted changes immediately: every editor, two of one file included. A
+        // profile that says which diagrams a file affects (`watch.affects`) has only those.
+        this.reloadAffectedBy([document.uri.toString()], 'Document saved');
     }
 
     /**
@@ -511,7 +571,12 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      * save — refresh every open diagram. Debounced to coalesce edit bursts.
      */
     protected handleExternalFileChange(uri: vscode.Uri): void {
-        if (!matchesSourceExtension(uri.path, this.profile.sourceExtensions) || this.uriToClientId.size === 0) {
+        // A file that is not a source is heard only by a profile that says what
+        // it affects: without that, a side file (a manifest, a configuration)
+        // would reload every diagram, as a source does. With it, the profile is
+        // asked about every file its watch globs see.
+        const affects = this.profile.watch?.affects;
+        if ((!affects && !matchesSourceExtension(uri.path, this.profile.sourceExtensions)) || this.editors.size === 0) {
             return;
         }
         const canonical = this.canonicalizeUriString(uri);
@@ -520,7 +585,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         // any OTHER watched file, keep the cross-file-import reload but skip build
         // artifacts / irrelevant trees (see isUnderArtifactDir) so generated files
         // under a build tree don't thrash open diagrams.
-        const isOwnSource = this.uriToClientId.has(canonical);
+        const isOwnSource = this.editorsOfDocument(canonical).length > 0;
         if (!isOwnSource && this.isUnderArtifactDir(uri)) {
             return;
         }
@@ -538,16 +603,77 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             return;
         }
 
+        // Every file changed in the window is kept: a burst that touches a side
+        // file and then a source reloads what either affects, not what the last
+        // one does.
+        this.pendingExternalChanges.add(uri.toString());
         if (this.externalRefreshTimer) {
             clearTimeout(this.externalRefreshTimer);
         }
         this.externalRefreshTimer = setTimeout(() => {
             this.externalRefreshTimer = undefined;
-            for (const [sourceUri, clientId] of this.uriToClientId) {
-                console.log(`[WorkflowEditorProvider] External change to ${uri.fsPath}; force-reloading diagram for client ${clientId} (source ${sourceUri}).`);
-                this.dispatchModelRefresh(clientId, sourceUri, { forceReloadFromDisk: true });
-            }
+            const changed = [...this.pendingExternalChanges];
+            this.pendingExternalChanges.clear();
+            this.reloadAffectedBy(changed, 'External change');
         }, WorkflowEditorProvider.EXTERNAL_REFRESH_DEBOUNCE_MS);
+    }
+
+    /**
+     * Reload, from disk, the diagrams a change to `changed` (URI strings)
+     * affects: every open one, as it always was, or, for a profile that says
+     * (`watch.affects`), the ones it names and the changed files' own. Every
+     * editor of such a file is reloaded, not one.
+     */
+    private reloadAffectedBy(changed: readonly string[], why: string): void {
+        const affects = this.profile.watch?.affects;
+        const reload = (documents: ReadonlySet<string>): void => {
+            for (const editor of [...this.editors.values()]) {
+                if (!documents.has(editor.documentKey)) {
+                    continue;
+                }
+                console.log(`[WorkflowEditorProvider] ${why}: ${changed.join(', ')}; force-reloading diagram for client ${editor.clientId} (source ${editor.documentKey}).`);
+                this.dispatchModelRefresh(editor.clientId, editor.documentKey, { forceReloadFromDisk: true });
+            }
+        };
+        if (!affects) {
+            reload(new Set(this.openDocumentKeys()));
+            return;
+        }
+        void this.documentsAffectedBy(changed, affects).then(reload);
+    }
+
+    /**
+     * The open documents the profile says a change to `changed` affects, with
+     * each changed file's own. A hook that fails reloads every open diagram:
+     * a reload too many is cheaper than a diagram left stale without a word.
+     */
+    private async documentsAffectedBy(
+        changed: readonly string[],
+        affects: DiagramWatchAffects
+    ): Promise<Set<string>> {
+        const open = this.openDocumentKeys();
+        // Handed as VS Code spells them, which is how the product was handed them in `getGraph`.
+        const openUris = open.map(key => this.editorsOfDocument(key)[0]?.documentUri ?? key);
+        const affected = new Set<string>();
+        for (const file of changed) {
+            const own = this.canonicalizeUriString(file);
+            if (open.includes(own)) {
+                affected.add(own);
+            }
+            try {
+                const named = (await affects(file, openUris)) as readonly string[] | undefined;
+                for (const uri of Array.isArray(named) ? named : []) {
+                    const key = this.canonicalizeUriString(uri);
+                    if (open.includes(key)) {
+                        affected.add(key);
+                    }
+                }
+            } catch (error) {
+                console.warn(`[WorkflowEditorProvider] watch.affects failed for ${file}; reloading every open diagram:`, error);
+                return new Set(this.openDocumentKeys());
+            }
+        }
+        return affected;
     }
 
     /**
@@ -560,11 +686,9 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     protected handleDocumentChange(event: vscode.TextDocumentChangeEvent): void {
         const uriString = this.canonicalizeUriString(event.document.uri);
 
-        const clientId = this.uriToClientId.get(uriString);
-
         // Not an editor's own document, but possibly a nested workflow's file
         // shown in another editor's view: preview it there.
-        if (!clientId) {
+        if (this.editorsOfDocument(uriString).length === 0) {
             this.previewInViewsShowing(event);
             return;
         }
@@ -583,13 +707,15 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         // Schedule a new update
         const timer = setTimeout(() => {
             this.changeDebounceTimers.delete(uriString);
-            console.log(`[WorkflowEditorProvider] Document changed (debounced): ${uriString}. Triggering live diagram update for client: ${clientId}`);
-            
-            // Send the current document content for live preview
+            // Send the current document content for live preview, to every
+            // editor of the document open when the wait is over.
             const content = event.document.getText();
-            this.dispatchModelRefresh(clientId, uriString, {
-                content
-            });
+            for (const editor of this.editorsOfDocument(uriString)) {
+                console.log(`[WorkflowEditorProvider] Document changed (debounced): ${uriString}. Triggering live diagram update for client: ${editor.clientId}`);
+                this.dispatchModelRefresh(editor.clientId, uriString, {
+                    content
+                });
+            }
         }, WorkflowEditorProvider.CHANGE_DEBOUNCE_MS);
         
         this.changeDebounceTimers.set(uriString, timer);
@@ -605,12 +731,12 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             return;
         }
         const changed = this.canonicalizeUriString(event.document.uri);
-        for (const [editorUri, editorClientId] of this.uriToClientId) {
-            const shown = this.uriToRefreshContext.get(editorUri)?.shownSourceUri;
+        for (const { clientId: editorClientId, documentKey: editorUri, view } of this.editors.values()) {
+            const shown = view?.shownSourceUri;
             if (!shown || this.canonicalizeUriString(shown) !== changed) {
                 continue;
             }
-            const timerKey = `${editorUri}::${changed}`;
+            const timerKey = `${editorClientId}::${changed}`;
             const existing = this.changeDebounceTimers.get(timerKey);
             if (existing) {
                 clearTimeout(existing);
@@ -637,7 +763,9 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         sourceUri: string,
         options: { content?: string; forceReloadFromDisk?: boolean; contentUri?: string; silent?: boolean } = {}
     ): void {
-        const refreshContext = this.getRefreshContext(sourceUri);
+        // The view of THIS editor: a file's other editor may show another.
+        const editor = this.editors.get(clientId);
+        const refreshContext = editor ? editor.view : this.getRefreshContext(sourceUri);
 
         // The editor refreshes the view it shows. Navigating in place that can be
         // a workflow in another file than the editor's own document: refresh that
@@ -678,22 +806,32 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         this.glspVscodeConnector.dispatchAction(action, clientId);
     }
 
-    setRefreshContext(
-        documentUri: vscode.Uri | string,
-        context: { networkName?: string; navTrail?: string; queueTraceVisible?: boolean; runId?: string; shownSourceUri?: string }
-    ): void {
-        const key = this.canonicalizeUriString(documentUri);
-        const next = {
-            ...this.uriToRefreshContext.get(key),
-            ...context
-        };
-
-        if (!next.networkName && !next.navTrail && typeof next.queueTraceVisible !== 'boolean' && !next.runId && !next.shownSourceUri) {
-            this.uriToRefreshContext.delete(key);
-            return;
+    /** Record what every editor of a document shows (see {@link setRefreshContextForClient} for one). */
+    setRefreshContext(documentUri: vscode.Uri | string, context: DiagramViewRecord): void {
+        for (const editor of this.editorsOfDocument(this.canonicalizeUriString(documentUri))) {
+            this.mergeView(editor, context);
         }
+    }
 
-        this.uriToRefreshContext.set(key, next);
+    /**
+     * Record what one editor shows: the one whose diagram asked for a model.
+     * A file's other editor can be on another view of it, and refreshes that.
+     * False when the client is not an editor's.
+     */
+    setRefreshContextForClient(clientId: string, context: DiagramViewRecord): boolean {
+        const editor = this.editors.get(clientId);
+        if (!editor) {
+            return false;
+        }
+        this.mergeView(editor, context);
+        return true;
+    }
+
+    private mergeView(editor: DiagramEditor, context: DiagramViewRecord): void {
+        const next = { ...editor.view, ...context };
+        editor.view = !next.networkName && !next.navTrail && typeof next.queueTraceVisible !== 'boolean' && !next.runId && !next.shownSourceUri
+            ? undefined
+            : next;
     }
 
     /**
@@ -705,15 +843,16 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      * that asked.
      */
     editorsOf(uri: vscode.Uri | string): string[] {
+        return [...new Set(this.editorsShowing(uri).map(editor => editor.documentKey))];
+    }
+
+    /** The editors {@link editorsOf} names, each one: a file can have two. */
+    private editorsShowing(uri: vscode.Uri | string): DiagramEditor[] {
         const wanted = this.canonicalizeUriString(uri);
-        const editors: string[] = [];
-        for (const editorUri of this.uriToClientId.keys()) {
-            const shown = this.uriToRefreshContext.get(editorUri)?.shownSourceUri;
-            if (editorUri === wanted || (typeof shown === 'string' && this.canonicalizeUriString(shown) === wanted)) {
-                editors.push(editorUri);
-            }
-        }
-        return editors;
+        return [...this.editors.values()].filter(editor => {
+            const shown = editor.view?.shownSourceUri;
+            return editor.documentKey === wanted || (typeof shown === 'string' && this.canonicalizeUriString(shown) === wanted);
+        });
     }
 
     /**
@@ -728,14 +867,19 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      */
     recordHostView(
         documentUri: vscode.Uri | string,
-        view: { sourceUri: string; networkName?: string; navTrail?: string; runId?: string }
+        view: { sourceUri: string; networkName?: string; navTrail?: string; runId?: string },
+        /** The editor the host sent it to; absent, every editor of the document. */
+        clientId?: string
     ): void {
-        this.setRefreshContext(documentUri, {
+        const record: DiagramViewRecord = {
             shownSourceUri: view.sourceUri,
             networkName: view.networkName?.trim() || undefined,
             navTrail: view.navTrail?.trim() || undefined,
             runId: view.runId?.trim() || undefined
-        });
+        };
+        if (clientId === undefined || !this.setRefreshContextForClient(clientId, record)) {
+            this.setRefreshContext(documentUri, record);
+        }
     }
 
     /**
@@ -775,10 +919,13 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      */
     hostRefreshTarget(
         documentUri: vscode.Uri | string,
-        request: { open?: string; fallbackName?: string } = {}
+        request: { open?: string; fallbackName?: string } = {},
+        /** The editor asked; absent, the document's current one. */
+        clientId?: string
     ): { sourceUri: string; networkName?: string; navTrail?: string } {
         const own = typeof documentUri === 'string' ? documentUri : documentUri.toString();
-        const context = this.getRefreshContext(documentUri);
+        const editor = clientId !== undefined ? this.editors.get(clientId) : undefined;
+        const context = editor ? editor.view : this.getRefreshContext(documentUri);
         const shown = typeof context?.shownSourceUri === 'string' && context.shownSourceUri.trim() !== ''
             ? context.shownSourceUri
             : undefined;
@@ -791,12 +938,17 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             const sameRoot = context?.networkName === opened
                 && this.canonicalizeUriString(shown ?? own) === this.canonicalizeUriString(own)
                 && crumbCount(context?.navTrail) <= 1;
-            this.setRefreshContext(documentUri, {
+            const record: DiagramViewRecord = {
                 shownSourceUri: own,
                 networkName: opened,
                 navTrail,
                 ...(sameRoot ? {} : { runId: undefined })
-            });
+            };
+            if (editor) {
+                this.mergeView(editor, record);
+            } else {
+                this.setRefreshContext(documentUri, record);
+            }
             return { sourceUri: own, networkName: opened, navTrail };
         }
         const networkName = context?.networkName ?? (request.fallbackName?.trim() || undefined);
@@ -833,18 +985,17 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     ): number {
         const named = typeof options.workflowName === 'string' ? options.workflowName.trim() : '';
         const opening = options.open === true && named !== '';
-        // An open is of the editor opened on the file. A refresh is of every view of it.
+        // An open is of the editor opened on the file (the one used last, of
+        // two). A refresh is of every view of it, in every editor.
         const own = this.canonicalizeUriString(uri);
-        const editors = opening ? (this.uriToClientId.has(own) ? [own] : []) : this.editorsOf(uri);
+        const current = opening ? this.currentEditorOf(own) : undefined;
+        const editors = opening ? (current ? [current] : []) : this.editorsShowing(uri);
         let asked = 0;
-        for (const editorUri of editors) {
-            const clientId = this.uriToClientId.get(editorUri);
-            if (!clientId) {
-                continue;
-            }
+        for (const { documentKey: editorUri, clientId } of editors) {
             const target = this.hostRefreshTarget(
                 editorUri,
-                opening ? { open: named } : { fallbackName: editors.length === 1 ? named : undefined }
+                opening ? { open: named } : { fallbackName: editors.length === 1 ? named : undefined },
+                clientId
             );
             const action = RequestModelAction.create({
                 requestId: 'refresh-queue-visibility-' + Date.now(),
@@ -875,8 +1026,14 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         return asked;
     }
 
-    getRefreshContext(documentUri: vscode.Uri | string): { networkName?: string; navTrail?: string; queueTraceVisible?: boolean; runId?: string; shownSourceUri?: string } | undefined {
-        return this.uriToRefreshContext.get(this.canonicalizeUriString(documentUri));
+    /** What the document's current editor shows (see {@link getClientIdForDocumentUri}). */
+    getRefreshContext(documentUri: vscode.Uri | string): DiagramViewRecord | undefined {
+        return this.currentEditorOf(this.canonicalizeUriString(documentUri))?.view;
+    }
+
+    /** What one editor shows. */
+    getRefreshContextForClient(clientId: string): DiagramViewRecord | undefined {
+        return this.editors.get(clientId)?.view;
     }
 
     /**
@@ -900,7 +1057,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
                 (sourceUri, signature) => this.onLiveOverlaySignatureUpdate(sourceUri, signature)
             );
             // Begin watching any diagrams already open when the source is attached.
-            for (const key of this.uriToClientId.keys()) {
+            for (const key of this.openDocumentKeys()) {
                 this.startLiveOverlayWatch(key, vscode.Uri.parse(key));
             }
         }
@@ -930,8 +1087,8 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      */
     onLiveOverlaySignatureUpdate(sourceUri: string, signature: string | undefined): void {
         const key = this.canonicalizeUriString(sourceUri);
-        const clientId = this.uriToClientId.get(key);
-        if (!clientId) {
+        const editors = this.editorsOfDocument(key);
+        if (editors.length === 0) {
             return;
         }
 
@@ -945,7 +1102,9 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         // Silent: the overlay changes on every firing of a run, and each change
         // reloads the model to redraw the glow; a "Model loading in progress"
         // notification per firing was the complaint.
-        this.dispatchModelRefresh(clientId, vscode.Uri.parse(key).toString(), { silent: true });
+        for (const editor of editors) {
+            this.dispatchModelRefresh(editor.clientId, vscode.Uri.parse(key).toString(), { silent: true });
+        }
     }
 
     /**
@@ -1304,32 +1463,125 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      */
     /** The document an editor's client was opened on: its root. */
     getDocumentUriForClientId(clientId: string): string | undefined {
-        for (const [uri, id] of this.uriToClientId) {
-            if (id === clientId) {
-                return uri;
-            }
-        }
-        return undefined;
+        return this.editors.get(clientId)?.documentKey;
     }
 
-    getClientIdForDocumentUri(uri: vscode.Uri): string | undefined {
-        return this.uriToClientId.get(this.canonicalizeUriString(uri));
+    /**
+     * "The" diagram of a file, for what goes to one editor (a command on the
+     * active diagram, an open, an export): of two editors on the file, the
+     * active one, or else the one used last.
+     */
+    getClientIdForDocumentUri(uri: vscode.Uri | string): string | undefined {
+        return this.currentEditorOf(this.canonicalizeUriString(uri))?.clientId;
+    }
+
+    /** Every diagram of a file, for what each of them must hear (a reload, a run's overlay). */
+    getClientIdsForDocumentUri(uri: vscode.Uri | string): string[] {
+        return this.editorsOfDocument(this.canonicalizeUriString(uri)).map(editor => editor.clientId);
+    }
+
+    /** Begin tracking an editor; `first` when its document had no other. */
+    private trackEditor(
+        documentUri: vscode.Uri | string,
+        clientId: string,
+        webview?: vscode.Webview,
+        panel?: vscode.WebviewPanel
+    ): { key: string; first: boolean } {
+        const key = this.canonicalizeUriString(documentUri);
+        const first = this.editorsOfDocument(key).length === 0;
+        this.editors.set(clientId, {
+            clientId,
+            documentKey: key,
+            documentUri: typeof documentUri === 'string' ? documentUri : documentUri.toString(),
+            webview,
+            panel,
+            lastActive: ++this.activity
+        });
+        return { key, first };
+    }
+
+    /** Stop tracking an editor; `last` when its document has no other left. */
+    private untrackEditor(clientId: string): { key: string; last: boolean } | undefined {
+        const editor = this.editors.get(clientId);
+        if (!editor) {
+            return undefined;
+        }
+        this.editors.delete(clientId);
+        return { key: editor.documentKey, last: this.editorsOfDocument(editor.documentKey).length === 0 };
+    }
+
+    /** A document's editors, in the order they were opened. */
+    private editorsOfDocument(key: string): DiagramEditor[] {
+        return [...this.editors.values()].filter(editor => editor.documentKey === key);
+    }
+
+    /** A document's current editor: the active one, or else the one used last. */
+    private currentEditorOf(key: string): DiagramEditor | undefined {
+        let latest: DiagramEditor | undefined;
+        for (const editor of this.editorsOfDocument(key)) {
+            if (editor.panel?.active === true) {
+                return editor;
+            }
+            if (!latest || editor.lastActive > latest.lastActive) {
+                latest = editor;
+            }
+        }
+        return latest;
+    }
+
+    /** The documents with an editor open, each once. */
+    private openDocumentKeys(): string[] {
+        return [...new Set([...this.editors.values()].map(editor => editor.documentKey))];
+    }
+
+    /**
+     * Tell the profile a file's first editor opened, or its last closed.
+     * Never a reason for the editor not to open or close: what the hook
+     * throws or rejects with is logged.
+     */
+    private tellProfile(hook: 'onEditorOpened' | 'onEditorClosed', uri: string): void {
+        const listener = this.profile[hook];
+        if (!listener) {
+            return;
+        }
+        const failed = (error: unknown): void => console.warn(`[WorkflowEditorProvider] the profile's ${hook} failed for ${uri}:`, error);
+        try {
+            const result = listener.call(this.profile, uri) as unknown;
+            if (result && typeof (result as Promise<void>).catch === 'function') {
+                (result as Promise<void>).catch(failed);
+            }
+        } catch (error) {
+            failed(error);
+        }
     }
 
     /**
      * Open a source URI and select the given range — the `revealRange` capability
      * handed to a profile's {@link DiagramProfile.onWebviewMessage} hook. An
      * absent range opens the document without a selection.
+     *
+     * By default the file is shown where it is already open, or else in the
+     * active group, which is the diagram's: over the diagram. `beside` keeps the
+     * diagram in sight. The file is shown in a group other than the active one
+     * where it is open there, and otherwise in the group beside, even where the
+     * diagram's own group holds it in a tab behind: shown there, it would cover
+     * the diagram again.
      */
     private async revealRange(
         uriStr: string,
-        range?: { startLine: number; startColumn?: number }
+        range?: { startLine: number; startColumn?: number },
+        options?: RevealRangeOptions
     ): Promise<void> {
         const uri = vscode.Uri.parse(uriStr);
         const selection = range
             ? new vscode.Range(range.startLine, range.startColumn ?? 0, range.startLine, range.startColumn ?? 0)
             : undefined;
-        await vscode.window.showTextDocument(uri, inPlace(uri, 'text', { selection, preserveFocus: false }));
+        const show: vscode.TextDocumentShowOptions = { selection, preserveFocus: options?.preserveFocus === true };
+        if (options?.beside === true) {
+            await vscode.window.showTextDocument(uri, { ...show, viewColumn: openColumnFor(uri, 'text') ?? vscode.ViewColumn.Beside });
+            return;
+        }
+        await vscode.window.showTextDocument(uri, inPlace(uri, 'text', show));
     }
 
     /**
@@ -1339,13 +1591,12 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      * `dispatchToWebview`. No-op when no client is registered for the URI.
      */
     dispatchToWebview(uri: string, action: { kind: string } & Record<string, unknown>): void {
-        const clientId = this.getClientIdForDocumentUri(vscode.Uri.parse(uri));
-        if (!clientId) {
-            return;
+        // Every editor of the file: each shows it.
+        for (const clientId of this.getClientIdsForDocumentUri(uri)) {
+            (this.glspVscodeConnector as unknown as {
+                sendMessageToClient(clientId: string, message: unknown): void;
+            }).sendMessageToClient(clientId, { clientId, action });
         }
-        (this.glspVscodeConnector as unknown as {
-            sendMessageToClient(clientId: string, message: unknown): void;
-        }).sendMessageToClient(clientId, { clientId, action });
     }
 
     /**
@@ -1410,19 +1661,43 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      * webview is the editor's. A client that has gone is told nothing.
      */
     postLoading(clientId: string, update: LoadingUpdate): void {
-        const documentUri = this.getDocumentUriForClientId(clientId);
-        if (documentUri) {
-            const message: LoadingMessage = { type: LOADING_MESSAGE_TYPE, payload: update };
-            this.postToWebview(documentUri, message);
+        const message: LoadingMessage = { type: LOADING_MESSAGE_TYPE, payload: update };
+        this.postToClient(clientId, message);
+    }
+
+    /**
+     * What a PRODUCT says a file's diagram is doing (`DiagramProfileHandle.loading`),
+     * to every editor of the file: work the product does for the file after
+     * the platform has drawn it, which its reader is waiting on all the same.
+     * Words that would show nothing (no message) are not posted.
+     */
+    postLoadingToDocument(uri: string, update: LoadingUpdate): void {
+        const payload = update.state === 'progress' ? normalizeLoadProgress(update) : update;
+        if (!payload) {
+            return;
+        }
+        const message: LoadingMessage = {
+            type: LOADING_MESSAGE_TYPE,
+            payload: update.state === 'progress' ? { state: 'progress', ...(payload as LoadProgress) } : update
+        };
+        this.postToWebview(uri, message);
+    }
+
+    /** Post to every editor of a file. */
+    postToWebview(uri: string, message: unknown): void {
+        for (const editor of this.editorsOfDocument(this.canonicalizeUriString(uri))) {
+            void editor.webview?.postMessage(message);
         }
     }
 
-    postToWebview(uri: string, message: unknown): void {
-        const webview = this.uriToWebview.get(this.canonicalizeUriString(uri));
+    /** Post to one editor; false when it has gone. */
+    postToClient(clientId: string, message: unknown): boolean {
+        const webview = this.editors.get(clientId)?.webview;
         if (!webview) {
-            return;
+            return false;
         }
         void webview.postMessage(message);
+        return true;
     }
 
     /**
@@ -1431,12 +1706,11 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      * new source. Returns true if a diagram client was found and refreshed.
      */
     refreshModelFromDisk(uri: vscode.Uri): boolean {
-        const clientId = this.getClientIdForDocumentUri(uri);
-        if (!clientId) {
-            return false;
+        const clientIds = this.getClientIdsForDocumentUri(uri);
+        for (const clientId of clientIds) {
+            this.dispatchModelRefresh(clientId, uri.toString(), { forceReloadFromDisk: true });
         }
-        this.dispatchModelRefresh(clientId, uri.toString(), { forceReloadFromDisk: true });
-        return true;
+        return clientIds.length > 0;
     }
 }
 

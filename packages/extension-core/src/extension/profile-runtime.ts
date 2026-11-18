@@ -97,6 +97,13 @@ export async function activateProfileRuntime(
       glsp.editorProvider.dispatchToWebview(uri, action),
     postToWebview: (uri, message) =>
       glsp.editorProvider.postToWebview(uri, message),
+    // The diagram's own loading indicator, for what the product does for it
+    // outside `getGraph` (a layout streamed in after the graph is drawn).
+    loading: {
+      report: (uri, progress) =>
+        glsp.editorProvider.postLoadingToDocument(uri, { state: "progress", ...progress }),
+      end: (uri) => glsp.editorProvider.postLoadingToDocument(uri, { state: "done" }),
+    },
   };
 }
 

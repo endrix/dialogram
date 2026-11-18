@@ -42,6 +42,7 @@ import {
     UpdateModelAction
 } from '@eclipse-glsp/protocol';
 import { inject, injectable, optional } from 'inversify';
+import { URI } from 'vscode-uri';
 import {
     WorkflowDiagramMetadata,
     type WorkflowDiagramModel,
@@ -54,6 +55,7 @@ import { LayoutPersistenceService } from '../services/layout-persistence-service
 import { placePortLabel, placePortLabels, portLabelGapOf } from './port-labels';
 import { AgentStructuralEditSignal } from './agent-structural-edit-signal';
 import { LoadProgressReporter, counted, isBackgroundLoad } from './load-progress';
+import { isLoadAbandoned } from './load-cancellation';
 import {
     WorkflowRerouteEdgesAvoidOverlapsOperationHandler,
     WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND
@@ -107,8 +109,11 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
     @optional()
     protected loadProgress?: LoadProgressReporter;
 
-    /** "Laying out the diagram", with how much there is of it. */
-    private tellLayingOut(message: string, modelState: ModelState): void {
+    /**
+     * "Laying out the diagram", with how much there is of it: in the
+     * profile's words for the step, when it has its own (`loadPhaseWords`).
+     */
+    private tellLayingOut(phase: 'laying-out' | 'routing', message: string, modelState: ModelState): void {
         if (!this.loadProgress?.telling) {
             return;
         }
@@ -123,7 +128,12 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             element.children.forEach(count);
         };
         count(modelState.root);
-        this.loadProgress.say({ message, detail: `${counted(nodes, 'node')}, ${counted(edges, 'edge')}` });
+        const file = typeof modelState.sourceUri === 'string' ? URI.parse(modelState.sourceUri).fsPath : undefined;
+        this.loadProgress.sayPhase(
+            phase,
+            { message, detail: `${counted(nodes, 'node')}, ${counted(edges, 'edge')}` },
+            { ...(file ? { file } : {}), nodes, edges }
+        );
     }
 
     /**
@@ -158,9 +168,9 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
     }
 
     private async submitLaidOut(reason: DirtyStateChangeReason | undefined, quiet: boolean): Promise<Action[]> {
-        const tellLayingOut = (message: string, state: ModelState): void => {
+        const tellLayingOut = (phase: 'laying-out' | 'routing', message: string, state: ModelState): void => {
             if (!quiet) {
-                this.tellLayingOut(message, state);
+                this.tellLayingOut(phase, message, state);
             }
         };
         const layoutEngine = (this as any).layoutEngine as LayoutEngine | undefined;
@@ -186,7 +196,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
 
             console.log('[WorkflowModelSubmissionHandler] Running initial ELK layout for:', layoutMeta.networkId);
-            tellLayingOut('Laying out the diagram', modelState);
+            tellLayingOut('laying-out', 'Laying out the diagram', modelState);
             try {
                 const _elk0 = perfNow();
                 // Parity with the manual auto-layout path (`dialogram.layoutBoundaryFlow`):
@@ -261,7 +271,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
                 console.log(`[agent-auto-layout] branch=1c-i RUN boundary-flow net=${layoutMeta.networkId}`);
             }
             console.log('[WorkflowModelSubmissionHandler] Auto-layout after agent structural edit for:', layoutMeta.networkId);
-            tellLayingOut('Laying out the diagram', modelState);
+            tellLayingOut('laying-out', 'Laying out the diagram', modelState);
             try {
                 await this.runBoundaryFlowAndPersist(modelState, layoutEngine);
                 console.log('[WorkflowModelSubmissionHandler] Agent auto-layout completed');
@@ -308,7 +318,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             !didBootstrapReroute
         ) {
             console.log('[WorkflowModelSubmissionHandler] Running bootstrap edge reroute for:', layoutMeta.networkId);
-            tellLayingOut('Routing the connections', modelState);
+            tellLayingOut('routing', 'Routing the connections', modelState);
             try {
                 const _reroute0 = perfNow();
                 await this.rerouteHandler.runReroute({
@@ -755,6 +765,13 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
         try {
             return await this.load(action);
         } catch (error) {
+            // A load abandoned because its reader went (the editor closed, a
+            // newer request came) sends nothing and ends nothing: the newer
+            // load is the one the indicator speaks for now. Not an error.
+            if (isLoadAbandoned(error)) {
+                console.log(`[WorkflowRequestModelActionHandler] load abandoned (${error.why}): ${String(action.requestId ?? '').slice(0, 40)}`);
+                return [];
+            }
             if (!isBackgroundLoad(action.requestId, action.options)) {
                 this.loadProgress?.endWithoutModel();
             }

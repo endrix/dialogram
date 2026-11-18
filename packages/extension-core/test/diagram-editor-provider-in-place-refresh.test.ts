@@ -35,7 +35,7 @@ function makeProvider() {
     } as any;
     const context = { subscriptions: [] } as unknown as vscode.ExtensionContext;
     const provider: any = new WorkflowEditorProvider(context, connector, {} as unknown as DiagramProfile);
-    provider.uriToClientId.set(provider.canonicalizeUriString(ROOT), 'client-top');
+    provider.trackEditor(ROOT, 'client-top');
     return { provider, dispatched };
 }
 
@@ -176,7 +176,7 @@ describe('a refresh the host asks for', () => {
         // `block.py` itself.
         const twoEditors = (ownView?: { networkName: string }) => {
             const made = makeProvider();
-            made.provider.uriToClientId.set(made.provider.canonicalizeUriString(CHILD), 'client-child');
+            made.provider.trackEditor(CHILD, 'client-child');
             made.provider.setRefreshContext(ROOT, { shownSourceUri: CHILD.toString(), networkName: 'block', navTrail: trail });
             if (ownView) {
                 made.provider.setRefreshContext(CHILD, { shownSourceUri: CHILD.toString(), ...ownView });

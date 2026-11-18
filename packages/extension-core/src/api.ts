@@ -28,6 +28,15 @@ import type {
   NodeFamilySpec,
   ExecutionNodeState,
   ExecutionOverlaySink,
+  LoadPhaseWords,
+  LoadProgress,
+} from "@dialogram/shared";
+
+export type {
+  LoadPhase,
+  LoadPhaseFacts,
+  LoadPhaseWords,
+  LoadProgress,
 } from "@dialogram/shared";
 
 export type {
@@ -102,12 +111,24 @@ export interface DiagramStorageOptions {
  * each session's context. The operation prefix the edits route under is the
  * storage options', not this block's.
  *
- * REALM NOTE: the function-valued fields (graph/turn/selection context, tool
- * handlers, slash-command handlers) follow the {@link DiagramProfile.serverDiagramModule}
- * precedent — they are safe only in build-time library mode, where the consumer
- * bundles `@dialogram/extension-core` and calls `activateProfileRuntime` directly.
- * The cross-extension `DialogramApi.activateDiagramProfile` path (data-only
- * profiles assembled inside the platform bundle) never populates them.
+ * REALM NOTE: the function-valued fields are SUPPORTED over the cross-extension
+ * `DialogramApi.activateDiagramProfile`, as they are in library mode. Every
+ * extension runs in the one extension-host JavaScript realm, and
+ * `activateDiagramProfile` hands the platform the consumer's profile object
+ * itself, not a copy (`packages/extension/src/main.ts`), so a plain function
+ * the consumer wrote is called as it was written, with its closure. That
+ * covers, here: `tools` (each `handler`, for the chat's in-process MCP server
+ * and, with `DiagramProfile.mcp`, the diagram server's MCP bridge),
+ * `graphContextProvider`, `turnContextProvider`, `selectionContext.render`, and
+ * each slash command's `handler` in `slashCommands`
+ * (`test/chat-functions-over-api.test.ts` calls each through that path).
+ *
+ * What does NOT cross is a DI object: a GLSP `DiagramModule`, a `ContainerModule`,
+ * a class decorated for inversify. Those carry the identity of the bundle they
+ * were built in, and the platform bundle resolves them in its own
+ * (`DiagramProfile.serverDiagramModule`, `serverModules`, `edits.operationModules`;
+ * `assertProfileCrossesPlatformApiSafely` refuses them). A chat function that
+ * reaches into such an object of its own bundle still runs, in its own bundle.
  */
 export interface DiagramChatConfig {
   /** @deprecated Nothing reads it; accepted and ignored. */
@@ -392,7 +413,10 @@ export interface DiagramProfile {
    * this hook; returning `true` (or a promise resolving to `true`) marks the
    * message consumed. When absent, unhandled messages are ignored exactly as
    * before (byte-identical parity). `ctx.postToWebview` posts back to the same
-   * webview; `ctx.revealRange` opens a source URI and selects the range.
+   * webview; `ctx.revealRange` opens a source URI and selects the range. Where
+   * the file is not open in another group, it opens in the active one, the
+   * diagram's, over the diagram; `{ beside: true }` opens it in the group beside
+   * instead (see {@link RevealRangeOptions}).
    */
   onWebviewMessage?: (
     uri: string,
@@ -402,6 +426,7 @@ export interface DiagramProfile {
       revealRange(
         uriStr: string,
         range?: { startLine: number; startColumn?: number },
+        options?: RevealRangeOptions,
       ): Promise<void>;
     },
   ) => boolean | Promise<boolean>;
@@ -426,7 +451,62 @@ export interface DiagramProfile {
    * all. A profile can be fully editable and still create nothing.
    */
   supportsElementCreation?: boolean;
-  watch?: { globs: string[] };
+  /**
+   * What the platform watches on disk for changes made outside the editor (an
+   * agent, git, a build), and which diagrams such a change reloads.
+   *
+   * `globs` are what is watched; absent, the globs follow from
+   * {@link sourceExtensions}. A change to one of the product's sources reloads
+   * every open diagram (one may import another); a file that is not a source
+   * reloads nothing, unless `affects` is given.
+   *
+   * `affects` says which diagrams a change reloads: handed the changed file
+   * and the files with a diagram open (URIs, as `vscode.Uri.toString()` spells
+   * them, which is how `getGraph` was handed them), it returns the ones to
+   * reload. It is asked about every file the globs see, source or not, so
+   * that a side file (a manifest, a technology file) reloads the diagrams that
+   * read it and no others; and about each save of a source in the editor. The
+   * changed file's own diagram, when it has one, is reloaded whatever it
+   * returns. Changes within a quarter of a second are taken together, and a
+   * file under a build tree (`build/`, `out/`, `node_modules/`…) is never asked
+   * about. A hook that throws reloads every open diagram. Absent, a change
+   * reloads what it always did.
+   */
+  watch?: {
+    globs: string[];
+    affects?: DiagramWatchAffects;
+  };
+  /**
+   * A file's first diagram editor has opened. Called once per file, however
+   * many editors are then opened on it, with the URI the editor is on (as
+   * `vscode.Uri.toString()` spells it). What it throws or rejects is logged.
+   */
+  onEditorOpened?: (uri: string) => void | Promise<void>;
+  /**
+   * The last diagram editor of a file has closed: nothing the product keeps
+   * for that file's diagram has a reader any more. Called once, with the last
+   * editor, and not when one of two editors on the file closes. A load still
+   * running for it has been told already (`ModelSourceOptions.signal`). Not
+   * called when the window closes: the extension host is going, and
+   * `deactivate` is where to let go of everything at once.
+   */
+  onEditorClosed?: (uri: string) => void | Promise<void>;
+  /**
+   * The words the loading indicator shows for the platform's own steps of a
+   * load ("Reading top.def", "Drawing the diagram | 1 node, 0 edges",
+   * "Laying out the diagram", "Routing the connections"), or none.
+   *
+   * The platform's words are about a graph of nodes and edges. A product
+   * whose graph is a frame for content it streams afterwards says what its
+   * reader is really waiting for, or nothing: given the step, the platform's
+   * words and the facts they were made from (the file, the node and edge
+   * counts), it returns other words, `false` to say nothing at that step, or
+   * nothing to keep the platform's. Called on the extension host, for a load
+   * somebody is waiting on. A hook that throws says nothing at that step.
+   * What the product says while it reads (`ModelSourceOptions.progress`) and
+   * after (`DiagramProfileHandle.loading`) is its own and not passed here.
+   */
+  loadPhaseWords?: LoadPhaseWords;
   /** Cross-file navigation provider. */
   navigation?: DiagramNavigationProvider;
   /** Openability predicate; `undefined` = always openable. */
@@ -463,6 +543,41 @@ export interface DiagramProfile {
 }
 
 /**
+ * Where `ctx.revealRange` (in {@link DiagramProfile.onWebviewMessage}) shows a
+ * source. Left out, it is shown as it always was: in the group the file is
+ * already open in, else in the active group, which is the diagram's own, so
+ * the text covers the diagram, and with the focus moved to it.
+ */
+export interface RevealRangeOptions {
+  /**
+   * Keep the diagram in sight: show the file in a group other than the
+   * diagram's where it is open there, else in the group beside (opening one
+   * where there is none). A "Go to source" from a diagram the user is still
+   * reading wants this.
+   */
+  beside?: boolean;
+  /** Leave the focus where it is (on the diagram) rather than on the text. */
+  preserveFocus?: boolean;
+}
+
+/**
+ * Which of the open diagrams a change to a watched file reloads
+ * (`DiagramProfile.watch.affects`).
+ *
+ * @param changed the changed file, as `vscode.Uri.toString()` spells it.
+ * @param open the files with a diagram open, spelled the same way.
+ * @returns the files of `open` whose diagrams to reload; nothing for none.
+ */
+export type DiagramWatchAffects = (
+  changed: string,
+  open: readonly string[],
+) =>
+  | readonly string[]
+  | undefined
+  | void
+  | Promise<readonly string[] | undefined | void>;
+
+/**
  * Handle returned by `activateDiagramProfile`. Disposing it tears down the
  * GLSP integration for that profile. The `chat` accessors back the consumer's
  * own diagnostic commands (command ids stay consumer-owned so two consumers
@@ -489,6 +604,23 @@ export interface DiagramProfileHandle extends vscode.Disposable {
    * channel. No-op when no panel is registered for the URI.
    */
   postToWebview(uri: string, message: unknown): void;
+  /**
+   * The loading indicator of a file's diagram, for what the product does
+   * for that diagram outside `getGraph`: a layout it streams in after the
+   * platform has drawn the graph, a second pass, a reload of its own.
+   *
+   * `report` shows what is being done (`message`, and an optional `detail`)
+   * on every editor of `uri`: centred while the diagram is still empty, as a
+   * pill near the top once it has a picture, and then only once the wait
+   * passes 300 ms. `end` takes it down. Words are trimmed to one line each,
+   * and words with no message show nothing. A file with no diagram open is
+   * told nothing. The same indicator the platform's own load uses: what is
+   * said last shows, whoever said it.
+   */
+  loading: {
+    report(uri: string, progress: LoadProgress): void;
+    end(uri: string): void;
+  };
 }
 
 /** A `{ type, data }` message exchanged with a consumer-owned chat webview. */

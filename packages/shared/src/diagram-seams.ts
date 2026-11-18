@@ -144,6 +144,22 @@ export interface ModelSourceOptions {
      * `options.progress?.(...)`.
      */
     progress?: (progress: LoadProgress) => void;
+    /**
+     * Aborted when nobody is waiting for this graph any more: the diagram's
+     * editor closed, or the reader asked the same diagram for another graph
+     * (a save, another view, a refresh) while this one was being made. Stop
+     * the work behind it (a compiler, a worker, a request to a server), and
+     * answer as you like: `undefined`, a partial document, or a throw. The
+     * platform draws nothing of a load that was aborted, whatever comes back,
+     * and the request that replaced it draws in its place. `signal.reason`
+     * says which it was (an `AbortError` whose message names it).
+     *
+     * Not aborted for a request nobody is waiting on (a run's overlay being
+     * redrawn): such a request never replaces one the reader is. Absent where
+     * nothing can cancel the load (a test, an older host), so read it as
+     * `options.signal?.aborted`.
+     */
+    signal?: AbortSignal;
 }
 
 /** v2 seam: how a diagram gets its graph. Core ships NO implementation. */

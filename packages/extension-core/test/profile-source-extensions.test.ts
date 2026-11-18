@@ -154,7 +154,7 @@ describe('WorkflowEditorProvider source watching', () => {
         const { provider } = build({ sourceExtensions: ['.foo'] });
         provider.dispatchModelRefresh = (_clientId: string, uri: string) => dispatched.push(uri);
         const source = vscode.Uri.file('/repo/designs/pipeline.foo');
-        provider.uriToClientId.set(provider.canonicalizeUriString(source), 'client-0');
+        provider.trackEditor(source, 'client-0');
 
         vi.useFakeTimers();
         provider.handleExternalFileChange(vscode.Uri.file('/repo/designs/README.md'));

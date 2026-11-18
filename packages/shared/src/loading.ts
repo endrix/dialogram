@@ -26,6 +26,68 @@ export interface LoadProgress {
     detail?: string;
 }
 
+/**
+ * A step of a load that the platform takes itself, and names on the
+ * indicator: reading the file, drawing the graph the product gave, laying it
+ * out, routing its connections.
+ */
+export type LoadPhase = 'reading' | 'drawing' | 'laying-out' | 'routing';
+
+/** What the platform knows of a step when it names it. */
+export interface LoadPhaseFacts {
+    /** The file being read, an absolute path; absent where the step does not know it. */
+    file?: string;
+    /** The nodes and edges of the graph: for drawing, laying out and routing. */
+    nodes?: number;
+    edges?: number;
+}
+
+/**
+ * A product's say over the platform's own words for a step
+ * (`DiagramProfile.loadPhaseWords`).
+ *
+ * The platform's words assume that the graph is what the reader is waiting
+ * for: "Drawing the diagram, 1 node, 0 edges" is true of a graph of nodes and
+ * edges, and wrong for a product whose graph is a frame round content it
+ * streams afterwards. Handed the step, the words the platform would show and
+ * the facts they were made from, it returns other words, `false` to say
+ * nothing at that step (the indicator keeps what was said before it), or
+ * nothing for the platform's own.
+ */
+export type LoadPhaseWords = (
+    phase: LoadPhase,
+    words: LoadProgress,
+    facts: LoadPhaseFacts
+) => LoadProgress | false | undefined | void;
+
+/**
+ * The words for a step: the platform's, or what the product's
+ * {@link LoadPhaseWords} put in their place, normalized as a product's words
+ * are. Nothing to say when the product silenced the step, or when its hook
+ * threw: a status line is not a reason for a load to fail.
+ */
+export function wordsForPhase(
+    hook: LoadPhaseWords | undefined,
+    phase: LoadPhase,
+    words: LoadProgress,
+    facts: LoadPhaseFacts
+): LoadProgress | undefined {
+    if (!hook) {
+        return words;
+    }
+    let chosen: LoadProgress | false | undefined | void;
+    try {
+        chosen = hook(phase, { ...words }, { ...facts });
+    } catch (error) {
+        console.warn(`[dialogram] the profile's words for the ${phase} step failed:`, error);
+        return undefined;
+    }
+    if (chosen === false) {
+        return undefined;
+    }
+    return chosen ? normalizeLoadProgress(chosen) : words;
+}
+
 /** What the host tells a diagram about what its reader is waiting for: what is being done, or that it is over. */
 export type LoadingUpdate =
     | ({ state: 'progress' } & LoadProgress)

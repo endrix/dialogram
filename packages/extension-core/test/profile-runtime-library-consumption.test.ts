@@ -14,7 +14,8 @@ import type { DiagramProfile, DiagramModelSource } from '../src/api';
 const hoisted = vi.hoisted(() => ({
     receivedProfile: undefined as DiagramProfile | undefined,
     dispatchToWebview: undefined as any,
-    postToWebview: undefined as any
+    postToWebview: undefined as any,
+    postLoadingToDocument: undefined as any
 }));
 
 vi.mock('../src/extension/diagram/glsp-activation', () => ({
@@ -22,11 +23,13 @@ vi.mock('../src/extension/diagram/glsp-activation', () => ({
         hoisted.receivedProfile = profile;
         hoisted.dispatchToWebview = vi.fn();
         hoisted.postToWebview = vi.fn();
+        hoisted.postLoadingToDocument = vi.fn();
         return {
             connector: { sendMessageToClient: vi.fn() } as unknown,
             editorProvider: {
                 dispatchToWebview: hoisted.dispatchToWebview,
-                postToWebview: hoisted.postToWebview
+                postToWebview: hoisted.postToWebview,
+                postLoadingToDocument: hoisted.postLoadingToDocument
             } as unknown,
             executionOverlay: {} as unknown,
             dispose: () => undefined
@@ -81,6 +84,7 @@ afterEach(() => {
     hoisted.receivedProfile = undefined;
     hoisted.dispatchToWebview = undefined;
     hoisted.postToWebview = undefined;
+    hoisted.postLoadingToDocument = undefined;
     vi.clearAllMocks();
 });
 
@@ -121,5 +125,18 @@ describe('activateProfileRuntime — library consumption (custom serverDiagramMo
 
         expect(hoisted.postToWebview).toHaveBeenCalledTimes(1);
         expect(hoisted.postToWebview).toHaveBeenCalledWith('file:///m.mlir', { type: 'mlir.syncCursor', line: 2 });
+    });
+
+    it('handle.loading reports to, and ends, the loading indicator of the file\'s diagrams', async () => {
+        const context = makeContext();
+        const handle = await activateProfileRuntime(context, libraryProfile());
+
+        handle.loading.report('file:///m.mlir', { message: 'Placing cells', detail: 'stage 2 of 3' });
+        handle.loading.end('file:///m.mlir');
+
+        expect(hoisted.postLoadingToDocument.mock.calls).toEqual([
+            ['file:///m.mlir', { state: 'progress', message: 'Placing cells', detail: 'stage 2 of 3' }],
+            ['file:///m.mlir', { state: 'done' }]
+        ]);
     });
 });

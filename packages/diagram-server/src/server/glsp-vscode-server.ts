@@ -13,7 +13,7 @@ import type { BaseGLSPClient } from '@eclipse-glsp/protocol';
 import type { ContainerModule } from 'inversify';
 import { createWorkflowServerModules } from './server-module';
 import { createSessionGatedGlspClient } from './session-gated-glsp-client';
-import type { EditStrategy, DiagramModelSource } from '@dialogram/shared';
+import type { EditStrategy, DiagramModelSource, LoadPhaseWords } from '@dialogram/shared';
 import type { StorageRuntimeOptions } from './storage-runtime-options';
 import type { ElkServerOptions } from './elk-server/index';
 import type { McpServerModuleOptions } from './mcp-diagram-module';
@@ -59,6 +59,10 @@ export interface WorkflowGlspVscodeServerOptions extends Partial<Omit<NodeGlspVs
     elkServer?: ElkServerOptions;
     /** What each client's load is doing, for the host to post to its diagram (see load-progress.ts). */
     loadProgress?: LoadProgressSink;
+    /** The product's words for the platform's steps of a load; absent, the platform's (see load-progress.ts). */
+    loadPhaseWords?: LoadPhaseWords;
+    /** The name the Problems panel gives a graph diagnostic's source; absent, `workflow` (see graph-diagnostics.ts). */
+    diagnosticSource?: string;
 }
 
 /**
@@ -101,7 +105,9 @@ export function createWorkflowGlspVscodeServer(
             diagramModuleFactory: mergedOptions.diagramModuleFactory,
             mcp: mergedOptions.mcp,
             elkServer: mergedOptions.elkServer,
-            loadProgress: mergedOptions.loadProgress
+            loadProgress: mergedOptions.loadProgress,
+            loadPhaseWords: mergedOptions.loadPhaseWords,
+            diagnosticSource: mergedOptions.diagnosticSource
         })
     });
     return server;

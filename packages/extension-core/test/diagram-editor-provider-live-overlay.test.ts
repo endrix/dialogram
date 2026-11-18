@@ -43,7 +43,7 @@ function makeProvider() {
 
 function registerClient(provider: WorkflowEditorProvider, uri: vscode.Uri, clientId: string): string {
     const key = (provider as any).canonicalizeUriString(uri) as string;
-    (provider as any).uriToClientId.set(key, clientId);
+    (provider as any).trackEditor(uri, clientId);
     return key;
 }
 
