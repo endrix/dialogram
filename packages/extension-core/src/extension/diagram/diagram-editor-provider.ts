@@ -683,6 +683,46 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         this.uriToRefreshContext.set(key, next);
     }
 
+    /**
+     * What a refresh the HOST asks for is a refresh of: which file, under
+     * which name, by which trail. The refresh command's half of what
+     * {@link dispatchModelRefresh} does for a save.
+     *
+     * With no view named, it is the view the editor shows. Navigating in
+     * place that can be a workflow in another file than the editor's own
+     * document, and asked of the document under that view's name and trail it
+     * is a view the document does not have: the producer refuses it, or draws
+     * it as a different view, kept under a different layout.
+     *
+     * With another view named (a graph of the document chosen from a list,
+     * while the diagram is three levels down in something else), it is that
+     * view of the editor's document, as its root: the trail that came before
+     * led to the view that was on screen, and sent along it would file the
+     * new view under crumbs it was not reached by. The trail is the view
+     * itself, which is also what tells the diagram to start its crumbs over.
+     * And it is remembered as what the editor shows, so that the next save
+     * refreshes it and not the view before.
+     */
+    hostRefreshTarget(
+        documentUri: vscode.Uri | string,
+        workflowName?: string
+    ): { sourceUri: string; networkName?: string; navTrail?: string } {
+        const own = typeof documentUri === 'string' ? documentUri : documentUri.toString();
+        const context = this.getRefreshContext(documentUri);
+        const named = typeof workflowName === 'string' ? workflowName.trim() : '';
+        if (named !== '' && named !== context?.networkName) {
+            const navTrail = JSON.stringify([{ sourceUri: own, workflowName: named }]);
+            this.setRefreshContext(documentUri, { shownSourceUri: own, networkName: named, navTrail });
+            return { sourceUri: own, networkName: named, navTrail };
+        }
+        const shown = context?.shownSourceUri;
+        return {
+            sourceUri: typeof shown === 'string' && shown.trim() !== '' ? shown : own,
+            ...(context?.networkName ? { networkName: context.networkName } : {}),
+            ...(context?.navTrail ? { navTrail: context.navTrail } : {})
+        };
+    }
+
     getRefreshContext(documentUri: vscode.Uri | string): { networkName?: string; navTrail?: string; queueTraceVisible?: boolean; runId?: string; shownSourceUri?: string } | undefined {
         return this.uriToRefreshContext.get(this.canonicalizeUriString(documentUri));
     }

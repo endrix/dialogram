@@ -1176,11 +1176,12 @@ function registerCalDiagramCommands(
         if (!provider || !clientId) {
             return;
         }
-        const refreshContext = provider.getRefreshContext(uri);
+        // The view the editor shows, or the one named: see `hostRefreshTarget`.
+        const target = provider.hostRefreshTarget(uri, opts?.workflowName);
         const refreshAction = RequestModelAction.create({
             requestId: 'refresh-queue-visibility-' + Date.now(),
             options: {
-                sourceUri: uri.toString(),
+                sourceUri: target.sourceUri,
                 diagramType: WORKFLOW_DIAGRAM_TYPE,
                 queueTraceVisible: getQueueTraceVisible(),
                 // Queue-trace visibility toggles only re-apply the queue-trace overlay (edge glow /
@@ -1190,8 +1191,8 @@ function registerCalDiagramCommands(
                 // want a fresh re-plan (the generic refresh command) leave this unset and pay the full
                 // reload, which re-acquires and re-runs bounds as required for correctness.
                 ...(opts?.agentContextOnly ? { agentContextOnly: true } : {}),
-                ...(opts?.workflowName ? { networkName: opts.workflowName } : refreshContext?.networkName ? { networkName: refreshContext.networkName } : {}),
-                ...(refreshContext?.navTrail ? { [NAV_TRAIL_ARG]: refreshContext.navTrail } : {})
+                ...(target.networkName ? { networkName: target.networkName } : {}),
+                ...(target.navTrail ? { [NAV_TRAIL_ARG]: target.navTrail } : {})
             }
         });
         if (opts?.reveal) {

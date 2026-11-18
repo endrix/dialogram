@@ -907,6 +907,22 @@ it no longer has.
 
 ### Fixed
 
+- **The refresh command refreshes the view that is on screen.** Navigating in
+  place, that can be a workflow in another file than the editor's document.
+  The command (`commands.refreshDiagramModel`, a product's "Refresh Diagram"
+  and whatever it redraws a diagram with) asked the editor's document for the
+  nested view's name and trail: a view that document does not have, refused by
+  a producer that reads one file at a time and drawn as a different view, under
+  a different layout and one crumb deeper, by one that does not. It asks the
+  file the view is of, as a save already did.
+- **A graph opened by name in a diagram that is already open is its root.**
+  The open command on an open editor (the way a product moves between the
+  graphs of one file) sent the name with the trail of the view that was on
+  screen, and did not record what it had opened. The new view was filed under
+  the old crumbs, and the next save went back to the view before. The request
+  carries a trail of the view itself, which starts the crumbs over, and the
+  editor remembers it as what it shows (`hostRefreshTarget`).
+
 - **A source too large for a text document opens as a diagram.** VS Code does
   not hand a file over 50 MB to extensions as text: `activeTextEditor` is
   absent while the file is on screen, and `openTextDocument` rejects it. The

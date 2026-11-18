@@ -88,6 +88,71 @@ describe('refreshing an editor that navigates in place', () => {
 });
 
 /**
+ * The refresh command (a product's "Refresh Diagram", and whatever a product
+ * redraws a diagram with) is a refresh of the view on screen too, and the
+ * way a product opens another graph of a file that is already open.
+ */
+describe('a refresh the host asks for', () => {
+    it('is of the view the editor shows, in the file that view is of', () => {
+        // Asked of the editor's document under the nested view's name and
+        // trail, it is a view that document does not have: refused by a
+        // producer that reads one file at a time, drawn as a different view
+        // (and kept under a different layout) by one that does not.
+        const { provider } = makeProvider();
+        provider.setRefreshContext(ROOT, { shownSourceUri: CHILD.toString(), networkName: 'block', navTrail: trail });
+
+        expect(provider.hostRefreshTarget(ROOT)).toEqual({
+            sourceUri: CHILD.toString(),
+            networkName: 'block',
+            navTrail: trail
+        });
+        // Named as what it is, it is the same refresh.
+        expect(provider.hostRefreshTarget(ROOT, 'block')).toEqual({
+            sourceUri: CHILD.toString(),
+            networkName: 'block',
+            navTrail: trail
+        });
+    });
+
+    it('is of the editor’s own document before anything has been shown', () => {
+        const { provider } = makeProvider();
+
+        expect(provider.hostRefreshTarget(ROOT)).toEqual({ sourceUri: ROOT.toString() });
+    });
+
+    it('opens another graph of the document as its root, not under the crumbs of the view before', () => {
+        // A graph chosen from a list while the diagram is three levels down.
+        // The old trail leads to the view that WAS on screen: sent along, the
+        // new view is filed under it, and every view opened from there on is
+        // outlined and laid out as a part of something it is not in.
+        const { provider } = makeProvider();
+        provider.setRefreshContext(ROOT, { shownSourceUri: CHILD.toString(), networkName: 'block', navTrail: trail });
+
+        const target = provider.hostRefreshTarget(ROOT, ' other ');
+
+        expect(target.sourceUri).toBe(ROOT.toString());
+        expect(target.networkName).toBe('other');
+        // The trail is the view itself: what the diagram starts its crumbs over from.
+        expect(JSON.parse(target.navTrail!)).toEqual([{ sourceUri: ROOT.toString(), workflowName: 'other' }]);
+    });
+
+    it('remembers the graph it opened, so that the next save refreshes it and not the view before', () => {
+        const { provider, dispatched } = makeProvider();
+        provider.setRefreshContext(ROOT, { shownSourceUri: CHILD.toString(), networkName: 'block', navTrail: trail, runId: 'r7' });
+
+        provider.hostRefreshTarget(ROOT, 'other');
+        provider.dispatchModelRefresh('client-top', provider.canonicalizeUriString(ROOT), { forceReloadFromDisk: true });
+
+        const options = dispatched[0].action.options;
+        expect(options.sourceUri).toBe(provider.canonicalizeUriString(ROOT));
+        expect(options.networkName).toBe('other');
+        expect(JSON.parse(options['wf:navTrail'])).toEqual([{ sourceUri: ROOT.toString(), workflowName: 'other' }]);
+        // What else is known of the editor stays known.
+        expect(provider.getRefreshContext(ROOT).runId).toBe('r7');
+    });
+});
+
+/**
  * A nested workflow's file, edited in a text editor without saving: the views
  * showing it preview the change, as an editor's own document always did.
  */
