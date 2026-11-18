@@ -252,84 +252,131 @@ describe('createSidecarDiagramProfile', () => {
     });
 });
 
-describe('the sidecar and CLI a profile hands the product', () => {
+describe('runCli: the product’s CLI, started as a run starts it', () => {
     const temps: string[] = [];
-    const savedConfiguration = workspace.getConfiguration;
+    const savedWorkspace = { ...workspace };
     afterEach(() => {
-        workspace.getConfiguration = savedConfiguration;
+        Object.assign(workspace, savedWorkspace);
         for (const dir of temps.splice(0)) {
             fs.rmSync(dir, { recursive: true, force: true });
         }
     });
 
-    /** A directory of the test's own, with a sidecar `name` whose script is `body` (node). */
-    function sidecar(name: string, body: string[]): { dir: string; command: string } {
-        const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sidecar-host-')));
+    /** A project of the test's own (a `package.json`, so the run root), with a CLI `name` whose script is `body` (node). */
+    function project(name: string, body: string[]): { dir: string; command: string; file: any } {
+        const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'run-cli-')));
         temps.push(dir);
+        fs.writeFileSync(path.join(dir, 'package.json'), '{}');
+        fs.mkdirSync(path.join(dir, 'flows'));
+        fs.writeFileSync(path.join(dir, 'flows', 'main.py'), '');
         const command = path.join(dir, name);
         fs.writeFileSync(command, ['#!/usr/bin/env node', ...body].join('\n'));
         fs.chmodSync(command, 0o755);
-        return { dir, command };
+        return { dir, command, file: Uri.file(path.join(dir, 'flows', 'main.py')) };
     }
 
-    /** Answers the one request it reads with the op and args it was asked, and where it ran. */
+    /** Settings the test gives: `values` by key, the default otherwise. */
+    function settings(values: Record<string, unknown>, scopes: unknown[] = []): void {
+        workspace.getConfiguration = ((_section?: string, scope?: unknown) => {
+            scopes.push(scope);
+            return { get: <T>(key: string, fallback?: T) => (key in values ? values[key] : fallback) as T };
+        }) as typeof workspace.getConfiguration;
+    }
+
+    /** Prints its arguments and where it ran, says something on stderr, exits with the code it is given last. */
     const ECHO = [
-        "let buf = '';",
-        "process.stdin.on('data', d => { buf += d; });",
-        "process.stdin.on('end', () => {",
-        "    const r = JSON.parse(buf);",
-        "    console.log(JSON.stringify({ status: 'ok', diagnostic: { op: r.op, args: r.args, cwd: process.cwd() } }));",
-        '});'
+        'const args = process.argv.slice(2);',
+        'console.log(JSON.stringify({ args, cwd: process.cwd() }));',
+        "console.error('said on stderr');",
+        'process.exit(Number(args[args.length - 1]) || 0);'
     ];
 
-    it.skipIf(process.platform === 'win32')('asks the profile’s sidecar one request, the op prefixed, as the diagram’s requests are read', async () => {
-        const { dir, command } = sidecar('echo-sidecar', ECHO);
-        const p = createSidecarDiagramProfile(baseInput({ sidecarCommandDefault: command }));
-        const file = path.join(dir, 'flow.py');
-        fs.writeFileSync(file, '');
-        expect(await p.externalTool!.query!(file, { op: 'agentSkills', args: { cwd: dir } })).toEqual({
-            ok: true,
-            response: { status: 'ok', diagnostic: { op: 'wfpy.agentSkills', args: { cwd: dir }, cwd: dir } },
-            command,
-            cwd: dir
+    it.skipIf(process.platform === 'win32')('runs the command from the run root with the arguments given, and returns what it said', async () => {
+        const { dir, command, file } = project('x-cli', ECHO);
+        const p = createSidecarDiagramProfile(baseInput({ cliCommandDefault: command }));
+        expect(await p.runCli!(file, ['skills', '--json', file.fsPath])).toEqual({
+            exitCode: 0,
+            stdout: JSON.stringify({ args: ['skills', '--json', file.fsPath], cwd: dir }) + '\n',
+            stderr: 'said on stderr\n'
         });
     });
 
-    it.skipIf(process.platform === 'win32')('waits the profile’s graph-load deadline for the file, unless told otherwise', async () => {
-        const { dir, command } = sidecar('silent-sidecar', ["process.stdin.resume();", "setInterval(() => undefined, 1000);"]);
-        const p = createSidecarDiagramProfile(baseInput({ sidecarCommandDefault: command }));
-        const file = path.join(dir, 'flow.py');
-        fs.writeFileSync(file, '');
-        const scopes: unknown[] = [];
-        workspace.getConfiguration = ((_section?: string, scope?: unknown) => {
-            scopes.push(scope);
-            return { get: <T>(key: string, fallback?: T) => (key === 'graphLoadTimeoutSeconds' ? 1 : fallback) as T };
-        }) as typeof workspace.getConfiguration;
-        let started = Date.now();
-        expect(await p.externalTool!.query!(file, { op: 'agentSkills' })).toMatchObject({ ok: false, failure: 'timeout', command });
-        expect(Date.now() - started).toBeGreaterThanOrEqual(900);
-        expect(scopes.some(scope => (scope as { fsPath?: string } | undefined)?.fsPath === file)).toBe(true);
-        started = Date.now();
-        expect(await p.externalTool!.query!(file, { op: 'agentSkills' }, { timeoutMs: 200 })).toMatchObject({ failure: 'timeout' });
-        expect(Date.now() - started).toBeLessThan(900);
-    }, 20_000);
-
-    it('gives the run root and the CLI by the run driver’s rules', async () => {
-        const { dir } = sidecar('unused', []);
-        fs.writeFileSync(path.join(dir, 'package.json'), '{}');
-        fs.mkdirSync(path.join(dir, 'flows'));
-        const file = Uri.file(path.join(dir, 'flows', 'main.py')) as any;
-        const p = createSidecarDiagramProfile(baseInput());
-        expect(await p.externalTool!.resolveRunRoot!(file)).toBe(dir);
-        expect(await p.externalTool!.cliInvocation!(file)).toEqual({ cmd: 'wfpy', argsPrefix: [], cwd: dir });
+    it.skipIf(process.platform === 'win32')('starts an interpreter with the module form, as a run does', async () => {
+        const { dir, command, file } = project('python3', ECHO);
+        const p = createSidecarDiagramProfile(baseInput({ cliCommandDefault: command, cliPythonModule: 'wfpy.cli' }));
+        const result = await p.runCli!(file, ['skills']);
+        expect(JSON.parse(result.stdout)).toEqual({ args: ['-m', 'wfpy.cli', 'skills'], cwd: dir });
     });
 
-    it('gives a read-only profile with a CLI the run root and the CLI, and no query', () => {
-        const p = createSidecarDiagramProfile(baseInput({
-            readOnly: true,
-            sidecarCommandSettingKey: undefined,
-            sidecarCommandDefault: undefined
-        }));
-        expect(Object.keys(p.externalTool ?? {}).sort()).toEqual(['cliInvocation', 'resolveRunRoot']);
+    it.skipIf(process.platform === 'win32')('gives an exit other than 0 as the CLI’s answer, not a failure', async () => {
+        const { command, file } = project('x-cli', ECHO);
+        const p = createSidecarDiagramProfile(baseInput({ cliCommandDefault: command }));
+        const result = await p.runCli!(file, ['no-such-subcommand', '2']);
+        expect(result).toMatchObject({ exitCode: 2, stderr: 'said on stderr\n' });
+        expect(result.failure).toBeUndefined();
+    });
+
+    it.skipIf(process.platform === 'win32')('stops the CLI and all it started at the graph-load deadline for the file, or the one given', async () => {
+        // The CLI starts a child that outlives it unless the group is stopped,
+        // and says the child's pid; neither ever exits on its own.
+        const { dir, command, file } = project('x-cli', [
+            "const { spawn } = require('node:child_process');",
+            "const child = spawn(process.execPath, ['-e', 'setInterval(() => undefined, 1000)'], { stdio: 'ignore' });",
+            "require('node:fs').writeFileSync(require('node:path').join(__dirname, 'child.pid'), String(child.pid));",
+            'setInterval(() => undefined, 1000);'
+        ]);
+        const p = createSidecarDiagramProfile(baseInput({ cliCommandDefault: command }));
+        const scopes: unknown[] = [];
+        settings({ graphLoadTimeoutSeconds: 1 }, scopes);
+        let started = Date.now();
+        for (const timeoutMs of [undefined, 0, -5, Number.NaN]) {
+            // Not a deadline anyone means: the setting's, not "stop at once".
+            started = Date.now();
+            expect(await p.runCli!(file, [], { timeoutMs })).toMatchObject({ exitCode: -1, failure: 'timeout' });
+            expect(Date.now() - started).toBeGreaterThanOrEqual(900);
+        }
+        expect(scopes.some(scope => (scope as { fsPath?: string } | undefined)?.fsPath === file.fsPath)).toBe(true);
+        started = Date.now();
+        const result = await p.runCli!(file, [], { timeoutMs: 200 });
+        expect(Date.now() - started).toBeLessThan(900);
+        expect(result.message).toContain('no response after');
+        const childPid = Number(fs.readFileSync(path.join(dir, 'child.pid'), 'utf8'));
+        expect(() => process.kill(childPid, 0)).toThrow();
+    }, 30_000);
+
+    it('says why when there is no command, before it looks for the run root', async () => {
+        const p = createSidecarDiagramProfile(baseInput({ cliCommandDefault: '' }));
+        let looked = false;
+        workspace.getWorkspaceFolder = (() => {
+            looked = true;
+            return undefined;
+        }) as typeof workspace.getWorkspaceFolder;
+        expect(await p.runCli!(Uri.file('/nowhere/main.py') as any, ['skills'])).toEqual({
+            exitCode: -1,
+            stdout: '',
+            stderr: '',
+            failure: 'no-command',
+            message: 'Cannot run: wfLang.wfpyCliCommand names no command, and this extension has no default for it.'
+        });
+        expect(looked).toBe(false);
+    });
+
+    it.skipIf(process.platform === 'win32')('says so when the command cannot be started, and never throws', async () => {
+        const { dir, file } = project('unused', []);
+        const p = createSidecarDiagramProfile(baseInput({ cliCommandDefault: path.join(dir, 'not-there') }));
+        expect(await p.runCli!(file, [])).toMatchObject({ exitCode: -1, failure: 'start' });
+        workspace.getConfiguration = (() => {
+            throw new Error('settings unreadable');
+        }) as typeof workspace.getConfiguration;
+        expect(await p.runCli!(file, [])).toMatchObject({
+            exitCode: -1,
+            failure: 'start',
+            message: 'The CLI was not started: settings unreadable'
+        });
+    });
+
+    it('is absent where the CLI runs no diagram', () => {
+        expect(createSidecarDiagramProfile(baseInput({ cliRuns: false })).runCli).toBeUndefined();
+        expect(createSidecarDiagramProfile(baseInput()).runCli).toBeTypeOf('function');
     });
 });

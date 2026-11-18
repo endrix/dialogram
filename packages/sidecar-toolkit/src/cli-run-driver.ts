@@ -27,7 +27,7 @@
  * headline case (run started before the diagram opens) is fully covered.
  */
 import * as vscode from 'vscode';
-import { resolveCliInvocation } from './run-root.js';
+import { noCliCommandMessage, resolveCliInvocation } from './run-root.js';
 import { fileExists } from './server/source-files';
 import * as cp from 'node:child_process';
 import { unlinkSync } from 'node:fs';
@@ -1135,11 +1135,10 @@ export class CliRunDriver {
         }
 
         const isPython = sourceUri.fsPath.endsWith('.py');
-        // The run root and the CLI by the rules a product's host code is handed too (`run-root.ts`).
+        // The run root and the CLI by the rules `runCli` starts a product's CLI by too (`run-root.ts`).
         const cli = await resolveCliInvocation(this.config, sourceUri, isPython);
         if (!cli) {
-            const cliLabel = `${this.config.settingsNamespace}.${this.config.cliCommandSettingKey}`;
-            const message = `Cannot run: ${cliLabel} names no command, and this extension has no default for it.`;
+            const message = noCliCommandMessage(this.config);
             vscode.window.showErrorMessage(message);
             return { error: message };
         }

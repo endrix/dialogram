@@ -69,17 +69,6 @@ function parseAnswer(stdout: string): unknown {
     }
 }
 
-/** Where and with what environment a sidecar is started for `file`: its Python package root, first on `PYTHONPATH`. */
-async function sidecarStartFor(file: string): Promise<{ cwd: string; env: NodeJS.ProcessEnv }> {
-    const packageRoot = await findPackageRootForFile(file);
-    return { cwd: packageRoot ?? path.dirname(file), env: withPythonPackageRoot(process.env, packageRoot) };
-}
-
-/** The directory a sidecar is started in for `file`, from which a relative command is found. */
-export async function sidecarStartDirectory(file: string): Promise<string> {
-    return (await sidecarStartFor(file)).cwd;
-}
-
 /**
  * Send one request to a sidecar and read its answer. Never throws. The sidecar
  * runs from the file's Python package root with that root first on
@@ -89,10 +78,11 @@ export async function sidecarStartDirectory(file: string): Promise<string> {
 export async function invokeSidecar(request: SidecarRequest): Promise<SidecarOpResult> {
     const { command, op } = request;
     try {
-        const start = await sidecarStartFor(request.file);
+        const packageRoot = await findPackageRootForFile(request.file);
         const result = await runChildProcess(command, [], {
             input: JSON.stringify({ file: request.file, op, args: request.args }) + '\n',
-            ...start,
+            cwd: packageRoot ?? path.dirname(request.file),
+            env: withPythonPackageRoot(process.env, packageRoot),
             ...(request.timeoutMs !== undefined ? { timeoutMs: request.timeoutMs } : {})
         });
         const stderr = result.stderr.trim() || undefined;

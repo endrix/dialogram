@@ -28,7 +28,6 @@ import type {
   NodeFamilySpec,
   ExecutionNodeState,
   ExecutionOverlaySink,
-  ToolOpResult,
 } from "@dialogram/shared";
 
 export type {
@@ -40,7 +39,6 @@ export type {
   EntityPaletteItemSpec,
   InProcessChatTool,
   NodeFamilySpec,
-  ToolOpResult,
 } from "@dialogram/shared";
 
 import type {
@@ -462,50 +460,6 @@ export interface DiagramProfile {
   statusSource?: DiagramStatusSource;
   /** Registers the new-source-file (and any edit-backend) commands; returns their disposable. */
   newSourceFile?: (context: vscode.ExtensionContext) => vscode.Disposable;
-  /**
-   * The profile's external tool and CLI, started as the diagram and the run
-   * driver start them, for the product's own host code: handed back on
-   * {@link DiagramProfileHandle.externalTool}. Set by a profile assembler
-   * whose profile has either.
-   */
-  externalTool?: ExternalToolApi;
-}
-
-/**
- * A profile's external tool and CLI, for a product's host code that asks
- * them something the diagram does not: started by the platform's own rules,
- * so that what the product asks is what the diagram and a run would get.
- */
-export interface ExternalToolApi {
-  /**
-   * Send one request to the profile's edit tool for `file` (absolute), as the
-   * diagram's own requests are sent and read: the command setting scoped to
-   * the file, started where and with the environment they are, in its own
-   * process group, the whole group stopped at the deadline (the profile's
-   * graph-load deadline for the file, unless `options.timeoutMs` says). The
-   * `op` is bare: the profile's operation prefix is added. Never throws.
-   * Absent for a profile without an edit tool (a read-only one).
-   */
-  query?(
-    file: string,
-    request: { op: string; args?: Record<string, unknown> },
-    options?: { timeoutMs?: number },
-  ): Promise<ToolOpResult>;
-  /**
-   * The directory a run of `file` starts in, by the run driver's rule: from
-   * the file's workspace folder (the first one when it is in none, its own
-   * directory without any), the nearest directory holding a `package.json`
-   * or a `.git`; that folder when none does. Absent for a profile without a
-   * CLI.
-   */
-  resolveRunRoot?(file: vscode.Uri): Promise<string>;
-  /**
-   * The CLI as the run driver starts it for `file`: the setting scoped to the
-   * file's folder (the profile's default when blank), the module form the run
-   * driver uses for an interpreter, and the run root as `cwd`. Absent for a
-   * profile without a CLI.
-   */
-  cliInvocation?(file: vscode.Uri): Promise<{ cmd: string; argsPrefix: string[]; cwd: string }>;
 }
 
 /**
@@ -535,8 +489,6 @@ export interface DiagramProfileHandle extends vscode.Disposable {
    * channel. No-op when no panel is registered for the URI.
    */
   postToWebview(uri: string, message: unknown): void;
-  /** The profile's {@link DiagramProfile.externalTool}, when it has one. */
-  externalTool?: ExternalToolApi;
 }
 
 /** A `{ type, data }` message exchanged with a consumer-owned chat webview. */

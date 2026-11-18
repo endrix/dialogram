@@ -139,6 +139,13 @@ modules, operation handlers, edit backend, run driver, navigation provider
 and new-source-file command — everything DI-decorated stays inside the
 platform bundle (see [The bundle-boundary law](#the-bundle-boundary-law)).
 
+The profile it returns also has `runCli(file, args)`, where the CLI runs a
+diagram (`cliRuns` is not `false`): the product's own host code runs its CLI
+with it, started exactly as a run of the file starts it (the command, the
+module form for an interpreter, the run root), the whole process group
+stopped at the deadline. A product asks the CLI what a run would find this
+way, rather than copying where and how a run starts.
+
 A consumer whose diagram is a pure projection of a file — drawn by a CLI,
 with nothing to edit — takes the same path without a sidecar: `readOnly:
 true` with `graphAcquisition: 'cli-plan'` assembles a profile whose `edits`
@@ -201,12 +208,6 @@ The returned `DiagramProfileHandle` exposes chat diagnostics plus two
 webview channels: `dispatchToWebview(uri, action)` (host→client GLSP action
 over the overlay bridge) and `postToWebview(uri, message)` (raw
 `webview.postMessage` for consumer-owned protocols such as cursor sync).
-For a sidecar profile it also carries `externalTool`: `query(file, { op,
-args })`, one request to the profile's sidecar, sent and read as the
-diagram's own are (absent without a sidecar); and `resolveRunRoot(file)` and
-`cliInvocation(file)`, where and with which command a run of the file starts
-(absent without a CLI). A product asks through these rather than copying the
-rules.
 
 ### API versioning
 

@@ -12,7 +12,6 @@
  * result as `DiagramProfile` at the assignment site.
  */
 import type { DiagramClientAssets, DiagramCommandIds, EntityPaletteItemSpec, NodeFamilySpec, ProductClientBehavior } from '@dialogram/shared';
-import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { DEFAULT_EXPORT_OP, invokeSidecarOp } from './sidecar-graph-export.js';
 import { createSourceReferenceContext } from './chat-source-reference.js';
@@ -38,8 +37,7 @@ import {
 import { createSidecarEditBackend } from './chat-edit-backend.js';
 import { createPythonNavigationProvider } from './python-navigation.js';
 import { registerSidecarCommands } from './sidecar-commands.js';
-import { invokeSidecar, sidecarStartDirectory } from './sidecar-transport.js';
-import { resolveCliInvocation, resolveRunRoot } from './run-root.js';
+import { runCli, type CliRunResult } from './run-root.js';
 import { registerPythonAnalysisPaths } from './python-analysis-paths-host.js';
 import { registerNewSourceFileCommand } from './new-source-file-command.js';
 import { createCliStatusSource, type SidecarStatusSourceInput } from './cli-status-source.js';
@@ -791,38 +789,11 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
         return { dispose: () => undefined };
     };
 
-    // The product's own host code asks the sidecar and the CLI through the
-    // rules the diagram and the run use (the command resolved here, the
-    // transport, the run root), not a copy of them: `query` where there is a
-    // sidecar, the run root and the CLI where there is a CLI.
-    const hasCli = nonBlank(input.cliCommandDefault) !== undefined;
-    const query = sidecarCommand
-        ? async (file: string, request: { op: string; args?: Record<string, unknown> }, options?: { timeoutMs?: number }) => {
-            const command = resolveSidecarCommand(file);
-            const [result, cwd] = await Promise.all([
-                invokeSidecar({
-                    command,
-                    file,
-                    op: `${input.sidecarOperationPrefix}.${request.op}`,
-                    args: request.args ?? {},
-                    timeoutMs: options?.timeoutMs ?? getGraphLoadTimeoutMs(runtimeConfig, vscode, vscode.Uri.file(file))
-                }),
-                sidecarStartDirectory(file).catch(() => path.dirname(file))
-            ]);
-            return { ...result, command, cwd };
-        }
-        : undefined;
-    const externalTool = query || hasCli
-        ? {
-            ...(query ? { query } : {}),
-            ...(hasCli
-                ? {
-                    resolveRunRoot: (file: vscode.Uri) => resolveRunRoot(file),
-                    // The default is not blank, so neither is the command: there is always one.
-                    cliInvocation: async (file: vscode.Uri) => (await resolveCliInvocation(runtimeConfig, file))!
-                }
-                : {})
-        }
+    // The product's own host code runs its CLI as a run does (`run-root.ts`),
+    // where the CLI runs at all: a CLI without `run` is not one to start.
+    const runCliOfProfile = runs
+        ? (file: vscode.Uri, args: readonly string[], options?: { timeoutMs?: number }): Promise<CliRunResult> =>
+            runCli(runtimeConfig, file, args, options)
         : undefined;
 
     const profile = {
@@ -897,7 +868,13 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
         runDriver,
         statusSource: input.statusSource ? createCliStatusSource(input.statusSource, runtimeConfig) : undefined,
         newSourceFile,
-        externalTool
+        /**
+         * Run the product's CLI for `file` with `args`, started exactly as a
+         * run of the file starts it, the whole process group stopped at the
+         * deadline (`options.timeoutMs`, else the graph-load deadline). Never
+         * throws. Absent when the CLI runs no diagram (`cliRuns: false`).
+         */
+        runCli: runCliOfProfile
     };
     // Brand: assembled inside the platform bundle — DI fields may round-trip the API.
     Object.defineProperty(profile, Symbol.for('dialogram.platformAssembledProfile'), {

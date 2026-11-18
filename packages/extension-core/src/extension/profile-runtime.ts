@@ -97,8 +97,6 @@ export async function activateProfileRuntime(
       glsp.editorProvider.dispatchToWebview(uri, action),
     postToWebview: (uri, message) =>
       glsp.editorProvider.postToWebview(uri, message),
-    // The profile's external tool and CLI for the product's host code, as given.
-    ...(profile.externalTool ? { externalTool: profile.externalTool } : {}),
   };
 }
 

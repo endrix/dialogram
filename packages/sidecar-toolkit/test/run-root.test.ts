@@ -1,7 +1,7 @@
 /**
  * Where a run starts and with which command (`run-root.ts`): the run driver's
- * rules, which a product's host code is handed too (the profile's
- * `externalTool`).
+ * rules, which `runCli` starts a product's CLI by too. They are the toolkit's
+ * own; these tests hold the run driver to what it did before they moved here.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
@@ -87,5 +87,17 @@ describe('the CLI a run starts', () => {
         // Blank is the default, as everywhere the command is read.
         configured = '  ';
         expect((await resolveCliInvocation(config, Uri.file(path.join(root, 'flows', 'main.py')) as any))?.cmd).toBe('x-cli');
+    });
+
+    it('is none when the setting and the default are blank, found before the run root is looked for', async () => {
+        let looked = false;
+        Object.assign(workspace, {
+            getWorkspaceFolder: () => {
+                looked = true;
+                return undefined;
+            }
+        });
+        expect(await resolveCliInvocation({ ...config, cliCommandDefault: '' }, Uri.file('/nowhere/main.py') as any)).toBeUndefined();
+        expect(looked).toBe(false);
     });
 });

@@ -379,26 +379,3 @@ export interface ListRowCell {
     /** What kind of line, for the product's stylesheet: `list-row-cell-<kind>`. */
     kind?: string;
 }
-
-/**
- * What one request to a profile's external tool got back, as the diagram's
- * own requests are read: `ok` with the answer, or why not. A request the
- * tool refused is `failure: 'rejected'`, with its answer in `response` and
- * its `diagnostic.code` in `code`; the others are the process's.
- */
-export interface ToolOpResult {
-    ok: boolean;
-    /** The parsed answer, when the tool gave one. */
-    response?: any;
-    /** Why `ok` is false, for a person. */
-    message?: string;
-    failure?: 'start' | 'timeout' | 'exit' | 'rejected' | 'invalid-json';
-    /** The answer's `diagnostic.code`, when the tool refused the request with one. */
-    code?: string;
-    stderr?: string;
-    timedOut?: boolean;
-    /** The command as started (the setting scoped to the file, its default when blank). */
-    command: string;
-    /** Where it was started, by the profile's rule for the file: a relative command is found from here. */
-    cwd: string;
-}

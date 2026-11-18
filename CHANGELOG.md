@@ -11,8 +11,8 @@ with products built against it: its API removals (#127, #129), the stock
 bundle's dropping the agent workflow UI (#137) and the `@viewer` opener
 (#141), and the server's no longer answering agent discovery (#139), need a
 product still at 0.8 to fail its version check rather than run against what
-it no longer has; and a product that uses `DiagramProfileHandle.externalTool`
-needs a platform that hands it one.
+it no longer has; and a product that uses its profile's `runCli` needs a
+platform that hands it one.
 
 ### Removed
 
@@ -78,25 +78,24 @@ needs a platform that hands it one.
 
 ### Added
 
-- **A product's host code asks its sidecar and CLI as the platform does.**
-  `DiagramProfileHandle.externalTool` (`ExternalToolApi`) hands a product the
-  profile's own rules instead of a copy of them, which drifts:
-  - `query(file, { op, args }, { timeoutMs })` sends one request to the
-    profile's sidecar through `invokeSidecar`, as the diagram's own
-    requests are sent and read, and returns its result with the `command`
-    (the setting scoped to the file) and the `cwd` it started in
-    (`ToolOpResult`). The op gets the profile's prefix; the deadline is the
-    profile's graph-load deadline for the file unless `timeoutMs` says.
-  - `resolveRunRoot(file)`, the directory a run starts in, and
-    `cliInvocation(file)`, the CLI as the run driver starts it: the run
-    driver's own rules, moved out of `CliRunDriver` into `run-root.ts`,
-    which the driver now calls.
-  - Set by `createSidecarDiagramProfile` (`DiagramProfile.externalTool`):
-    `query` for a profile with a sidecar, the other two for one with a CLI,
-    a read-only `cli-plan` profile included.
+- **A product's host code runs its CLI as a run does.** The profile
+  `createSidecarDiagramProfile` returns has `runCli(file, args, { timeoutMs })`
+  where the CLI runs a diagram (not with `cliRuns: false`). It starts the CLI
+  exactly as a run of `file` starts it: the command setting scoped to the
+  file, its default when blank, `-m <module>` for an interpreter, from the
+  run root, in its own process group, the whole group stopped at the
+  deadline. The deadline is `timeoutMs` when positive, else the graph-load
+  deadline for the file. It never throws, and answers `CliRunResult`:
+  `exitCode`, `stdout` and `stderr`, and a `failure` (`no-command`, `start`,
+  `timeout`) with a `message` when the CLI did not run to its end; an exit
+  other than 0 is the CLI's answer, not a failure. A product asks the CLI
+  what a run would find instead of copying the rules for where and how a run
+  starts, which stay the toolkit's own (`run-root.ts`, which the run driver
+  now calls too).
   - A run whose CLI setting and default are both blank says only that
     (`Cannot run: ... names no command`); it no longer names a workspace
-    folder, `package.json` or `.git`, which cannot cause it.
+    folder, `package.json` or `.git`, which cannot cause it, and no longer
+    looks for the run root first.
 
 - **A diagram that is loading says so, and says what it is doing.** A large
   design takes seconds to read and seconds more to lay out, and for all of
