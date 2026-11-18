@@ -33,4 +33,4 @@ export {
 
 export { type RunQuestion, type RunAnswer } from './cli-run-driver.js';
 
-export { type CliRunResult } from './run-root.js';
+export { type CliRunResult } from './cli-invocation.js';

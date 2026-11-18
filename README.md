@@ -142,9 +142,10 @@ platform bundle (see [The bundle-boundary law](#the-bundle-boundary-law)).
 The profile it returns also has `runCli(file, args)`, where the CLI runs a
 diagram (`cliRuns` is not `false`): the product's own host code runs its CLI
 with it, started exactly as a run of the file starts it (the command, the
-module form for an interpreter, the run root), the whole process group
-stopped at the deadline. A product asks the CLI what a run would find this
-way, rather than copying where and how a run starts.
+module form for an interpreter, the run root), stopped at the deadline: on
+POSIX the CLI leads its own process group and the whole group is stopped, on
+Windows only the CLI itself, not what it started. A product asks the CLI what
+a run would find this way, rather than copying where and how a run starts.
 
 A consumer whose diagram is a pure projection of a file — drawn by a CLI,
 with nothing to edit — takes the same path without a sidecar: `readOnly:

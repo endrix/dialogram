@@ -283,6 +283,35 @@ describe('runCli: the product’s CLI, started as a run starts it', () => {
         }) as typeof workspace.getConfiguration;
     }
 
+    /**
+     * Whether process `pid` is gone within `ms`: no longer there, or a zombie
+     * waiting to be reaped. A signalled process takes a moment to die, and
+     * after that is still listed until its parent, or init, reaps it.
+     */
+    async function goneWithin(pid: number, ms: number): Promise<boolean> {
+        const until = Date.now() + ms;
+        for (;;) {
+            try {
+                process.kill(pid, 0);
+            } catch {
+                return true;
+            }
+            try {
+                // `<pid> (<name>) <state> ...`; the name may hold spaces.
+                const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+                if (stat.slice(stat.lastIndexOf(')') + 2).startsWith('Z')) {
+                    return true;
+                }
+            } catch {
+                // No /proc here, or the process went in between: the next kill says.
+            }
+            if (Date.now() >= until) {
+                return false;
+            }
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+    }
+
     /** Prints its arguments and where it ran, says something on stderr, exits with the code it is given last. */
     const ECHO = [
         'const args = process.argv.slice(2);',
@@ -342,7 +371,7 @@ describe('runCli: the product’s CLI, started as a run starts it', () => {
         expect(Date.now() - started).toBeLessThan(900);
         expect(result.message).toContain('no response after');
         const childPid = Number(fs.readFileSync(path.join(dir, 'child.pid'), 'utf8'));
-        expect(() => process.kill(childPid, 0)).toThrow();
+        expect(await goneWithin(childPid, 5_000)).toBe(true);
     }, 30_000);
 
     it('says why when there is no command, before it looks for the run root', async () => {
@@ -369,11 +398,23 @@ describe('runCli: the product’s CLI, started as a run starts it', () => {
         workspace.getConfiguration = (() => {
             throw new Error('settings unreadable');
         }) as typeof workspace.getConfiguration;
-        expect(await p.runCli!(file, [])).toMatchObject({
+        // Nothing was started: the toolkit could not work out how, which is no
+        // command missing from the machine.
+        expect(await p.runCli!(file, [])).toEqual({
             exitCode: -1,
-            failure: 'start',
-            message: 'The CLI was not started: settings unreadable'
+            stdout: '',
+            stderr: '',
+            failure: 'internal',
+            message: 'Could not work out how to start the CLI: settings unreadable'
         });
+    });
+
+    it.skipIf(process.platform === 'win32')('keeps a deadline longer than a timer holds, given or set', async () => {
+        const { command, file } = project('x-cli', ["setTimeout(() => process.stdout.write('done'), 300);"]);
+        const p = createSidecarDiagramProfile(baseInput({ cliCommandDefault: command }));
+        expect(await p.runCli!(file, [], { timeoutMs: 2 ** 31 + 1_000 })).toMatchObject({ exitCode: 0, stdout: 'done' });
+        settings({ graphLoadTimeoutSeconds: 3_000_000 });
+        expect(await p.runCli!(file, [])).toMatchObject({ exitCode: 0, stdout: 'done' });
     });
 
     it('is absent where the CLI runs no diagram', () => {

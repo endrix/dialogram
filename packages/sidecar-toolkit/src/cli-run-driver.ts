@@ -27,7 +27,7 @@
  * headline case (run started before the diagram opens) is fully covered.
  */
 import * as vscode from 'vscode';
-import { noCliCommandMessage, resolveCliInvocation } from './run-root.js';
+import { noCliCommandMessage, resolveCliInvocation } from './cli-invocation.js';
 import { fileExists } from './server/source-files';
 import * as cp from 'node:child_process';
 import { unlinkSync } from 'node:fs';
@@ -725,7 +725,7 @@ export class CliRunDriver {
         return queueTracePath;
     }
 
-    private async runCli(
+    private async spawnRun(
         inv: { cmd: string; args: string[]; cwd: string },
         output: vscode.OutputChannel,
         onSpawn?: (child: cp.ChildProcessWithoutNullStreams) => void,
@@ -1135,7 +1135,7 @@ export class CliRunDriver {
         }
 
         const isPython = sourceUri.fsPath.endsWith('.py');
-        // The run root and the CLI by the rules `runCli` starts a product's CLI by too (`run-root.ts`).
+        // The run root and the CLI by the rules `runCli` starts a product's CLI by too (`cli-invocation.ts`).
         const cli = await resolveCliInvocation(this.config, sourceUri, isPython);
         if (!cli) {
             const message = noCliCommandMessage(this.config);
@@ -1397,7 +1397,7 @@ export class CliRunDriver {
                     refreshTimer = setInterval(() => void refreshDiagram(), 400);
                 }
                 startStream();
-                return await this.runCli(
+                return await this.spawnRun(
                     { cmd: cli.cmd, args: cliArgs, cwd: cli.cwd },
                     output,
                     (child) => {

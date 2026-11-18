@@ -37,7 +37,7 @@ import {
 import { createSidecarEditBackend } from './chat-edit-backend.js';
 import { createPythonNavigationProvider } from './python-navigation.js';
 import { registerSidecarCommands } from './sidecar-commands.js';
-import { runCli, type CliRunResult } from './run-root.js';
+import { runCli, type CliRunResult } from './cli-invocation.js';
 import { registerPythonAnalysisPaths } from './python-analysis-paths-host.js';
 import { registerNewSourceFileCommand } from './new-source-file-command.js';
 import { createCliStatusSource, type SidecarStatusSourceInput } from './cli-status-source.js';
@@ -789,7 +789,7 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
         return { dispose: () => undefined };
     };
 
-    // The product's own host code runs its CLI as a run does (`run-root.ts`),
+    // The product's own host code runs its CLI as a run does (`cli-invocation.ts`),
     // where the CLI runs at all: a CLI without `run` is not one to start.
     const runCliOfProfile = runs
         ? (file: vscode.Uri, args: readonly string[], options?: { timeoutMs?: number }): Promise<CliRunResult> =>
@@ -870,9 +870,10 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
         newSourceFile,
         /**
          * Run the product's CLI for `file` with `args`, started exactly as a
-         * run of the file starts it, the whole process group stopped at the
-         * deadline (`options.timeoutMs`, else the graph-load deadline). Never
-         * throws. Absent when the CLI runs no diagram (`cliRuns: false`).
+         * run of the file starts it, stopped at the deadline
+         * (`options.timeoutMs`, else the graph-load deadline): on POSIX with
+         * all it started, on Windows the CLI alone. Never throws. Absent when
+         * the CLI runs no diagram (`cliRuns: false`).
          */
         runCli: runCliOfProfile
     };
