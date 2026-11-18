@@ -142,6 +142,40 @@ describe('the end of a wait', () => {
         expect(told).toEqual([]);
     });
 
+    it('is not said by the submit of a request nobody is waiting on, nor is its layout', async () => {
+        // The storage asks again by itself, with the callers of a workflow it
+        // has found, and that request submits a model of its own at once.
+        const { handler, order, told } = submitHarness(firstOpen);
+        (handler.loadProgress as LoadProgressReporter).say({ message: 'Reading top.fir' });
+
+        await handler.submitQuietly();
+
+        expect(order).toEqual(['said', 'layout', 'model made']);
+        expect(told).toEqual([{ state: 'progress', message: 'Reading top.fir' }]);
+    });
+
+    it('is said by the reader’s own submit while such a request is still in flight', async () => {
+        // The session does not handle one request at a time: that refresh is
+        // dispatched from inside the load that started the search for
+        // callers, and the sizes the diagram measured come back, and the
+        // reader's model leaves, while it is still at work. Kept as "a
+        // background request is in flight", it swallowed the reader's end,
+        // and the indicator counted on for good.
+        const { handler, told } = submitHarness(firstOpen);
+        (handler.loadProgress as LoadProgressReporter).say({ message: 'Reading top.fir' });
+        let finish!: () => void;
+        const atWork = new Promise<void>(resolve => { finish = resolve; });
+        handler.runBoundaryFlowAndPersist = async () => { await atWork; };
+        const quiet = handler.submitQuietly();
+
+        await handler.submitModelDirectly();
+
+        expect(told.at(-1)).toEqual({ state: 'done', model: true });
+        finish();
+        await quiet;
+        expect(told.filter(update => update.state === 'done')).toHaveLength(1);
+    });
+
     it('is said with no model when the submit fails', async () => {
         const { handler, told } = submitHarness(firstOpen);
         const failure = new Error('the model could not be serialised');
@@ -168,16 +202,22 @@ function requestHarness(reporter: LoadProgressReporter | undefined, loadSourceMo
         }
     };
     handler.progressService = { start: () => ({ end: () => undefined }) };
+    const submits: string[] = [];
     handler.submissionHandler = {
         submitInitialModel: async () => [],
         // As the real one: the end of whatever was being waited for.
         submitModelDirectly: async () => {
+            submits.push('ending the wait');
             reporter?.endWithModel();
+            return [];
+        },
+        submitQuietly: async () => {
+            submits.push('quietly');
             return [];
         }
     };
     handler.loadProgress = reporter;
-    return { handler, statuses };
+    return { handler, statuses, submits };
 }
 
 describe('a request for the model', () => {
@@ -198,6 +238,18 @@ describe('a request for the model', () => {
         expect(statuses.at(-1)?.severity).toBe('NONE');
     });
 
+    it('made behind the reader’s back does not end their wait by failing', async () => {
+        const told: LoadingUpdate[] = [];
+        const reporter = reporterTo(told);
+        reporter.say({ message: 'Reading top.fir' });
+        const failure = new Error('the overlay could not be read');
+        const { handler } = requestHarness(reporter, async () => { throw failure; });
+
+        await expect(handler.execute({ kind: 'requestModel', requestId: 'refresh-live-overlay-1' } as any)).rejects.toBe(failure);
+
+        expect(told).toEqual([{ state: 'progress', message: 'Reading top.fir' }]);
+    });
+
     it('says the wait is over when the load fails, anywhere on the way', async () => {
         const told: LoadingUpdate[] = [];
         const reporter = reporterTo(told);
@@ -213,17 +265,14 @@ describe('a request for the model', () => {
     });
 
     it('made behind the reader’s back says nothing, and its model does not end their wait', async () => {
-        // The first open of a workflow other workflows call: the host asks
-        // again, for the callers it has found by then, while the layout the
-        // reader is waiting for is still to run. That request submits a model
-        // of its own at once.
+        // The first open of a workflow other workflows call: the storage
+        // asks again, for the callers it has found by then, while the layout
+        // the reader is waiting for is still to run. That request submits a
+        // model of its own at once.
         const told: LoadingUpdate[] = [];
         const reporter = reporterTo(told);
         reporter.say({ message: 'Reading top.fir' });
-        let tellingWhileLoading: boolean | undefined;
-        const { handler } = requestHarness(reporter, async () => {
-            tellingWhileLoading = reporter.telling;
-        });
+        const { handler, submits } = requestHarness(reporter);
 
         await handler.execute({
             kind: 'requestModel',
@@ -231,7 +280,7 @@ describe('a request for the model', () => {
             options: { agentContextOnly: true }
         } as any);
 
-        expect(tellingWhileLoading).toBe(false);
+        expect(submits).toEqual(['quietly']);
         expect(told).toEqual([{ state: 'progress', message: 'Reading top.fir' }]);
         // The reader's own load ends it, when its model leaves.
         reporter.endWithModel();

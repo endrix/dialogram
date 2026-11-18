@@ -136,7 +136,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
      */
     override async submitModelDirectly(reason?: DirtyStateChangeReason): Promise<Action[]> {
         try {
-            const actions = await this.submitLaidOut(reason);
+            const actions = await this.submitLaidOut(reason, false);
             this.loadProgress?.endWithModel();
             return actions;
         } catch (error) {
@@ -145,7 +145,24 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
         }
     }
 
-    private async submitLaidOut(reason?: DirtyStateChangeReason): Promise<Action[]> {
+    /**
+     * Submit the model for a request nobody is waiting on: nothing is said of
+     * it, and its model ends nobody's wait.
+     *
+     * Such a request can run alongside one the reader IS waiting on (see
+     * `LoadProgressReporter`), so this is said by the caller, here, and not
+     * kept as a state of the session.
+     */
+    async submitQuietly(reason?: DirtyStateChangeReason): Promise<Action[]> {
+        return this.submitLaidOut(reason, true);
+    }
+
+    private async submitLaidOut(reason: DirtyStateChangeReason | undefined, quiet: boolean): Promise<Action[]> {
+        const tellLayingOut = (message: string, state: ModelState): void => {
+            if (!quiet) {
+                this.tellLayingOut(message, state);
+            }
+        };
         const layoutEngine = (this as any).layoutEngine as LayoutEngine | undefined;
         const diagramConfiguration = (this as any).diagramConfiguration as DiagramConfiguration;
         const modelState = (this as any).modelState as ModelState;
@@ -169,7 +186,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
 
             console.log('[WorkflowModelSubmissionHandler] Running initial ELK layout for:', layoutMeta.networkId);
-            this.tellLayingOut('Laying out the diagram', modelState);
+            tellLayingOut('Laying out the diagram', modelState);
             try {
                 const _elk0 = perfNow();
                 // Parity with the manual auto-layout path (`dialogram.layoutBoundaryFlow`):
@@ -244,7 +261,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
                 console.log(`[agent-auto-layout] branch=1c-i RUN boundary-flow net=${layoutMeta.networkId}`);
             }
             console.log('[WorkflowModelSubmissionHandler] Auto-layout after agent structural edit for:', layoutMeta.networkId);
-            this.tellLayingOut('Laying out the diagram', modelState);
+            tellLayingOut('Laying out the diagram', modelState);
             try {
                 await this.runBoundaryFlowAndPersist(modelState, layoutEngine);
                 console.log('[WorkflowModelSubmissionHandler] Agent auto-layout completed');
@@ -291,7 +308,7 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
             !didBootstrapReroute
         ) {
             console.log('[WorkflowModelSubmissionHandler] Running bootstrap edge reroute for:', layoutMeta.networkId);
-            this.tellLayingOut('Routing the connections', modelState);
+            tellLayingOut('Routing the connections', modelState);
             try {
                 const _reroute0 = perfNow();
                 await this.rerouteHandler.runReroute({
@@ -735,17 +752,12 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
      * anywhere on the way, since then no model will.
      */
     override async execute(action: RequestModelAction): Promise<Action[]> {
-        const reporter = this.loadProgress;
-        if (!reporter) {
-            return this.load(action);
-        }
-        if (isBackgroundLoad(action.requestId, action.options)) {
-            return reporter.inBackground(() => this.load(action));
-        }
         try {
             return await this.load(action);
         } catch (error) {
-            reporter.endWithoutModel();
+            if (!isBackgroundLoad(action.requestId, action.options)) {
+                this.loadProgress?.endWithoutModel();
+            }
             throw error;
         }
     }
@@ -773,7 +785,14 @@ export class WorkflowRequestModelActionHandler extends RequestModelActionHandler
                 // in-flight ComputedBoundsAction from a concurrent full refresh,
                 // causing perpetual model invalidation (the diagram never updates).
                 await this.sourceModelStorage.loadSourceModel(action);
-                const actions = await this.submissionHandler.submitModelDirectly();
+                // Quietly: this request is nobody's wait, and it can run
+                // while the reader's own load is still on its way to a model.
+                const submission = this.submissionHandler as ModelSubmissionHandler & {
+                    submitQuietly?: () => Promise<Action[]>;
+                };
+                const actions = await (submission.submitQuietly
+                    ? submission.submitQuietly()
+                    : submission.submitModelDirectly());
                 console.log(`[WorkflowRequestModelActionHandler] agent-ctx-only: submitted directly, ${actions.length} actions`);
                 return actions;
             }

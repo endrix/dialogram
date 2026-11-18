@@ -54,11 +54,19 @@ export const BUSY_DELAY_MS = 300;
 
 /**
  * How long the indicator waits for the model the host said was on its way.
- * The model follows in the same breath; this is for the one that never
- * arrives, so that the indicator does not count the seconds of a wait that
- * is over.
+ * The model follows in the same breath, but a very large one takes seconds to
+ * cross to the webview, and the indicator going before it left the canvas
+ * blank for them. This is for the model that never arrives at all, so that
+ * the indicator does not count the seconds of a wait that is over for good.
  */
-export const MODEL_GRACE_MS = 5_000;
+export const MODEL_GRACE_MS = 30_000;
+
+/**
+ * How long after a change the status region is given its words. A region is
+ * read out when its words change AFTER it is in the page: one made and filled
+ * in the same breath, as the first words are, is not reliably read at all.
+ */
+export const ANNOUNCE_DELAY_MS = 50;
 
 /** From how many seconds the wait is counted out loud: a load of a second needs no stopwatch. */
 const CLOCK_FROM_SECONDS = 2;
@@ -85,6 +93,9 @@ let pendingText: { message: string; detail: string } | undefined;
 let clockTimer: ReturnType<typeof setInterval> | undefined;
 let startedAt = 0;
 let installed = false;
+/** What the status region will say next, and the timer that will say it. */
+let toAnnounce: string | undefined;
+let announceTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** The indicator's element, made if it is not there. Nothing where there is no document. */
 function ensureIndicator(): HTMLElement | undefined {
@@ -133,11 +144,21 @@ function line(part: 'message' | 'detail' | 'elapsed'): Element | null {
     return typeof document === 'undefined' ? null : document.querySelector(`#${INDICATOR_ID} .workflow-loading-${part}`);
 }
 
+/** Give the status region its words, a moment from now: the latest ones, once. */
 function announce(words: string): void {
-    const announcer = typeof document === 'undefined' ? null : document.getElementById(ANNOUNCER_ID);
-    if (announcer && announcer.textContent !== words) {
-        announcer.textContent = words;
+    toAnnounce = words;
+    if (announceTimer !== undefined) {
+        return;
     }
+    announceTimer = setTimeout(() => {
+        announceTimer = undefined;
+        const announcer = typeof document === 'undefined' ? null : document.getElementById(ANNOUNCER_ID);
+        if (announcer && toAnnounce !== undefined && announcer.textContent !== toAnnounce) {
+            announcer.textContent = toAnnounce;
+        }
+        toAnnounce = undefined;
+    }, ANNOUNCE_DELAY_MS);
+    (announceTimer as { unref?: () => void }).unref?.();
 }
 
 function write(message: string, detail: string): void {
@@ -364,6 +385,11 @@ export function resetLoadingIndicatorForTests(): void {
         window.removeEventListener('message', onMessage);
     }
     installed = false;
+    if (announceTimer !== undefined) {
+        clearTimeout(announceTimer);
+        announceTimer = undefined;
+    }
+    toAnnounce = undefined;
     if (typeof document !== 'undefined') {
         document.getElementById(INDICATOR_ID)?.remove();
         document.getElementById(ANNOUNCER_ID)?.remove();

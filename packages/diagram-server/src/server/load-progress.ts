@@ -79,8 +79,16 @@ export function counted(count: number, noun: string): string {
  *    indicator stays until there is a picture in its place;
  *  - a failure, anywhere on the way ({@link endWithoutModel}).
  *
- * A request nobody is waiting on is handled {@link inBackground}: what it
- * does is not said, and what it ends is not the reader's wait.
+ * A request nobody is waiting on says nothing here and ends nothing. That
+ * is the CALLER's to see to, call by call (the storage does not speak for
+ * such a load; its submit is the quiet one), and not something this class
+ * keeps a state of: the session does not handle one request at a time. The
+ * refresh the storage asks for itself, once it has found a workflow's
+ * callers, is dispatched from inside the load that started the search, and
+ * runs alongside whatever the queue brings next, the sizes the diagram
+ * measured among it. A "background request in flight" kept here made the
+ * reader's own end look like the background's: it was swallowed, and the
+ * indicator counted the seconds of a load that was over.
  */
 @injectable()
 export class LoadProgressReporter {
@@ -95,12 +103,9 @@ export class LoadProgressReporter {
     /** Something has been said that has not been ended. */
     private said = false;
 
-    /** How many requests nobody is waiting on are being handled now. */
-    private background = 0;
-
-    /** Whether anything said now would reach a reader: a product is handed something to say its part with only then. */
+    /** Whether anything said here reaches a reader: a product is handed something to say its part with only then. */
     get telling(): boolean {
-        return this.sink !== undefined && this.clientId !== undefined && this.background === 0;
+        return this.sink !== undefined && this.clientId !== undefined;
     }
 
     /** Whether the host shows what is said here at all. */
@@ -133,15 +138,5 @@ export class LoadProgressReporter {
         }
         this.said = false;
         tellLoading(this.sink, this.clientId, update);
-    }
-
-    /** Handle a request nobody is waiting on. */
-    async inBackground<T>(work: () => Promise<T>): Promise<T> {
-        this.background += 1;
-        try {
-            return await work();
-        } finally {
-            this.background -= 1;
-        }
     }
 }

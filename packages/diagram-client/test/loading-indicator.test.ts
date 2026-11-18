@@ -12,6 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LOADING_MESSAGE_TYPE, type LoadingMessage } from '@dialogram/shared';
 import {
+    ANNOUNCE_DELAY_MS,
     BUSY_DELAY_MS,
     LoadingIndicatorModelListener,
     MODEL_GRACE_MS,
@@ -201,9 +202,9 @@ describe('when the wait is over', () => {
 });
 
 describe('what a screen reader is told', () => {
-    it('is in a status region that is always there, and only its words change', () => {
-        // A region shown and given its words in the same breath is not
-        // reliably read out.
+    it('is in a status region that is in the page before it is given its words', () => {
+        // A region made and filled in the same breath is not reliably read
+        // out, and the first words are the ones that would be.
         installLoadingIndicator();
 
         expect(announcer()?.getAttribute('role')).toBe('status');
@@ -211,6 +212,9 @@ describe('what a screen reader is told', () => {
         expect(announcer()?.hidden).toBe(false);
         // The picture of it is for the eye.
         expect(indicator()?.getAttribute('aria-hidden')).toBe('true');
+        expect(announcer()?.textContent).toBe('');
+
+        vi.advanceTimersByTime(ANNOUNCE_DELAY_MS);
         expect(announcer()?.textContent).toBe('Opening the diagram');
     });
 
@@ -223,11 +227,24 @@ describe('what a screen reader is told', () => {
         expect(announcer()?.textContent).toBe('Laying out the diagram, 177 nodes, 565 edges');
     });
 
+    it('is the latest step, when several come at once', () => {
+        installLoadingIndicator();
+        vi.advanceTimersByTime(ANNOUNCE_DELAY_MS);
+
+        post(progress('Reading Top.fir'));
+        post(progress('Drawing the diagram', '9 nodes, 16 edges'));
+        vi.advanceTimersByTime(ANNOUNCE_DELAY_MS);
+
+        expect(announcer()?.textContent).toBe('Drawing the diagram, 9 nodes, 16 edges');
+    });
+
     it('is nothing once the wait is over', () => {
         installLoadingIndicator();
         post(progress('Reading Top.fir'));
+        vi.advanceTimersByTime(ANNOUNCE_DELAY_MS);
 
         post(over);
+        vi.advanceTimersByTime(ANNOUNCE_DELAY_MS);
 
         expect(announcer()?.textContent).toBe('');
     });

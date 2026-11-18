@@ -458,11 +458,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             }
             perf.mark('acquire');
             if (!doc) {
-                // Nothing to draw anew, so no model of this load's to end
-                // the wait at.
-                if (watched) {
-                    reporter?.endWithoutModel();
-                }
+                // Nothing to draw anew. The handler submits what there was,
+                // and that submit ends the wait, at the model it sends.
                 return;
             }
             // The model source pre-normalizes its diagnostics onto `doc.diagnostics` (walking its own

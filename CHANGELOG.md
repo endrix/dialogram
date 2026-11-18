@@ -104,7 +104,8 @@ it no longer has.
     `done` alone when the load failed or had nothing to draw, and it goes at
     once. A model by itself does not end a wait the host has spoken of: a
     refresh made behind the reader's back lands in the middle of a first
-    open, whose layout is still running.
+    open, whose layout is still running. Such a request says nothing, and
+    submits its model quietly (`submitQuietly`).
   - Every product on the stock client has it: the stock starter raises it,
     and so does `workflowFeaturesModule`, for a product whose starter is its
     own. A client that takes neither (the MLIR viewer) is as it was.
@@ -112,8 +113,8 @@ it no longer has.
     overlay, and the host's own refreshes behind the reader's back.
   - Where the host shows this, GLSP's "Model loading in progress" notice is
     not started: it was a second, vaguer word for the same wait.
-  - A screen reader is told each step through a status region that is always
-    in the page, and not the seconds.
+  - A screen reader is told each step through a status region that is in
+    the page before it is given its words, and not the seconds.
 - **A graph that grows keeps its picture still.** A producer may say its
   graph grows a step at a time (`graph.meta.incremental`): a schematic of a
   netlist that starts from one cell and takes in a pin's fan-in when asked.

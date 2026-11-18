@@ -182,35 +182,17 @@ describe('a session saying what its reader is waiting for', () => {
         expect(told).toHaveLength(2);
     });
 
-    it('says nothing of a request nobody is waiting on, and does not let it end the wait', async () => {
-        // A refresh the host makes behind the reader's back lands in the
-        // middle of a first open: it submits a model of its own, and the
-        // layout the reader is waiting for is still to run.
+    it('keeps no account of requests nobody is waiting on', () => {
+        // Whether a request is the reader's is the caller's to know, call by
+        // call: the session does not handle one request at a time, and a
+        // "background request in flight" kept here once made the reader's own
+        // end look like the background's. Here, whatever is said is said, and
+        // whatever is ended is ended.
         const told: LoadingUpdate[] = [];
         const reporter = reporterTo(told);
-        reporter.say({ message: 'Reading Top.fir' });
-
-        const answer = await reporter.inBackground(async () => {
-            expect(reporter.telling).toBe(false);
-            reporter.say({ message: 'Reading Top.fir again' });
-            reporter.endWithModel();
-            return 'its own model';
-        });
-
-        expect(answer).toBe('its own model');
-        expect(told).toEqual([{ state: 'progress', message: 'Reading Top.fir' }]);
-        // The reader's wait goes on, and ends when it does.
-        expect(reporter.telling).toBe(true);
-        reporter.endWithModel();
-        expect(told.at(-1)).toEqual({ state: 'done', model: true });
-    });
-
-    it('is the reader’s again after a request nobody waited on has failed', async () => {
-        const reporter = reporterTo([]);
-
-        await expect(reporter.inBackground(async () => { throw new Error('no'); })).rejects.toThrow('no');
 
         expect(reporter.telling).toBe(true);
+        expect('inBackground' in reporter).toBe(false);
     });
 
     it('says nothing on a host that shows no progress, or before it knows its client', () => {
@@ -339,12 +321,15 @@ describe('a load', () => {
         expect(told.at(-1)).toEqual({ state: 'done' });
     });
 
-    it('says it is over when there is nothing to draw anew', async () => {
-        const { load, told } = storageWith(async () => undefined);
+    it('leaves the end to the submit that follows when there is nothing to draw anew', async () => {
+        // The handler submits what there was, and a model follows: said to
+        // be over here, the indicator went one round trip before it.
+        const { load, told, built } = storageWith(async () => undefined);
 
         await load('refresh-1');
 
-        expect(told).toEqual([{ state: 'progress', message: 'Reading Top.fir' }, { state: 'done' }]);
+        expect(told).toEqual([{ state: 'progress', message: 'Reading Top.fir' }]);
+        expect(built()).toBe(0);
     });
 
     it('says nothing when nobody is waiting on it, and hands the product nothing to say it with', async () => {
