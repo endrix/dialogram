@@ -53,7 +53,6 @@ import {
     registerDiagramViewType, serializedRangeToVscodeRange
 } from './open-in-place';
 import { producerNamedDefinition } from './producer-definition';
-import { RevealNodeAction } from '@dialogram/shared';
 
 // Define the diagram type constant locally to avoid import
 const WORKFLOW_DIAGRAM_TYPE = 'cal-network-diagram';
@@ -1165,43 +1164,20 @@ function registerCalDiagramCommands(
     };
 
     const refreshActiveDiagramModel = async (
-        opts?: { sourceUri?: string; workflowName?: string; agentContextOnly?: boolean; reveal?: string }
+        opts?: { sourceUri?: string; workflowName?: string; open?: boolean; agentContextOnly?: boolean; reveal?: string }
     ): Promise<void> => {
         const uri = opts?.sourceUri ? vscode.Uri.parse(opts.sourceUri) : getActiveWorkflowDiagramUri();
         if (!uri) {
             return;
         }
-        const provider = editorProvider;
-        const clientId = provider?.getClientIdForDocumentUri(uri);
-        if (!provider || !clientId) {
-            return;
-        }
-        // The view the editor shows, or the one named: see `hostRefreshTarget`.
-        const target = provider.hostRefreshTarget(uri, opts?.workflowName);
-        const refreshAction = RequestModelAction.create({
-            requestId: 'refresh-queue-visibility-' + Date.now(),
-            options: {
-                sourceUri: target.sourceUri,
-                diagramType: WORKFLOW_DIAGRAM_TYPE,
-                queueTraceVisible: getQueueTraceVisible(),
-                // Queue-trace visibility toggles only re-apply the queue-trace overlay (edge glow /
-                // queue-depth args) onto the unchanged graph — no node/edge/position change — so this
-                // redelivery can rebuild off the warm plan cache and skip the RequestBounds round-trip
-                // via the agent-context-only fast path. Callers that may change the source (rename) or
-                // want a fresh re-plan (the generic refresh command) leave this unset and pay the full
-                // reload, which re-acquires and re-runs bounds as required for correctness.
-                ...(opts?.agentContextOnly ? { agentContextOnly: true } : {}),
-                ...(target.networkName ? { networkName: target.networkName } : {}),
-                ...(target.navTrail ? { [NAV_TRAIL_ARG]: target.navTrail } : {})
-            }
+        // Which editors, and what each is asked for: `refreshFromHost`.
+        editorProvider?.refreshFromHost(uri, {
+            workflowName: opts?.workflowName,
+            open: opts?.open,
+            agentContextOnly: opts?.agentContextOnly,
+            reveal: opts?.reveal,
+            queueTraceVisible: getQueueTraceVisible()
         });
-        if (opts?.reveal) {
-            // Named before the model is asked for: the diagram selects and
-            // centres the node when the model that has it comes in. What a
-            // product's command added is not always where the view is.
-            connector.dispatchAction(RevealNodeAction.create(opts.reveal), clientId);
-        }
-        connector.dispatchAction(refreshAction, clientId);
     };
 
     // The setAgentToolConfig / getAgentToolConfig commands are registered by the
@@ -1265,7 +1241,8 @@ function registerCalDiagramCommands(
                 // is the mechanism a drill-down already relies on.
                 await refreshActiveDiagramModel({
                     sourceUri: sourceUri.toString(),
-                    workflowName: requestedNetwork
+                    workflowName: requestedNetwork,
+                    open: true
                 });
             }
         })
@@ -1314,7 +1291,8 @@ function registerCalDiagramCommands(
                 // exists does not make one.
                 await refreshActiveDiagramModel({
                     sourceUri: sourceUri.toString(),
-                    workflowName: requestedNetwork
+                    workflowName: requestedNetwork,
+                    open: true
                 });
             }
         })
