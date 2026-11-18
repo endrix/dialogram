@@ -321,6 +321,171 @@ body.vscode-high-contrast {
     pointer-events: none;
 }
 
+/* ── View options under the palette's tools (view-options-palette.ts) ─────
+   Drawn with the palette's own classes (tool-group, group-header,
+   tool-button), so the theme's palette rules give them their colours; what
+   is here is only what a check box, a swatch and a heading's buttons need. */
+
+/* A palette with nothing to show (no tools, no view options, no filter)
+   draws no body: an empty box, or GLSP's "No results found.", says
+   nothing true. */
+.tool-palette .palette-body.palette-body-empty {
+    display: none;
+}
+
+.tool-palette .view-options-group {
+    min-width: 180px;
+}
+
+.tool-palette .view-options-header {
+    gap: 4px;
+    padding-right: 6px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.tool-palette .view-options-header .view-options-twisty {
+    padding: 0.4em 0 0.4em 0.4em;
+}
+
+.tool-palette .view-options-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tool-palette .view-options-count {
+    flex: none;
+    font-weight: normal;
+    opacity: 0.65;
+    font-size: 0.9em;
+}
+
+.tool-palette .view-options-actions {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+}
+
+.tool-palette .view-options-actions .codicon {
+    padding: 2px;
+    border-radius: 3px;
+    opacity: 0.75;
+    cursor: pointer;
+}
+
+.tool-palette .view-options-actions .codicon:hover {
+    opacity: 1;
+    background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+}
+
+.tool-palette .view-option {
+    gap: 6px;
+    cursor: pointer;
+    padding-left: 1.2em;
+}
+
+.tool-palette .view-option:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder, #007fd4);
+    outline-offset: -1px;
+}
+
+.tool-palette .view-options-lines {
+    /* A long group scrolls under its heading (about twelve lines). */
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+/* A line that cannot change reads as such, not as one unchecked: a dashed
+   box, the label in italics, a "no" mark; the reason is its tooltip. */
+.tool-palette .view-option.disabled {
+    cursor: not-allowed;
+}
+
+.tool-palette .view-option.disabled .view-option-box {
+    border: 1px dashed var(--vscode-checkbox-border, #6b6b6b);
+    opacity: 0.6;
+}
+
+.tool-palette .view-option.disabled .view-option-label {
+    font-style: italic;
+    opacity: 0.7;
+}
+
+.tool-palette .view-option.disabled .view-option-swatch {
+    opacity: 0.5;
+}
+
+.tool-palette .view-option .view-option-locked {
+    flex: none;
+    margin: 0;
+    font-size: 12px;
+    opacity: 0.7;
+}
+
+.tool-palette .view-option-box {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 14px;
+    height: 14px;
+    border: 1px solid var(--vscode-checkbox-border, #6b6b6b);
+    border-radius: 3px;
+    background: var(--vscode-checkbox-background, #313131);
+    color: var(--vscode-checkbox-foreground, #cccccc);
+}
+
+.tool-palette .view-option-box.radio {
+    border-radius: 50%;
+}
+
+.tool-palette .view-option-box .codicon {
+    margin: 0;
+    font-size: 12px;
+}
+
+.tool-palette .view-option-box.radio .codicon {
+    font-size: 8px;
+}
+
+.tool-palette .view-option-swatch {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    border: 1px solid color-mix(in srgb, var(--vscode-foreground, #cccccc) 30%, transparent);
+}
+
+.tool-palette .view-option-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tool-palette .view-option .view-option-only {
+    flex: none;
+    margin: 0;
+    padding: 1px;
+    border-radius: 3px;
+    opacity: 0;
+}
+
+.tool-palette .view-option:hover .view-option-only,
+.tool-palette .view-option:focus-within .view-option-only {
+    opacity: 0.75;
+}
+
+.tool-palette .view-option .view-option-only:hover {
+    opacity: 1;
+    background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+}
+
 .feedback-edge {
      pointer-events: none;
 }
@@ -3581,16 +3746,49 @@ details[open] > summary .agent-chat-expand-arrow {
     min-height: 0; /* scrolls inside the panel's max-height */
     overflow: auto;
     padding-bottom: 6px;
+    /* Only the rows in view are drawn (hierarchy-outline.ts, outline-rows.ts):
+       the spacer is as tall as all of them, and each row is placed on it. */
+    position: relative;
+}
+
+.workflow-hierarchy-outline-spacer {
+    width: 1px;
+    pointer-events: none;
 }
 
 .workflow-hierarchy-outline-row {
     display: flex;
     align-items: center;
     gap: 4px;
-    min-height: 22px;
+    /* One height for every row: which rows are in view is arithmetic on it
+       (OUTLINE_ROW_HEIGHT in outline-rows.ts). */
+    position: absolute;
+    left: 0;
+    right: 0;
+    box-sizing: border-box;
+    height: 22px;
+    overflow: hidden;
     padding-right: 6px;
     cursor: pointer;
     white-space: nowrap;
+}
+
+/* The row the product pointed at, or the reader picked last. */
+.workflow-hierarchy-outline-row.selected {
+    background: var(--vscode-list-inactiveSelectionBackground, #37373d);
+    color: var(--vscode-list-inactiveSelectionForeground, inherit);
+}
+
+.workflow-hierarchy-outline-row.selected.current {
+    background: var(--vscode-list-activeSelectionBackground, #04395e);
+}
+
+/* A row of a lazy group whose page has not come yet, or could not. */
+.workflow-hierarchy-outline-row.loading,
+.workflow-hierarchy-outline-row.failed {
+    cursor: default;
+    opacity: 0.55;
+    font-style: italic;
 }
 
 .workflow-hierarchy-outline-row:hover {

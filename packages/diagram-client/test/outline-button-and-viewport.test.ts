@@ -127,4 +127,12 @@ describe('the hierarchy panel', () => {
     it('keeps a usable height when the button sits low in a short window', () => {
         expect(panelPlacement({ left: 400, bottom: 100 }, { width: 500, height: 120 }).maxHeight).toBe(160);
     });
+
+    it('is as wide as the canvas allows, not the window: a docked property panel takes part of it', () => {
+        // A 700 px webview with a 360 px docked panel: the canvas is 340 px.
+        expect(panelPlacement({ left: 650, bottom: 600 }, { width: 700, height: 700 }, { left: 360, width: 340 }).width).toBe(180);
+        expect(panelPlacement({ left: 1154, bottom: 784 }, { width: 1200, height: 800 }, { left: 0, width: 1200 }).width).toBe(380);
+        expect(panelPlacement({ left: 1154, bottom: 784 }, { width: 1200, height: 800 }, { left: 0, width: 600 }).width).toBe(300);
+        expect(panelPlacement({ left: 1154, bottom: 784 }, { width: 1200, height: 800 }).width).toBeUndefined();
+    });
 });

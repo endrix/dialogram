@@ -30,6 +30,10 @@ import type {
   ExecutionOverlaySink,
   LoadPhaseWords,
   LoadProgress,
+  OutlinePage,
+  OutlinePageRequest,
+  OutlineRowActivation,
+  OutlineRowReveal,
 } from "@dialogram/shared";
 
 export type {
@@ -48,6 +52,11 @@ export type {
   EntityPaletteItemSpec,
   InProcessChatTool,
   NodeFamilySpec,
+  OutlinePage,
+  OutlinePageRequest,
+  OutlinePageRow,
+  OutlineRowActivation,
+  OutlineRowReveal,
 } from "@dialogram/shared";
 
 import type {
@@ -57,6 +66,14 @@ import type {
 } from "./extension/chat/slash-commands";
 
 export type { ChatCommandContribution, ChatCommandContext, ChatCommandResult };
+import type { ViewOptionChange, ViewOptionGroup, ViewOptionTurn } from "@dialogram/shared";
+export type {
+  ViewOptionChange,
+  ViewOptionGroup,
+  ViewOptionItem,
+  ViewOptionsState,
+  ViewOptionTurn,
+} from "@dialogram/shared";
 import type { AcpAgentSpec } from "./extension/acp-client";
 export type { AcpAgentSpec };
 import type { AcpConnectorConfig, AcpConnectorFiles } from "./extension/chat/acp-connectors";
@@ -285,6 +302,52 @@ export type DiagramRunDriverFactory = (
 ) => vscode.Disposable;
 
 /**
+ * The rows of the outline that are too many to send with every model, and
+ * what a click on a row that is no node of the graph does (shared
+ * `outline-pages.ts`).
+ *
+ * The outline the model source gives (`GraphDocument.hierarchy`) is sent with
+ * every model and drawn whole. A group of it marked `lazy` (with its `count`)
+ * is not: its rows stay here, in the host, and the panel asks {@link page}
+ * for the ones the reader scrolls to, a page at a time, and for the ones a
+ * filter typed in the panel finds. Only the rows on screen are in the
+ * panel's DOM, so a group of a hundred thousand scrolls as one of forty.
+ *
+ * A row with no node of the graph behind it (a lazy row without `nodeId`, an
+ * `item` row of the outline) is the product's: a click calls {@link activate}
+ * with its id. The product points the outline at a row with
+ * {@link DiagramProfileHandle.revealOutlineRow}.
+ *
+ * Plain functions, safe across the cross-extension
+ * `DialogramApi.activateDiagramProfile`. `file` is the absolute path of the
+ * file the outline is of (the editor's, whose model gave the outline).
+ */
+export interface DiagramOutline {
+  /**
+   * Rows `offset` to `offset + limit` of the lazy group `group`, under the
+   * panel's filter `query` (`''` for none; what matches is the producer's
+   * to decide, the panel only shows what comes back), and how many rows
+   * match in all. Asked as the reader opens the group and scrolls it; keep
+   * it quick, it is what scrolling waits for. A throw shows the rows as not
+   * loaded, and is logged.
+   */
+  page(file: string, request: OutlinePageRequest): OutlinePage | Promise<OutlinePage>;
+  /**
+   * Where the row `id` is among the rows of `group` under `query`, from 0,
+   * or `undefined` when it is not there. Asked to reveal a row whose place
+   * the product did not give ({@link OutlineRowReveal.index}), or with a
+   * filter typed. Without it such a row is revealed only once the pages
+   * read so far have it.
+   */
+  locate?(
+    file: string,
+    row: { group: string; id: string; query: string },
+  ): number | undefined | Promise<number | undefined>;
+  /** A click (`open: false`) or double click (`open: true`) on a row that is the product's. */
+  activate?(file: string, row: OutlineRowActivation): void | Promise<void>;
+}
+
+/**
  * Node states that come from a report rather than a run: what a product's tool
  * says about each node of the file a diagram shows (which of its requirements
  * are covered, which checks pass), painted with the run overlay's drawing.
@@ -324,6 +387,46 @@ export interface DiagramStatusSource {
 export interface DiagramStatusContext {
   /** The status source's output channel, `<display name> <label>`. */
   output: vscode.OutputChannel;
+}
+
+/**
+ * What a reader may show and hide in this product's diagrams, from the
+ * palette: checkable groups drawn under the palette's tools, in its style,
+ * each a heading that opens and closes over its lines, with All, None and
+ * Only for a long one (shared `view-options.ts`).
+ *
+ * A group is declared as data: here, once for every diagram, or by the model
+ * source with each graph (`GraphDocument.viewOptions`), which is where groups
+ * that depend on the file come from. The profile's come first.
+ *
+ * The HOST holds what the reader chose, per file, beside the file's layout
+ * (`.layout/<file>.layout.json`, `viewOptions`), so that it survives a
+ * reload and a reopen, and so that it can be read and set when no diagram is
+ * open: {@link DiagramProfileHandle.getViewOptions} and
+ * {@link DiagramProfileHandle.setViewOptions}, which is what a chat tool that
+ * shows or hides things calls. A click is in force in the webview at once:
+ * the platform dispatches `ViewOptionsChangedAction` there, which a
+ * product's client module handles to redraw without a round trip.
+ *
+ * Functions here are plain functions, safe across the cross-extension
+ * `DialogramApi.activateDiagramProfile` (no DI identity is involved; see
+ * the realm note on {@link DiagramChatConfig}).
+ */
+export interface DiagramViewOptions {
+  /** Groups every diagram of the profile offers, before the graph's own. A
+   *  graph's group with the id of one of these is left out. */
+  groups?: ViewOptionGroup[];
+  /**
+   * Told every change, from the reader or the host, once it is in force in
+   * the diagrams and kept: the file (an absolute path), every group as it
+   * stands, the lines turned and who turned them. A group marked `reload`
+   * has the model asked for again besides; this is for the rest (a status
+   * line, a chat context). A throw is logged and changes nothing.
+   */
+  onDidChange?(
+    file: string,
+    event: { groups: ViewOptionGroup[]; turns: ViewOptionTurn[]; origin: "reader" | "host" },
+  ): void;
 }
 
 /**
@@ -388,6 +491,8 @@ export interface DiagramProfile {
   edits: EditStrategy;
   /** Factory for the graph model source (core ships no implementation). */
   modelSource?: () => DiagramModelSource;
+  /** The outline's rows on demand, and its rows that are the product's; see {@link DiagramOutline}. */
+  outline?: DiagramOutline;
   /**
    * Consumer's GLSP `DiagramModule` factory — BUILD-TIME LIBRARY consumption
    * only. When supplied it REPLACES the stock diagram module on the server
@@ -540,6 +645,8 @@ export interface DiagramProfile {
   statusSource?: DiagramStatusSource;
   /** Registers the new-source-file (and any edit-backend) commands; returns their disposable. */
   newSourceFile?: (context: vscode.ExtensionContext) => vscode.Disposable;
+  /** What a reader may show and hide, in the palette; see {@link DiagramViewOptions}. */
+  viewOptions?: DiagramViewOptions;
 }
 
 /**
@@ -589,6 +696,15 @@ export interface DiagramProfileHandle extends vscode.Disposable {
     showLog(): void;
   };
   /**
+   * Show a row in the outline of every open diagram of the file at `uri` (a
+   * URI string, a `vscode.Uri` or an absolute path): its group opened, the
+   * page it is on fetched, the row selected and scrolled into view; the
+   * panel opened too with `show`. For the product's own selection (a row
+   * picked elsewhere) to be the outline's. Returns how many diagrams were
+   * told; none when no diagram of the file is open.
+   */
+  revealOutlineRow(uri: string | vscode.Uri, row: OutlineRowReveal): number;
+  /**
    * Dispatch a host→client action to the webview owning `uri`, over the ungated
    * `sendMessageToClient` overlay-bridge path — it reaches the client even for
    * kinds the client did not advertise in `clientActions`. No-op when no diagram
@@ -621,6 +737,24 @@ export interface DiagramProfileHandle extends vscode.Disposable {
     report(uri: string, progress: LoadProgress): void;
     end(uri: string): void;
   };
+  /**
+   * The view options of the file at `uri` (a URI string, a `vscode.Uri` or
+   * an absolute path) as they stand: the groups its last graph declared, or
+   * the profile's when no diagram of it has been opened yet, with the
+   * reader's choices applied. See {@link DiagramViewOptions}.
+   */
+  getViewOptions(uri: string | vscode.Uri): Promise<ViewOptionGroup[]>;
+  /**
+   * Change the view options of the file at `uri`, as the host: each change
+   * in turn (a line, `all` of a group, `only` one line), kept for the file,
+   * shown in every diagram of it and told to `viewOptions.onDidChange`. A
+   * line of a group no graph of the file has declared yet is kept, and
+   * applies when one does. Resolves to the groups as they stand.
+   */
+  setViewOptions(
+    uri: string | vscode.Uri,
+    changes: ViewOptionChange | ViewOptionChange[],
+  ): Promise<ViewOptionGroup[]>;
 }
 
 /** A `{ type, data }` message exchanged with a consumer-owned chat webview. */

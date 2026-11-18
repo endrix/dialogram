@@ -21,6 +21,17 @@
  * double-clicks, so it does what the canvas would (open its file, its first
  * view, the unit behind it). Rows carry the producer's label and detail, its
  * node family's colour and its badges.
+ *
+ * Rows are drawn only where the panel is scrolled to (`outline-rows.ts`): the
+ * rows are one height, so which ones are in view is arithmetic, and a tree of
+ * a hundred thousand rows has as many rows in the DOM as one of forty. A
+ * group may be lazy (shared `outline-pages.ts`): its rows are the host's,
+ * asked for a page at a time as it is opened and scrolled (`outline-pager.ts`),
+ * and a filter is answered by the host for them. A row with no node of the
+ * graph behind it (an `item` row, a lazy row without `nodeId`) is the
+ * product's: a click hands its id to the host. And the host can point the
+ * outline at a row: it opens the rows down to it, fetches its page, selects
+ * it and scrolls it into view.
  */
 import { inject, injectable, multiInject, optional } from 'inversify';
 import { raiseFloatingPanel, stackAsFloatingPanel } from './floating-panels';
@@ -28,27 +39,63 @@ import { findNodeIdByGraphId } from './producer-ids';
 import { EditorContextService, TYPES, type IActionDispatcher, type MouseListener } from '@eclipse-glsp/client';
 import { RequestModelAction } from '@eclipse-glsp/sprotty';
 import { CenterAction, SelectAction } from '@eclipse-glsp/protocol';
-import { WorkflowDiagramMetadata, type HierarchyOutlineEntry } from '@dialogram/shared';
+import {
+    OUTLINE_ACTIVATE_MESSAGE,
+    OUTLINE_REPLY_MESSAGE,
+    OUTLINE_REQUEST_MESSAGE,
+    OUTLINE_REVEAL_MESSAGE,
+    WorkflowDiagramMetadata,
+    type HierarchyOutlineEntry,
+    type OutlinePageRow,
+    type OutlineReplyPayload,
+    type OutlineRowReveal
+} from '@dialogram/shared';
 import { navigatesInPlace } from './navigation-ui';
 import { clientBehavior } from './profile';
+import { VscodeUi } from './vscode-ui';
 import {
     foreignFileName,
-    outlineMatches,
+    itemId,
     pathOfTrail,
-    rowDetail,
     rowId,
     rowIdsTo,
     rowLabel,
+    rowMeta,
+    shownDetail,
     trailTo
 } from './hierarchy-outline-tree';
+import {
+    entryPath,
+    indexOfEntry,
+    indexOfPaged,
+    lazyGroupPath,
+    layOutOutline,
+    OUTLINE_ROW_HEIGHT,
+    rowTop,
+    scrollGeometry,
+    scrollTopFor,
+    slotAt,
+    visibleRows,
+    type OutlineLayout,
+    type OutlineSlot
+} from './outline-rows';
+import { OutlinePager } from './outline-pager';
 
 const PANEL_ID = 'workflow-hierarchy-outline';
 const BODY_ID = 'workflow-hierarchy-outline-body';
 const SEARCH_ID = 'workflow-hierarchy-outline-search';
 const TOGGLE_ID = 'workflow-hierarchy-outline-toggle';
 const OPEN_STORAGE_KEY = 'dialogram.hierarchyOutline.open';
+/** The class of a row's family colour, an existing class of the stylesheet. */
+const FAMILY_COLOR_CLASS = 'workflow-hierarchy-outline-chip';
 /** How long a click waits to find out it was the first half of a double click. */
 const DOUBLE_CLICK_GRACE_MS = 220;
+/** How long typing waits before a filter goes to the host, for an outline with lazy groups. */
+const HOST_FILTER_DELAY_MS = 150;
+/** How long the panel waits for the host's answer before it shows the rows as not loaded. */
+const HOST_ANSWER_TIMEOUT_MS = 30_000;
+/** The panel's height when it cannot be measured (it is laid out as it opens). */
+const UNMEASURED_VIEW_PX = 400;
 
 function storedOpen(): boolean {
     try {
@@ -66,6 +113,23 @@ function storeOpen(open: boolean): void {
     }
 }
 
+/** Whether the outline has a group whose rows are the host's. */
+function hasLazyGroup(entry: HierarchyOutlineEntry): boolean {
+    return entry.lazy !== undefined || entry.children.some(hasLazyGroup);
+}
+
+/** The key of the row selected: a row of the outline by its id, a lazy group's row by group and id. */
+function entryKey(entry: HierarchyOutlineEntry): string {
+    return `e\u0000${rowId(entry)}`;
+}
+
+function pagedKey(group: string, id: string): string {
+    return `p\u0000${group}\u0000${id}`;
+}
+
+/** Where the panel is to scroll to once it is drawn. */
+type ScrollTarget = { entry: HierarchyOutlineEntry } | { group: HierarchyOutlineEntry; position: number };
+
 @injectable()
 export class HierarchyOutlinePanel {
     @inject(TYPES.IActionDispatcher) protected readonly dispatcher!: IActionDispatcher;
@@ -76,18 +140,38 @@ export class HierarchyOutlinePanel {
     private outline: HierarchyOutlineEntry | undefined;
     private renderedJson: string | undefined;
     private readonly expanded = new Set<string>(['']);
+    /** The filter, lower-cased, for the rows the webview has. */
     private query = '';
+    /** The filter as typed, trimmed, for the rows the host has. */
+    private hostQuery = '';
     private open = storedOpen();
     private currentPath: string[] = [];
     private root: unknown;
     private wired = false;
+    private listening = false;
     private clickTimer: ReturnType<typeof setTimeout> | undefined;
+    private filterTimer: ReturnType<typeof setTimeout> | undefined;
     /** What to select once the view containing it has loaded, and whether to open it. */
     private pendingFocus: Focus | undefined;
-    /** The entry behind each rendered row, by row id: group rows have no path to look up. */
-    private readonly rowEntries = new Map<string, HierarchyOutlineEntry>();
+    /** A row the host asked to show before there was an outline to show it in. */
+    private pendingReveal: OutlineRowReveal | undefined;
+    private layout: OutlineLayout = { segments: [], total: 0 };
+    private layoutStale = true;
+    private drawQueued = false;
+    private selected: string | undefined;
+    private scrollTarget: ScrollTarget | undefined;
+    private requestCount = 0;
+    private readonly replies = new Map<string, (reply: OutlineReplyPayload) => void>();
+    private readonly pager = new OutlinePager(
+        {
+            page: (group, offset, limit, query) => this.ask({ op: 'page', group, offset, limit, query }),
+            locate: (group, id, query) => this.ask({ op: 'locate', group, id, query })
+        },
+        () => this.relayout()
+    );
 
     modelRootChanged(root: unknown): void {
+        this.listen();
         this.root = root;
         const raw = (root as { args?: Record<string, unknown> })?.args?.['wf:hierarchy'];
         if (!navigatesInPlace() || typeof raw !== 'string') {
@@ -102,16 +186,27 @@ export class HierarchyOutlinePanel {
                 this.setAvailable(false);
                 return;
             }
+            // Another outline: the host's rows of the one before are not its rows.
+            this.pager.reset();
+            this.layoutStale = true;
         }
         // The trail the server echoes on the root: this view's own, whichever
         // listener the model reaches first.
         this.currentPath = pathOfTrail(trailOfRoot(root));
         for (const id of this.outline ? rowIdsTo(this.outline, this.currentPath) : []) {
-            this.expanded.add(id);
+            if (!this.expanded.has(id)) {
+                this.expanded.add(id);
+                this.layoutStale = true;
+            }
         }
         this.setAvailable(true);
         this.resolvePendingFocus();
         this.render();
+        const reveal = this.pendingReveal;
+        if (reveal) {
+            this.pendingReveal = undefined;
+            void this.reveal(reveal);
+        }
     }
 
     // ── Chrome ──────────────────────────────────────────────────────────
@@ -135,7 +230,9 @@ export class HierarchyOutlinePanel {
                 </div>
                 <input id="${SEARCH_ID}" class="workflow-hierarchy-outline-search" type="text"
                        placeholder="Filter…" aria-label="Filter the ${title.toLowerCase()}" spellcheck="false" />
-                <div id="${BODY_ID}" class="workflow-hierarchy-outline-body" role="tree"></div>
+                <div id="${BODY_ID}" class="workflow-hierarchy-outline-body" role="tree">
+                    <div class="workflow-hierarchy-outline-spacer"></div>
+                </div>
             </aside>
             <button id="${TOGGLE_ID}" class="workflow-fab-btn workflow-hierarchy-outline-toggle floating" type="button"
                     title="${title} (O)" aria-label="Toggle the ${title.toLowerCase()}" hidden>
@@ -161,16 +258,43 @@ export class HierarchyOutlinePanel {
         panel?.querySelector('[data-action="collapse"]')?.addEventListener('click', () => {
             this.expanded.clear();
             this.expanded.add('');
+            this.layoutStale = true;
+            const body = document.getElementById(BODY_ID);
+            if (body) {
+                body.scrollTop = 0;
+            }
             this.render();
         });
         document.getElementById(SEARCH_ID)?.addEventListener('input', event => {
-            this.query = (event.target as HTMLInputElement).value.trim().toLowerCase();
-            this.render();
+            const typed = (event.target as HTMLInputElement).value.trim();
+            if (this.filterTimer) {
+                clearTimeout(this.filterTimer);
+                this.filterTimer = undefined;
+            }
+            // Rows the host has are filtered there: a keystroke at a time would
+            // be a request at a time.
+            if (this.outline && hasLazyGroup(this.outline)) {
+                this.filterTimer = setTimeout(() => {
+                    this.filterTimer = undefined;
+                    this.setFilter(typed);
+                }, HOST_FILTER_DELAY_MS);
+            } else {
+                this.setFilter(typed);
+            }
         });
         const body = document.getElementById(BODY_ID);
         body?.addEventListener('click', event => this.onRowClick(event, false));
         body?.addEventListener('dblclick', event => this.onRowClick(event, true));
-        window.addEventListener('resize', () => this.placeNearButton());
+        body?.addEventListener('scroll', () => this.queueDraw(), { passive: true });
+        // The body changes size with no scroll (the panel placed again, its
+        // limit changed): the rows in view are drawn again.
+        if (body && typeof ResizeObserver === 'function') {
+            new ResizeObserver(() => this.queueDraw()).observe(body);
+        }
+        window.addEventListener('resize', () => {
+            this.placeNearButton();
+            this.queueDraw();
+        });
         document.addEventListener('keydown', event => {
             const target = event.target as HTMLElement | null;
             const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
@@ -180,6 +304,38 @@ export class HierarchyOutlinePanel {
                 this.setOpen(!this.open);
             }
         });
+    }
+
+    /** The host's answers, and its "show this row". */
+    private listen(): void {
+        if (this.listening || typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
+            return;
+        }
+        this.listening = true;
+        window.addEventListener('message', (event: MessageEvent) => {
+            const message = event.data as { type?: unknown; payload?: unknown } | undefined;
+            if (message?.type === OUTLINE_REPLY_MESSAGE) {
+                const reply = message.payload as OutlineReplyPayload | undefined;
+                const answer = reply ? this.replies.get(reply.requestId) : undefined;
+                if (reply && answer) {
+                    this.replies.delete(reply.requestId);
+                    answer(reply);
+                }
+            } else if (message?.type === OUTLINE_REVEAL_MESSAGE && message.payload && typeof message.payload === 'object') {
+                void this.reveal(message.payload as OutlineRowReveal);
+            }
+        });
+    }
+
+    private setFilter(typed: string): void {
+        this.hostQuery = typed;
+        this.query = typed.toLowerCase();
+        this.layoutStale = true;
+        const body = document.getElementById(BODY_ID);
+        if (body) {
+            body.scrollTop = 0;
+        }
+        this.render();
     }
 
     private setAvailable(available: boolean): void {
@@ -229,46 +385,143 @@ export class HierarchyOutlinePanel {
         if (rect.width === 0 && rect.height === 0) {
             return;
         }
-        const place = panelPlacement(rect, { width: window.innerWidth, height: window.innerHeight });
+        // The canvas, not the window: a docked property panel takes part of the window.
+        const canvas = document.querySelector<HTMLElement>('.sprotty-container')?.getBoundingClientRect();
+        const place = panelPlacement(
+            rect,
+            { width: window.innerWidth, height: window.innerHeight },
+            canvas && canvas.width > 0 ? { left: canvas.left, width: canvas.width } : undefined
+        );
         panel.style.right = `${place.right}px`;
         panel.style.bottom = `${place.bottom}px`;
         panel.style.maxHeight = `${place.maxHeight}px`;
+        if (place.width !== undefined) {
+            panel.style.width = `${place.width}px`;
+        }
     }
 
     // ── Rows ────────────────────────────────────────────────────────────
 
+    /** Lay the rows out again (the host said how many a group has, or sent a page), and draw. */
+    private relayout(): void {
+        this.layoutStale = true;
+        this.queueDraw();
+    }
+
+    private queueDraw(): void {
+        if (this.drawQueued) {
+            return;
+        }
+        this.drawQueued = true;
+        const run = (): void => {
+            this.drawQueued = false;
+            this.render();
+        };
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(run);
+        } else {
+            setTimeout(run, 0);
+        }
+    }
+
+    /** Draw the rows in view, and ask the host for the pages they are on. */
     private render(): void {
         const body = document.getElementById(BODY_ID);
         if (!body || !this.outline || !this.open) {
             return;
         }
-        this.rowEntries.clear();
-        body.replaceChildren(...this.renderRows(this.outline, 0));
+        if (this.layoutStale) {
+            this.layoutStale = false;
+            this.layout = layOutOutline(this.outline, {
+                expanded: this.expanded,
+                query: this.query,
+                lazyTotal: group => this.pager.total(group.lazy!.id, this.hostQuery)
+            });
+        }
+        const total = this.layout.total;
+        let spacer = body.querySelector<HTMLElement>(':scope > .workflow-hierarchy-outline-spacer');
+        if (!spacer) {
+            spacer = document.createElement('div');
+            spacer.className = 'workflow-hierarchy-outline-spacer';
+            body.prepend(spacer);
+        }
+        // The spacer's height does not depend on the view, and the body grows
+        // with it up to the panel's limit: the view is measured once it is set.
+        spacer.style.height = `${scrollGeometry(total, OUTLINE_ROW_HEIGHT, 0).height}px`;
+        const view = body.clientHeight > 0 ? body.clientHeight : UNMEASURED_VIEW_PX;
+
+        const target = this.scrollTarget;
+        if (target) {
+            const index = 'entry' in target
+                ? indexOfEntry(this.layout, target.entry)
+                : indexOfPaged(this.layout, target.group, target.position);
+            if (index >= 0) {
+                this.scrollTarget = undefined;
+                body.scrollTop = scrollTopFor(index, body.scrollTop, view, OUTLINE_ROW_HEIGHT, total);
+            }
+        }
+
+        const { first, last, offset } = visibleRows(body.scrollTop, view, OUTLINE_ROW_HEIGHT, total);
+        const rows: HTMLElement[] = [spacer];
+        const shown = new Map<string, { group: string; query: string; from: number; to: number }>();
+        for (let index = first; index <= last; index++) {
+            const slot = slotAt(this.layout, index);
+            if (!slot) {
+                break;
+            }
+            const row = slot.kind === 'entry' ? this.entryRow(slot) : this.pagedRow(slot);
+            row.dataset.index = String(index);
+            row.style.top = `${rowTop(index, body.scrollTop, offset, OUTLINE_ROW_HEIGHT)}px`;
+            rows.push(row);
+            if (slot.kind === 'paged') {
+                const group = slot.group.lazy!.id;
+                const range = shown.get(group);
+                shown.set(group, range
+                    ? { ...range, to: slot.position }
+                    : { group, query: this.hostQuery, from: slot.position, to: slot.position });
+            }
+        }
+        body.replaceChildren(...rows);
+        this.pager.want([...shown.values()]);
     }
 
-    private renderRows(entry: HierarchyOutlineEntry, depth: number): HTMLElement[] {
-        if (!outlineMatches(entry, this.query)) {
-            return [];
-        }
-        const id = rowId(entry);
-        this.rowEntries.set(id, entry);
-        // A filter opens every row with a match beneath it.
-        const isOpen = this.query !== '' || this.expanded.has(id);
+    private rowShell(depth: number, key: string): HTMLElement {
         const row = document.createElement('div');
         row.className = 'workflow-hierarchy-outline-row';
-        row.dataset.rowId = id;
         row.setAttribute('role', 'treeitem');
         row.style.paddingLeft = `${6 + depth * 14}px`;
-        row.classList.toggle('current', entry.role !== 'group' && entry.role !== 'node' && id === this.currentPath.join('/'));
+        if (key === this.selected) {
+            row.classList.add('selected');
+            row.setAttribute('aria-selected', 'true');
+        }
+        return row;
+    }
+
+    private entryRow(slot: Extract<OutlineSlot, { kind: 'entry' }>): HTMLElement {
+        const entry = slot.entry;
+        const id = rowId(entry);
+        // A filter opens every row with a match beneath it.
+        const isOpen = this.query !== '' || this.expanded.has(id);
+        const row = this.rowShell(slot.depth, entryKey(entry));
+        row.dataset.rowId = id;
+        const view = entry.role !== 'group' && entry.role !== 'node' && entry.role !== 'item';
+        row.classList.toggle('current', view && id === this.currentPath.join('/'));
         if (entry.role) {
             row.classList.add(`role-${entry.role}`);
         }
 
         const twisty = document.createElement('span');
         twisty.className = 'workflow-hierarchy-outline-twisty codicon';
-        if (entry.children.length > 0) {
+        // A closed lazy group is not asked for its rows; an open one, or one
+        // under a filter, has been by the layout.
+        const lazyTotal = entry.lazy ? this.pager.known(entry.lazy.id, this.hostQuery) : undefined;
+        const opens = entry.lazy
+            ? (this.query === '' ? (entry.count ?? lazyTotal ?? 1) : (lazyTotal ?? 1)) > 0
+            : entry.children.length > 0;
+        if (opens) {
             twisty.classList.add(isOpen ? 'codicon-chevron-down' : 'codicon-chevron-right');
             twisty.dataset.toggle = id;
+            row.setAttribute('aria-expanded', String(isOpen));
         }
         row.appendChild(twisty);
 
@@ -285,19 +538,14 @@ export class HierarchyOutlinePanel {
         label.textContent = rowLabel(entry);
         row.appendChild(label);
 
-        const detail = rowDetail(entry);
+        const detail = shownDetail(entry);
         if (detail) {
             const type = document.createElement('span');
             type.className = 'workflow-hierarchy-outline-type';
             type.textContent = detail;
             row.appendChild(type);
         }
-        for (const badge of entry.badges ?? []) {
-            const mark = document.createElement('span');
-            mark.className = `workflow-hierarchy-outline-badge badge-tone-${/^[a-z]+$/.test(badge.tone ?? '') ? badge.tone : 'neutral'}`;
-            mark.textContent = badge.text;
-            row.appendChild(mark);
-        }
+        appendBadges(row, entry.badges);
         // A row the producer labels says what it is; the file chip is for an
         // instance known only by name.
         const file = entry.role || entry.label ? undefined : foreignFileName(entry, this.outline?.sourceUri);
@@ -307,69 +555,102 @@ export class HierarchyOutlinePanel {
             chip.textContent = file;
             row.appendChild(chip);
         }
+        // A lazy group says how many rows the host found (under the filter,
+        // if there is one), and before it has said, the count it was given.
+        const said = rowMeta(entry, lazyTotal);
         const meta = document.createElement('span');
         meta.className = 'workflow-hierarchy-outline-meta';
-        if (entry.error) {
-            meta.classList.add('error');
-            meta.textContent = 'error';
-            row.title = entry.error;
-        } else if (entry.truncated) {
-            meta.textContent = '…';
-            row.title = 'Not expanded: it nests itself, or is too deep';
-        } else if (entry.role === 'group') {
-            meta.textContent = String(entry.children.length);
-        } else if (entry.role !== 'node') {
-            const nested = entry.children.filter(child => child.role !== 'node' && child.role !== 'group').length;
-            const parts = [
-                typeof entry.nodeCount === 'number' ? `${entry.nodeCount} nodes` : undefined,
-                nested > 0 ? `${nested} nested` : undefined
-            ].filter(Boolean);
-            meta.textContent = parts.join(' · ');
+        meta.classList.toggle('error', said.error === true);
+        meta.textContent = said.text;
+        if (said.title) {
+            row.title = said.title;
         }
         row.appendChild(meta);
+        return row;
+    }
 
-        const rows: HTMLElement[] = [row];
-        if (isOpen) {
-            for (const child of entry.children) {
-                rows.push(...this.renderRows(child, depth + 1));
+    private pagedRow(slot: Extract<OutlineSlot, { kind: 'paged' }>): HTMLElement {
+        const group = slot.group.lazy!.id;
+        const found = this.pager.row(group, this.hostQuery, slot.position);
+        const row = this.rowShell(slot.depth, found ? pagedKey(group, found.id) : '');
+        row.classList.add('paged');
+        const twisty = document.createElement('span');
+        twisty.className = 'workflow-hierarchy-outline-twisty';
+        row.appendChild(twisty);
+        const label = document.createElement('span');
+        label.className = 'workflow-hierarchy-outline-label';
+        row.appendChild(label);
+        if (!found) {
+            const failure = this.pager.failure(group, this.hostQuery, slot.position);
+            row.classList.add(failure ? 'failed' : 'loading');
+            label.textContent = failure ? 'Not loaded' : 'Loading…';
+            if (failure) {
+                row.title = failure;
             }
+            return row;
         }
-        return rows;
+        row.dataset.itemId = found.id;
+        row.classList.add(found.nodeId ? 'role-node' : 'role-item');
+        const color = found.family ? familyColor(found.family) : undefined;
+        if (color) {
+            // The family's colour, drawn as the outline's own rows draw it.
+            const swatch = document.createElement('span');
+            swatch.className = FAMILY_COLOR_CLASS;
+            swatch.style.background = color;
+            row.insertBefore(swatch, label);
+        }
+        label.textContent = found.label;
+        if (found.detail) {
+            const type = document.createElement('span');
+            type.className = 'workflow-hierarchy-outline-type';
+            type.textContent = found.detail;
+            row.appendChild(type);
+        }
+        appendBadges(row, found.badges);
+        return row;
     }
 
     private onRowClick(event: MouseEvent, isDouble: boolean): void {
         const target = event.target as HTMLElement;
         const toggle = target.closest<HTMLElement>('[data-toggle]');
         if (toggle && !isDouble) {
-            const id = toggle.dataset.toggle!;
-            if (this.expanded.has(id)) {
-                this.expanded.delete(id);
-            } else {
-                this.expanded.add(id);
-            }
-            this.render();
+            this.toggle(toggle.dataset.toggle!);
             return;
         }
         const row = target.closest<HTMLElement>('.workflow-hierarchy-outline-row');
-        const entry = row ? this.rowEntries.get(row.dataset.rowId ?? '') : undefined;
-        if (!entry) {
+        const slot = row?.dataset.index !== undefined ? slotAt(this.layout, Number(row.dataset.index)) : undefined;
+        if (!slot) {
             return;
         }
         if (this.clickTimer) {
             clearTimeout(this.clickTimer);
             this.clickTimer = undefined;
         }
-        const act = (double: boolean): void => {
-            if (entry.role === 'group') {
-                this.toggle(rowId(entry));
-            } else if (entry.role === 'node') {
-                this.focusNode(entry, double);
-            } else if (double) {
-                this.openView(entry.path);
-            } else {
-                this.look(entry);
+        let act: (double: boolean) => void;
+        if (slot.kind === 'paged') {
+            const group = slot.group.lazy!.id;
+            const found = this.pager.row(group, this.hostQuery, slot.position);
+            if (!found) {
+                return;
             }
-        };
+            act = double => this.actOnPaged(group, found, slot.viewPath, double);
+        } else {
+            const entry = slot.entry;
+            act = double => {
+                if (entry.role === 'group') {
+                    this.toggle(rowId(entry));
+                } else if (entry.role === 'node') {
+                    this.focusNode(entry, double);
+                } else if (entry.role === 'item') {
+                    this.select(entryKey(entry));
+                    this.activate(itemId(entry), undefined, double);
+                } else if (double) {
+                    this.openView(entry.path);
+                } else {
+                    this.look(entry);
+                }
+            };
+        }
         if (isDouble) {
             act(true);
             return;
@@ -380,13 +661,149 @@ export class HierarchyOutlinePanel {
         }, DOUBLE_CLICK_GRACE_MS);
     }
 
+    /** A lazy group's row: find its node, as a node row does, or hand it to the product. */
+    private actOnPaged(group: string, row: OutlinePageRow, viewPath: string[], double: boolean): void {
+        this.select(pagedKey(group, row.id));
+        if (row.nodeId) {
+            this.focus(viewPath, { nodeId: row.nodeId, open: double });
+        } else {
+            this.activate(row.id, group, double);
+        }
+    }
+
+    private select(key: string): void {
+        this.selected = key;
+        this.render();
+    }
+
+    /** Hand a row that is the product's to the host, which calls the profile's `outline.activate`. */
+    private activate(id: string, group: string | undefined, open: boolean): void {
+        this.postToHost({
+            type: OUTLINE_ACTIVATE_MESSAGE,
+            payload: { sourceUri: this.outlineSource(), id, ...(group ? { group } : {}), open }
+        });
+    }
+
     private toggle(id: string): void {
         if (this.expanded.has(id)) {
             this.expanded.delete(id);
         } else {
             this.expanded.add(id);
         }
+        this.layoutStale = true;
         this.render();
+    }
+
+    // ── The host's rows ─────────────────────────────────────────────────
+
+    /** The file the outline is of: what the host's rows are asked of. */
+    private outlineSource(): string {
+        return this.outline?.sourceUri ?? this.editorContext?.sourceUri ?? '';
+    }
+
+    /** What goes to the host; a test overrides it. */
+    protected postToHost(message: unknown): boolean {
+        return VscodeUi.instance.post(message);
+    }
+
+    /** Ask the host, and wait for its answer, or for long enough to say there is none. */
+    private ask(body: Record<string, unknown>): Promise<OutlineReplyPayload> {
+        const requestId = `outline-${++this.requestCount}-${Date.now()}`;
+        return new Promise(resolve => {
+            const timer = setTimeout(() => {
+                this.replies.delete(requestId);
+                resolve({ requestId, error: 'The host did not answer.' });
+            }, HOST_ANSWER_TIMEOUT_MS);
+            this.replies.set(requestId, reply => {
+                clearTimeout(timer);
+                resolve(reply);
+            });
+            const sent = this.postToHost({
+                type: OUTLINE_REQUEST_MESSAGE,
+                payload: { requestId, sourceUri: this.outlineSource(), ...body }
+            });
+            if (!sent) {
+                clearTimeout(timer);
+                this.replies.delete(requestId);
+                resolve({ requestId, error: 'No host to ask.' });
+            }
+        });
+    }
+
+    /**
+     * Show the row the host names: open the rows down to it, fetch the page
+     * it is on, select it and scroll it into view. A filter that hides it is
+     * cleared. A closed panel shows it when it is opened, or now with `show`.
+     */
+    async reveal(target: OutlineRowReveal): Promise<void> {
+        if (!target || typeof target.id !== 'string') {
+            return;
+        }
+        if (!this.outline) {
+            this.pendingReveal = target;
+            return;
+        }
+        if (target.show && !this.open) {
+            this.setOpen(true);
+        }
+        if (target.group) {
+            const path = lazyGroupPath(this.outline, target.group);
+            const group = path[path.length - 1];
+            if (!group) {
+                return;
+            }
+            for (const entry of path) {
+                this.expanded.add(rowId(entry));
+            }
+            let position = this.hostQuery === '' && Number.isInteger(target.index)
+                ? target.index
+                : await this.pager.locate(target.group, target.id, this.hostQuery);
+            if (position === undefined && this.hostQuery !== '') {
+                this.clearFilter();
+                position = Number.isInteger(target.index) ? target.index : await this.pager.locate(target.group, target.id, '');
+            }
+            if (position === undefined || position < 0) {
+                this.layoutStale = true;
+                this.render();
+                return;
+            }
+            await this.pager.rowAt(target.group, this.hostQuery, position);
+            this.selected = pagedKey(target.group, target.id);
+            this.scrollTarget = { group, position };
+        } else {
+            const path = entryPath(this.outline, target.id);
+            const entry = path[path.length - 1];
+            if (!entry) {
+                return;
+            }
+            for (const above of path.slice(0, -1)) {
+                this.expanded.add(rowId(above));
+            }
+            this.selected = entryKey(entry);
+            this.scrollTarget = { entry };
+            this.layoutStale = true;
+            this.render();
+            if (this.open && this.scrollTarget && this.query !== '') {
+                // Still not placed: the filter hides it.
+                this.clearFilter();
+            }
+        }
+        this.layoutStale = true;
+        this.render();
+    }
+
+    private clearFilter(): void {
+        const input = document.getElementById(SEARCH_ID) as HTMLInputElement | null;
+        if (input) {
+            input.value = '';
+        }
+        if (this.filterTimer) {
+            clearTimeout(this.filterTimer);
+            this.filterTimer = undefined;
+        }
+        this.hostQuery = '';
+        this.query = '';
+        this.layoutStale = true;
     }
 
     // ── Navigation ──────────────────────────────────────────────────────
@@ -498,23 +915,49 @@ function familyColor(family: string): string | undefined {
     return spec && /^#[0-9a-fA-F]{3,8}$|^[a-z]+$/.test(spec.color) ? spec.color : undefined;
 }
 
+/** A row's badges, after its label. */
+function appendBadges(row: HTMLElement, badges: Array<{ text: string; tone?: string }> | undefined): void {
+    for (const badge of badges ?? []) {
+        const mark = document.createElement('span');
+        mark.className = `workflow-hierarchy-outline-badge badge-tone-${/^[a-z]+$/.test(badge.tone ?? '') ? badge.tone : 'neutral'}`;
+        mark.textContent = badge.text;
+        row.appendChild(mark);
+    }
+}
+
 /** Space between the button and the panel, and kept from the window's top edge. */
 const PANEL_GAP_PX = 8;
+
+/** The widest the panel is, px, and the narrowest it is made to fit a narrow canvas. */
+const PANEL_MAX_WIDTH_PX = 380;
+const PANEL_MIN_WIDTH_PX = 180;
 
 /**
  * Where the panel opens: just left of its button, bottom-aligned with it, and
  * growing upward -- as tall as the room above the button allows. In the
  * coordinates `position: fixed` takes (`right`/`bottom` from the window edges).
+ *
+ * Given the canvas (what is left of the window beside a docked property
+ * panel), it is at most half as wide as the canvas and no wider than the
+ * canvas left of the button: measured against the window, a narrow editor
+ * with the property panel docked had the outline cover the canvas.
  */
 export function panelPlacement(
     button: { left: number; bottom: number },
-    window: { width: number; height: number }
-): { right: number; bottom: number; maxHeight: number } {
-    return {
+    window: { width: number; height: number },
+    canvas?: { left: number; width: number }
+): { right: number; bottom: number; maxHeight: number; width?: number } {
+    const place = {
         right: Math.max(PANEL_GAP_PX, window.width - button.left + PANEL_GAP_PX),
         bottom: Math.max(PANEL_GAP_PX, window.height - button.bottom),
         maxHeight: Math.max(160, button.bottom - PANEL_GAP_PX * 2)
     };
+    if (!canvas) {
+        return place;
+    }
+    const roomLeftOfButton = button.left - canvas.left - PANEL_GAP_PX * 2;
+    const width = Math.min(PANEL_MAX_WIDTH_PX, canvas.width / 2, roomLeftOfButton);
+    return { ...place, width: Math.round(Math.max(PANEL_MIN_WIDTH_PX, width)) };
 }
 
 /**

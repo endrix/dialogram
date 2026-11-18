@@ -10,12 +10,25 @@ import { RequestModelAction } from '@eclipse-glsp/protocol';
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import { statSync } from 'node:fs';
-import { LOADING_MESSAGE_TYPE, RevealNodeAction, WORKFLOW_DIAGRAM_TYPE, normalizeLoadProgress, type LoadProgress, type LoadingMessage, type LoadingUpdate } from '@dialogram/shared';
+import {
+    LOADING_MESSAGE_TYPE,
+    OUTLINE_ACTIVATE_MESSAGE,
+    OUTLINE_REQUEST_MESSAGE,
+    RevealNodeAction,
+    VIEW_OPTIONS_CHANGED_MESSAGE,
+    WORKFLOW_DIAGRAM_TYPE,
+    normalizeLoadProgress,
+    type LoadProgress,
+    type LoadingMessage,
+    type LoadingUpdate
+} from '@dialogram/shared';
 import { type DiagramClientBehavior, type DiagramProfile, type DiagramWatchAffects, type RevealRangeOptions } from '../../api';
 import { listAcpConnectors, workspaceDirFor } from '../chat/acp-connectors';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
 import { matchesSourceExtension, sourceWatchGlobs } from './source-extensions';
 import { inPlace, openColumnFor } from './open-in-place';
+import type { OutlineHost } from './outline-host';
+import type { ViewOptionsHost } from './view-options-host';
 
 const RUN_ID_ARG = 'wf:runId';
 
@@ -124,6 +137,12 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     private uriToLiveOverlaySignature = new Map<string, string | undefined>();
 
     /**
+     * Where the outline's requests for rows, and its clicks on rows that are
+     * the product's, go (outline-host.ts); set by the activation.
+     */
+    outlineHost?: Pick<OutlineHost, 'onWebviewRequest' | 'onWebviewActivate'>;
+
+    /**
      * Fires with a document's URI string each time a webview (re)registers for it
      * (initial open and every reopen). The host wires this to drain the
      * execution-overlay replay buffer through the bridge so a webview reopened
@@ -148,6 +167,13 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     private liveOverlayWatch?: (sourceUri: vscode.Uri) => { dispose(): void };
     private liveOverlaySignatureSubscription?: { dispose(): void };
     private readonly uriToLiveOverlayWatch = new Map<string, { dispose(): void }>();
+
+    /**
+     * Where the reader's view-option changes go (view-options-host.ts): set
+     * by the activation, which makes the host before the server, and the
+     * provider after.
+     */
+    viewOptionsHost?: Pick<ViewOptionsHost, 'onWebviewChange'>;
 
     /**
      * Debounce timers for live document change updates.
@@ -372,6 +398,25 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
                     return;
                 }
 
+                // The outline asks for rows of a lazy group, or where one is:
+                // answered to this editor only, which is the one scrolling (a
+                // file's other editor scrolls its own list), and to nothing
+                // when it has closed while the producer was answering.
+                if (message?.type === OUTLINE_REQUEST_MESSAGE) {
+                    if (this.outlineHost) {
+                        await this.outlineHost.onWebviewRequest(message.payload, reply => {
+                            this.postToClient(clientId, reply);
+                        });
+                    }
+                    return;
+                }
+
+                // A row of the outline that is the product's was clicked.
+                if (message?.type === OUTLINE_ACTIVATE_MESSAGE) {
+                    await this.outlineHost?.onWebviewActivate(message.payload);
+                    return;
+                }
+
                 if (message?.type === 'dialogram.svg.failed') {
                     const reason = message.payload?.reason as string | undefined;
                     void vscode.window.showWarningMessage(`Could not export the diagram as SVG${reason ? `: ${reason}` : '.'}`);
@@ -489,6 +534,16 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
                             payload: { requestId, result: { error: msg } }
                         });
                     }
+                    return;
+                }
+
+                // The reader changed what is shown, in the palette: the host
+                // keeps it for the file, tells the product, and tells the
+                // file's other diagrams. Named by this editor's client, not
+                // its file: a second editor of the same file is one of the
+                // others, and has to hear it.
+                if (message?.type === VIEW_OPTIONS_CHANGED_MESSAGE) {
+                    await this.viewOptionsHost?.onWebviewChange(clientId, message.payload);
                     return;
                 }
 
@@ -844,6 +899,16 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      */
     editorsOf(uri: vscode.Uri | string): string[] {
         return [...new Set(this.editorsShowing(uri).map(editor => editor.documentKey))];
+    }
+
+    /**
+     * The clients of the editors {@link editorsOf} names, each editor once: for
+     * what each diagram of a file is told on its own (a view option another
+     * editor turned, a row of its outline to show), which a file's second
+     * editor must hear as well, and the one it came from need not.
+     */
+    clientIdsShowing(uri: vscode.Uri | string): string[] {
+        return this.editorsShowing(uri).map(editor => editor.clientId);
     }
 
     /** The editors {@link editorsOf} names, each one: a file can have two. */

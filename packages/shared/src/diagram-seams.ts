@@ -1,4 +1,5 @@
 import type { LoadProgress } from './loading';
+import type { ViewOptionGroup, ViewOptionsState } from './view-options';
 
 /** Neutral, pre-normalized diagnostic a model source attaches to its GraphDocument. */
 export interface GraphDiagnostic {
@@ -87,6 +88,14 @@ export interface GraphDocument {
      * shows to navigate it. Published on the root model as `wf:hierarchy`.
      */
     hierarchy?: HierarchyOutlineEntry;
+    /**
+     * What a reader may show and hide in this graph's view, as checkable
+     * groups the palette draws under its tools (`view-options.ts`). The
+     * profile's own groups (`DiagramProfile.viewOptions.groups`) come first.
+     * Published on the root model as `wf:viewOptions`, with the reader's
+     * choices for the file applied.
+     */
+    viewOptions?: ViewOptionGroup[];
 }
 
 /**
@@ -116,9 +125,36 @@ export interface HierarchyOutlineEntry {
      * children's paths are written as if it were not there, and its own path
      * only has to be unique. `node`: a node inside the view of the row above
      * (`nodeId`), not a view; a click finds it, a double click does what a
-     * double click on that node does.
+     * double click on that node does. `item`: something of the product's
+     * that is neither a view nor a node of the graph (a file, a record): a
+     * click hands its {@link id} to the product (`DiagramProfile.outline.activate`),
+     * which selects and reveals it in its own way.
      */
-    role?: 'view' | 'group' | 'node';
+    role?: 'view' | 'group' | 'node' | 'item';
+    /** The product's id for an `item` row, handed back when it is clicked or named in a reveal; its path joined by `/` otherwise. */
+    id?: string;
+    /**
+     * How many rows a group holds, when that is not what `children` says:
+     * the size of a `lazy` group, or of a list the producer cut short
+     * (`truncated`, "200 of 268"). Shown as the group's count, once.
+     */
+    count?: number;
+    /**
+     * The group's rows are the host's, a page at a time, as the group is
+     * opened and scrolled (shared `outline-pages.ts`), and a filter typed in
+     * the panel is answered there for them. `id` names the group to the host
+     * (`DiagramProfile.outline.page`); `count` is how many rows it has;
+     * `children` stays empty. Pages already shown are asked for again when
+     * the outline changes: change `version` when the rows do and nothing
+     * else in the outline does.
+     */
+    lazy?: { id: string; version?: string | number };
+    /**
+     * What the row's count counts, in the producer's words for one and for
+     * more: a view's nodes (`nodeCount`, "1 node, 3 nodes" when unsaid), a
+     * group's rows (a bare number when unsaid).
+     */
+    countNoun?: { one: string; other: string };
     /** What the row says, instead of its last path segment. */
     label?: string;
     /** Said after the label, dimmed: a title for an id, an id for a title. */
@@ -160,6 +196,14 @@ export interface ModelSourceOptions {
      * `options.signal?.aborted`.
      */
     signal?: AbortSignal;
+    /**
+     * What the reader chose of the file's view options, by group and item
+     * (`view-options.ts`): an item not named is as the producer declares it.
+     * For a group the producer applies itself (`reload`), which leaves
+     * things out of the graph rather than hiding them in the view. Absent
+     * when nothing was chosen.
+     */
+    viewOptions?: ViewOptionsState;
 }
 
 /** v2 seam: how a diagram gets its graph. Core ships NO implementation. */

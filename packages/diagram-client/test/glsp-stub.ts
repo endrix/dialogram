@@ -175,13 +175,46 @@ export const UpdateModelAction = { KIND: 'updateModel', is: (action: any): boole
 export const SetModelAction = { KIND: 'setModel', is: (action: any): boolean => action?.kind === 'setModel' };
 /**
  * GLSP's palette: asks for its items once, again on a model only when one
- * of them is dynamic (`dynamicItems`, for a test). It counts its asks.
+ * of them is dynamic (`dynamicItems`, for a test). It counts its asks. Its
+ * body is built as GLSP builds it (`createBody`: a `palette-body` of tool
+ * groups, or GLSP's "No results found." when it has no items), where there
+ * is a DOM.
  */
 export class ToolPalette {
     protected paletteItems: unknown[] = [];
     protected dynamic = false;
+    protected bodyDiv?: HTMLElement;
+    protected searchField?: HTMLInputElement;
+    protected containerElement?: HTMLElement;
     dynamicItems = false;
     asked = 0;
+    protected createBody(): void {
+        const bodyDiv = document.createElement('div');
+        bodyDiv.classList.add('palette-body');
+        for (const item of this.paletteItems as Array<{ label: string; children?: Array<{ label: string }> }>) {
+            const group = document.createElement('div');
+            group.classList.add('tool-group');
+            for (const child of item.children ?? []) {
+                const button = document.createElement('div');
+                button.classList.add('tool-button');
+                button.textContent = child.label;
+                group.appendChild(button);
+            }
+            bodyDiv.appendChild(group);
+        }
+        if (this.paletteItems.length === 0) {
+            const noResultsDiv = document.createElement('div');
+            noResultsDiv.innerText = 'No results found.';
+            noResultsDiv.classList.add('tool-button');
+            bodyDiv.appendChild(noResultsDiv);
+        }
+        if (this.bodyDiv) {
+            this.bodyDiv.replaceWith(bodyDiv);
+        } else {
+            this.containerElement?.appendChild(bodyDiv);
+        }
+        this.bodyDiv = bodyDiv;
+    }
     protected async setPaletteItems(): Promise<void> {
         this.asked++;
         this.dynamic = this.dynamicItems;

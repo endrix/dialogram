@@ -355,3 +355,37 @@ const MY_PROFILE: DiagramProfile = {
   assets and the platform's codicons remain loadable under the CSP.
 - Omit `clientAssets` entirely and the provider falls back to the stock
   `dist/webview/diagram-client.*` paths, byte-identically to today.
+
+### 6. Following the view options in your modules
+
+What a reader may show and hide is declared by the profile or the model
+source (`DiagramProfile.viewOptions`, `GraphDocument.viewOptions`) and drawn
+by the platform under the palette's tools. A renderer of your own follows it
+in the webview, with no round trip, by handling the action the platform
+dispatches each time what is checked changes (the first model that has the
+groups, a reader's click, a change the host made):
+
+```ts
+import { ContainerModule } from 'inversify';
+import { configureActionHandler } from '@eclipse-glsp/client';
+import { ViewOptionsChangedAction, ViewOptionsService } from '@dialogram/diagram-client';
+
+export const myFeaturesModule = new ContainerModule((bind, unbind, isBound, rebind) => {
+    bind(MyRenderer).toSelf().inSingletonScope();
+    configureActionHandler({ bind, isBound }, ViewOptionsChangedAction.KIND, MyRenderer);
+});
+
+@injectable()
+class MyRenderer {
+    @inject(ViewOptionsService) private readonly options!: ViewOptionsService;
+    handle(action: ViewOptionsChangedAction.Action): void {
+        // `action.changed` is the lines that turned, `action.groups` all of them.
+        this.redraw(this.options.isChecked('kinds', 'a') !== false);
+    }
+}
+```
+
+The platform binds `ViewOptionsService` and a handler of its own for the
+action, so the action is known whether or not you handle it. The state is the
+host's, per file, kept beside the layout; do not keep a copy of it in the
+webview's storage.

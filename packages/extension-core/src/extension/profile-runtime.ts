@@ -13,6 +13,7 @@
  * toolkit import appear here.
  */
 import type * as vscode from "vscode";
+import { pathToFileURL } from "node:url";
 import type { DiagramProfile, DiagramProfileHandle } from "../api";
 import { activateGlspIntegration } from "./diagram/glsp-activation";
 import { ChatRuntime, type ChatRuntimeConfig } from "./chat/chat-runtime";
@@ -87,6 +88,9 @@ export async function activateProfileRuntime(
 
   return {
     dispose: () => glsp.dispose(),
+    // The product's selection, shown in the outline (outline-host.ts).
+    revealOutlineRow: (uri, row) =>
+      glsp.outline.reveal(typeof uri === "string" ? uri : uri.toString(), row),
     chat: {
       runDiagnostics: () => chatRuntime?.runDiagnostics(),
       showLog: () => chatRuntime?.showLog(),
@@ -104,7 +108,18 @@ export async function activateProfileRuntime(
         glsp.editorProvider.postLoadingToDocument(uri, { state: "progress", ...progress }),
       end: (uri) => glsp.editorProvider.postLoadingToDocument(uri, { state: "done" }),
     },
+    // The reader's view options, held by the host per file.
+    getViewOptions: (uri) => glsp.viewOptions.get(uriString(uri)),
+    setViewOptions: (uri, changes) => glsp.viewOptions.set(uriString(uri), changes),
   };
+}
+
+/** A file named as a `vscode.Uri`, a URI string or an absolute path, as a URI string. */
+function uriString(uri: string | vscode.Uri): string {
+  if (typeof uri !== "string") {
+    return uri.toString();
+  }
+  return /^[a-zA-Z][a-zA-Z0-9+.-]+:/.test(uri) ? uri : pathToFileURL(uri).toString();
 }
 
 /**

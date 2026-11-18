@@ -40,6 +40,11 @@
         "op": "actionHandler"
     },
     {
+        "handler": "ViewOptionsService",
+        "kind": "dialogram.viewOptionsChanged",
+        "op": "actionHandler"
+    },
+    {
         "id": "ChangeBoundsTool",
         "op": "rebind",
         "scope": "singleton",
@@ -456,9 +461,20 @@
         "to": "self"
     },
     {
+        "id": "ViewOptionsService",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
         "id": "Symbol(stub.IGModelRootListener)",
         "op": "bind",
         "to": "service:ToggleAnchor"
+    },
+    {
+        "id": "Symbol(stub.IGModelRootListener)",
+        "op": "bind",
+        "to": "service:ViewOptionsService"
     },
     {
         "id": "FeedbackAwareUpdateModelCommand",

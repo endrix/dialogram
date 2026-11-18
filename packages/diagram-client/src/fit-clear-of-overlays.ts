@@ -24,6 +24,7 @@ const CANVAS_OVERLAYS = [
     '.floating-tool-btn',
     '.workflow-breadcrumb-overlay',
     '.workflow-fab-stack',
+    '.workflow-hierarchy-outline:not([hidden])',
     '.property-panel.floating:not(.collapsed)'
 ];
 
