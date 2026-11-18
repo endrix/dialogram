@@ -151,7 +151,7 @@ CSP, esbuild options, timing constraints) is in
 | Commands | `commands` (21 consumer-owned command ids), `operationKinds` (port create/delete kind strings) |
 | Model & edits | `modelSource` factory, `edits` (`'read-only'` or a strategy with operation modules), `serverModules`, `serverDiagramModule` (library mode only), `storageOptions` |
 | Client | `clientBehavior` (neutral capability flags injected into the webview), `clientAssets` (custom webview bundle — data only), `clientStylesheets` (the product's own stylesheets, served after the platform's — data only), `onWebviewMessage` (inbound message hook; its `ctx.revealRange(uri, range, { beside, preserveFocus })` opens a source over the diagram, or beside it) |
-| Features | `watch` (file globs, and `affects`: which open diagrams a changed file reloads), `onEditorOpened` / `onEditorClosed` (a file's first diagram editor opened, its last closed), `loadPhaseWords` (the product's words, or none, for the platform's loading steps), `navigation` (cross-file drill-down), `canOpenSource` (openability predicate), `editBackend` (chat mutation seam), `chat` (chat carry-overs), `runDriver` (factory receiving a `DiagramRunHost`), `newSourceFile` |
+| Features | `watch` (file globs, and `affects`: which open diagrams a changed file reloads), `onEditorOpened` / `onEditorClosed` (a file's first diagram editor opened, its last closed), `loadPhaseWords` (the product's words, or none, for the platform's loading steps), `viewOptions` (what a reader may show and hide, from the palette), `outline` (a lazy outline group's rows on demand, and the product's rows), `navigation` (cross-file drill-down), `canOpenSource` (openability predicate), `editBackend` (chat mutation seam), `chat` (chat carry-overs), `runDriver` (factory receiving a `DiagramRunHost`), `newSourceFile` |
 
 Everything optional degrades gracefully: no `chat` → no chat backend, no
 `runDriver` → no run/stop commands or live glow, no `clientAssets` → the
@@ -164,7 +164,11 @@ over the overlay bridge) and `postToWebview(uri, message)` (raw
 the diagram's loading indicator: `loading.report(uri, { message, detail })`
 and `loading.end(uri)`, for work the product does for a file's diagram
 outside `getGraph` (a layout streamed in after the graph is drawn). Each
-reaches every editor open on the file; a file can have two.
+reaches every editor open on the file; a file can have two. So do
+`revealOutlineRow(uri, row)` (the product's selection, shown in the
+outline) and `setViewOptions(uri, changes)` (with `getViewOptions(uri)`, the
+reader's choices, kept per file by the host). What answers one webview's
+message, `onWebviewMessage`'s `ctx.postToWebview`, goes to that editor alone.
 
 What a load is given and told:
 
@@ -248,7 +252,10 @@ is the product's: a click calls `outline.activate(file, { id, group, open })`.
 `DiagramProfileHandle.revealOutlineRow(uri, { id, group, index, show })` shows
 the product's own selection in the outline: the group opens, the page comes,
 the row is selected and scrolled to. `outline.locate` answers where a row is
-when the product did not say. See `DiagramOutline` in `api.ts` and shared
+when the product did not say. With two editors on one file, each asks for
+its own pages and is answered alone; a revealed row is shown in both; and
+`outline.activate` does not say which editor the click was in, so what it
+selects is the file's. See `DiagramOutline` in `api.ts` and shared
 `outline-pages.ts`.
 
 ## Execution overlays and run drivers
@@ -278,8 +285,11 @@ the reader chose, per file, in the file's layout record, so it survives a
 reload and a reopen and applies before the first drawing.
 `DiagramProfileHandle.getViewOptions(uri)` and `setViewOptions(uri, changes)`
 read and set it with or without a diagram open (what a chat tool calls), and
-`viewOptions.onDidChange` hears every change. In the webview a product's
-module handles `ViewOptionsChangedAction` (diagram-client README, §6). See
+`viewOptions.onDidChange` hears every change. A reader's click in one editor
+of a file shows in every other editor of it. In the webview a product's
+module handles `ViewOptionsChangedAction` (diagram-client README, §6), a
+diagram surface's included. A load the editor's closing abandoned declares
+nothing: its groups are not taken as the file's. See
 `DiagramViewOptions` in `api.ts` and shared `view-options.ts`.
 
 ## Development

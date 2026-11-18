@@ -54,6 +54,7 @@ const NOT_EXPORTED: Record<string, string> = {
     'touch-action': 'nothing to touch',
     'image-rendering': 'the diagram holds no raster images',
     '-webkit-backdrop-filter': 'panel chrome, never inside the diagram svg',
+    isolation: 'the stacking context of the div a diagram surface is mounted in, outside the svg',
     // The palette's agent icon is a masked pseudo-element: chrome, and a
     // pseudo-element does not clone anyway. The run ring's band is masked
     // too; the export draws it as a stroke instead (`exportedRunRing`).

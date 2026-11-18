@@ -59,6 +59,35 @@ function largest(areas: Rect[]): Rect[] {
 }
 
 /**
+ * The largest free area of the canvas, by its surface (the first of equal
+ * ones): where Center puts the content's middle, and what a diagram surface
+ * is told is free. The whole canvas when nothing covers it.
+ */
+export function largestFreeArea(canvas: { width: number; height: number }, covered: readonly Rect[]): Rect | undefined {
+    let best: Rect | undefined;
+    for (const area of freeAreas(canvas, covered)) {
+        if (!best || area.width * area.height > best.width * best.height) {
+            best = area;
+        }
+    }
+    return best;
+}
+
+/**
+ * The viewport that keeps `zoom` and puts the middle of `content` (in the
+ * model's units) in the middle of `area` (in the canvas's pixels).
+ */
+export function viewportCentredIn(content: Rect, area: Rect, zoom: number): Viewport {
+    return {
+        scroll: {
+            x: content.x + content.width / 2 - (area.x + area.width / 2) / zoom,
+            y: content.y + content.height / 2 - (area.y + area.height / 2) / zoom
+        },
+        zoom
+    };
+}
+
+/**
  * The viewport that draws `content` (in the model's units) as big as it can
  * be, `margin` screen pixels inside one of the canvas's free areas, centred
  * there; nothing when no free area has room for the margin. (A fit's

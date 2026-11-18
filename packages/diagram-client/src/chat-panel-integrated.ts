@@ -1,5 +1,8 @@
-import { injectable } from 'inversify';
+import { inject, injectable, optional, postConstruct } from 'inversify';
 import { IDiagramStartup, ISelectionListener } from '@eclipse-glsp/client';
+import type { SurfaceSelectionSummary } from '@dialogram/shared';
+import { DiagramSurfaceHost } from './diagram-surface-host';
+import { summarizeSurfaceSelection } from './diagram-surface';
 import { raiseFloatingPanel, stackAsFloatingPanel } from './floating-panels';
 import { Messenger } from 'vscode-messenger-webview';
 import { DiagramWebviewChannel, getDiagramWebviewChannel } from './webview-channel';
@@ -226,6 +229,11 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   /** Live diagram selection (node ids), mirrored to the host for chat context. */
   private selectedNodeIds: string[] = [];
+  /** What a diagram surface has selected, as the chat is told it. */
+  private surfaceSelection: SurfaceSelectionSummary | undefined;
+
+  @inject(DiagramSurfaceHost) @optional()
+  protected readonly surfaceHost: DiagramSurfaceHost | undefined;
 
   /**
    * True from the moment a session's history is restored until the user sends the
@@ -288,7 +296,28 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
    */
   selectionChanged(_root: unknown, selectedElements: string[]): void {
     this.selectedNodeIds = selectedElements ?? [];
-    this.sendToHost('chat.selection', { selectedNodeIds: this.selectedNodeIds, viewTrail: currentViewTrail() });
+    this.postSelection();
+  }
+
+  /**
+   * A diagram surface's selection (`diagram-surface.ts`) is the chat's
+   * selection too: it rides on the same `chat.selection` beside the node
+   * ids, and on every message sent, so the host's context says what it is.
+   */
+  @postConstruct()
+  protected listenToSurface(): void {
+    this.surfaceHost?.onSelectionChanged(selection => {
+      this.surfaceSelection = selection ? summarizeSurfaceSelection(selection) : undefined;
+      this.postSelection();
+    });
+  }
+
+  private postSelection(): void {
+    this.sendToHost('chat.selection', {
+      selectedNodeIds: this.selectedNodeIds,
+      surfaceSelection: this.surfaceSelection,
+      viewTrail: currentViewTrail(),
+    });
     if (this.initialized) this.update();
   }
 
@@ -888,6 +917,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       sessionId: this.currentSessionId,
       mode: this.currentMode,
       selectedNodeIds: this.selectedNodeIds,
+      surfaceSelection: this.surfaceSelection,
       viewTrail: currentViewTrail(),
     });
 
@@ -1804,7 +1834,12 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
               <span class="codicon codicon-inspect"></span>
               ${this.selectedNodeIds.length} node${this.selectedNodeIds.length === 1 ? '' : 's'} selected — included as context
             </div>`
-          : nothing}
+          : this.surfaceSelection
+            ? html`<div class="chat-selection-hint" title="The selection is sent as context">
+                <span class="codicon codicon-inspect"></span>
+                ${this.surfaceSelection.title} selected — included as context
+              </div>`
+            : nothing}
         <div class="chat-composer">
           <textarea
             class="chat-input"

@@ -398,6 +398,14 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
                     return;
                 }
 
+                // A diagram surface's image (diagram-client svg-export-command.ts):
+                // the reply of the one editor the export command was sent to
+                // (glsp-activation.ts), so one dialog asks where to save it.
+                if (message?.type === 'dialogram.png.extracted') {
+                    await this.saveExtractedPng(canonicalDocumentUri, message.payload ?? {});
+                    return;
+                }
+
                 // The outline asks for rows of a lazy group, or where one is:
                 // answered to this editor only, which is the one scrolling (a
                 // file's other editor scrolls its own list), and to nothing
@@ -419,7 +427,8 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
 
                 if (message?.type === 'dialogram.svg.failed') {
                     const reason = message.payload?.reason as string | undefined;
-                    void vscode.window.showWarningMessage(`Could not export the diagram as SVG${reason ? `: ${reason}` : '.'}`);
+                    const format = message.payload?.format === 'PNG' ? 'PNG' : 'SVG';
+                    void vscode.window.showWarningMessage(`Could not export the diagram as ${format}${reason ? `: ${reason}` : '.'}`);
                     return;
                 }
 
@@ -1682,28 +1691,64 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         if (typeof payload.svg !== 'string' || payload.svg.length === 0) {
             return;
         }
-        const base = typeof payload.name === 'string' && payload.name ? payload.name : 'diagram';
+        const count = typeof payload.elementCount === 'number' ? ` (${payload.elementCount} elements)` : '';
+        await this.saveExport(documentUri, {
+            bytes: Buffer.from(payload.svg, 'utf8'),
+            name: payload.name,
+            format: 'SVG',
+            extension: 'svg',
+            detail: count
+        });
+    }
+
+    /**
+     * Save a diagram surface's image (diagram-client svg-export-command.ts):
+     * base64 PNG bytes, checked to be a PNG, through the same dialog as the
+     * SVG.
+     */
+    private async saveExtractedPng(
+        documentUri: string,
+        payload: { data?: unknown; name?: unknown }
+    ): Promise<void> {
+        if (typeof payload.data !== 'string' || payload.data.length === 0) {
+            return;
+        }
+        const bytes = Buffer.from(payload.data, 'base64');
+        if (bytes.length < 8 || bytes.readUInt32BE(0) !== 0x89504e47) {
+            void vscode.window.showWarningMessage('Could not export the diagram as PNG: the image is not a PNG.');
+            return;
+        }
+        await this.saveExport(documentUri, { bytes, name: payload.name, format: 'PNG', extension: 'png', detail: '' });
+    }
+
+    /** Ask where, write, and offer to open or reveal what was written. */
+    private async saveExport(
+        documentUri: string,
+        file: { bytes: Uint8Array; name: unknown; format: 'SVG' | 'PNG'; extension: string; detail: string }
+    ): Promise<void> {
+        const base = typeof file.name === 'string' && file.name ? file.name : 'diagram';
         const source = vscode.Uri.parse(documentUri);
         const folder = source.scheme === 'file' ? path.dirname(source.fsPath) : undefined;
+        const fileName = `${base}.${file.extension}`;
 
         const target = await vscode.window.showSaveDialog({
-            title: 'Export diagram as SVG',
-            defaultUri: folder ? vscode.Uri.file(path.join(folder, `${base}.svg`)) : vscode.Uri.file(`${base}.svg`),
-            filters: { 'SVG image': ['svg'] },
+            title: `Export diagram as ${file.format}`,
+            defaultUri: folder ? vscode.Uri.file(path.join(folder, fileName)) : vscode.Uri.file(fileName),
+            filters: { [`${file.format} image`]: [file.extension] },
             saveLabel: 'Export'
         });
         if (!target) {
             return;
         }
         try {
-            await vscode.workspace.fs.writeFile(target, Buffer.from(payload.svg, 'utf8'));
+            await vscode.workspace.fs.writeFile(target, file.bytes);
         } catch (error) {
             void vscode.window.showErrorMessage(
                 `Could not write ${target.fsPath}: ${error instanceof Error ? error.message : String(error)}`
             );
             return;
         }
-        const count = typeof payload.elementCount === 'number' ? ` (${payload.elementCount} elements)` : '';
+        const count = file.detail;
         const open = 'Open';
         const reveal = 'Reveal in Explorer';
         const choice = await vscode.window.showInformationMessage(

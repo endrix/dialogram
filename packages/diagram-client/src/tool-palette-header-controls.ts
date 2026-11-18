@@ -1,6 +1,7 @@
 import { codiconCSSClasses } from '@eclipse-glsp/sprotty';
 import { VscodeUi } from './vscode-ui';
-import { exportDiagramSvg } from './svg-export-command';
+import { exportDiagram } from './svg-export-command';
+import { SURFACE_MOUNTED_EVENT, mountedSurfaceHost } from './diagram-surface-host';
 import { commandId, feedbackEdgesVisibleStorageKey, queueTraceVisibleStorageKey, runHeaderControls } from './profile';
 
 type DiagramContext = {
@@ -297,21 +298,39 @@ function patchHeaderTools(headerTools: HTMLElement): void {
         headerTools.insertBefore(loopIcon, headerTools.firstChild);
     }
 
-    // 5b) Export the rendered diagram as an SVG file (svg-export.ts).
-    if (!headerTools.querySelector('i.codicon.codicon-export.cal-export-svg')) {
-        const exportIcon = createHeaderIcon('export');
-        exportIcon.classList.add('cal-export-svg');
-        exportIcon.title = 'Export diagram as SVG';
-        exportIcon.setAttribute('aria-label', exportIcon.title);
-        exportIcon.onclick = () => {
-            exportDiagramSvg();
-            exportIcon.focus();
+    // 5b) Export the rendered diagram as an SVG file (svg-export.ts), or a
+    // mounted surface's image as a PNG (svg-export-command.ts).
+    let exportIcon = headerTools.querySelector('i.codicon.codicon-export.cal-export-svg') as HTMLElement | null;
+    if (!exportIcon) {
+        const icon = createHeaderIcon('export');
+        icon.classList.add('cal-export-svg');
+        icon.onclick = () => {
+            void exportDiagram();
+            icon.focus();
         };
-        headerTools.appendChild(exportIcon);
+        headerTools.appendChild(icon);
+        exportIcon = icon;
+        // A surface mounts after the palette is drawn: the tooltip says what the export is then.
+        document.addEventListener(SURFACE_MOUNTED_EVENT, () => sayWhatOf(icon));
     }
+    // Said again before the tooltip shows, in case.
+    const icon = exportIcon;
+    const sayWhat = () => sayWhatOf(icon);
+    sayWhat();
+    icon.onmouseenter = sayWhat;
+    icon.onfocus = sayWhat;
 
     // 6) Normalize icon order + visual grouping separators.
     reorderAndGroupHeaderTools(headerTools);
+}
+
+/** The export button's tooltip: a mounted surface's image is a PNG, the diagram an SVG. */
+function sayWhatOf(icon: HTMLElement): void {
+    const title = mountedSurfaceHost()?.exportsImage() ? 'Export diagram as PNG' : 'Export diagram as SVG';
+    if (icon.title !== title) {
+        icon.title = title;
+        icon.setAttribute('aria-label', title);
+    }
 }
 
 export function installToolPaletteHeaderControls(): void {

@@ -10,6 +10,7 @@
  * The text after the command is kept, as typed, under `_raw`, for a command
  * whose values are source text (quotes and all).
  */
+import type { SurfaceSelectionSummary } from '@dialogram/shared';
 
 export interface ChatCommandContext {
     /** Absolute path of the file the chat is scoped to. */
@@ -19,6 +20,12 @@ export interface ChatCommandContext {
     sessionId: string;
     /** Live diagram selection for the file (empty when nothing selected). */
     selectedNodeIds: string[];
+    /**
+     * What a diagram surface has selected for the file, when it has: the
+     * surface's own ids and the rows its property panel shows, as text.
+     * Absent for a diagram without a surface.
+     */
+    surfaceSelection?: SurfaceSelectionSummary;
     /** Chat mode the command was invoked in; drives mode-aware `/help`. */
     mode: 'plan' | 'build';
 }

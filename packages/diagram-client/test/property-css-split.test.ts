@@ -8,6 +8,11 @@
  * property selector was lost, duplicated, or renamed by the move. It also asserts
  * property-panel.css is @imported (self-contained section) and that the moved
  * rules now live in property-panel.css, not diagram-client.css.
+ *
+ * Selectors added since the split are appended to the baseline deliberately:
+ * the link of a diagram surface selection's row (`.pp-surface-link` and its
+ * hover and focus states), and its note and "and N more" lines (`.pp-surface-note`,
+ * `.pp-surface-more`).
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

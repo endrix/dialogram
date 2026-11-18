@@ -1554,6 +1554,12 @@ export class GraphGModelSource {
         if (graphFacts) {
             graphArgs[WorkflowDiagramMetadata.FACTS] = graphFacts;
         }
+        // The data of the diagram's surface, passed through unread: the
+        // product's webview surface is its only reader.
+        const surfaceData = doc.graph.meta?.['surface'];
+        if (surfaceData !== undefined) {
+            graphArgs[WorkflowDiagramMetadata.SURFACE] = surfaceData;
+        }
         if (doc.graph.meta?.['readOnly'] === true) {
             graphArgs[WorkflowDiagramMetadata.READ_ONLY_VIEW] = true;
             // What can still be edited in it, of the edits the platform knows.

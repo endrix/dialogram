@@ -40,11 +40,6 @@
         "op": "actionHandler"
     },
     {
-        "handler": "ViewOptionsService",
-        "kind": "dialogram.viewOptionsChanged",
-        "op": "actionHandler"
-    },
-    {
         "id": "ChangeBoundsTool",
         "op": "rebind",
         "scope": "singleton",
@@ -461,20 +456,9 @@
         "to": "self"
     },
     {
-        "id": "ViewOptionsService",
-        "op": "bind",
-        "scope": "singleton",
-        "to": "self"
-    },
-    {
         "id": "Symbol(stub.IGModelRootListener)",
         "op": "bind",
         "to": "service:ToggleAnchor"
-    },
-    {
-        "id": "Symbol(stub.IGModelRootListener)",
-        "op": "bind",
-        "to": "service:ViewOptionsService"
     },
     {
         "id": "FeedbackAwareUpdateModelCommand",
@@ -492,5 +476,64 @@
         "op": "modelElement",
         "typeId": "edge:transition",
         "view": "TransitionEdgeView"
+    },
+    {
+        "handler": "ViewOptionsService",
+        "kind": "dialogram.viewOptionsChanged",
+        "op": "actionHandler"
+    },
+    {
+        "id": "CenterCommand",
+        "op": "bind",
+        "to": "SurfaceAwareCenterCommand"
+    },
+    {
+        "id": "DiagramSurfaceHost",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "id": "HiddenRenderRecord",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "id": "SurfaceClickListener",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "id": "Symbol(stub.HiddenVNodePostprocessor)",
+        "op": "bind",
+        "to": "service:HiddenRenderRecord"
+    },
+    {
+        "id": "Symbol(stub.IGModelRootListener)",
+        "op": "bind",
+        "to": "service:ViewOptionsService"
+    },
+    {
+        "id": "Symbol(stub.ISelectionListener)",
+        "op": "bind",
+        "to": "service:DiagramSurfaceHost"
+    },
+    {
+        "id": "Symbol(stub.IVNodePostprocessor)",
+        "op": "bind",
+        "to": "service:DiagramSurfaceHost"
+    },
+    {
+        "id": "Symbol(stub.MouseListener)",
+        "op": "bind",
+        "to": "service:SurfaceClickListener"
+    },
+    {
+        "id": "ViewOptionsService",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
     }
 ]

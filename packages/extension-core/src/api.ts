@@ -34,13 +34,10 @@ import type {
   OutlinePageRequest,
   OutlineRowActivation,
   OutlineRowReveal,
-} from "@dialogram/shared";
-
-export type {
-  LoadPhase,
-  LoadPhaseFacts,
-  LoadPhaseWords,
-  LoadProgress,
+  SurfaceSelectionSummary,
+  ViewOptionChange,
+  ViewOptionGroup,
+  ViewOptionTurn,
 } from "@dialogram/shared";
 
 export type {
@@ -52,11 +49,26 @@ export type {
   EntityPaletteItemSpec,
   InProcessChatTool,
   NodeFamilySpec,
+} from "@dialogram/shared";
+
+// The seams' vocabulary: the loading words, the outline on demand, a
+// surface's selection, the view options.
+export type {
+  LoadPhase,
+  LoadPhaseFacts,
+  LoadPhaseWords,
+  LoadProgress,
   OutlinePage,
   OutlinePageRequest,
   OutlinePageRow,
   OutlineRowActivation,
   OutlineRowReveal,
+  SurfaceSelectionSummary,
+  ViewOptionChange,
+  ViewOptionGroup,
+  ViewOptionItem,
+  ViewOptionsState,
+  ViewOptionTurn,
 } from "@dialogram/shared";
 
 import type {
@@ -66,14 +78,6 @@ import type {
 } from "./extension/chat/slash-commands";
 
 export type { ChatCommandContribution, ChatCommandContext, ChatCommandResult };
-import type { ViewOptionChange, ViewOptionGroup, ViewOptionTurn } from "@dialogram/shared";
-export type {
-  ViewOptionChange,
-  ViewOptionGroup,
-  ViewOptionItem,
-  ViewOptionsState,
-  ViewOptionTurn,
-} from "@dialogram/shared";
 import type { AcpAgentSpec } from "./extension/acp-client";
 export type { AcpAgentSpec };
 import type { AcpConnectorConfig, AcpConnectorFiles } from "./extension/chat/acp-connectors";
@@ -182,14 +186,34 @@ export interface DiagramChatConfig {
   graphContextProvider?: (
     file: string,
   ) => Promise<string | undefined> | string | undefined;
-  /** Extra ACP content blocks injected on EVERY turn. */
+  /**
+   * Extra ACP content blocks injected on EVERY turn. `surfaceSelection` is
+   * what a diagram surface has selected (diagram-client `diagram-surface.ts`),
+   * passed only when there is one: a profile without a surface is called
+   * with two arguments, as before.
+   */
   turnContextProvider?: (
     file: string,
     selectedNodeIds: string[],
+    surfaceSelection?: SurfaceSelectionSummary,
   ) => Promise<any[]> | any[];
-  /** Per-turn selection injection; `false` disables, `render` customizes. */
+  /**
+   * Per-turn selection injection; `false` disables, `render` customizes.
+   *
+   * Without `render`, nodes selected are named by id, and a surface's
+   * selection is said with its kind, title, ids and rows. `render` is called
+   * when nodes are selected (with the surface's selection as a third argument
+   * when there is one too) and when only a surface's is (`selectedNodeIds`
+   * empty); an empty answer for the latter falls back to the default text.
+   */
   selectionContext?:
-    false | { render?: (file: string, selectedNodeIds: string[]) => string };
+    false | {
+      render?: (
+        file: string,
+        selectedNodeIds: string[],
+        surfaceSelection?: SurfaceSelectionSummary,
+      ) => string;
+    };
   /**
    * Slash commands contributed by the profile (handler-capable). Appended
    * AFTER the edit capability's contributions; on a duplicate `command` name
@@ -343,7 +367,12 @@ export interface DiagramOutline {
     file: string,
     row: { group: string; id: string; query: string },
   ): number | undefined | Promise<number | undefined>;
-  /** A click (`open: false`) or double click (`open: true`) on a row that is the product's. */
+  /**
+   * A click (`open: false`) or double click (`open: true`) on a row that is
+   * the product's. It does not say which editor of the file it was in, when
+   * two show it: what it selects is the file's, as a node selection is, and
+   * {@link DiagramProfileHandle.postToWebview} tells every editor of it.
+   */
   activate?(file: string, row: OutlineRowActivation): void | Promise<void>;
 }
 
@@ -467,7 +496,15 @@ export interface DiagramProfile {
   sourceExtensions?: string[];
   /** Port operation-kind strings injected into the diagram client. */
   operationKinds?: DiagramOperationKinds;
-  /** Neutral behavior flags forwarded into the diagram webview. */
+  /**
+   * Neutral behavior flags forwarded into the diagram webview. Among them,
+   * for a diagram whose content a webview surface draws (diagram-client
+   * `diagram-surface.ts`, bound in the bundle `clientAssets` serves):
+   * `zoomLimits` (the zoom range, GLSP's 0.1 to 20 by default; the surface's
+   * own wins) and `initialView` (`'fit'` fits a view the first time it is
+   * opened, once its content has bounds; `'center'`, the default, centres it
+   * at zoom 1).
+   */
   clientBehavior?: DiagramClientBehavior;
   /** Consumer-supplied webview bundle (script/style/resource-roots). When absent,
    *  the provider serves its stock `dist/webview/*` bundle. DATA ONLY — path/URI
@@ -517,11 +554,21 @@ export interface DiagramProfile {
    * NOT already consumed by its built-in debug / `dialogram.ui.*` handlers to
    * this hook; returning `true` (or a promise resolving to `true`) marks the
    * message consumed. When absent, unhandled messages are ignored exactly as
-   * before (byte-identical parity). `ctx.postToWebview` posts back to the same
-   * webview; `ctx.revealRange` opens a source URI and selects the range. Where
+   * before (byte-identical parity). `ctx.postToWebview` posts back to the
+   * webview the message came from, and to it alone when two editors show the
+   * file (`DiagramProfileHandle.postToWebview` reaches every editor of it);
+   * `ctx.revealRange` opens a source URI and selects the range. Where
    * the file is not open in another group, it opens in the active one, the
    * diagram's, over the diagram; `{ beside: true }` opens it in the group beside
    * instead (see {@link RevealRangeOptions}).
+   *
+   * The webview side is `postToHost(message)` and `onHostMessage(listener)`
+   * from `@dialogram/diagram-client` (a diagram surface gets both as
+   * `context.host`): messages are objects with a string `type`, and types
+   * starting with `dialogram.` or `chat.` are the platform's, refused there
+   * and never heard. Reach for those, not for the page's VS Code API object,
+   * which is the platform's and is not part of this contract. `ArrayBuffer`s
+   * cross both ways.
    */
   onWebviewMessage?: (
     uri: string,
@@ -705,19 +752,21 @@ export interface DiagramProfileHandle extends vscode.Disposable {
    */
   revealOutlineRow(uri: string | vscode.Uri, row: OutlineRowReveal): number;
   /**
-   * Dispatch a host→client action to the webview owning `uri`, over the ungated
-   * `sendMessageToClient` overlay-bridge path — it reaches the client even for
-   * kinds the client did not advertise in `clientActions`. No-op when no diagram
-   * client is registered for the URI.
+   * Dispatch a host→client action to every diagram editor of `uri`, over the
+   * ungated `sendMessageToClient` overlay-bridge path — it reaches the client
+   * even for kinds the client did not advertise in `clientActions`. No-op when
+   * no diagram client is registered for the URI.
    */
   dispatchToWebview(
     uri: string,
     action: { kind: string } & Record<string, unknown>,
   ): void;
   /**
-   * Post a raw message straight to the webview panel owning `uri`
+   * Post a raw message straight to every diagram editor of `uri`
    * (`webview.postMessage`), for the consumer's own cursor-sync / graph-era
-   * channel. No-op when no panel is registered for the URI.
+   * channel; a diagram surface hears it on `context.host`. To answer one
+   * editor, answer through the `ctx` of {@link DiagramProfile.onWebviewMessage}.
+   * No-op when no panel is registered for the URI.
    */
   postToWebview(uri: string, message: unknown): void;
   /**

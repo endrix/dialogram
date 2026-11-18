@@ -38,6 +38,8 @@ import {
     GRoutingHandle,
     GRoutingHandleView,
     FitToScreenCommand,
+    CenterCommand,
+    CenterKeyboardListener,
     SetModelCommand,
     ComputedBoundsApplicator,
     ToolPalette
@@ -61,6 +63,8 @@ import { SelectionFocusPostprocessor } from './selection-focus';
 import { ViewToolPalette } from './view-tool-palette';
 import { ViewOptionsService } from './view-options';
 import { ViewOptionsChangedAction } from '@dialogram/shared';
+import { DiagramSurfaceHost, SurfaceClickListener } from './diagram-surface-host';
+import { HiddenRenderRecord, SurfaceAwareCenterCommand, ZoomKeepingCenterKeyboardListener } from './viewport-content';
 
 /**
  * The neutral base bindings shared by all diagram-client consumers. Loaded first
@@ -100,7 +104,31 @@ export const diagramBaseModule = new ContainerModule((bind, unbind, isBound, reb
     // Fit draws the diagram where the palette and the canvas's buttons leave it free.
     rebind(FitToScreenCommand).to(FitClearOfOverlaysCommand);
 
-    // Center viewport on initial model load (once per workflow).
+    // Center, like Fit, frames the content as it is drawn: a surface's with
+    // the graph's, labels no view draws left out (viewport-content.ts).
+    if (isBound(CenterCommand)) {
+        rebind(CenterCommand).to(SurfaceAwareCenterCommand);
+    } else {
+        bind(CenterCommand).to(SurfaceAwareCenterCommand);
+    }
+    // Its key too: Center keeps the zoom, whichever way it is asked for.
+    if (isBound(CenterKeyboardListener)) {
+        rebind(CenterKeyboardListener).to(ZoomKeepingCenterKeyboardListener).inSingletonScope();
+    }
+    // What the last hidden render drew, for the two above.
+    bind(HiddenRenderRecord).toSelf().inSingletonScope();
+    bind(TYPES.HiddenVNodePostprocessor).toService(HiddenRenderRecord);
+
+    // A product's diagram surface (diagram-surface.ts): mounted under the SVG,
+    // told every viewport, its clicks and selection carried. Without one bound
+    // it only hears the renders, for the first view below.
+    bind(DiagramSurfaceHost).toSelf().inSingletonScope();
+    bind(TYPES.IVNodePostprocessor).toService(DiagramSurfaceHost);
+    bind(TYPES.ISelectionListener).toService(DiagramSurfaceHost);
+    bind(SurfaceClickListener).toSelf().inSingletonScope();
+    bind(TYPES.MouseListener).toService(SurfaceClickListener);
+
+    // The first view of a view never shown here (once per workflow).
     bind(InitialViewportService).toSelf().inSingletonScope();
 
     // Post-edit selection polish (paste/duplicate selects newly created elements).

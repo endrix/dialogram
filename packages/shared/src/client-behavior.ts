@@ -101,6 +101,22 @@ export interface DiagramClientBehavior {
      *  done. */
     nodeActionCommand?: string;
     /**
+     * The zoom range the reader can reach, in CSS pixels per model unit;
+     * GLSP's 0.1 to 20 when absent. Both must be positive and finite, `min`
+     * below `max`, or the range is ignored with a warning. A diagram surface's
+     * own `zoomLimits` wins over this one. A `min` below 0.1 also widens the
+     * scroll range, so the floor can be reached on a wide canvas.
+     */
+    zoomLimits?: { min: number; max: number };
+    /**
+     * What a view shows the first time it is opened: `center` (the default)
+     * centres the content at zoom 1, `fit` fits it into the canvas clear of
+     * the palette and the other overlays. Done once per view, as soon as the
+     * content has bounds (a diagram surface's included); a view navigated back
+     * to returns to where it was left, as before.
+     */
+    initialView?: 'center' | 'fit';
+    /**
      * Whether the host has a chat backend behind this diagram.
      *
      * Derived by the platform from `DiagramProfile.chat`, not supplied by a
