@@ -153,7 +153,7 @@ export function bundlePorts(
             for (const member of members) {
                 memberOf.set(member.id, { busId, expanded });
                 if (expanded) {
-                    ports.push({ ...member, busMember: group });
+                    ports.push({ ...member, busMember: group, ...(memberPins.length ? { busPins: memberPins } : {}) });
                 }
             }
         }

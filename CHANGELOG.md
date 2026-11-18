@@ -620,10 +620,13 @@ it no longer has.
   and a register of a bundle (chisel-ide's signal view) has a `d` and a `q`
   per field: opened, its bus was a column of `d`s that said nothing. The bus
   is named by the pin most of its members are (the `d`); each member is
-  named as its port is, and one on another pin says which (`en: valid`).
+  named as its port is, and one on another pin says which, the pin set
+  apart before the name (*en* `valid`), so no name can be taken for it. The
+  members stay under their bus, ranked with it and then by their own pins.
   The body is as wide as the longest names side by side, with the rail
-  each member's name has in front of it; a name is as wide as its columns,
-  a wide character two.
+  each member's name has in front of it. A name is estimated as wide as its
+  columns, a wide character two, by one estimate the server and the client
+  share.
 - **A wire outside the viewport is not drawn**, as a node outside it is
   not; one within a few pixels of it still is, since its arrowhead and its
   caption reach further than its route. Of a diagram's thousands of wires

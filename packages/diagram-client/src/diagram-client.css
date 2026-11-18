@@ -3766,6 +3766,13 @@ details[open] > summary .agent-chat-expand-arrow {
     stroke-width: 2px;
 }
 
+/* A symbol's pin said before a bus member's name (`en` before `valid`):
+   the name's own text, set apart so no name is taken for it. */
+.port-label-pin {
+    font-style: italic;
+    fill-opacity: 0.65;
+}
+
 .port-bus-rail {
     stroke: var(--vscode-descriptionForeground, #8b8b8b);
     stroke-width: 1px;

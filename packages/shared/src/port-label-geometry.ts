@@ -5,15 +5,44 @@
  */
 import { WorkflowDiagramConstants } from './diagram-constants';
 
+/** Whether a character takes two columns of a fixed-width font: East Asian wide and fullwidth forms, emoji. */
+function isWide(codePoint: number): boolean {
+    return (codePoint >= 0x1100 && codePoint <= 0x115f)
+        || (codePoint >= 0x2e80 && codePoint <= 0xa4cf)
+        || (codePoint >= 0xac00 && codePoint <= 0xd7a3)
+        || (codePoint >= 0xf900 && codePoint <= 0xfaff)
+        || (codePoint >= 0xfe30 && codePoint <= 0xfe4f)
+        || (codePoint >= 0xff00 && codePoint <= 0xff60)
+        || (codePoint >= 0xffe0 && codePoint <= 0xffe6)
+        || (codePoint >= 0x1f300 && codePoint <= 0x1faff)
+        || (codePoint >= 0x20000 && codePoint <= 0x3fffd);
+}
+
+/** The columns a text takes in a fixed-width font: two for a wide character, one for any other. */
+export function textColumns(text: string): number {
+    let columns = 0;
+    for (const char of text) {
+        columns += isWide(char.codePointAt(0)!) ? 2 : 1;
+    }
+    return columns;
+}
+
+/**
+ * A text's box before the client has measured it: a fixed width per column
+ * (a producer's names are any text, and a wide character is two), a line's
+ * height. The one estimate, for the server's model and the client's view.
+ */
+export function estimateTextSize(text: string, fontSizePx: number): { width: number; height: number } {
+    const columnWidth = Math.max(5, Math.round(fontSizePx * 0.6));
+    return {
+        width: Math.max(0, textColumns(text) * columnWidth),
+        height: Math.max(10, Math.round(fontSizePx * 1.2))
+    };
+}
+
 /** A port name's box before the client has measured it. */
 export function estimatePortLabelSize(text: string): { width: number; height: number } {
-    const fontSizePx = WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX;
-    const avgCharWidth = fontSizePx * 0.7;
-    const padding = 3;
-    return {
-        width: Math.max(1, Math.ceil(text.length * avgCharWidth + padding * 2)),
-        height: Math.max(1, Math.ceil(fontSizePx * 1.25))
-    };
+    return estimateTextSize(text, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX);
 }
 
 /**

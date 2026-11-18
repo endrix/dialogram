@@ -2425,10 +2425,13 @@ export class WorkflowLabelView implements IView {
             // the bundle's, one step in. The server sized the box for it.
             const busGroup = parentPort?.args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP] as string | undefined;
             const busMemberOf = parentPort?.args?.[WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF] as string | undefined;
+            // A symbol's pin said before the name, apart from it: a register's
+            // `en` among the `d`s of its bus. The server sized the box for both.
+            const pin = (label as any).args?.[WorkflowDiagramMetadata.PORT_LABEL_PIN] as string | undefined;
             const slot = busGroup
                 ? WorkflowDiagramConstants.PORT_BUS_LABEL_INSET_PX
                 : busMemberOf ? WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX : 0;
-            const estimate = estimateLabelSizeFallback(label.text || '');
+            const estimate = estimateLabelSizeFallback(pin ? `${pin} ${label.text || ''}` : label.text || '');
             const labelW = labelWRaw > 0 ? labelWRaw : estimate.width + slot;
             const labelH = labelHRaw > 0 ? labelHRaw : estimate.height;
             const textX = isOutput ? labelW - slot : slot;
@@ -2474,7 +2477,9 @@ export class WorkflowLabelView implements IView {
                         // Vertically center glyphs within the label box.
                         'dominant-baseline': 'middle'
                     }
-                }, label.text || '')
+                }, ...(pin
+                    ? [svg('tspan', { class: { 'port-label-pin': true } }, pin), svg('tspan', { attrs: { dx: 4 } }, label.text || '')]
+                    : [label.text || '']))
             );
         }
 

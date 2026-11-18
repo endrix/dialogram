@@ -4,7 +4,7 @@
  * mux's select below its data), a register's pins named by what they are.
  */
 import { describe, expect, it } from 'vitest';
-import { SymbolGeometry, WorkflowDiagramConstants, WorkflowDiagramCss, WorkflowDiagramMetadata } from '@dialogram/shared';
+import { estimatePortLabelSize, SymbolGeometry, WorkflowDiagramConstants, WorkflowDiagramCss, WorkflowDiagramMetadata } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument, type PyGraphNode } from '../src/model/graph-gmodel-source';
 
 const port = (node: string, name: string, direction: 'in' | 'out', pins?: string[]) =>
@@ -33,9 +33,8 @@ const registerNode = (doc: PyGraphDocument, open: boolean): any => new GraphGMod
 const label = (gnode: any, name: string): string | undefined =>
     ports(gnode).find((p: any) => p.args[WorkflowDiagramMetadata.PORT_NAME] === name)?.children[0].text;
 
-/** A name's width as the server estimates it: a fixed width per column. */
-const textWidth = (text: string): number =>
-    text.length * Math.max(5, Math.round(WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX * 0.6));
+/** A name's width as the platform estimates it, on the server and in the client alike. */
+const textWidth = (text: string): number => estimatePortLabelSize(text).width;
 
 describe('symbol nodes', () => {
     it('are sized by the symbol, have no header, and put their pins on the body', () => {
@@ -197,16 +196,36 @@ describe('symbol nodes, in the corners', () => {
         expect(open.size.width).toBeGreaterThan(closed.size.width);
     });
 
-    it('name a member on another pin than its bus by that pin as well', () => {
+    it('name a member on another pin than its bus by that pin as well, apart from its name', () => {
         // A bundle of fields written together, and its `valid` the enable.
         const doc = registerOf([field('valid', 'in', 'en', 'in'), field('addr', 'in', 'd', 'in'), field('data', 'in', 'd', 'in'),
             field('addr', 'out', 'q', 'out'), field('data', 'out', 'q', 'out')]);
         // The bus is named by the pin most of its members are.
         expect(label(registerNode(doc, false), 'in')).toBe('d');
         const open = registerNode(doc, true);
-        const names = ports(open).filter((p: any) => p.cssClasses.includes(WorkflowDiagramCss.PORT_BUS_MEMBER) && p.position.x < 0)
-            .map((p: any) => p.children[0].text);
-        expect(names.sort()).toEqual(['addr', 'data', 'en: valid']);
+        const members = ports(open).filter((p: any) => p.cssClasses.includes(WorkflowDiagramCss.PORT_BUS_MEMBER) && p.position.x < 0);
+        const pinOf = (name: string) => members.find((p: any) => p.children[0].text === name).children[0].args[WorkflowDiagramMetadata.PORT_LABEL_PIN];
+        // The name is the field's, whatever it looks like; the pin is said apart.
+        expect(members.map((p: any) => p.children[0].text).sort()).toEqual(['addr', 'data', 'valid']);
+        expect(['addr', 'data', 'valid'].map(pinOf)).toEqual([undefined, undefined, 'en']);
+        const valid = members.find((p: any) => p.children[0].text === 'valid').children[0];
+        expect(valid.size.width).toBeGreaterThanOrEqual(textWidth('en valid') + WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX);
+    });
+
+    it('draw an open bus’s members under it, whatever pins they are on', () => {
+        // Two enables and a field: the bus is named and placed by `en`, and
+        // its `d` member, which comes before `en` among a register's pins,
+        // is still under it, not above.
+        const doc = registerOf([field('valid', 'in', 'en', 'in'), field('ready', 'in', 'en', 'in'), field('addr', 'in', 'd', 'in'),
+            field('x', 'in', 'd', 'x'), field('y', 'in', 'd', 'x'),
+            field('addr', 'out', 'q', 'out'), field('data', 'out', 'q', 'out')]);
+        const open = registerNode(doc, true);
+        const west = ports(open).filter((p: any) => p.position.x < 0 && p.args[WorkflowDiagramMetadata.PORT_NAME] !== 'clk')
+            .sort((a: any, b: any) => a.position.y - b.position.y)
+            .map((p: any) => `${p.args[WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF] ? '  ' : ''}${p.args[WorkflowDiagramMetadata.PORT_NAME]}`);
+        // The `x` bus (`d`) first, its members under it; then the `in` bus
+        // (`en`), its `d` member and then its enables under it.
+        expect(west).toEqual(['x', '  x', '  y', 'in', '  addr', '  valid', '  ready']);
     });
 
     it('give a name of wide characters the columns it takes', () => {

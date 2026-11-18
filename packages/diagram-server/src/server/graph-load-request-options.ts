@@ -9,7 +9,7 @@
  */
 
 // The source-URI key, shared with the host and the toolkit (see `uri-keys.ts`).
-import { WorkflowDiagramConstants, type NodeLine, type ViewRequest } from '@dialogram/shared';
+import { WorkflowDiagramConstants, textColumns, type NodeLine, type ViewRequest } from '@dialogram/shared';
 import { normalizeSourceUriKey } from './uri-keys';
 export { normalizeSourceUriKey };
 
@@ -174,27 +174,8 @@ const CLASS_NAME = /^[a-z][a-z0-9-]*$/;
  */
 const NOT_FOR_A_LINE = /[\u0000-\u001f\u007f-\u009f\u200b\u2028\u2029\u202a-\u202e\u2060\u2066-\u2069\ufeff]/g;
 
-/** Whether a character takes two columns of a fixed-width font: East Asian wide and fullwidth forms, emoji. */
-function isWide(codePoint: number): boolean {
-    return (codePoint >= 0x1100 && codePoint <= 0x115f)
-        || (codePoint >= 0x2e80 && codePoint <= 0xa4cf)
-        || (codePoint >= 0xac00 && codePoint <= 0xd7a3)
-        || (codePoint >= 0xf900 && codePoint <= 0xfaff)
-        || (codePoint >= 0xfe30 && codePoint <= 0xfe4f)
-        || (codePoint >= 0xff00 && codePoint <= 0xff60)
-        || (codePoint >= 0xffe0 && codePoint <= 0xffe6)
-        || (codePoint >= 0x1f300 && codePoint <= 0x1faff)
-        || (codePoint >= 0x20000 && codePoint <= 0x3fffd);
-}
-
-/** The columns a text takes in a fixed-width font: two for a wide character, one for any other. */
-export function textColumns(text: string): number {
-    let columns = 0;
-    for (const char of text) {
-        columns += isWide(char.codePointAt(0)!) ? 2 : 1;
-    }
-    return columns;
-}
+/** The columns a text takes in a fixed-width font: one estimate, the platform's (`port-label-geometry.ts`). */
+export { textColumns };
 
 /** `text` cut to `max` columns, an ellipsis in the place of what is cut. By character, never through one. */
 function cutToColumns(text: string, max: number): string {
@@ -204,7 +185,7 @@ function cutToColumns(text: string, max: number): string {
     let out = '';
     let columns = 0;
     for (const char of text) {
-        const width = isWide(char.codePointAt(0)!) ? 2 : 1;
+        const width = textColumns(char);
         if (columns + width > max - 1) {
             break;
         }

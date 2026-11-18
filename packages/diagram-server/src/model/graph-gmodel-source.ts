@@ -1,11 +1,11 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
-import { parseBadgesMeta, parseFactsMeta, parseLinesMeta, parseViewsMeta, textColumns, type UnitBadge } from '../server/graph-load-request-options';
-import { BoundaryPortGeometry, isBoundaryNodeType, SymbolGeometry, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
+import { parseBadgesMeta, parseFactsMeta, parseLinesMeta, parseViewsMeta, type UnitBadge } from '../server/graph-load-request-options';
+import { BoundaryPortGeometry, estimateTextSize, isBoundaryNodeType, SymbolGeometry, textColumns, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findLoopEdges } from './feedback-edges';
 import { arrangeGroupRows, groupLayoutOptions, isGroupRow, splitEdgesAtGroups } from './group-edges';
 import { URI } from 'vscode-uri';
-import { boundaryMargin, bundlePorts, type PortBus, type PortBusState } from './port-bundles';
+import { boundaryMargin, bundlePorts, portSideOf, type PortBus, type PortBusState } from './port-bundles';
 import { stableNodeId as stableNodeIdOf, stableNodeIds, stablePortNames } from './stable-ids';
 import { canOpen, openNodes, openScopeId } from './open-nodes';
 import { compressAutomaton } from './automaton-compress';
@@ -38,6 +38,8 @@ export type PyGraphPort = {
     bus?: PortBus;
     /** The platform's: the open bundle this port is drawn under. */
     busMember?: string;
+    /** The platform's: of a member of an open bundle, the pins its bus is on, the one it is named by first. */
+    busPins?: string[];
 };
 
 export type PyGraphNode = {
@@ -432,9 +434,6 @@ export class GraphGModelSource {
                 }
                 continue;
             }
-            // Ports are laid out by SIDE, which is the direction unless the
-            // producer placed the port with its bundle (`port.side`).
-            const sideOf = (p: PyGraphPort): PortSide => normalizePortSide(p.side) ?? (p.direction === 'in' ? 'WEST' : 'EAST');
             // A node the producer says is drawn as a symbol (a gate, a mux, a
             // register): its pins in the symbol's order, its size the symbol's.
             const openable = canOpen(node, doc.graph.subgraphs);
@@ -446,23 +445,35 @@ export class GraphGModelSource {
                 && !openable
                 ? node.meta['symbol'] as SymbolKind
                 : undefined;
-            const bySymbolPin = (ps: PyGraphPort[]): PyGraphPort[] => symbolKind
-                ? ps.map((p, k) => ({ p, k })).sort((a, b) => (SymbolGeometry.pinRank(a.p.pins) - SymbolGeometry.pinRank(b.p.pins)) || a.k - b.k).map(e => e.p)
-                : ps;
-            const inputs = bySymbolPin(node.ports.filter(p => sideOf(p) === 'WEST'));
-            const outputs = bySymbolPin(node.ports.filter(p => sideOf(p) === 'EAST'));
+            // An open bus's members are drawn under it, inside its rail: ranked
+            // with their bus (by its pins), then by their own pins. A member
+            // ranked by its own pin alone left its bus (an `en` member above
+            // the `d` bus it is in).
+            const bySymbolPin = (ps: PyGraphPort[]): PyGraphPort[] => {
+                if (!symbolKind) {
+                    return ps;
+                }
+                // A bundle's members follow its bus (`bundlePorts`).
+                let head = -1;
+                return ps.map((p, k) => {
+                    if (!p.busMember) {
+                        head = k;
+                    }
+                    return {
+                        p, k,
+                        rank: SymbolGeometry.pinRank(p.busMember ? p.busPins : p.pins),
+                        at: p.busMember ? head : k,
+                        own: p.busMember ? SymbolGeometry.pinRank(p.pins) : -1
+                    };
+                }).sort((a, b) => (a.rank - b.rank) || (a.at - b.at) || (a.own - b.own) || (a.k - b.k)).map(e => e.p);
+            };
+            // Ports are laid out by SIDE, which is the direction unless the
+            // producer placed the port with its bundle (`port.side`).
+            const inputs = bySymbolPin(node.ports.filter(p => portSideOf(p) === 'WEST'));
+            const outputs = bySymbolPin(node.ports.filter(p => portSideOf(p) === 'EAST'));
             // A register's clock is drawn at its wedge, not on a pin row.
             const clocks = symbolKind ? inputs.filter(p => SymbolGeometry.isClockPin(symbolKind, p.pins)) : [];
             const rowInputs = clocks.length ? inputs.filter(p => !clocks.includes(p)) : inputs;
-            // The pin each bus on the node is named by, for its members' names.
-            const busPins = new Map<string, string>();
-            for (const p of node.ports) {
-                if (p.bus && p.pins?.length) {
-                    busPins.set(`${p.bus.group}\u0000${sideOf(p)}`, p.pins[0]);
-                }
-            }
-            const pinNameOf = (p: PyGraphPort): string =>
-                registerPinName(p, p.busMember ? busPins.get(`${p.busMember}\u0000${sideOf(p)}`) : undefined);
 
             const portW = WorkflowDiagramConstants.PORT_WIDTH_PX;
             const portH = WorkflowDiagramConstants.PORT_HEIGHT_PX;
@@ -533,7 +544,7 @@ export class GraphGModelSource {
                 + lineColumnWidth * Math.max(...lines.map(line => textColumns(line.text)));
             // As wide as the label boxes drawn on the body, a bus's inset and
             // a member's rail slot with them.
-            const pinNameWidth = (ps: PyGraphPort[]): number => Math.max(0, ...ps.map(p => this.portLabelBoxWidth(p, pinNameOf(p))));
+            const pinNameWidth = (ps: PyGraphPort[]): number => Math.max(0, ...ps.map(p => this.portLabelBoxWidth(p, registerPinLabel(p).drawn)));
             // Under a symbol, its caption: a register's name; any symbol's the
             // producer gives (`meta.caption`, a library mux's instance name).
             const producerCaption = typeof node.meta?.['caption'] === 'string' && node.meta['caption'] ? node.meta['caption'] as string : undefined;
@@ -942,10 +953,11 @@ export class GraphGModelSource {
                             east ? outputs.length : rowInputs.length, east ? idx : rowInputs.indexOf(port)) - boxH / 2;
                 // A register's pins are named by what they are (`d`, `en`, `q`);
                 // a gate's pins say nothing a wire does not, and are hidden.
-                const labelText = symbolKind === 'register' ? pinNameOf(port) : port.name;
+                const pinLabel = symbolKind === 'register' ? registerPinLabel(port) : undefined;
+                const labelText = pinLabel ? pinLabel.text : port.name;
                 const labelSize = this.estimateLabelSize(labelText, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX);
                 // A gate's pin names are hidden and take no room in its body.
-                const labelBoxWidth = symbolKind && symbolKind !== 'register' ? 0 : this.portLabelBoxWidth(port, labelText);
+                const labelBoxWidth = symbolKind && symbolKind !== 'register' ? 0 : this.portLabelBoxWidth(port, pinLabel?.drawn ?? labelText);
                 const gport: GPort = {
                     id: portId,
                     type: direction === 'output' ? WorkflowDiagramTypes.PORT_OUTPUT : WorkflowDiagramTypes.PORT_INPUT,
@@ -1014,6 +1026,7 @@ export class GraphGModelSource {
                     args: {
                         [WorkflowDiagramMetadata.PORT_ID]: portId,
                         [WorkflowDiagramMetadata.PORT_NAME]: port.name,
+                        ...(pinLabel?.pin ? { [WorkflowDiagramMetadata.PORT_LABEL_PIN]: pinLabel.pin } : {}),
                         ...busArgsOf(port),
                         [WorkflowDiagramMetadata.PORT_DIRECTION]: direction,
                         [WorkflowDiagramMetadata.PORT_TYPE]: port.type
@@ -1590,11 +1603,7 @@ export class GraphGModelSource {
     }
 
     private estimateLabelSize(text: string, fontSizePx: number = WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX): { width: number; height: number } {
-        const avgCharWidth = Math.max(5, Math.round(fontSizePx * 0.6));
-        // By columns, as a node's lines are: a producer's names are any text.
-        const width = Math.max(0, textColumns(text) * avgCharWidth);
-        const height = Math.max(10, Math.round(fontSizePx * 1.2));
-        return { width, height };
+        return estimateTextSize(text, fontSizePx);
     }
 
     private createScopeNode(
@@ -2365,15 +2374,19 @@ function ownedEnd(raw: string, owners: ReadonlyMap<string, PortOwner>, nodes: re
  * and, of a bus opened on it, the field it carries. A register of a bundle
  * has a `d` per field: the bus is the `d`, and each member says which field
  * it is, where a column of `d`s said nothing. A member on another pin than
- * the one its bus is named by (`busPin`) says which (`en: valid`).
+ * the one its bus is named by says which (`pin`), drawn apart from the name
+ * so no name can be taken for it; `drawn` is the text the label is as wide
+ * as.
  */
-function registerPinName(port: PyGraphPort, busPin: string | undefined): string {
+function registerPinLabel(port: PyGraphPort): { text: string; pin?: string; drawn: string } {
     const pin = port.pins?.[0];
     if (!pin) {
-        return port.name;
+        return { text: port.name, drawn: port.name };
     }
     if (!port.busMember) {
-        return pin;
+        return { text: pin, drawn: pin };
     }
-    return pin === busPin ? port.name : `${pin}: ${port.name}`;
+    return pin === port.busPins?.[0]
+        ? { text: port.name, drawn: port.name }
+        : { text: port.name, pin, drawn: `${pin} ${port.name}` };
 }
