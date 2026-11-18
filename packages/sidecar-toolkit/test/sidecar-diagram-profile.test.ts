@@ -297,7 +297,8 @@ describe('runCli: the product’s CLI, started as a run starts it', () => {
         expect(await p.runCli!(file, ['skills', '--json', file.fsPath])).toEqual({
             exitCode: 0,
             stdout: JSON.stringify({ args: ['skills', '--json', file.fsPath], cwd: dir }) + '\n',
-            stderr: 'said on stderr\n'
+            stderr: 'said on stderr\n',
+            cwd: dir
         });
     });
 
@@ -364,7 +365,7 @@ describe('runCli: the product’s CLI, started as a run starts it', () => {
     it.skipIf(process.platform === 'win32')('says so when the command cannot be started, and never throws', async () => {
         const { dir, file } = project('unused', []);
         const p = createSidecarDiagramProfile(baseInput({ cliCommandDefault: path.join(dir, 'not-there') }));
-        expect(await p.runCli!(file, [])).toMatchObject({ exitCode: -1, failure: 'start' });
+        expect(await p.runCli!(file, [])).toMatchObject({ exitCode: -1, failure: 'start', cwd: dir });
         workspace.getConfiguration = (() => {
             throw new Error('settings unreadable');
         }) as typeof workspace.getConfiguration;

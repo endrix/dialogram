@@ -83,6 +83,12 @@ export interface CliRunResult {
     failure?: 'no-command' | 'start' | 'timeout';
     /** Why, for a person, when `failure` is set. */
     message?: string;
+    /**
+     * The directory the command was started in, the run root: what a run of
+     * the file would take as its working directory. Absent when no command
+     * was started.
+     */
+    cwd?: string;
 }
 
 /**
@@ -117,7 +123,8 @@ export async function runCli(
             exitCode: result.code,
             stdout: result.stdout,
             stderr: result.stderr,
-            ...(failure ? { failure, message: describeChildFailure(cli.cmd, result) } : {})
+            ...(failure ? { failure, message: describeChildFailure(cli.cmd, result) } : {}),
+            cwd: cli.cwd
         };
     } catch (error) {
         return {

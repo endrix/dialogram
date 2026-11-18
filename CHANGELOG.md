@@ -87,8 +87,9 @@ platform that hands it one.
   deadline. The deadline is `timeoutMs` when positive, else the graph-load
   deadline for the file. It never throws, and answers `CliRunResult`:
   `exitCode`, `stdout` and `stderr`, and a `failure` (`no-command`, `start`,
-  `timeout`) with a `message` when the CLI did not run to its end; an exit
-  other than 0 is the CLI's answer, not a failure. A product asks the CLI
+  `timeout`) with a `message` when the CLI did not run to its end, and the
+  `cwd` it was started in; an exit other than 0 is the CLI's answer, not a
+  failure. A product asks the CLI
   what a run would find instead of copying the rules for where and how a run
   starts, which stay the toolkit's own (`run-root.ts`, which the run driver
   now calls too).
