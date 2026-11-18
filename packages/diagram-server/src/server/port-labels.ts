@@ -16,7 +16,7 @@ import {
     WorkflowDiagramCss,
     WorkflowDiagramMetadata,
     WorkflowDiagramTypes,
-    estimatePortLabelSize,
+    estimatePortLabelBox,
     portLabelX,
     portLabelY,
     portSide
@@ -43,10 +43,8 @@ export function placePortLabel(label: any, port: any, gap: number): void {
     }) === 'EAST';
     // A symbol's pin names sit inside its body, past the pin's stub.
     const symbolPin = Array.isArray(port?.cssClasses) && port.cssClasses.includes(WorkflowDiagramCss.SYMBOL_PIN);
-    // Until it is measured, as the client draws it: a symbol's pin name as
-    // the server sized it, any other port's name by the platform's estimate.
-    const fallback = estimatePortLabelSize(label.text ?? '',
-        symbolPin ? { pin: label.args?.[WorkflowDiagramMetadata.PORT_LABEL_PIN] as string | undefined } : undefined);
+    // Until it is measured, as the client draws it, slot and all.
+    const fallback = estimatePortLabelBox(port, label);
     const labelW = label.size?.width ?? fallback.width;
     const labelH = label.size?.height ?? fallback.height;
     // Positioned by its top-left: client-side alignment for port labels is

@@ -1,6 +1,6 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
 import { parseBadgesMeta, parseFactsMeta, parseLinesMeta, parseViewsMeta, type UnitBadge } from '../server/graph-load-request-options';
-import { BoundaryPortGeometry, estimatePinLabelSize, estimateTextSize, isBoundaryNodeType, SymbolGeometry, textColumns, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
+import { BoundaryPortGeometry, estimatePinLabelSize, estimateTextSize, isBoundaryNodeType, portLabelSlot, SymbolGeometry, textColumns, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findLoopEdges } from './feedback-edges';
 import { arrangeGroupRows, groupLayoutOptions, isGroupRow, splitEdgesAtGroups } from './group-edges';
@@ -474,12 +474,12 @@ export class GraphGModelSource {
             const inputs = bySymbolPin(node.ports.filter(p => portSideOf(p) === 'WEST'));
             const outputs = bySymbolPin(node.ports.filter(p => portSideOf(p) === 'EAST'));
             // A register's clock is drawn at its wedge, not on a pin row: a
-            // port on its `clk`, and a bus named by it (`pinsByCount`), its
-            // members with it. A bus with one `clk` member among its `d`s is
-            // a `d`, on the rows, and the member is in its rail.
-            const clockPinsOf = (p: PyGraphPort): string[] | undefined =>
-                p.busMember !== undefined ? p.busPins?.slice(0, 1) : p.bus ? p.pins?.slice(0, 1) : p.pins;
-            const clocks = symbolKind ? inputs.filter(p => SymbolGeometry.isClockPin(symbolKind, clockPinsOf(p))) : [];
+            // port of its own on `clk`. A bus never is, whatever its members
+            // are on: it and its members are on the rows, in its rail, and a
+            // member on another pin than its bus says which (`clk tick`).
+            const clocks = symbolKind
+                ? inputs.filter(p => !p.bus && p.busMember === undefined && SymbolGeometry.isClockPin(symbolKind, p.pins))
+                : [];
             const rowInputs = clocks.length ? inputs.filter(p => !clocks.includes(p)) : inputs;
 
             const portW = WorkflowDiagramConstants.PORT_WIDTH_PX;
@@ -2402,9 +2402,7 @@ function portLabelEstimate(port: PyGraphPort, symbolKind: SymbolKind | undefined
     const size = pinLabel
         ? estimatePinLabelSize(text, pinLabel.pin)
         : estimateTextSize(text, WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX);
-    const slot = port.bus
-        ? WorkflowDiagramConstants.PORT_BUS_LABEL_INSET_PX
-        : port.busMember ? WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX : 0;
+    const slot = portLabelSlot({ bus: !!port.bus, busMember: port.busMember !== undefined });
     return {
         text,
         ...(pinLabel?.pin ? { pin: pinLabel.pin } : {}),

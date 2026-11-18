@@ -4,7 +4,7 @@
  * mux's select below its data), a register's pins named by what they are.
  */
 import { describe, expect, it } from 'vitest';
-import { estimatePinLabelSize, estimatePortLabelSize, estimateTextSize, portLabelParts, SymbolGeometry, WorkflowDiagramConstants, WorkflowDiagramCss, WorkflowDiagramMetadata } from '@dialogram/shared';
+import { estimatePinLabelSize, estimatePortLabelBox, estimatePortLabelSize, estimateTextSize, portLabelParts, SymbolGeometry, WorkflowDiagramConstants, WorkflowDiagramCss, WorkflowDiagramMetadata } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument, type PyGraphNode } from '../src/model/graph-gmodel-source';
 
 const port = (node: string, name: string, direction: 'in' | 'out', pins?: string[]) =>
@@ -247,6 +247,53 @@ describe('symbol nodes, in the corners', () => {
         expect(label(open, 'tick')).toBe('tick');
     });
 
+    it('never put a bus at the clock wedge, even one most of whose members are on the clock', () => {
+        // Two fields on `clk` and one on `d`: the bus is named `clk`, and is
+        // still on the rows, its members under it in its rail, the `d` one
+        // saying so; only a port of its own on `clk` is at the wedge.
+        const doc = registerOf([field('c0', 'in', 'clk', 'in'), field('c1', 'in', 'clk', 'in'), field('x', 'in', 'd', 'in'),
+            field('x', 'out', 'q', 'out'), field('y', 'out', 'q', 'out')]);
+        const west = (gnode: any) => ports(gnode).filter((p: any) => p.position.x < 0)
+            .sort((a: any, b: any) => a.position.y - b.position.y);
+        const wedge = (gnode: any) => SymbolGeometry.clockY(SymbolGeometry.bodyHeight('register', gnode.size.height, true));
+        const centre = (p: any) => p.position.y + p.size.height / 2;
+
+        const closed = registerNode(doc, false);
+        expect(label(closed, 'in')).toBe('clk');
+        expect(west(closed).map(centre)).not.toContain(wedge(closed));
+        expect(closed.size.height).toBe(SymbolGeometry.size('register', 1, 1, undefined, true).height);
+
+        const open = registerNode(doc, true);
+        expect(west(open).map((p: any) => `${p.args[WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF] ? '  ' : ''}${p.args[WorkflowDiagramMetadata.PORT_NAME]}`))
+            .toEqual(['in', '  x', '  c0', '  c1']);
+        const centres = west(open).map(centre);
+        expect(centres).not.toContain(wedge(open));
+        expect(new Set(centres.slice(1).map((y: number, k: number) => y - centres[k])).size).toBe(1);
+        expect(open.size.height).toBe(SymbolGeometry.size('register', 4, 3, undefined, true).height);
+        // Named by the field each carries, the `d` one by its pin as well.
+        const pinOf = (name: string) => ports(open).find((p: any) => p.args[WorkflowDiagramMetadata.PORT_NAME] === name && p.position.x < 0)
+            .children[0].args[WorkflowDiagramMetadata.PORT_LABEL_PIN];
+        expect(['x', 'c0', 'c1'].map(pinOf)).toEqual(['d', undefined, undefined]);
+        // The body holds its widest name, the `d x` one, rail and all.
+        const xBox = ports(open).find((p: any) => p.args[WorkflowDiagramMetadata.PORT_NAME] === 'x' && p.position.x < 0).children[0].size.width;
+        expect(xBox).toBe(textWidth('x', 'd') + WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX);
+    });
+
+    it('keep each side’s members under that side’s bus, a bundle on both sides', () => {
+        // A bus is keyed by its group and its side (`bundlePorts`), so a
+        // member is always on its bus's side: two members of `in` placed east
+        // are a bus of their own there, under it.
+        const doc = registerOf([field('a', 'in', 'd', 'in'), field('b', 'in', 'd', 'in'),
+            { ...field('c', 'in', 'en', 'in'), side: 'east' }, { ...field('e', 'in', 'en', 'in'), side: 'east' },
+            field('a', 'out', 'q', 'out'), field('b', 'out', 'q', 'out')]);
+        const open = registerNode(doc, true);
+        const side = (east: boolean) => ports(open).filter((p: any) => (p.position.x > 0) === east)
+            .sort((a: any, b: any) => a.position.y - b.position.y)
+            .map((p: any) => `${p.args[WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF] ? '  ' : ''}${p.args[WorkflowDiagramMetadata.PORT_NAME]}`);
+        expect(side(false)).toEqual(['in', '  a', '  b']);
+        expect(side(true)).toEqual(['in', '  c', '  e', 'out', '  a', '  b']);
+    });
+
     it('name a bus whose pins tie by the one a register lists first, in any order of its fields', () => {
         for (const [first, second] of [['en', 'd'], ['d', 'en']]) {
             const doc = registerOf([field('p', 'in', first, 'in'), field('r', 'in', second, 'in'),
@@ -296,16 +343,41 @@ describe('symbol nodes, in the corners', () => {
 });
 
 describe('port names before the client measures them', () => {
-    it('are estimated as they always were, by columns, when they are no symbol pin', () => {
-        // 0.7 of the font per column and 3 px each side; a line and a quarter
+    it('are estimated as they always were when they are no symbol pin', () => {
+        // 0.7 of the font a character and 3 px each side; a line and a quarter
         // high. Every product's labels are placed by it until measured.
         expect(estimatePortLabelSize('abc')).toEqual({ width: Math.ceil(3 * 12 * 0.7 + 6), height: 15 });
-        expect(estimatePortLabelSize('時間').width).toBe(estimatePortLabelSize('abcd').width);
+        expect(estimatePortLabelSize('時間').width).toBe(estimatePortLabelSize('ab').width);
+        expect(estimateTextSize('時間', 12).width).toBe(estimateTextSize('ab', 12).width);
     });
 
-    it('are estimated as the server sized them when they are a symbol pin', () => {
-        expect(estimatePortLabelSize('valid', { pin: 'en' })).toEqual(estimatePinLabelSize('valid', 'en'));
-        expect(estimatePortLabelSize('d', {})).toEqual(estimatePinLabelSize('d'));
+    it('size a node by its name as they always did, whatever characters it has', () => {
+        const width = (name: string) => transform([{ id: 'n:x', kind: 'logic', label: name, scope: 'root', ports: [] }])
+            .children.find((c: any) => c.id === name).size.width;
+        expect(width('時間'.repeat(15))).toBe(width('ab'.repeat(15)));
+    });
+
+    it('are estimated as the server sized them when they are a symbol pin, with their slot', () => {
+        const member = { cssClasses: [WorkflowDiagramCss.SYMBOL_PIN], args: { [WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF]: 'in' } };
+        const box = estimatePortLabelBox(member, { text: 'valid', args: { [WorkflowDiagramMetadata.PORT_LABEL_PIN]: 'en' } });
+        expect(box).toEqual({ width: textWidth('valid', 'en') + WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX,
+            height: estimatePinLabelSize('valid').height, slot: WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX });
+        expect(estimatePortLabelBox({ args: {} }, { text: 'abc' })).toEqual({ ...estimatePortLabelSize('abc'), slot: 0 });
+    });
+
+    it('are placed before they are measured where the server sized them', async () => {
+        // An output member of an open bus on a register, its pin said: placed
+        // with no size, as on a reopen, it lands where its sized box does.
+        const { placePortLabel } = await import('../src/server/port-labels');
+        const doc = registerOf([field('a', 'in', 'd', 'in'), field('b', 'in', 'd', 'in'),
+            field('a', 'out', 'q', 'out'), field('b', 'out', 'q', 'out'), field('ok', 'out', 'en', 'out')]);
+        const open = registerNode(doc, true);
+        const ok = ports(open).find((p: any) => p.args[WorkflowDiagramMetadata.PORT_NAME] === 'ok');
+        const sized = { ...ok.children[0] };
+        const unsized = { ...ok.children[0], size: undefined };
+        placePortLabel(sized, ok, 3);
+        placePortLabel(unsized, ok, 3);
+        expect(unsized.position).toEqual(sized.position);
     });
 });
 

@@ -9,7 +9,7 @@
  */
 
 // The source-URI key, shared with the host and the toolkit (see `uri-keys.ts`).
-import { WorkflowDiagramConstants, textColumns, type NodeLine, type ViewRequest } from '@dialogram/shared';
+import { WorkflowDiagramConstants, charColumns, textColumns, type NodeLine, type ViewRequest } from '@dialogram/shared';
 import { normalizeSourceUriKey } from './uri-keys';
 export { normalizeSourceUriKey };
 
@@ -182,7 +182,7 @@ function cutToColumns(text: string, max: number): string {
     let out = '';
     let columns = 0;
     for (const char of text) {
-        const width = textColumns(char);
+        const width = charColumns(char);
         if (columns + width > max - 1) {
             break;
         }

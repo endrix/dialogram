@@ -624,14 +624,17 @@ it no longer has.
   apart before the name (*en* `valid`), so no name can be taken for it. A
   tie between pins goes to the one a register lists first, so the order of
   the fields does not move the bus. The members stay under their bus,
-  ranked with it and then by their own pins, and a bus with one `clk`
-  member among its `d`s stays on the rows, that member in its rail; only a
-  bus named by its `clk` is at the clock's wedge. The body is as wide as
+  ranked with it and then by their own pins. A bus is never at the clock's
+  wedge, whatever its members are on: it and they are on the rows, in its
+  rail, and a member on another pin says which (*clk* `tick`); only a port
+  of the register's own on `clk` is at the wedge. The body is as wide as
   the longest names side by side, with the rail each member's name has in
   front of it. A register's names are estimated as they are drawn, the pin,
   a 4 px gap and the name (`portLabelParts`, one helper the server and the
-  client share), by columns, a wide character two. Any other port's name is
-  estimated before it is measured as it always was, now by columns.
+  client share), by columns, a wide character two; every other estimate is
+  as it was. Before it is measured, a port's label is placed by one
+  estimate of its box, slot and all, on the server and in the client
+  (`estimatePortLabelBox`).
 - **A wire outside the viewport is not drawn**, as a node outside it is
   not; one within a few pixels of it still is, since its arrowhead and its
   caption reach further than its route. Of a diagram's thousands of wires

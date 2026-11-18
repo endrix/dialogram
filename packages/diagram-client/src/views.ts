@@ -50,7 +50,7 @@ import { nodeLinesHeight, nodeLinesOf, renderNodeLines } from './node-lines';
 import { listRowOf, renderListRow } from './list-row-view';
 import { GROUP_INITIAL_MARK_ROOM_PX, groupInitialMark, isGroupInitial } from './group-initial-mark';
 import { isDrawnBackwards } from './feedback-direction';
-import { WorkflowDiagramConstants, estimatePortLabelSize, portLabelParts } from '@dialogram/shared';
+import { WorkflowDiagramConstants, estimatePortLabelBox, portLabelParts } from '@dialogram/shared';
 
 /** Walk to the model root; the drag-active window is tracked per root. */
 function rootOfEdge(element: any): any {
@@ -2421,20 +2421,15 @@ export class WorkflowLabelView implements IView {
             // A bus keeps an inset beside the port for its larger dot, and a
             // member of an open one a slot for its rail, so its name sits under
             // the bundle's, one step in. The server sized the box for it.
-            const busGroup = parentPort?.args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP] as string | undefined;
             const busMemberOf = parentPort?.args?.[WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF] as string | undefined;
             // A symbol's pin said before the name, apart from it: a register's
             // `en` among the `d`s of its bus. The server sized the box for both.
             const pin = (label as any).args?.[WorkflowDiagramMetadata.PORT_LABEL_PIN] as string | undefined;
-            const slot = busGroup
-                ? WorkflowDiagramConstants.PORT_BUS_LABEL_INSET_PX
-                : busMemberOf ? WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX : 0;
-            // Until the client has measured it: a symbol's pin name as the
-            // server sized it, any other port's name by the platform's estimate,
-            // as the server places it (`port-labels.ts`).
-            const symbolPin = Array.isArray(parentPort?.cssClasses) && parentPort.cssClasses.includes(WorkflowDiagramCss.SYMBOL_PIN);
-            const estimate = estimatePortLabelSize(label.text || '', symbolPin ? { pin } : undefined);
-            const labelW = labelWRaw > 0 ? labelWRaw : estimate.width + slot;
+            // Until the client has measured it, as the server places it
+            // (`port-labels.ts`): the box, slot and all.
+            const estimate = estimatePortLabelBox(parentPort, label as any);
+            const slot = estimate.slot;
+            const labelW = labelWRaw > 0 ? labelWRaw : estimate.width;
             const labelH = labelHRaw > 0 ? labelHRaw : estimate.height;
             const textX = isOutput ? labelW - slot : slot;
             const textY = Math.round(labelH / 2);

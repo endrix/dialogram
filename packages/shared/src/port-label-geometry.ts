@@ -4,6 +4,7 @@
  * placement on every submit, and the client's view.
  */
 import { WorkflowDiagramConstants } from './diagram-constants';
+import { WorkflowDiagramCss, WorkflowDiagramMetadata } from './diagram-types';
 
 /** Whether a character takes two columns of a fixed-width font: East Asian wide and fullwidth forms, emoji. */
 function isWide(codePoint: number): boolean {
@@ -18,26 +19,36 @@ function isWide(codePoint: number): boolean {
         || (codePoint >= 0x20000 && codePoint <= 0x3fffd);
 }
 
+/** The columns one character (a code point) takes in a fixed-width font: two if it is wide, else one. */
+export function charColumns(char: string): number {
+    return isWide(char.codePointAt(0)!) ? 2 : 1;
+}
+
 /** The columns a text takes in a fixed-width font: two for a wide character, one for any other. */
 export function textColumns(text: string): number {
     let columns = 0;
     for (const char of text) {
-        columns += isWide(char.codePointAt(0)!) ? 2 : 1;
+        columns += charColumns(char);
     }
     return columns;
 }
 
+/** A line of text's height at a font size, before the client has measured it. */
+function textHeight(fontSizePx: number): number {
+    return Math.max(10, Math.round(fontSizePx * 1.2));
+}
+
+/** A text's width per character (per column, of a fixed-width font) at a font size. */
+function columnWidth(fontSizePx: number): number {
+    return Math.max(5, Math.round(fontSizePx * 0.6));
+}
+
 /**
- * A text's box before the client has measured it: a fixed width per column
- * (a producer's names are any text, and a wide character is two), a line's
- * height. The server sizes its nodes by it.
+ * A text's box before the client has measured it, as the server sizes its
+ * nodes by it: a fixed width per character, a line's height.
  */
 export function estimateTextSize(text: string, fontSizePx: number): { width: number; height: number } {
-    const columnWidth = Math.max(5, Math.round(fontSizePx * 0.6));
-    return {
-        width: Math.max(0, textColumns(text) * columnWidth),
-        height: Math.max(10, Math.round(fontSizePx * 1.2))
-    };
+    return { width: Math.max(0, text.length * columnWidth(fontSizePx)), height: textHeight(fontSizePx) };
 }
 
 /** One part of a port's label as it is drawn: its text, whether it is the pin, how far it is set from the part before. */
@@ -59,33 +70,62 @@ export function portLabelParts(name: string, pin?: string): PortLabelPart[] {
         : [{ text: name, pin: false, dx: 0 }];
 }
 
-/** A symbol pin's name before the client has measured it, and the pin said before it: as the server sizes a symbol's body. */
+/**
+ * A symbol pin's name before the client has measured it, and the pin said
+ * before it: as the server sizes a symbol's body. By columns, a wide
+ * character two: a register's names are a producer's fields, any text.
+ */
 export function estimatePinLabelSize(name: string, pin?: string): { width: number; height: number } {
     const fontSizePx = WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX;
     return {
-        width: portLabelParts(name, pin).reduce((width, part) => width + part.dx + estimateTextSize(part.text, fontSizePx).width, 0),
-        height: estimateTextSize(name, fontSizePx).height
+        width: portLabelParts(name, pin).reduce((width, part) => width + part.dx + textColumns(part.text) * columnWidth(fontSizePx), 0),
+        height: textHeight(fontSizePx)
     };
 }
 
-/**
- * A port name's box before the client has measured it, as the client draws it
- * and the server places it until then. A symbol's pin (`symbol`, with the pin
- * said before the name if there is one) is as the server sized it; any other
- * port's name keeps the estimate every product's labels have been placed by:
- * 0.7 of the font a column, 3 px each side.
- */
-export function estimatePortLabelSize(text: string, symbol?: { pin?: string }): { width: number; height: number } {
-    if (symbol) {
-        return estimatePinLabelSize(text, symbol.pin);
-    }
+/** A port name's box before the client has measured it: 0.7 of the font a character, 3 px each side, a line and a quarter high. */
+export function estimatePortLabelSize(text: string): { width: number; height: number } {
     const fontSizePx = WorkflowDiagramConstants.PORT_LABEL_FONT_SIZE_PX;
     const avgCharWidth = fontSizePx * 0.7;
     const padding = 3;
     return {
-        width: Math.max(1, Math.ceil(textColumns(text) * avgCharWidth + padding * 2)),
+        width: Math.max(1, Math.ceil(text.length * avgCharWidth + padding * 2)),
         height: Math.max(1, Math.ceil(fontSizePx * 1.25))
     };
+}
+
+/**
+ * The room in front of a port's name: a bus's inset for its larger dot, a
+ * member of an open bus's slot for its rail, so its name sits under the
+ * bundle's, one step in; none for any other port.
+ */
+export function portLabelSlot(port: { bus: boolean; busMember: boolean }): number {
+    return port.bus
+        ? WorkflowDiagramConstants.PORT_BUS_LABEL_INSET_PX
+        : port.busMember ? WorkflowDiagramConstants.PORT_BUS_RAIL_SLOT_PX : 0;
+}
+
+/**
+ * A port label's box before the client has measured it, the same on the
+ * server, which places it (`port-labels.ts`), and in the client, which draws
+ * it: a symbol's pin name as the server sized it, the pin said before it; any
+ * other port's name by `estimatePortLabelSize`; and in front of either, the
+ * port's slot (`portLabelSlot`). Read from the model, as both sides have it.
+ */
+export function estimatePortLabelBox(
+    port: { cssClasses?: readonly string[]; args?: Record<string, unknown> } | undefined,
+    label: { text?: string; args?: Record<string, unknown> }
+): { width: number; height: number; slot: number } {
+    const text = label.text ?? '';
+    const symbolPin = Array.isArray(port?.cssClasses) && port!.cssClasses!.includes(WorkflowDiagramCss.SYMBOL_PIN);
+    const size = symbolPin
+        ? estimatePinLabelSize(text, label.args?.[WorkflowDiagramMetadata.PORT_LABEL_PIN] as string | undefined)
+        : estimatePortLabelSize(text);
+    const slot = portLabelSlot({
+        bus: port?.args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP] !== undefined,
+        busMember: port?.args?.[WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF] !== undefined
+    });
+    return { width: size.width + slot, height: size.height, slot };
 }
 
 /**
