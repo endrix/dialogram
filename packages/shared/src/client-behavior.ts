@@ -95,6 +95,11 @@ export interface DiagramClientBehavior {
     /** What the hierarchy outline panel is called (its title and its button's
      *  tooltip); "Hierarchy" by default. */
     outlineTitle?: string;
+    /** The VS Code command that carries out what a producer offers on a node
+     *  or on the canvas (`meta.actions`, node-actions.ts), called with one
+     *  `NodeActionRequest`. Without it the actions are neither offered nor
+     *  done. */
+    nodeActionCommand?: string;
     /**
      * Whether the host has a chat backend behind this diagram.
      *

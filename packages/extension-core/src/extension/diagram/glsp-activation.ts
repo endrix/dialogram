@@ -53,6 +53,7 @@ import {
     registerDiagramViewType, serializedRangeToVscodeRange
 } from './open-in-place';
 import { producerNamedDefinition } from './producer-definition';
+import { RevealNodeAction } from '@dialogram/shared';
 
 // Define the diagram type constant locally to avoid import
 const WORKFLOW_DIAGRAM_TYPE = 'cal-network-diagram';
@@ -1163,7 +1164,9 @@ function registerCalDiagramCommands(
         return undefined;
     };
 
-    const refreshActiveDiagramModel = async (opts?: { sourceUri?: string; workflowName?: string; agentContextOnly?: boolean }): Promise<void> => {
+    const refreshActiveDiagramModel = async (
+        opts?: { sourceUri?: string; workflowName?: string; agentContextOnly?: boolean; reveal?: string }
+    ): Promise<void> => {
         const uri = opts?.sourceUri ? vscode.Uri.parse(opts.sourceUri) : getActiveWorkflowDiagramUri();
         if (!uri) {
             return;
@@ -1191,6 +1194,12 @@ function registerCalDiagramCommands(
                 ...(refreshContext?.navTrail ? { [NAV_TRAIL_ARG]: refreshContext.navTrail } : {})
             }
         });
+        if (opts?.reveal) {
+            // Named before the model is asked for: the diagram selects and
+            // centres the node when the model that has it comes in. What a
+            // product's command added is not always where the view is.
+            connector.dispatchAction(RevealNodeAction.create(opts.reveal), clientId);
+        }
         connector.dispatchAction(refreshAction, clientId);
     };
 
@@ -1324,8 +1333,11 @@ function registerCalDiagramCommands(
 
     // Command: Refresh active diagram model
     context.subscriptions.push(
-        vscode.commands.registerCommand(profile.commands.refreshDiagramModel, async (args?: { sourceUri?: string; workflowName?: string }) => {
-            await refreshActiveDiagramModel({ sourceUri: args?.sourceUri, workflowName: args?.workflowName });
+        vscode.commands.registerCommand(profile.commands.refreshDiagramModel, async (
+            args?: { sourceUri?: string; workflowName?: string; reveal?: string }
+        ) => {
+            const reveal = typeof args?.reveal === 'string' && args.reveal.trim() !== '' ? args.reveal : undefined;
+            await refreshActiveDiagramModel({ sourceUri: args?.sourceUri, workflowName: args?.workflowName, reveal });
         })
     );
 

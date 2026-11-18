@@ -26,6 +26,7 @@ import {
     parseViewArg
 } from '@dialogram/diagram-server/server/graph-load-request-options';
 import { HierarchyCache, definitionFiles, fileHash, findInstance, outlineOf } from './hierarchy-cache';
+import { FileMemo } from '@dialogram/diagram-server/services/file-memo';
 import { extractWorkflowDefinitionNames } from './source-analysis';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
 import {
@@ -47,6 +48,12 @@ interface CachedPlan {
     json: string;
     definitions: Map<string, string | undefined>;
 }
+
+/**
+ * The units a file declares. A large file is read for them once while it
+ * stays as it was (file-memo.ts), whichever editor asks.
+ */
+const LOCAL_WORKFLOW_NAMES = new FileMemo<string[]>();
 
 /**
  * Acquires workflow graph documents via the runtime CLI's `plan --format graph`, falling back to
@@ -337,10 +344,10 @@ export class CliGraphModelSource implements DiagramModelSource {
         }
     }
 
+    /** A file that cannot be read declares nothing, and that is not kept: it is read again at the next ask. */
     private async getLocalWorkflowNames(filePath: string): Promise<string[]> {
         try {
-            const sourceText = await fs.readFile(filePath, 'utf-8');
-            return extractWorkflowDefinitionNames(sourceText);
+            return await LOCAL_WORKFLOW_NAMES.get(filePath, async () => extractWorkflowDefinitionNames(await fs.readFile(filePath, 'utf-8')));
         } catch {
             return [];
         }
@@ -358,15 +365,9 @@ export class CliGraphModelSource implements DiagramModelSource {
     }
 
     private async computePlanCacheKey(filePath: string, workflowName: string | undefined): Promise<string | undefined> {
-        try {
-            const fsModule = await import('node:fs/promises');
-            const crypto = await import('node:crypto');
-            const content = await fsModule.readFile(filePath);
-            const hash = crypto.createHash('sha256').update(content).digest('hex');
-            return `${filePath}::${workflowName ?? ''}::${hash}`;
-        } catch {
-            return undefined;
-        }
+        // The same hash the definition files are checked by: a large file's is kept (file-memo.ts).
+        const hash = await fileHash(filePath);
+        return hash === undefined ? undefined : `${filePath}::${workflowName ?? ''}::${hash}`;
     }
 }
 

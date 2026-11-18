@@ -13,6 +13,7 @@ import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared
 import { NodeOpener } from './node-opener';
 import { lastPerKey } from './contributions';
 import { portBusToggleOf } from './port-bus-toggle';
+import { doubleClickNodeAction } from './node-actions';
 
 const SHOW_OPTIONS_ARG = 'jsonOpenerOptions';
 const NAVIGATE_PREFER_DEFINITION_ARG = 'wf:navigatePreferDefinition';
@@ -178,6 +179,11 @@ export class ViewerMouseListener extends MouseListener implements Ranked {
     override doubleClick(target: GModelElement, event: MouseEvent): (Action | Promise<Action>)[] {
         // A double-click on a bus toggle is two toggles, not a request to open the node.
         if (portBusToggleOf(event)) {
+            return [];
+        }
+        // What the producer marked for a double-click here is the product's
+        // to do (node-actions.ts): the navigation listener dispatches it.
+        if (doubleClickNodeAction(target)) {
             return [];
         }
         const node = findContainingEntityNode(target);

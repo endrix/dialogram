@@ -2,9 +2,9 @@
  * A node drawn as a symbol rather than a box: a gate, a mux, a register, an
  * operator.
  *
- * A producer says what a node is drawn as (`meta.symbol`: `and`, `or`, `xor`,
- * `xnor`, `not`, `mux`, `register`, `operator`, the last with the glyph it
- * shows in `meta.operator`) and, on each port, the pins it is wired to
+ * A producer says what a node is drawn as (`meta.symbol`: `and`, `nand`, `or`,
+ * `nor`, `xor`, `xnor`, `not`, `buf`, `mux`, `register`, `operator`, the last
+ * with the glyph it shows in `meta.operator`) and, on each port, the pins it is wired to
  * (`port.pins`, data first, then controls, then the result). The server sizes
  * the node and places its pins from these measures; the client draws the body
  * between the pin stubs. Both read them here, so the pins sit where the body's
@@ -14,10 +14,10 @@
  * box's edges, centred on its border as every port does, and the stub joins
  * each to the body, the way a schematic draws a gate's pins.
  */
-export type SymbolKind = 'and' | 'or' | 'xor' | 'xnor' | 'not' | 'mux' | 'register' | 'operator';
+export type SymbolKind = 'and' | 'nand' | 'or' | 'nor' | 'xor' | 'xnor' | 'not' | 'buf' | 'mux' | 'register' | 'operator';
 
 export namespace SymbolGeometry {
-    export const KINDS: readonly SymbolKind[] = ['and', 'or', 'xor', 'xnor', 'not', 'mux', 'register', 'operator'];
+    export const KINDS: readonly SymbolKind[] = ['and', 'nand', 'or', 'nor', 'xor', 'xnor', 'not', 'buf', 'mux', 'register', 'operator'];
     /** Length of a pin's stub, between the box's edge and the body. */
     export const STUB_PX = 10;
     /** Distance between two pins' rows. */
@@ -27,10 +27,13 @@ export namespace SymbolGeometry {
     /** The body's width, and the least height it is drawn at. */
     export const BODY: Readonly<Record<SymbolKind, { width: number; minHeight: number }>> = {
         and: { width: 30, minHeight: 28 },
+        nand: { width: 36, minHeight: 28 },
         or: { width: 32, minHeight: 28 },
+        nor: { width: 38, minHeight: 28 },
         xor: { width: 36, minHeight: 28 },
         xnor: { width: 40, minHeight: 28 },
         not: { width: 26, minHeight: 22 },
+        buf: { width: 20, minHeight: 22 },
         mux: { width: 20, minHeight: 36 },
         register: { width: 44, minHeight: 36 },
         operator: { width: 30, minHeight: 26 }
@@ -39,8 +42,18 @@ export namespace SymbolGeometry {
     export const BACK_CURVE = 0.25;
     /** An XOR's second back line sits this far behind its body. */
     export const XOR_GAP_PX = 5;
-    /** The bubble on a NOT's or an XNOR's output. */
+    /** The bubble on an inverting gate's output: a NOT's, a NAND's, a NOR's, an XNOR's. */
     export const BUBBLE_RADIUS_PX = 3;
+
+    /** Whether a kind's output is inverted: it is drawn with a bubble. */
+    export function hasBubble(kind: SymbolKind): boolean {
+        return kind === 'not' || kind === 'nand' || kind === 'nor' || kind === 'xnor';
+    }
+
+    /** Whether a kind's back is an OR's curve. */
+    export function hasCurvedBack(kind: SymbolKind): boolean {
+        return kind === 'or' || kind === 'nor' || kind === 'xor' || kind === 'xnor';
+    }
     /** Room under a symbol for its caption: a register's name, or the one its producer gives. */
     export const CAPTION_HEIGHT_PX = 14;
 
@@ -134,7 +147,7 @@ export namespace SymbolGeometry {
         return Math.max(BODY.register.width, widestInput + widestOutput + 2 * PIN_NAME_INSET_PX + PIN_NAME_SPACING_PX);
     }
 
-    /** How far an OR's (an XOR's, an XNOR's) back curves in at its middle. */
+    /** How far an OR's (a NOR's, an XOR's, an XNOR's) back curves in at its middle. */
     export function backDepth(kind: SymbolKind): number {
         return BODY[kind].width * BACK_CURVE;
     }
@@ -155,7 +168,7 @@ export namespace SymbolGeometry {
      * curve, at the stub's end) for an XOR and an XNOR.
      */
     export function backX(kind: SymbolKind, bodyHeightPx: number, y: number): number {
-        if (kind !== 'or' && kind !== 'xor' && kind !== 'xnor') {
+        if (!hasCurvedBack(kind)) {
             return STUB_PX;
         }
         const t = Math.min(1, Math.max(0, y / bodyHeightPx));
@@ -165,11 +178,11 @@ export namespace SymbolGeometry {
     /**
      * Where the body's front is at height `y`, as an x in the node's box: an
      * output pin's stub runs from here. On the half-ellipse for an AND, the
-     * front curve for an OR, the slant for a NOT and a mux, past the bubble
-     * for a NOT and an XNOR.
+     * front curve for an OR, the slant for a NOT, a buffer and a mux, past
+     * the bubble for a kind that has one.
      */
     export function frontX(kind: SymbolKind, width: number, bodyHeightPx: number, y: number): number {
-        const bubble = kind === 'not' || kind === 'xnor' ? 2 * BUBBLE_RADIUS_PX : 0;
+        const bubble = hasBubble(kind) ? 2 * BUBBLE_RADIUS_PX : 0;
         const right = width - STUB_PX;
         const front = right - bubble;
         const left = STUB_PX + (kind === 'xor' || kind === 'xnor' ? XOR_GAP_PX : 0);
@@ -181,13 +194,16 @@ export namespace SymbolGeometry {
         }
         switch (kind) {
             case 'and':
+            case 'nand':
                 return left + (front - left) / 2 * (1 + Math.sqrt(1 - off * off));
             case 'or':
+            case 'nor':
             case 'xor':
             case 'xnor':
                 // The two front quadratics meet at the tip; a parabola is near enough.
                 return left + (front - left) * (1 - 0.65 * off * off);
             case 'not':
+            case 'buf':
                 return left + (front - left) * (1 - off);
             case 'mux': {
                 // Straight between 20% and 80% of its height, slanting back above and below.

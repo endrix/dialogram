@@ -187,6 +187,8 @@ export namespace WorkflowDiagramMetadata {
      * the same sanitizer the chat uses; the rest is shown verbatim.
      */
     export const FACTS = 'wf:facts';
+    /** On the root: what the producer offers on the canvas (`graph.meta.actions`, node-actions.ts). */
+    export const ACTIONS = 'wf:actions';
     /**
      * Short marks a producer puts on a node's header, as it listed them on
      * `meta.badges`: `[{ text, tone? }]`, drawn right-aligned in the header

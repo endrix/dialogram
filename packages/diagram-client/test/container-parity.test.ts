@@ -39,7 +39,10 @@
  * and as a model-root listener, with GLSP's update command rebound to the
  * `AnchoredUpdateModelCommand` that scrolls in the update's own animation), and an
  * automaton's state and transition (`node:state`, `edge:transition`), and the
- * `FitClearOfOverlaysCommand` that fits the diagram where the canvas's overlays leave it free — plus two
+ * `FitClearOfOverlaysCommand` that fits the diagram where the canvas's overlays leave it free, and the
+ * `dialogram.nodeAction` action handler (carries what a producer offers on a node or the canvas to
+ * the product's command, node-actions.ts), and the `dialogram.revealNode` action handler (selects and
+ * centres the node the product's command names, once the model that has it loads) — plus two
  * changes: the graph is drawn by `DetailGraphView` (GLSP's `GGraphView`, its svg marked with the
  * level of detail of the zoom, zoom-detail.ts), and `label:boundary:type` is bound to
  * the non-editable `BoundaryLabel`, because editing it renamed the port.

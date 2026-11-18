@@ -14,6 +14,7 @@ import { navigatesInPlace, WorkflowNavigationUi } from './navigation-ui';
 import { clientBehavior } from './profile';
 import { openTargetAction } from './open-target';
 import { portBusToggleOf } from './port-bus-toggle';
+import { doubleClickNodeAction } from './node-actions';
 import {
     buildCrossFileNavigationTarget,
     GRAPH_SOURCE_URI_ARG,
@@ -150,6 +151,13 @@ export class WorkflowNetworkNavigationMouseListener extends MouseListener implem
         // A double-click on a bus toggle is two toggles, not a request to open the node.
         if (portBusToggleOf(event)) {
             return [];
+        }
+        // What the producer marked for a double-click on this node, or on the
+        // port clicked, is what it does: the product's command, in place of
+        // anything the platform would open.
+        const offered = doubleClickNodeAction(target);
+        if (offered) {
+            return [offered as unknown as Action];
         }
         // A node that stands for a file opens it, whatever else it could do
         // (see open-target.ts); the viewer listener stands back for it.

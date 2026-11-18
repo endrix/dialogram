@@ -11,6 +11,8 @@ import {
 import {
     isBoundaryNodeType,
     hierarchyTrailTo,
+    NodeActionAction,
+    parseNodeActions,
     WorkflowDiagramMetadata,
     WorkflowDiagramTypes,
     type HierarchyCrumb,
@@ -269,6 +271,39 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
         const elementArgs: Args | undefined = (element as any).args;
         const navSymbolHint = navigationSymbolFromElement(element);
 
+        // What the producer offers on this node, or on the canvas
+        // (`meta.actions`, node-actions.ts): first in the menu, in its order.
+        // The menu is drawn in the order the items are returned (nothing
+        // sorts it), so first here is first there. The product's command
+        // carries them out; the client leaves them out of the menu when the
+        // product names none (`offeredMenuItems`).
+        const offered = (() => {
+            if (element === this.modelState.root) {
+                return { actions: parseNodeActions(elementArgs?.[WorkflowDiagramMetadata.ACTIONS]), elementId: undefined };
+            }
+            // A port or a label selected stands for its node.
+            let current: any = element;
+            while (current && current !== this.modelState.root) {
+                const meta = (current.args as Args | undefined)?.[WorkflowDiagramMetadata.NODE_META] as unknown;
+                if (meta && typeof meta === 'object') {
+                    return { actions: parseNodeActions((meta as Record<string, unknown>)['actions']), elementId: String(current.id) };
+                }
+                current = current.parent;
+            }
+            return { actions: [], elementId: undefined };
+        })();
+        offered.actions.filter(action => action.menu !== false).forEach((action, index) => items.push({
+            id: `${NodeActionAction.KIND}.${action.id}`,
+            label: action.label,
+            sortString: `a0${String(index).padStart(2, '0')}`,
+            group: 'producer',
+            actions: [{
+                kind: NodeActionAction.KIND,
+                action: action.id,
+                ...(offered.elementId ? { elementId: offered.elementId } : {})
+            } as any]
+        }));
+
         // The views the producer offers of the unit shown, besides the one on
         // screen: on the canvas, for the workflow itself.
         if (element === this.modelState.root) {
@@ -279,8 +314,8 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
                 rootViews.filter(view => view.id !== shownView).forEach((view, index) => items.push({
                     id: `dialogram.openView.${view.id}`,
                     label: view.label,
-                    // Last in the menu, under a separator: a view is a different
-                    // picture of the same thing, not an edit of it.
+                    // Under a separator, after what the producer offers: a view is
+                    // a different picture of the same thing, not an edit of it.
                     sortString: `z${index}`,
                     group: 'views',
                     actions: [{ kind: OPEN_VIEW_KIND, view: view.id, label: view.label, uri: sourceUri, workflowName: shownWorkflow.trim() } as any]
