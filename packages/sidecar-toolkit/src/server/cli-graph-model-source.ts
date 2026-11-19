@@ -64,10 +64,11 @@ const LOCAL_WORKFLOW_NAMES = new FileMemo<string[]>();
 export class CliGraphModelSource implements DiagramModelSource {
 
     /**
-     * Cache of runtime `plan` output keyed by (file, workflow, on-disk content hash). The runtime
-     * path re-elaborates the workflow on every load/refresh; debounced live updates and reopens of
-     * an unchanged file re-read identical disk content and become cache hits. A save changes the
-     * content hash and misses, so edits always re-run. Bounded LRU-ish.
+     * Cache of runtime `plan` output keyed by (file, workflow, on-disk content hash, the folder
+     * the plan started in). The runtime path re-elaborates the workflow on every load/refresh;
+     * debounced live updates and reopens of an unchanged file re-read identical disk content and
+     * become cache hits. A save changes the content hash and misses, so edits always re-run; a
+     * workspace folder opened since moves the run root and misses too. Bounded LRU-ish.
      */
     private readonly planGraphCache = new Map<string, CachedPlan>();
     private static readonly PLAN_GRAPH_CACHE_MAX = 24;
@@ -109,10 +110,14 @@ export class CliGraphModelSource implements DiagramModelSource {
             : this.fallback.analysis.pickDefaultWorkflowName(workflowFilePath, localWorkflowNames);
         const selectedWorkflowName = requestedWorkflowName ?? defaultWorkflowName;
 
+        // Where a run of the file starts, so the plan, a run, `runCli` and a status source agree
+        // on the folder (its workspace folder, its own folder outside every folder).
+        const cwd = await resolveRunRoot(workflowFilePath);
+
         // A view other than the structure is not in the hierarchy export: the
         // plan command makes it, told which view with `--view <id>`.
         const view = parseViewArg(opts[VIEW_ARG]);
-        const fromHierarchy = view ? undefined : await this.viewFromHierarchy(sourceUri, workflowFilePath, selectedWorkflowName, opts);
+        const fromHierarchy = view ? undefined : await this.viewFromHierarchy(sourceUri, workflowFilePath, selectedWorkflowName, opts, cwd);
         if (fromHierarchy) {
             return this.fallback.attachDiagnostics({ ...fromHierarchy, resolvedOptions: opts });
         }
@@ -124,10 +129,6 @@ export class CliGraphModelSource implements DiagramModelSource {
         if (view) {
             args.push('--view', view);
         }
-
-        // Where a run of the file starts, so the plan, a run, `runCli` and a status source agree
-        // on the folder (its workspace folder, its own folder outside every folder).
-        const cwd = await resolveRunRoot(workflowFilePath);
 
         // Skip re-running the workflow when on-disk content is unchanged (e.g. debounced live
         // updates, reopen). The key includes the content hash, so a save misses and re-runs,
@@ -265,7 +266,9 @@ export class CliGraphModelSource implements DiagramModelSource {
         sourceUri: string,
         workflowFilePath: string,
         workflowName: string | undefined,
-        opts: Record<string, unknown>
+        opts: Record<string, unknown>,
+        /** The run root of `workflowFilePath`, already resolved. */
+        cwd?: string
     ): Promise<GraphDocument | undefined> {
         if (!this.cfg.cliHierarchyArgs || typeof opts.content === 'string') {
             return undefined;
@@ -277,8 +280,10 @@ export class CliGraphModelSource implements DiagramModelSource {
         if (!root) {
             return undefined;
         }
-        // Kept per folder it was exported from, as the plan is.
-        const exported = await this.hierarchyCache.get(root.file, root.workflow, await resolveRunRoot(root.file));
+        // Exported from the root file's run root, as a run of the root starts, and kept per folder
+        // as the plan is.
+        const rootCwd = root.file === workflowFilePath && cwd !== undefined ? cwd : await resolveRunRoot(root.file);
+        const exported = await this.hierarchyCache.get(root.file, root.workflow, rootCwd);
         if (!exported) {
             return undefined;
         }
@@ -365,7 +370,6 @@ export class CliGraphModelSource implements DiagramModelSource {
         }
     }
 
-    /** Cache key for a runtime plan: (file, workflow, sha256 of on-disk content). undefined if unreadable. */
     /** Whether every file a definition drawn in `entry` is declared in reads as it did. */
     private async definitionsUnchanged(entry: CachedPlan): Promise<boolean> {
         for (const [file, hash] of entry.definitions) {
@@ -376,6 +380,10 @@ export class CliGraphModelSource implements DiagramModelSource {
         return true;
     }
 
+    /**
+     * Cache key for a runtime plan: (file, workflow, sha256 of on-disk content, the folder it
+     * starts in). undefined if unreadable.
+     */
     private async computePlanCacheKey(filePath: string, workflowName: string | undefined, cwd: string): Promise<string | undefined> {
         // The same hash the definition files are checked by: a large file's is kept (file-memo.ts).
         const hash = await fileHash(filePath);

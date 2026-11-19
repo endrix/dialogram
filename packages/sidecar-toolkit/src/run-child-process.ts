@@ -211,24 +211,34 @@ export async function runChildProcess(
 /**
  * Why `spawn` failed, said of the folder when that is what is missing: Node
  * answers a `cwd` that is not there with the same ENOENT as a command that is
- * not installed (`spawn <cmd> ENOENT`), which sends the reader to look for the
- * wrong thing. A file whose folder was removed or renamed under an open
- * diagram is the usual way to get here.
+ * not installed (`spawn <cmd> ENOENT`, its `path` the command), which sends
+ * the reader to look for the wrong thing. A file whose folder was removed or
+ * renamed under an open diagram is the usual way to get here. Only a folder
+ * that is not there is said to be missing; any other answer from looking at
+ * it leaves Node's error as it was. Looked at on this failure alone, once.
  */
 function startError(error: Error, cwd: string | undefined): Error {
     if (cwd === undefined || (error as NodeJS.ErrnoException).code !== 'ENOENT') {
         return error;
     }
     try {
-        if (statSync(cwd).isDirectory()) {
+        statSync(cwd);
+        return error;
+    } catch (statError) {
+        const code = (statError as NodeJS.ErrnoException).code;
+        if (code !== 'ENOENT' && code !== 'ENOTDIR') {
             return error;
         }
-    } catch {
-        // not there: said below
     }
-    const missing: NodeJS.ErrnoException = new Error(`the folder it starts in, ${cwd}, does not exist`);
-    missing.code = 'ENOENT';
-    return missing;
+    const node = error as NodeJS.ErrnoException & { spawnargs?: string[] };
+    return Object.assign(new Error(`the folder it starts in, ${cwd}, does not exist`), {
+        code: node.code,
+        errno: node.errno,
+        syscall: node.syscall,
+        // What is missing is the folder, not the command Node names.
+        path: cwd,
+        spawnargs: node.spawnargs
+    });
 }
 
 /**

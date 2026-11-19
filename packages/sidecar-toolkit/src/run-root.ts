@@ -30,39 +30,40 @@ export async function resolveRunRoot(file: vscode.Uri | string): Promise<string>
 
 /**
  * The innermost open workspace folder that holds `forUri` once every link on
- * both paths is followed; undefined when none does, or when the file's
- * directory cannot be resolved (it is gone, or not on this disk).
+ * both paths is followed, the file's own included (a link to a file in the
+ * folder); undefined when none does, or when neither the file nor its
+ * directory can be resolved (they are gone, or not on this disk).
  */
 async function folderThroughLinks(forUri: vscode.Uri): Promise<vscode.WorkspaceFolder | undefined> {
     const folders = vscode.workspace.workspaceFolders ?? [];
     if (folders.length === 0 || forUri.scheme !== 'file') {
         return undefined;
     }
-    const fileDir = await realDirectory(path.dirname(forUri.fsPath));
-    if (!fileDir) {
+    const realFile = (await realPath(forUri.fsPath)) ?? (await realPath(path.dirname(forUri.fsPath)));
+    if (!realFile) {
         return undefined;
     }
-    const resolved = await Promise.all(folders.map(folder => (folder.uri.scheme === 'file' ? realDirectory(folder.uri.fsPath) : undefined)));
+    const resolved = await Promise.all(folders.map(folder => (folder.uri.scheme === 'file' ? realPath(folder.uri.fsPath) : undefined)));
     let best: { folder: vscode.WorkspaceFolder; real: string } | undefined;
     folders.forEach((folder, index) => {
         const real = resolved[index];
-        if (real && isInside(fileDir, real) && (!best || real.length > best.real.length)) {
+        if (real && isInside(realFile, real) && (!best || real.length > best.real.length)) {
             best = { folder, real };
         }
     });
     return best?.folder;
 }
 
-async function realDirectory(dir: string): Promise<string | undefined> {
+async function realPath(file: string): Promise<string | undefined> {
     try {
-        return await fs.realpath(dir);
+        return await fs.realpath(file);
     } catch {
         return undefined;
     }
 }
 
-/** Whether `dir` is `folder` or inside it, both resolved; by whole names, so `/work-other` is not in `/work`. */
-function isInside(dir: string, folder: string): boolean {
-    const relative = path.relative(folder, dir);
+/** Whether `file` is `folder` or inside it, both resolved; by whole names, so `/work-other` is not in `/work`. */
+function isInside(file: string, folder: string): boolean {
+    const relative = path.relative(folder, file);
     return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }

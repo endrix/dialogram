@@ -61,6 +61,8 @@ describe('runChildProcess', () => {
         expect(describeChildFailure(process.execPath, result)).toBe(
             `${process.execPath}: failed to start: the folder it starts in, ${gone}, does not exist`
         );
+        // Node's fields kept, its `path` the folder rather than the command it named.
+        expect(result.spawnError).toMatchObject({ code: 'ENOENT', path: gone, spawnargs: ['-e', ''] });
         // A command that is not there, from a folder that is, is still said as before.
         const missing = await runChildProcess(path.join(gone, 'no-such-command'), [], { cwd: os.tmpdir() });
         expect(missing.spawnError?.message).toMatch(/ENOENT/);

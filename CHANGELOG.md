@@ -959,9 +959,13 @@ platform that hands it one.
   - A plan and a hierarchy export are kept per folder they started in: a
     workspace folder opened since moves the run root, and the file is
     planned again from there.
-  - The model source's plans start the command the file's folder sets, as
+  - The model source's plans read the CLI setting for the file's folder, as
     a run, `runCli`, the chat's graph and a status source already did; they
-    read the window's setting alone.
+    read the window's setting alone. The `-m <module>` form is as it was: a
+    plan, the chat's graph and a status source add it for every file, a run
+    and `runCli` for a Python source only.
+  - A file that is itself a link to a file in a workspace folder runs in
+    that folder.
   - A CLI whose folder is gone (the file's folder removed or renamed under
     an open diagram) says so, `failed to start: the folder it starts in,
     <folder>, does not exist`, rather than Node's `spawn <command> ENOENT`,

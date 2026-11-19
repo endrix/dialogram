@@ -136,6 +136,18 @@ describe.skipIf(process.platform === 'win32')('the directory a run starts in, th
         expect(await runRootOf(path.join(root, 'outside', 'shared', 'main.py'))).toBe(path.join(root, 'outside', 'shared'));
     });
 
+    it('is the workspace folder for a file that is itself a link to a file in it', async () => {
+        // `~/shortcut.py` leads to `work/pkg/flow.py`: it runs where the file it names does.
+        const root = tree({ '.git/HEAD': '', 'work/pkg/flow.py': '', 'home/notes.txt': '' });
+        fs.symlinkSync(path.join(root, 'work', 'pkg', 'flow.py'), path.join(root, 'home', 'shortcut.py'));
+        openFolders(path.join(root, 'work'));
+        expect(await runRootOf(path.join(root, 'home', 'shortcut.py'))).toBe(path.join(root, 'work'));
+        // A link to a file outside every folder runs in the link's own folder.
+        fs.writeFileSync(path.join(root, 'loose.py'), '');
+        fs.symlinkSync(path.join(root, 'loose.py'), path.join(root, 'home', 'other.py'));
+        expect(await runRootOf(path.join(root, 'home', 'other.py'))).toBe(path.join(root, 'home'));
+    });
+
     it('is not a folder that only a link’s name, not its target, puts the file under', async () => {
         // `work-other` starts with `work` but is not inside it, followed or not.
         const root = tree({ 'work/.git/HEAD': '', 'work-other/main.py': '' });

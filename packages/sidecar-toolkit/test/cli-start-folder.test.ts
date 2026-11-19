@@ -116,6 +116,22 @@ describe('the cli-plan graph export starts the CLI in the run root', () => {
         expect(starts()).toEqual([folder, folder]);
     });
 
+    it('works out where the file runs once per load, the hierarchy export and the plan both', async () => {
+        const { folder, file, starts } = homeWithProject();
+        let asked = 0;
+        const answer = workspace.getWorkspaceFolder;
+        workspace.getWorkspaceFolder = ((uri: Uri) => {
+            asked += 1;
+            return answer(uri);
+        }) as typeof workspace.getWorkspaceFolder;
+        const source = createSidecarModelSource(planCfg());
+
+        await source.getGraph(Uri.file(file).toString(), { requestOptions: { networkName: 'main' } });
+
+        expect(starts()).toEqual([folder, folder]);
+        expect(asked).toBe(1);
+    });
+
     it('runs the plan for a child’s node identities there too', async () => {
         const { folder, file, starts } = homeWithProject();
         const source = createSidecarModelSource(planCfg());
