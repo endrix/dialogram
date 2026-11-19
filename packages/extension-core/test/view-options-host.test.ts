@@ -280,12 +280,12 @@ describe('a file whose diagrams show views declaring one group with other lines'
 
     it('takes the group’s own fields, and a line it repeats, from the newest declaration', async () => {
         const { host } = makeHost();
-        await host.wrapModelSource(source([{ ...wide, reload: true }])).getGraph(FILE, {} as any);
+        await host.wrapModelSource(source([{ ...wide, collapsed: true }])).getGraph(FILE, {} as any);
         await host.wrapModelSource(source([{ ...narrow, items: [{ id: 'm2', label: 'M2, here', disabled: 'Not drawn here' }, ...narrow.items] }])).getGraph(FILE, {} as any);
 
         const [layers] = await host.get(FILE);
         expect(layers.label).toBe('Layers, this view');
-        expect(layers.reload).toBeUndefined();
+        expect(layers.collapsed).toBeUndefined();
         expect(layers.items).toEqual([
             { id: 'm2', label: 'M2, here', checked: true, disabled: 'Not drawn here' },
             { id: 'm3', label: 'M3', checked: true },
@@ -303,6 +303,25 @@ describe('a file whose diagrams show views declaring one group with other lines'
         expect(checked(await host.set(FILE, { group: 'lod', item: 'fine', checked: true }), 'lod')).toEqual({ fine: true, outline: false, coarse: false });
         expect(checked(await host.get(FILE), 'lod')).toEqual({ fine: true, outline: false, coarse: false });
     });
+
+    for (const strict of ['older', 'newer'] as const) {
+        it(`reloads and keeps nothing on a click in either view when the ${strict} declaration asks it`, async () => {
+            const { host, kept, refreshed } = makeHost();
+            const asks = { reload: true, persist: false };
+            await host.wrapModelSource(source([strict === 'older' ? { ...wide, ...asks } : wide])).getGraph(FILE, {} as any);
+            await host.wrapModelSource(source([strict === 'newer' ? { ...narrow, ...asks } : narrow])).getGraph(FILE, {} as any);
+
+            // A click in editor 1's view, on a line editor 2's does not list.
+            await host.onWebviewChange({ sourceUri: FILE, changes: [{ group: 'layers', item: 'm1', checked: false }] });
+            expect(refreshed).toEqual([FILE]);
+            expect(kept['/w/top.sv']).toEqual({});
+            // And in editor 2's.
+            await host.onWebviewChange({ sourceUri: FILE, changes: [{ group: 'layers', item: 'm3', checked: false }] });
+            expect(refreshed).toEqual([FILE, FILE]);
+            expect(kept['/w/top.sv']).toEqual({});
+            expect(checked(await host.get(FILE), 'layers')).toEqual({ m3: false, m1: false, m2: true });
+        });
+    }
 });
 
 describe('a one-of group whose checked line cannot be changed now', () => {

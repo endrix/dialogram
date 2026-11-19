@@ -202,9 +202,11 @@ platform that hands it one.
     every group its graphs have declared, the newest of each, with the lines
     an older declaration of it listed that the newest lacks (after the
     newest's own; the newest's label, kind, `disabled` and defaults win, and
-    in a `one` group its line is the one checked by default), so two editors
-    showing views that declare different groups, or one group with other
-    lines, each keep theirs: All, None, Only and a reload's choices are for
+    in a `one` group its line is the one checked by default; a group
+    reloads, or is not kept, if any declaration of it says so), so two
+    editors showing views that declare different groups, or one group with
+    other lines, each keep theirs, save a pick equal to the newest's default
+    for a line not chosen yet, which is not kept: All, None and Only turn
     every line.
   - A click is in force in the webview at once: the platform dispatches
     `ViewOptionsChangedAction` (`dialogram.viewOptionsChanged`), which a

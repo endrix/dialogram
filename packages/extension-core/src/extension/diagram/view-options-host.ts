@@ -295,19 +295,31 @@ export class ViewOptionsHost {
  * newest's groups first, then the groups declared before that it does not
  * declare. A group it declares again keeps the lines declared before that
  * it lacks, after its own: two views of the file can list other lines under
- * one group, and All, None and Only, and a reload's choices, are for every
- * line of it. What the newest declares wins: a group's label, `choice`,
- * `collapsed`, `persist` and `reload`, and a line's label, colour,
- * `disabled` and default. In a `one` group the line checked by default is
- * the newest's; a line kept from before is not checked by default.
+ * one group, and All, None and Only turn every line of it, from either. A
+ * pick is kept where it turns a line from what the host holds, which for a
+ * line not chosen yet is the newest's default: a pick in another view that
+ * matches that default is not kept. What the
+ * newest declares wins: a group's label, `choice` and `collapsed`, and a
+ * line's label, colour, `disabled` and default. In a `one` group the line
+ * checked by default is the newest's; a line kept from before is not
+ * checked by default. A group is `reload` if any declaration of it is, and
+ * not kept (`persist: false`) if any declaration of it is not: a change made
+ * in any view of it then has the producer asked again, and none is written
+ * beside the file.
  */
 function mergeDeclarations(newest: ViewOptionGroup[], before: ViewOptionGroup[]): ViewOptionGroup[] {
     const earlier = new Map(before.map(group => [group.id, group]));
     const merged = newest.map(group => {
+        const older = earlier.get(group.id);
+        if (!older) {
+            return group;
+        }
         const ids = new Set(group.items.map(item => item.id));
-        const kept = (earlier.get(group.id)?.items ?? []).filter(item => !ids.has(item.id));
+        const kept = older.items.filter(item => !ids.has(item.id));
+        const reload = group.reload === true || older.reload === true;
+        const persist = group.persist !== false && older.persist !== false;
         // Made safe as one declaration: a `one` group keeps its newest line checked.
-        return kept.length === 0 ? group : normalizeViewOptionGroups([{ ...group, items: [...group.items, ...kept] }])[0];
+        return normalizeViewOptionGroups([{ ...group, reload, persist, items: [...group.items, ...kept] }])[0];
     });
     const ids = new Set(newest.map(group => group.id));
     return [...merged, ...before.filter(group => !ids.has(group.id))];

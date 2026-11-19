@@ -338,9 +338,9 @@ export interface DiagramOutline {
    * again while the panel keeps what it read of the group under that
    * filter: until the outline changes, or, under a filter other than the
    * one typed now, until the panel forgets it for newer ones (it keeps every
-   * group under the filter typed now, and others while it keeps no more
-   * than twelve in all), when it is asked again if the reader comes back to
-   * that filter. A row given without an `id` keeps its place and does
+   * group under the filter typed now and any a reveal is reading, and
+   * others while it keeps no more than twelve in all), when it is asked
+   * again if the reader comes back to that filter. A row given without an `id` keeps its place and does
    * nothing when clicked.
    */
   page(file: string, request: OutlinePageRequest): OutlinePage | Promise<OutlinePage>;

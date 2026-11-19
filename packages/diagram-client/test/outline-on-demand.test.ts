@@ -556,6 +556,103 @@ describe('the counts of many lazy groups while the reader types', () => {
     });
 });
 
+/** A host of 500 rows a group, each row's id its group and place, answering after `ms`; it counts what it was asked. */
+function timedHost(ms: number) {
+    const asked: Array<{ group: string; offset: number; query: string }> = [];
+    const transport: OutlinePagerTransport = {
+        page: (group, offset, limit, query) => {
+            asked.push({ group, offset, query });
+            const rows = Array.from({ length: Math.min(limit, 500 - offset) }, (_, at) => ({ id: `${group}/${offset + at}`, label: `row ${offset + at}` }));
+            return new Promise(resolve => setTimeout(() => resolve({ page: { total: 500, offset, rows } }), ms));
+        },
+        locate: async () => ({})
+    };
+    return { transport, asked };
+}
+
+describe('rows asked for by place under a filter not in use', () => {
+    const pins = (pager: OutlinePager) => (pager as unknown as { pinned: Map<string, number> }).pinned;
+    /** `count` groups counted under the filter typed, as the panel's layout does. */
+    async function counted(pager: OutlinePager, count: number): Promise<string[]> {
+        const groups = Array.from({ length: count }, (_, at) => `c${at}`);
+        groups.forEach(group => pager.total(group, 'typed'));
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(groups.every(group => pager.known(group, 'typed') === 500)).toBe(true);
+        return groups;
+    }
+
+    // More than eight wait: one is still queued when an answer comes, and
+    // its listing is made before the call answered reads its own.
+    for (const [inUse, waiting] of [[13, 9], [40, 9], [40, 10], [40, 16]]) {
+        it(`are each asked for once and found: ${inUse} groups counted under the filter typed, ${waiting} rows waited for without it`, async () => {
+            vi.useFakeTimers();
+            try {
+                const host = timedHost(20);
+                const pager = new OutlinePager(host.transport, () => undefined, 100);
+                await counted(pager, inUse);
+                const found: string[] = [];
+                const calls = Array.from({ length: waiting }, (_, at) => pager.rowAt(`w${at}`, '', 250 + at).then(row => {
+                    found[at] = row?.id ?? 'none';
+                }));
+                // Ten requests a call is enough to fail on.
+                for (let waited = 0; waited < 5_000 && found.filter(Boolean).length < waiting && host.asked.length < inUse + 10 * waiting; waited += 20) {
+                    await vi.advanceTimersByTimeAsync(20);
+                }
+                const settled = host.asked.length;
+                await vi.advanceTimersByTimeAsync(1_000);
+
+                expect(host.asked.length).toBe(settled);
+                expect(host.asked.filter(ask => ask.query === '').map(ask => `${ask.group}@${ask.offset}`))
+                    .toEqual(Array.from({ length: waiting }, (_, at) => `w${at}@200`));
+                expect(found).toEqual(Array.from({ length: waiting }, (_, at) => `w${at}/${250 + at}`));
+                expect(pins(pager).size).toBe(0);
+                await Promise.all(calls);
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+    }
+
+    it('let every waiting call go at a reset, and a call from before it does not let go of a pin made after it', async () => {
+        vi.useFakeTimers();
+        try {
+            const host = timedHost(20);
+            const pager = new OutlinePager(host.transport, () => undefined, 100);
+            const groups = await counted(pager, 13);
+            const waiting = Array.from({ length: 9 }, (_, at) => `w${at}`);
+            const before = waiting.map((group, at) => pager.rowAt(group, '', 250 + at));
+            expect(pins(pager).size).toBe(9);
+
+            // The outline changes while they wait; the panel counts again, and
+            // the same rows are revealed again before the calls from before end.
+            pager.reset();
+            expect(pins(pager).size).toBe(0);
+            const asked = host.asked.length;
+            groups.forEach(group => pager.total(group, 'typed'));
+            const found: string[] = [];
+            const after = waiting.map((group, at) => pager.rowAt(group, '', 250 + at).then(row => {
+                found[at] = row?.id ?? 'none';
+            }));
+            expect(await Promise.all(before)).toEqual(waiting.map(() => undefined));
+            expect(pins(pager).size).toBe(9);
+            for (let waited = 0; waited < 5_000 && found.filter(Boolean).length < 9 && host.asked.length < asked + 13 + 90; waited += 20) {
+                await vi.advanceTimersByTimeAsync(20);
+            }
+            await vi.advanceTimersByTimeAsync(1_000);
+
+            expect(host.asked.length - asked).toBe(13 + 9);
+            expect(found).toEqual(waiting.map((group, at) => `${group}/${250 + at}`));
+            expect(pins(pager).size).toBe(0);
+            await Promise.all(after);
+            // And again, from what is here.
+            expect((await pager.rowAt('w3', '', 253))?.id).toBe('w3/253');
+            expect(host.asked.length - asked).toBe(13 + 9);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+});
+
 describe('a page as the host passes it on', () => {
     it('keeps the request within bounds', () => {
         expect(normalizeOutlinePageRequest({ group: 'g', offset: -5.5, limit: 1e9, query: '  x ' }))

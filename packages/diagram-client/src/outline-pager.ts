@@ -17,7 +17,8 @@
  * or on its way: the panel asks every lazy group it has no count for at
  * each layout. One queued under a filter the reader has typed past is not
  * asked when its turn comes, unless a caller of `rowAt` waits for it; it
- * is asked afresh if the reader comes back to that filter.
+ * is asked afresh if the reader comes back to that filter. What a `rowAt`
+ * reads is kept for as long as the call lasts, whatever filter it is under.
  *
  * DOM-free: what reaches the host is the transport the panel gives it.
  */
@@ -49,7 +50,9 @@ const KEPT_PAGES = 400;
  * counted: past it, the oldest of other filters go. Every group's listing
  * under the filter in use is kept, however many: the panel asks every lazy
  * group for its count at each layout, and a listing forgotten there is
- * asked again at the next.
+ * asked again at the next. So is one a `rowAt` reads, while the call lasts:
+ * its page, once here, is read when the call wakes, after other listings
+ * may have been made.
  */
 const KEPT_LISTINGS = 12;
 /** Requests to the host at once for what the scroll shows. */
@@ -79,6 +82,12 @@ export class OutlinePager {
      * ({@link total}) or for the rows it shows ({@link want}).
      */
     private inUse = '';
+    /**
+     * The listings `rowAt` calls read, by how many: kept while one lasts.
+     * A new map at each reset, so that a call from before it lets go of its
+     * own pin only.
+     */
+    private pinned = new Map<string, number>();
     private generation = 0;
 
     constructor(
@@ -95,6 +104,7 @@ export class OutlinePager {
         this.asked = [];
         this.queued.clear();
         this.wanted = [];
+        this.pinned = new Map();
         for (const waiting of this.waiters.values()) {
             for (const wake of waiting) {
                 wake();
@@ -157,6 +167,23 @@ export class OutlinePager {
 
     /** The row at `position` of a group, fetching its page if need be; `undefined` when there is none. */
     async rowAt(group: string, query: string, position: number): Promise<OutlinePageRow | undefined> {
+        // Its listing is kept while the call lasts, whatever filter it is under.
+        const pins = this.pinned;
+        const pin = key(group, query);
+        pins.set(pin, (pins.get(pin) ?? 0) + 1);
+        try {
+            return await this.fetchRow(group, query, position);
+        } finally {
+            const left = (pins.get(pin) ?? 1) - 1;
+            if (left > 0) {
+                pins.set(pin, left);
+            } else {
+                pins.delete(pin);
+            }
+        }
+    }
+
+    private async fetchRow(group: string, query: string, position: number): Promise<OutlinePageRow | undefined> {
         const page = Math.floor(position / this.pageSize);
         const generation = this.generation;
         // A short page is asked again for the rest until it holds the row, or
@@ -203,13 +230,13 @@ export class OutlinePager {
             listing = { query, pages: new Map(), short: new Set(), failed: new Map(), used: [] };
             this.listings.set(id, listing);
             // The oldest of other filters than the one in use go; none of
-            // that one, however many lazy groups the outline has, and not
-            // this one, which is wanted now.
+            // that one, however many lazy groups the outline has, not this
+            // one, which is wanted now, and none a `rowAt` reads.
             for (const [other, kept] of this.listings) {
                 if (this.listings.size <= KEPT_LISTINGS) {
                     break;
                 }
-                if (kept.query !== this.inUse && other !== id) {
+                if (kept.query !== this.inUse && other !== id && !this.pinned.has(other)) {
                     this.listings.delete(other);
                 }
             }
