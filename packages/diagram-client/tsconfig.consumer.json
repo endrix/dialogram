@@ -1,0 +1,12 @@
+{
+    // The settings a product checks these sources under. A product resolves
+    // `@dialogram/diagram-client` to this folder's TypeScript and compiles it
+    // in its own strict program, with an ES2022 library. `tsconfig.json`
+    // beside this file is not strict, so an implicit `any` passes there and
+    // fails in every product's build. `npm run typecheck` checks both.
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "strict": true,
+        "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    }
+}
