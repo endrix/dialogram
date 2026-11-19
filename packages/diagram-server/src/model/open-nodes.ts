@@ -17,8 +17,10 @@
  * its own and keeps its geometry, as for any group.
  *
  * The inner nodes are named under their frame's id (`innerNodeId`), so they
- * meet no other node's id or saved place, and are drawn as they are: one
- * holding a graph of its own is not opened again.
+ * meet no other node's id or saved place. One holding a graph of its own
+ * opens in turn, as any node does, its frame inside its parent's: an `if`
+ * in an always block, a branch in the `if`, as deep as the producer nests
+ * them. Each opens and closes on its own and is saved under its own key.
  *
  * Three things a producer may say of the graph it gives a node:
  *
@@ -131,8 +133,24 @@ const push = <K, V>(map: Map<K, V[]>, key: K, value: V): void => {
     }
 };
 
-/** `doc` with the nodes `state` says are open drawn as the groups of what they hold. */
+/**
+ * `doc` with the nodes `state` says are open drawn as the groups of what they
+ * hold, and, inside those, the nodes that are open in turn.
+ */
 export function openNodes(doc: PyGraphDocument, state: PortBusState | undefined, ids: StableNodeIds): PyGraphDocument {
+    // One level a pass: the nodes a pass draws in a frame are the next one's
+    // to open. A document is finite, so a pass that opens nothing comes.
+    for (;;) {
+        const next = openOnce(doc, state, ids);
+        if (next === doc) {
+            return doc;
+        }
+        doc = next;
+    }
+}
+
+/** `doc` with the nodes of its graph that are open drawn as the groups of what they hold, once. */
+function openOnce(doc: PyGraphDocument, state: PortBusState | undefined, ids: StableNodeIds): PyGraphDocument {
     const opened = doc.graph.nodes.filter(node =>
         canOpen(node, doc.graph.subgraphs) && isOpenIn(state, stableNodeId(ids, node), node));
     if (opened.length === 0) {
@@ -160,14 +178,8 @@ export function openNodes(doc: PyGraphDocument, state: PortBusState | undefined,
         const inner = innerGraphOf(node)!;
         const scopeId = openScopeId(node.id);
         const own = new Map(node.ports.map(port => [port.id, port]));
-        // Inner nodes are drawn as they are, not opened again: what they hold is not drawn.
-        const cells = inner.nodes.map(cell => {
-            const meta = cell.meta ? { ...cell.meta } : undefined;
-            if (meta) {
-                delete meta['inner'];
-            }
-            return { ...cell, id: innerNodeId(node.id, cell.id), scope: scopeId, ...(meta ? { meta } : {}) };
-        });
+        // An inner node keeps what it holds: the next pass opens it, where it is open.
+        const cells = inner.nodes.map(cell => ({ ...cell, id: innerNodeId(node.id, cell.id), scope: scopeId }));
         const nodeOfPin = new Map<string, string>();
         for (const cell of cells) {
             for (const port of cell.ports ?? []) {

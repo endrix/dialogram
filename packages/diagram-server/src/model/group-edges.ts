@@ -555,6 +555,23 @@ const GROUP_ROWS_LAYOUT: Record<string, string> = {
 };
 
 /**
+ * A group whose members are the frames of open nodes, each on a row of its
+ * own (the branches of an `if`, its `else if`s under it): one column, the
+ * first row on top, the frames' left edges on one line. It is laid out to the
+ * right, every frame in the one layer between the group's inputs and its
+ * outputs (no edge runs between them), in the producer's order. Laid out
+ * downward, in partitions, the layout moved the frames sideways to shorten
+ * the wires from the side and put some of their pins on the side they are
+ * not on: an output on the left, an input on the right.
+ */
+const GROUP_COLUMN_LAYOUT: Record<string, string> = {
+    'elk.separateConnectedComponents': 'false',
+    'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+    'elk.layered.crossingMinimization.forceNodeModelOrder': 'true',
+    'elk.spacing.nodeNode': '16'
+};
+
+/**
  * A list (`GROUP_LIST`): its members are rows of the same width, one under
  * another with nothing between them, so that their outlines draw the lines
  * of a table; the frame holds them close.
@@ -587,6 +604,8 @@ export function isGroupRow(value: unknown): value is number {
  * nested and the edges cut, since both decide it:
  *
  * - a nested group is a member, and has a row as a node has;
+ * - members that are all frames of open nodes, a row each, are a column
+ *   (`GROUP_COLUMN_LAYOUT`);
  * - a group with an edge between two of its own members keeps the plain
  *   layout. Rows are for members that relate only to what is outside the
  *   group (the actions of a state, each leading to another state). With an
@@ -630,6 +649,20 @@ export function arrangeGroupRows(children: GModelElement[]): void {
             return;
         }
         const last = Math.max(...rows) + 1;
+        const column = !list && rows.length === members.length && new Set(rows).size === rows.length
+            && members.every(member => typeof member.args?.[WorkflowDiagramMetadata.OPEN_NODE_KEY] === 'string');
+        if (column) {
+            group.layoutOptions = { ...groupLayoutOptions(), ...GROUP_COLUMN_LAYOUT };
+            group.args = { ...(group.args ?? {}), [WorkflowDiagramMetadata.GROUP_ROWS]: true };
+            // The order the layout keeps is the members' order in the group: by row.
+            const byRow = [...members].sort((a, b) => rowOf(a)! - rowOf(b)!);
+            let next = 0;
+            group.children = (group.children ?? []).map(child => (members.includes(child as GNode) ? byRow[next++] : child));
+            for (const member of members) {
+                member.layoutOptions = { ...(member.layoutOptions ?? {}), 'elk.alignment': 'LEFT' };
+            }
+            return;
+        }
         group.layoutOptions = { ...groupLayoutOptions(true), ...(list ? GROUP_LIST_LAYOUT : {}) };
         group.args = { ...(group.args ?? {}), [WorkflowDiagramMetadata.GROUP_ROWS]: true };
         for (const member of members) {

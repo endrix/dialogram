@@ -282,7 +282,7 @@ describe('a node opened in place, in the corners', () => {
         expect(frame.args[WorkflowDiagramMetadata.OPEN_NODE_BUNDLES]).toEqual(['ab']);
     });
 
-    it('draws its inner nodes as they are: one holding a graph is not offered to open', () => {
+    it('offers an inner node holding a graph of its own to open, closed until the reader opens it', () => {
         const nested: PyGraphDocument = {
             ...doc,
             graph: {
@@ -295,7 +295,8 @@ describe('a node opened in place, in the corners', () => {
         };
         const graph: any = new GraphGModelSource().transform(nested, { portBuses: openState(true) }).graph;
         const frame = graph.children.find((c: any) => c.id === openFrameId(P));
-        expect(frame.children.some((c: any) => c.args?.[WorkflowDiagramMetadata.NODE_OPENABLE])).toBe(false);
+        expect(frame.children.filter((c: any) => c.args?.[WorkflowDiagramMetadata.NODE_OPENABLE] === true)).toHaveLength(3);
+        expect(frame.children.some((c: any) => c.type === WorkflowDiagramTypes.NODE_GROUP)).toBe(false);
     });
 
     it('wires a pin reading the node’s own output from the pin driving it', () => {
@@ -403,6 +404,98 @@ describe('a node its producer draws open', () => {
         await d.command(openFrameId(P)).execute();
         // Closed by the reader: what a bus toggle elsewhere saves for it says so again.
         expect(d.shownOpen().get(KEY)).toEqual(new Set([ToggleNodeOpenOperation.CLOSED]));
+    });
+});
+
+/**
+ * An always block whose inside is its statement (`if (a) q <= b;`): the block
+ * holds the branch, the branch holds the assignment. Both draw open, their
+ * ports on their frames.
+ */
+const B = `${P}/if:0`;
+const A = `${B}/assign:0`;
+const branch: PyGraphNode = {
+    id: B, kind: 'logic', label: 'if (a)', scope: 'root',
+    ports: [port(B, 'a', 'in'), port(B, 'b', 'in'), port(B, 'q', 'out')],
+    meta: {
+        inner: {
+            open: true, pins: true,
+            nodes: [{ id: A, kind: 'logic', label: 'q <= b', scope: 'root', ports: [port(A, 'b', 'in'), port(A, 'q', 'out')] }],
+            edges: [{ from: `${B}:b`, to: `${A}:b` }, { from: `${A}:q`, to: `${B}:q` }]
+        }
+    }
+};
+const statement: PyGraphDocument = {
+    ...doc,
+    graph: {
+        ...doc.graph,
+        nodes: [boundary('a', 'wf-input'), boundary('b', 'wf-input'), boundary('q', 'wf-output'), {
+            ...proc,
+            ports: [port(P, 'q', 'out'), port(P, 'a', 'in'), port(P, 'b', 'in')],
+            meta: {
+                process: 'always',
+                inner: {
+                    open: true, pins: true, nodes: [branch],
+                    edges: [{ from: `${P}:a`, to: `${B}:a` }, { from: `${P}:b`, to: `${B}:b` }, { from: `${B}:q`, to: `${P}:q` }]
+                }
+            }
+        }],
+        edges: doc.graph.edges.filter(e => e.id !== 'e:t')
+    }
+};
+/** The branch's id in the model, under the block's frame, and the key it is saved by. */
+const BI = innerNodeId(P, B);
+
+describe('a node opened inside an open node', () => {
+    const nothing = portBusStateOf(new Map());
+
+    it('opens in turn, its frame in its parent’s, the wires running pin to pin through both', () => {
+        const opened = openNodes(statement, nothing, stableNodeIds(statement.graph.nodes));
+        const outer = opened.graph.subgraphs!.find(s => s.id === `open:${P}`)!;
+        const inner = opened.graph.subgraphs!.find(s => s.id === `open:${BI}`)!;
+        expect(outer).toMatchObject({ parent: 'root' });
+        expect(inner).toMatchObject({ kind: 'group', label: 'if (a)', parent: `open:${P}`, openNodeKey: BI });
+        expect(inner.pins!.map(pin => pin.name)).toEqual(['a', 'b', 'q']);
+        expect(opened.graph.nodes.map(n => n.id).filter(id => id === P || id === BI)).toEqual([]);
+        expect(opened.graph.nodes.find(n => n.id === innerNodeId(BI, A))?.scope).toBe(`open:${BI}`);
+        expect(opened.graph.edges.map(e => `${e.from} -> ${e.to}`).sort()).toEqual([
+            `b:a:a -> ${P}:a`, `b:b:b -> ${P}:b`, `${P}:q -> b:q:q`,
+            `${P}:a -> ${B}:a`, `${P}:b -> ${B}:b`, `${B}:q -> ${P}:q`,
+            `${B}:b -> ${A}:b`, `${A}:q -> ${B}:q`
+        ].sort());
+        expect(new Set(opened.graph.edges.map(e => e.id)).size).toBe(opened.graph.edges.length);
+    });
+
+    it('is a frame in a frame in the model, which closes on its own, its parent staying open', () => {
+        const frames = (state: ReturnType<typeof portBusStateOf>) => {
+            const graph: any = new GraphGModelSource().transform(statement, { portBuses: state }).graph;
+            const outer = graph.children.find((c: any) => c.id === openFrameId(P));
+            return { graph, outer, inner: outer?.children.find((c: any) => c.id === openFrameId(BI)) };
+        };
+        const open = frames(nothing);
+        expect(open.inner.type).toBe(WorkflowDiagramTypes.NODE_GROUP);
+        expect(open.inner.args[WorkflowDiagramMetadata.OPEN_NODE_KEY]).toBe(BI);
+        const closed = frames(portBusStateOf(new Map([[BI, new Set([ToggleNodeOpenOperation.CLOSED])]])));
+        expect(closed.inner).toBeUndefined();
+        const node = closed.outer.children.find((c: any) => c.args?.[WorkflowDiagramMetadata.GRAPH_NODE_ID] === BI);
+        expect(node.args[WorkflowDiagramMetadata.NODE_OPENABLE]).toBe(true);
+        // Closing the block closes all of it: the branch is not drawn, open or not.
+        const shut = frames(portBusStateOf(new Map([[KEY, new Set([ToggleNodeOpenOperation.CLOSED])]])));
+        expect(shut.outer).toBeUndefined();
+        expect(shut.graph.children.find((c: any) => c.args?.[WorkflowDiagramMetadata.GRAPH_NODE_ID] === P)
+            .args[WorkflowDiagramMetadata.NODE_OPENABLE]).toBe(true);
+    });
+
+    it('is closed and opened again by its toggle, the layout keeping which', async () => {
+        const d = diagram(places, statement);
+        expect(d.find(openFrameId(BI))).toBeDefined();
+        await d.command(openFrameId(BI)).execute();
+        expect(d.open().get(BI)).toEqual(new Set([ToggleNodeOpenOperation.CLOSED]));
+        expect(d.find(openFrameId(BI))).toBeUndefined();
+        expect(d.find(openFrameId(P))).toBeDefined();
+        await d.command(BI).execute();
+        expect(d.open().get(BI)?.has(ToggleNodeOpenOperation.CLOSED)).toBe(false);
+        expect(d.find(openFrameId(BI))).toBeDefined();
     });
 });
 
