@@ -4,7 +4,8 @@
  * `DiagramModelSource` implementation that acquires a workflow graph by spawning the runtime CLI's
  * `plan --format graph` (the cli-plan acquisition strategy), with a plan-result cache and a static-sidecar
  * fallback (composed via a {@link SidecarModelSource}) when the runtime CLI can't produce a graph.
- * argv comes from `cfg.cliGraphArgs` — the toolkit carries no product argv literals.
+ * argv comes from `cfg.cliGraphArgs` — the toolkit carries no product argv literals. Every plan
+ * starts where a run of the file starts (`resolveRunRoot`).
  */
 
 import 'reflect-metadata';
@@ -37,6 +38,7 @@ import {
     graphLoadTimeoutHint
 } from './sidecar-runtime-config';
 import { describeChildFailure, runChildProcess } from '../run-child-process';
+import { resolveRunRoot } from '../run-root';
 import { SidecarModelSource, type SidecarModelSourceResult, nodeIdentitiesFromDoc } from './sidecar-model-source';
 
 /**
@@ -149,6 +151,7 @@ export class CliGraphModelSource implements DiagramModelSource {
         // unstartable command (ENOENT) reports as an event rather than a throw, which is
         // the other way this used to never settle. Both end up as `failure` below.
         const result = await runChildProcess(cliInvocation.cmd, args, {
+            cwd: await this.runRoot(workflowFilePath),
             timeoutMs: this.graphLoadTimeoutMs(workflowFilePath)
         });
         const { stdout } = result;
@@ -233,6 +236,7 @@ export class CliGraphModelSource implements DiagramModelSource {
         // same user code and can wedge the same way. Identities are optional — a failure
         // here degrades the result rather than failing the load — but it must still END.
         const result = await runChildProcess(cliInvocation.cmd, args, {
+            cwd: await this.runRoot(filePath),
             timeoutMs: this.graphLoadTimeoutMs(filePath)
         });
         if (result.code !== 0 || result.stdout.trim() === '') {
@@ -301,7 +305,7 @@ export class CliGraphModelSource implements DiagramModelSource {
         const result = await runChildProcess(
             cliInvocation.cmd,
             [...cliInvocation.argsPrefix, ...this.cfg.cliHierarchyArgs(rootFile, rootWorkflow)],
-            { timeoutMs: this.graphLoadTimeoutMs(rootFile) }
+            { cwd: await this.runRoot(rootFile), timeoutMs: this.graphLoadTimeoutMs(rootFile) }
         );
         const failure = describeChildFailure(cliInvocation.cmd, result);
         if (failure || result.stdout.trim() === '') {
@@ -327,6 +331,15 @@ export class CliGraphModelSource implements DiagramModelSource {
         } catch {
             return { cmd: this.cfg.cliCommandDefault, argsPrefix: [] };
         }
+    }
+
+    /**
+     * Where the CLI starts for this file: where a run of it starts, so the plan, a run, `runCli`
+     * and a status source agree on the folder (the file's workspace folder, its own folder
+     * outside every folder).
+     */
+    private runRoot(filePath: string): Promise<string> {
+        return resolveRunRoot(filePath);
     }
 
     /**

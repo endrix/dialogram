@@ -4,17 +4,20 @@
  *
  * Pinned here, against a real child process (`fixtures/fake-status-cli.cjs`):
  * which command runs (the configured CLI, the one the diagram is drawn with),
- * where (the file's folder), that a CLI reporting its own failure in JSON is
+ * where (the run root: the file's workspace folder, the file's own folder
+ * outside every folder), that a CLI reporting its own failure in JSON is
  * read rather than thrown away (the product knows what `ok: false` means; a
  * build that has errors may still have written the index a report reads), and
  * that what is not an answer at all -- no such command, no JSON -- rejects
  * with something a person can act on. And that the profile builder hands the
  * platform a status source exactly when the product declares one.
  */
+import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { openWorkspaceFolders, workspace } from './vscode-mock';
 import type { ExecutionNodeState } from '@dialogram/shared';
 import { createCliStatusSource, runCliJson, type SidecarStatusSourceInput } from '../src/cli-status-source';
 import { createSidecarDiagramProfile, type SidecarProfileInput } from '../src/sidecar-diagram-profile';
@@ -66,6 +69,20 @@ describe('running the CLI for a report', () => {
 const RUNTIME = { settingsNamespace: 'product', cliCommandSettingKey: 'cliCommand', cliCommandDefault: FAKE_CLI } as any;
 
 describe('the status source the platform gets', () => {
+    const temps: string[] = [];
+    const savedWorkspace = { ...workspace };
+    afterEach(() => {
+        for (const key of Object.keys(workspace)) {
+            if (!(key in savedWorkspace)) {
+                delete (workspace as Record<string, unknown>)[key];
+            }
+        }
+        Object.assign(workspace, savedWorkspace);
+        for (const dir of temps.splice(0)) {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
     it('passes the label and the two commands through, and collect a CLI bound to the file', async () => {
         const seen: unknown[] = [];
         const input: SidecarStatusSourceInput = {
@@ -85,9 +102,34 @@ describe('the status source the platform gets', () => {
 
         expect(source).toMatchObject({ label: 'Coverage', showCommand: 'product.coverage.show', clearCommand: 'product.coverage.clear' });
         expect(states).toEqual<ExecutionNodeState[]>([{ nodeId: 'node:a', status: 'succeeded' }]);
-        // The configured CLI, in the file's folder, the command line in the output.
+        // The configured CLI, in the file's folder (it is in no workspace
+        // folder), the command line in the output.
         expect(seen).toEqual([{ ok: true, args: ['report', file], cwd: path.join(here, 'fixtures') }]);
         expect(output).toEqual([`$ ${FAKE_CLI} report ${file}`]);
+    });
+
+    it('runs the CLI where a run of the file starts: its workspace folder, not its own folder or a `.git` above', async () => {
+        const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'status-root-')));
+        temps.push(root);
+        fs.mkdirSync(path.join(root, '.git'));
+        fs.mkdirSync(path.join(root, 'project', 'docs'), { recursive: true });
+        const file = path.join(root, 'project', 'docs', 'spec.md');
+        fs.writeFileSync(file, '');
+        openWorkspaceFolders(path.join(root, 'project'));
+        const seen: unknown[] = [];
+        const source = createCliStatusSource({
+            label: 'Coverage',
+            showCommand: 'product.coverage.show',
+            clearCommand: 'product.coverage.clear',
+            collect: async (f, cli) => {
+                seen.push(await cli(['report', f]));
+                return [];
+            }
+        }, RUNTIME);
+
+        await source.collect(file, { output: { appendLine: () => undefined } });
+
+        expect(seen).toEqual([{ ok: true, args: ['report', file], cwd: path.join(root, 'project') }]);
     });
 
     it('is on the profile exactly when the product declares one', () => {

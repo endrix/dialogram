@@ -1,6 +1,8 @@
 // Minimal runtime shim for the `vscode` module used by extension/GLSP code.
 // Vitest runs in plain Node.js where the real VS Code API is not available.
 
+import * as nodePath from 'node:path';
+
 export type Thenable<T> = PromiseLike<T>;
 
 export class Position {
@@ -222,6 +224,22 @@ export const workspace = {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     getWorkspaceFolder: (_uri: Uri): undefined => undefined
 };
+
+/**
+ * Opens `folders` in the test's window, in that order: `workspace.workspaceFolders`
+ * lists them, and `workspace.getWorkspaceFolder` answers as VS Code does, by
+ * the path the file is named by: the innermost folder that holds it, without
+ * following a symbolic link. A test that calls it restores `workspace` after.
+ */
+export function openWorkspaceFolders(...folders: string[]): void {
+    const workspaceFolders = folders.map((folder, index) => ({ uri: Uri.file(folder), name: nodePath.basename(folder), index }));
+    Object.assign(workspace, {
+        workspaceFolders,
+        getWorkspaceFolder: (uri: Uri) => workspaceFolders
+            .filter(folder => uri.fsPath === folder.uri.fsPath || uri.fsPath.startsWith(folder.uri.fsPath + nodePath.sep))
+            .sort((a, b) => b.uri.fsPath.length - a.uri.fsPath.length)[0]
+    });
+}
 
 // Added for cli-run-driver.test.ts: the driver registers its run/stop and
 // agent-tool config commands through `vscode.commands.registerCommand`, and the

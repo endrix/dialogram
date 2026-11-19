@@ -38,6 +38,7 @@ import { createSidecarEditBackend } from './chat-edit-backend.js';
 import { createPythonNavigationProvider } from './python-navigation.js';
 import { registerSidecarCommands } from './sidecar-commands.js';
 import { runCli, type CliRunResult } from './cli-invocation.js';
+import { resolveRunRoot } from './run-root.js';
 import { registerPythonAnalysisPaths } from './python-analysis-paths-host.js';
 import { registerNewSourceFileCommand } from './new-source-file-command.js';
 import { createCliStatusSource, type SidecarStatusSourceInput } from './cli-status-source.js';
@@ -619,16 +620,18 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
     //
     // Read-only, the one op anyone asks for is the graph export, and the CLI
     // plan answers it, in the sidecar's envelope, with the same deadline the
-    // model source gives the plan; the op name is not looked at.
+    // model source gives the plan, from the same folder (the run root); the op
+    // name is not looked at.
     const planGraph = cliGraphArgs
-        ? (file: string, args: Record<string, unknown>) => {
+        ? async (file: string, args: Record<string, unknown>) => {
             const scopeUri = vscode.Uri.file(file);
             const scoped = args[input.scopeArgKey];
             return exportGraphFromCli(file, {
                 ...getCliInvocation(runtimeConfig, vscode, scopeUri),
                 cliGraphArgs,
                 networkName: typeof scoped === 'string' ? scoped : undefined,
-                timeoutMs: getGraphLoadTimeoutMs(runtimeConfig, vscode, scopeUri)
+                timeoutMs: getGraphLoadTimeoutMs(runtimeConfig, vscode, scopeUri),
+                cwd: await resolveRunRoot(scopeUri)
             });
         }
         : undefined;

@@ -13,10 +13,10 @@
  * the arguments and the mapping, which only it knows. A report that takes
  * several commands (index, then query) is several calls.
  */
-import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { ExecutionNodeState } from '@dialogram/shared';
 import { describeChildFailure, runChildProcess } from './run-child-process.js';
+import { resolveRunRoot } from './run-root.js';
 import { getCliInvocation, getGraphLoadTimeoutMs, type SidecarRuntimeConfig } from './server/sidecar-runtime-config.js';
 
 /**
@@ -34,10 +34,11 @@ export interface SidecarStatusSourceInput {
     clearCommand: string;
     /**
      * The node states for the diagram of `file`, from the CLI's reports.
-     * `cli(args)` runs the configured CLI command in the file's folder, with
-     * the graph-load deadline, and resolves to its stdout parsed as JSON,
-     * whatever its exit code: a CLI that speaks JSON reports its own failures
-     * there, and `collect` knows what they mean. It rejects when the command
+     * `cli(args)` runs the configured CLI command where a run of the file
+     * starts (the run root: its workspace folder, its own folder outside
+     * every folder), with the graph-load deadline, and resolves to its stdout
+     * parsed as JSON, whatever its exit code: a CLI that speaks JSON reports
+     * its own failures there, and `collect` knows what they mean. It rejects when the command
      * cannot start, does not answer in time, or prints no JSON. A throw from
      * `collect` is shown to the person; the states shown stay as they were.
      */
@@ -76,18 +77,19 @@ export async function runCliJson(args: string[], options: CliJsonOptions): Promi
  * The platform's status source for a CLI-backed product: `collect` gets a
  * {@link StatusCli} bound to the CLI command, folder and deadline of the file
  * it is asked about, read from the same settings the diagram's own plan uses,
- * so the report comes from the same tool the diagram was drawn with.
+ * so the report comes from the same tool the diagram was drawn with, started
+ * in the same folder (`resolveRunRoot`).
  */
 export function createCliStatusSource(input: SidecarStatusSourceInput, runtimeConfig: SidecarRuntimeConfig) {
     return {
         label: input.label,
         showCommand: input.showCommand,
         clearCommand: input.clearCommand,
-        collect: (file: string, context: { output: { appendLine(line: string): void } }): Promise<ExecutionNodeState[]> => {
+        collect: async (file: string, context: { output: { appendLine(line: string): void } }): Promise<ExecutionNodeState[]> => {
             const scopeUri = vscode.Uri.file(file);
             const options: CliJsonOptions = {
                 ...getCliInvocation(runtimeConfig, vscode, scopeUri),
-                cwd: path.dirname(file),
+                cwd: await resolveRunRoot(scopeUri),
                 timeoutMs: getGraphLoadTimeoutMs(runtimeConfig, vscode, scopeUri),
                 log: line => context.output.appendLine(line)
             };

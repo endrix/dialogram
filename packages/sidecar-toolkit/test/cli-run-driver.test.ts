@@ -10,7 +10,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
-import { resetRegisteredCommands } from './vscode-mock';
+import { openWorkspaceFolders, resetRegisteredCommands, workspace } from './vscode-mock';
 
 // Fake the CLI spawn so the run command completes deterministically without a
 // real child process, capturing the invocation so we can assert the args that
@@ -179,6 +179,47 @@ describe('CliRunDriver agent-tool overrides', () => {
         expect(spawnCalls.length).toBe(1);
         expect(spawnCalls[0].args).not.toContain('--agent-tools');
         expect(spawnCalls[0].args).not.toContain('--agent-tool-auth');
+    });
+});
+
+describe('CliRunDriver: where a run starts', () => {
+    const savedWorkspace = { ...workspace };
+    const temps: string[] = [];
+    beforeEach(() => {
+        spawnCalls.length = 0;
+        resetRegisteredCommands();
+    });
+    afterEach(() => {
+        for (const key of Object.keys(workspace)) {
+            if (!(key in savedWorkspace)) {
+                delete (workspace as Record<string, unknown>)[key];
+            }
+        }
+        Object.assign(workspace, savedWorkspace);
+        for (const dir of temps.splice(0)) {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('starts in the file’s workspace folder, not at a `.git` above it, and in the file’s own folder outside every folder', async () => {
+        const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cli-run-driver-home-')));
+        temps.push(home);
+        fs.mkdirSync(path.join(home, '.git'));
+        const folder = path.join(home, 'project');
+        fs.mkdirSync(path.join(folder, 'flows'), { recursive: true });
+        const file = path.join(folder, 'flows', 'pipeline.py');
+        fs.writeFileSync(file, '# fixture\n', 'utf8');
+        fs.mkdirSync(path.join(home, 'loose'));
+        const loose = path.join(home, 'loose', 'pipeline.py');
+        fs.writeFileSync(loose, '# fixture\n', 'utf8');
+        openWorkspaceFolders(folder);
+        const driver = new CliRunDriver(makeConfig(makeOverrideState()), makeHost() as any);
+        driver.registerCommands(makeContext());
+
+        await vscode.commands.executeCommand(RUN_CMD, { sourceUri: `file://${file}` });
+        await vscode.commands.executeCommand(RUN_CMD, { sourceUri: `file://${loose}` });
+
+        expect(spawnCalls.map(call => call.cwd)).toEqual([folder, path.join(home, 'loose')]);
     });
 });
 
