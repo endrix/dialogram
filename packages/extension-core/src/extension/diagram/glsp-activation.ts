@@ -30,6 +30,7 @@ import type { DiagramViewRecord, WorkflowEditorProvider } from './diagram-editor
 import { ExecutionOverlayRegistry } from './execution-overlay';
 import { forwardExecutionOverlayEvents, forwardExecutionOverlayStates, type ExecutionOverlayWebviewSink } from './execution-overlay-bridge';
 import { registerStatusSource } from './status-source';
+import { OutlineHost } from './outline-host';
 import {
     activeSourceUri,
     readRequestedNetworkName,
@@ -53,6 +54,7 @@ import {
     registerDiagramViewType, serializedRangeToVscodeRange
 } from './open-in-place';
 import { producerNamedDefinition } from './producer-definition';
+import { ViewOptionsHost } from './view-options-host';
 
 // Define the diagram type constant locally to avoid import
 const WORKFLOW_DIAGRAM_TYPE = 'cal-network-diagram';
@@ -301,6 +303,8 @@ export interface GlspIntegrationHandle extends vscode.Disposable {
     editorProvider: WorkflowEditorProvider;
     /** Per-activation neutral execution-overlay seam (states + opaque events). */
     executionOverlay: ExecutionOverlayRegistry;
+    /** The outline's rows on demand: what the profile handle reveals a row through. */
+    outline: OutlineHost;
     /**
      * The in-host GLSP-MCP loopback server URL announced on the `initialize` handshake,
      * or `undefined` when MCP is disabled or no endpoint was announced. Read from the typed
@@ -318,6 +322,8 @@ export interface GlspIntegrationHandle extends vscode.Disposable {
     setChatTaskHandler(handler: ChatTaskHandler | undefined): void;
     /** Where the run driver's confirmations go (resuming a run the chat fixed). */
     setChatConfirmHandler(handler: ChatConfirmHandler | undefined): void;
+    /** The reader's view options, per file: what the profile handle reads and sets. */
+    viewOptions: ViewOptionsHost;
 }
 
 export type RunQuestionHandler = (question: DiagramRunQuestion, sourceUri: string) => Promise<DiagramRunAnswer | undefined>;
@@ -375,6 +381,36 @@ export async function activateGlspIntegration(
     const storageOptions = composeStorageRuntimeOptions(profile);
     let loadProgressTarget: Pick<WorkflowEditorProvider, 'postLoading'> | undefined;
 
+    // The reader's view options, per file (view-options-host.ts). Made
+    // before the server, whose model source it wraps; the editors it tells
+    // are the provider's, made further down.
+    const { LayoutPersistenceService } = await import('@dialogram/diagram-server');
+    const viewOptionsLayouts = new LayoutPersistenceService();
+    let viewOptionsEditors: Pick<WorkflowEditorProvider, 'clientsShowing' | 'postToClient' | 'refreshFromHost'> | undefined;
+    const viewOptions = new ViewOptionsHost({
+        groups: profile.viewOptions?.groups,
+        onDidChange: profile.viewOptions?.onDidChange,
+        store: {
+            load: file => viewOptionsLayouts.loadViewOptions(file),
+            save: (file, state) => viewOptionsLayouts.saveViewOptions(file, state)
+        },
+        keyOf: normalizeSourceUriKey,
+        pathOf: uri => (/^[a-zA-Z][a-zA-Z0-9+.-]+:/.test(uri) ? vscode.Uri.parse(uri).fsPath : uri),
+        // Each editor showing the file, by its client, with the file's URI
+        // as it names it: a file's second editor hears what the reader
+        // turned in the first, and the first hears what the host made of it.
+        post: (sourceUri, message) => {
+            for (const editor of viewOptionsEditors?.clientsShowing(sourceUri) ?? []) {
+                viewOptionsEditors?.postToClient(editor.clientId, message(editor.sourceUri));
+            }
+        },
+        refresh: sourceUri => {
+            viewOptionsEditors?.refreshFromHost(sourceUri);
+        },
+        log: message => console.warn(message)
+    });
+    const modelSource = profile.modelSource;
+
     // Large graphs on the product's Java ELK server, as its settings choose.
     const layoutSettings = vscode.workspace.getConfiguration(profile.settingsNamespace);
     const elkServer = composeElkServerOptions(profile, context.extensionPath, key => layoutSettings.get(key));
@@ -391,7 +427,7 @@ export async function activateGlspIntegration(
         storageOptions,
         additionalServerModules: (profile.serverModules ?? []) as ContainerModule[],
         edits: profile.edits,
-        modelSourceFactory: profile.modelSource,
+        modelSourceFactory: modelSource ? () => viewOptions.wrapModelSource(modelSource()) : undefined,
         // Build-time library seam: when the profile supplies its own GLSP DiagramModule
         // (constructed in the caller's realm), it replaces the stock module on the server.
         diagramModuleFactory: profile.serverDiagramModule,
@@ -970,6 +1006,8 @@ export async function activateGlspIntegration(
         assetsUri
     );
     loadProgressTarget = editorProvider;
+    viewOptionsEditors = editorProvider;
+    editorProvider.viewOptionsHost = viewOptions;
 
     // Configure default GLSP commands (undo, redo, copy, paste, etc.)
     configureDefaultCommands({
@@ -1051,6 +1089,21 @@ export async function activateGlspIntegration(
     // Register additional Workflow-specific commands
     registerCalDiagramCommands(state, glspVscodeConnector, editorProvider, executionOverlay);
 
+    // The outline's rows on demand (outline-host.ts): the profile's pages,
+    // its row actions, and the product's "show this row".
+    const outline = new OutlineHost({
+        outline: profile.outline,
+        pathOf: uri => (/^[a-zA-Z][a-zA-Z0-9+.-]+:/.test(uri) ? vscode.Uri.parse(uri).fsPath : uri),
+        // By client, each editor showing the file once: two editors of it
+        // each show the row, and an editor of another file is not told.
+        editorsOf: uri => editorProvider.clientIdsShowing(uri),
+        post: (clientId, message) => {
+            editorProvider.postToClient(clientId, message);
+        },
+        log: message => console.warn(message)
+    });
+    editorProvider.outlineHost = outline;
+
     // Composite disposable for cleanup, kept internal to the handle below.
     const disposable = vscode.Disposable.from(
         editorProviderDisposable,
@@ -1065,6 +1118,7 @@ export async function activateGlspIntegration(
         editorProvider,
         executionOverlay,
         mcpServerUrl,
+        outline,
         setRunQuestionHandler: (handler) => {
             state.runQuestionHandler = handler;
         },
@@ -1074,6 +1128,7 @@ export async function activateGlspIntegration(
         setChatConfirmHandler: (handler) => {
             state.chatConfirmHandler = handler;
         },
+        viewOptions,
         dispose: () => disposable.dispose()
     };
 }

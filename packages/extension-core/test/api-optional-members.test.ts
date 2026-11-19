@@ -29,9 +29,14 @@ const PRODUCT_FILES: Record<string, string> = {
     // A product that uses what is new, after checking that it is there.
     'handle-use.ts': `
         import type { DiagramProfileHandle } from '../src/api';
-        export function report(handle: DiagramProfileHandle, uri: string): void {
+        export async function report(handle: DiagramProfileHandle, uri: string): Promise<void> {
             handle.loading?.report(uri, { message: 'Placing cells' });
             handle.loading?.end(uri);
+            handle.revealOutlineRow?.(uri, { group: 'cells', id: 'c1' });
+            if (handle.getViewOptions && handle.setViewOptions) {
+                const groups = await handle.getViewOptions(uri);
+                await handle.setViewOptions(uri, { group: groups[0].id, all: true });
+            }
         }
     `,
     // \`watch\` with \`affects\` and the default globs.

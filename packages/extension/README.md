@@ -241,6 +241,25 @@ The toolkit's characterization suites run against fake sidecar/CLI fixtures
 in `packages/sidecar-toolkit/test/fixtures/`, so the full protocol is
 exercised without any product installed.
 
+## The outline on demand
+
+The outline (`GraphDocument.hierarchy`) rides on every model and is drawn
+whole, which suits a hierarchy of views. A group of it that is a list of a
+hundred thousand things is marked `lazy` with its `count`, and its rows stay
+in the host: the panel asks the profile's
+`outline.page(file, { group, offset, limit, query })` for the page the reader
+scrolls to, and for the rows a filter finds. Only the rows on screen are in
+the DOM. A row that is no node of the graph (no `nodeId`, or the role `item`)
+is the product's: a click calls `outline.activate(file, { id, group, open })`.
+`DiagramProfileHandle.revealOutlineRow(uri, { id, group, index, show })` shows
+the product's own selection in the outline: the group opens, the page comes,
+the row is selected and scrolled to. `outline.locate` answers where a row is
+when the product did not say. A page may hold fewer rows than asked: the
+panel asks for the rest from the first one missing, and only `total` ends the
+list. See `DiagramOutline` in `api.ts` and shared `outline-pages.ts`.
+`revealOutlineRow` is optional on the handle (`handle.revealOutlineRow?.(...)`):
+a Dialogram older than it reports the same API version.
+
 ## Execution overlays and run drivers
 
 A profile's `runDriver` factory receives a `DiagramRunHost`:
@@ -258,6 +277,21 @@ closed and reopened mid-run, so the bar and glow survive tab churn. The
 toolkit ships `CliRunDriver` — a complete implementation over a spawned CLI
 with SSE event streaming, per-entity agent-tool overrides, and process
 control — which sidecar profiles get for free.
+
+## View options
+
+A profile (`viewOptions.groups`) or its model source (`GraphDocument.viewOptions`,
+for groups that depend on the file) declares checkable groups of what a reader
+may show and hide; the palette draws them under its tools. The host holds what
+the reader chose, per file, in the file's layout record, so it survives a
+reload and a reopen and applies before the first drawing.
+`DiagramProfileHandle.getViewOptions(uri)` and `setViewOptions(uri, changes)`
+read and set it with or without a diagram open (what a chat tool calls), and
+`viewOptions.onDidChange` hears every change. Both are optional on the
+handle, for a Dialogram older than them that reports the same API version;
+check before calling. In the webview a product's
+module handles `ViewOptionsChangedAction` (diagram-client README, §6). See
+`DiagramViewOptions` in `api.ts` and shared `view-options.ts`.
 
 ## Development
 

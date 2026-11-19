@@ -122,3 +122,14 @@ export { isBlock, looksLikeDiff, parseEmbedded, formatAgentOutputs } from './age
 // How much text the diagram draws at a zoom, and the classes a product's own
 // text is tagged with to follow it (zoom-detail.ts).
 export { DETAIL_ZOOM, NAME_ZOOM, ZOOM_TEXT_CLASSES, detailLevel, type DetailLevel } from './zoom-detail';
+// The view options of the diagram shown (view-options.ts): a product's client
+// module handles `ViewOptionsChangedAction` to redraw when the reader or the
+// host turns a line, or asks `ViewOptionsService` what is checked.
+export { ViewOptionsService } from './view-options';
+export {
+    ViewOptionsChangedAction,
+    type ViewOptionChange,
+    type ViewOptionGroup,
+    type ViewOptionItem,
+    type ViewOptionTurn
+} from '@dialogram/shared';

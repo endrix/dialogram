@@ -174,7 +174,63 @@ platform that hands it one.
   extensions give (every file, with none declared), so that `watch` can
   carry `affects` alone; an empty list watches nothing on disk, and only a
   save in the editor reloads.
-
+- **View options in the palette.** What a reader may show and hide is the
+  producer's to declare and the platform's to draw: checkable groups under
+  the palette's tools, in the palette's own markup and theme (shared
+  `view-options.ts`, diagram-client `view-options-palette.ts`). A group is
+  a heading that opens and closes (remembered per product), with how many
+  of its lines are checked, All and None; a line has a box, an optional
+  colour swatch and, on hover, Only (Alt+click does the same); Space and
+  Enter work on a focused line. A line that cannot change now says why in
+  its tooltip and reads as such (a dashed box, a "no" mark), not as one
+  unchecked. A `one` group is radio buttons. A long group scrolls under its
+  heading. The palette's filter filters the lines too.
+  - Declared as data, by the profile for every diagram
+    (`DiagramProfile.viewOptions.groups`) or by the model source with each
+    graph (`GraphDocument.viewOptions`), which is how lines that exist only
+    when the content has them come and go. They ride on the root model as
+    `wf:viewOptions`, with the file's choices already applied, so the first
+    drawing of a reopened file is already right.
+  - The host holds the truth, per file, beside the file's layout
+    (`.layout/<file>.layout.json`, `viewOptions`; every write of the layout
+    keeps it): it survives a reload and a reopen, and it can be read and set
+    with no diagram open. `DiagramProfileHandle.getViewOptions(uri)` and
+    `setViewOptions(uri, changes)` are what a chat tool that shows or hides
+    things calls; every open diagram of the file follows. Both are optional
+    on the handle: a Dialogram older than them reports the same API
+    version, so a product checks before calling. A file's declaration is
+    every group its graphs have declared, the newest of each, with the lines
+    an older declaration of it listed that the newest lacks (after the
+    newest's own; the newest's label, kind, `disabled` and defaults win, and
+    in a `one` group its line is the one checked by default; a group
+    reloads, or is not kept, if any declaration of it says so), so two
+    editors showing views that declare different groups, or one group with
+    other lines, each keep theirs, save a pick equal to the newest's default
+    for a line not chosen yet, which is not kept: All, None and Only turn
+    every line.
+  - A click is in force in the webview at once: the platform dispatches
+    `ViewOptionsChangedAction` (`dialogram.viewOptionsChanged`), which a
+    product's client module handles to redraw with no round trip, and asks
+    `ViewOptionsService` what is checked. The host is told after, keeps it,
+    tells every diagram of the file the lines that turned, and tells the
+    product (`viewOptions.onDidChange`). The diagram the click came from
+    hears the host's result too: a change the host made just before (a
+    chat tool's) can leave another state than the click showed, and the
+    diagram follows the host's. The webview hears the host from the start:
+    a line the host turns while the first model is laid out is applied over
+    it. A change is taken only for a file its editor shows. A group marked `reload` has the
+    model asked for again, and `getGraph` is handed the choices
+    (`options.viewOptions`) for a producer that leaves things out itself;
+    `persist: false` keeps a choice for the session only.
+  - A palette with no tools no longer says "No results found." with view
+    options, or with nothing at all (its empty body is not drawn); it says
+    so when a filter matched neither a tool nor a line.
+  - Ids are kept exactly as the producer gave them, which is what it looks
+    its choices up by. In a `one` group the line declared `checked: true`
+    is the one checked; a disabled line there is still let go of when the
+    reader picks another, so one line stays checked.
+  - A product that declares none sees no change: no root argument, no
+    palette section, the same documents from its model source.
 - **A diagram that is loading says so, and says what it is doing.** A large
   design takes seconds to read and seconds more to lay out, and for all of
   that the canvas was empty. It now shows a turning circle with, under it,
@@ -213,6 +269,42 @@ platform that hands it one.
     not started: it was a second, vaguer word for the same wait.
   - A screen reader is told each step through a status region that is in
     the page before it is given its words, and not the seconds.
+- **The outline on demand.** A group row of the outline may be `lazy`: it
+  says how many rows it has (`count`), and its rows stay in the host, asked
+  of the profile's `outline.page(file, { group, offset, limit, query })` a
+  page at a time as the reader opens the group and scrolls it (shared
+  `outline-pages.ts`, extension-core `outline-host.ts`). A filter typed in
+  the panel is answered there for those rows; the rows the outline carries
+  are still filtered in the webview. A lazy group stays closed until the
+  reader opens it.
+  - Only the rows in view are in the DOM, for every outline: rows are one
+    height (22 px), so which are in view is arithmetic
+    (`outline-rows.ts`), and a list of 200 000 rows scrolls as one of forty.
+    A scroll asks for the pages it stops on, not every page on the way
+    (`outline-pager.ts`); past what a browser scrolls, a pixel of scrolling
+    stands for more rows. Each lazy group's first page carries its count,
+    and is asked for once under the filter typed, however many lazy groups
+    the outline has; a count still to be asked under a filter the reader
+    has typed past is not asked. Coming back to a filter asks for the counts
+    of it the panel has not kept.
+  - A page may hold fewer rows than asked (a producer that reads in smaller
+    batches): the panel asks for the rest from the first row missing. Only
+    `total` ends the list; an answer with no rows short of it shows the rest
+    of the page as not loaded, with why, and is not asked again. A row
+    given without an `id` keeps its place and does nothing when clicked.
+  - A row that is no node of the graph (a lazy row without `nodeId`, or an
+    outline row with the new role `item` and its own `id`) is the
+    product's: a click or a double click calls `outline.activate(file,
+    { id, group?, open })`. A lazy row with `nodeId` is found in the view
+    as a `node` row is.
+  - The product points the outline at a row with
+    `DiagramProfileHandle.revealOutlineRow(uri, { id, group?, index?, show? })`:
+    the rows down to it open, the page it is on is fetched (its place asked
+    of `outline.locate` when the product did not give it), it is selected
+    and scrolled into view, and a filter that hides it is cleared when the
+    row is there without it. Without `outline.locate`, a row whose place is
+    not given is revealed only from the pages already read. `revealOutlineRow`
+    is optional on the handle, as `loading` is.
 - **A graph that grows keeps its picture still.** A producer may say its
   graph grows a step at a time (`graph.meta.incremental`): a schematic of a
   netlist that starts from one cell and takes in a pin's fan-in when asked.
@@ -745,6 +837,19 @@ platform that hands it one.
   `createWorkflowGlspVscodeServer({ diagnosticSource })`; a host that gives
   none gets `workflow`, as before. A Problems filter typed as `workflow`
   no longer matches.
+- **The outline's words.** A view says "1 node", not "1 nodes", and a
+  producer may name what a row counts (`countNoun`, `{ one, other }`). A
+  group says its count once: a detail that only repeats it ("Parts 182 …
+  182") is taken as the count and not shown again, and `count` says how
+  many a group holds when it lists fewer. A list cut short says how much of
+  it is listed ("200 of 268", "The first 200 of 268 are listed"), where its
+  tooltip used to say it nests itself or is too deep, which is what a view
+  cut short means and still says.
+- **The outline sizes against the canvas.** It is at most half as wide as
+  the canvas and no wider than the canvas left of its button, where it was
+  half the window: with the property panel docked in a narrow editor it
+  covered the canvas. Fit leaves room for it when it is open
+  (`fit-clear-of-overlays.ts`, one line).
 
 - **A wire outside the viewport is not drawn**, as a node outside it is
   not; one within a few pixels of it still is, since its arrowhead and its

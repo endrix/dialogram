@@ -37,6 +37,13 @@ export interface LayoutFileContent {
         portBuses?: Record<string, string[]>;
         unwrittenStates?: Record<string, NodePosition>;
     }>;
+    /**
+     * What the reader chose of the file's view options, by group and item
+     * (shared `view-options.ts`): one record for the file, not per network,
+     * since a view option is about the file and is the same in each of its
+     * views. Kept by every write of the file as it stands.
+     */
+    viewOptions?: Record<string, Record<string, boolean>>;
 }
 
 type LayoutSnapshot = {
@@ -220,6 +227,21 @@ export async function flushLayoutPersistence(): Promise<void> {
     await Promise.all(Array.from(liveServices, service => service.flush()));
 }
 
+/**
+ * The write in progress to each layout file, in this process. Every save
+ * reads the file to merge into it, and two at once would each write what
+ * the other replaced. Kept for the process rather than per service: each
+ * diagram session has a service of its own, and the host has one for the
+ * view options, all writing the same files.
+ */
+const writesInProgress = new Map<string, Promise<void>>();
+
+/** The view options a layout file carries, to be written back as they are. */
+function viewOptionsOf(data: LayoutFileContent | undefined): Pick<LayoutFileContent, 'viewOptions'> {
+    const raw = data?.viewOptions;
+    return raw && typeof raw === 'object' && !Array.isArray(raw) && Object.keys(raw).length > 0 ? { viewOptions: raw } : {};
+}
+
 export class LayoutPersistenceService {
     private pendingSaves = new Map<
         string,
@@ -232,11 +254,6 @@ export class LayoutPersistenceService {
     >();
     private saveDebounceMs: number;
     /**
-     * The write in progress to each layout file. Every save reads the file to
-     * merge into it; two at once would each write what the other replaced.
-     */
-    private writes = new Map<string, Promise<void>>();
-    /**
      * Which bundles are open, per layout file and network, when the file could
      * not take it (a read-only directory, persistence switched off): the
      * reader's choice still holds for the session.
@@ -244,6 +261,8 @@ export class LayoutPersistenceService {
     private unsavedPortBuses = new Map<string, Record<string, string[]>>();
     /** The same for the states the editor holds (`unwrittenStates`). */
     private unsavedUnwrittenStates = new Map<string, Record<string, NodePosition>>();
+    /** The same for the reader's view options, per layout file. */
+    private unsavedViewOptions = new Map<string, Record<string, Record<string, boolean>>>();
 
     // Can be disabled for debugging/benchmarks.
     private readonly disablePersistence = process.env.WORKFLOW_DIAGRAM_DISABLE_PERSISTENCE === '1';
@@ -494,12 +513,12 @@ export class LayoutPersistenceService {
 
     /** Run `write` once every write to `layoutPath` started before it has finished. */
     private serialized(layoutPath: string, write: () => Promise<void>): Promise<void> {
-        const previous = this.writes.get(layoutPath) ?? Promise.resolve();
+        const previous = writesInProgress.get(layoutPath) ?? Promise.resolve();
         const next = previous.then(write, write);
-        this.writes.set(layoutPath, next);
+        writesInProgress.set(layoutPath, next);
         next.finally(() => {
-            if (this.writes.get(layoutPath) === next) {
-                this.writes.delete(layoutPath);
+            if (writesInProgress.get(layoutPath) === next) {
+                writesInProgress.delete(layoutPath);
             }
         }).catch(() => {
             // The caller awaits `next` and sees its failure; this chain only tidies up.
@@ -586,7 +605,8 @@ export class LayoutPersistenceService {
 
         const content: LayoutFileContent = {
             version: LAYOUT_VERSION,
-            layouts: mergedLayouts
+            layouts: mergedLayouts,
+            ...viewOptionsOf(existing)
         };
 
         try {
@@ -659,7 +679,7 @@ export class LayoutPersistenceService {
             const snapshot: LayoutSnapshot = layouts[networkId] ?? { nodes: {} };
             const portBuses = merge(this.unsavedPortBuses.get(unsavedKey) ?? snapshot.portBuses);
             layouts[networkId] = { ...snapshot, portBuses };
-            const content: LayoutFileContent = { version: LAYOUT_VERSION, layouts };
+            const content: LayoutFileContent = { version: LAYOUT_VERSION, layouts, ...viewOptionsOf(existing) };
             try {
                 await fs.mkdir(path.dirname(layoutPath), { recursive: true });
                 await fs.writeFile(layoutPath, JSON.stringify(content, null, 2), 'utf-8');
@@ -709,7 +729,7 @@ export class LayoutPersistenceService {
             const snapshot: LayoutSnapshot = layouts[networkId] ?? { nodes: {} };
             const { unwrittenStates: _replaced, ...rest } = snapshot;
             layouts[networkId] = Object.keys(record).length > 0 ? { ...rest, unwrittenStates: record } : rest;
-            const content: LayoutFileContent = { version: LAYOUT_VERSION, layouts };
+            const content: LayoutFileContent = { version: LAYOUT_VERSION, layouts, ...viewOptionsOf(existing) };
             try {
                 await fs.mkdir(path.dirname(layoutPath), { recursive: true });
                 await fs.writeFile(layoutPath, JSON.stringify(content, null, 2), 'utf-8');
@@ -717,6 +737,63 @@ export class LayoutPersistenceService {
             } catch (error) {
                 console.error(`Failed to save layout file: ${layoutPath}`, error);
                 this.unsavedUnwrittenStates.set(unsavedKey, record);
+            }
+        });
+    }
+
+    /**
+     * What the reader chose of the file's view options, or `undefined` when
+     * nothing is kept for it. Read from the layout file, beside the positions.
+     */
+    async loadViewOptions(workflowFilePath: string): Promise<Record<string, Record<string, boolean>> | undefined> {
+        const unsaved = this.unsavedViewOptions.get(this.getLayoutFilePath(workflowFilePath));
+        if (unsaved) {
+            return unsaved;
+        }
+        if (this.disablePersistence) {
+            return undefined;
+        }
+        return viewOptionsOf(await this.readAnyLayoutFile(workflowFilePath)).viewOptions;
+    }
+
+    /**
+     * Keep the reader's view options for the file: `state` replaces what was
+     * kept, and an empty one takes the record away. The positions, routes
+     * and the rest of each network's layout stay as they are. Where the file
+     * cannot take it (a read-only directory, persistence switched off) the
+     * choice still holds for the session.
+     */
+    async saveViewOptions(workflowFilePath: string, state: Record<string, Record<string, boolean>>): Promise<void> {
+        const layoutPath = this.getLayoutFilePath(workflowFilePath);
+        const kept = Object.keys(state).length > 0 ? state : undefined;
+        if (this.disablePersistence) {
+            this.unsavedViewOptions.set(layoutPath, state);
+            return;
+        }
+        // A save of positions still waiting on its debounce is written first,
+        // as for the bundles: written after, it would merge into the old file.
+        const pending = this.pendingSaves.get(layoutPath);
+        if (pending) {
+            clearTimeout(pending.timeout);
+            this.pendingSaves.delete(layoutPath);
+            await this.doSave(layoutPath, pending.networkId, pending.positions, pending.edgeRoutes);
+        }
+        await this.serialized(layoutPath, async () => {
+            const existing = await this.readAnyLayoutFile(workflowFilePath);
+            if (!existing && !kept) {
+                // Nothing kept and nothing to keep: no file is made for it.
+                this.unsavedViewOptions.delete(layoutPath);
+                return;
+            }
+            const layouts = existing ? this.normalizeLayoutsFromFile(existing) : {};
+            const content: LayoutFileContent = { version: LAYOUT_VERSION, layouts, ...(kept ? { viewOptions: kept } : {}) };
+            try {
+                await fs.mkdir(path.dirname(layoutPath), { recursive: true });
+                await fs.writeFile(layoutPath, JSON.stringify(content, null, 2), 'utf-8');
+                this.unsavedViewOptions.delete(layoutPath);
+            } catch (error) {
+                console.error(`Failed to save layout file: ${layoutPath}`, error);
+                this.unsavedViewOptions.set(layoutPath, state);
             }
         });
     }

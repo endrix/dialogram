@@ -48,6 +48,11 @@
  * the non-editable `BoundaryLabel`, because editing it renamed the port.
  * The loading indicator's model-root listener is here too (bound to itself and as a listener): it
  * takes the indicator down when the model it was waiting for arrives.
+ * So is the view-options service (view-options.ts): bound to itself, as a
+ * model-root listener (it reads each model's view options), and as the handler
+ * of `dialogram.viewOptionsChanged`, the action it dispatches to a product's
+ * client modules, so that the action is known whether or not a product
+ * handles it.
  * The oracle still does its job: it fails on any binding this composition gains
  * or loses, and updating the fixture is the deliberate act of accepting one.
  * Regenerate it only after confirming the diff contains exactly the bindings the

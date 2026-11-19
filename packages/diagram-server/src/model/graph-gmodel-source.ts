@@ -1,6 +1,7 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
 import { parseBadgesMeta, parseFactsMeta, parseLinesMeta, parseViewsMeta, type UnitBadge } from '../server/graph-load-request-options';
 import { BoundaryPortGeometry, estimatePinLabelSize, estimateTextSize, isBoundaryNodeType, portLabelSlot, SymbolGeometry, textColumns, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
+import { normalizeViewOptionGroups, VIEW_OPTIONS_ARG } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findLoopEdges } from './feedback-edges';
 import { arrangeGroupRows, groupLayoutOptions, isGroupRow, splitEdgesAtGroups } from './group-edges';
@@ -118,6 +119,7 @@ export type PyGraphDocument = {
     partial?: boolean;
     errors?: Array<{ message?: string; file?: string; line?: number; column?: number }>;
     hierarchy?: unknown;
+    viewOptions?: unknown;
 };
 
 export type GModelElement = {
@@ -1581,6 +1583,12 @@ export class GraphGModelSource {
         // data the client renders without laying anything out.
         if (doc.hierarchy && typeof doc.hierarchy === 'object') {
             graphArgs['wf:hierarchy'] = JSON.stringify(doc.hierarchy);
+        }
+        // What the reader may show and hide, for the palette: plain data too,
+        // with the reader's choices for the file already applied by the host.
+        const viewOptions = normalizeViewOptionGroups(doc.viewOptions);
+        if (viewOptions.length > 0) {
+            graphArgs[VIEW_OPTIONS_ARG] = JSON.stringify(viewOptions);
         }
         if (workflowDefinitionSource) {
             const definitionRange = {

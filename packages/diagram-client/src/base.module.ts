@@ -59,6 +59,8 @@ import { ExecutionStatesFeedbackCommand } from './execution-states';
 import { SelectionTraceFeedbackCommand, SelectionTraceListener } from './selection-trace';
 import { SelectionFocusPostprocessor } from './selection-focus';
 import { ViewToolPalette } from './view-tool-palette';
+import { ViewOptionsService } from './view-options';
+import { ViewOptionsChangedAction } from '@dialogram/shared';
 
 /**
  * The neutral base bindings shared by all diagram-client consumers. Loaded first
@@ -114,6 +116,14 @@ export const diagramBaseModule = new ContainerModule((bind, unbind, isBound, reb
     if (isBound(ToolPalette)) {
         rebind(ToolPalette).to(ViewToolPalette).inSingletonScope();
     }
+
+    // The view options of the diagram shown (view-options.ts): the palette
+    // draws them, a product's client module hears them change. The service
+    // reads each model's, and handles its own action, so that the action is
+    // known to the diagram whether or not a product handles it too.
+    bind(ViewOptionsService).toSelf().inSingletonScope();
+    bind(TYPES.IGModelRootListener).toService(ViewOptionsService);
+    configureActionHandler(context, ViewOptionsChangedAction.KIND, ViewOptionsService);
 
     // Override copy/paste handler so we can prepare post-paste selection.
     if (isBound(TYPES.ICopyPasteHandler)) {

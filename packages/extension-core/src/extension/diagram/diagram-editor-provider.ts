@@ -10,12 +10,25 @@ import { RequestModelAction } from '@eclipse-glsp/protocol';
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import { statSync } from 'node:fs';
-import { LOADING_MESSAGE_TYPE, RevealNodeAction, WORKFLOW_DIAGRAM_TYPE, normalizeLoadProgress, type LoadProgress, type LoadingMessage, type LoadingUpdate } from '@dialogram/shared';
+import {
+    LOADING_MESSAGE_TYPE,
+    OUTLINE_ACTIVATE_MESSAGE,
+    OUTLINE_REQUEST_MESSAGE,
+    RevealNodeAction,
+    VIEW_OPTIONS_CHANGED_MESSAGE,
+    WORKFLOW_DIAGRAM_TYPE,
+    normalizeLoadProgress,
+    type LoadProgress,
+    type LoadingMessage,
+    type LoadingUpdate
+} from '@dialogram/shared';
 import { type DiagramClientBehavior, type DiagramProfile, type DiagramWatchAffects, type RevealRangeOptions } from '../../api';
 import { listAcpConnectors, workspaceDirFor } from '../chat/acp-connectors';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
 import { matchesSourceExtension, sourceWatchGlobs } from './source-extensions';
 import { inPlace, openColumnFor } from './open-in-place';
+import type { OutlineHost } from './outline-host';
+import type { ViewOptionsHost } from './view-options-host';
 
 const RUN_ID_ARG = 'wf:runId';
 
@@ -124,6 +137,12 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     private uriToLiveOverlaySignature = new Map<string, string | undefined>();
 
     /**
+     * Where the outline's requests for rows, and its clicks on rows that are
+     * the product's, go (outline-host.ts); set by the activation.
+     */
+    outlineHost?: Pick<OutlineHost, 'onWebviewRequest' | 'onWebviewActivate'>;
+
+    /**
      * Fires each time a webview (re)registers for a document (initial open and
      * every reopen), with the document's URI string and the client that
      * registered. The host wires this to drain the execution-overlay replay
@@ -142,6 +161,13 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     private liveOverlayWatch?: (sourceUri: vscode.Uri) => { dispose(): void };
     private liveOverlaySignatureSubscription?: { dispose(): void };
     private readonly uriToLiveOverlayWatch = new Map<string, { dispose(): void }>();
+
+    /**
+     * Where the reader's view-option changes go (view-options-host.ts): set
+     * by the activation, which makes the host before the server, and the
+     * provider after.
+     */
+    viewOptionsHost?: Pick<ViewOptionsHost, 'onWebviewChange'>;
 
     /**
      * Debounce timers for live document change updates.
@@ -365,6 +391,25 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
                     return;
                 }
 
+                // The outline asks for rows of a lazy group, or where one is:
+                // answered to this editor only, which is the one scrolling (a
+                // file's other editor scrolls its own list), and to nothing
+                // when it has closed while the producer was answering.
+                if (message?.type === OUTLINE_REQUEST_MESSAGE) {
+                    if (this.outlineHost) {
+                        await this.outlineHost.onWebviewRequest(message.payload, reply => {
+                            this.postToClient(clientId, reply);
+                        });
+                    }
+                    return;
+                }
+
+                // A row of the outline that is the product's was clicked.
+                if (message?.type === OUTLINE_ACTIVATE_MESSAGE) {
+                    await this.outlineHost?.onWebviewActivate(message.payload);
+                    return;
+                }
+
                 if (message?.type === 'dialogram.svg.failed') {
                     const reason = message.payload?.reason as string | undefined;
                     void vscode.window.showWarningMessage(`Could not export the diagram as SVG${reason ? `: ${reason}` : '.'}`);
@@ -481,6 +526,18 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
                             type: 'dialogram.ui.response',
                             payload: { requestId, result: { error: msg } }
                         });
+                    }
+                    return;
+                }
+
+                // The reader changed what is shown, in the palette: the host
+                // keeps it for the file (beside it, on disk), tells the
+                // product, and tells every diagram of the file, this one
+                // too. Only for a file this editor shows: what is written
+                // beside a file is that editor's to change.
+                if (message?.type === VIEW_OPTIONS_CHANGED_MESSAGE) {
+                    if (this.shows(clientId, message.payload)) {
+                        await this.viewOptionsHost?.onWebviewChange(message.payload);
                     }
                     return;
                 }
@@ -837,6 +894,39 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      */
     editorsOf(uri: vscode.Uri | string): string[] {
         return [...new Set(this.editorsShowing(uri).map(editor => editor.documentKey))];
+    }
+
+    /**
+     * The clients of the editors {@link editorsOf} names, each editor once: for
+     * what each diagram of a file is told on its own (a view option another
+     * editor turned, a row of its outline to show), which a file's second
+     * editor must hear as well, and the one it came from need not.
+     */
+    clientIdsShowing(uri: vscode.Uri | string): string[] {
+        return this.editorsShowing(uri).map(editor => editor.clientId);
+    }
+
+    /**
+     * The clients of the editors {@link editorsOf} names, each with the
+     * file's URI as that editor names it: its document's, or that of the view
+     * it shows in place. A diagram knows its file by its own spelling.
+     */
+    clientsShowing(uri: vscode.Uri | string): Array<{ clientId: string; sourceUri: string }> {
+        const wanted = this.canonicalizeUriString(uri);
+        return this.editorsShowing(uri).map(editor => ({
+            clientId: editor.clientId,
+            sourceUri: editor.documentKey === wanted ? editor.documentUri : (editor.view?.shownSourceUri ?? editor.documentUri)
+        }));
+    }
+
+    /**
+     * Whether a webview's message names a file its editor shows (its
+     * `sourceUri`): what the host writes beside, and hands the product, is
+     * that editor's file and no other.
+     */
+    private shows(clientId: string, payload: unknown): boolean {
+        const sourceUri = (payload as { sourceUri?: unknown } | undefined)?.sourceUri;
+        return typeof sourceUri === 'string' && sourceUri !== '' && this.clientIdsShowing(sourceUri).includes(clientId);
     }
 
     /** The editors {@link editorsOf} names, each one: a file can have two. */
