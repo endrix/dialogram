@@ -270,8 +270,11 @@ export interface DiagramSurface {
     resized?(viewport: SurfaceViewport): void;
     /**
      * A click where no diagram element is. Answer with `context.setSelection`,
-     * or not at all. A double click there is the surface's alone: the
-     * platform shows no root properties over a surface that has `click`.
+     * or not at all. A double click there is the surface's alone: over a
+     * surface that has `click`, the platform shows no root properties for
+     * it. The property panel shows them instead while nothing is selected:
+     * from the first model on, and again once a selection is cleared by
+     * Escape or by the surface.
      */
     click?(point: SurfacePoint): void;
     /** A link of the selection's rows was clicked in the property panel. */

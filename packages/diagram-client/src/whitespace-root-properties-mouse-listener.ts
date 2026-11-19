@@ -23,7 +23,8 @@ export class WhitespaceRootPropertiesMouseListener extends MouseListener impleme
         // Where a mounted surface hears clicks, the graph's whitespace is the
         // surface's: a double-click there is its to answer (it was handed the
         // click with clickCount 2), and showing the root's properties would
-        // replace the selection it has just put in the panel.
+        // replace the selection it has just put in the panel. The panel shows
+        // them there by itself while nothing is selected.
         if (this.surfaceHandlesClicks()) {
             return [];
         }

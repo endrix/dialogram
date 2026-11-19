@@ -1405,6 +1405,23 @@ platform that hands it one.
 
 ### Fixed
 
+- **Over a surface that hears clicks, the property panel opens on the
+  view's own properties.** A product that draws the diagram on its own
+  surface and answers its clicks (#203) opened with "Select an element to
+  view properties" in the panel, and the reader had no gesture to replace
+  it: the double click on the background that shows the root's properties
+  elsewhere is the surface's there, so only a surface selection cleared with
+  Escape brought them. The panel now shows them from the first model on,
+  while nothing is selected and it shows nothing else, whether the surface
+  mounts before that model or after it, and follows the models after it. A
+  node or a surface selection in the panel is never replaced by them because
+  a model came, a click on nothing still keeps what the panel shows, and
+  nothing is reported as selected, to the chat or to a profile's selection
+  hooks. Text being typed into a field of the panel is kept: the view's
+  properties are drawn once the focus leaves it. A product without a
+  surface, or with one that hears no clicks, sees the hint and the double
+  click as before.
+
 - **A field the producer marked editable was listed twice in the property
   panel** where a product shows instance parameters: once in the Fields
   section with its choices, once more as free text.

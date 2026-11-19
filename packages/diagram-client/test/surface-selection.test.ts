@@ -5,13 +5,16 @@
  * the panel's own section builder, its links go back to the surface, it
  * stays through the platform's own model updates, and it goes when cleared;
  * a double-click on the graph's whitespace is the surface's when it hears
- * clicks, so the root's properties do not replace what it selected; the chat
- * is told a capped summary on every change and with every message.
+ * clicks, so the root's properties do not replace what it selected, and the
+ * panel shows them by itself there while nothing is selected, from the first
+ * model on; the chat is told a capped summary on every change and with every
+ * message.
  */
 import 'reflect-metadata';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { WorkflowDiagramMetadata as M } from '@dialogram/shared';
 import { installPage } from './panel-harness/harness';
-import { TestPanel, resetPanel, rootOf, section } from './panel-harness/panel';
+import { TestPanel, resetPanel, rootOf, section, tick } from './panel-harness/panel';
 import { DiagramSurfaceHost } from '../src/diagram-surface-host';
 import { ChatPanel } from '../src/chat-panel-integrated';
 import { WhitespaceRootPropertiesMouseListener } from '../src/whitespace-root-properties-mouse-listener';
@@ -40,8 +43,15 @@ const via: SurfaceSelection = {
     bounds: { x: 420, y: 0, width: 12, height: 9 }
 };
 
-/** A host with a mounted surface whose context the test drives, and the links it was asked to follow. */
-function surfaceHost(click?: DiagramSurface['click']): { host: DiagramSurfaceHost; context: () => DiagramSurfaceContext; followed: string[] } {
+/**
+ * A host with a surface whose context the test drives, and the links it was
+ * asked to follow. The surface is mounted at once, as at a first render,
+ * unless `mounted: false`: `mount()` mounts it then.
+ */
+function surfaceHost(
+    click?: DiagramSurface['click'],
+    options: { mounted?: boolean } = {}
+): { host: DiagramSurfaceHost; context: () => DiagramSurfaceContext; followed: string[]; mount: () => void } {
     let context: DiagramSurfaceContext | undefined;
     const followed: string[] = [];
     const surface: DiagramSurface = {
@@ -62,9 +72,14 @@ function surfaceHost(click?: DiagramSurface['click']): { host: DiagramSurfaceHos
     base.innerHTML = '<svg></svg>';
     document.body.appendChild(base);
     const root = { id: 'graph', type: 'graph', zoom: 1, scroll: { x: 0, y: 0 }, canvasBounds: { x: 0, y: 0, width: 800, height: 600 }, args: {} };
-    host.decorate({}, root);
-    host.postUpdate();
-    return { host, context: () => context!, followed };
+    const mount = () => {
+        host.decorate({}, root);
+        host.postUpdate();
+    };
+    if (options.mounted !== false) {
+        mount();
+    }
+    return { host, context: () => context!, followed, mount };
 }
 
 function panelOn(host: DiagramSurfaceHost): TestPanel {
@@ -76,6 +91,28 @@ function panelOn(host: DiagramSurfaceHost): TestPanel {
 
 const rows = (title: string) => [...section(title)!.querySelectorAll('.pp-arow')]
     .map(row => [row.querySelector('.pp-akey')!.textContent!.trim(), row.querySelector('.pp-aval')!.textContent!.replace(/\s+/g, ' ').trim()]);
+
+const graph = { type: 'graph' } as never;
+const mouse = (detail: number) => ({ clientX: 40, clientY: 30, button: 0, detail, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false });
+
+/** A double-click on the graph's whitespace: its two listeners in the order a browser runs them, the second mouseup, then dblclick. */
+function doubleClick(host: DiagramSurfaceHost | undefined, panel: TestPanel): void {
+    host?.click(mouse(2));
+    const listener = new WhitespaceRootPropertiesMouseListener();
+    Object.assign(listener as any, { propertyPanel: panel, surfaceHost: host });
+    expect(listener.doubleClick(graph, new MouseEvent('dblclick'))).toEqual([]);
+}
+
+/** The chat panel on a host, and what it sent its own host. */
+function chatOn(host: DiagramSurfaceHost) {
+    const sent: Array<{ method: string; env: any }> = [];
+    const chat = new ChatPanel();
+    (chat as any).channel = { sendToHost: (method: string, env: any) => sent.push({ method, env }) };
+    (chat as any).surfaceHost = host;
+    (chat as any).listenToSurface();
+    (globalThis as any).diagramIdentifier = { uri: 'file:///w/shapes.txt' };
+    return { chat, sent };
+}
 
 beforeEach(() => {
     resetPanel();
@@ -151,17 +188,6 @@ describe('the property panel shows a surface\'s selection', () => {
 });
 
 describe('a double-click on the graph\'s whitespace', () => {
-    const graph = { type: 'graph' } as never;
-    const mouse = (detail: number) => ({ clientX: 40, clientY: 30, button: 0, detail, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false });
-
-    /** The two listeners in the order a browser runs them: the second mouseup, then dblclick. */
-    function doubleClick(host: DiagramSurfaceHost | undefined, panel: TestPanel): void {
-        host?.click(mouse(2));
-        const listener = new WhitespaceRootPropertiesMouseListener();
-        Object.assign(listener as any, { propertyPanel: panel, surfaceHost: host });
-        expect(listener.doubleClick(graph, new MouseEvent('dblclick'))).toEqual([]);
-    }
-
     it('is the surface\'s, when it hears clicks: what it selected stays in the panel', () => {
         const counts: number[] = [];
         let context: () => DiagramSurfaceContext = () => { throw new Error('not mounted'); };
@@ -207,16 +233,6 @@ describe('a double-click on the graph\'s whitespace', () => {
 });
 
 describe('the chat is told a surface\'s selection', () => {
-    function chatOn(host: DiagramSurfaceHost) {
-        const sent: Array<{ method: string; env: any }> = [];
-        const chat = new ChatPanel();
-        (chat as any).channel = { sendToHost: (method: string, env: any) => sent.push({ method, env }) };
-        (chat as any).surfaceHost = host;
-        (chat as any).listenToSurface();
-        (globalThis as any).diagramIdentifier = { uri: 'file:///w/shapes.txt' };
-        return { chat, sent };
-    }
-
     it('on every change, as a summary without link targets, and cleared', () => {
         const { host, context } = surfaceHost();
         const { sent } = chatOn(host);
@@ -258,5 +274,185 @@ describe('the chat is told a surface\'s selection', () => {
         expect(summary.ids).toHaveLength(50);
         expect(summary.rows).toHaveLength(40);
         expect(summary.rows[0].value.length).toBe(200);
+    });
+});
+
+describe('over a surface that hears clicks, the panel opens on the view\'s own properties', () => {
+    /** What the editor provider writes into the panel before any model. */
+    const HINT = '<div class="no-selection">Select an element to view properties</div>';
+    const hint = () => document.querySelector('#property-content .no-selection')?.textContent;
+    const node = { id: 'n1', type: 'node:task', args: { [M.ENTITY_NAME]: 'first' }, children: [] };
+
+    /** The page as the editor provider writes it: the panel holds the hint. */
+    function freshPage(): void {
+        installPage();
+        document.getElementById('property-content')!.innerHTML = HINT;
+    }
+
+    /** A view's root, as a layout viewer's producer sends it: of the view itself, a name and a fact. */
+    function view(cells = '1200', ...nodes: any[]): any {
+        return { ...rootOf(...nodes), args: { [M.READ_ONLY_VIEW]: true, [M.NETWORK_NAME]: 'top', [M.FACTS]: [{ label: 'Cells', value: cells }] } };
+    }
+
+    /** The view's own properties as the panel shows them; undefined while it shows anything else. */
+    function viewShown(): string[][] | undefined {
+        const name = section('View')?.querySelector('.property-value')?.textContent?.trim();
+        return name === undefined ? undefined : [['Name', name], ...rows('Facts')];
+    }
+
+    /** A click on nothing: the graph's deselection, then the surface's click, which this surface leaves unanswered. */
+    function clickOnNothing(host: DiagramSurfaceHost, panel: TestPanel, root: any): void {
+        panel.selectionChanged(root, []);
+        host.selectionChanged(undefined, []);
+        host.click(mouse(1));
+    }
+
+    beforeEach(freshPage);
+
+    it('from the first model, whether the surface mounts before it comes or after', () => {
+        const drawn: string[] = [];
+        for (const modelFirst of [false, true]) {
+            freshPage();
+            const { host, mount } = surfaceHost(() => undefined, { mounted: !modelFirst });
+            const panel = panelOn(host);
+            panel.modelRootChanged(view() as never);
+            if (modelFirst) {
+                expect(hint()).toBe('Select an element to view properties');
+                mount();
+            }
+            expect(hint()).toBeUndefined();
+            expect(viewShown()).toEqual([['Name', 'top'], ['Cells', '1200']]);
+            drawn.push(document.getElementById('property-content')!.innerHTML);
+            window.dispatchEvent(new Event('pagehide'));
+        }
+        expect(drawn[1]).toBe(drawn[0]);
+    });
+
+    it('never in place of a node or a surface\'s selection, when a model comes or the surface mounts', () => {
+        const { host, context } = surfaceHost(() => undefined);
+        const panel = panelOn(host);
+        panel.modelRootChanged(view('1200', node) as never);
+        expect(viewShown()).toEqual([['Name', 'top'], ['Cells', '1200']]);
+
+        panel.selectionChanged(view('1200', node), ['n1']);
+        host.selectionChanged(undefined, ['n1']);
+        panel.modelRootChanged(view('1300', node) as never);
+        expect(rows('Basic Info')[0]).toEqual(['Name', 'first']);
+
+        context().setSelection(via);
+        panel.modelRootChanged(view('1400', node) as never);
+        expect(rows('Basic Info')[0]).toEqual(['Name', 'Rectangle 42']);
+        window.dispatchEvent(new Event('pagehide'));
+
+        // A node selected before the surface mounts stays when it mounts.
+        freshPage();
+        const later = surfaceHost(() => undefined, { mounted: false });
+        const second = panelOn(later.host);
+        second.modelRootChanged(view('1200', node) as never);
+        second.selectionChanged(view('1200', node), ['n1']);
+        later.mount();
+        expect(rows('Basic Info')[0]).toEqual(['Name', 'first']);
+        expect(viewShown()).toBeUndefined();
+    });
+
+    it('follows the model while it shows them, and draws nothing again for a model that changes none of them', () => {
+        const { host } = surfaceHost(() => undefined);
+        const panel = panelOn(host);
+        panel.modelRootChanged(view('1200') as never);
+        expect(viewShown()).toEqual([['Name', 'top'], ['Cells', '1200']]);
+        const drawn = section('View');
+
+        panel.modelRootChanged(view('1200') as never);
+        expect(section('View')).toBe(drawn);
+
+        panel.modelRootChanged(view('1300') as never);
+        expect(viewShown()).toEqual([['Name', 'top'], ['Cells', '1300']]);
+    });
+
+    it('only there: without a surface, or over one that hears no clicks, the hint stays until a double-click shows them', () => {
+        const hosts: Array<() => DiagramSurfaceHost | undefined> = [
+            () => undefined,
+            () => {
+                // The stock modules bind a host for every product; this one has no surface bound.
+                const bare = new DiagramSurfaceHost();
+                Object.assign(bare as any, { actionDispatcher: { dispatch: async () => undefined }, viewerOptions: { baseDiv: 'diagram' } });
+                bare.decorate({}, { id: 'graph', type: 'graph', zoom: 1, scroll: { x: 0, y: 0 }, canvasBounds: { x: 0, y: 0, width: 800, height: 600 } });
+                bare.postUpdate();
+                return bare;
+            },
+            () => surfaceHost().host
+        ];
+        for (const make of hosts) {
+            freshPage();
+            const host = make();
+            const panel = host ? panelOn(host) : new TestPanel();
+            panel.modelRootChanged(view() as never);
+            expect(hint()).toBe('Select an element to view properties');
+
+            doubleClick(host, panel);
+            expect(viewShown()).toEqual([['Name', 'top'], ['Cells', '1200']]);
+            window.dispatchEvent(new Event('pagehide'));
+        }
+
+        freshPage();
+        panelOn(surfaceHost(() => undefined).host).modelRootChanged(view() as never);
+        expect(viewShown()).toEqual([['Name', 'top'], ['Cells', '1200']]);
+    });
+
+    it('keeps what the panel shows on a click on nothing, through the models that come after it', () => {
+        const { host, context } = surfaceHost(() => undefined);
+        const panel = panelOn(host);
+        panel.modelRootChanged(view('1200', node) as never);
+        clickOnNothing(host, panel, view('1200', node));
+        expect(viewShown()).toEqual([['Name', 'top'], ['Cells', '1200']]);
+
+        // Nothing is selected after the click, and the node stays in the panel all the same.
+        panel.selectionChanged(view('1200', node), ['n1']);
+        host.selectionChanged(undefined, ['n1']);
+        clickOnNothing(host, panel, view('1200', node));
+        panel.modelRootChanged(view('1300', node) as never);
+        expect(rows('Basic Info')[0]).toEqual(['Name', 'first']);
+
+        context().setSelection(via);
+        clickOnNothing(host, panel, view('1300', node));
+        panel.modelRootChanged(view('1400', node) as never);
+        expect(rows('Basic Info')[0]).toEqual(['Name', 'Rectangle 42']);
+    });
+
+    it('selects nothing: the graph is asked to select nothing, and the chat is told of no selection', () => {
+        const { host } = surfaceHost(() => undefined);
+        const { chat, sent } = chatOn(host);
+        const panel = panelOn(host);
+        panel.modelRootChanged(view() as never);
+        expect(viewShown()).toEqual([['Name', 'top'], ['Cells', '1200']]);
+
+        expect(panel.dispatched).toEqual([]);
+        expect(host.currentSelection()).toBeUndefined();
+        expect(sent.filter(s => s.env?.type === 'chat.selection')).toEqual([]);
+        (chat as any).inputValue = 'what is this?';
+        (chat as any).sendMessage();
+        const message = sent.find(s => s.env?.type === 'chat.sendMessage')!.env.data;
+        expect(message.selectedNodeIds).toEqual([]);
+        expect(message.surfaceSelection).toBeUndefined();
+    });
+
+    it('waits while something in the panel is typed into, and shows them once the focus leaves the panel', async () => {
+        const { host } = surfaceHost(() => undefined);
+        const panel = panelOn(host);
+        (panel as any).initializeEditTracking();
+        const input = document.createElement('input');
+        document.getElementById('property-content')!.appendChild(input);
+        input.focus();
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+        input.value = 'a';
+
+        panel.modelRootChanged(view() as never);
+        expect(input.isConnected).toBe(true);
+        expect(input.value).toBe('a');
+        expect(hint()).toBe('Select an element to view properties');
+
+        input.blur();
+        await tick();
+        expect(viewShown()).toEqual([['Name', 'top'], ['Cells', '1200']]);
     });
 });

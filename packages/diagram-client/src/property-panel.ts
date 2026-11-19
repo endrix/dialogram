@@ -30,7 +30,7 @@ import { NodeSectionContribution, type NodeInfoRow, type NodeSectionContext } fr
 import { createPropertySection, shortenPath } from './property-section';
 import { isReadOnlyView } from './read-only-view';
 import { elementPanelSignature, networkPanelSignature } from './panel-signature';
-import { DiagramSurfaceHost, type SurfaceSelectionCause } from './diagram-surface-host';
+import { DiagramSurfaceHost, SURFACE_MOUNTED_EVENT, type SurfaceSelectionCause } from './diagram-surface-host';
 import type { SurfaceSelection, SurfaceValue, SurfaceValuePart } from './diagram-surface';
 
 /**
@@ -123,33 +123,68 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             }
             // The focus has not landed yet: look once it has.
             setTimeout(() => {
-                if (this.redrawPending && this.lastRoot && !this.typingInPanel()) {
+                if (this.redrawPending && this.lastRoot && !this.typingInPanel() && !this.showViewOverSurface()) {
                     this.redrawIfChanged(this.lastRoot);
                 }
             }, 0);
         }, true);
     }
 
-    /** After injection: the node sections' one-time setup, and the surface's selection heard. */
+    /**
+     * After injection: the node sections' one-time setup, and the surface's
+     * selection and mounting heard. A surface may mount after the first model
+     * came, and the panel then looks again (`showViewOverSurface`).
+     */
     @postConstruct()
     protected installNodeSections(): void {
         const host = { redrawIfShowing: (elementId: string) => this.redrawIfShowing(elementId) };
         for (const contribution of this.nodeSections()) {
             contribution.install?.(host);
         }
-        this.surfaceHost?.onSelectionChanged((selection, cause) => this.surfaceSelectionChanged(selection, cause));
+        if (this.surfaceHost) {
+            this.surfaceHost.onSelectionChanged((selection, cause) => this.surfaceSelectionChanged(selection, cause));
+            document.addEventListener(SURFACE_MOUNTED_EVENT, () => this.showViewOverSurface());
+        }
     }
 
     /** Whether the panel shows the surface's selection (`showSurfaceSelection`). */
     private showingSurface = false;
 
     /**
+     * With nothing selected and nothing else shown, over a mounted surface
+     * that hears clicks, the panel shows the view's own properties: the
+     * double click on the background that shows them elsewhere is the
+     * surface's there (`WhitespaceRootPropertiesMouseListener`, by the same
+     * test), and the page's hint would stay in their place with no gesture
+     * to replace it. A node or a surface selection the panel shows is left
+     * as it is, and nothing is selected by this. Not while something in the
+     * panel is typed into: the focus leaving the panel draws them. True when
+     * it drew them.
+     */
+    protected showViewOverSurface(): boolean {
+        const host = this.surfaceHost;
+        const hearsClicks = !!host?.mounted() && typeof host.surface()?.click === 'function';
+        if (this.shown || this.showingSurface || !this.lastRoot || !hearsClicks || host?.currentSelection()) {
+            return false;
+        }
+        if (this.typingInPanel()) {
+            this.redrawPending = true;
+            return false;
+        }
+        this.redrawPending = false;
+        this.showNoSelection();
+        return true;
+    }
+
+    /**
      * The surface's selection changed: shown as a node is, and, when it is
      * cleared by Escape or by the surface, the panel goes back to the view's
-     * own properties, since what it showed is no longer selected anywhere. A
-     * node selected instead clears it too, and the node's panel is already
-     * drawn then: nothing to do. A click on nothing keeps what the panel
-     * shows, as a click that deselects a node does.
+     * own properties, since what it showed is no longer selected anywhere.
+     * Over a surface that hears clicks, those are also what the panel shows
+     * from the first model on, while nothing is selected
+     * (`showViewOverSurface`). A node selected instead clears it too, and the
+     * node's panel is already drawn then: nothing to do. A click on nothing
+     * keeps what the panel shows, as a click that deselects a node does.
      */
     surfaceSelectionChanged(selection: SurfaceSelection | undefined, cause: SurfaceSelectionCause): void {
         if (selection) {
@@ -357,7 +392,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     // streams (`NodeSectionContribution.modelChanged`).
     modelRootChanged(root: Readonly<GModelRoot>): void {
         this.lastRoot = root;
-        if (this.redrawIfChanged(root)) {
+        if (this.showViewOverSurface() || this.redrawIfChanged(root)) {
             return;
         }
         if (!this.lastRenderedNodeId) {

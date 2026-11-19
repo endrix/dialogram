@@ -342,7 +342,12 @@ startStockDiagram({ features: [new ContainerModule(bind => { bind(DiagramSurface
 - A double-click on no diagram element reaches `click` with `clickCount: 2`
   (after the first click's `1`) and is yours alone: with a `click`, the
   platform does not show the root's properties there, so what you select
-  stays in the panel.
+  stays in the panel. The panel shows the root's properties by itself
+  instead while nothing is selected: from the first model on, in place of
+  its "Select an element" hint, and again once a selection is cleared by
+  Escape or by you. A node or a selection of yours in the panel is never
+  replaced by them because a model came, and a click on nothing that you
+  leave unanswered leaves the panel as it is.
 - `context.reveal(bounds)` centres a rectangle in the free area at the zoom
   there is, as Center does: a rectangle that fits the canvas but not the
   free area stays on the canvas, a margin inside its edge, and one wider or
