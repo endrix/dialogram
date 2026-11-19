@@ -1501,6 +1501,28 @@ body.vscode-high-contrast-light .node-center-image-light {
     stroke-opacity: 1;
 }
 
+/* A title its producer gave the frame says what a source says (a block's
+   kind and the signals that activate it): as written, where a group's name
+   is set in capitals. */
+.workflow-node-group.workflow-group-titled > .group-label {
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+/* An open node with an error or a warning in its source: on its frame, as on
+   the node closed, and not on what the frame holds. */
+.workflow-node-group.workflow-group-source-error > .group-frame {
+    stroke: var(--workflow-node-error-stroke);
+    stroke-opacity: 1;
+    stroke-width: 2.5px;
+}
+
+.workflow-node-group.workflow-group-source-warning > .group-frame {
+    stroke: var(--vscode-editorWarning-foreground, #cca700);
+    stroke-opacity: 1;
+    stroke-width: 2px;
+}
+
 .workflow-node-group .group-label {
     /* From the title's x, as the view places it: a general text rule centred it. */
     text-anchor: start;
@@ -1541,6 +1563,27 @@ body.vscode-high-contrast-light .node-center-image-light {
 /* Where an edge ends at the group itself: its arrowhead meets the frame. */
 .workflow-group-end-port .group-boundary-dot {
     display: none;
+}
+
+/* One of an open node's own ports, on its frame: its name inside the frame,
+   and a clock's wedge before it, as on a register's symbol. */
+.workflow-group-frame-pin .frame-pin-label {
+    font-size: 11px;
+    fill: var(--vscode-editor-foreground, #cccccc);
+    text-anchor: start;
+    pointer-events: none;
+}
+
+.workflow-group-frame-pin .frame-pin-label.frame-pin-label-output {
+    text-anchor: end;
+}
+
+.workflow-group-frame-pin .frame-pin-clock {
+    fill: none;
+    stroke: var(--vscode-foreground, #cccccc);
+    stroke-width: 1.5px;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 /* What happens in a group and stays in it: one loop on the frame, drawn as
@@ -4006,6 +4049,7 @@ details[open] > summary .agent-chat-expand-arrow {
    line, its badges, how many a port takes, what a wire carries and its
    bits. */
 .detail-far text.port-label,
+.detail-far text.frame-pin-label,
 .detail-far text.type-footer-label,
 .detail-far g.header-badge,
 .detail-far text.multiplicity-badge,
@@ -4013,6 +4057,7 @@ details[open] > summary .agent-chat-expand-arrow {
 .detail-far text.cal-edge-index-label,
 .detail-far .zoom-detail,
 .detail-mid text.port-label,
+.detail-mid text.frame-pin-label,
 .detail-mid text.type-footer-label:not(.symbol-caption),
 .detail-mid text.header-label.label-type,
 .detail-mid g.header-badge,

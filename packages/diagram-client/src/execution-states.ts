@@ -30,7 +30,7 @@
  * a set that arrived before is painted then.
  */
 import type { ExecutionNodeState, ExecutionNodeStatus } from '@dialogram/shared';
-import { WorkflowDiagramMetadata } from '@dialogram/shared';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { FeedbackCommand, TYPES } from '@eclipse-glsp/client';
 import type { Action, CommandExecutionContext, GModelRoot } from '@eclipse-glsp/sprotty';
 import { inject, injectable } from 'inversify';
@@ -130,7 +130,10 @@ export function applyExecutionStates(root: PaintableElement, states: readonly Ex
     }
     const changed: string[] = [];
     const visit = (element: PaintableElement): void => {
-        const producerId = element.args?.[WorkflowDiagramMetadata.GRAPH_NODE_ID];
+        // (Not the frame of an open node: a state is drawn on a node's body,
+        // a frame has none, and on it every member's body would take the state.)
+        const frame = (element as { type?: string }).type === WorkflowDiagramTypes.NODE_GROUP;
+        const producerId = frame ? undefined : element.args?.[WorkflowDiagramMetadata.GRAPH_NODE_ID];
         const cssClass = classOf.get(element.id) ?? (typeof producerId === 'string' ? classOf.get(producerId) : undefined);
         if (cssClass) {
             const classes = element.cssClasses ?? [];

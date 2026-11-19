@@ -20,7 +20,10 @@
  *   right for edges going out), at the height where its saved route crossed
  *   the frame: the start of the piece inside for a port edges enter by, the
  *   end of it for a port they leave by. Without a saved route it goes level
- *   with the port of the member it leads to.
+ *   with the port of the member it leads to, and under a port already there.
+ * - a pin of an open node's frame no edge ends on has no route to say where
+ *   it was: the layout never places it, the frame does (`placeUnwiredPins`),
+ *   here as after a layout, in the room it keeps under its members.
  *
  * Routes are absolute, as every route in a layout file is; the snap that then
  * re-attaches each route to its ports (`applyPersistedEdgeRoutes`) finds the
@@ -28,6 +31,8 @@
  */
 import { GEdge, GModelElement, GModelRoot, GNode, GPort } from '@eclipse-glsp/server';
 import { WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
+import { frameRoomOf } from '../model/group-edges';
+import { buildEdgeSignatureCounts, edgeRouteKeyFor } from '../routing/persisted-edge-routes';
 
 type Point = { x: number; y: number };
 type Size = { width: number; height: number };
@@ -74,14 +79,51 @@ export function groupPadding(group: GModelElement): number {
         : WorkflowDiagramConstants.GROUP_PADDING_PX;
 }
 
+/** Whether a port is a pin of an open node's frame no edge ends on, which the frame places. */
+export function isUnwiredPin(element: unknown): boolean {
+    return (element as { args?: Record<string, unknown> } | undefined)?.args?.[WorkflowDiagramMetadata.FRAME_PIN_UNWIRED] === true;
+}
+
+/**
+ * Put the pins of an open node's frame no edge ends on where the frame keeps
+ * room for them: under its members, one under another on their side, the
+ * last a padding above the frame's bottom. From the frame's size alone, so
+ * they are in the same place after a layout and in a saved layout opened
+ * again.
+ */
+export function placeUnwiredPins(group: GModelElement): void {
+    const size = sizeOf(group);
+    if (!size) {
+        return;
+    }
+    const pad = groupPadding(group);
+    const pitch = WorkflowDiagramConstants.FRAME_PIN_PITCH_PX;
+    const portSize = WorkflowDiagramConstants.GROUP_BOUNDARY_PORT_SIZE_PX;
+    for (const east of [false, true]) {
+        const pins = (group.children as GModelElement[]).filter(child => isUnwiredPin(child)
+            && ((child as any).args?.[WorkflowDiagramMetadata.PORT_SIDE] === 'EAST') === east);
+        pins.forEach((pin, k) => {
+            const box = sizeOf(pin) ?? { width: portSize, height: portSize };
+            // Its name is above its line: the line is at the foot of its row.
+            const centre = size.height - pad - (pins.length - 1 - k) * pitch - box.height / 2 - 1;
+            (pin as any).position = { x: east ? size.width - box.width / 2 : -box.width / 2, y: centre - box.height / 2 };
+            (pin as any).size = box;
+        });
+    }
+}
+
 /**
  * The size a group takes around its members: their extent, the padding below
  * them, and on the right the same inset they have on the left. A list's
- * padding is its own, closer, as its layout has it.
+ * padding is its own, closer, as its layout has it. An open node's frame
+ * keeps its room besides (`FRAME_ROOM`): on the right what its own pins'
+ * names take, under its members its pins no edge ends on, and never less
+ * than its title.
  */
 export function groupSizeAroundMembers(group: GNode): Size {
     const header: number = WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX;
     const pad = groupPadding(group);
+    const room = frameRoomOf(group);
     let left = Number.POSITIVE_INFINITY;
     let right = 0;
     let bottom: number = header;
@@ -100,15 +142,18 @@ export function groupSizeAroundMembers(group: GNode): Size {
     // The layout insets the members from the left by the padding, and further
     // when edges enter on that side; the right inset mirrors it.
     const inset = Number.isFinite(left) ? Math.max(pad, left) : pad;
+    // Its own pins' names on the right take what they take, not what those on the left do.
+    const onRight = room.left > 0 || room.right > 0 ? pad + room.right : inset;
     return {
-        width: Math.max(right + inset, 2 * pad, WorkflowDiagramConstants.GROUP_MIN_WIDTH_PX),
-        height: Math.max(bottom + pad, header + 2 * pad, WorkflowDiagramConstants.GROUP_MIN_HEIGHT_PX)
+        width: Math.max(right + onRight, 2 * pad, WorkflowDiagramConstants.GROUP_MIN_WIDTH_PX, room.width),
+        height: Math.max(bottom + pad, header + 2 * pad, WorkflowDiagramConstants.GROUP_MIN_HEIGHT_PX) + room.bottom
     };
 }
 
 /**
  * Size every group around its members and put each boundary port back on its
- * frame, from the saved routes (absolute, by edge id) where there are any.
+ * frame, from the saved routes (absolute, under the key a layout file keeps
+ * an edge's route by) where there are any.
  */
 export function restoreGroupGeometry(root: GModelRoot, routes?: Map<string, Point[]>): void {
     const groups = groupsInnermostFirst(root);
@@ -134,14 +179,30 @@ export function restoreGroupGeometry(root: GModelRoot, routes?: Map<string, Poin
     };
     index(root);
 
+    // A route is kept under its edge's ends where the edge names them (a wire
+    // on a frame's pin does), else under its id.
+    const signatures = routes ? buildEdgeSignatureCounts(root) : new Map<string, number>();
+    const routeOf = (edge: GEdge): Point[] | undefined => {
+        const key = edgeRouteKeyFor(edge.args as Record<string, unknown> | undefined, signatures);
+        return (key !== undefined ? routes?.get(key) : undefined) ?? routes?.get(edge.id);
+    };
     const portSize = WorkflowDiagramConstants.GROUP_BOUNDARY_PORT_SIZE_PX;
     const header = WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX;
     for (const group of groups) {
         const pad = groupPadding(group);
+        const room = frameRoomOf(group);
+        // Under a port that is the lowest thing on the frame: the padding a
+        // member has under it. An open node's frame that keeps room lays out
+        // with what `settleFrames` gives it, and the layout then leaves under
+        // such a port the clearance its ports keep from the bottom
+        // (`portsSurrounding`) and the padding, each with the room for the
+        // pins no edge ends on.
+        const framed = (group.args as Record<string, unknown> | undefined)?.[WorkflowDiagramMetadata.FRAME_ROOM] !== undefined;
+        const below = framed ? pad / 2 + room.bottom + pad + room.bottom : pad;
         const origin = absolutePosition(group);
         const crossings: Array<{ port: GPort; size: Size; entering: boolean; at?: Point; inner?: GModelElement }> = [];
         for (const port of group.children) {
-            if (!(port instanceof GPort) || port.type !== WorkflowDiagramTypes.PORT_GROUP_BOUNDARY) {
+            if (!(port instanceof GPort) || port.type !== WorkflowDiagramTypes.PORT_GROUP_BOUNDARY || isUnwiredPin(port)) {
                 continue;
             }
             const size = sizeOf(port) ?? { width: portSize, height: portSize };
@@ -151,13 +212,13 @@ export function restoreGroupGeometry(root: GModelRoot, routes?: Map<string, Poin
             // at the port's anchor: the left edge of the port box on the left
             // side, the right edge on the right.
             const inside = edges.find(edge => (entering ? edge.sourceId : edge.targetId) === port.id);
-            const route = inside ? routes?.get(inside.id) : undefined;
+            const route = inside ? routeOf(inside) : undefined;
             let at = route && route.length > 0 ? (entering ? route[0] : route[route.length - 1]) : undefined;
             if (!inside) {
                 // Where edges end at the group itself there is no piece inside:
                 // the port is where an edge outside the group reaches it.
                 for (const edge of edges) {
-                    const outside = (entering ? edge.targetId : edge.sourceId) === port.id ? routes?.get(edge.id) : undefined;
+                    const outside = (entering ? edge.targetId : edge.sourceId) === port.id ? routeOf(edge) : undefined;
                     if (outside && outside.length > 0) {
                         at = entering ? outside[outside.length - 1] : outside[0];
                         break;
@@ -181,24 +242,46 @@ export function restoreGroupGeometry(root: GModelRoot, routes?: Map<string, Poin
             // the frame reaches down past it, with the padding it has below a
             // member, so the port stays where its route meets it.
             if (crossing.at) {
-                size.height = Math.max(size.height, crossing.at.y - origin.y + crossing.size.height / 2 + pad);
+                size.height = Math.max(size.height, crossing.at.y - origin.y + crossing.size.height / 2 + below);
             }
         }
         group.size = size;
 
+        // Each port's height on its side: where its route crossed the frame,
+        // else level with what it leads to inside.
+        const placed: Array<{ port: GPort; box: Size; entering: boolean; centre: number; exact: boolean }> = [];
         for (const { port, size: box, entering, at, inner } of crossings) {
             let centreY: number | undefined = at ? at.y - origin.y : undefined;
             if (centreY === undefined && inner) {
                 const innerSize = sizeOf(inner) ?? { width: 0, height: 0 };
                 centreY = absolutePosition(inner).y + innerSize.height / 2 - origin.y;
             }
+            placed.push({ port, box, entering, centre: centreY ?? header + box.height / 2, exact: at !== undefined });
+        }
+        // Two ports with no route to say where they were may lead to one
+        // place: the second goes under the first, not on it.
+        const gap = 2 * portSize;
+        for (const entering of [true, false]) {
+            const side = placed.filter(p => p.entering === entering).sort((a, b) => a.centre - b.centre);
+            for (let k = 1; k < side.length; k++) {
+                if (!side[k].exact && side[k].centre < side[k - 1].centre + gap) {
+                    side[k].centre = side[k - 1].centre + gap;
+                }
+            }
+        }
+        const reach = Math.max(group.size.height, ...placed.map(({ box, centre }) => centre + box.height / 2 + below));
+        if (reach > group.size.height) {
+            group.size = { width: group.size.width, height: reach };
+        }
+        for (const { port, box, entering, centre } of placed) {
             const minY = header + box.height / 2;
             const maxY = group.size.height - box.height / 2;
-            const y = Math.min(Math.max(centreY ?? minY, minY), Math.max(minY, maxY)) - box.height / 2;
+            const y = Math.min(Math.max(centre, minY), Math.max(minY, maxY)) - box.height / 2;
             const x = entering ? -box.width / 2 : group.size.width - box.width / 2;
             port.position = { x, y };
             port.size = box;
         }
+        placeUnwiredPins(group);
     }
 }
 

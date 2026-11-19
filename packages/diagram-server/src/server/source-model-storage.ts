@@ -24,6 +24,7 @@ import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import {
     WorkflowDiagramMetadata,
+    WorkflowDiagramTypes,
     type WorkflowDiagramModel,
     WORKFLOW_NETWORK_MODEL_KEY,
     WORKFLOW_LAYOUT_PERSISTENCE_KEY,
@@ -732,7 +733,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         // the whole diagram for want of a saved place.
         if (loadedLayoutPositions) {
             loadedLayoutPositions = withBoundaryBusPositions((diagramModel as any).graph, loadedLayoutPositions);
-            loadedLayoutPositions = withOpenNodePositions((diagramModel as any).graph, loadedLayoutPositions);
+            loadedLayoutPositions = withOpenNodePositions((diagramModel as any).graph, loadedLayoutPositions, !fromCurrent);
         }
         (diagramModel as any).workflowName = workflowName;
         (diagramModel as any).documentUri = sourceUri;
@@ -1590,7 +1591,9 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                         delete (element.args as any)[WorkflowDiagramMetadata.QUEUE_SIZE];
                     }
                 }
-                if (element instanceof GNode) {
+                // (Not the frame of an open node: a state is drawn on a node's
+                // body, and on a frame every member's body would take it.)
+                if (element instanceof GNode && element.type !== WorkflowDiagramTypes.NODE_GROUP) {
                     const args = element.args as Record<string, unknown> | undefined;
                     const nodeIdentityCandidates = analysis?.buildOverlayNodeIdentityCandidates(args) ?? [];
                     const matchesActive = activeNames.length > 0

@@ -16,6 +16,13 @@ export namespace ToggleNodeOpenOperation {
     /** The name an open node is listed under among its node's open bundles. */
     export const OPEN = '*';
 
+    /**
+     * The name a node the reader closed is listed under, when its producer
+     * draws it open to begin with (`meta.inner.open`): for such a node,
+     * nothing listed means open, as nothing listed means closed for the rest.
+     */
+    export const CLOSED = '!';
+
     export interface Operation extends Action {
         kind: typeof KIND;
         /** The node's id, closed, or the frame's, open. */

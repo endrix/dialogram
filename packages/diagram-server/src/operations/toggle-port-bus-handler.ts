@@ -51,7 +51,7 @@ import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from '../server/s
 import { WORKFLOW_LAYOUT_BOUNDARY_FLOW_OPERATION_KIND, WorkflowLayoutBoundaryFlowOperationHandler } from './layout-boundary-flow-handler';
 import { makeRoom, type Box } from './make-room';
 import { boundaryBusMembersOf } from '../server/boundary-bus-positions';
-import { groupSizeAroundMembers } from '../server/group-geometry';
+import { groupSizeAroundMembers, isUnwiredPin, placeUnwiredPins } from '../server/group-geometry';
 import { layoutTargetOf, type LayoutTarget } from '../server/layout-target';
 import {
     WORKFLOW_REROUTE_EDGES_AVOID_OVERLAPS_OPERATION_KIND,
@@ -303,6 +303,10 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
                 if (key && !open.has(key)) {
                     open.set(key, new Set<string>());
                 }
+                if (key && args[WorkflowDiagramMetadata.NODE_STARTS_OPEN] === true) {
+                    // Drawn closed though its producer draws it open: the reader closed it.
+                    open.get(key)!.add(ToggleNodeOpenOperation.CLOSED);
+                }
             }
             const group = args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP];
             if (typeof group === 'string') {
@@ -507,7 +511,7 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
             group.size = size;
             const header = WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX;
             for (const port of group.children ?? []) {
-                if (port.type !== WorkflowDiagramTypes.PORT_GROUP_BOUNDARY) {
+                if (port.type !== WorkflowDiagramTypes.PORT_GROUP_BOUNDARY || isUnwiredPin(port)) {
                     continue;
                 }
                 const box = port.size ?? { width: WorkflowDiagramConstants.GROUP_BOUNDARY_PORT_SIZE_PX, height: WorkflowDiagramConstants.GROUP_BOUNDARY_PORT_SIZE_PX };
@@ -515,6 +519,7 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
                 const y = Math.min(Math.max(port.position?.y ?? header, header), Math.max(header, size.height - box.height));
                 port.position = { x: east ? size.width - box.width / 2 : (port.position?.x ?? -box.width / 2), y };
             }
+            placeUnwiredPins(group);
             changed.push(String(group.id));
         }
         return changed;

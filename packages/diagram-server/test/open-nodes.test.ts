@@ -4,15 +4,21 @@
  * reach, and toggled like a bus, with room made and given back.
  */
 import { describe, expect, it } from 'vitest';
+import ELK from 'elkjs/lib/elk.bundled.js';
+import { DefaultElementFilter } from '@eclipse-glsp/layout-elk';
 import { GModelIndex } from '@eclipse-glsp/server';
 import { ToggleNodeOpenOperation, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument, type PyGraphNode } from '../src/model/graph-gmodel-source';
 import { portBusStateOf } from '../src/model/port-bundles';
 import { stableNodeIds } from '../src/model/stable-ids';
-import { OPEN_NODE_SPACING, innerNodeId, openFrameId, openNodes, withOpenNodePositions } from '../src/model/open-nodes';
+import { OPEN_NODE_SPACING, innerNodeId, isOpenIn, openFrameId, openNodes, withOpenNodePositions } from '../src/model/open-nodes';
 import { convertToGModelRoot } from '../src/server/gmodel-convert';
 import { relativeToParent, restoreGroupGeometry } from '../src/server/group-geometry';
-import { collectNodePositions, nodeLayoutKeyOf } from '../src/server/layout-snapshot';
+import { collectEdgeRoutes, collectNodePositions, nodeLayoutKeyOf } from '../src/server/layout-snapshot';
+import { WorkflowElkLayoutEngine } from '../src/server/elk-layout-engine';
+import { WorkflowLayoutConfigurator } from '../src/server/layout-configurator';
+import { idOfNamedNode } from '../src/server/mcp-named-elements';
+import { applyBoundaryFlowLayerConstraints } from '../src/operations/boundary-flow-layout';
 import { countCoincidentNodes } from '../src/server/source-model-storage';
 import { TogglePortBusCommand } from '../src/operations/toggle-port-bus-handler';
 import { WorkflowToggleNodeOpenOperationHandler } from '../src/operations/toggle-node-open-handler';
@@ -135,7 +141,7 @@ describe('the places a toggle needs', () => {
 });
 
 /** The diagram as the storage rebuilds it: positions by layout key, absolute, at every depth. */
-function diagram(positions: Record<string, Point>) {
+function diagram(positions: Record<string, Point>, source: PyGraphDocument = doc) {
     let open = new Map<string, Set<string>>();
     const state: { root?: any; index?: GModelIndex } = {};
     const place = (element: any, at: Map<string, Point>, parentAt: Point): void => {
@@ -151,7 +157,7 @@ function diagram(positions: Record<string, Point>) {
         }
     };
     const build = (saved: Map<string, Point>): void => {
-        const built: any = new GraphGModelSource().transform(doc, { portBuses: portBusStateOf(open) });
+        const built: any = new GraphGModelSource().transform(source, { portBuses: portBusStateOf(open) });
         const at = withOpenNodePositions(built.graph, saved);
         for (const element of built.graph.children ?? []) {
             place(element, at, { x: 0, y: 0 });
@@ -185,7 +191,7 @@ function diagram(positions: Record<string, Point>) {
     const command = (elementId: string): TogglePortBusCommand =>
         handler.createCommand(ToggleNodeOpenOperation.create({ nodeId: elementId })) as TogglePortBusCommand;
     const find = (id: string): any => state.index!.find(id);
-    return { at, command, find, open: () => open, handlerState: (handler as any).modelState };
+    return { at, command, find, open: () => open, handlerState: (handler as any).modelState, shownOpen: (): Map<string, Set<string>> => (handler as any).openBundles() };
 }
 
 describe('opening a node in place', () => {
@@ -327,5 +333,351 @@ describe('a bus toggle beside an open node', () => {
         const bus = new WorkflowTogglePortBusOperationHandler();
         (bus as any).modelState = (d as any).handlerState;
         expect(bus.openBundles().get(KEY)?.has(ToggleNodeOpenOperation.OPEN)).toBe(true);
+    });
+});
+
+
+/**
+ * The same block as a producer of designs draws an always block: with a
+ * clock among its ports, something the property panel sets, and what it
+ * says of its inside (`open`, `pins`).
+ */
+const block = (inner: Record<string, unknown>): PyGraphNode => ({
+    ...proc,
+    type: 'always_ff @(posedge clk)',
+    ports: [...proc.ports, { ...port(P, 'clk', 'in'), role: 'clock' }],
+    meta: {
+        ...proc.meta,
+        parameters: [{ name: 'kind', value: 'always_ff', editable: true }],
+        inner: { ...(proc.meta!['inner'] as object), ...inner }
+    }
+});
+const withBlock = (node: PyGraphNode): PyGraphDocument =>
+    ({ ...doc, graph: { ...doc.graph, nodes: doc.graph.nodes.map(n => (n.id === P ? node : n)) } });
+const places = { a: { x: 0, y: 100 }, b: { x: 0, y: 160 }, q: { x: 600, y: 100 }, t: { x: 600, y: 160 }, [KEY]: { x: 200, y: 100 } };
+
+describe('a node its producer draws open', () => {
+    const open = withBlock(block({ open: true }));
+    const nothing = portBusStateOf(new Map());
+    const closedByReader = portBusStateOf(new Map([[KEY, new Set([ToggleNodeOpenOperation.CLOSED])]]));
+
+    it('is open with nothing saved, and with no layout state at all', () => {
+        for (const state of [nothing, undefined]) {
+            const drawn = openNodes(open, state, stableNodeIds(open.graph.nodes));
+            expect(drawn.graph.subgraphs!.some(scope => scope.id === `open:${P}`)).toBe(true);
+        }
+        expect(isOpenIn(nothing, KEY, block({ open: true }))).toBe(true);
+        // Any other node is closed until the reader opens it, and that is listed as before.
+        expect(isOpenIn(nothing, KEY, proc)).toBe(false);
+        expect(isOpenIn(openState(true), KEY, proc)).toBe(true);
+    });
+
+    it('stays closed once the reader closed it, node and frame saying that closing is what to keep', () => {
+        const closed: any = new GraphGModelSource().transform(open, { portBuses: closedByReader }).graph;
+        const node = closed.children.find((c: any) => c.args?.[WorkflowDiagramMetadata.NODE_OPENABLE] === true);
+        expect(node.args[WorkflowDiagramMetadata.NODE_STARTS_OPEN]).toBe(true);
+        expect(closed.children.some((c: any) => c.id === openFrameId(P))).toBe(false);
+        const shown: any = new GraphGModelSource().transform(open, { portBuses: nothing }).graph;
+        expect(shown.children.find((c: any) => c.id === openFrameId(P)).args[WorkflowDiagramMetadata.NODE_STARTS_OPEN]).toBe(true);
+        // A node that starts closed says neither.
+        const plain: any = new GraphGModelSource().transform(doc, { portBuses: nothing }).graph;
+        expect(plain.children.find((c: any) => c.args?.[WorkflowDiagramMetadata.NODE_OPENABLE] === true).args[WorkflowDiagramMetadata.NODE_STARTS_OPEN]).toBeUndefined();
+    });
+
+    it('is closed and opened again by its toggle, the layout keeping which', async () => {
+        const d = diagram(places, open);
+        expect(d.find(openFrameId(P))).toBeDefined();
+        await d.command(openFrameId(P)).execute();
+        expect(d.open().get(KEY)).toEqual(new Set([ToggleNodeOpenOperation.CLOSED]));
+        expect(d.find(openFrameId(P))).toBeUndefined();
+        expect(d.at(KEY)).toEqual({ x: 200, y: 100 });
+        await d.command(KEY).execute();
+        expect(d.open().get(KEY)?.has(ToggleNodeOpenOperation.CLOSED)).toBe(false);
+        expect(d.find(openFrameId(P))).toBeDefined();
+    });
+
+    it('stays closed through a toggle of something else, which saves what every node shows', async () => {
+        const d = diagram(places, open);
+        // Open, nothing is listed for it: that is how it starts.
+        expect(d.shownOpen().get(KEY)?.has(ToggleNodeOpenOperation.CLOSED) ?? false).toBe(false);
+        await d.command(openFrameId(P)).execute();
+        // Closed by the reader: what a bus toggle elsewhere saves for it says so again.
+        expect(d.shownOpen().get(KEY)).toEqual(new Set([ToggleNodeOpenOperation.CLOSED]));
+    });
+});
+
+describe('an open node that keeps its ports on its frame', () => {
+    const pinned = withBlock(block({ pins: true }));
+    const frameOf = (): any =>
+        (new GraphGModelSource().transform(pinned, { portBuses: openState(true) }).graph as any);
+
+    it('ends each edge on the port it was on, and wires the inside from and to those ports', () => {
+        const opened = openNodes(pinned, openState(true), stableNodeIds(pinned.graph.nodes));
+        const ends = opened.graph.edges.map(e => `${e.from} -> ${e.to}`).sort();
+        expect(ends).toEqual([
+            // From outside, to the frame's pins and from them.
+            `b:a:a -> ${P}:a`, `b:b:b -> ${P}:b`, `${P}:q -> b:q:q`, `${P}:t -> b:t:t`,
+            // Inside, from a pin to what it feeds and to a pin from what drives it,
+            // and across the frame where an input is wired straight to an output.
+            `${P}:a -> ${P}/cell:not:a`, `${P}:b -> ${P}/cell:and:b`, `${P}/cell:reg:q -> ${P}:q`, `${P}:a -> ${P}:t`,
+            `${P}/cell:and:y -> ${P}/cell:reg:d`, `${P}/cell:not:y -> ${P}/cell:and:a`
+        ].sort());
+        expect(new Set(opened.graph.edges.map(e => e.id)).size).toBe(opened.graph.edges.length);
+        // An edge that ends on a pin is the edge it was, under its own id.
+        expect(opened.graph.edges.filter(e => e.scope === 'root').map(e => e.id).sort()).toEqual(['e:a', 'e:b', 'e:q', 'e:t']);
+        const scope = opened.graph.subgraphs!.find(s => s.id === `open:${P}`)!;
+        expect(scope.pins!.map(pin => pin.name)).toEqual(['q', 't', 'a', 'b', 'clk']);
+        // (A node opened without them has none, and its edges run on to the inner pins.)
+        expect(openNodes(doc, openState(true), stableNodeIds(doc.graph.nodes)).graph.subgraphs!.find(s => s.id === `open:${P}`)!.pins).toBeUndefined();
+    });
+
+    it('gives its frame those ports as pins: named, the clock marked, there whether wired or not', () => {
+        const graph = frameOf();
+        const frame = graph.children.find((c: any) => c.id === openFrameId(P));
+        const pins = frame.children.filter((c: any) => c.args?.[WorkflowDiagramMetadata.FRAME_PIN] === true);
+        expect(pins.map((pin: any) => [pin.args[WorkflowDiagramMetadata.PORT_NAME], pin.args[WorkflowDiagramMetadata.PORT_DIRECTION], pin.args[WorkflowDiagramMetadata.PORT_ROLE]]))
+            .toEqual([['q', 'output', undefined], ['t', 'output', undefined], ['a', 'input', undefined], ['b', 'input', undefined], ['clk', 'input', 'clock']]);
+        // As a port of the node says them, which is how the panel lists them; and a pin is no node of that name.
+        expect(pins.map((pin: any) => pin.args[WorkflowDiagramMetadata.IS_INPUT_PORT])).toEqual([false, false, true, true, true]);
+        expect(pins.every((pin: any) => pin.args[WorkflowDiagramMetadata.ENTITY_NAME] === undefined)).toBe(true);
+        expect(pins.every((pin: any) => pin.type === WorkflowDiagramTypes.PORT_GROUP_BOUNDARY)).toBe(true);
+        // Nothing crosses the frame anywhere else: no other boundary port, no edge cut in pieces.
+        expect(frame.children.filter((c: any) => c.type === WorkflowDiagramTypes.PORT_GROUP_BOUNDARY)).toHaveLength(5);
+        const edges = graph.children.filter((c: any) => typeof c.sourceId === 'string');
+        expect(edges.every((edge: any) => !String(edge.id).endsWith('::piece'))).toBe(true);
+        const pinId = (name: string): string => pins.find((pin: any) => pin.args[WorkflowDiagramMetadata.PORT_NAME] === name).id;
+        const members = new Set(frame.children.filter((c: any) => String(c.type).startsWith('node:')).flatMap((m: any) => (m.children ?? []).map((c: any) => c.id)));
+        // The wire from outside ends on the pin; the wire inside starts on it and ends on a member's pin.
+        expect(edges.filter((edge: any) => edge.targetId === pinId('a')).map((edge: any) => members.has(edge.sourceId))).toEqual([false]);
+        // (`a` also runs straight across the frame to the pin `t`.)
+        expect(edges.filter((edge: any) => edge.sourceId === pinId('a')).map((edge: any) => members.has(edge.targetId) || edge.targetId).sort()).toEqual([pinId('t'), true].sort());
+        expect(edges.filter((edge: any) => edge.targetId === pinId('q')).map((edge: any) => members.has(edge.sourceId))).toEqual([true]);
+        // The clock's net is not drawn: its pin is on the frame all the same, with no wire,
+        // and says so: the frame places it, not the layout.
+        expect(edges.some((edge: any) => edge.sourceId === pinId('clk') || edge.targetId === pinId('clk'))).toBe(false);
+        expect(pins.filter((pin: any) => pin.args[WorkflowDiagramMetadata.FRAME_PIN_UNWIRED] === true).map((pin: any) => pin.args[WorkflowDiagramMetadata.PORT_NAME])).toEqual(['clk']);
+        // An edge on a pin names its ends as it did on the node: what a saved route, a delete and the panel go by.
+        const named = (from: any[], id: string) => { const a = from.find((edge: any) => edge.id === id).args; return [a['wf:from'], a['wf:outPort'], a['wf:to'], a['wf:inPort']]; };
+        const closedEdges = (new GraphGModelSource().transform(pinned, { portBuses: openState(false) }).graph as any).children.filter((c: any) => typeof c.sourceId === 'string');
+        for (const id of ['e:a', 'e:b', 'e:q', 'e:t']) {
+            expect(named(edges, id), id).toEqual(named(closedEdges, id));
+            expect(named(edges, id).every(part => typeof part === 'string' && part !== ''), id).toBe(true);
+        }
+    });
+
+    it('is still the node when it is selected: its name, its type, what can be set of it, its id', () => {
+        const frame = frameOf().children.find((c: any) => c.id === openFrameId(P));
+        expect(frame.args[WorkflowDiagramMetadata.ENTITY_NAME]).toBe('q, t');
+        expect(frame.args[WorkflowDiagramMetadata.ENTITY_TYPE]).toBe('always_ff @(posedge clk)');
+        expect(frame.args[WorkflowDiagramMetadata.GRAPH_NODE_ID]).toBe(P);
+        const meta = frame.args[WorkflowDiagramMetadata.NODE_META];
+        expect(meta.parameters).toEqual([{ name: 'kind', value: 'always_ff', editable: true }]);
+        // What the property panel reads: the fields it sets, as on the node closed.
+        expect(frame.args[WorkflowDiagramMetadata.ENTITY_PARAMETERS]).toEqual(meta.parameters);
+        // What it holds is drawn, not carried again.
+        expect(meta.inner).toBeUndefined();
+        // A node that says neither of its inside is opened as before: its frame is a group's.
+        const plain: any = new GraphGModelSource().transform(doc, { portBuses: openState(true) }).graph;
+        const group = plain.children.find((c: any) => c.id === openFrameId(P));
+        for (const key of [WorkflowDiagramMetadata.GRAPH_NODE_ID, WorkflowDiagramMetadata.ENTITY_NAME, WorkflowDiagramMetadata.NODE_META, WorkflowDiagramMetadata.FRAME_ROOM]) {
+            expect(group.args[key]).toBeUndefined();
+        }
+    });
+
+    it('is still the node to go to: its place in the source, its views, an error in it, and its own key', () => {
+        const located = withBlock({
+            ...block({ pins: true }),
+            meta: {
+                ...block({ pins: true }).meta,
+                source: { file: '/w/top.sv', line: 12 },
+                views: [{ id: 'synth', label: 'RTL Schematic' }],
+                facts: [{ label: 'Clock', value: 'clk' }],
+                diagnostics: [{ severity: 'error', message: 'q is driven twice' }]
+            }
+        });
+        const build = (open: boolean): any => new GraphGModelSource().transform(located, { portBuses: openState(open) }).graph;
+        const closed = build(false).children.find((c: any) => c.args?.[WorkflowDiagramMetadata.NODE_OPENABLE] === true);
+        const frame = build(true).children.find((c: any) => c.id === openFrameId(P));
+        // Everything the node carries closed, the frame carries: nothing is listed to be forgotten.
+        for (const key of Object.keys(closed.args)) {
+            if (key !== WorkflowDiagramMetadata.NODE_OPENABLE && key !== WorkflowDiagramMetadata.AST_PATH && key !== WorkflowDiagramMetadata.NODE_META) {
+                expect(frame.args[key], key).toEqual(closed.args[key]);
+            }
+        }
+        expect(frame.args[WorkflowDiagramMetadata.SOURCE_RANGE]).toEqual({ start: { line: 11, character: 0 }, end: { line: 11, character: 0 } });
+        expect(String(frame.args[WorkflowDiagramMetadata.REFERENCED_URI])).toContain('top.sv');
+        expect(frame.args[WorkflowDiagramMetadata.VIEWS]).toBeDefined();
+        expect(frame.args['wf:errorMessage']).toBe('q is driven twice');
+        // The error marks the frame, with a class of its own: the node's would paint every member.
+        expect(frame.cssClasses).toContain('workflow-group-source-error');
+        expect(frame.cssClasses).not.toContain('cal-node-graph-error');
+        // Its own: the key its place is saved under, and that it is open.
+        expect(frame.args[WorkflowDiagramMetadata.AST_PATH]).toBe(openFrameId(P));
+        expect(frame.args[WorkflowDiagramMetadata.NODE_OPENABLE]).toBeUndefined();
+        // And it is the one node of that name, whatever it holds is called.
+        const sameName = withBlock({ ...block({ pins: true }), label: 'reg' });
+        const root = convertToGModelRoot(new GraphGModelSource().transform(sameName, { portBuses: portBusStateOf(new Map([['reg', new Set([ToggleNodeOpenOperation.OPEN])]])) }) as any);
+        expect(idOfNamedNode(root as any, 'reg')).toBe(openFrameId(P));
+    });
+
+    it('is titled as its producer says, where its name alone does not say what it is', () => {
+        const titled = withBlock(block({ pins: true, title: 'q, t: always_ff @(posedge clk)' }));
+        const scope = (document: PyGraphDocument) =>
+            openNodes(document, openState(true), stableNodeIds(document.graph.nodes)).graph.subgraphs!.find(s => s.id === `open:${P}`)!;
+        expect(scope(titled).label).toBe('q, t: always_ff @(posedge clk)');
+        expect(scope(pinned).label).toBe('q, t');
+        // Drawn as written (a group's name is set in capitals), in a frame at least as wide as it.
+        const frame = (document: PyGraphDocument): any =>
+            (new GraphGModelSource().transform(document, { portBuses: openState(true) }).graph as any).children.find((c: any) => c.id === openFrameId(P));
+        expect(frame(titled).cssClasses).toContain('workflow-group-titled');
+        expect(frame(pinned).cssClasses).not.toContain('workflow-group-titled');
+        const least = (f: any): number => Number(/^\((\d+),/.exec(String(f.layoutOptions['elk.nodeSize.minimum']))![1]);
+        expect(least(frame(titled))).toBeGreaterThan(least(frame(pinned)));
+        expect(frame(titled).args[WorkflowDiagramMetadata.FRAME_ROOM].width).toBe(least(frame(titled)));
+    });
+
+    it('makes room inside the frame for the names of its pins', () => {
+        const frame = frameOf().children.find((c: any) => c.id === openFrameId(P));
+        const padding = String(frame.layoutOptions['elk.padding']);
+        const side = (name: string): number => Number(new RegExp(`${name}=(\\d+)`).exec(padding)![1]);
+        // `clk` on the left, one letter on the right, over the frame's own margin;
+        // and under the members a row for the pin no edge ends on.
+        expect(side('left')).toBeGreaterThan(side('right'));
+        expect(side('right')).toBeGreaterThan(14);
+        expect(side('bottom')).toBe(14 + 22);
+        expect(frame.args[WorkflowDiagramMetadata.FRAME_ROOM]).toMatchObject({ left: side('left') - 14, right: side('right') - 14, bottom: 22 });
+    });
+
+    it('keeps a connection through a node opened without pins, from a pin and to one', () => {
+        // A (pins) -> B.j, B wires j straight to t, B.t -> C (pins).
+        const through = (id: string, pins: boolean): PyGraphNode => ({
+            id, kind: 'logic', label: id, scope: 'root',
+            ports: [port(id, 'j', 'in'), port(id, 't', 'out')],
+            meta: { inner: {
+                nodes: [{ id: `${id}/buf`, kind: 'logic', label: 'buf', scope: 'root', ports: [port(`${id}/buf`, 'a', 'in'), port(`${id}/buf`, 'y', 'out')] }],
+                edges: pins
+                    ? [{ from: `${id}:j`, to: `${id}/buf:a` }, { from: `${id}/buf:y`, to: `${id}:t` }]
+                    : [{ from: `${id}:j`, to: `${id}:t` }],
+                ...(pins ? { pins: true } : {})
+            } }
+        });
+        const chain: PyGraphDocument = { version: '1', graph: {
+            id: 'top', nodes: [through('A', true), through('B', false), through('C', true)],
+            edges: [{ id: 'ab', from: 'A:t', to: 'B:j', scope: 'root' }, { id: 'bc', from: 'B:t', to: 'C:j', scope: 'root' }],
+            subgraphs: [{ id: 'root', kind: 'root', parent: null, controlNodeId: null }]
+        } };
+        const all = portBusStateOf(new Map(['A', 'B', 'C'].map(key => [key, new Set([ToggleNodeOpenOperation.OPEN])])));
+        const opened = openNodes(chain, all, stableNodeIds(chain.graph.nodes));
+        expect(opened.graph.edges.filter(e => e.scope === 'root').map(e => `${e.from} -> ${e.to}`)).toEqual(['A:t -> C:j']);
+        // In the model nothing dangles: every edge ends on something drawn.
+        const graph: any = new GraphGModelSource().transform(chain, { portBuses: all }).graph;
+        const ids = new Set<string>();
+        const edges: any[] = [];
+        const walk = (element: any): void => {
+            ids.add(element.id);
+            if (typeof element.sourceId === 'string') { edges.push(element); }
+            (element.children ?? []).forEach(walk);
+        };
+        walk(graph);
+        expect(edges.length).toBeGreaterThan(0);
+        expect(edges.filter(edge => !ids.has(edge.sourceId) || !ids.has(edge.targetId))).toEqual([]);
+    });
+
+    it('is cut at a group it is in, not at its own frame, where an edge comes to a pin from outside the group', () => {
+        // The block in a producer's group, `a` and `q` outside it.
+        const grouped: PyGraphDocument = {
+            ...pinned,
+            graph: {
+                ...pinned.graph,
+                nodes: pinned.graph.nodes.map(n => (n.id === P ? { ...n, scope: 'stage' } : n)),
+                subgraphs: [...pinned.graph.subgraphs!, { id: 'stage', kind: 'group', label: 'Stage', parent: 'root', controlNodeId: null }]
+            }
+        };
+        const graph: any = new GraphGModelSource().transform(grouped, { portBuses: openState(true) }).graph;
+        const all: any[] = [];
+        const walk = (element: any): void => { all.push(element); (element.children ?? []).forEach(walk); };
+        walk(graph);
+        const ids = new Set(all.map(element => element.id));
+        const edges = all.filter(element => typeof element.sourceId === 'string');
+        expect(edges.filter(edge => !ids.has(edge.sourceId) || !ids.has(edge.targetId))).toEqual([]);
+        const stage = all.find(element => element.id === 'scope:stage');
+        const frame = all.find(element => element.id === openFrameId(P));
+        expect(stage.children).toContain(frame);
+        const crossings = (group: any): any[] => group.children.filter((c: any) => c.type === WorkflowDiagramTypes.PORT_GROUP_BOUNDARY);
+        // The frame has its five pins and nothing else: no edge is cut at it.
+        expect(crossings(frame).every((c: any) => c.args[WorkflowDiagramMetadata.FRAME_PIN] === true)).toBe(true);
+        expect(crossings(frame)).toHaveLength(5);
+        // The group is crossed four times (a, b in; q, t out), each piece inside ending on a pin.
+        expect(crossings(stage)).toHaveLength(4);
+        const pinIds = new Set(crossings(frame).map((c: any) => c.id));
+        for (const crossing of crossings(stage)) {
+            const inside = edges.filter(edge => edge.sourceId === crossing.id || edge.targetId === crossing.id)
+                .filter(edge => pinIds.has(edge.sourceId) || pinIds.has(edge.targetId));
+            expect(inside, crossing.id).toHaveLength(1);
+        }
+    });
+
+    it('is laid out again when its layout was saved while it was drawn closed', () => {
+        // Saved before its producer drew it open: a place for the node, none for its frame.
+        const startsOpen: any = new GraphGModelSource().transform(withBlock(block({ open: true, pins: true })), { portBuses: portBusStateOf(new Map()) }).graph;
+        const saved = new Map(Object.entries(places));
+        const loaded = withOpenNodePositions(startsOpen, saved, true);
+        expect(loaded.has(openFrameId(P))).toBe(false);
+        expect(loaded.has(C('reg'))).toBe(false);
+        // Opened by the reader, in the diagram as it is drawn now, the frame takes its node's place as before.
+        expect(withOpenNodePositions(startsOpen, saved).get(openFrameId(P))).toEqual(places[KEY]);
+        // And a layout saved with it open is the layout.
+        const savedOpen = new Map([...saved, [openFrameId(P), { x: 200, y: 100 }], [C('not'), { x: 250, y: 150 }], [C('and'), { x: 350, y: 150 }], [C('reg'), { x: 450, y: 150 }]]);
+        savedOpen.delete(KEY);
+        expect(withOpenNodePositions(startsOpen, savedOpen, true)).toBe(savedOpen);
+    });
+
+    it('is where it was laid out when its saved layout is opened again: its size, and every pin, wired or not', async () => {
+        const two = withBlock({ ...block({ open: true, pins: true, title: 'q, t: always_ff @(posedge clk or negedge rst_n)' }),
+            ports: [...block({}).ports, { ...port(P, 'rst_n', 'in') }] });
+        const build = (): any => new GraphGModelSource().transform(two, { portBuses: portBusStateOf(new Map()) });
+        const index = (element: any, map = new Map<string, any>()): Map<string, any> => {
+            map.set(element.id, element);
+            (element.children ?? []).forEach((child: any) => index(child, map));
+            return map;
+        };
+        const root: any = convertToGModelRoot(build());
+        const byId = index(root);
+        const modelState: any = { root, index: { get: (id: string) => byId.get(id), findByClass: (id: string) => byId.get(id) } };
+        applyBoundaryFlowLayerConstraints(root, new Set(), false);
+        await new WorkflowElkLayoutEngine(() => new (ELK as any)({ algorithms: ['layered'] }), new DefaultElementFilter(), new WorkflowLayoutConfigurator(), modelState).layout();
+        const positions = collectNodePositions(root);
+        const routes = collectEdgeRoutes(root);
+        // Opened again: built anew, the saved places put back, no layout run.
+        const built = build();
+        const at = withOpenNodePositions(built.graph, positions, true);
+        const place = (element: any, parentAt: Point): void => {
+            const key = String(element.type).startsWith('node:') ? nodeLayoutKeyOf(element) : undefined;
+            const saved = key ? at.get(key) : undefined;
+            if (saved) { element.position = relativeToParent(saved, parentAt); }
+            (element.children ?? []).forEach((child: any) => place(child, saved ?? parentAt));
+        };
+        (built.graph.children ?? []).forEach((element: any) => place(element, { x: 0, y: 0 }));
+        const reopened: any = convertToGModelRoot(built);
+        restoreGroupGeometry(reopened, routes);
+        const again = index(reopened);
+        const frame = byId.get(openFrameId(P));
+        expect(again.get(openFrameId(P)).size).toEqual(frame.size);
+        const pins = frame.children.filter((c: any) => c.args?.[WorkflowDiagramMetadata.FRAME_PIN] === true);
+        expect(pins).toHaveLength(6);
+        for (const pin of pins) {
+            expect(again.get(pin.id).position, String(pin.args[WorkflowDiagramMetadata.PORT_NAME])).toEqual(pin.position);
+        }
+        // The two no edge ends on are under the members, one under the other, inside the frame.
+        const y = (name: string): number => pins.find((pin: any) => pin.args[WorkflowDiagramMetadata.PORT_NAME] === name).position.y;
+        const members = frame.children.filter((c: any) => String(c.type).startsWith('node:'));
+        const under = Math.max(...members.map((m: any) => m.position.y + m.size.height));
+        expect(y('clk')).toBeGreaterThan(under);
+        expect(y('rst_n') - y('clk')).toBe(22);
+        expect(y('rst_n')).toBeLessThan(frame.size.height - 14);
+        // And no pin an edge ends on is in their room, or on another.
+        const wired = pins.filter((pin: any) => pin.args[WorkflowDiagramMetadata.FRAME_PIN_UNWIRED] !== true);
+        expect(wired.every((pin: any) => pin.position.y < y('clk') - 8)).toBe(true);
+        expect(new Set(pins.map((pin: any) => `${pin.position.x},${pin.position.y}`)).size).toBe(6);
     });
 });

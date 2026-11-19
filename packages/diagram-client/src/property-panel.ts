@@ -683,11 +683,14 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         // so offering it "Input Ports (0)" and "Output Ports (0)", each with an
         // add button, describes something that cannot exist. Its own type and
         // direction are already on the Basic Info section above.
+        // Nor, empty, for the frame of an open node that keeps no pins: its
+        // ports are not drawn while it is open, which is not having none.
+        const listsEmptyPorts = !!entityType && node.type !== WorkflowDiagramTypes.NODE_GROUP;
         if (!isBoundary && sections?.ports !== false) {
-            if (inputPorts.length > 0 || entityType) {
+            if (inputPorts.length > 0 || listsEmptyPorts) {
                 content.appendChild(this.buildEntityPortsSection(node, entityType, 'input', inputPorts));
             }
-            if (outputPorts.length > 0 || entityType) {
+            if (outputPorts.length > 0 || listsEmptyPorts) {
                 content.appendChild(this.buildEntityPortsSection(node, entityType, 'output', outputPorts));
             }
         }
@@ -1510,6 +1513,10 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     protected normalizeEditableEntityParameters(raw: unknown): Array<{ name: string; inputValue: string; detailText?: string }> {
         if (Array.isArray(raw)) {
             return raw
+                // One the producer marked editable is a field of the Fields
+                // section (producer-fields.ts), with its choices: listing it
+                // here too would show it twice, the second time as free text.
+                .filter(entry => !(entry && typeof entry === 'object' && (entry as { editable?: unknown }).editable === true))
                 .map(entry => this.normalizeEditableEntityParameterEntry(undefined, entry))
                 .filter((entry): entry is { name: string; inputValue: string; detailText?: string } => entry !== undefined);
         }

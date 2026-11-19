@@ -4,11 +4,11 @@ import { BoundaryPortGeometry, estimatePinLabelSize, estimateTextSize, isBoundar
 import { normalizeViewOptionGroups, VIEW_OPTIONS_ARG } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findLoopEdges } from './feedback-edges';
-import { arrangeGroupRows, groupLayoutOptions, isGroupRow, splitEdgesAtGroups } from './group-edges';
+import { arrangeGroupRows, framePin, groupLayoutOptions, isGroupRow, settleFrames, splitEdgesAtGroups } from './group-edges';
 import { URI } from 'vscode-uri';
 import { boundaryMargin, bundlePorts, portSideOf, type PortBus, type PortBusState } from './port-bundles';
 import { stableNodeId as stableNodeIdOf, stableNodeIds, stablePortNames } from './stable-ids';
-import { canOpen, openNodes, openScopeId } from './open-nodes';
+import { canOpen, openNodes, openScopeId, startsOpen } from './open-nodes';
 import { compressAutomaton } from './automaton-compress';
 import { listColumns, listRowOf, type ListColumns, type ListMember } from './list-rows';
 
@@ -95,6 +95,16 @@ export type PyGraphScope = {
     openNodeKey?: string;
     /** The platform's: that node's open bundles, kept while it is open and they are not drawn. */
     openNodeBundles?: string[];
+    /**
+     * The platform's: the open node itself, where its frame is that node (one
+     * its producer draws open, or whose ports stay on its frame): the frame
+     * then carries what the node carries closed.
+     */
+    openNode?: PyGraphNode;
+    /** The platform's: the frame's title is its producer's (`meta.inner.title`), drawn as written. */
+    titled?: boolean;
+    /** The platform's: that node's own ports, drawn as pins of its frame (`meta.inner.pins`). */
+    pins?: PyGraphPort[];
     children?: string[];
     nodes?: string[];
     edges?: string[];
@@ -414,7 +424,14 @@ export class GraphGModelSource {
                 workflowName = node.label;
             }
         }
-        for (const node of doc.graph.nodes) {
+        // A container's frame is its node (open-nodes.ts): the node is built
+        // here as it is drawn closed, and not drawn, for the frame to carry
+        // what it carries (its place in the source, its fields and facts,
+        // its views, what its producer says of it).
+        const containers = new Set<PyGraphNode>((doc.graph.subgraphs ?? []).flatMap(scope => scope.openNode ? [scope.openNode] : []));
+        const closedOf = new Map<string, GNode>();
+        for (const node of [...doc.graph.nodes, ...containers]) {
+            const undrawn = containers.has(node);
             if (!workflowDefinitionSource && node.kind === 'workflow') {
                 const workflowSource = node.meta?.['source'] as { file?: string; line?: number } | undefined;
                 if (typeof workflowSource?.line === 'number' && workflowSource.line > 0) {
@@ -714,6 +731,10 @@ export class GraphGModelSource {
             if (openable) {
                 // It holds a graph of its own: it can be opened in place.
                 gnode.args = { ...(gnode.args ?? {}), [WorkflowDiagramMetadata.NODE_OPENABLE]: true };
+                if (startsOpen(node)) {
+                    // Drawn closed, it was closed by the reader: what the layout file is to keep.
+                    gnode.args[WorkflowDiagramMetadata.NODE_STARTS_OPEN] = true;
+                }
             }
             const openTarget = this.openTarget(node.meta?.['open']);
             if (openTarget) {
@@ -1070,7 +1091,9 @@ export class GraphGModelSource {
                     };
                 }
                 gport.children = [label];
-                portIdMap.set(port.id, portId);
+                if (!undrawn) {
+                    portIdMap.set(port.id, portId);
+                }
                 return gport;
             };
 
@@ -1160,6 +1183,10 @@ export class GraphGModelSource {
                     gnode.children!.push(gport, gportOut);
                 }
             }
+            if (undrawn) {
+                closedOf.set(node.id, gnode);
+                continue;
+            }
             nodeMap.set(stableNodeId, gnode);
             irNodeToStableId.set(node.id, stableNodeId);
             if (isState) {
@@ -1199,7 +1226,8 @@ export class GraphGModelSource {
         if (groupScopes.length > 0) {
             const groupNodes = new Map<string, GNode>();
             for (const scope of groupScopes) {
-                const group = this.createGroupNode(scope, scopeNodes, irNodeToStableId, nodeMap, removedNodeIds);
+                const group = this.createGroupNode(scope, scopeNodes, irNodeToStableId, nodeMap, removedNodeIds, portIdMap,
+                    scope.openNode ? closedOf.get(scope.openNode.id) : undefined);
                 groupNodes.set(scope.id, group);
                 groupNodeByModelId.set(group.id, group);
             }
@@ -1333,7 +1361,8 @@ export class GraphGModelSource {
                 selectionLinks.push(link);
             }
         }
-        const portOwners = portOwnersOf(doc.graph.nodes);
+        // (A container's ports are its frame's pins: an edge on one names the node, as it did closed.)
+        const portOwners = portOwnersOf([...doc.graph.nodes, ...containers]);
         for (const edge of doc.graph.edges) {
             const scope = scopeById.get(edge.scope);
             const branch = this.scopeLabel(scope?.kind ?? '');
@@ -1516,6 +1545,9 @@ export class GraphGModelSource {
         splitEdgesAtGroups(children);
         // Once the groups are nested and the edges cut: which groups lay out in rows.
         arrangeGroupRows(children);
+        // And once every edge is where it ends: the room an open node's frame
+        // keeps for its pins and its title, and which pins no edge ends on.
+        settleFrames(children);
 
         // Edges first, so nodes and ports paint over them.
         //
@@ -1678,7 +1710,9 @@ export class GraphGModelSource {
         scopeNodes: Map<string, string[]>,
         irNodeToStableId: Map<string, string>,
         nodeMap: Map<string, GNode>,
-        removedNodeIds: Set<string>
+        removedNodeIds: Set<string>,
+        portIdMap: Map<string, string>,
+        closed?: GNode
     ): GNode {
         const nodeId = `scope:${scope.id}`;
         // A label the producer gave is the label, an empty one included: a
@@ -1707,6 +1741,45 @@ export class GraphGModelSource {
                 ...(scope.openNodeBundles ? { [WorkflowDiagramMetadata.OPEN_NODE_BUNDLES]: scope.openNodeBundles } : {})
             }
         };
+        if (scope.titled) {
+            node.cssClasses!.push(WorkflowDiagramCss.GROUP_TITLED);
+        }
+        const opened = scope.openNode;
+        if (opened) {
+            // A container's frame is that node: it carries what the node
+            // carries closed (its name and type, its place in the source, its
+            // fields, facts and views, what its producer says of it), so it is
+            // selected, shown in the panel, edited and gone to as the node is.
+            // Its own are the frame's: its key, and the graph it now shows.
+            const meta = opened.meta ? { ...opened.meta } : undefined;
+            if (meta) {
+                delete meta['inner'];
+            }
+            const carried: Record<string, unknown> = { ...((closed?.args ?? {}) as Record<string, unknown>) };
+            delete carried[WorkflowDiagramMetadata.NODE_OPENABLE];
+            node.args = {
+                [WorkflowDiagramMetadata.ENTITY_NAME]: opened.label,
+                [WorkflowDiagramMetadata.ENTITY_TYPE]: opened.type,
+                [WorkflowDiagramMetadata.GRAPH_NODE_ID]: opened.id,
+                ...carried,
+                ...(meta ? { [WorkflowDiagramMetadata.NODE_META]: meta } : {}),
+                ...(startsOpen(opened) ? { [WorkflowDiagramMetadata.NODE_STARTS_OPEN]: true } : {}),
+                ...node.args
+            } as any;
+            // An error or a warning in its source marks the frame, not what it holds.
+            if (closed?.cssClasses?.includes('cal-node-graph-error')) {
+                node.cssClasses!.push(WorkflowDiagramCss.GROUP_SOURCE_ERROR);
+            } else if (closed?.cssClasses?.includes('cal-node-graph-warning')) {
+                node.cssClasses!.push(WorkflowDiagramCss.GROUP_SOURCE_WARNING);
+            }
+        }
+        for (const pin of scope.pins ?? []) {
+            // Its own ports, on the frame: inputs on the left, outputs on the
+            // right, each with its name inside the frame (`settleFrames` makes room).
+            const pinId = `${nodeId}::pin::${pin.id}`;
+            portIdMap.set(pin.id, pinId);
+            node.children!.push(framePin(pinId, pin));
+        }
         const memberIds = new Set<string>();
         for (const irId of scope.nodes ?? []) {
             const stableId = irNodeToStableId.get(irId);

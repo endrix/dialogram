@@ -48,6 +48,11 @@ export function idOfNamedNode(root: GModelRoot | undefined, name: string): strin
         if (typeof element.type === 'string' && element.type.startsWith('node:')
             && args?.[WorkflowDiagramMetadata.ENTITY_NAME] === wanted) {
             found.push(element.id);
+            if (element.type === WorkflowDiagramTypes.NODE_GROUP) {
+                // The frame of an open node is the node of that name: what it
+                // holds (a register named as the block that drives it) is not.
+                return;
+            }
         }
         for (const child of (element.children ?? []) as GModelElement[]) {
             visit(child);

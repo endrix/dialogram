@@ -162,8 +162,13 @@ export class WorkflowToggleNodeOpenOperationHandler extends WorkflowTogglePortBu
         const groups = shownOpen.get(nodeKey) ?? new Set<string>();
         if (open) {
             groups.add(ToggleNodeOpenOperation.OPEN);
+            groups.delete(ToggleNodeOpenOperation.CLOSED);
         } else {
             groups.delete(ToggleNodeOpenOperation.OPEN);
+            if (before.args?.[WorkflowDiagramMetadata.NODE_STARTS_OPEN] === true) {
+                // A node its producer draws open stays closed only if that is kept.
+                groups.add(ToggleNodeOpenOperation.CLOSED);
+            }
         }
         shownOpen.set(nodeKey, groups);
         await this.layoutPersistence.savePortBuses(layout.filePath, layout.networkId, shownOpen);

@@ -91,6 +91,8 @@ export function splitEdgesAtGroups(children: GModelElement[]): void {
     const ownerOfPort = new Map<string, string>();
     /** group id -> the group. */
     const groupById = new Map<string, GNode>();
+    /** A frame's own pin (an open node's port kept on its frame) -> its group. */
+    const groupOfPin = new Map<string, GNode>();
     let hasGroup = false;
 
     // Ports belong to the nearest node above them; a node inside another node
@@ -116,6 +118,11 @@ export function splitEdgesAtGroups(children: GModelElement[]): void {
                 groupById.set(element.id, element as GNode);
                 parentOfGroup.set(element.id, group);
                 groupOfNode.set(element.id, group);
+                for (const child of element.children ?? []) {
+                    if (isPort(child) && child.args?.[WorkflowDiagramMetadata.FRAME_PIN] === true) {
+                        groupOfPin.set(child.id, element as GNode);
+                    }
+                }
                 walk(element.children, element as GNode);
             } else if (isNode(element)) {
                 groupOfNode.set(element.id, group);
@@ -141,7 +148,7 @@ export function splitEdgesAtGroups(children: GModelElement[]): void {
         return chain;
     };
     const endpointNode = (id: string): string | undefined =>
-        ownerOfPort.get(id) ?? (groupOfNode.has(id) ? id : undefined);
+        ownerOfPort.get(id) ?? groupOfPin.get(id)?.id ?? (groupOfNode.has(id) ? id : undefined);
 
     const ports = new Map<string, GPort>();
     const pieces = new Map<string, GEdge>();
@@ -182,8 +189,18 @@ export function splitEdgesAtGroups(children: GModelElement[]): void {
         // An end that is a group itself, not a port of one of its members.
         const sourceGroup = groupById.get(edge.sourceId);
         const targetGroup = groupById.get(edge.targetId);
-        const sourceGroups = groupsAround(sourceNode);
-        const targetGroups = groupsAround(targetNode);
+        // A pin of a frame is on the frame: outside it for an edge from
+        // elsewhere, which ends there without crossing; inside it for an
+        // edge to one of its members (or to another of its pins), which is
+        // one piece laid out inside.
+        const sourcePin = groupOfPin.get(edge.sourceId);
+        const targetPin = groupOfPin.get(edge.targetId);
+        const sourceOutside = groupsAround(sourceNode);
+        const targetOutside = groupsAround(targetNode);
+        const sourceGroups = sourcePin && (targetOutside.includes(sourcePin) || targetPin === sourcePin)
+            ? [sourcePin, ...sourceOutside] : sourceOutside;
+        const targetGroups = targetPin && (sourceOutside.includes(targetPin) || sourcePin === targetPin)
+            ? [targetPin, ...targetOutside] : targetOutside;
         // Between a group and something inside it (or itself): the group's loop.
         const holds = (group: GNode | undefined, otherNode: string, others: GNode[]): boolean =>
             group !== undefined && (otherNode === group.id || others.includes(group));
@@ -358,6 +375,136 @@ function addBoundaryPort(group: GNode, direction: Direction, portId: string, end
     };
     group.children = [...(group.children ?? []), port];
     return port;
+}
+
+/** The width a frame pin's name takes inside the frame: its text, and the gap to the dot and to the members. */
+export function framePinLabelWidth(name: string): number {
+    return FRAME_PIN_LABEL_GAP_PX + Math.ceil(name.length * FRAME_PIN_FONT_PX * 0.6) + FRAME_PIN_LABEL_GAP_PX;
+}
+
+const FRAME_PIN_FONT_PX = 11;
+const FRAME_PIN_LABEL_GAP_PX = 6;
+
+/**
+ * One of an open node's own ports, on its frame: a boundary port like those
+ * an edge is cut at, on the left for an input and on the right for an output,
+ * that says what the port said on the node (its name, type and role; the
+ * client draws the name inside the frame, above the wire, and a clock's wedge
+ * at the frame for the role `clock`). It is there whether or not an edge ends
+ * on it.
+ */
+export function framePin(portId: string, pin: { name: string; direction?: string; type?: string; role?: string }): GPort {
+    const size = WorkflowDiagramConstants.GROUP_BOUNDARY_PORT_SIZE_PX;
+    const output = pin.direction === 'out';
+    const side = output ? 'EAST' : 'WEST';
+    return {
+        id: portId,
+        type: WorkflowDiagramTypes.PORT_GROUP_BOUNDARY,
+        cssClasses: [WorkflowDiagramCss.GROUP_BOUNDARY_PORT, WorkflowDiagramCss.GROUP_FRAME_PIN],
+        position: { x: 0, y: 0 },
+        size: { width: size, height: size },
+        layoutOptions: {
+            'elk.port.side': side,
+            'elk.port.borderOffset': String(-size / 2)
+        },
+        args: {
+            // As a port of the node says them: the panel lists the frame's
+            // pins as it lists the node's ports, and an edge names its end.
+            [WorkflowDiagramMetadata.PORT_NAME]: pin.name,
+            [WorkflowDiagramMetadata.PORT_DIRECTION]: output ? 'output' : 'input',
+            [WorkflowDiagramMetadata.IS_INPUT_PORT]: !output,
+            ...(pin.type ? { [WorkflowDiagramMetadata.PORT_TYPE]: pin.type } : {}),
+            [WorkflowDiagramMetadata.PORT_SIDE]: side,
+            [WorkflowDiagramMetadata.FRAME_PIN]: true,
+            ...(pin.role ? { [WorkflowDiagramMetadata.PORT_ROLE]: pin.role, 'wf:portRole': pin.role } : {})
+        }
+    };
+}
+
+/** The room an open node's frame keeps beyond a group's padding (`FRAME_ROOM`). */
+export interface FrameRoom {
+    /** Beside its members, for the names of its pins. */
+    left: number;
+    right: number;
+    /** Under its members, for the pins no edge ends on. */
+    bottom: number;
+    /** The least width its title needs. */
+    width: number;
+}
+
+/** The room a frame keeps (`FRAME_ROOM`), none for a group that says none. */
+export function frameRoomOf(group: { args?: unknown }): FrameRoom {
+    const room = (group.args as Record<string, unknown> | undefined)?.[WorkflowDiagramMetadata.FRAME_ROOM] as Partial<FrameRoom> | undefined;
+    const of = (value: unknown): number => typeof value === 'number' && value > 0 ? value : 0;
+    return { left: of(room?.left), right: of(room?.right), bottom: of(room?.bottom), width: of(room?.width) };
+}
+
+/** The width a frame's title takes, after its toggle: as the client draws it (11px, semibold). */
+function frameTitleWidth(title: string): number {
+    return 40 + Math.ceil(title.length * 6.9) + 12;
+}
+
+/**
+ * Once every edge is where it ends: each open node's frame that has pins, or
+ * a title of its producer's, says the room it keeps (`FRAME_ROOM`) and lays
+ * out with it, whichever way it lays out (in rows too). A pin no edge ends
+ * on is marked (`FRAME_PIN_UNWIRED`): the layout does not place it, the frame
+ * does, in the room under its members.
+ */
+export function settleFrames(children: GModelElement[]): void {
+    const ends = new Set<string>();
+    const frames: GNode[] = [];
+    const visit = (element: GModelElement): void => {
+        if (isEdge(element)) {
+            ends.add(element.sourceId);
+            ends.add(element.targetId);
+        } else if (element.type === WorkflowDiagramTypes.NODE_GROUP
+            && typeof (element.args as Record<string, unknown> | undefined)?.[WorkflowDiagramMetadata.OPEN_NODE_KEY] === 'string') {
+            frames.push(element as GNode);
+        }
+        for (const child of element.children ?? []) {
+            visit(child);
+        }
+    };
+    children.forEach(visit);
+    const header = WorkflowDiagramConstants.GROUP_HEADER_HEIGHT_PX;
+    const pad = WorkflowDiagramConstants.GROUP_PADDING_PX;
+    for (const frame of frames) {
+        const room: FrameRoom = { left: 0, right: 0, bottom: 0, width: 0 };
+        const unwired = { WEST: 0, EAST: 0 };
+        for (const pin of frame.children ?? []) {
+            const args = pin.args as Record<string, unknown> | undefined;
+            if (args?.[WorkflowDiagramMetadata.FRAME_PIN] !== true) {
+                continue;
+            }
+            const side = args[WorkflowDiagramMetadata.PORT_SIDE] === 'EAST' ? 'EAST' : 'WEST';
+            const width = framePinLabelWidth(String(args[WorkflowDiagramMetadata.PORT_NAME] ?? ''));
+            if (side === 'EAST') {
+                room.right = Math.max(room.right, width);
+            } else {
+                room.left = Math.max(room.left, width);
+            }
+            if (!ends.has(pin.id)) {
+                args[WorkflowDiagramMetadata.FRAME_PIN_UNWIRED] = true;
+                unwired[side]++;
+            }
+        }
+        room.bottom = Math.max(unwired.WEST, unwired.EAST) * WorkflowDiagramConstants.FRAME_PIN_PITCH_PX;
+        if (frame.cssClasses?.includes(WorkflowDiagramCss.GROUP_TITLED)) {
+            room.width = frameTitleWidth(String((frame.args as Record<string, unknown>)[WorkflowDiagramMetadata.GROUP_LABEL] ?? ''));
+        }
+        if (room.left + room.right + room.bottom + room.width === 0) {
+            continue;
+        }
+        frame.args = { ...(frame.args ?? {}), [WorkflowDiagramMetadata.FRAME_ROOM]: room as any };
+        frame.layoutOptions = {
+            ...(frame.layoutOptions ?? groupLayoutOptions()),
+            'elk.nodeSize.minimum': `(${Math.max(WorkflowDiagramConstants.GROUP_MIN_WIDTH_PX, room.width)},${WorkflowDiagramConstants.GROUP_MIN_HEIGHT_PX + room.bottom})`,
+            'elk.padding': `[top=${header + pad},left=${pad + room.left},bottom=${pad + room.bottom},right=${pad + room.right}]`,
+            // The pins an edge ends on stay above the room of those none does.
+            'elk.spacing.portsSurrounding': `[top=${header + pad / 2},left=0,bottom=${pad / 2 + room.bottom},right=0]`
+        };
+    }
 }
 
 /**

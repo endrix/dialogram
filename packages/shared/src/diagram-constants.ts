@@ -94,6 +94,8 @@ export const WorkflowDiagramConstants = {
     GROUP_PADDING_PX: 14,
     /** The point on a group's frame an edge passes through on its way in or out. */
     GROUP_BOUNDARY_PORT_SIZE_PX: 8,
+    /** One under another on an open node's frame, the pins no edge ends on: a pin and its name above it. */
+    FRAME_PIN_PITCH_PX: 22,
     /** The loop on a group's frame (edges between the group and its own members). */
     GROUP_LOOP_RADIUS_PX: 14,
     /** Between the band of pinned groups and the diagram under it, and between two pinned groups. */
