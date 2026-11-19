@@ -16,7 +16,7 @@ import { createHash } from 'node:crypto';
 import { FileMemo } from '@dialogram/diagram-server/services/file-memo';
 import { promises as fs } from 'node:fs';
 import { URI } from 'vscode-uri';
-import type { HierarchyOutlineEntry } from '@dialogram/shared';
+import type { GraphDocument, HierarchyGraph, HierarchyOutlineEntry } from '@dialogram/shared';
 
 /** One instance in a runtime's hierarchy export. */
 export interface HierarchyEntry {
@@ -61,6 +61,38 @@ export function outlineOf(entry: HierarchyEntry): HierarchyOutlineEntry {
         ...(entry.truncated ? { truncated: true } : {}),
         children: entry.children.map(outlineOf)
     };
+}
+
+const graphsByExport = new WeakMap<HierarchyExport, HierarchyGraph[]>();
+
+/**
+ * Every instance's graph, root first, for an outline of nodes across the
+ * hierarchy (`GraphDocument.hierarchyGraphs`). The root's is the export's
+ * own document; a nested instance's is its tree entry's. The documents are
+ * the export's, not copies, and the list is made once per export.
+ */
+export function graphsOf(exported: HierarchyExport): HierarchyGraph[] {
+    const known = graphsByExport.get(exported);
+    if (known) {
+        return known;
+    }
+    const graphs: HierarchyGraph[] = [];
+    const place = (entry: HierarchyEntry): Pick<HierarchyGraph, 'path' | 'workflowName' | 'sourceUri'> => ({
+        path: entry.path,
+        workflowName: entry.workflowName,
+        ...(entry.sourcePath ? { sourceUri: URI.file(entry.sourcePath).toString() } : {})
+    });
+    const { hierarchy: root, ...rootDocument } = exported;
+    graphs.push({ ...place(root), document: rootDocument as unknown as GraphDocument });
+    const walk = (entry: HierarchyEntry): void => {
+        if (entry.graph && typeof entry.graph === 'object') {
+            graphs.push({ ...place(entry), document: entry.graph as GraphDocument });
+        }
+        entry.children.forEach(walk);
+    };
+    root.children.forEach(walk);
+    graphsByExport.set(exported, graphs);
+    return graphs;
 }
 
 /** Every file the hierarchy was elaborated from. */

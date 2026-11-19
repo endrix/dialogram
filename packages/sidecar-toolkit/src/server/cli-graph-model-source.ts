@@ -26,7 +26,7 @@ import {
     parseNavigationTrailArg,
     parseViewArg
 } from '@dialogram/diagram-server/server/graph-load-request-options';
-import { HierarchyCache, definitionFiles, fileHash, findInstance, outlineOf } from './hierarchy-cache';
+import { HierarchyCache, definitionFiles, fileHash, findInstance, graphsOf, outlineOf } from './hierarchy-cache';
 import { FileMemo } from '@dialogram/diagram-server/services/file-memo';
 import { extractWorkflowDefinitionNames } from './source-analysis';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
@@ -294,7 +294,7 @@ export class CliGraphModelSource implements DiagramModelSource {
                 return undefined;
             }
             const { hierarchy: _tree, ...rootDoc } = exported;
-            return { ...(rootDoc as unknown as GraphDocument), hierarchy: outline };
+            return { ...(rootDoc as unknown as GraphDocument), hierarchy: outline, hierarchyGraphs: graphsOf(exported) };
         }
         const instance = findInstance(exported.hierarchy, path);
         if (
@@ -304,7 +304,7 @@ export class CliGraphModelSource implements DiagramModelSource {
         ) {
             return undefined;
         }
-        return { ...(instance.graph as GraphDocument), hierarchy: outline };
+        return { ...(instance.graph as GraphDocument), hierarchy: outline, hierarchyGraphs: graphsOf(exported) };
     }
 
     /** Runs the runtime's hierarchy export from `cwd`, the root file's run root; its stdout, or undefined when it fails. */

@@ -32,6 +32,10 @@
  * product's: a click hands its id to the host. And the host can point the
  * outline at a row: it opens the rows down to it, fetches its page, selects
  * it and scrolls it into view.
+ *
+ * The panel is one of a kind of panel (`OutlinePanelConfig`): the node list
+ * (`node-list-outline.ts`) is another, fed by another argument, with its own
+ * button under this one's.
  */
 import { inject, injectable, multiInject, optional } from 'inversify';
 import { raiseFloatingPanel, stackAsFloatingPanel } from './floating-panels';
@@ -81,11 +85,8 @@ import {
 } from './outline-rows';
 import { OutlinePager } from './outline-pager';
 
-const PANEL_ID = 'workflow-hierarchy-outline';
-const BODY_ID = 'workflow-hierarchy-outline-body';
-const SEARCH_ID = 'workflow-hierarchy-outline-search';
-const TOGGLE_ID = 'workflow-hierarchy-outline-toggle';
-const OPEN_STORAGE_KEY = 'dialogram.hierarchyOutline.open';
+/** The chat's button, which the hierarchy's sits directly under. */
+const CHAT_TOGGLE_ID = 'workflow-chat-toggle-btn';
 /** The class of a row's family colour, an existing class of the stylesheet. */
 const FAMILY_COLOR_CLASS = 'workflow-hierarchy-outline-chip';
 /** How long a click waits to find out it was the first half of a double click. */
@@ -97,17 +98,51 @@ const HOST_ANSWER_TIMEOUT_MS = 30_000;
 /** The panel's height when it cannot be measured (it is laid out as it opens). */
 const UNMEASURED_VIEW_PX = 400;
 
-function storedOpen(): boolean {
+/** What tells one outline panel from another on the canvas. */
+export interface OutlinePanelConfig {
+    /** The panel's element id; its body, filter and button are `<id>-body`, `<id>-search` and `<id>-toggle`. */
+    id: string;
+    /** Where whether it is open is kept. */
+    storageKey: string;
+    /** The root model argument holding its outline, as JSON. */
+    arg: string;
+    /** The codicon of its button, without the `codicon-` prefix. */
+    codicon: string;
+    /** The key that opens and closes it, if any. */
+    shortcut?: string;
+    /** The buttons its button sits directly under in the floating stack, the first there. */
+    under: string[];
+    /** A class of its own beside the outline's, for its own styles. */
+    className?: string;
+    /**
+     * Whether the host's outline messages are this panel's: its answers for
+     * lazy groups and its "show this row" (`DiagramProfile.outline`). Only
+     * one panel's, the hierarchy's.
+     */
+    hostRows: boolean;
+}
+
+const HIERARCHY_PANEL: OutlinePanelConfig = {
+    id: 'workflow-hierarchy-outline',
+    storageKey: 'dialogram.hierarchyOutline.open',
+    arg: 'wf:hierarchy',
+    codicon: 'type-hierarchy',
+    shortcut: 'o',
+    under: [CHAT_TOGGLE_ID],
+    hostRows: true
+};
+
+function storedOpen(key: string): boolean {
     try {
-        return globalThis.localStorage?.getItem(OPEN_STORAGE_KEY) === '1';
+        return globalThis.localStorage?.getItem(key) === '1';
     } catch {
         return false;
     }
 }
 
-function storeOpen(open: boolean): void {
+function storeOpen(key: string, open: boolean): void {
     try {
-        globalThis.localStorage?.setItem(OPEN_STORAGE_KEY, open ? '1' : '0');
+        globalThis.localStorage?.setItem(key, open ? '1' : '0');
     } catch {
         // ignore
     }
@@ -119,7 +154,7 @@ function hasLazyGroup(entry: HierarchyOutlineEntry): boolean {
 }
 
 /** The key of the row selected: a row of the outline by its id, a lazy group's row by group and id. */
-function entryKey(entry: HierarchyOutlineEntry): string {
+export function entryKey(entry: HierarchyOutlineEntry): string {
     return `e\u0000${rowId(entry)}`;
 }
 
@@ -141,16 +176,23 @@ export class HierarchyOutlinePanel {
     /** The canvas's own double-click handling, which a node row's double click runs. */
     @multiInject(TYPES.MouseListener) @optional() protected readonly mouseListeners: MouseListener[] = [];
 
-    private outline: HierarchyOutlineEntry | undefined;
+    protected readonly config: OutlinePanelConfig = this.panelConfig();
+    private readonly ids = {
+        panel: this.config.id,
+        body: `${this.config.id}-body`,
+        search: `${this.config.id}-search`,
+        toggle: `${this.config.id}-toggle`
+    };
+    protected outline: HierarchyOutlineEntry | undefined;
     private renderedJson: string | undefined;
-    private readonly expanded = new Set<string>(['']);
+    protected readonly expanded = new Set<string>(['']);
     /** The filter, lower-cased, for the rows the webview has. */
     private query = '';
     /** The filter as typed, trimmed, for the rows the host has. */
     private hostQuery = '';
-    private open = storedOpen();
+    private open = storedOpen(this.config.storageKey);
     private currentPath: string[] = [];
-    private root: unknown;
+    protected root: unknown;
     private wired = false;
     private listening = false;
     private clickTimer: ReturnType<typeof setTimeout> | undefined;
@@ -174,25 +216,64 @@ export class HierarchyOutlinePanel {
         () => this.relayout()
     );
 
+    /** Which panel this is; a panel of another kind says its own. */
+    protected panelConfig(): OutlinePanelConfig {
+        return HIERARCHY_PANEL;
+    }
+
+    /** What the panel is called. */
+    protected title(): string {
+        return outlineTitle();
+    }
+
+    /** The outline in its argument's JSON, or undefined when there is none to show. */
+    protected parseOutline(raw: string): HierarchyOutlineEntry | undefined {
+        const parsed = JSON.parse(raw) as HierarchyOutlineEntry;
+        return parsed && typeof parsed === 'object' && Array.isArray(parsed.children) ? parsed : undefined;
+    }
+
+    /** Another outline came (a load, a run's tokens): a panel of another kind reads it here. */
+    protected outlineChanged(_outline: HierarchyOutlineEntry): void {
+        // Nothing for the hierarchy.
+    }
+
+    /** Why a row cannot be acted on now, or undefined when it can (`HierarchyOutlineEntry.unavailable`). */
+    protected unavailableReason(entry: HierarchyOutlineEntry): string | undefined {
+        return typeof entry.unavailable === 'string' && entry.unavailable.trim() !== '' ? entry.unavailable : undefined;
+    }
+
+    /** A node row's click: find its node in the view above it, and double-click it on a double click. */
+    protected actOnNode(entry: HierarchyOutlineEntry, double: boolean): void {
+        this.focusNode(entry, double);
+    }
+
     modelRootChanged(root: unknown): void {
         this.listen();
         this.root = root;
-        const raw = (root as { args?: Record<string, unknown> })?.args?.['wf:hierarchy'];
+        const raw = (root as { args?: Record<string, unknown> })?.args?.[this.config.arg];
         if (!navigatesInPlace() || typeof raw !== 'string') {
             this.setAvailable(false);
             return;
         }
         if (raw !== this.renderedJson) {
+            let outline: HierarchyOutlineEntry | undefined;
             try {
-                this.outline = JSON.parse(raw) as HierarchyOutlineEntry;
-                this.renderedJson = raw;
+                outline = this.parseOutline(raw);
             } catch {
+                outline = undefined;
+            }
+            if (!outline) {
+                this.outline = undefined;
+                this.renderedJson = undefined;
                 this.setAvailable(false);
                 return;
             }
+            this.outline = outline;
+            this.renderedJson = raw;
             // Another outline: the host's rows of the one before are not its rows.
             this.pager.reset();
             this.layoutStale = true;
+            this.outlineChanged(outline);
         }
         // The trail the server echoes on the root: this view's own, whichever
         // listener the model reaches first.
@@ -216,13 +297,21 @@ export class HierarchyOutlinePanel {
     // ── Chrome ──────────────────────────────────────────────────────────
 
     private ensureChrome(): void {
-        if (typeof document === 'undefined' || !document.body || document.getElementById(PANEL_ID)) {
+        if (typeof document === 'undefined' || !document.body) {
             return;
         }
-        const title = outlineTitle();
+        const title = this.title();
+        const existing = document.getElementById(this.ids.panel);
+        if (existing) {
+            this.refreshChrome(existing, title);
+            return;
+        }
+        const ids = this.ids;
+        const shortcut = this.config.shortcut ? ` (${this.config.shortcut.toUpperCase()})` : '';
+        const ownClass = this.config.className ? ` ${this.config.className}` : '';
         const holder = document.createElement('div');
         holder.innerHTML = `
-            <aside id="${PANEL_ID}" class="workflow-hierarchy-outline" aria-label="${title}" hidden>
+            <aside id="${ids.panel}" class="workflow-hierarchy-outline${ownClass}" aria-label="${title}" hidden>
                 <div class="workflow-hierarchy-outline-header">
                     <span class="workflow-hierarchy-outline-title">${title}</span>
                     <button class="workflow-hierarchy-outline-btn" data-action="collapse" type="button" title="Collapse all rows">
@@ -232,22 +321,50 @@ export class HierarchyOutlinePanel {
                         <span class="codicon codicon-close"></span>
                     </button>
                 </div>
-                <input id="${SEARCH_ID}" class="workflow-hierarchy-outline-search" type="text"
+                <input id="${ids.search}" class="workflow-hierarchy-outline-search" type="text"
                        placeholder="Filter…" aria-label="Filter the ${title.toLowerCase()}" spellcheck="false" />
-                <div id="${BODY_ID}" class="workflow-hierarchy-outline-body" role="tree">
+                <div id="${ids.body}" class="workflow-hierarchy-outline-body" role="tree">
                     <div class="workflow-hierarchy-outline-spacer"></div>
                 </div>
             </aside>
-            <button id="${TOGGLE_ID}" class="workflow-fab-btn workflow-hierarchy-outline-toggle floating" type="button"
-                    title="${title} (O)" aria-label="Toggle the ${title.toLowerCase()}" hidden>
-                <span class="codicon codicon-type-hierarchy"></span>
+            <button id="${ids.toggle}" class="workflow-fab-btn workflow-hierarchy-outline-toggle${ownClass ? `${ownClass}-toggle` : ''} floating" type="button"
+                    title="${title}${shortcut}" aria-label="Toggle the ${title.toLowerCase()}" hidden>
+                <span class="codicon codicon-${this.config.codicon}"></span>
             </button>`;
         while (holder.firstChild) {
             document.body.appendChild(holder.firstChild);
         }
-        const panel = document.getElementById(PANEL_ID);
+        const panel = document.getElementById(ids.panel);
         if (panel) {
             stackAsFloatingPanel(panel);
+        }
+    }
+
+    /**
+     * Say the panel's title and draw its button's icon again, when they have
+     * changed: a panel of another kind may have its own only once its outline
+     * has come, after its chrome was made.
+     */
+    private refreshChrome(panel: HTMLElement, title: string): void {
+        const icon = document.getElementById(this.ids.toggle)?.querySelector('.codicon');
+        const iconClass = `codicon codicon-${this.config.codicon}`;
+        if (icon && icon.className !== iconClass) {
+            icon.className = iconClass;
+        }
+        if (panel.getAttribute('aria-label') === title) {
+            return;
+        }
+        panel.setAttribute('aria-label', title);
+        const heading = panel.querySelector('.workflow-hierarchy-outline-title');
+        if (heading) {
+            heading.textContent = title;
+        }
+        panel.querySelector(`#${this.ids.search}`)?.setAttribute('aria-label', `Filter the ${title.toLowerCase()}`);
+        const toggle = document.getElementById(this.ids.toggle);
+        if (toggle) {
+            const shortcut = this.config.shortcut ? ` (${this.config.shortcut.toUpperCase()})` : '';
+            toggle.title = `${title}${shortcut}`;
+            toggle.setAttribute('aria-label', `Toggle the ${title.toLowerCase()}`);
         }
     }
 
@@ -256,20 +373,20 @@ export class HierarchyOutlinePanel {
             return;
         }
         this.wired = true;
-        document.getElementById(TOGGLE_ID)?.addEventListener('click', () => this.setOpen(!this.open));
-        const panel = document.getElementById(PANEL_ID);
+        document.getElementById(this.ids.toggle)?.addEventListener('click', () => this.setOpen(!this.open));
+        const panel = document.getElementById(this.ids.panel);
         panel?.querySelector('[data-action="close"]')?.addEventListener('click', () => this.setOpen(false));
         panel?.querySelector('[data-action="collapse"]')?.addEventListener('click', () => {
             this.expanded.clear();
             this.expanded.add('');
             this.layoutStale = true;
-            const body = document.getElementById(BODY_ID);
+            const body = document.getElementById(this.ids.body);
             if (body) {
                 body.scrollTop = 0;
             }
             this.render();
         });
-        document.getElementById(SEARCH_ID)?.addEventListener('input', event => {
+        document.getElementById(this.ids.search)?.addEventListener('input', event => {
             const typed = (event.target as HTMLInputElement).value.trim();
             if (this.filterTimer) {
                 clearTimeout(this.filterTimer);
@@ -286,7 +403,7 @@ export class HierarchyOutlinePanel {
                 this.setFilter(typed);
             }
         });
-        const body = document.getElementById(BODY_ID);
+        const body = document.getElementById(this.ids.body);
         body?.addEventListener('click', event => this.onRowClick(event, false));
         body?.addEventListener('dblclick', event => this.onRowClick(event, true));
         body?.addEventListener('scroll', () => this.queueDraw(), { passive: true });
@@ -299,20 +416,23 @@ export class HierarchyOutlinePanel {
             this.placeNearButton();
             this.queueDraw();
         });
-        document.addEventListener('keydown', event => {
-            const target = event.target as HTMLElement | null;
-            const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
-            if (!typing && !event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === 'o'
-                && !document.getElementById(TOGGLE_ID)?.hidden) {
-                event.preventDefault();
-                this.setOpen(!this.open);
-            }
-        });
+        const shortcut = this.config.shortcut?.toLowerCase();
+        if (shortcut) {
+            document.addEventListener('keydown', event => {
+                const target = event.target as HTMLElement | null;
+                const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+                if (!typing && !event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === shortcut
+                    && !document.getElementById(this.ids.toggle)?.hidden) {
+                    event.preventDefault();
+                    this.setOpen(!this.open);
+                }
+            });
+        }
     }
 
     /** The host's answers, and its "show this row". */
     private listen(): void {
-        if (this.listening || typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
+        if (this.listening || !this.config.hostRows || typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
             return;
         }
         this.listening = true;
@@ -335,7 +455,7 @@ export class HierarchyOutlinePanel {
         this.hostQuery = typed;
         this.query = typed.toLowerCase();
         this.layoutStale = true;
-        const body = document.getElementById(BODY_ID);
+        const body = document.getElementById(this.ids.body);
         if (body) {
             body.scrollTop = 0;
         }
@@ -345,14 +465,14 @@ export class HierarchyOutlinePanel {
     private setAvailable(available: boolean): void {
         this.ensureChrome();
         this.wire();
-        const toggle = document.getElementById(TOGGLE_ID);
-        const panel = document.getElementById(PANEL_ID);
+        const toggle = document.getElementById(this.ids.toggle);
+        const panel = document.getElementById(this.ids.panel);
         if (toggle) {
             toggle.hidden = !available;
-            placeInButtonStack(toggle);
+            placeInButtonStack(toggle, document, this.config.under);
             // The stack and the chat button may be put in place after this
             // listener runs; place it again once they are.
-            requestAnimationFrame(() => placeInButtonStack(toggle));
+            requestAnimationFrame(() => placeInButtonStack(toggle, document, this.config.under));
         }
         if (panel) {
             panel.hidden = !available || !this.open;
@@ -363,12 +483,12 @@ export class HierarchyOutlinePanel {
 
     private setOpen(open: boolean): void {
         this.open = open;
-        storeOpen(open);
-        const panel = document.getElementById(PANEL_ID);
+        storeOpen(this.config.storageKey, open);
+        const panel = document.getElementById(this.ids.panel);
         if (panel) {
             panel.hidden = !open;
         }
-        document.getElementById(TOGGLE_ID)?.classList.toggle('active', open);
+        document.getElementById(this.ids.toggle)?.classList.toggle('active', open);
         if (open) {
             if (panel) {
                 raiseFloatingPanel(panel);
@@ -380,8 +500,8 @@ export class HierarchyOutlinePanel {
 
     /** Open the panel beside its button, wherever the button stack put it. */
     private placeNearButton(): void {
-        const panel = document.getElementById(PANEL_ID);
-        const toggle = document.getElementById(TOGGLE_ID);
+        const panel = document.getElementById(this.ids.panel);
+        const toggle = document.getElementById(this.ids.toggle);
         if (!panel || !toggle || panel.hidden || toggle.hidden) {
             return;
         }
@@ -429,8 +549,8 @@ export class HierarchyOutlinePanel {
     }
 
     /** Draw the rows in view, and ask the host for the pages they are on. */
-    private render(): void {
-        const body = document.getElementById(BODY_ID);
+    protected render(): void {
+        const body = document.getElementById(this.ids.body);
         if (!body || !this.outline || !this.open) {
             return;
         }
@@ -524,6 +644,11 @@ export class HierarchyOutlinePanel {
         if (entry.role) {
             row.classList.add(`role-${entry.role}`);
         }
+        const unavailable = this.unavailableReason(entry);
+        if (unavailable) {
+            row.classList.add('unavailable');
+            row.setAttribute('aria-disabled', 'true');
+        }
 
         const twisty = document.createElement('span');
         twisty.className = 'workflow-hierarchy-outline-twisty codicon';
@@ -579,6 +704,9 @@ export class HierarchyOutlinePanel {
         meta.textContent = said.text;
         if (said.title) {
             row.title = said.title;
+        }
+        if (unavailable) {
+            row.title = unavailable;
         }
         row.appendChild(meta);
         return row;
@@ -652,11 +780,15 @@ export class HierarchyOutlinePanel {
             act = double => this.actOnPaged(group, found, slot.viewPath, double);
         } else {
             const entry = slot.entry;
+            // A row that cannot be acted on now takes no click.
+            if (this.unavailableReason(entry)) {
+                return;
+            }
             act = double => {
                 if (entry.role === 'group') {
                     this.toggle(rowId(entry));
                 } else if (entry.role === 'node') {
-                    this.focusNode(entry, double);
+                    this.actOnNode(entry, double);
                 } else if (entry.role === 'item') {
                     this.select(entryKey(entry));
                     this.activate(itemId(entry), undefined, double);
@@ -687,7 +819,7 @@ export class HierarchyOutlinePanel {
         }
     }
 
-    private select(key: string): void {
+    protected select(key: string): void {
         this.selected = key;
         this.render();
     }
@@ -713,7 +845,7 @@ export class HierarchyOutlinePanel {
     // ── The host's rows ─────────────────────────────────────────────────
 
     /** The file the outline is of: what the host's rows are asked of. */
-    private outlineSource(): string {
+    protected outlineSource(): string {
         return this.outline?.sourceUri ?? this.editorContext?.sourceUri ?? '';
     }
 
@@ -813,7 +945,7 @@ export class HierarchyOutlinePanel {
     }
 
     private clearFilter(): void {
-        const input = document.getElementById(SEARCH_ID) as HTMLInputElement | null;
+        const input = document.getElementById(this.ids.search) as HTMLInputElement | null;
         if (input) {
             input.value = '';
         }
@@ -838,7 +970,7 @@ export class HierarchyOutlinePanel {
     }
 
     /** A node row: find its node in the view above it, and double-click it when `open`. */
-    private focusNode(entry: HierarchyOutlineEntry, open: boolean): void {
+    protected focusNode(entry: HierarchyOutlineEntry, open: boolean): void {
         this.focus(entry.path.slice(0, -1), { name: entry.path[entry.path.length - 1], nodeId: entry.nodeId, open });
     }
 
@@ -981,14 +1113,17 @@ export function panelPlacement(
 }
 
 /**
- * Put the hierarchy button in the floating button stack, directly under the
- * chat button. The stack is a reversed column -- what comes first in it sits
- * lowest -- so "under chat" is just before it. Without a stack yet, the button
- * floats on its own until one exists.
+ * Put an outline's button in the floating button stack, directly under the
+ * first of the buttons `under` names that is in the stack: the hierarchy's
+ * under the chat button, the node list's under the hierarchy's. The stack is
+ * a reversed column -- what comes first in it sits lowest -- so "under" is
+ * just before it. Without a stack yet, the button floats on its own until
+ * one exists.
  */
 export function placeInButtonStack(
     toggle: HTMLElement,
-    doc: Pick<Document, 'querySelector' | 'getElementById'> = document
+    doc: Pick<Document, 'querySelector' | 'getElementById'> = document,
+    under: readonly string[] = [CHAT_TOGGLE_ID]
 ): void {
     const stack = doc.querySelector('.workflow-fab-stack');
     if (!stack) {
@@ -996,10 +1131,12 @@ export function placeInButtonStack(
         return;
     }
     toggle.classList.remove('floating');
-    const chat = doc.getElementById('workflow-chat-toggle-btn');
-    if (chat && chat.parentElement === stack) {
-        if (toggle.nextElementSibling !== chat) {
-            stack.insertBefore(toggle, chat);
+    const above = under
+        .map(id => doc.getElementById(id))
+        .find(button => button !== null && button !== toggle && button.parentElement === stack);
+    if (above) {
+        if (toggle.nextElementSibling !== above) {
+            stack.insertBefore(toggle, above);
         }
     } else if (toggle.parentElement !== stack) {
         stack.appendChild(toggle);

@@ -33,9 +33,12 @@ import {
     type GraphDiagnostic,
     type GraphNodeIdentity,
     type WorkflowRelationshipInfo,
-    type WorkflowCallerReference
+    type WorkflowCallerReference,
+    NODE_LIST_ARG
 } from '@dialogram/shared';
 import { GraphGModelSource } from '../model/graph-gmodel-source';
+import { buildNodeList, type OverlayTokenOf } from './node-list';
+import { edgeTokensOf } from './edge-tokens';
 import { FileMemo } from '../services/file-memo';
 import { portBusStateOf } from '../model/port-bundles';
 import { allowsStateEdits, placeHeldStates, withUnwrittenStates } from '../model/unwritten-states';
@@ -186,6 +189,9 @@ export function countCoincidentNodes(positions: Iterable<{ x: number; y: number 
  * Source model storage for Workflow diagrams.
  * Acquires the graph via the injected DiagramModelSource seam and transforms it to GModel.
  */
+/** The run an overlay came from, and the token it leaves on an edge (edge-tokens.ts), for the node list. */
+type AppliedOverlay = { runId: string; outDir: string; tokenOf: OverlayTokenOf };
+
 /** Take off an edge what a run put on it: the token it carried, its queue size at a step. */
 function clearEdgeOverlay(edge: GEdge): void {
     const args = edge.args as Record<string, unknown> | undefined;
@@ -976,7 +982,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             }
         }
 
-        await this.applyViewerOverlayToEdges(
+        const appliedOverlay = await this.applyViewerOverlayToEdges(
             gmodelRoot,
             workflowFilePath,
             workflowName || 'workflow',
@@ -988,6 +994,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             requestedRunId
         );
         perf?.mark('ov:viewer');
+        this.attachNodeList(gmodelRoot, doc, appliedOverlay);
+        perf?.mark('ov:nodeList');
         await this.applyAgentContextToNodes(
             gmodelRoot,
             workflowFilePath,
@@ -1370,7 +1378,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         queueTraceVisible?: boolean,
         sourcePathHints?: string[],
         preferredRunId?: string
-    ): Promise<void> {
+    ): Promise<AppliedOverlay | undefined> {
         const _perfT0 = PERF_ENABLED ? perfNow() : 0;
         try {
             const overlay = await this.tryLoadLatestViewerOverlay(workflowFilePath, workflowName, sourcePathHints, workflowNameHints, preferredRunId);
@@ -1380,7 +1388,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 // Clear any stale glow state left from a previous cycle.
                 this.clearExecutionGlowState(root);
                 walkGEdges(root, clearEdgeOverlay);
-                return;
+                return undefined;
             }
             const activeNamesLog = overlay.active
                 ? overlay.active.map(a => a?.entityInstanceName ?? 'none').join(',')
@@ -1467,6 +1475,18 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 }
             }
 
+            const tokensOfEdge = edgeTokensOf({
+                overlayEdges: overlay.edges,
+                overlayBySignature,
+                queueByAstPath,
+                queueBySignature,
+                queueTokenByAstPath,
+                queueTokenBySignature,
+                atTrace: queueTrace !== undefined,
+                astPathCandidates: astPathCandidatesForEdge,
+                signatureCandidates: signatureCandidatesForEdge
+            });
+
             const activeNames = overlay.active && Array.isArray(overlay.active)
                 ? overlay.active
                     .map(entry => analysis?.resolveOverlayActiveEntityName(entry, workflowName, navigationTrail))
@@ -1530,57 +1550,11 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 if (element instanceof GEdge && edgeOverlayHidden) {
                     clearEdgeOverlay(element);
                 } else if (element instanceof GEdge) {
-                    const args = element.args as Record<string, unknown> | undefined;
-                    let queueSizeForEdge: number | undefined;
-                    let queueTokenForEdge: unknown;
-                    // The token the edge carried by the end of the run.
-                    let finalToken: unknown;
-                    let hasFinalToken = false;
-                    const astPathCandidates = astPathCandidatesForEdge(args);
-                    for (const astPath of astPathCandidates) {
-                        const entry = overlay.edges[astPath];
-                        if (!hasFinalToken && entry && Object.prototype.hasOwnProperty.call(entry, 'lastToken')) {
-                            finalToken = (entry as any).lastToken;
-                            hasFinalToken = true;
-                        }
-                        const qSize = queueByAstPath.get(astPath);
-                        if (queueSizeForEdge === undefined && typeof qSize === 'number') {
-                            queueSizeForEdge = qSize;
-                        }
-                        if (queueTokenForEdge === undefined && queueTokenByAstPath.has(astPath)) {
-                            queueTokenForEdge = queueTokenByAstPath.get(astPath);
-                        }
-                    }
-
-                    const signature = signatureCandidatesForEdge(args)
-                        .find(candidate => overlayBySignature.has(candidate) || queueBySignature.has(candidate));
-                    if (signature && overlayBySignature.has(signature)) {
-                        finalToken = overlayBySignature.get(signature);
-                        hasFinalToken = true;
-                    }
-                    if (queueSizeForEdge === undefined && signature) {
-                        const qSize = queueBySignature.get(signature);
-                        if (typeof qSize === 'number') {
-                            queueSizeForEdge = qSize;
-                        }
-                    }
-                    if (queueTokenForEdge === undefined && signature && queueTokenBySignature.has(signature)) {
-                        queueTokenForEdge = queueTokenBySignature.get(signature);
-                    }
-
-                    // A step is shown and the trace knows this edge: draw it as
-                    // it was then. The run's final token would paint an edge as
-                    // carried at a step no token had reached it yet, so going
-                    // back through the trace would change nothing on the edges.
-                    // An edge the trace does not know keeps the final token.
-                    const atStep = queueTrace !== undefined && queueSizeForEdge !== undefined;
-                    const shownToken = atStep ? queueTokenForEdge : (queueTokenForEdge ?? finalToken);
-                    const hasShownToken = atStep
-                        ? queueTokenForEdge !== undefined
-                        : queueTokenForEdge !== undefined || hasFinalToken;
-                    if (hasShownToken) {
+                    // The rule the node list reads too (edge-tokens.ts).
+                    const { shown, queueSize: queueSizeForEdge } = tokensOfEdge(element.args as Record<string, unknown> | undefined);
+                    if (shown) {
                         element.args = element.args || {};
-                        (element.args as any)[WorkflowDiagramMetadata.VIEWER_LAST_TOKEN] = shownToken;
+                        (element.args as any)[WorkflowDiagramMetadata.VIEWER_LAST_TOKEN] = shown.token;
                     } else if (element.args) {
                         delete (element.args as any)[WorkflowDiagramMetadata.VIEWER_LAST_TOKEN];
                     }
@@ -1662,8 +1636,50 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                     }
                 }
             }
+            return {
+                runId: overlay.runId,
+                outDir: overlay.outDir,
+                tokenOf: args => tokensOfEdge(args).shown
+            };
         } catch (err) {
             console.warn('[WorkflowSourceModelStorage] Failed to apply viewer overlay', err);
+            return undefined;
+        }
+    }
+
+    /**
+     * The list of one family's nodes across the hierarchy, on the root as
+     * `wf:nodeList` (`node-list.ts`), when the product names a family
+     * (`StorageRuntimeOptions.nodeList`) and the producer gave the
+     * hierarchy's graphs. Each instance's graph is transformed as a view of
+     * it would be, and its edges take the run's tokens as the canvas's do.
+     */
+    private attachNodeList(root: GModelRoot, doc: any, overlay: AppliedOverlay | undefined): void {
+        const args = ((root as any).args = (root as any).args || {});
+        delete args[NODE_LIST_ARG];
+        const spec = this.storageOptions?.nodeList;
+        const graphs = doc?.hierarchyGraphs;
+        if (!spec || !Array.isArray(graphs) || graphs.length === 0) {
+            return;
+        }
+        try {
+            const transform = new GraphGModelSource(this.storageOptions);
+            const list = buildNodeList({
+                spec,
+                families: this.storageOptions?.clientNodeFamilies ?? this.storageOptions?.nodeFamilies ?? [],
+                graphs,
+                hierarchy: doc.hierarchy,
+                transform: document => transform.transform(document as any).graph,
+                tokenOf: overlay?.tokenOf,
+                rootArgs: overlay
+                    ? { 'wf:viewerOverlayRunId': overlay.runId, 'wf:viewerOverlayOutDir': overlay.outDir }
+                    : undefined
+            });
+            if (list) {
+                args[NODE_LIST_ARG] = JSON.stringify(list);
+            }
+        } catch (err) {
+            console.warn('[WorkflowSourceModelStorage] Failed to build the node list', err);
         }
     }
 

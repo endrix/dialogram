@@ -11,7 +11,7 @@
  * needs no `@dialogram/extension-core` dependency; the shell annotates the
  * result as `DiagramProfile` at the assignment site.
  */
-import type { DiagramClientAssets, DiagramCommandIds, EntityPaletteItemSpec, NodeFamilySpec, ProductClientBehavior } from '@dialogram/shared';
+import type { DiagramClientAssets, DiagramCommandIds, EntityPaletteItemSpec, NodeFamilySpec, NodeListSpec, ProductClientBehavior } from '@dialogram/shared';
 import * as vscode from 'vscode';
 import { DEFAULT_EXPORT_OP, invokeSidecarOp } from './sidecar-graph-export.js';
 import { createSourceReferenceContext } from './chat-source-reference.js';
@@ -221,6 +221,13 @@ export interface SidecarProfileInput {
     /** @deprecated The platform has no Entities entries of its own any more. Accepted and ignored. */
     platformEntityItems?: boolean;
     nodeFamilies?: NodeFamilySpec[];
+    /**
+     * A second outline beside the hierarchy: the nodes of one family
+     * (`nodeFamilies`) wherever they are in it, a double click opening what
+     * one on the node opens. Needs `cliHierarchyArgs`: the rows are built
+     * from the hierarchy's export.
+     */
+    nodeList?: NodeListSpec;
     /**
      * The layout the diagrams open with and Layout Diagram runs: `untangled`
      * or `free-ports`, the Layout menu's other two. Absent, Layout Diagram's
@@ -838,6 +845,7 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
             operationPrefix: input.sidecarOperationPrefix,
             entityPaletteItems: input.entityPaletteItems,
             nodeFamilies: input.nodeFamilies,
+            nodeList: input.nodeList,
             nestedNavigation: input.clientBehavior?.nestedNavigation,
             defaultLayout: input.defaultLayout,
             toggleLayout: input.toggleLayout

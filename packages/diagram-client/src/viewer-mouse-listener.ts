@@ -10,8 +10,7 @@ import { openTargetOf } from './open-target';
 import { openLeaf } from './network-navigation-mouse-listener';
 import { inject, injectable, multiInject, optional } from 'inversify';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
-import { NodeOpener } from './node-opener';
-import { lastPerKey } from './contributions';
+import { NodeOpener, openNode, openersInOrder } from './node-opener';
 import { portBusToggleOf } from './port-bus-toggle';
 import { doubleClickNodeAction } from './node-actions';
 
@@ -173,7 +172,7 @@ export class ViewerMouseListener extends MouseListener implements Ranked {
 
     /** One opener per id, in the order the ids were first bound; a later binding replaces the earlier one. */
     protected nodeOpeners(): readonly NodeOpener[] {
-        return lastPerKey(this.contributedOpeners, opener => opener.id);
+        return openersInOrder(this.contributedOpeners);
     }
 
     override doubleClick(target: GModelElement, event: MouseEvent): (Action | Promise<Action>)[] {
@@ -204,17 +203,9 @@ export class ViewerMouseListener extends MouseListener implements Ranked {
         // What a product opens for the node, before the platform's own: its
         // definition. An empty answer is no answer; an opener that throws is
         // skipped, so it cannot stop the node from opening anything.
-        for (const opener of this.nodeOpeners()) {
-            let opened: (Action | Promise<Action>)[] | undefined;
-            try {
-                opened = opener.open(node, { sourceUri: this.editorContext.sourceUri });
-            } catch (error) {
-                console.warn(`[dialogram] the node opener '${opener.id}' failed`, error);
-                continue;
-            }
-            if (opened && opened.length > 0) {
-                return opened;
-            }
+        const opened = openNode(this.nodeOpeners(), node, { sourceUri: this.editorContext.sourceUri });
+        if (opened) {
+            return opened;
         }
 
         // The definition of a task, or of an actor that is not marked external.

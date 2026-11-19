@@ -347,6 +347,17 @@
         "to": "service:HierarchyOutlinePanel"
     },
     {
+        "id": "NodeListOutlinePanel",
+        "op": "bind",
+        "scope": "singleton",
+        "to": "self"
+    },
+    {
+        "id": "Symbol(stub.IGModelRootListener)",
+        "op": "bind",
+        "to": "service:NodeListOutlinePanel"
+    },
+    {
         "handler": "WorkflowGoToErrorActionHandler",
         "kind": "dialogram.goToError",
         "op": "actionHandler"

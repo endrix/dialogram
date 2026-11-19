@@ -12,6 +12,7 @@ export * from './port-stub';
 export * from './boundary-port-geometry';
 export * from './binding-keys';
 export * from './diagram-seams';
+export * from './node-family';
 export * from './loading';
 export * from './hierarchy';
 export * from './outline-pages';

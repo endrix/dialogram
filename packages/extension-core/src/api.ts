@@ -26,6 +26,7 @@ import type {
   DiagramClientAssets,
   EntityPaletteItemSpec,
   NodeFamilySpec,
+  NodeListSpec,
   ExecutionNodeState,
   ExecutionOverlaySink,
   LoadPhaseWords,
@@ -49,6 +50,7 @@ export type {
   EntityPaletteItemSpec,
   InProcessChatTool,
   NodeFamilySpec,
+  NodeListSpec,
 } from "@dialogram/shared";
 
 // The seams' vocabulary: the loading words, the outline on demand, a
@@ -111,6 +113,8 @@ export interface DiagramStorageOptions {
   /** @deprecated The platform has no Entities entries of its own any more. Accepted and ignored. */
   platformEntityItems?: boolean;
   nodeFamilies?: NodeFamilySpec[];
+  /** A second outline, of one node family across the hierarchy (shared `NodeListSpec`). */
+  nodeList?: NodeListSpec;
   /** How nested workflows are navigated; in place, a nested view's layout is
    *  the root's, per instance (diagram-server `layout-target.ts`). */
   nestedNavigation?: 'in-place' | 'new-editor';

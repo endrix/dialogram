@@ -53,4 +53,19 @@ describe('composeStorageRuntimeOptions', () => {
         expect(composeStorageRuntimeOptions({})).toBeUndefined();
         expect(composeStorageRuntimeOptions({ supportsElementCreation: true })).toBeUndefined();
     });
+
+    it('gives a node list the families the canvas colours by, and nothing else them', () => {
+        const viewer = { annotation: 'viewer', color: '#49a6b8' };
+        const nodeList = { family: 'viewer', title: 'Viewers' };
+        const base = { settingsNamespace: 'wf', operationPrefix: 'wf' };
+        // The client's families, which a product may give the client alone.
+        expect(composeStorageRuntimeOptions({ storageOptions: { ...base, nodeList }, clientBehavior: { nodeFamilies: [viewer] } } as any))
+            .toMatchObject({ nodeList, clientNodeFamilies: [viewer] });
+        // Without, the server reads its own (`attachNodeList`).
+        expect(composeStorageRuntimeOptions({ storageOptions: { ...base, nodeList, nodeFamilies: [viewer] } } as any))
+            .not.toHaveProperty('clientNodeFamilies');
+        // No list, no families folded in: the server's own stay as they were.
+        expect(composeStorageRuntimeOptions({ storageOptions: base, clientBehavior: { nodeFamilies: [viewer] } } as any))
+            .not.toHaveProperty('clientNodeFamilies');
+    });
 });
