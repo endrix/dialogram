@@ -2,6 +2,7 @@ import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
 import { parseBadgesMeta, parseFactsMeta, parseLinesMeta, parseViewsMeta, type UnitBadge } from '../server/graph-load-request-options';
 import { BoundaryPortGeometry, estimatePinLabelSize, estimateTextSize, isBoundaryNodeType, portLabelSlot, SymbolGeometry, textColumns, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import { normalizeViewOptionGroups, VIEW_OPTIONS_ARG } from '@dialogram/shared';
+import { nodeFamilyName, resolveNodeFamily } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findLoopEdges } from './feedback-edges';
 import { arrangeGroupRows, framePin, groupLayoutOptions, isGroupRow, settleFrames, splitEdgesAtGroups } from './group-edges';
@@ -2304,21 +2305,8 @@ export class GraphGModelSource {
     private nodeFamilyOf(
         annotations: Array<{ name?: string; arguments?: Array<{ name?: string; value?: string }> }> | undefined
     ): string | undefined {
-        const byName = new Map((annotations ?? []).map(a => [a?.name ?? '', a]));
-        const family = (this.storageOptions?.nodeFamilies ?? []).find(candidate => {
-            const annotation = byName.get(candidate.annotation);
-            if (!annotation) {
-                return false;
-            }
-            if (!candidate.match) {
-                return true;
-            }
-            const argument = annotation.arguments?.find(arg => arg?.name === candidate.match!.argument);
-            // Values arrive serialized, so a string is quoted.
-            const value = (argument?.value ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-            return candidate.match!.oneOf.some(value_ => value_.toLowerCase() === value);
-        });
-        return family ? (family.id ?? family.annotation) : undefined;
+        const family = resolveNodeFamily(annotations, this.storageOptions?.nodeFamilies ?? []);
+        return family ? nodeFamilyName(family) : undefined;
     }
 
     private isExternalByMeta(node: PyGraphNode): boolean {

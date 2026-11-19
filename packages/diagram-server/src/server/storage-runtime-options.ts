@@ -1,4 +1,4 @@
-import type { EntityPaletteItemSpec, NodeFamilySpec } from '@dialogram/shared';
+import type { EntityPaletteItemSpec, NodeFamilySpec, NodeListSpec } from '@dialogram/shared';
 /**
  * Neutral runtime options the source-model storage (and tool palette) need.
  *
@@ -26,6 +26,19 @@ export interface StorageRuntimeOptions {
      * The class is derived from each annotation, so core names none.
      */
     nodeFamilies?: NodeFamilySpec[];
+    /**
+     * A second outline, of one node family across the hierarchy: published on
+     * the root as `wf:nodeList` (`node-list.ts`). Only where the producer
+     * gives the hierarchy's graphs (`GraphDocument.hierarchyGraphs`).
+     */
+    nodeList?: NodeListSpec;
+    /**
+     * The node families the canvas colours nodes by
+     * (`clientBehavior.nodeFamilies`, else `nodeFamilies`): the node list
+     * finds its family's nodes as the canvas shows them. Composed by the
+     * platform (extension-core `profile-storage-options.ts`).
+     */
+    clientNodeFamilies?: NodeFamilySpec[];
     /**
      * How the product navigates nested workflows (`clientBehavior.nestedNavigation`).
      * In place, a nested view's layout is the root's, stored per instance in the

@@ -21,7 +21,8 @@
  * palette icons a product contributed), the `dialogram.rerunFromHere` action handler
  * (resumes the shown run before a node's last firing) and the `dialogram.openInOwnEditor`
  * one (opens a nested workflow's file as a root of its own), the hierarchy outline panel
- * (bound to itself and as a model-root listener), and "Go to Error" (its action handler and
+ * (bound to itself and as a model-root listener) and the node list panel beside it (bound the
+ * same two ways), and "Go to Error" (its action handler and
  * the focus-after-load service, bound the same two ways), and the `dialogram.openView` action
  * handler (shows a view of a unit besides its structure, in place), the group container and its
  * boundary port (`node:group`, `port:group-boundary`), the `IMovementRestrictor` that keeps a

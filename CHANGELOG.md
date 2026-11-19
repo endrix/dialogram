@@ -78,6 +78,30 @@ platform that hands it one.
 
 ### Added
 
+- **A list of one node family across the hierarchy, beside the hierarchy
+  outline.** A product names a family (`nodeList: { family, title, codicon }`
+  on its sidecar profile, `DiagramStorageOptions.nodeList`), and the canvas
+  gets a second floating panel, its button directly under the hierarchy's:
+  the family's nodes wherever they are in the hierarchy, under the
+  instances holding them and no others. A single click finds a node in its
+  view, as the hierarchy's node rows do. A double click opens what a double
+  click on that node opens, without its view being opened: each row carries
+  the node as the canvas would draw it, with the edges into it and what the
+  last run left on them (shared `DetachedNode`), and the product's node
+  openers are given it. A node that no opener can open yet is dimmed in the
+  theme's disabled ink, says why as its tooltip, and takes no click; the
+  others read in the editor's ink. Openers say so through a new, optional
+  `NodeOpener.canOpen`, asked only by such lists. The rows are built on the
+  server from the hierarchy's export (`GraphDocument.hierarchyGraphs`, given
+  by the sidecar toolkit's model source with `cliHierarchyArgs`), found by
+  the family rule the canvas colours by (now one function, shared
+  `resolveNodeFamily`, used by the canvas and the server too), and given
+  the run's tokens by the canvas's own matching; each export's graphs are
+  transformed once. A row may also be made unavailable by its producer
+  (`HierarchyOutlineEntry.unavailable`). The outline panel is now one kind
+  of panel (`OutlinePanelConfig`) of which the hierarchy and the node list
+  are two.
+
 - **A node opened in place may start open, keep its ports on its frame and
   be titled, and is then still that node.** For a node that is a container
   of a design, such as a block of code and the registers it holds, a producer

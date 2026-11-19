@@ -11,7 +11,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { URI } from 'vscode-uri';
-import { HierarchyCache, fileHash, findInstance, outlineOf, type HierarchyEntry } from '../src/server/hierarchy-cache';
+import { HierarchyCache, fileHash, findInstance, graphsOf, outlineOf, type HierarchyEntry } from '../src/server/hierarchy-cache';
 import { CliGraphModelSource } from '../src/server/cli-graph-model-source';
 
 const graph = (label: string) => ({ version: '1', graph: { id: `wf:${label}`, nodes: [{ id: label, label }], edges: [] } });
@@ -44,6 +44,18 @@ describe('the hierarchy tree', () => {
         expect(JSON.stringify(outline)).not.toContain('b1-view');
         expect(outline.children[0]).toMatchObject({ path: ['b1'], nodeId: 'node:root:b1', sourceUri: URI.file('/w/block.py').toString() });
         expect(outline.children[1].error).toBe('ValueError: no');
+    });
+
+    it('gives every instance\'s graph, root first, the export\'s own documents, once per export', () => {
+        const exported = { ...graph('top-view'), hierarchy: tree('/w/top.py', '/w/block.py') };
+        const graphs = graphsOf(exported);
+        // b2 did not elaborate: it has no graph to give.
+        expect(graphs.map(g => g.path)).toEqual([[], ['b1'], ['b1', 'leaf']]);
+        expect((graphs[0].document.graph as any).id).toBe('wf:top-view');
+        expect(graphs[0].document).not.toHaveProperty('hierarchy');
+        expect(graphs[1]).toMatchObject({ workflowName: 'block', sourceUri: URI.file('/w/block.py').toString() });
+        expect(graphs[1].document).toBe(exported.hierarchy.children[0].graph);
+        expect(graphsOf(exported)).toBe(graphs);
     });
 });
 
@@ -191,6 +203,9 @@ describe('a view read from the hierarchy', () => {
         expect(rootDoc.hierarchy.children.map((c: any) => c.path)).toEqual([['b1'], ['b2']]);
         expect(nestedDoc.graph.id).toBe('wf:b1-view');
         expect(nestedDoc.hierarchy.workflowName).toBe('top');
+        // Both views carry the hierarchy's graphs, for a list of nodes across it.
+        expect(rootDoc.hierarchyGraphs.map((g: any) => g.path)).toEqual([[], ['b1'], ['b1', 'leaf']]);
+        expect(nestedDoc.hierarchyGraphs).toBe(rootDoc.hierarchyGraphs);
         expect(exports()).toBe(1);
     });
 

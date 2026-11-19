@@ -8,7 +8,7 @@
  */
 
 /** @jsx svg */
-import type { NodeFamilySpec } from '@dialogram/shared';
+import { resolveNodeFamily, type NodeFamilySpec } from '@dialogram/shared';
 import { injectable } from 'inversify';
 import { VNode } from 'snabbdom';
 import { html } from 'sprotty/lib/lib/jsx';
@@ -99,38 +99,6 @@ const BOUNDARY_NODE_HEIGHT = BoundaryPortGeometry.ROW_PITCH_PX;
 
 // Icon size for center node icons
 const NODE_ICON_SIZE = 36;
-
-/**
- * The family a node belongs to, and what it looks like.
- *
- * Both come from the product: `task` and `network` are the platform's own
- * concepts, but a node that is an agent, a tool or a source belongs to one
- * product's taxonomy. Holding those here would mean the platform learning one
- * vocabulary and drawing every other product's graph plain.
- *
- * Declaration order decides, so a node in two families lands in the one listed
- * first — a node can carry the annotation that makes it openable AND the one
- * that says what it is, and only the second describes the node.
- */
-function resolveNodeFamily(
-    annotations: Array<{ name?: string; arguments?: Array<{ name?: string; value?: string }> }> | undefined,
-    families: readonly NodeFamilySpec[]
-): NodeFamilySpec | undefined {
-    const byName = new Map((annotations ?? []).map(a => [a?.name ?? '', a]));
-    return families.find(family => {
-        const annotation = byName.get(family.annotation);
-        if (!annotation) {
-            return false;
-        }
-        if (!family.match) {
-            return true;
-        }
-        const argument = annotation.arguments?.find(arg => arg?.name === family.match!.argument);
-        // Values arrive serialized, so a string is quoted.
-        const value = (argument?.value ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-        return family.match.oneOf.some(candidate => candidate.toLowerCase() === value);
-    });
-}
 
 /** Internals reached by the family tests; not part of the module's surface. */
 

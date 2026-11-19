@@ -8,6 +8,11 @@
  * options. So it is folded in here, on the one channel that already carries the
  * product-shaped values into the server's DI container.
  *
+ * The node list (`storageOptions.nodeList`) is the other: it finds its nodes
+ * as the canvas colours them, by the families the client is given
+ * (`clientBehavior.nodeFamilies`, else `storageOptions.nodeFamilies`, as the
+ * diagram editor provider hands them over), so those are folded in beside it.
+ *
  * The only subtlety is a profile that suppresses creation and carries no storage
  * options at all. Something has to be bound for the flag to arrive, so one is
  * synthesized — with the exact defaults every reader of these options already
@@ -21,7 +26,7 @@ import type { DiagramProfile } from '../../api';
 import type { StorageRuntimeOptions } from '@dialogram/diagram-server';
 
 export function composeStorageRuntimeOptions(
-    profile: Pick<DiagramProfile, 'storageOptions' | 'supportsElementCreation'>
+    profile: Pick<DiagramProfile, 'storageOptions' | 'supportsElementCreation' | 'clientBehavior'>
 ): StorageRuntimeOptions | undefined {
     const suppressesElementCreation = profile.supportsElementCreation === false;
     if (!profile.storageOptions && !suppressesElementCreation) {
@@ -29,10 +34,14 @@ export function composeStorageRuntimeOptions(
         // that never had storage options does not acquire them by accident.
         return undefined;
     }
+    const clientNodeFamilies = profile.storageOptions?.nodeList
+        ? profile.clientBehavior?.nodeFamilies ?? profile.storageOptions.nodeFamilies
+        : undefined;
     return {
         settingsNamespace: '',
         operationPrefix: '',
         ...profile.storageOptions,
-        supportsElementCreation: profile.supportsElementCreation
+        supportsElementCreation: profile.supportsElementCreation,
+        ...(clientNodeFamilies ? { clientNodeFamilies } : {})
     };
 }

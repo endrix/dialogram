@@ -120,6 +120,69 @@ export interface GraphDocument {
      * (`ModelSourceOptions.signal`) are not taken as the file's.
      */
     viewOptions?: ViewOptionGroup[];
+    /**
+     * The graph of every instance in the hierarchy, root first, when the
+     * producer exported the whole hierarchy at once. They are read for a list
+     * of one family's nodes across the hierarchy
+     * (`DiagramStorageOptions.nodeList`), and never published as they are.
+     */
+    hierarchyGraphs?: HierarchyGraph[];
+}
+
+/** One instance's graph in a hierarchy export (`GraphDocument.hierarchyGraphs`). */
+export interface HierarchyGraph {
+    /** Instance names from the root; `[]` for the root. */
+    path: string[];
+    workflowName: string;
+    sourceUri?: string;
+    /** The instance's own graph document, as a view of it would be given. */
+    document: GraphDocument;
+}
+
+/**
+ * A second outline beside the hierarchy: the nodes of one family, wherever
+ * they are in the hierarchy, under the instances holding them. A product
+ * names the family (`DiagramStorageOptions.nodeList`); the platform builds
+ * the rows from the hierarchy's graphs, each node row carrying the node as
+ * the canvas would draw it (`HierarchyOutlineEntry.detachedNode`), so a
+ * double click opens what a double click on that node opens, without its
+ * view being opened. A row the product's node opener cannot open yet
+ * (`NodeOpener.canOpen`: a viewer before any run, say) is dimmed and takes
+ * no click.
+ */
+export interface NodeListSpec {
+    /** The node family listed: a `NodeFamilySpec`'s `id`, else its annotation. */
+    family: string;
+    /** The panel's title, in plain words ("Viewers"). */
+    title: string;
+    /** A codicon for its button, without the `codicon-` prefix ("eye"). */
+    codicon?: string;
+}
+
+/** The root model argument a node list is published on, as JSON (`NodeListOutline`). */
+export const NODE_LIST_ARG = 'wf:nodeList';
+
+/** A node list as it is published (`NODE_LIST_ARG`). */
+export interface NodeListOutline {
+    title: string;
+    codicon?: string;
+    /** The root instance, holding the instances and nodes listed. */
+    outline: HierarchyOutlineEntry;
+}
+
+/**
+ * A node of another view, as the canvas would draw it: the element, the
+ * edges into it with what the last run left on them, and the root's run
+ * arguments (`wf:viewerOverlayRunId`, ...). Enough for a product's node
+ * opener, which reads a node, its root's edges and its root's arguments,
+ * to work on it as on a node of the view shown.
+ */
+export interface DetachedNode {
+    id: string;
+    type: string;
+    args?: Record<string, unknown>;
+    edges: Array<{ id: string; type: string; sourceId: string; targetId: string; args?: Record<string, unknown> }>;
+    rootArgs?: Record<string, unknown>;
 }
 
 /**
@@ -209,6 +272,14 @@ export interface HierarchyOutlineEntry {
     family?: string;
     /** Short marks after the label, as a node header's badges. */
     badges?: Array<{ text: string; tone?: string }>;
+    /**
+     * Why the row cannot be acted on now, said as its tooltip: the row is
+     * dimmed and takes no click. In a node list, a row whose node no
+     * product opener can open yet is so too (`NodeOpener.canOpen`).
+     */
+    unavailable?: string;
+    /** A node list's node, as the canvas would draw it: what its double click opens. */
+    detachedNode?: DetachedNode;
 }
 
 export interface ModelSourceOptions {

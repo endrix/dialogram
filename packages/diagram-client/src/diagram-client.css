@@ -3843,6 +3843,28 @@ details[open] > summary .agent-chat-expand-arrow {
     color: var(--vscode-list-activeSelectionForeground, #ffffff);
 }
 
+/* A row that cannot be acted on now (HierarchyOutlineEntry.unavailable, or a
+   node list's node no opener can open yet): dimmed, its tooltip says why, and
+   it takes no click. */
+.workflow-hierarchy-outline-row.unavailable {
+    cursor: default;
+    color: var(--vscode-disabledForeground, rgba(204, 204, 204, 0.5));
+}
+
+.workflow-hierarchy-outline-row.unavailable:hover {
+    background: transparent;
+}
+
+.workflow-hierarchy-outline-row.unavailable .workflow-hierarchy-outline-type {
+    color: inherit;
+}
+
+/* The node list's nodes that can be opened read in the editor's own ink
+   (black in a light theme), against the dimmed ones that cannot yet. */
+.workflow-node-list .workflow-hierarchy-outline-row.role-node:not(.unavailable):not(.current) {
+    color: var(--vscode-editor-foreground, var(--vscode-foreground, #cccccc));
+}
+
 .workflow-hierarchy-outline-twisty {
     width: 16px;
     flex: none;

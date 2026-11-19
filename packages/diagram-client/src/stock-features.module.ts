@@ -33,6 +33,7 @@ import {
     StatusSourceContextMenuItemProvider
 } from './status-source-menu';
 import { HierarchyOutlinePanel } from './hierarchy-outline';
+import { NodeListOutlinePanel } from './node-list-outline';
 import { FocusAfterLoadService, RevealNodeActionHandler } from './focus-after-load';
 import { ReadOnlyViewMarker } from './read-only-view';
 import { NodeActionActionHandler } from './node-actions';
@@ -83,6 +84,10 @@ export const workflowFeaturesModule = new ContainerModule((bind, unbind, isBound
     // carries a hierarchy.
     bind(HierarchyOutlinePanel).toSelf().inSingletonScope();
     bind(TYPES.IGModelRootListener).toService(HierarchyOutlinePanel);
+    // The node list beside it, fed by `wf:nodeList`: one family's nodes across
+    // the hierarchy (a workflow's viewers), when the product names one.
+    bind(NodeListOutlinePanel).toSelf().inSingletonScope();
+    bind(TYPES.IGModelRootListener).toService(NodeListOutlinePanel);
 
     // Selects a node once the view it is in has loaded ("Go to Error").
     bind(FocusAfterLoadService).toSelf().inSingletonScope();
