@@ -13,6 +13,12 @@
  * group's total, is asked again for the rest from where it stopped; an
  * answer with no rows there shows the rest of the page as not loaded.
  *
+ * A page is queued once, however often it is asked for while it is queued
+ * or on its way: the panel asks every lazy group it has no count for at
+ * each layout. One queued under a filter the reader has typed past is not
+ * asked when its turn comes, unless a caller of `rowAt` waits for it; it
+ * is asked afresh if the reader comes back to that filter.
+ *
  * DOM-free: what reaches the host is the transport the panel gives it.
  */
 import { OUTLINE_PAGE_SIZE, type OutlinePage, type OutlinePageRow } from '@dialogram/shared';
@@ -39,10 +45,11 @@ interface Listing {
 /** Pages kept of one listing; the ones shown longest ago go first. */
 const KEPT_PAGES = 400;
 /**
- * Listings kept of filters other than the one being asked under (a group
- * under a filter); the oldest go first. Every group's listing under the
- * filter in use is kept: the panel asks every lazy group for its count at
- * each layout, and a listing forgotten there is asked again at the next.
+ * Listings kept (a group under a filter), those of the filter in use
+ * counted: past it, the oldest of other filters go. Every group's listing
+ * under the filter in use is kept, however many: the panel asks every lazy
+ * group for its count at each layout, and a listing forgotten there is
+ * asked again at the next.
  */
 const KEPT_LISTINGS = 12;
 /** Requests to the host at once for what the scroll shows. */
@@ -56,11 +63,22 @@ const ASKED_IN_FLIGHT = 8;
 export class OutlinePager {
     private readonly listings = new Map<string, Listing>();
     private readonly inFlight = new Set<string>();
-    /** Pages asked for by name (a count, a row to reveal): asked first, and never forgotten. */
+    /**
+     * Pages asked for by name (a count, a row to reveal): asked first, and
+     * forgotten only when the filter they are under is no longer in use and
+     * nothing waits for them.
+     */
     private asked: Array<{ group: string; query: string; page: number }> = [];
+    /** The pages in {@link asked}, each once: one queued or in flight is not queued again. */
+    private readonly queued = new Set<string>();
     /** Pages the scroll shows: replaced by each scroll. */
     private wanted: Array<{ group: string; query: string; page: number }> = [];
     private readonly waiters = new Map<string, Array<() => void>>();
+    /**
+     * The filter in use: the one the panel last asked under, for a count
+     * ({@link total}) or for the rows it shows ({@link want}).
+     */
+    private inUse = '';
     private generation = 0;
 
     constructor(
@@ -75,6 +93,7 @@ export class OutlinePager {
         this.listings.clear();
         this.inFlight.clear();
         this.asked = [];
+        this.queued.clear();
         this.wanted = [];
         for (const waiting of this.waiters.values()) {
             for (const wake of waiting) {
@@ -84,8 +103,12 @@ export class OutlinePager {
         this.waiters.clear();
     }
 
-    /** How many rows the group has under the filter, or `undefined` before the host has said; asks it then. */
+    /**
+     * How many rows the group has under the filter, or `undefined` before
+     * the host has said; asks it then. The filter is the one in use from now.
+     */
     total(group: string, query: string): number | undefined {
+        this.inUse = query;
         const listing = this.listing(group, query);
         if (listing.total === undefined && !listing.failed.has(0)) {
             this.ask(group, query, [0]);
@@ -117,11 +140,13 @@ export class OutlinePager {
 
     /**
      * The rows the panel shows now, by group: ask for the pages they are on.
-     * What was wanted before and not yet asked is forgotten.
+     * What was wanted before and not yet asked is forgotten. Their filter is
+     * the one in use from now.
      */
     want(ranges: Array<{ group: string; query: string; from: number; to: number }>): void {
         const wanted: Array<{ group: string; query: string; page: number }> = [];
         for (const range of ranges) {
+            this.inUse = range.query;
             for (let page = Math.floor(Math.max(0, range.from) / this.pageSize); page <= Math.floor(range.to / this.pageSize); page++) {
                 wanted.push({ group: range.group, query: range.query, page });
             }
@@ -146,7 +171,7 @@ export class OutlinePager {
                 break;
             }
             await new Promise<void>(resolve => {
-                const id = `${key(group, query)}\u0000${page}`;
+                const id = pageId(group, query, page);
                 this.waiters.set(id, [...(this.waiters.get(id) ?? []), resolve]);
                 this.ask(group, query, [page]);
             });
@@ -177,13 +202,14 @@ export class OutlinePager {
         if (!listing) {
             listing = { query, pages: new Map(), short: new Set(), failed: new Map(), used: [] };
             this.listings.set(id, listing);
-            // The oldest of other filters go; none under this one, however
-            // many lazy groups the outline has.
+            // The oldest of other filters than the one in use go; none of
+            // that one, however many lazy groups the outline has, and not
+            // this one, which is wanted now.
             for (const [other, kept] of this.listings) {
                 if (this.listings.size <= KEPT_LISTINGS) {
                     break;
                 }
-                if (kept.query !== query) {
+                if (kept.query !== this.inUse && other !== id) {
                     this.listings.delete(other);
                 }
             }
@@ -196,19 +222,35 @@ export class OutlinePager {
     }
 
     private ask(group: string, query: string, pages: number[]): void {
-        this.asked.push(...pages.map(page => ({ group, query, page })));
+        for (const page of pages) {
+            const id = pageId(group, query, page);
+            if (!this.queued.has(id) && !this.inFlight.has(id)) {
+                this.queued.add(id);
+                this.asked.push({ group, query, page });
+            }
+        }
         this.pump();
     }
 
     private pump(): void {
         while ((this.asked.length > 0 && this.inFlight.size < ASKED_IN_FLIGHT)
             || (this.wanted.length > 0 && this.inFlight.size < IN_FLIGHT)) {
-            const next = (this.asked.length > 0 && this.inFlight.size < ASKED_IN_FLIGHT ? this.asked : this.wanted).shift()!;
-            const listing = this.listing(next.group, next.query);
-            const id = `${key(next.group, next.query)}\u0000${next.page}`;
+            const byName = this.asked.length > 0 && this.inFlight.size < ASKED_IN_FLIGHT;
+            const next = (byName ? this.asked : this.wanted).shift()!;
+            const id = pageId(next.group, next.query, next.page);
+            if (byName) {
+                this.queued.delete(id);
+            }
             if (this.inFlight.has(id)) {
                 continue;
             }
+            if (next.query !== this.inUse && !this.waiters.has(id)) {
+                // Under a filter the reader has left, and no `rowAt` waits
+                // for it: not asked, nor its listing made. Whoever asks for
+                // it again (the filter is back) has it queued afresh.
+                continue;
+            }
+            const listing = this.listing(next.group, next.query);
             if ((listing.pages.has(next.page) && !listing.short.has(next.page)) || listing.failed.has(next.page)
                 || (listing.total !== undefined && next.page * this.pageSize >= listing.total && next.page > 0)) {
                 // Nothing to ask: whoever waits for it has what there is.
@@ -285,6 +327,10 @@ export class OutlinePager {
 
 function key(group: string, query: string): string {
     return `${group}\u0000${query}`;
+}
+
+function pageId(group: string, query: string, page: number): string {
+    return `${key(group, query)}\u0000${page}`;
 }
 
 function touch(used: number[], page: number): void {

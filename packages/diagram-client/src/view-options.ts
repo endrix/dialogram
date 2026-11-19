@@ -209,7 +209,9 @@ export class ViewOptionsService {
         if (!shownFile) {
             return;
         }
-        const next = applyViewOptionTurns(this.shown, turns);
+        // A host's pick racing the reader's click in a one-of group would
+        // check two lines: the group keeps the click until its answer comes.
+        const next = applyHeard(this.shown, turns);
         this.show(next, viewOptionTurnsBetween(this.shown, next), 'host');
     }
 
