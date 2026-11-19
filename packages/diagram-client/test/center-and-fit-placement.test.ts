@@ -6,8 +6,10 @@
  *
  * Center puts the content's middle in the middle of the largest free area.
  * Content that fits the canvas but not that area would run off the canvas's
- * edge: it stops a margin inside it instead. And a zoom the limits change
- * keeps the content's middle where the command put it.
+ * edge: it stops a margin inside it instead. Content larger than the canvas
+ * covers all of it, as near that middle as it can. And a zoom the limits
+ * change keeps the content's middle where the command put it, the content
+ * then kept on the canvas by the same rule.
  */
 import 'reflect-metadata';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -20,11 +22,20 @@ type Box = { x: number; y: number; width: number; height: number };
 let covered: Box[] = [];
 vi.mock('../src/canvas-overlays', () => ({ overlaysOn: () => covered, CANVAS_OVERLAYS: [] }));
 vi.mock('../src/vscode-ui', async () => (await import('./panel-harness/harness')).vscodeUiModule());
+/** Whether `keepOnCanvas` does its work: off, it hands the viewport back as it was given. */
+let keepingOnCanvas = true;
+vi.mock('../src/fit-geometry', async importOriginal => {
+    const actual = await importOriginal<typeof import('../src/fit-geometry')>();
+    return {
+        ...actual,
+        keepOnCanvas: (...args: Parameters<typeof actual.keepOnCanvas>) => keepingOnCanvas ? actual.keepOnCanvas(...args) : args[0]
+    };
+});
 
 const { SurfaceAwareCenterCommand, HiddenRenderRecord } = await import('../src/viewport-content');
 const { FitClearOfOverlaysCommand } = await import('../src/fit-clear-of-overlays');
 const { DiagramSurfaceHost } = await import('../src/diagram-surface-host');
-const { FIT_MARGIN } = await import('../src/fit-geometry');
+const { FIT_MARGIN, keepOnCanvas } = await import('../src/fit-geometry');
 const { applyViewportLimits } = await import('../src/viewport-limits');
 
 const requireSprotty = createRequire(require.resolve('@eclipse-glsp/client'));
@@ -73,6 +84,7 @@ const palette = (width: number, size: { width: number; height: number }): Box =>
 
 afterEach(() => {
     covered = [];
+    keepingOnCanvas = true;
 });
 
 describe('Center, with the palette over the canvas', () => {
@@ -98,7 +110,7 @@ describe('Center, with the palette over the canvas', () => {
         expect(shown.bottom).toBeCloseTo(600);
     });
 
-    it('a diagram larger than the canvas still has its middle in the middle of the free area', () => {
+    it('a 2000 × 1500 diagram, which covers the 1200 × 800 canvas from there, still has its middle in the middle of the free area', () => {
         covered = [palette(1200, { width: 240, height: 400 })];
         const content = { x: 0, y: 0, width: 2000, height: 1500 };
         const shown = onScreen(content, center(model({ width: 1200, height: 800 }, [content])));
@@ -124,6 +136,66 @@ describe('Center, with the palette over the canvas', () => {
     });
 });
 
+describe('Center, with content larger than the canvas', () => {
+    // On a 1200 × 800 canvas with the palette, the free area is the 915 px
+    // left of it, its middle at x 457.5. Centred there at zoom 1, a diagram
+    // wider than the canvas but narrower than 1485 px ran off the left edge
+    // and left a strip of the canvas empty on the right.
+    it.each([
+        // width, left, right
+        [1201, -1, 1200], // it was drawn from −143 to 1058
+        [1250, -50, 1200], // from −167.5 to 1082.5, 117.5 px of the canvas empty on the right
+        [1400, -200, 1200], // from −242.5 to 1157.5
+        [2000, -542.5, 1457.5] // wide enough to cover the canvas from the free area's middle: as it was
+    ])('a diagram %d px wide covers the whole canvas, as near the free area’s middle as that allows', (width, left, right) => {
+        covered = [palette(1200, { width: 240, height: 400 })];
+        const content = { x: 0, y: 0, width, height: 500 };
+        const shown = onScreen(content, center(model({ width: 1200, height: 800 }, [content])));
+        expect(shown.left).toBeLessThanOrEqual(0);
+        expect(shown.right).toBeGreaterThanOrEqual(1200);
+        expect(shown.left).toBeCloseTo(left);
+        expect(shown.right).toBeCloseTo(right);
+        expect(shown.top).toBeCloseTo(150);
+    });
+
+    it('a diagram 900 px tall under a chat card covers the whole canvas’s height', () => {
+        // The chat card, bottom centre and half the canvas's width: the free area is the 480 px above it.
+        covered = [{ x: 300, y: 480, width: 600, height: 300 }];
+        const content = { x: 0, y: 0, width: 1000, height: 900 };
+        const shown = onScreen(content, center(model({ width: 1200, height: 800 }, [content])));
+        // Its middle in the middle of the free area, it was drawn from −210 to 690, the canvas empty below it.
+        expect(shown.top).toBeCloseTo(-100);
+        expect(shown.bottom).toBeCloseTo(800);
+        // Its width fits the free area: centred in it.
+        expect(shown.left).toBeCloseTo(100);
+        expect(shown.right).toBeCloseTo(1100);
+    });
+
+    it('a diagram exactly as wide as the canvas fills it, edge to edge', () => {
+        covered = [palette(1200, { width: 240, height: 400 })];
+        const content = { x: 0, y: 0, width: 1200, height: 500 };
+        const shown = onScreen(content, center(model({ width: 1200, height: 800 }, [content])));
+        expect(shown.left).toBeCloseTo(0);
+        expect(shown.right).toBeCloseTo(1200);
+    });
+
+    it('content that fits a canvas under twice the margin stops as far inside its edge as there is room', () => {
+        // A 30 px canvas whose right 20 px are covered: the free area is 10 px wide.
+        covered = [{ x: 10, y: 0, width: 20, height: 30 }];
+        const content = { x: 0, y: 0, width: 20, height: 10 };
+        const shown = onScreen(content, center(model({ width: 30, height: 30 }, [content])));
+        expect(shown.left).toBeCloseTo(5);
+        expect(shown.right).toBeCloseTo(25);
+        expect(shown.top).toBeCloseTo(10);
+    });
+
+    it('a viewport whose content or canvas has no size it can read is left as it is', () => {
+        const viewport = { scroll: { x: 3, y: 4 }, zoom: 1 };
+        expect(keepOnCanvas(viewport, { x: 0, y: 0, width: NaN, height: NaN }, { width: 1200, height: 800 })).toEqual(viewport);
+        expect(keepOnCanvas(viewport, { x: 0, y: 0, width: 2000, height: 1000 }, { width: NaN, height: NaN })).toEqual(viewport);
+    });
+});
+
 describe('Fit, when a zoom limit applies', () => {
     it('B1: a 100 × 50 node fitted at a max of 5 is in the middle of an 800 × 600 canvas', () => {
         const content = { x: 0, y: 0, width: 100, height: 50 };
@@ -141,6 +213,75 @@ describe('Fit, when a zoom limit applies', () => {
         const shown = onScreen(content, viewport);
         expect(shown.middle.x).toBeCloseTo(400);
         expect(shown.middle.y).toBeCloseTo(300);
+    });
+
+    it('a 2200 × 1000 diagram fitted at a floor of 0.5 stays on the 1200 × 800 canvas, a margin inside its left edge', () => {
+        covered = [palette(1200, { width: 240, height: 400 })];
+        const content = { x: 0, y: 0, width: 2200, height: 1000 };
+        const viewport = fit(model({ width: 1200, height: 800 }, [content]), { ...STOCK, zoomLimits: { min: 0.5, max: 20 } });
+        expect(viewport.zoom).toBe(0.5);
+        // Its middle kept in the middle of the 915 px left of the palette, it was drawn from −92.5 to 1007.5.
+        const shown = onScreen(content, viewport);
+        expect(shown.left).toBeCloseTo(FIT_MARGIN);
+        expect(shown.right).toBeCloseTo(1100 + FIT_MARGIN);
+        expect(shown.top).toBeCloseTo(150);
+        expect(shown.bottom).toBeCloseTo(650);
+    });
+
+    it('an 11 000 × 4000 diagram fitted at GLSP’s floor of 0.1 stays on the canvas, a margin above its bottom edge', () => {
+        covered = [palette(1200, { width: 240, height: 400 })];
+        const content = { x: 0, y: 0, width: 11_000, height: 4000 };
+        const viewport = fit(model({ width: 1200, height: 800 }, [content]));
+        expect(viewport.zoom).toBe(0.1);
+        // Fitted below the palette, its middle kept there, it was drawn from 417.5 to 817.5, 17.5 px off the bottom.
+        const shown = onScreen(content, viewport);
+        expect(shown.left).toBeCloseTo(50);
+        expect(shown.right).toBeCloseTo(1150);
+        expect(shown.top).toBeCloseTo(800 - FIT_MARGIN - 400);
+        expect(shown.bottom).toBeCloseTo(800 - FIT_MARGIN);
+    });
+
+    it('a 1300 × 1000 diagram a floor of 1 leaves larger than the canvas covers all of it, as Center’s does', () => {
+        covered = [palette(1200, { width: 240, height: 400 })];
+        const content = { x: 0, y: 0, width: 1300, height: 1000 };
+        const viewport = fit(model({ width: 1200, height: 800 }, [content]), { ...STOCK, zoomLimits: { min: 1, max: 20 } });
+        expect(viewport.zoom).toBe(1);
+        // Its middle kept in the middle of the free area, it was drawn from −192.5 to 1107.5.
+        const shown = onScreen(content, viewport);
+        expect(shown.left).toBeCloseTo(-100);
+        expect(shown.right).toBeCloseTo(1200);
+        expect(shown.top).toBeCloseTo(-100);
+        expect(shown.bottom).toBeCloseTo(900);
+    });
+
+    it('at a zoom the limits leave alone, is the same with and without keeping the content on the canvas', () => {
+        const canvas = { width: 1200, height: 800 };
+        const cases: Array<{ covered: Box[]; content: Box }> = [
+            { covered: [palette(1200, { width: 240, height: 400 })], content: { x: 0, y: 0, width: 2200, height: 1000 } },
+            { covered: [palette(1200, { width: 240, height: 400 })], content: { x: -300, y: 40, width: 3000, height: 900 } },
+            { covered: [palette(1200, { width: 240, height: 400 })], content: { x: 0, y: 0, width: 400, height: 1600 } },
+            { covered: [palette(1200, { width: 240, height: 400 }), { x: 300, y: 480, width: 600, height: 300 }], content: { x: 10, y: 10, width: 1000, height: 500 } },
+            { covered: [], content: { x: 0, y: 0, width: 300, height: 200 } },
+            // No free area with room for the margin: Sprotty's fit, edge to edge.
+            { covered: [{ x: 0, y: 0, ...canvas }], content: { x: 0, y: 0, width: 1000, height: 500 } }
+        ];
+        for (const { covered: over, content } of cases) {
+            covered = over;
+            keepingOnCanvas = true;
+            const kept = fit(model(canvas, [content]));
+            keepingOnCanvas = false;
+            const left = fit(model(canvas, [content]));
+            expect(kept.zoom).toBeGreaterThan(STOCK.zoomLimits.min);
+            expect(kept.zoom).toBeLessThan(STOCK.zoomLimits.max);
+            expect(kept).toEqual(left);
+        }
+        // The comparison sees the clamp: at a floor of 0.5 the first case's two differ.
+        covered = cases[0].covered;
+        const floor = { ...STOCK, zoomLimits: { min: 0.5, max: 20 } };
+        keepingOnCanvas = true;
+        const kept = fit(model(canvas, [cases[0].content]), floor);
+        keepingOnCanvas = false;
+        expect(fit(model(canvas, [cases[0].content]), floor)).not.toEqual(kept);
     });
 });
 
@@ -210,6 +351,32 @@ describe('a surface’s reveal', () => {
         const viewport = viewportOf();
         expect(viewport.zoom).toBe(5);
         expect(onScreen(content, viewport).middle).toEqual({ x: 400, y: 300 });
+    });
+
+    it('with fit, at a floor of 0.5, keeps a 2200 × 1000 rectangle on the canvas, as Fit does', () => {
+        covered = [palette(1200, { width: 240, height: 400 })];
+        const { reveal, viewportOf } = hostOn({ width: 1200, height: 800 }, { min: 0.5, max: 20 });
+        const content = { x: 0, y: 0, width: 2200, height: 1000 };
+        reveal(content, { fit: true, animate: false });
+        const viewport = viewportOf();
+        expect(viewport.zoom).toBe(0.5);
+        // It was drawn from −92.5 to 1007.5.
+        const shown = onScreen(content, viewport);
+        expect(shown.left).toBeCloseTo(FIT_MARGIN);
+        expect(shown.right).toBeCloseTo(1100 + FIT_MARGIN);
+        expect(shown.top).toBeCloseTo(150);
+        expect(shown.bottom).toBeCloseTo(650);
+    });
+
+    it('without fit, has a rectangle 1250 px wide cover the canvas, as Center does', () => {
+        covered = [palette(1200, { width: 240, height: 400 })];
+        const { reveal, viewportOf } = hostOn({ width: 1200, height: 800 });
+        const content = { x: 0, y: 0, width: 1250, height: 500 };
+        reveal(content, { animate: false });
+        // It was drawn from −167.5 to 1082.5.
+        const shown = onScreen(content, viewportOf());
+        expect(shown.left).toBeCloseTo(-50);
+        expect(shown.right).toBeCloseTo(1200);
     });
 });
 

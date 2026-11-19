@@ -93,17 +93,25 @@ export function viewportCentredIn(content: Rect, area: Rect, zoom: number): View
  * canvas, `margin` screen pixels inside the edge where there is room for it.
  * Centred in a free area narrower than it, content that fits the canvas
  * would run off the canvas's edge: it stops inside the edge instead, as near
- * the free area's middle as the canvas lets it. Content already all on the
- * canvas, and content larger than it, are left where they are.
+ * the free area's middle as the canvas lets it. Along an axis on which it is
+ * larger than the canvas, content that would leave part of the canvas empty
+ * while it runs off the other edge is moved to cover the whole canvas, as
+ * near the free area's middle as that allows. Content already all on the
+ * canvas, and content larger than it that already covers it, are left where
+ * they are.
  */
 export function keepOnCanvas(viewport: Viewport, content: Rect, canvas: { width: number; height: number }, margin = FIT_MARGIN): Viewport {
     const zoom = viewport.zoom;
     const along = (scroll: number, start: number, size: number, extent: number): number => {
         const shown = size * zoom;
+        const at = (start - scroll) * zoom;
+        if (shown > extent) {
+            const covering = Math.min(Math.max(at, extent - shown), 0);
+            return covering === at ? scroll : start - covering / zoom;
+        }
         if (!(shown <= extent)) {
             return scroll;
         }
-        const at = (start - scroll) * zoom;
         if (at >= 0 && at + shown <= extent) {
             return scroll;
         }

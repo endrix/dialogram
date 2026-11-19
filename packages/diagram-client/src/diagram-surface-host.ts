@@ -575,12 +575,12 @@ export class DiagramSurfaceHost implements ISelectionListener {
         const canvas = this.root!.canvasBounds;
         // As Fit and Center do it: fitted clear of the overlays (else into the
         // whole canvas), at a zoom within the limits with the middle kept; or
-        // centred in the free area at the zoom there is, on the canvas.
+        // centred in the free area at the zoom there is. On the canvas, either way.
         const fitted = options.fit
             ? viewportClearOf(bounds, canvas, overlaysOn(canvas), FIT_MARGIN) ?? viewportClearOf(bounds, canvas, [], FIT_MARGIN)
             : undefined;
         const framed = options.fit
-            ? fitted && withinZoomLimits(fitted, bounds, this.viewerOptions?.zoomLimits)
+            ? fitted && keepOnCanvas(withinZoomLimits(fitted, bounds, this.viewerOptions?.zoomLimits), bounds, canvas)
             : keepOnCanvas(viewportCentredIn(bounds, this.freeArea() ?? { x: 0, y: 0, width: viewport.width, height: viewport.height }, viewport.zoom), bounds, canvas);
         if (framed) {
             this.setViewport({ scrollX: framed.scroll.x, scrollY: framed.scroll.y, zoom: framed.zoom }, animate);

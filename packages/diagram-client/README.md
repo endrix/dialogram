@@ -345,9 +345,11 @@ startStockDiagram({ features: [new ContainerModule(bind => { bind(DiagramSurface
   stays in the panel.
 - `context.reveal(bounds)` centres a rectangle in the free area at the zoom
   there is, as Center does: a rectangle that fits the canvas but not the
-  free area stays on the canvas, a margin inside its edge. `{ fit: true }`
-  fits it as Fit does, into the whole canvas when no free area has room for
-  the margin, and a zoom the limits stop keeps it in the middle.
+  free area stays on the canvas, a margin inside its edge, and one wider or
+  taller than the canvas covers its whole width or height, as near the free
+  area's middle as that allows. `{ fit: true }` fits it as Fit does, into
+  the whole canvas when no free area has room for the margin; a zoom the
+  limits stop keeps it in the middle, and on the canvas by the same rule.
   `context.freeArea()` is that area, the canvas less the platform's overlays.
   `reveal` and `fit` are animated unless `{ animate: false }`; `setViewport`,
   for your own pan and zoom, is not unless `{ animate: true }`.

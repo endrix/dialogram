@@ -152,7 +152,10 @@ export function viewportContentBounds(
 /**
  * Set a viewport command's old and new viewports around `bounds`, as Sprotty's
  * `BoundsAwareViewportCommand.initialize` does once it has its bounds; a zoom
- * the limits change keeps the content's middle where the command put it.
+ * the limits change keeps the content's middle where the command put it, and
+ * the content is then kept on the canvas as Center keeps it (`keepOnCanvas`).
+ * A Fit the limits leave alone is on the canvas already, with its margin,
+ * and does not move.
  */
 export function frameBounds(
     model: GModelRoot,
@@ -174,9 +177,11 @@ export function frameBounds(
     }
     const options = (viewerOptions ?? {}) as any;
     const zoomed = withinZoomLimits(proposed, bounds, options.zoomLimits);
+    const canvas = root.canvasBounds;
+    const placed = isValidBounds(canvas) && canvas.width > 0 && canvas.height > 0 ? keepOnCanvas(zoomed, bounds, canvas) : zoomed;
     return {
         oldViewport,
-        newViewport: limitViewport(zoomed, root.canvasBounds as any, options.horizontalScrollLimits, options.verticalScrollLimits, options.zoomLimits)
+        newViewport: limitViewport(placed, root.canvasBounds as any, options.horizontalScrollLimits, options.verticalScrollLimits, options.zoomLimits)
     };
 }
 
@@ -188,6 +193,8 @@ export function frameBounds(
  * Center gives (1, or the one there is with `retainZoom`), within the zoom
  * limits. Content that fits the canvas is never left partly off it: where the
  * free area is narrower than it, it stops a margin inside the canvas's edge.
+ * Content larger than the canvas covers all of it, as near the free area's
+ * middle as that allows.
  */
 @injectable()
 export class SurfaceAwareCenterCommand extends CenterCommand {

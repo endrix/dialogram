@@ -266,9 +266,10 @@ platform that hands it one.
     largest part of the canvas the platform's overlays leave free, so a
     product places what it reveals there instead of keeping its own copy of
     the overlay list. `reveal` centres a rectangle at the zoom there is, as
-    Center does (all of it on the canvas when it fits there), or with `fit`
-    fits it as Fit does (into the whole canvas when no free area has room
-    for the margin), within the zoom limits. `reveal` and `fit` are animated
+    Center does (all of it on the canvas when it fits there, the whole
+    canvas covered when it is larger), or with `fit` fits it as Fit does
+    (into the whole canvas when no free area has room for the margin),
+    within the zoom limits. `reveal` and `fit` are animated
     unless `animate: false`; `setViewport`, what a surface's own pan or zoom
     calls, is not unless `animate: true`.
   - The palette's header and the breadcrumb get a background over a surface,
@@ -294,15 +295,19 @@ platform that hands it one.
   with a warning. With several surfaces bound, the range is that of the
   surface used (the last one, a later binding of an `id` in an earlier
   one's place).
-- **A Fit or Center the zoom range stops keeps the content in the middle.**
-  Sprotty clamps the zoom after working out the scroll for the zoom wanted,
-  and keeps that scroll: at a maximum of 5, a Fit of a single 100 × 50 node
-  on an 800 × 600 canvas put its middle at (260, 195), and at a floor of
-  0.25 a Fit of a 20 000 × 10 000 diagram put it below the canvas, which
-  showed nothing. The scroll is now worked out again for the zoom the range
-  allows, around the content's middle, for Fit, Center, the first view and a
-  surface's `reveal`. It reached every product at GLSP's own 0.1 to 20 too,
-  for a very small diagram or a very large one.
+- **A Fit or Center the zoom range stops keeps the content in the middle,
+  on the canvas.** Sprotty clamps the zoom after working out the scroll for
+  the zoom wanted, and keeps that scroll: at a maximum of 5, a Fit of a
+  single 100 × 50 node on an 800 × 600 canvas put its middle at (260, 195),
+  and at a floor of 0.25 a Fit of a 20 000 × 10 000 diagram put it below the
+  canvas, which showed nothing. The scroll is now worked out again for the
+  zoom the range allows, around the content's middle, for Fit, Center, the
+  first view and a surface's `reveal`, and the content is then kept on the
+  canvas as Center keeps it: fitted at a floor of 0.5, a 2200 × 1000 diagram
+  on a 1200 × 800 canvas stops a margin inside the left edge, where keeping
+  its middle left of the palette would have cut off 92 pixels. A Fit the
+  range leaves alone is not moved. It reached every product at GLSP's own
+  0.1 to 20 too, for a very small diagram or a very large one.
 - **A first view that fits.** `clientBehavior.initialView: 'fit'` shows a
   view never shown in the editor fitted rather than centred at zoom 1.
 - **A surface's selection in the chat's hooks.** `selectionContext.render`
@@ -942,7 +947,12 @@ platform that hands it one.
   the canvas, a margin inside its edge, as near the free area's middle as
   that allows: a 1000 × 500 diagram on a 1200 × 800 canvas would otherwise
   have lost its left 42 pixels past the edge, to keep its middle left of the
-  palette.
+  palette. Content wider than the canvas covers its whole width, and content
+  taller than it its whole height, as near the free area's middle as that
+  allows: a 1250 × 500 diagram on that canvas loses 50 pixels past the left
+  edge and reaches the right one, where keeping its middle left of the
+  palette would have cut off 167 and left 117 of the canvas empty on the
+  right.
 - **Fit and Center leave the chat card and an open outline clear.** Fit
   avoided the palette, the canvas's buttons, the breadcrumb and a floating
   property panel, but put content under the chat and under the outline,
