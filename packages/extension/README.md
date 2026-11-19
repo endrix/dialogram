@@ -167,16 +167,23 @@ outside `getGraph` (a layout streamed in after the graph is drawn). Each
 reaches every editor open on the file; a file can have two. So do
 `revealOutlineRow(uri, row)` (the product's selection, shown in the
 outline) and `setViewOptions(uri, changes)` (with `getViewOptions(uri)`, the
-reader's choices, kept per file by the host). What answers one webview's
-message, `onWebviewMessage`'s `ctx.postToWebview`, goes to that editor alone.
+reader's choices, kept per file by the host). `loading`, `revealOutlineRow`,
+`getViewOptions` and `setViewOptions` are optional: a Dialogram older than
+them reports the same API version without them, so a product checks before
+calling (`handle.loading?.report(...)`). What answers one webview's message,
+`onWebviewMessage`'s `ctx.postToWebview`, goes to that editor alone.
 
 What a load is given and told:
 
 - `getGraph(sourceUri, options)` gets `options.progress`, to say what it is
   doing while it reads, and `options.signal`, an `AbortSignal` aborted when
   nobody waits for the graph any more: the editor closed, or a newer request
-  for the same diagram (a save, another view) arrived. Nothing of an aborted
-  load is drawn, whatever it returns.
+  for the same diagram (a save, another view) arrived while `getGraph` ran,
+  once the diagram shows a graph (a first load is let finish). Nothing of a
+  load whose signal was aborted is drawn, whatever it returns; once
+  `getGraph` has answered, the signal is never aborted, and the answer is
+  drawn. A request replaced while it still waited behind another never
+  calls `getGraph`.
 - The Problems panel names a graph diagnostic's source by the profile's
   `displayName` (it said `workflow` for every product).
 
@@ -252,11 +259,14 @@ is the product's: a click calls `outline.activate(file, { id, group, open })`.
 `DiagramProfileHandle.revealOutlineRow(uri, { id, group, index, show })` shows
 the product's own selection in the outline: the group opens, the page comes,
 the row is selected and scrolled to. `outline.locate` answers where a row is
-when the product did not say. With two editors on one file, each asks for
-its own pages and is answered alone; a revealed row is shown in both; and
-`outline.activate` does not say which editor the click was in, so what it
-selects is the file's. See `DiagramOutline` in `api.ts` and shared
-`outline-pages.ts`.
+when the product did not say. A page may hold fewer rows than asked: the
+panel asks for the rest from the first one missing, and only `total` ends the
+list. With two editors on one file, each asks for its own pages and is
+answered alone; a revealed row is shown in both; and `outline.activate` does
+not say which editor the click was in, so what it selects is the file's. See
+`DiagramOutline` in `api.ts` and shared `outline-pages.ts`.
+`revealOutlineRow` is optional on the handle (`handle.revealOutlineRow?.(...)`):
+a Dialogram older than it reports the same API version.
 
 ## Execution overlays and run drivers
 
@@ -285,10 +295,12 @@ the reader chose, per file, in the file's layout record, so it survives a
 reload and a reopen and applies before the first drawing.
 `DiagramProfileHandle.getViewOptions(uri)` and `setViewOptions(uri, changes)`
 read and set it with or without a diagram open (what a chat tool calls), and
-`viewOptions.onDidChange` hears every change. A reader's click in one editor
-of a file shows in every other editor of it. In the webview a product's
-module handles `ViewOptionsChangedAction` (diagram-client README, §6), a
-diagram surface's included. A load the editor's closing abandoned declares
+`viewOptions.onDidChange` hears every change. Both are optional on the
+handle, for a Dialogram older than them that reports the same API version;
+check before calling. A reader's click in one editor of a file shows in every
+other editor of it. In the webview a product's module handles
+`ViewOptionsChangedAction` (diagram-client README, §6), a diagram surface's
+included. A load abandoned through `ModelSourceOptions.signal` declares
 nothing: its groups are not taken as the file's. See
 `DiagramViewOptions` in `api.ts` and shared `view-options.ts`.
 

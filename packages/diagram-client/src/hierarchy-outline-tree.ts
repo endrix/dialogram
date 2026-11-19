@@ -73,9 +73,10 @@ export interface RowMeta {
 const NODES = { one: 'node', other: 'nodes' };
 
 /**
- * A group's detail that is only a number ("182", "113,750"): a producer
- * with no other place for a group's count put it there. It is the count,
- * and is said once, on the right, as one.
+ * A group's detail that only repeats how many rows it lists ("182" on a
+ * group of 182, "113,750"): a producer with no other place for a group's
+ * count put it there. It is said once, on the right. Any other number (a
+ * width, a layer) is the producer's detail, and is shown as one.
  */
 export function numericDetail(entry: HierarchyOutlineEntry): number | undefined {
     if (entry.role !== 'group' || !entry.detail) {
@@ -86,20 +87,20 @@ export function numericDetail(entry: HierarchyOutlineEntry): number | undefined 
     if (!/^\d{1,15}$/.test(said) && !/^\d{1,3}([,.\s\u202f\u00a0']\d{3}){1,4}$/.test(said)) {
         return undefined;
     }
-    return Number(said.replace(/\D/g, ''));
+    const count = Number(said.replace(/\D/g, ''));
+    return count === entry.children.length ? count : undefined;
 }
 
 /**
  * What a group holds: a lazy group's rows (under the filter, once the host
- * has said), else its `count`, else the number its detail is, else what it
- * lists; never fewer than it lists.
+ * has said), else its `count`, else what it lists; never fewer than it
+ * lists.
  */
 export function groupCount(entry: HierarchyOutlineEntry, lazyTotal?: number): number {
     if (entry.lazy) {
         return lazyTotal ?? entry.count ?? 0;
     }
-    const said = typeof entry.count === 'number' ? entry.count : numericDetail(entry);
-    return Math.max(entry.children.length, said ?? 0);
+    return Math.max(entry.children.length, typeof entry.count === 'number' ? entry.count : 0);
 }
 
 /**

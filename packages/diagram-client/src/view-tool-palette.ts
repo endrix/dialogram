@@ -103,6 +103,21 @@ export class ViewToolPalette extends ToolPalette {
             body.appendChild(holder);
         }
         const service = this.viewOptions;
+        // Drawn anew on every change: what the reader was at (a long group
+        // scrolled, the line or heading Space and Enter work on) is put back.
+        const scrolled = new Map<string, number>();
+        for (const lines of Array.from(holder.querySelectorAll<HTMLElement>('.view-options-group .view-options-lines'))) {
+            const group = lines.closest<HTMLElement>('.view-options-group')?.dataset.group;
+            if (group !== undefined && lines.scrollTop > 0) {
+                scrolled.set(group, lines.scrollTop);
+            }
+        }
+        const active = document.activeElement as HTMLElement | null;
+        const focused = active && holder.contains(active) ? {
+            group: active.closest<HTMLElement>('.view-options-group')?.dataset.group,
+            item: active.dataset.item,
+            header: active.classList.contains('view-options-header')
+        } : undefined;
         holder.replaceChildren(...drawViewOptionGroups(service?.groups ?? [], {
             filter,
             isCollapsed: group => this.collapse.isCollapsed(group),
@@ -112,6 +127,19 @@ export class ViewToolPalette extends ToolPalette {
             },
             onChange: change => service?.change(change)
         }));
+        for (const group of Array.from(holder.querySelectorAll<HTMLElement>('.view-options-group'))) {
+            const top = group.dataset.group !== undefined ? scrolled.get(group.dataset.group) : undefined;
+            const lines = group.querySelector<HTMLElement>('.view-options-lines');
+            if (top !== undefined && lines) {
+                lines.scrollTop = top;
+            }
+            if (focused && group.dataset.group === focused.group) {
+                const again = focused.header
+                    ? group.querySelector<HTMLElement>('.view-options-header')
+                    : Array.from(group.querySelectorAll<HTMLElement>('.view-option')).find(line => line.dataset.item === focused.item);
+                again?.focus({ preventScroll: true });
+            }
+        }
         const options = holder.childElementCount > 0;
         if (!tools && !options && filter.trim() !== '') {
             // A filter that matched nothing: that is what the words are for.

@@ -450,19 +450,26 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 reporter?.say(progress);
             }
         };
-        if (watched) {
-            reporter?.sayPhase(
-                'reading',
-                { message: `Reading ${path.basename(workflowFilePath)}` },
-                { file: workflowFilePath }
-            );
-        }
         // Whether anybody still wants this graph: aborted when the editor
-        // closes, or when the reader asks for another before it has come.
-        const signal = this.loadCancellation?.begin(!background);
+        // closes, or when the reader asks for another before it has come
+        // (once the diagram shows a graph: a first load is let finish, see
+        // `load-cancellation.ts`). Asked before anything is said, since a
+        // request replaced while it waited in the queue does not load at all.
+        const signal = this.loadCancellation?.begin(action, !background, !background && this.modelState?.root !== undefined);
         const abandoned = (): LoadAbandoned | undefined =>
             signal?.aborted ? new LoadAbandoned(LoadCancellation.why(signal)) : undefined;
         try {
+            const before = abandoned();
+            if (before) {
+                throw before;
+            }
+            if (watched) {
+                reporter?.sayPhase(
+                    'reading',
+                    { message: `Reading ${path.basename(workflowFilePath)}` },
+                    { file: workflowFilePath }
+                );
+            }
             // What is inside "reading" is the product's to say, for as long
             // as it is reading: a product that goes on talking after it has
             // answered (the output of a build it gave up on) is reporting on
@@ -493,6 +500,12 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 throw abandoned() ?? error;
             } finally {
                 reading = false;
+                // The signal is for the product's own work, which is over:
+                // a request that arrives from here on replaces nothing of
+                // this load, and what is drawn of its answer is drawn.
+                if (signal) {
+                    this.loadCancellation?.end(signal);
+                }
             }
             // Whatever came back of an abandoned load is drawn for nobody, and
             // would be drawn over the newer load's graph.
@@ -534,6 +547,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             }
             throw error;
         } finally {
+            // Ended already once the product was asked; this is for a load
+            // that ended before it was.
             if (signal) {
                 this.loadCancellation?.end(signal);
             }

@@ -143,20 +143,14 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     outlineHost?: Pick<OutlineHost, 'onWebviewRequest' | 'onWebviewActivate'>;
 
     /**
-     * Fires with a document's URI string each time a webview (re)registers for it
-     * (initial open and every reopen). The host wires this to drain the
-     * execution-overlay replay buffer through the bridge so a webview reopened
-     * mid-run comes back with the live "Running agents" bar rather than empty.
-     * The URI is emitted as `document.uri.toString()` — the same representation
-     * run drivers emit with — so the replay lookup keys match.
-     */
-    private readonly registerClientEmitter = new vscode.EventEmitter<string>();
-    readonly onDidRegisterClient: vscode.Event<string> = this.registerClientEmitter.event;
-
-    /**
-     * The same, with the client that registered: what is replayed goes to
-     * the editor that is new, and not to the file's other editor, which has
-     * it already.
+     * Fires each time a webview (re)registers for a document (initial open and
+     * every reopen), with the document's URI string and the client that
+     * registered. The host wires this to drain the execution-overlay replay
+     * buffer through the bridge so a webview reopened mid-run comes back with
+     * the live "Running agents" bar rather than empty: to the editor that is
+     * new, and not to the file's other editor, which has it already. The URI
+     * is emitted as `document.uri.toString()` — the same representation run
+     * drivers emit with — so the replay lookup keys match.
      */
     private readonly registerEditorEmitter = new vscode.EventEmitter<{ uri: string; clientId: string }>();
     readonly onDidRegisterEditor: vscode.Event<{ uri: string; clientId: string }> = this.registerEditorEmitter.event;
@@ -249,7 +243,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     ) {
         super(glspVscodeConnector);
 
-        extensionContext.subscriptions.push(this.registerClientEmitter, this.registerEditorEmitter);
+        extensionContext.subscriptions.push(this.registerEditorEmitter);
 
         // Listen for document changes for live preview (debounced)
         extensionContext.subscriptions.push(
@@ -315,7 +309,6 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         // execution-overlay events for this source into the (re)opened webview.
         // Fired synchronously here: the drain runs before any later live batch on
         // the single-threaded host loop, preserving replay-before-live order.
-        this.registerClientEmitter.fire(document.uri.toString());
         this.registerEditorEmitter.fire({ uri: document.uri.toString(), clientId });
 
         // Which of a file's editors was used last: the one a command for "the"
@@ -547,12 +540,14 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
                 }
 
                 // The reader changed what is shown, in the palette: the host
-                // keeps it for the file, tells the product, and tells the
-                // file's other diagrams. Named by this editor's client, not
-                // its file: a second editor of the same file is one of the
-                // others, and has to hear it.
+                // keeps it for the file (beside it, on disk), tells the
+                // product, and tells every diagram of the file, this one
+                // too. Only for a file this editor shows: what is written
+                // beside a file is that editor's to change.
                 if (message?.type === VIEW_OPTIONS_CHANGED_MESSAGE) {
-                    await this.viewOptionsHost?.onWebviewChange(clientId, message.payload);
+                    if (this.shows(clientId, message.payload)) {
+                        await this.viewOptionsHost?.onWebviewChange(message.payload);
+                    }
                     return;
                 }
 
@@ -918,6 +913,29 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      */
     clientIdsShowing(uri: vscode.Uri | string): string[] {
         return this.editorsShowing(uri).map(editor => editor.clientId);
+    }
+
+    /**
+     * The clients of the editors {@link editorsOf} names, each with the
+     * file's URI as that editor names it: its document's, or that of the view
+     * it shows in place. A diagram knows its file by its own spelling.
+     */
+    clientsShowing(uri: vscode.Uri | string): Array<{ clientId: string; sourceUri: string }> {
+        const wanted = this.canonicalizeUriString(uri);
+        return this.editorsShowing(uri).map(editor => ({
+            clientId: editor.clientId,
+            sourceUri: editor.documentKey === wanted ? editor.documentUri : (editor.view?.shownSourceUri ?? editor.documentUri)
+        }));
+    }
+
+    /**
+     * Whether a webview's message names a file its editor shows (its
+     * `sourceUri`): what the host writes beside, and hands the product, is
+     * that editor's file and no other.
+     */
+    private shows(clientId: string, payload: unknown): boolean {
+        const sourceUri = (payload as { sourceUri?: unknown } | undefined)?.sourceUri;
+        return typeof sourceUri === 'string' && sourceUri !== '' && this.clientIdsShowing(sourceUri).includes(clientId);
     }
 
     /** The editors {@link editorsOf} names, each one: a file can have two. */

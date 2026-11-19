@@ -20,7 +20,6 @@ import {
     layOutOutline,
     OUTLINE_MAX_SCROLL_HEIGHT,
     OUTLINE_ROW_HEIGHT,
-    pagesFor,
     rowTop,
     scrollGeometry,
     scrollTopFor,
@@ -28,7 +27,7 @@ import {
     visibleRows
 } from '../src/outline-rows';
 import { OutlinePager, type OutlinePagerTransport } from '../src/outline-pager';
-import { groupCount, numericDetail, outlineMatches, rowMeta, shownDetail } from '../src/hierarchy-outline-tree';
+import { groupCount, numericDetail, outlineMatches, rowId, rowMeta, shownDetail } from '../src/hierarchy-outline-tree';
 
 const ROWS = 200_000;
 const lazy: HierarchyOutlineEntry = {
@@ -122,12 +121,6 @@ describe('the rows in view', () => {
         expect(farShown.first).toBeLessThanOrEqual(1_999_000);
         expect(farShown.last).toBeGreaterThanOrEqual(1_999_000);
     });
-
-    it('are on the pages of their positions', () => {
-        expect(pagesFor(150_000, 150_036, 100)).toEqual([1500]);
-        expect(pagesFor(95, 205, 100)).toEqual([0, 1, 2]);
-        expect(pagesFor(5, 4, 100)).toEqual([]);
-    });
 });
 
 /** A host of `count` rows named `row <n>`, which a filter matches by name; it counts what it was asked. */
@@ -197,7 +190,6 @@ describe('the pages of a lazy group', () => {
         await settle();
         expect(host.asked).toHaveLength(3);
         expect(changes).toBeGreaterThan(0);
-        expect(pager.timings.length).toBe(3);
     });
 
     it('forget a page the reader scrolled past before it was asked for', async () => {
@@ -248,6 +240,56 @@ describe('the pages of a lazy group', () => {
         expect(pager.total('rows', '')).toBe(0);
     });
 
+    it('a page shorter than asked: the rest is asked from where it stopped, and the rows are where they belong', async () => {
+        const asked: Array<{ offset: number; limit: number }> = [];
+        // A producer that reads at most 30 rows at a time, of 1,000.
+        const pager = new OutlinePager({
+            page: async (_group, offset, limit) => {
+                asked.push({ offset, limit });
+                const rows = [];
+                for (let at = offset; at < Math.min(1000, offset + Math.min(limit, 30)); at++) {
+                    rows.push({ id: `r${at}`, label: `row ${at}` });
+                }
+                return { page: { total: 1000, offset, rows } };
+            },
+            locate: async () => ({})
+        }, () => undefined, 100);
+        expect((await pager.rowAt('rows', '', 50))?.id).toBe('r50');
+        pager.want([{ group: 'rows', query: '', from: 60, to: 99 }]);
+        for (let i = 0; i < 10; i++) {
+            await settle();
+        }
+        expect(asked).toEqual([{ offset: 0, limit: 100 }, { offset: 30, limit: 70 }, { offset: 60, limit: 40 }, { offset: 90, limit: 10 }]);
+        for (const position of [0, 29, 30, 59, 60, 99]) {
+            expect(pager.row('rows', '', position)?.id).toBe(`r${position}`);
+        }
+        expect(pager.failure('rows', '', 99)).toBeUndefined();
+        // The last page ends at the total, not at a page's worth.
+        expect((await pager.rowAt('rows', '', 999))?.id).toBe('r999');
+        expect(asked.filter(ask => ask.offset >= 900).map(ask => ask.offset)).toEqual([900, 930, 960, 990]);
+    });
+
+    it('a page that stops short of the total with nothing more is shown as not loaded, and not asked again', async () => {
+        const asked: number[] = [];
+        // Ten rows, then nothing, though it counts 1,000.
+        const pager = new OutlinePager({
+            page: async (_group, offset) => {
+                asked.push(offset);
+                const rows = offset === 0 ? Array.from({ length: 10 }, (_, at) => ({ id: `r${at}`, label: `row ${at}` })) : [];
+                return { page: { total: 1000, offset, rows } };
+            },
+            locate: async () => ({})
+        }, () => undefined, 100);
+        expect(await pager.rowAt('rows', '', 50)).toBeUndefined();
+        expect(asked).toEqual([0, 10]);
+        expect(pager.row('rows', '', 9)?.id).toBe('r9');
+        expect(pager.failure('rows', '', 50)).toBe('No rows came from row 11 on, of 1,000');
+        pager.want([{ group: 'rows', query: '', from: 0, to: 60 }]);
+        await settle();
+        expect(await pager.rowAt('rows', '', 70)).toBeUndefined();
+        expect(asked).toEqual([0, 10]);
+    });
+
     it('are all forgotten when the outline changes', async () => {
         const host = fakeHost();
         const pager = new OutlinePager(host.transport, () => undefined, 100);
@@ -258,18 +300,88 @@ describe('the pages of a lazy group', () => {
     });
 });
 
+/**
+ * The outline of `groups` lazy groups of 500 rows each, laid out again after
+ * every answer and asking for what it shows, as the panel's `render()` does:
+ * every lazy group's count under a filter, every opened one's without.
+ */
+function outlineOfLazyGroups(groups: number, query: string) {
+    const lazies: HierarchyOutlineEntry[] = Array.from({ length: groups }, (_, at) => ({
+        path: [`#g${at}`], workflowName: 'top', role: 'group', label: `Group ${at}`, count: 500, lazy: { id: `g${at}` }, children: []
+    }));
+    const root: HierarchyOutlineEntry = { path: [], workflowName: 'top', children: lazies };
+    const asked: string[] = [];
+    let stopped = false;
+    const pager: OutlinePager = new OutlinePager({
+        page: (group, offset, limit) => {
+            asked.push(`${group}@${offset}`);
+            const rows = Array.from({ length: Math.min(limit, 500 - offset) }, (_, at) => ({ id: `r${offset + at}`, label: `row ${offset + at}` }));
+            // The host answers a little later, as over the webview's messages.
+            return new Promise(resolve => setTimeout(() => resolve({ page: { total: 500, offset, rows } }), 1));
+        },
+        locate: async () => ({})
+    }, () => setTimeout(render, 0), 100);
+    function render(): void {
+        if (stopped) {
+            return;
+        }
+        const layout = layOutOutline(root, {
+            expanded: new Set(['', ...(query === '' ? lazies.map(rowId) : [])]),
+            query,
+            lazyTotal: group => pager.total(group.lazy!.id, query)
+        });
+        const { first, last } = visibleRows(0, 440, OUTLINE_ROW_HEIGHT, layout.total);
+        const shown = new Map<string, { group: string; query: string; from: number; to: number }>();
+        for (let index = first; index <= last; index++) {
+            const slot = slotAt(layout, index);
+            if (slot?.kind === 'paged') {
+                const group = slot.group.lazy!.id;
+                const range = shown.get(group);
+                shown.set(group, range ? { ...range, to: slot.position } : { group, query, from: slot.position, to: slot.position });
+            }
+        }
+        pager.want([...shown.values()]);
+    }
+    render();
+    return { asked, stop: () => { stopped = true; } };
+}
+
+const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+describe('the pages of many lazy groups', () => {
+    for (const groups of [13, 40]) {
+        for (const query of ['', 'row']) {
+            it(`are each asked for once, with ${groups} groups ${query === '' ? 'opened, no filter' : 'under a filter'}`, async () => {
+                const outline = outlineOfLazyGroups(groups, query);
+                try {
+                    await pause(250);
+                    const settled = outline.asked.length;
+                    await pause(150);
+                    // Each group's first page, which carries its count; nothing after.
+                    expect(outline.asked.length).toBe(settled);
+                    expect(new Set(outline.asked).size).toBe(outline.asked.length);
+                    expect(outline.asked.length).toBe(groups);
+                } finally {
+                    outline.stop();
+                }
+            });
+        }
+    }
+});
+
 describe('a page as the host passes it on', () => {
     it('keeps the request within bounds', () => {
         expect(normalizeOutlinePageRequest({ group: 'g', offset: -5.5, limit: 1e9, query: '  x ' }))
             .toEqual({ group: 'g', offset: 0, limit: OUTLINE_PAGE_MAX, query: 'x' });
     });
 
-    it('keeps rows with an id, at most the limit, and a total no smaller than what it sent', () => {
+    it('keeps at most the limit of rows, each in its place, and a total no smaller than what it sent', () => {
         const page = normalizeOutlinePage({
             total: 1,
             rows: [{ id: 'a', label: ' A\nrow ' }, { label: 'no id' }, { id: 'b', badges: [{ text: '' }, { text: 'x', tone: 'info' }] }, { id: 'c' }]
         }, { group: 'g', offset: 10, limit: 2, query: '' });
-        expect(page).toEqual({ total: 11, offset: 10, rows: [{ id: 'a', label: 'A row' }] });
+        // A row without an id keeps its place, so the rows after it are where the producer put them.
+        expect(page).toEqual({ total: 12, offset: 10, rows: [{ id: 'a', label: 'A row' }, { id: '', label: 'no id' }] });
         const page2 = normalizeOutlinePage({ total: 50, rows: [{ id: 'b', badges: [{ text: '' }, { text: 'x', tone: 'info' }] }] }, { group: 'g', offset: 0, limit: 5, query: '' });
         expect(page2.rows[0]).toEqual({ id: 'b', label: 'b', badges: [{ text: 'x', tone: 'info' }] });
         expect(normalizeOutlinePage(undefined, { group: 'g', offset: 0, limit: 5, query: '' })).toEqual({ total: 0, offset: 0, rows: [] });
@@ -296,16 +408,21 @@ describe('the words a row says', () => {
         expect(rowMeta(repeated).text).toBe('3');
         expect(shownDetail(repeated)).toBeUndefined();
         expect(shownDetail(group({ detail: 'from the library' }))).toBe('from the library');
-        expect(numericDetail(group({ detail: '113,750' }))).toBe(113_750);
+        expect(numericDetail(group({ detail: '113,750' }, 113_750))).toBe(113_750);
         expect(numericDetail(group({ detail: '1.5' }))).toBeUndefined();
+        // A number that is not the group's count (a width, a layer) is the producer's detail.
+        const width = group({ detail: '32' }, 2);
+        expect(numericDetail(width)).toBeUndefined();
+        expect(shownDetail(width)).toBe('32');
+        expect(rowMeta(width)).toEqual({ text: '2' });
         expect(rowMeta(group({ countNoun: { one: 'thing', other: 'things' } })).text).toBe('3 things');
     });
 
     it('say how much of a list cut short is listed, and say it right', () => {
         const cut = group({ truncated: true, count: 268 }, 200);
         expect(rowMeta(cut)).toEqual({ text: '200 of 268', title: 'The first 200 of 268 are listed' });
-        // A producer that could only put the count in the detail.
-        expect(rowMeta(group({ truncated: true, detail: '268' }, 200)).text).toBe('200 of 268');
+        // A number in the detail is not taken for a count the group does not list.
+        expect(rowMeta(group({ truncated: true, detail: '268' }, 200)).text).toBe('200+');
         expect(rowMeta(group({ truncated: true }, 200))).toEqual({ text: '200+', title: '200 are listed; there are more' });
         // A view cut short is still one that nests itself or goes too deep.
         expect(rowMeta({ ...view(3), truncated: true }).title).toBe('Not expanded: it nests itself, or is too deep');

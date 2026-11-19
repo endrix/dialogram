@@ -9,12 +9,20 @@
  * palette redraws, and {@link ViewOptionsChangedAction} is dispatched to the
  * product's client modules before anything is sent, so a renderer follows
  * without waiting for the host. The click then goes to the host, which keeps
- * it. What the host turns comes back as the lines it turned.
+ * it. Every line the host turns comes back, the result of this diagram's own
+ * click too: a change the host made just before it can have left the host
+ * with another state than the click showed here, and the copy follows the
+ * host's. (Two clicks quicker than the host answers can show the first
+ * answer for a moment; the second answer follows.)
  *
  * A model can have been made before the last change reached the host (a
  * click on its way, a host change on its way here): for the file it already
  * shows, the copy keeps the state it has for every line it knows and takes
  * from the model only what is new. A model of another file is taken whole.
+ * Either way, lines the host turned that the copy did not show then (the
+ * first model, or the file being opened in place, still on its way; a line
+ * of a group the view shown does not have) are heard from the start and
+ * applied over the model of their file, which may be older than they are.
  */
 import { inject, injectable, optional } from 'inversify';
 import { TYPES, type IActionDispatcher } from '@eclipse-glsp/client';
@@ -73,6 +81,24 @@ export function keepShownState(declared: ViewOptionGroup[], shown: ViewOptionGro
     });
 }
 
+/** Whether the groups have the line a turn names. */
+function hasLine(groups: ViewOptionGroup[], turn: ViewOptionTurn): boolean {
+    return groups.some(group => group.id === turn.group && group.items.some(item => item.id === turn.item));
+}
+
+/**
+ * The groups with lines the host turned applied, in the order they came; a
+ * `one` group they would leave with other than one line checked keeps its
+ * own.
+ */
+function applyHeard(groups: ViewOptionGroup[], turns: ViewOptionTurn[]): ViewOptionGroup[] {
+    if (turns.length === 0) {
+        return groups;
+    }
+    const turned = applyViewOptionTurns(groups, turns);
+    return turned.map((group, at) => (group.choice === 'one' && group.items.filter(item => item.checked !== false).length !== 1 ? groups[at] : group));
+}
+
 /** The groups a model root carries, or none. */
 export function viewOptionsOfRoot(root: unknown): { sourceUri: string; groups: ViewOptionGroup[] } {
     const args = (root as { args?: Record<string, unknown> } | undefined)?.args;
@@ -88,6 +114,9 @@ export function viewOptionsOfRoot(root: unknown): { sourceUri: string; groups: V
     }
 }
 
+/** Host changes kept for a file the diagram does not show yet, at most. */
+const MAX_HEARD = 256;
+
 @injectable()
 export class ViewOptionsService {
     @inject(TYPES.IActionDispatcher) @optional() protected readonly dispatcher?: IActionDispatcher;
@@ -97,6 +126,18 @@ export class ViewOptionsService {
     private shownJson = '[]';
     private readonly listeners = new Set<() => void>();
     private listening = false;
+    /**
+     * Lines the host turned that the diagram shown did not have when they
+     * came, by file, oldest first: applied over the next model of their
+     * file. A model lets go of the others (the diagram is not showing them).
+     */
+    private heard: Array<{ sourceUri: string; turns: ViewOptionTurn[] }> = [];
+
+    constructor() {
+        // From the start, not from the first model: a host change made while
+        // the first model is laid out comes before it.
+        this.listen();
+    }
 
     /** The file the groups are of. */
     get sourceUri(): string {
@@ -123,9 +164,14 @@ export class ViewOptionsService {
     modelRootChanged(root: unknown): void {
         this.listen();
         const { sourceUri, groups: declared } = viewOptionsOfRoot(root);
-        const sameFile = sameSource(sourceUri, this.shownSource);
+        const sameFile = sameSource(sourceUri, this.shownSource) && this.shownSource !== '';
         const before = sameFile ? this.shown : [];
-        const next = sameFile ? keepShownState(declared, this.shown) : declared;
+        const kept = sameFile ? keepShownState(declared, this.shown) : declared;
+        const heard = this.heard.filter(entry => sameSource(entry.sourceUri, sourceUri)).flatMap(entry => entry.turns);
+        const next = applyHeard(kept, heard);
+        // What this model still does not show is heard on, for the next one of the file.
+        const unshown = heard.filter(turn => !hasLine(next, turn));
+        this.heard = unshown.length > 0 ? [{ sourceUri, turns: unshown }] : [];
         this.shownSource = sourceUri;
         this.show(next, viewOptionTurnsBetween(before, next), 'load');
     }
@@ -144,9 +190,23 @@ export class ViewOptionsService {
         this.postToHost({ type: VIEW_OPTIONS_CHANGED_MESSAGE, payload: { sourceUri: this.shownSource, changes: [change] } });
     }
 
-    /** Lines the host turned for a file; only the diagram of that file follows. */
+    /**
+     * Lines the host turned for a file; only the diagram of that file
+     * follows. Lines it does not show (another file, the first model still
+     * to come, a group it does not have) are kept for the model that shows
+     * them.
+     */
     hostTurned(sourceUri: string, turns: ViewOptionTurn[]): void {
-        if (!sameSource(sourceUri, this.shownSource)) {
+        const shownFile = this.shownSource !== '' && sameSource(sourceUri, this.shownSource);
+        const unshown = shownFile ? turns.filter(turn => !hasLine(this.shown, turn)) : turns;
+        if (unshown.length > 0) {
+            this.heard.push({ sourceUri, turns: unshown });
+            // A file shown in place hears its editor's own file for as long as it lasts: the oldest go.
+            if (this.heard.length > MAX_HEARD) {
+                this.heard.shift();
+            }
+        }
+        if (!shownFile) {
             return;
         }
         const next = applyViewOptionTurns(this.shown, turns);

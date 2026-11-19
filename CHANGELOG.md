@@ -111,24 +111,38 @@ platform that hands it one.
 - **A load nobody waits for any more is told so** (`ModelSourceOptions.signal`,
   an `AbortSignal` beside `progress`). It is aborted when the diagram's
   editor closes, and when a newer request for the same diagram arrives
-  while the load runs (a save, another view, a refresh): GLSP runs a
-  session's requests one at a time, so the newer one would otherwise wait
-  for the old to finish, and then draw over it. The reason says which
-  (an `AbortError`). A product stops its compiler, worker or request; the
-  platform draws nothing of an aborted load, whatever `getGraph` returns,
-  and does not end the loading indicator for it, which the newer load now
-  speaks for. A request nobody is waiting on (a run's overlay redrawn)
-  neither aborts a load nor is aborted by one, only by the editor closing.
-  The session's dispatcher sees the newer request arrive
-  (`LoadCancellingActionDispatcher`, bound by `WorkflowDiagramModule`; a
-  product's own diagram module gets it by extending that one).
+  while `getGraph` runs (a save, another view, a refresh), once the diagram
+  shows a graph: GLSP runs a session's requests one at a time, so the newer
+  one would otherwise wait for the old to finish, and then draw over it.
+  The reason says which (an `AbortError`). A product stops its compiler,
+  worker or request; the platform draws nothing of a load whose signal was
+  aborted, whatever `getGraph` returns, and does not end the loading
+  indicator for it, which the newer load now speaks for.
+  - The signal covers `getGraph` and nothing after it. Once `getGraph` has
+    answered, nothing aborts it, and the platform draws the answer even when
+    a newer request arrives during the layout; the newer one then draws
+    over it.
+  - A request replaced while it still waits behind another never calls
+    `getGraph`: a save, then a refresh, during a slow load runs the load for
+    the refresh only.
+  - A diagram's first load is not replaced. Until a diagram shows a graph,
+    the reader waits for a picture, any picture: the first load is drawn,
+    and the newer request after it, as before. Only the editor closing
+    aborts it.
+  - A request nobody is waiting on (a run's overlay redrawn) neither aborts
+    a load nor is aborted by one, only by the editor closing.
+  - The session's dispatcher sees the newer request arrive
+    (`LoadCancellingActionDispatcher`, bound by `WorkflowDiagramModule`; a
+    product's own diagram module gets it by extending that one).
 - **A product can say what its diagram is doing after the platform has
   drawn it** (`DiagramProfileHandle.loading.report(uri, progress)`,
   `loading.end(uri)`): a layout it streams in, a second pass. The same
   indicator the platform's load uses, on every editor of the file, centred
   while the diagram is empty and as a pill once it has a picture. A product
   reached it through an internal import of the client's
-  `loading-indicator`.
+  `loading-indicator`. `loading` is optional on the handle: a Dialogram
+  older than this reports the same API version and has none, so a product
+  calls `handle.loading?.report(...)`.
 - **A product can put its own words in place of the platform's loading
   steps, or none** (`DiagramProfile.loadPhaseWords(phase, words, facts)`,
   with `phase` one of `reading`, `drawing`, `laying-out`, `routing`).
@@ -156,7 +170,10 @@ platform that hands it one.
   globs see is asked about, and so is each save of a source in the editor;
   the diagrams it names are reloaded, with the changed file's own. Changes
   within the quarter-second debounce are taken together. Without it, nothing
-  changes.
+  changes. `watch.globs` may now be left out, for the globs the source
+  extensions give (every file, with none declared), so that `watch` can
+  carry `affects` alone; an empty list watches nothing on disk, and only a
+  save in the editor reloads.
 - **View options in the palette.** What a reader may show and hide is the
   producer's to declare and the platform's to draw: checkable groups under
   the palette's tools, in the palette's own markup and theme (shared
@@ -179,13 +196,22 @@ platform that hands it one.
     keeps it): it survives a reload and a reopen, and it can be read and set
     with no diagram open. `DiagramProfileHandle.getViewOptions(uri)` and
     `setViewOptions(uri, changes)` are what a chat tool that shows or hides
-    things calls; every open diagram of the file follows.
+    things calls; every open diagram of the file follows. Both are optional
+    on the handle: a Dialogram older than them reports the same API
+    version, so a product checks before calling. A file's declaration is
+    every group its graphs have declared, the newest of each, so two editors
+    showing views that declare different groups each keep theirs.
   - A click is in force in the webview at once: the platform dispatches
     `ViewOptionsChangedAction` (`dialogram.viewOptionsChanged`), which a
     product's client module handles to redraw with no round trip, and asks
     `ViewOptionsService` what is checked. The host is told after, keeps it,
-    tells the other diagrams of the file the lines that turned, and tells
-    the product (`viewOptions.onDidChange`). A group marked `reload` has the
+    tells every diagram of the file the lines that turned, and tells the
+    product (`viewOptions.onDidChange`). The diagram the click came from
+    hears the host's result too: a change the host made just before (a
+    chat tool's) can leave another state than the click showed, and the
+    diagram follows the host's. The webview hears the host from the start:
+    a line the host turns while the first model is laid out is applied over
+    it. A change is taken only for a file its editor shows. A group marked `reload` has the
     model asked for again, and `getGraph` is handed the choices
     (`options.viewOptions`) for a producer that leaves things out itself;
     `persist: false` keeps a choice for the session only. A load abandoned
@@ -193,6 +219,10 @@ platform that hands it one.
   - A palette with no tools no longer says "No results found." with view
     options, or with nothing at all (its empty body is not drawn); it says
     so when a filter matched neither a tool nor a line.
+  - Ids are kept exactly as the producer gave them, which is what it looks
+    its choices up by. In a `one` group the line declared `checked: true`
+    is the one checked; a disabled line there is still let go of when the
+    reader picks another, so one line stays checked.
   - A product that declares none sees no change: no root argument, no
     palette section, the same documents from its model source.
 - **A diagram surface: a product draws the diagram's content itself.** A
@@ -314,7 +344,13 @@ platform that hands it one.
     (`outline-rows.ts`), and a list of 200 000 rows scrolls as one of forty.
     A scroll asks for the pages it stops on, not every page on the way
     (`outline-pager.ts`); past what a browser scrolls, a pixel of scrolling
-    stands for more rows.
+    stands for more rows. Each lazy group's first page carries its count,
+    and is asked for once however many lazy groups the outline has.
+  - A page may hold fewer rows than asked (a producer that reads in smaller
+    batches): the panel asks for the rest from the first row missing. Only
+    `total` ends the list; an answer with no rows short of it shows the rest
+    of the page as not loaded, with why, and is not asked again. A row
+    given without an `id` keeps its place and does nothing when clicked.
   - A row that is no node of the graph (a lazy row without `nodeId`, or an
     outline row with the new role `item` and its own `id`) is the
     product's: a click or a double click calls `outline.activate(file,
@@ -324,7 +360,10 @@ platform that hands it one.
     `DiagramProfileHandle.revealOutlineRow(uri, { id, group?, index?, show? })`:
     the rows down to it open, the page it is on is fetched (its place asked
     of `outline.locate` when the product did not give it), it is selected
-    and scrolled into view, and a filter that hides it is cleared.
+    and scrolled into view, and a filter that hides it is cleared when the
+    row is there without it. Without `outline.locate`, a row whose place is
+    not given is revealed only from the pages already read. `revealOutlineRow`
+    is optional on the handle, as `loading` is.
 - **A graph that grows keeps its picture still.** A producer may say its
   graph grows a step at a time (`graph.meta.incremental`): a schematic of a
   netlist that starts from one cell and takes in a pin's fan-in when asked.

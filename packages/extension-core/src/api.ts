@@ -354,14 +354,23 @@ export interface DiagramOutline {
    * match in all. Asked as the reader opens the group and scrolls it; keep
    * it quick, it is what scrolling waits for. A throw shows the rows as not
    * loaded, and is logged.
+   *
+   * It may give fewer rows than `limit` (it reads in smaller batches, or
+   * stops at a time budget): the panel asks again from the first row it did
+   * not get. Only `total` ends the list: an answer with no rows short of it
+   * shows the rest of what was asked as not loaded, and it is not asked
+   * again until the outline changes. A row given without an `id` keeps its
+   * place and does nothing when clicked.
    */
   page(file: string, request: OutlinePageRequest): OutlinePage | Promise<OutlinePage>;
   /**
    * Where the row `id` is among the rows of `group` under `query`, from 0,
    * or `undefined` when it is not there. Asked to reveal a row whose place
    * the product did not give ({@link OutlineRowReveal.index}), or with a
-   * filter typed. Without it such a row is revealed only once the pages
-   * read so far have it.
+   * filter typed. Without it, such a row is revealed only when a page the
+   * panel has read already holds it; otherwise the reveal does nothing. A
+   * filter that hides the row is cleared only when the row is there without
+   * it.
    */
   locate?(
     file: string,
@@ -608,9 +617,11 @@ export interface DiagramProfile {
    * agent, git, a build), and which diagrams such a change reloads.
    *
    * `globs` are what is watched; absent, the globs follow from
-   * {@link sourceExtensions}. A change to one of the product's sources reloads
-   * every open diagram (one may import another); a file that is not a source
-   * reloads nothing, unless `affects` is given.
+   * {@link sourceExtensions} (every file, when it declares none), so `watch`
+   * can carry `affects` alone. An empty list watches nothing on disk: only a
+   * save in the editor reloads a diagram. A change to one of the product's
+   * sources reloads every open diagram (one may import another); a file that
+   * is not a source reloads nothing, unless `affects` is given.
    *
    * `affects` says which diagrams a change reloads: handed the changed file
    * and the files with a diagram open (URIs, as `vscode.Uri.toString()` spells
@@ -625,7 +636,7 @@ export interface DiagramProfile {
    * reloads what it always did.
    */
   watch?: {
-    globs: string[];
+    globs?: string[];
     affects?: DiagramWatchAffects;
   };
   /**
@@ -749,24 +760,29 @@ export interface DiagramProfileHandle extends vscode.Disposable {
    * panel opened too with `show`. For the product's own selection (a row
    * picked elsewhere) to be the outline's. Returns how many diagrams were
    * told; none when no diagram of the file is open.
+   *
+   * Absent on a Dialogram older than this, which reports the same API
+   * version: call it as `handle.revealOutlineRow?.(...)`.
    */
-  revealOutlineRow(uri: string | vscode.Uri, row: OutlineRowReveal): number;
+  revealOutlineRow?(uri: string | vscode.Uri, row: OutlineRowReveal): number;
   /**
-   * Dispatch a host→client action to every diagram editor of `uri`, over the
-   * ungated `sendMessageToClient` overlay-bridge path — it reaches the client
-   * even for kinds the client did not advertise in `clientActions`. No-op when
-   * no diagram client is registered for the URI.
+   * Dispatch a host→client action to every diagram editor open on `uri` (a
+   * file can have two, after View: Split Editor Right), over the ungated
+   * `sendMessageToClient` overlay-bridge path — it reaches the client even for
+   * kinds the client did not advertise in `clientActions`. No-op when no diagram
+   * client is registered for the URI.
    */
   dispatchToWebview(
     uri: string,
     action: { kind: string } & Record<string, unknown>,
   ): void;
   /**
-   * Post a raw message straight to every diagram editor of `uri`
-   * (`webview.postMessage`), for the consumer's own cursor-sync / graph-era
-   * channel; a diagram surface hears it on `context.host`. To answer one
-   * editor, answer through the `ctx` of {@link DiagramProfile.onWebviewMessage}.
-   * No-op when no panel is registered for the URI.
+   * Post a raw message straight to the webview of every diagram editor open
+   * on `uri` (`webview.postMessage`; a file can have two), for the consumer's
+   * own cursor-sync / graph-era channel; a diagram surface hears it on
+   * `context.host`. To answer one editor, answer through the `ctx` of
+   * {@link DiagramProfile.onWebviewMessage}. No-op when no panel is
+   * registered for the URI.
    */
   postToWebview(uri: string, message: unknown): void;
   /**
@@ -781,26 +797,37 @@ export interface DiagramProfileHandle extends vscode.Disposable {
    * and words with no message show nothing. A file with no diagram open is
    * told nothing. The same indicator the platform's own load uses: what is
    * said last shows, whoever said it.
+   *
+   * Absent on a Dialogram older than this, which reports the same API
+   * version: call it as `handle.loading?.report(...)`.
    */
-  loading: {
+  loading?: {
     report(uri: string, progress: LoadProgress): void;
     end(uri: string): void;
   };
   /**
    * The view options of the file at `uri` (a URI string, a `vscode.Uri` or
-   * an absolute path) as they stand: the groups its last graph declared, or
-   * the profile's when no diagram of it has been opened yet, with the
-   * reader's choices applied. See {@link DiagramViewOptions}.
+   * an absolute path) as they stand: every group its graphs have declared
+   * since the window opened, the newest declaration of each (two editors of
+   * the file can show views that declare different groups), or the
+   * profile's when no diagram of it has been opened yet, with the reader's
+   * choices applied. See {@link DiagramViewOptions}.
+   *
+   * Absent on a Dialogram older than this, which reports the same API
+   * version: check for it before calling.
    */
-  getViewOptions(uri: string | vscode.Uri): Promise<ViewOptionGroup[]>;
+  getViewOptions?(uri: string | vscode.Uri): Promise<ViewOptionGroup[]>;
   /**
    * Change the view options of the file at `uri`, as the host: each change
    * in turn (a line, `all` of a group, `only` one line), kept for the file,
    * shown in every diagram of it and told to `viewOptions.onDidChange`. A
    * line of a group no graph of the file has declared yet is kept, and
    * applies when one does. Resolves to the groups as they stand.
+   *
+   * Absent on a Dialogram older than this, which reports the same API
+   * version: check for it before calling.
    */
-  setViewOptions(
+  setViewOptions?(
     uri: string | vscode.Uri,
     changes: ViewOptionChange | ViewOptionChange[],
   ): Promise<ViewOptionGroup[]>;

@@ -23,32 +23,42 @@
 
 /** One checkable line of a group. */
 export interface ViewOptionItem {
-    /** The producer's name for it, unique in its group: what a change names. */
+    /**
+     * The producer's name for it, unique in its group: what a change names,
+     * and what the reader's choices are kept and handed back under, exactly
+     * as given.
+     */
     id: string;
     /** What the row says. */
     label: string;
-    /** Whether it is checked before the reader chooses. Default `true`. */
+    /**
+     * Whether it is checked before the reader chooses. Default `true`; in a
+     * `one` group, see {@link ViewOptionGroup.choice}.
+     */
     checked?: boolean;
     /** A CSS colour drawn as a swatch before the label: what the item looks like in the view. */
     color?: string;
     /**
      * Why it cannot be changed now ("Not drawn at this zoom"). Set, the row
      * is shown greyed with this as its tooltip, keeps the state it has, and
-     * a group's All, None and Only pass it by.
+     * a group's All, None and Only pass it by. In a `one` group it is still
+     * unchecked when the reader picks another line: one line stays checked.
      */
     disabled?: string;
 }
 
 /** A heading over checkable lines, which the reader opens and closes. */
 export interface ViewOptionGroup {
-    /** The producer's name for it, unique in the diagram. */
+    /** The producer's name for it, unique in the diagram, kept exactly as given. */
     id: string;
     /** What the heading says. */
     label: string;
     items: ViewOptionItem[];
     /**
      * `many` (the default): each line on its own, with All, None and Only.
-     * `one`: exactly one line is checked, as radio buttons (a level of detail).
+     * `one`: exactly one line is checked, as radio buttons (a level of
+     * detail). The one checked first is the first line declared
+     * `checked: true`; with none, the first not declared `checked: false`.
      */
     choice?: 'many' | 'one';
     /** Drawn closed until the reader opens it. Default open. */
@@ -163,6 +173,11 @@ const MAX_GROUPS = 64;
 const MAX_ITEMS = 4096;
 const MAX_TEXT = 200;
 
+/** An id as the producer gave it, or `''` for none: never rewritten, since the producer looks its choices up by it. */
+function idOf(value: unknown): string {
+    return typeof value === 'string' && value.trim() !== '' ? value : '';
+}
+
 function text(value: unknown): string {
     if (typeof value !== 'string') {
         return '';
@@ -173,9 +188,10 @@ function text(value: unknown): string {
 
 /**
  * Groups as a producer gave them, made safe to show: each with an id, a
- * label and items that have both, ids once each (the first is kept), and a
- * `one` group with exactly one line checked (its first checked line, or its
- * first line that can be). Anything else is dropped.
+ * label and items that have both, ids once each (the first is kept) and as
+ * given, and a `one` group with exactly one line checked (its first line
+ * declared checked, else its first not declared unchecked, else its first
+ * line that can be). Anything else is dropped.
  */
 export function normalizeViewOptionGroups(raw: unknown): ViewOptionGroup[] {
     if (!Array.isArray(raw)) {
@@ -187,24 +203,29 @@ export function normalizeViewOptionGroups(raw: unknown): ViewOptionGroup[] {
         if (!candidate || typeof candidate !== 'object') {
             continue;
         }
-        const id = text((candidate as ViewOptionGroup).id);
-        const label = text((candidate as ViewOptionGroup).label) || id;
+        const id = idOf((candidate as ViewOptionGroup).id);
+        const label = text((candidate as ViewOptionGroup).label) || text(id);
         if (id === '' || groupIds.has(id) || !Array.isArray((candidate as ViewOptionGroup).items)) {
             continue;
         }
         groupIds.add(id);
         const itemIds = new Set<string>();
         const items: ViewOptionItem[] = [];
+        /** The first line declared `checked: true`, which a `one` group checks. */
+        let declaredChecked: ViewOptionItem | undefined;
         for (const rawItem of (candidate as ViewOptionGroup).items.slice(0, MAX_ITEMS)) {
             if (!rawItem || typeof rawItem !== 'object') {
                 continue;
             }
-            const itemId = text(rawItem.id);
+            const itemId = idOf(rawItem.id);
             if (itemId === '' || itemIds.has(itemId)) {
                 continue;
             }
             itemIds.add(itemId);
-            const item: ViewOptionItem = { id: itemId, label: text(rawItem.label) || itemId, checked: rawItem.checked !== false };
+            const item: ViewOptionItem = { id: itemId, label: text(rawItem.label) || text(itemId), checked: rawItem.checked !== false };
+            if (rawItem.checked === true && !declaredChecked) {
+                declaredChecked = item;
+            }
             const color = text(rawItem.color);
             if (color !== '') {
                 item.color = color;
@@ -219,7 +240,7 @@ export function normalizeViewOptionGroups(raw: unknown): ViewOptionGroup[] {
         const source = candidate as ViewOptionGroup;
         if (source.choice === 'one') {
             group.choice = 'one';
-            settleOne(group);
+            settleOne(group, declaredChecked);
         }
         if (source.collapsed === true) {
             group.collapsed = true;
@@ -235,9 +256,10 @@ export function normalizeViewOptionGroups(raw: unknown): ViewOptionGroup[] {
     return groups;
 }
 
-/** A `one` group with exactly one line checked: the first that is, else the first that can be. */
-function settleOne(group: ViewOptionGroup): void {
-    const chosen = group.items.find(item => item.checked !== false)
+/** A `one` group with exactly one line checked: `first` if given, else the first that is, else the first that can be. */
+function settleOne(group: ViewOptionGroup, first?: ViewOptionItem): void {
+    const chosen = first
+        ?? group.items.find(item => item.checked !== false)
         ?? group.items.find(item => !item.disabled)
         ?? group.items[0];
     for (const item of group.items) {
@@ -273,9 +295,10 @@ export function applyViewOptionsState(groups: ViewOptionGroup[], state: ViewOpti
 /**
  * What `change` turns in `groups` (as they stand, state applied): the lines
  * whose state it changes, none when it changes nothing or names nothing
- * there is. A disabled line is never turned, and a `one` group keeps exactly
- * one line: checking a line there unchecks the other, unchecking its only
- * line and All and None do nothing.
+ * there is. A disabled line is never checked, and is unchecked only in a
+ * `one` group, which keeps exactly one line: checking a line there unchecks
+ * the other, disabled or not; unchecking its only line and All and None do
+ * nothing.
  */
 export function turnsOf(groups: ViewOptionGroup[], change: ViewOptionChange): ViewOptionTurn[] {
     const group = groups.find(candidate => candidate.id === change.group);
@@ -318,7 +341,10 @@ export function turnsOf(groups: ViewOptionGroup[], change: ViewOptionChange): Vi
     const turns: ViewOptionTurn[] = [];
     for (const item of group.items) {
         const checked = want.get(item.id);
-        if (checked === undefined || item.disabled || (item.checked !== false) === checked) {
+        // In a `one` group the line checked before is let go of even when
+        // it is disabled: else two lines would be checked.
+        const fixed = item.disabled && !(one && !checked);
+        if (checked === undefined || fixed || (item.checked !== false) === checked) {
             continue;
         }
         turns.push({ group: group.id, item: item.id, checked });

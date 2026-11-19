@@ -188,7 +188,7 @@ CSP, esbuild options, timing constraints) is in
 | Commands | `commands` (21 consumer-owned command ids), `operationKinds` (port create/delete kind strings) |
 | Model & edits | `modelSource` factory, `edits` (`'read-only'` or a strategy with operation modules), `serverModules`, `serverDiagramModule` (library mode only), `storageOptions`, `supportsElementCreation` (`false` empties the creation palette) |
 | Client | `clientBehavior` (neutral capability flags injected into the webview), `clientAssets` (custom webview bundle — data only), `clientStylesheets` (the product's own stylesheets, served after the platform's — data only), `onWebviewMessage` (inbound message hook; its `ctx.revealRange(uri, range, { beside, preserveFocus })` opens a source over the diagram, or beside it) |
-| Features | `watch` (file globs, and `affects`: which open diagrams a changed file reloads), `onEditorOpened` / `onEditorClosed` (a file's first diagram editor opened, its last closed), `loadPhaseWords` (the product's words, or none, for the platform's loading steps), `viewOptions` (what a reader may show and hide, from the palette), `outline` (a lazy outline group's rows on demand, and the product's rows), `navigation` (cross-file drill-down), `canOpenSource` (openability predicate), `editBackend` (chat mutation seam), `chat` (chat carry-overs), `runDriver` (factory receiving a `DiagramRunHost`), `statusSource` (node states from a report, shown on demand), `newSourceFile` |
+| Features | `watch` (file globs, and `affects`: which open diagrams a changed file reloads), `onEditorOpened` / `onEditorClosed` (a file's first diagram editor opened, its last closed), `loadPhaseWords` (the product's words, or none, for the platform's loading steps), `navigation` (cross-file drill-down), `canOpenSource` (openability predicate), `editBackend` (chat mutation seam), `chat` (chat carry-overs), `runDriver` (factory receiving a `DiagramRunHost`), `statusSource` (node states from a report, shown on demand), `newSourceFile`, `viewOptions` (checkable groups of what a reader may show and hide, drawn in the palette; the reader's choices kept per file), `outline` (the rows of a `lazy` outline group, a page at a time: `page`, `locate`, `activate`) |
 
 Everything optional degrades gracefully: no `chat` → no chat backend, no
 `runDriver` → no run/stop commands or live glow, no `clientAssets` → the
@@ -212,19 +212,27 @@ over the overlay bridge) and `postToWebview(uri, message)` (raw
 the diagram's loading indicator: `loading.report(uri, { message, detail })`
 and `loading.end(uri)`, for work the product does for a file's diagram
 outside `getGraph` (a layout streamed in after the graph is drawn). Each
-reaches every editor open on the file; a file can have two. So do
-`revealOutlineRow(uri, row)` (the product's selection, shown in the
-outline) and `setViewOptions(uri, changes)` (with `getViewOptions(uri)`, the
-reader's choices, kept per file by the host). What answers one webview's
-message, `onWebviewMessage`'s `ctx.postToWebview`, goes to that editor alone.
+reaches every editor open on the file; a file can have two. It also
+shows a row in the outline (`revealOutlineRow(uri, { id, group, index,
+show })`) and reads and sets a file's view options with or without a
+diagram open (`getViewOptions(uri)`, `setViewOptions(uri, changes)`).
+`loading`, `revealOutlineRow`, `getViewOptions` and `setViewOptions` are
+optional: a Dialogram older than them reports the same API version without
+them, so a product checks before calling (`handle.loading?.report(...)`).
+What answers one webview's message, `onWebviewMessage`'s `ctx.postToWebview`,
+goes to that editor alone.
 
 What a load is given and told:
 
 - `getGraph(sourceUri, options)` gets `options.progress`, to say what it is
   doing while it reads, and `options.signal`, an `AbortSignal` aborted when
   nobody waits for the graph any more: the editor closed, or a newer request
-  for the same diagram (a save, another view) arrived. Nothing of an aborted
-  load is drawn, whatever it returns.
+  for the same diagram (a save, another view) arrived while `getGraph` ran,
+  once the diagram shows a graph (a first load is let finish). Nothing of a
+  load whose signal was aborted is drawn, whatever it returns; once
+  `getGraph` has answered, the signal is never aborted, and the answer is
+  drawn. A request replaced while it still waited behind another never
+  calls `getGraph`.
 - The Problems panel names a graph diagnostic's source by the profile's
   `displayName` (it said `workflow` for every product).
 

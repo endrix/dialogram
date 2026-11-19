@@ -227,18 +227,32 @@ export interface ModelSourceOptions {
      */
     progress?: (progress: LoadProgress) => void;
     /**
-     * Aborted when nobody is waiting for this graph any more: the diagram's
-     * editor closed, or the reader asked the same diagram for another graph
-     * (a save, another view, a refresh) while this one was being made. Stop
-     * the work behind it (a compiler, a worker, a request to a server), and
-     * answer as you like: `undefined`, a partial document, or a throw. The
-     * platform draws nothing of a load that was aborted, whatever comes back,
-     * and the request that replaced it draws in its place. `signal.reason`
-     * says which it was (an `AbortError` whose message names it).
+     * Aborted when nobody is waiting for this graph any more, so that the
+     * product can stop the work behind it (a compiler, a worker, a request to
+     * a server):
      *
-     * Not aborted for a request nobody is waiting on (a run's overlay being
-     * redrawn): such a request never replaces one the reader is. Absent where
-     * nothing can cancel the load (a test, an older host), so read it as
+     * - the diagram's editor closed;
+     * - or the reader asked the same diagram for another graph (a save,
+     *   another view, a refresh) while this one was being made, once the
+     *   diagram shows a graph. A diagram's first load is not replaced: the
+     *   reader is waiting for a picture, and is shown this one, then the
+     *   newer one.
+     *
+     * Once it is aborted, answer as you like: `undefined`, a partial
+     * document, or a throw. Nothing of the answer is drawn, and the request
+     * that replaced this one draws in its place. `signal.reason` says which
+     * it was (an `AbortError` whose message names it).
+     *
+     * The signal covers `getGraph` and nothing after it: once `getGraph` has
+     * answered, the signal is never aborted, and the platform draws the
+     * answer (lays it out, sends it to the webview) even when a newer request
+     * arrives meanwhile, which then draws over it. A request replaced while
+     * it still waited behind another never calls `getGraph`.
+     *
+     * A load nobody is waiting on (a run's overlay being redrawn) is not
+     * aborted by a newer request, and does not abort one the reader waits
+     * on; only its editor closing aborts it. Absent where nothing can cancel
+     * the load (a test, an older host), so read it as
      * `options.signal?.aborted`.
      */
     signal?: AbortSignal;

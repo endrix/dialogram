@@ -128,7 +128,11 @@ function pagedKey(group: string, id: string): string {
 }
 
 /** Where the panel is to scroll to once it is drawn. */
-type ScrollTarget = { entry: HierarchyOutlineEntry } | { group: HierarchyOutlineEntry; position: number };
+/**
+ * A row to scroll to once it is laid out, by id: an outline that comes again
+ * (a reload, while the panel is closed) is new objects, and still has it.
+ */
+type ScrollTarget = { id: string } | { group: string; position: number };
 
 @injectable()
 export class HierarchyOutlinePanel {
@@ -452,9 +456,7 @@ export class HierarchyOutlinePanel {
 
         const target = this.scrollTarget;
         if (target) {
-            const index = 'entry' in target
-                ? indexOfEntry(this.layout, target.entry)
-                : indexOfPaged(this.layout, target.group, target.position);
+            const index = this.indexOfTarget(target);
             if (index >= 0) {
                 this.scrollTarget = undefined;
                 body.scrollTop = scrollTopFor(index, body.scrollTop, view, OUTLINE_ROW_HEIGHT, total);
@@ -483,6 +485,19 @@ export class HierarchyOutlinePanel {
         }
         body.replaceChildren(...rows);
         this.pager.want([...shown.values()]);
+    }
+
+    /** Where a row to scroll to is laid out, or -1 while it is not. */
+    private indexOfTarget(target: ScrollTarget): number {
+        if (!this.outline) {
+            return -1;
+        }
+        if ('id' in target) {
+            const path = entryPath(this.outline, target.id);
+            return path.length > 0 ? indexOfEntry(this.layout, path[path.length - 1]) : -1;
+        }
+        const path = lazyGroupPath(this.outline, target.group);
+        return path.length > 0 ? indexOfPaged(this.layout, path[path.length - 1], target.position) : -1;
     }
 
     private rowShell(depth: number, key: string): HTMLElement {
@@ -630,7 +645,8 @@ export class HierarchyOutlinePanel {
         if (slot.kind === 'paged') {
             const group = slot.group.lazy!.id;
             const found = this.pager.row(group, this.hostQuery, slot.position);
-            if (!found) {
+            // A row the producer gave no id is shown and is nothing to click.
+            if (!found || found.id === '') {
                 return;
             }
             act = double => this.actOnPaged(group, found, slot.viewPath, double);
@@ -759,8 +775,12 @@ export class HierarchyOutlinePanel {
                 ? target.index
                 : await this.pager.locate(target.group, target.id, this.hostQuery);
             if (position === undefined && this.hostQuery !== '') {
-                this.clearFilter();
-                position = Number.isInteger(target.index) ? target.index : await this.pager.locate(target.group, target.id, '');
+                // Hidden by the filter: cleared only for a row that is there without it.
+                const unfiltered = Number.isInteger(target.index) ? target.index : await this.pager.locate(target.group, target.id, '');
+                if (unfiltered !== undefined) {
+                    this.clearFilter();
+                    position = unfiltered;
+                }
             }
             if (position === undefined || position < 0) {
                 this.layoutStale = true;
@@ -769,7 +789,7 @@ export class HierarchyOutlinePanel {
             }
             await this.pager.rowAt(target.group, this.hostQuery, position);
             this.selected = pagedKey(target.group, target.id);
-            this.scrollTarget = { group, position };
+            this.scrollTarget = { group: target.group, position };
         } else {
             const path = entryPath(this.outline, target.id);
             const entry = path[path.length - 1];
@@ -780,7 +800,7 @@ export class HierarchyOutlinePanel {
                 this.expanded.add(rowId(above));
             }
             this.selected = entryKey(entry);
-            this.scrollTarget = { entry };
+            this.scrollTarget = { id: target.id };
             this.layoutStale = true;
             this.render();
             if (this.open && this.scrollTarget && this.query !== '') {

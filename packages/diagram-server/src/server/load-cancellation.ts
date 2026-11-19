@@ -12,7 +12,18 @@
  * One per session. The session's action dispatcher tells it of a newer
  * request as the request ARRIVES, not when it is taken from the queue: the
  * queue is sequential, so a request that waits there for the load in
- * progress could otherwise never replace it.
+ * progress could otherwise never replace it. A request that is itself
+ * replaced while it waits there never calls `getGraph`: when it is taken
+ * from the queue, its signal is already aborted.
+ *
+ * The signal covers the product's own work and nothing after it: it is let
+ * go of as soon as `getGraph` has answered, so that what the platform then
+ * draws of that answer (the layout, the model sent to the webview) never
+ * belongs to an aborted signal.
+ *
+ * A diagram's first load is not replaced: until the diagram shows a graph,
+ * the reader is waiting for a picture, any picture, and gets this one first
+ * and the newer one after it. Only its editor closing aborts it.
  */
 
 import { injectable } from 'inversify';
@@ -47,26 +58,44 @@ export const NEWER_REQUEST = 'a newer request for the diagram replaced this one'
 
 @injectable()
 export class LoadCancellation {
-    /** The loads in progress, and whether each is one the reader is waiting on. */
-    private readonly loads = new Map<AbortController, { watched: boolean }>();
+    /** The loads in progress, and whether a newer request replaces each. */
+    private readonly loads = new Map<AbortController, { replaceable: boolean }>();
+    /** How many requests the reader waits on have arrived, and which arrival each request was. */
+    private arrivals = 0;
+    private readonly arrivalOf = new WeakMap<object, number>();
     private closed = false;
 
     /**
-     * A load starts: the signal to hand its producer. Already aborted when the
-     * session is closed, so that a load that starts after its editor has gone
-     * stops at once.
+     * A load starts: the signal to hand its producer.
+     *
+     * `request` is the request it loads for, as the dispatcher saw it
+     * arrive; `waitedOn`, whether the reader waits for it (not a run's
+     * overlay redrawn in the background); `replaceable`, whether a newer
+     * request replaces it while it runs (not a diagram's first load).
+     *
+     * Already aborted when the session is closed, and when a newer request
+     * the reader waits on arrived while this one waited in the queue: such a
+     * load is for nobody before it starts, and is not started.
      */
-    begin(watched: boolean): AbortSignal {
+    begin(request: object | undefined, waitedOn: boolean, replaceable: boolean): AbortSignal {
         const controller = new AbortController();
         if (this.closed) {
             controller.abort(abortReason(EDITOR_CLOSED));
             return controller.signal;
         }
-        this.loads.set(controller, { watched });
+        const arrival = request === undefined ? undefined : this.arrivalOf.get(request);
+        if (waitedOn && arrival !== undefined && arrival < this.arrivals) {
+            controller.abort(abortReason(NEWER_REQUEST));
+            return controller.signal;
+        }
+        this.loads.set(controller, { replaceable: waitedOn && replaceable });
         return controller.signal;
     }
 
-    /** The load that was handed `signal` is over, however it ended. */
+    /**
+     * The producer handed `signal` has answered, or the load ended before it
+     * was asked: from now on nothing aborts the signal.
+     */
     end(signal: AbortSignal): void {
         for (const controller of this.loads.keys()) {
             if (controller.signal === signal) {
@@ -77,13 +106,19 @@ export class LoadCancellation {
     }
 
     /**
-     * The reader asked for another graph: the loads they were waiting on are
-     * for nobody now. A load nobody was waiting on (an overlay being redrawn)
-     * is left to finish; it has its own reason to.
+     * A request the reader waits on has arrived (`request`, which may now
+     * wait in the queue): the loads they were waiting on are for nobody now,
+     * and so is every such request that arrived before it and has not
+     * started. A load nobody was waiting on (an overlay being redrawn) is
+     * left to finish, as is a diagram's first load; each has its own reason
+     * to.
      */
-    supersede(): void {
-        for (const [controller, { watched }] of this.loads) {
-            if (watched) {
+    supersede(request?: object): void {
+        if (request !== undefined) {
+            this.arrivalOf.set(request, ++this.arrivals);
+        }
+        for (const [controller, { replaceable }] of this.loads) {
+            if (replaceable) {
                 this.loads.delete(controller);
                 controller.abort(abortReason(NEWER_REQUEST));
             }

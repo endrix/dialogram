@@ -71,7 +71,8 @@ class Host {
         let payload: any;
         if (request.op === 'locate') {
             const index = Number(String(request.id).slice(1));
-            payload = { requestId: request.requestId, index: found ? found.indexOf(index) : index };
+            const there = index < ROWS ? index : undefined;
+            payload = { requestId: request.requestId, index: found ? found.indexOf(index) : there };
         } else {
             const total = found ? found.length : ROWS;
             const rows: OutlinePageRow[] = [];
@@ -270,6 +271,26 @@ describe('a row the product names', () => {
         await panel.reveal({ group: 'rows', id: 'r42' });
         expect(search.value).toBe('');
         expect(rowSaying('row 42')?.classList.contains('selected')).toBe(true);
+    });
+
+    it('that is not there at all: a filter the reader typed stays', async () => {
+        const search = document.getElementById('workflow-hierarchy-outline-search') as HTMLInputElement;
+        search.value = 'row 7';
+        search.dispatchEvent(new Event('input'));
+        await new Promise(resolve => setTimeout(resolve, 200));
+        await panel.reveal({ group: 'rows', id: 'r999999' });
+        expect(search.value).toBe('row 7');
+        expect(panel.host.requests.filter(request => request.op === 'locate').map(request => request.query)).toEqual(['row 7', '']);
+    });
+
+    it('while the outline is closed, then loaded again: scrolled to when it opens', async () => {
+        document.getElementById('workflow-hierarchy-outline-toggle')!.click();
+        await panel.reveal({ group: 'rows', id: 'r150000', index: 150_000 });
+        // A reload brings the outline again, as new objects.
+        panel.modelRootChanged({ ...root, args: { ...root.args, 'wf:hierarchy': JSON.stringify({ ...outline, nodeCount: 2 }) } });
+        document.getElementById('workflow-hierarchy-outline-toggle')!.click();
+        await until(() => rowSaying('row 150000')?.classList.contains('selected') === true);
+        expect(body().scrollTop).toBeGreaterThan(149_000 * OUTLINE_ROW_HEIGHT);
     });
 
     it('of the outline’s own: the rows down to it open and it is selected', async () => {

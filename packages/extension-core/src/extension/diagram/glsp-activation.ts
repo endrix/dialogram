@@ -386,7 +386,7 @@ export async function activateGlspIntegration(
     // are the provider's, made further down.
     const { LayoutPersistenceService } = await import('@dialogram/diagram-server');
     const viewOptionsLayouts = new LayoutPersistenceService();
-    let viewOptionsEditors: Pick<WorkflowEditorProvider, 'clientIdsShowing' | 'postToClient' | 'refreshFromHost'> | undefined;
+    let viewOptionsEditors: Pick<WorkflowEditorProvider, 'clientsShowing' | 'postToClient' | 'refreshFromHost'> | undefined;
     const viewOptions = new ViewOptionsHost({
         groups: profile.viewOptions?.groups,
         onDidChange: profile.viewOptions?.onDidChange,
@@ -396,13 +396,12 @@ export async function activateGlspIntegration(
         },
         keyOf: normalizeSourceUriKey,
         pathOf: uri => (/^[a-zA-Z][a-zA-Z0-9+.-]+:/.test(uri) ? vscode.Uri.parse(uri).fsPath : uri),
-        // Each editor showing the file, by its client: a file's second editor
-        // hears what the reader turned in the first, which has it already.
-        post: (sourceUri, message, exceptEditor) => {
-            for (const clientId of viewOptionsEditors?.clientIdsShowing(sourceUri) ?? []) {
-                if (clientId !== exceptEditor) {
-                    viewOptionsEditors?.postToClient(clientId, message);
-                }
+        // Each editor showing the file, by its client, with the file's URI
+        // as it names it: a file's second editor hears what the reader
+        // turned in the first, and the first hears what the host made of it.
+        post: (sourceUri, message) => {
+            for (const editor of viewOptionsEditors?.clientsShowing(sourceUri) ?? []) {
+                viewOptionsEditors?.postToClient(editor.clientId, message(editor.sourceUri));
             }
         },
         refresh: sourceUri => {

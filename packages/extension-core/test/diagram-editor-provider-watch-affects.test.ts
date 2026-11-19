@@ -144,3 +144,30 @@ describe('a watched file\'s change', () => {
         expect(reloaded()).toEqual(['client-block', 'client-chip']);
     });
 });
+
+describe('what is watched on disk (`watch.globs`)', () => {
+    function watchedBy(watch: DiagramProfile['watch']): string[] {
+        const globs: string[] = [];
+        const spy = vi.spyOn(vscode.workspace, 'createFileSystemWatcher').mockImplementation(((glob: string) => {
+            globs.push(glob);
+            return { onDidChange: () => ({ dispose() {} }), onDidCreate: () => ({ dispose() {} }), dispose() {} };
+        }) as any);
+        try {
+            const context = { subscriptions: [] as Array<{ dispose(): void }> } as unknown as vscode.ExtensionContext;
+            const profile = { key: 'fixture', settingsNamespace: 'fixture', sourceExtensions: ['.dsl', '.lib'], watch } as unknown as DiagramProfile;
+            new WorkflowEditorProvider(context, { onDidChangeCustomDocument: undefined } as any, profile);
+        } finally {
+            spy.mockRestore();
+        }
+        return globs;
+    }
+
+    it('follows from the source extensions when `watch` carries `affects` alone', () => {
+        expect(watchedBy({ affects: () => [] })).toEqual(['**/*.dsl', '**/*.lib']);
+    });
+
+    it('is the list given, and nothing for an empty list (only a save in the editor reloads)', () => {
+        expect(watchedBy({ globs: ['**/tech.json'] })).toEqual(['**/tech.json']);
+        expect(watchedBy({ globs: [], affects: () => [] })).toEqual([]);
+    });
+});
