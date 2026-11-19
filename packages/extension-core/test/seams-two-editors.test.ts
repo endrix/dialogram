@@ -7,12 +7,16 @@
 // file's URI, which is also the second editor's, so the second editor of the
 // same file never heard it; and an outline row the product revealed went to
 // the file, not to each editor showing it. These pin each message to where it
-// belongs: a view option to every editor of the file but the one it came
-// from, an outline page to the editor that asked, a revealed row to each
-// editor showing the file once.
+// belongs: a view option to every editor of the file, the one it came from
+// too (with what the host made of it), an outline page to the editor that
+// asked, a revealed row to each editor showing the file once.
 import { describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
 import {
+    applyViewOptionTurns,
+    normalizeViewOptionGroups,
+    turnsOf,
+    type ViewOptionChange,
     OUTLINE_REPLY_MESSAGE,
     OUTLINE_REQUEST_MESSAGE,
     OUTLINE_REVEAL_MESSAGE,
@@ -46,7 +50,8 @@ const kinds: ViewOptionGroup = {
     label: 'Kinds',
     items: [
         { id: 'a', label: 'A', color: '#ff0000' },
-        { id: 'b', label: 'B' }
+        { id: 'b', label: 'B' },
+        { id: 'c', label: 'C' }
     ]
 };
 
@@ -114,11 +119,9 @@ function viewOptionsFor(provider: any, kept: Record<string, ViewOptionsState> = 
         },
         keyOf: uri => provider.canonicalizeUriString(uri),
         pathOf: uri => vscode.Uri.parse(uri).fsPath,
-        post: (sourceUri, message, exceptEditor) => {
-            for (const clientId of provider.clientIdsShowing(sourceUri)) {
-                if (clientId !== exceptEditor) {
-                    provider.postToClient(clientId, message);
-                }
+        post: (sourceUri, message) => {
+            for (const editor of provider.clientsShowing(sourceUri)) {
+                provider.postToClient(editor.clientId, message(editor.sourceUri));
             }
         },
         refresh: sourceUri => provider.refreshFromHost(sourceUri)
@@ -161,7 +164,7 @@ function outlineFor(provider: any) {
 const turned = (editor: FakeEditor) => editor.posted.filter(message => message?.type === VIEW_OPTIONS_TURNED_MESSAGE);
 
 describe('view options, with two editors on one file', () => {
-    it('a line the reader turns in one editor is shown in the other, and not told back to the first', async () => {
+    it('a line the reader turns in one editor is shown in the other, and the first hears what the host made of it', async () => {
         const { provider, open } = makeProvider();
         const first = open(FILE, 'client-0');
         const second = open(FILE, 'client-1');
@@ -172,9 +175,48 @@ describe('view options, with two editors on one file', () => {
             payload: { sourceUri: FILE.toString(), changes: [{ group: 'kinds', item: 'b', checked: false }] }
         });
 
-        expect(turned(first)).toEqual([]);
         expect(turned(second)).toHaveLength(1);
         expect(turned(second)[0].payload.turns).toEqual([{ group: 'kinds', item: 'b', checked: false }]);
+        expect(turned(first)).toEqual(turned(second));
+    });
+
+    it('a reader’s click racing a change the host made: every diagram ends as the host holds it', async () => {
+        const { provider, open } = makeProvider();
+        const first = open(FILE, 'client-0');
+        const second = open(FILE, 'client-1');
+        const host = viewOptionsFor(provider);
+        // Each webview's copy, as the diagram's ViewOptionsService keeps it:
+        // a click in force at once, then the lines the host turned, in order.
+        const shown = normalizeViewOptionGroups([kinds]);
+        const copy = { first: shown, second: shown };
+
+        // The reader picks Only A while a chat tool's "hide A" reaches the host first.
+        const clicked: ViewOptionChange = { group: 'kinds', only: 'a' };
+        copy.first = applyViewOptionTurns(copy.first, turnsOf(copy.first, clicked));
+        await host.set(FILE.toString(), { group: 'kinds', item: 'a', checked: false });
+        await first.send({ type: VIEW_OPTIONS_CHANGED_MESSAGE, payload: { sourceUri: FILE.toString(), changes: [clicked] } });
+        for (const message of turned(first)) {
+            copy.first = applyViewOptionTurns(copy.first, message.payload.turns);
+        }
+        for (const message of turned(second)) {
+            copy.second = applyViewOptionTurns(copy.second, message.payload.turns);
+        }
+
+        const states = (groups: ViewOptionGroup[]) => groups[0].items.map(item => `${item.id}:${item.checked !== false}`).join(' ');
+        const held = states(await host.get(FILE.toString()));
+        expect(held).toBe('a:true b:false c:false');
+        expect(states(copy.second)).toBe(held);
+        expect(states(copy.first)).toBe(held);
+    });
+
+    it('each editor is told the file as it names it, whatever spelling the host was handed', async () => {
+        const { provider, open } = makeProvider();
+        const first = open(FILE, 'client-0');
+        const host = viewOptionsFor(provider);
+
+        await host.set('file:///w/./top.dsl', { group: 'kinds', item: 'a', checked: false });
+
+        expect(turned(first).map(message => message.payload.sourceUri)).toEqual([FILE.toString()]);
     });
 
     it('a change the host makes reaches both editors', async () => {

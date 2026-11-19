@@ -191,18 +191,6 @@ export function scrollTopFor(index: number, scrollTop: number, viewHeight: numbe
     return Math.max(0, Math.min(Math.max(0, height - viewHeight), wanted));
 }
 
-/** The pages (of `pageSize` rows) rows `from` to `to` of a group are on. */
-export function pagesFor(from: number, to: number, pageSize: number): number[] {
-    const pages: number[] = [];
-    if (to < from || pageSize <= 0) {
-        return pages;
-    }
-    for (let page = Math.floor(Math.max(0, from) / pageSize); page <= Math.floor(to / pageSize); page++) {
-        pages.push(page);
-    }
-    return pages;
-}
-
 /** The lazy group of this id in the outline, and the rows down to it, from the root. */
 export function lazyGroupPath(root: HierarchyOutlineEntry, id: string): HierarchyOutlineEntry[] {
     const walk = (entry: HierarchyOutlineEntry): HierarchyOutlineEntry[] | undefined => {

@@ -254,8 +254,11 @@ is the product's: a click calls `outline.activate(file, { id, group, open })`.
 `DiagramProfileHandle.revealOutlineRow(uri, { id, group, index, show })` shows
 the product's own selection in the outline: the group opens, the page comes,
 the row is selected and scrolled to. `outline.locate` answers where a row is
-when the product did not say. See `DiagramOutline` in `api.ts` and shared
-`outline-pages.ts`.
+when the product did not say. A page may hold fewer rows than asked: the
+panel asks for the rest from the first one missing, and only `total` ends the
+list. See `DiagramOutline` in `api.ts` and shared `outline-pages.ts`.
+`revealOutlineRow` is optional on the handle (`handle.revealOutlineRow?.(...)`):
+a Dialogram older than it reports the same API version.
 
 ## Execution overlays and run drivers
 
@@ -284,7 +287,9 @@ the reader chose, per file, in the file's layout record, so it survives a
 reload and a reopen and applies before the first drawing.
 `DiagramProfileHandle.getViewOptions(uri)` and `setViewOptions(uri, changes)`
 read and set it with or without a diagram open (what a chat tool calls), and
-`viewOptions.onDidChange` hears every change. In the webview a product's
+`viewOptions.onDidChange` hears every change. Both are optional on the
+handle, for a Dialogram older than them that reports the same API version;
+check before calling. In the webview a product's
 module handles `ViewOptionsChangedAction` (diagram-client README, §6). See
 `DiagramViewOptions` in `api.ts` and shared `view-options.ts`.
 

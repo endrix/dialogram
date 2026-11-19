@@ -9,6 +9,10 @@
  * asked. So a fling through a hundred thousand rows asks for the pages it
  * stops on, not every page on the way.
  *
+ * A page the host answers with fewer rows than were asked, short of the
+ * group's total, is asked again for the rest from where it stopped; an
+ * answer with no rows there shows the rest of the page as not loaded.
+ *
  * DOM-free: what reaches the host is the transport the panel gives it.
  */
 import { OUTLINE_PAGE_SIZE, type OutlinePage, type OutlinePageRow } from '@dialogram/shared';
@@ -20,8 +24,12 @@ export interface OutlinePagerTransport {
 
 /** What is known of a group under a filter. */
 interface Listing {
+    /** The filter it is under. */
+    query: string;
     total?: number;
     pages: Map<number, OutlinePageRow[]>;
+    /** Pages that have fewer rows than they should: the rest is still to be asked. */
+    short: Set<number>;
     /** Pages that could not be had, and why. */
     failed: Map<number, string>;
     /** Pages by when they were last shown, the oldest first, for forgetting. */
@@ -30,7 +38,12 @@ interface Listing {
 
 /** Pages kept of one listing; the ones shown longest ago go first. */
 const KEPT_PAGES = 400;
-/** Listings kept (a group under a filter); the oldest go first. */
+/**
+ * Listings kept of filters other than the one being asked under (a group
+ * under a filter); the oldest go first. Every group's listing under the
+ * filter in use is kept: the panel asks every lazy group for its count at
+ * each layout, and a listing forgotten there is asked again at the next.
+ */
 const KEPT_LISTINGS = 12;
 /** Requests to the host at once for what the scroll shows. */
 const IN_FLIGHT = 2;
@@ -49,8 +62,6 @@ export class OutlinePager {
     private wanted: Array<{ group: string; query: string; page: number }> = [];
     private readonly waiters = new Map<string, Array<() => void>>();
     private generation = 0;
-    /** How long the host took for each page, ms, the latest last; for a measure of scrolling. */
-    readonly timings: number[] = [];
 
     constructor(
         private readonly transport: OutlinePagerTransport,
@@ -122,8 +133,18 @@ export class OutlinePager {
     /** The row at `position` of a group, fetching its page if need be; `undefined` when there is none. */
     async rowAt(group: string, query: string, position: number): Promise<OutlinePageRow | undefined> {
         const page = Math.floor(position / this.pageSize);
-        const listing = this.listing(group, query);
-        if (!listing.pages.has(page) && !listing.failed.has(page)) {
+        const generation = this.generation;
+        // A short page is asked again for the rest until it holds the row, or
+        // no more comes; each answer brings a row at least, or ends it.
+        for (;;) {
+            const listing = this.listing(group, query);
+            const rows = listing.pages.get(page);
+            const settled = listing.failed.has(page)
+                || (rows !== undefined && (!listing.short.has(page) || rows.length > position - page * this.pageSize))
+                || (listing.total !== undefined && position >= listing.total && page > 0);
+            if (settled || generation !== this.generation) {
+                break;
+            }
             await new Promise<void>(resolve => {
                 const id = `${key(group, query)}\u0000${page}`;
                 this.waiters.set(id, [...(this.waiters.get(id) ?? []), resolve]);
@@ -135,7 +156,7 @@ export class OutlinePager {
 
     /** Where a row is in the group under the filter, as far as the host or the pages already here say. */
     async locate(group: string, id: string, query: string): Promise<number | undefined> {
-        const listing = this.listings.get(key(group, query));
+        const listing = id === '' ? undefined : this.listings.get(key(group, query));
         for (const [page, rows] of listing?.pages ?? []) {
             const at = rows.findIndex(row => row.id === id);
             if (at >= 0) {
@@ -154,10 +175,17 @@ export class OutlinePager {
         const id = key(group, query);
         let listing = this.listings.get(id);
         if (!listing) {
-            listing = { pages: new Map(), failed: new Map(), used: [] };
+            listing = { query, pages: new Map(), short: new Set(), failed: new Map(), used: [] };
             this.listings.set(id, listing);
-            while (this.listings.size > KEPT_LISTINGS) {
-                this.listings.delete(this.listings.keys().next().value as string);
+            // The oldest of other filters go; none under this one, however
+            // many lazy groups the outline has.
+            for (const [other, kept] of this.listings) {
+                if (this.listings.size <= KEPT_LISTINGS) {
+                    break;
+                }
+                if (kept.query !== query) {
+                    this.listings.delete(other);
+                }
             }
         } else {
             // Most recently used last.
@@ -181,7 +209,7 @@ export class OutlinePager {
             if (this.inFlight.has(id)) {
                 continue;
             }
-            if (listing.pages.has(next.page) || listing.failed.has(next.page)
+            if ((listing.pages.has(next.page) && !listing.short.has(next.page)) || listing.failed.has(next.page)
                 || (listing.total !== undefined && next.page * this.pageSize >= listing.total && next.page > 0)) {
                 // Nothing to ask: whoever waits for it has what there is.
                 this.wake(id);
@@ -194,9 +222,13 @@ export class OutlinePager {
 
     private async fetch(group: string, query: string, page: number, id: string): Promise<void> {
         const generation = this.generation;
+        const start = page * this.pageSize;
+        // The rows a short page has already: the rest is asked from after them.
+        const before = this.listings.get(key(group, query));
+        const have = before?.short.has(page) ? before.pages.get(page) ?? [] : [];
         let answer: { page?: OutlinePage; error?: string; ms?: number };
         try {
-            answer = await this.transport.page(group, page * this.pageSize, this.pageSize, query);
+            answer = await this.transport.page(group, start + have.length, this.pageSize - have.length, query);
         } catch (error) {
             answer = { error: error instanceof Error ? error.message : String(error) };
         }
@@ -206,18 +238,30 @@ export class OutlinePager {
         this.inFlight.delete(id);
         const listing = this.listing(group, query);
         if (answer.page) {
-            listing.total = answer.page.total;
-            listing.pages.set(page, answer.page.rows);
+            const total = answer.page.total;
+            const rows = [...have, ...answer.page.rows];
+            // As many as there are from here, a page's worth at most.
+            const expected = Math.max(0, Math.min(this.pageSize, total - start));
+            listing.total = total;
+            listing.pages.set(page, rows);
+            listing.short.delete(page);
             listing.failed.delete(page);
+            if (rows.length < expected) {
+                if (answer.page.rows.length > 0) {
+                    // The rest is wanted as long as the page is: until the next scroll says otherwise.
+                    listing.short.add(page);
+                    this.wanted.unshift({ group, query, page });
+                } else {
+                    // Nothing more where the total says there is: the rest of
+                    // the page is not loaded, and not asked for again.
+                    listing.failed.set(page, `No rows came from row ${(start + rows.length + 1).toLocaleString('en-US')} on, of ${total.toLocaleString('en-US')}`);
+                }
+            }
             touch(listing.used, page);
             while (listing.used.length > KEPT_PAGES) {
-                listing.pages.delete(listing.used.shift()!);
-            }
-            if (typeof answer.ms === 'number') {
-                this.timings.push(answer.ms);
-                if (this.timings.length > 200) {
-                    this.timings.shift();
-                }
+                const forgotten = listing.used.shift()!;
+                listing.pages.delete(forgotten);
+                listing.short.delete(forgotten);
             }
         } else {
             listing.failed.set(page, answer.error ?? 'No answer');

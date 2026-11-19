@@ -174,8 +174,6 @@ platform that hands it one.
   extensions give (every file, with none declared), so that `watch` can
   carry `affects` alone; an empty list watches nothing on disk, and only a
   save in the editor reloads.
-
-  changes.
 - **View options in the palette.** What a reader may show and hide is the
   producer's to declare and the platform's to draw: checkable groups under
   the palette's tools, in the palette's own markup and theme (shared
@@ -198,19 +196,32 @@ platform that hands it one.
     keeps it): it survives a reload and a reopen, and it can be read and set
     with no diagram open. `DiagramProfileHandle.getViewOptions(uri)` and
     `setViewOptions(uri, changes)` are what a chat tool that shows or hides
-    things calls; every open diagram of the file follows.
+    things calls; every open diagram of the file follows. Both are optional
+    on the handle: a Dialogram older than them reports the same API
+    version, so a product checks before calling. A file's declaration is
+    every group its graphs have declared, the newest of each, so two editors
+    showing views that declare different groups each keep theirs.
   - A click is in force in the webview at once: the platform dispatches
     `ViewOptionsChangedAction` (`dialogram.viewOptionsChanged`), which a
     product's client module handles to redraw with no round trip, and asks
     `ViewOptionsService` what is checked. The host is told after, keeps it,
-    tells the other diagrams of the file the lines that turned, and tells
-    the product (`viewOptions.onDidChange`). A group marked `reload` has the
+    tells every diagram of the file the lines that turned, and tells the
+    product (`viewOptions.onDidChange`). The diagram the click came from
+    hears the host's result too: a change the host made just before (a
+    chat tool's) can leave another state than the click showed, and the
+    diagram follows the host's. The webview hears the host from the start:
+    a line the host turns while the first model is laid out is applied over
+    it. A change is taken only for a file its editor shows. A group marked `reload` has the
     model asked for again, and `getGraph` is handed the choices
     (`options.viewOptions`) for a producer that leaves things out itself;
     `persist: false` keeps a choice for the session only.
   - A palette with no tools no longer says "No results found." with view
     options, or with nothing at all (its empty body is not drawn); it says
     so when a filter matched neither a tool nor a line.
+  - Ids are kept exactly as the producer gave them, which is what it looks
+    its choices up by. In a `one` group the line declared `checked: true`
+    is the one checked; a disabled line there is still let go of when the
+    reader picks another, so one line stays checked.
   - A product that declares none sees no change: no root argument, no
     palette section, the same documents from its model source.
 - **A diagram that is loading says so, and says what it is doing.** A large
@@ -264,7 +275,13 @@ platform that hands it one.
     (`outline-rows.ts`), and a list of 200 000 rows scrolls as one of forty.
     A scroll asks for the pages it stops on, not every page on the way
     (`outline-pager.ts`); past what a browser scrolls, a pixel of scrolling
-    stands for more rows.
+    stands for more rows. Each lazy group's first page carries its count,
+    and is asked for once however many lazy groups the outline has.
+  - A page may hold fewer rows than asked (a producer that reads in smaller
+    batches): the panel asks for the rest from the first row missing. Only
+    `total` ends the list; an answer with no rows short of it shows the rest
+    of the page as not loaded, with why, and is not asked again. A row
+    given without an `id` keeps its place and does nothing when clicked.
   - A row that is no node of the graph (a lazy row without `nodeId`, or an
     outline row with the new role `item` and its own `id`) is the
     product's: a click or a double click calls `outline.activate(file,
@@ -274,7 +291,10 @@ platform that hands it one.
     `DiagramProfileHandle.revealOutlineRow(uri, { id, group?, index?, show? })`:
     the rows down to it open, the page it is on is fetched (its place asked
     of `outline.locate` when the product did not give it), it is selected
-    and scrolled into view, and a filter that hides it is cleared.
+    and scrolled into view, and a filter that hides it is cleared when the
+    row is there without it. Without `outline.locate`, a row whose place is
+    not given is revealed only from the pages already read. `revealOutlineRow`
+    is optional on the handle, as `loading` is.
 - **A graph that grows keeps its picture still.** A producer may say its
   graph grows a step at a time (`graph.meta.incremental`): a schematic of a
   netlist that starts from one cell and takes in a pin's fan-in when asked.

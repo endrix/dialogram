@@ -65,6 +65,20 @@ describe('the groups a producer declares', () => {
         expect(states(groups, 'one')).toEqual({ x: true, y: false });
     });
 
+    it('keep ids exactly as given, so that a producer finds its choices under them', () => {
+        const long = 'x'.repeat(250);
+        const groups = normalizeViewOptionGroups([
+            { id: ' a  b ', label: 'Spaced', items: [{ id: ` ${long}1`, label: 'One' }, { id: ` ${long}2`, label: 'Two' }, { id: '   ', label: 'blank' }, { id: 7, label: 'number' }] }
+        ]);
+        expect(groups[0].id).toBe(' a  b ');
+        expect(groups[0].items.map(item => item.id)).toEqual([` ${long}1`, ` ${long}2`]);
+    });
+
+    it('check the line of a one-of group declared checked, wherever it is', () => {
+        const [lod] = normalizeViewOptionGroups([{ id: 'lod', label: 'Detail', choice: 'one', items: [{ id: 'coarse', label: 'Coarse' }, { id: 'fine', label: 'Fine', checked: true }] }]);
+        expect(states([lod], 'lod')).toEqual({ coarse: false, fine: true });
+    });
+
     it('show the reader’s choices over the declared state', () => {
         expect(states(applyViewOptionsState([kinds], { kinds: { k0: false } }), 'kinds').k0).toBe(false);
         // A one-of choice naming two lines is no choice: the declared one stands.
@@ -83,6 +97,17 @@ describe('all, none and only', () => {
         expect(only.map(turn => turn.item)).toEqual(thirty.filter(item => item.id !== 'k3').map(item => item.id));
         expect(turnsOf([kinds], { group: 'kinds', only: 'off' })).toEqual([]);
         expect(turnsOf([kinds], { group: 'kinds', item: 'off', checked: false })).toEqual([]);
+    });
+
+    it('let go of a one-of group’s disabled line when another is picked: one line stays checked', () => {
+        const lod: ViewOptionGroup = {
+            id: 'lod', label: 'Detail', choice: 'one',
+            items: [{ id: 'coarse', label: 'Coarse', disabled: 'Not drawn at this zoom' }, { id: 'fine', label: 'Fine', checked: false }]
+        };
+        const turns = turnsOf(normalizeViewOptionGroups([lod]), { group: 'lod', item: 'fine', checked: true });
+        expect(turns).toEqual([{ group: 'lod', item: 'coarse', checked: false }, { group: 'lod', item: 'fine', checked: true }]);
+        // It is still never checked by a change.
+        expect(turnsOf(applyViewOptionTurns(normalizeViewOptionGroups([lod]), turns), { group: 'lod', item: 'coarse', checked: true })).toEqual([]);
     });
 
     it('keep exactly one line of a one-of group', () => {
@@ -156,6 +181,48 @@ describe('the webview’s copy', () => {
 
         expect(service.isChecked('kinds', 'k1')).toBe(false);
         expect(service.isChecked('kinds', 'new')).toBe(false);
+    });
+
+    it('hears the host from the start: a line turned while the first model was laid out is applied over it', () => {
+        const service = new TestService();
+        window.dispatchEvent(new MessageEvent('message', {
+            data: { type: VIEW_OPTIONS_TURNED_MESSAGE, payload: { sourceUri: FILE, turns: [{ group: 'kinds', item: 'k2', checked: false }] } }
+        }));
+        // The model was made before the host turned it.
+        service.modelRootChanged(rootOf([kinds]));
+        expect(service.isChecked('kinds', 'k2')).toBe(false);
+        expect(service.dispatched[0].changed).toContainEqual({ group: 'kinds', item: 'k2', checked: false });
+    });
+
+    it('agrees with a later model that carries the host’s state', () => {
+        const service = new TestService();
+        window.dispatchEvent(new MessageEvent('message', {
+            data: { type: VIEW_OPTIONS_TURNED_MESSAGE, payload: { sourceUri: FILE, turns: [{ group: 'kinds', item: 'k2', checked: false }] } }
+        }));
+        service.modelRootChanged(rootOf([kinds]));
+        const held = { ...kinds, items: kinds.items.map(item => (item.id === 'k2' ? { ...item, checked: false } : item)) };
+        service.modelRootChanged(rootOf([held]));
+        expect(service.isChecked('kinds', 'k2')).toBe(false);
+    });
+
+    it('keeps a line the host turned that the view shown does not have, for the model that has it', () => {
+        const service = new TestService();
+        service.modelRootChanged(rootOf([kinds]));
+        service.hostTurned(FILE, [{ group: 'detail', item: 'high', checked: true }, { group: 'detail', item: 'low', checked: false }]);
+        // A view of the file that declares the group, made before the host turned it.
+        service.modelRootChanged(rootOf([kinds, detail]));
+        expect(service.isChecked('detail', 'high')).toBe(true);
+        expect(service.isChecked('detail', 'low')).toBe(false);
+    });
+
+    it('takes the host’s answer to its own click without telling the product again', () => {
+        const service = new TestService();
+        service.modelRootChanged(rootOf([kinds]));
+        service.change({ group: 'kinds', item: 'k1', checked: false });
+        const told = service.dispatched.length;
+        service.hostTurned(FILE, [{ group: 'kinds', item: 'k1', checked: false }]);
+        expect(service.dispatched).toHaveLength(told);
+        expect(service.sent).toHaveLength(1);
     });
 
     it('takes a model of another file whole', () => {
@@ -318,6 +385,38 @@ describe('the palette', () => {
         expect(body().querySelector('.view-options-count')!.textContent).toBe('30 of 31');
         service.hostTurned(FILE, [{ group: 'kinds', item: 'k0', checked: true }]);
         expect(body().querySelector('[data-item="k0"]')!.getAttribute('aria-checked')).toBe('true');
+    });
+
+    it('keeps a long group’s scroll and the focused line when it redraws', () => {
+        // happy-dom lays nothing out: an element scrolls as far as it is told.
+        const scrolled = new WeakMap<Element, number>();
+        const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop');
+        Object.defineProperty(Element.prototype, 'scrollTop', {
+            configurable: true,
+            get(this: Element) { return scrolled.get(this) ?? 0; },
+            set(this: Element, value: number) { scrolled.set(this, value); }
+        });
+        try {
+            const service = new TestService();
+            service.modelRootChanged(rootOf([kinds]));
+            palette(service, tools);
+            body().querySelector<HTMLElement>('.view-options-lines')!.scrollTop = 140;
+            const line = body().querySelector<HTMLElement>('[data-item="k20"]')!;
+            line.focus();
+            line.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+            const redrawn = body().querySelector<HTMLElement>('[data-item="k20"]')!;
+            expect(redrawn).not.toBe(line);
+            expect(redrawn.getAttribute('aria-checked')).toBe('false');
+            expect(body().querySelector<HTMLElement>('.view-options-lines')!.scrollTop).toBe(140);
+            expect(document.activeElement).toBe(redrawn);
+            // And again: Space works on the line it left focused.
+            (document.activeElement as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+            expect(body().querySelector('[data-item="k20"]')!.getAttribute('aria-checked')).toBe('true');
+        } finally {
+            if (descriptor) {
+                Object.defineProperty(Element.prototype, 'scrollTop', descriptor);
+            }
+        }
     });
 
     it('does not say "No results found." for a product with no tools and view options', () => {

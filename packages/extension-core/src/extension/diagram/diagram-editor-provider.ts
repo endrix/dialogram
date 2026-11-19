@@ -531,12 +531,14 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
                 }
 
                 // The reader changed what is shown, in the palette: the host
-                // keeps it for the file, tells the product, and tells the
-                // file's other diagrams. Named by this editor's client, not
-                // its file: a second editor of the same file is one of the
-                // others, and has to hear it.
+                // keeps it for the file (beside it, on disk), tells the
+                // product, and tells every diagram of the file, this one
+                // too. Only for a file this editor shows: what is written
+                // beside a file is that editor's to change.
                 if (message?.type === VIEW_OPTIONS_CHANGED_MESSAGE) {
-                    await this.viewOptionsHost?.onWebviewChange(clientId, message.payload);
+                    if (this.shows(clientId, message.payload)) {
+                        await this.viewOptionsHost?.onWebviewChange(message.payload);
+                    }
                     return;
                 }
 
@@ -902,6 +904,29 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      */
     clientIdsShowing(uri: vscode.Uri | string): string[] {
         return this.editorsShowing(uri).map(editor => editor.clientId);
+    }
+
+    /**
+     * The clients of the editors {@link editorsOf} names, each with the
+     * file's URI as that editor names it: its document's, or that of the view
+     * it shows in place. A diagram knows its file by its own spelling.
+     */
+    clientsShowing(uri: vscode.Uri | string): Array<{ clientId: string; sourceUri: string }> {
+        const wanted = this.canonicalizeUriString(uri);
+        return this.editorsShowing(uri).map(editor => ({
+            clientId: editor.clientId,
+            sourceUri: editor.documentKey === wanted ? editor.documentUri : (editor.view?.shownSourceUri ?? editor.documentUri)
+        }));
+    }
+
+    /**
+     * Whether a webview's message names a file its editor shows (its
+     * `sourceUri`): what the host writes beside, and hands the product, is
+     * that editor's file and no other.
+     */
+    private shows(clientId: string, payload: unknown): boolean {
+        const sourceUri = (payload as { sourceUri?: unknown } | undefined)?.sourceUri;
+        return typeof sourceUri === 'string' && sourceUri !== '' && this.clientIdsShowing(sourceUri).includes(clientId);
     }
 
     /** The editors {@link editorsOf} names, each one: a file can have two. */

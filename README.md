@@ -188,7 +188,7 @@ CSP, esbuild options, timing constraints) is in
 | Commands | `commands` (21 consumer-owned command ids), `operationKinds` (port create/delete kind strings) |
 | Model & edits | `modelSource` factory, `edits` (`'read-only'` or a strategy with operation modules), `serverModules`, `serverDiagramModule` (library mode only), `storageOptions`, `supportsElementCreation` (`false` empties the creation palette) |
 | Client | `clientBehavior` (neutral capability flags injected into the webview), `clientAssets` (custom webview bundle — data only), `clientStylesheets` (the product's own stylesheets, served after the platform's — data only), `onWebviewMessage` (inbound message hook; its `ctx.revealRange(uri, range, { beside, preserveFocus })` opens a source over the diagram, or beside it) |
-| Features | `watch` (file globs, and `affects`: which open diagrams a changed file reloads), `onEditorOpened` / `onEditorClosed` (a file's first diagram editor opened, its last closed), `loadPhaseWords` (the product's words, or none, for the platform's loading steps), `navigation` (cross-file drill-down), `canOpenSource` (openability predicate), `editBackend` (chat mutation seam), `chat` (chat carry-overs), `runDriver` (factory receiving a `DiagramRunHost`), `statusSource` (node states from a report, shown on demand), `newSourceFile` |
+| Features | `watch` (file globs, and `affects`: which open diagrams a changed file reloads), `onEditorOpened` / `onEditorClosed` (a file's first diagram editor opened, its last closed), `loadPhaseWords` (the product's words, or none, for the platform's loading steps), `navigation` (cross-file drill-down), `canOpenSource` (openability predicate), `editBackend` (chat mutation seam), `chat` (chat carry-overs), `runDriver` (factory receiving a `DiagramRunHost`), `statusSource` (node states from a report, shown on demand), `newSourceFile`, `viewOptions` (checkable groups of what a reader may show and hide, drawn in the palette; the reader's choices kept per file), `outline` (the rows of a `lazy` outline group, a page at a time: `page`, `locate`, `activate`) |
 
 Everything optional degrades gracefully: no `chat` → no chat backend, no
 `runDriver` → no run/stop commands or live glow, no `clientAssets` → the
@@ -212,9 +212,13 @@ over the overlay bridge) and `postToWebview(uri, message)` (raw
 the diagram's loading indicator: `loading.report(uri, { message, detail })`
 and `loading.end(uri)`, for work the product does for a file's diagram
 outside `getGraph` (a layout streamed in after the graph is drawn). Each
-reaches every editor open on the file; a file can have two. `loading` is
-optional: a Dialogram older than it reports the same API version without
-it, so a product calls `handle.loading?.report(...)`.
+reaches every editor open on the file; a file can have two. It also
+shows a row in the outline (`revealOutlineRow(uri, { id, group, index,
+show })`) and reads and sets a file's view options with or without a
+diagram open (`getViewOptions(uri)`, `setViewOptions(uri, changes)`).
+`loading`, `revealOutlineRow`, `getViewOptions` and `setViewOptions` are
+optional: a Dialogram older than them reports the same API version without
+them, so a product checks before calling (`handle.loading?.report(...)`).
 
 What a load is given and told:
 

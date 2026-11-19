@@ -4,10 +4,10 @@
  *
  * The host holds the truth. These pin what that buys: a choice survives the
  * session (the store), it can be read and set with no diagram open (a chat
- * tool's `getViewOptions`/`setViewOptions`), every other diagram of the file
- * follows the lines turned and the one that turned them is not told again,
- * the product hears each change once, and a `reload` group has the model
- * asked for again.
+ * tool's `getViewOptions`/`setViewOptions`), every diagram of the file
+ * follows the lines the host turned (the one a reader's change came from
+ * too, which may have shown something else), the product hears each change
+ * once, and a `reload` group has the model asked for again.
  */
 import { describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
@@ -41,7 +41,7 @@ const detail: ViewOptionGroup = {
 };
 
 function makeHost(overrides: Partial<ViewOptionsHostOptions> = {}, kept: Record<string, ViewOptionsState> = {}) {
-    const posted: Array<{ sourceUri: string; message: any; exceptEditor?: string }> = [];
+    const posted: Array<{ sourceUri: string; message: any }> = [];
     const refreshed: string[] = [];
     const changes: Array<{ file: string; event: any }> = [];
     const store = {
@@ -54,7 +54,8 @@ function makeHost(overrides: Partial<ViewOptionsHostOptions> = {}, kept: Record<
         store,
         keyOf: uri => uri.toLowerCase(),
         pathOf: uri => vscode.Uri.parse(uri).fsPath,
-        post: (sourceUri, message, exceptEditor) => posted.push({ sourceUri, message, exceptEditor }),
+        // As a diagram names the file: here, as the host was first handed it.
+        post: (sourceUri, message) => posted.push({ sourceUri, message: message(sourceUri) }),
         refresh: sourceUri => refreshed.push(sourceUri),
         onDidChange: (file, event) => changes.push({ file, event }),
         ...overrides
@@ -125,8 +126,7 @@ describe('reading and setting them from the host', () => {
         expect(kept['/w/top.sv']).toEqual({ kinds: { a: false } });
         expect(posted).toEqual([{
             sourceUri: FILE,
-            message: { type: VIEW_OPTIONS_TURNED_MESSAGE, payload: { sourceUri: FILE, turns: [{ group: 'kinds', item: 'a', checked: false }] } },
-            exceptEditor: undefined
+            message: { type: VIEW_OPTIONS_TURNED_MESSAGE, payload: { sourceUri: FILE, turns: [{ group: 'kinds', item: 'a', checked: false }] } }
         }]);
         expect(changes).toHaveLength(1);
         expect(changes[0].file).toBe('/w/top.sv');
@@ -206,21 +206,63 @@ describe('reading and setting them from the host', () => {
     });
 });
 
+describe('a file whose diagrams show views declaring different groups', () => {
+    const layers: ViewOptionGroup = { id: 'layers', label: 'Layers', reload: true, persist: false, items: [{ id: 'm1', label: 'M1' }, { id: 'm2', label: 'M2' }] };
+    const nets: ViewOptionGroup = { id: 'nets', label: 'Nets', items: [{ id: 'clk', label: 'Clock' }, { id: 'rst', label: 'Reset' }] };
+
+    it('keeps every group declared, the newest of each: All on a group the last load did not declare is kept, told, and reloads', async () => {
+        const { host, kept, refreshed, changes } = makeHost();
+        // One editor's view declares the layers, the other's (loaded after) the nets.
+        await host.wrapModelSource(source([layers])).getGraph(FILE, {} as any);
+        await host.wrapModelSource(source([nets])).getGraph(FILE, {} as any);
+
+        const groups = await host.set(FILE, { group: 'layers', all: false });
+
+        expect(checked(groups, 'layers')).toEqual({ m1: false, m2: false });
+        expect(changes.map(change => change.event.turns.length)).toEqual([2]);
+        // `reload` and `persist: false` still hold for it.
+        expect(refreshed).toEqual([FILE]);
+        expect(kept['/w/top.sv']).toEqual({});
+        expect((await host.get(FILE)).map(group => group.id)).toEqual(['nets', 'layers']);
+        // A newer declaration of a group takes its place.
+        await host.wrapModelSource(source([{ ...layers, items: [{ id: 'm3', label: 'M3' }] }])).getGraph(FILE, {} as any);
+        expect((await host.get(FILE)).find(group => group.id === 'layers')!.items.map(item => item.id)).toEqual(['m3']);
+    });
+});
+
+describe('a one-of group whose checked line cannot be changed now', () => {
+    const lod: ViewOptionGroup = {
+        id: 'lod', label: 'Detail', choice: 'one',
+        items: [{ id: 'coarse', label: 'Coarse', disabled: 'Not drawn at this zoom' }, { id: 'fine', label: 'Fine', checked: false }]
+    };
+
+    it('lets go of it when the reader picks another: one line checked, kept and read back', async () => {
+        const { host, changes } = makeHost();
+        await host.wrapModelSource(source([lod])).getGraph(FILE, {} as any);
+
+        const groups = await host.set(FILE, { group: 'lod', item: 'fine', checked: true });
+
+        expect(checked(groups, 'lod')).toEqual({ coarse: false, fine: true });
+        expect(changes[0].event.turns).toEqual([{ group: 'lod', item: 'coarse', checked: false }, { group: 'lod', item: 'fine', checked: true }]);
+        expect(checked(await host.get(FILE), 'lod')).toEqual({ coarse: false, fine: true });
+    });
+});
+
 describe('a reader’s change, from a webview', () => {
-    it('is kept and told to the other diagrams of the file, not to the one it came from', async () => {
+    it('is kept and told to every diagram of the file, as the host made it', async () => {
         const { host, kept, posted, changes } = makeHost({ groups: [kinds] });
-        await host.onWebviewChange('file:///w/editor.sv', { sourceUri: FILE, changes: [{ group: 'kinds', item: 'b', checked: false }] });
+        await host.onWebviewChange({ sourceUri: FILE, changes: [{ group: 'kinds', item: 'b', checked: false }] });
 
         expect(kept['/w/top.sv']).toEqual({ kinds: { b: false } });
-        expect(posted[0].exceptEditor).toBe('file:///w/editor.sv');
+        expect(posted.map(post => post.message.payload.turns)).toEqual([[{ group: 'kinds', item: 'b', checked: false }]]);
         expect(changes[0].event.origin).toBe('reader');
     });
 
     it('is applied in the order it came, each on what the one before left', async () => {
         const { host } = makeHost({ groups: [kinds] });
         await Promise.all([
-            host.onWebviewChange('e', { sourceUri: FILE, changes: [{ group: 'kinds', all: false }] }),
-            host.onWebviewChange('e', { sourceUri: FILE, changes: [{ group: 'kinds', item: 'a', checked: true }] }),
+            host.onWebviewChange({ sourceUri: FILE, changes: [{ group: 'kinds', all: false }] }),
+            host.onWebviewChange({ sourceUri: FILE, changes: [{ group: 'kinds', item: 'a', checked: true }] }),
             host.set(FILE, { group: 'kinds', item: 'b', checked: true })
         ]);
         expect(checked(await host.get(FILE), 'kinds')).toEqual({ a: true, b: true, c: true });
@@ -228,8 +270,8 @@ describe('a reader’s change, from a webview', () => {
 
     it('ignores a message that is not one', async () => {
         const { host, posted } = makeHost({ groups: [kinds] });
-        await host.onWebviewChange('e', { changes: [{ group: 'kinds', all: false }] });
-        await host.onWebviewChange('e', { sourceUri: FILE, changes: [{ group: 'kinds' }, 'x'] });
+        await host.onWebviewChange({ changes: [{ group: 'kinds', all: false }] });
+        await host.onWebviewChange({ sourceUri: FILE, changes: [{ group: 'kinds' }, 'x'] });
         expect(posted).toEqual([]);
     });
 });
@@ -281,9 +323,12 @@ describe('the editor provider', () => {
         const payload = { sourceUri: FILE, changes: [{ group: 'kinds', all: true }] };
         await onMessage!({ type: VIEW_OPTIONS_CHANGED_MESSAGE, payload });
 
-        // Named by the editor's client, not its file: a file's second editor
-        // is one of the diagrams the change has to reach.
-        expect(onWebviewChange).toHaveBeenCalledWith('client-0', payload);
+        expect(onWebviewChange).toHaveBeenCalledWith(payload);
+        expect(onWebviewMessage).not.toHaveBeenCalled();
+
+        // A change naming a file this editor does not show writes nothing beside it.
+        await onMessage!({ type: VIEW_OPTIONS_CHANGED_MESSAGE, payload: { sourceUri: 'file:///elsewhere/other.sv', changes: [{ group: 'kinds', all: true }] } });
+        expect(onWebviewChange).toHaveBeenCalledTimes(1);
         expect(onWebviewMessage).not.toHaveBeenCalled();
     });
 });

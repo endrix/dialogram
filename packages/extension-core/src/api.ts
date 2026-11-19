@@ -330,14 +330,23 @@ export interface DiagramOutline {
    * match in all. Asked as the reader opens the group and scrolls it; keep
    * it quick, it is what scrolling waits for. A throw shows the rows as not
    * loaded, and is logged.
+   *
+   * It may give fewer rows than `limit` (it reads in smaller batches, or
+   * stops at a time budget): the panel asks again from the first row it did
+   * not get. Only `total` ends the list: an answer with no rows short of it
+   * shows the rest of what was asked as not loaded, and it is not asked
+   * again until the outline changes. A row given without an `id` keeps its
+   * place and does nothing when clicked.
    */
   page(file: string, request: OutlinePageRequest): OutlinePage | Promise<OutlinePage>;
   /**
    * Where the row `id` is among the rows of `group` under `query`, from 0,
    * or `undefined` when it is not there. Asked to reveal a row whose place
    * the product did not give ({@link OutlineRowReveal.index}), or with a
-   * filter typed. Without it such a row is revealed only once the pages
-   * read so far have it.
+   * filter typed. Without it, such a row is revealed only when a page the
+   * panel has read already holds it; otherwise the reveal does nothing. A
+   * filter that hides the row is cleared only when the row is there without
+   * it.
    */
   locate?(
     file: string,
@@ -704,8 +713,11 @@ export interface DiagramProfileHandle extends vscode.Disposable {
    * panel opened too with `show`. For the product's own selection (a row
    * picked elsewhere) to be the outline's. Returns how many diagrams were
    * told; none when no diagram of the file is open.
+   *
+   * Absent on a Dialogram older than this, which reports the same API
+   * version: call it as `handle.revealOutlineRow?.(...)`.
    */
-  revealOutlineRow(uri: string | vscode.Uri, row: OutlineRowReveal): number;
+  revealOutlineRow?(uri: string | vscode.Uri, row: OutlineRowReveal): number;
   /**
    * Dispatch a host→client action to every diagram editor open on `uri` (a
    * file can have two, after View: Split Editor Right), over the ungated
@@ -746,19 +758,27 @@ export interface DiagramProfileHandle extends vscode.Disposable {
   };
   /**
    * The view options of the file at `uri` (a URI string, a `vscode.Uri` or
-   * an absolute path) as they stand: the groups its last graph declared, or
-   * the profile's when no diagram of it has been opened yet, with the
-   * reader's choices applied. See {@link DiagramViewOptions}.
+   * an absolute path) as they stand: every group its graphs have declared
+   * since the window opened, the newest declaration of each (two editors of
+   * the file can show views that declare different groups), or the
+   * profile's when no diagram of it has been opened yet, with the reader's
+   * choices applied. See {@link DiagramViewOptions}.
+   *
+   * Absent on a Dialogram older than this, which reports the same API
+   * version: check for it before calling.
    */
-  getViewOptions(uri: string | vscode.Uri): Promise<ViewOptionGroup[]>;
+  getViewOptions?(uri: string | vscode.Uri): Promise<ViewOptionGroup[]>;
   /**
    * Change the view options of the file at `uri`, as the host: each change
    * in turn (a line, `all` of a group, `only` one line), kept for the file,
    * shown in every diagram of it and told to `viewOptions.onDidChange`. A
    * line of a group no graph of the file has declared yet is kept, and
    * applies when one does. Resolves to the groups as they stand.
+   *
+   * Absent on a Dialogram older than this, which reports the same API
+   * version: check for it before calling.
    */
-  setViewOptions(
+  setViewOptions?(
     uri: string | vscode.Uri,
     changes: ViewOptionChange | ViewOptionChange[],
   ): Promise<ViewOptionGroup[]>;

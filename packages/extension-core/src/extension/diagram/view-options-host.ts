@@ -19,7 +19,13 @@
  * that goes to every diagram of the file as the lines it turned
  * ({@link VIEW_OPTIONS_TURNED_MESSAGE}), never as a whole state, so that a
  * reader's click on its way to the host is not undone by an answer to the
- * click before.
+ * click before. The diagram a reader's change came from is told too: a
+ * change the host made just before can have left another state than the
+ * click showed there, and the diagram follows the host's.
+ *
+ * A file's diagrams can show views of it that declare different groups (two
+ * editors, each in another view): the file's declaration is every group its
+ * graphs have declared, the newest declaration of each.
  */
 import type {
     DiagramModelSource,
@@ -68,11 +74,13 @@ export interface ViewOptionsHostOptions {
     /** The file system path of a source URI, for the store and the product. */
     pathOf: (uri: string) => string;
     /**
-     * Post a message to every diagram of the file, but the one the change
-     * came from: `exceptEditor` is that editor's GLSP client id, since a file
-     * can have two editors and the other one has to hear it.
+     * Post a message to every diagram of the file, the one a reader's change
+     * came from too. `message(shownAs)` is what one is sent, with the file's
+     * URI as that diagram names it: a file's editors, and a view shown in
+     * place, each spell it their own way, and a diagram knows its file by its
+     * own spelling.
      */
-    post: (sourceUri: string, message: unknown, exceptEditor?: string) => void;
+    post: (sourceUri: string, message: (shownAs: string) => unknown) => void;
     /** Ask every diagram of the file for its model again. */
     refresh: (sourceUri: string) => void;
     log?: (message: string) => void;
@@ -82,7 +90,7 @@ export class ViewOptionsHost {
     /** What the reader chose, per file key; loaded from the store on first need. */
     private readonly choices = new Map<string, ViewOptionsState>();
     private readonly loading = new Map<string, Promise<ViewOptionsState>>();
-    /** The groups each file's last graph declared, the profile's first, as declared. */
+    /** The groups each file's graphs declared, the profile's first, the newest declaration of each group. */
     private readonly declared = new Map<string, ViewOptionGroup[]>();
     /** The URI each key was last seen as, for the messages. */
     private readonly uris = new Map<string, string>();
@@ -126,7 +134,7 @@ export class ViewOptionsHost {
         });
     }
 
-    /** The file's groups as they stand: those its last graph declared, or the profile's when none has been read yet. */
+    /** The file's groups as they stand: those its graphs declared, or the profile's when none has been read yet. */
     async get(uri: string): Promise<ViewOptionGroup[]> {
         const key = this.remember(uri);
         return applyViewOptionsState(this.declarationOf(key), await this.choicesOf(key));
@@ -145,23 +153,23 @@ export class ViewOptionsHost {
     }
 
     /**
-     * A webview's message: the reader changed what is shown, in the editor
-     * whose GLSP client is `fromEditor`. Every other diagram of the file is
-     * told, a second editor of the same file included.
+     * A webview's message: the reader changed what is shown. Every diagram of
+     * the file is told what the host made of it, the one it came from and a
+     * second editor of the same file included.
      */
-    async onWebviewChange(fromEditor: string, payload: unknown): Promise<void> {
+    async onWebviewChange(payload: unknown): Promise<void> {
         const sourceUri = (payload as { sourceUri?: unknown } | undefined)?.sourceUri;
         const raw = (payload as { changes?: unknown } | undefined)?.changes;
         if (typeof sourceUri !== 'string' || sourceUri === '' || !Array.isArray(raw)) {
             return;
         }
-        await this.change(sourceUri, raw.filter(isViewOptionChange), 'reader', fromEditor);
+        await this.change(sourceUri, raw.filter(isViewOptionChange), 'reader');
     }
 
-    private change(uri: string, changes: ViewOptionChange[], origin: 'reader' | 'host', exceptEditor?: string): Promise<ViewOptionGroup[]> {
+    private change(uri: string, changes: ViewOptionChange[], origin: 'reader' | 'host'): Promise<ViewOptionGroup[]> {
         const key = this.remember(uri);
         const previous = this.queues.get(key) ?? Promise.resolve();
-        const next = previous.catch(() => undefined).then(() => this.changeNow(key, changes, origin, exceptEditor));
+        const next = previous.catch(() => undefined).then(() => this.changeNow(key, changes, origin));
         this.queues.set(key, next);
         void next.finally(() => {
             if (this.queues.get(key) === next) {
@@ -171,7 +179,7 @@ export class ViewOptionsHost {
         return next;
     }
 
-    private async changeNow(key: string, changes: ViewOptionChange[], origin: 'reader' | 'host', exceptEditor?: string): Promise<ViewOptionGroup[]> {
+    private async changeNow(key: string, changes: ViewOptionChange[], origin: 'reader' | 'host'): Promise<ViewOptionGroup[]> {
         const declaration = this.declarationOf(key);
         let state = await this.choicesOf(key);
         let groups = applyViewOptionsState(declaration, state);
@@ -195,7 +203,7 @@ export class ViewOptionsHost {
         this.choices.set(key, state);
         const sourceUri = this.uris.get(key) ?? key;
         await this.keep(key, state, declaration);
-        this.options.post(sourceUri, { type: VIEW_OPTIONS_TURNED_MESSAGE, payload: { sourceUri, turns } }, exceptEditor);
+        this.options.post(sourceUri, shownAs => ({ type: VIEW_OPTIONS_TURNED_MESSAGE, payload: { sourceUri: shownAs, turns } }));
         try {
             this.options.onDidChange?.(this.options.pathOf(sourceUri), { groups, turns, origin });
         } catch (error) {
@@ -224,15 +232,22 @@ export class ViewOptionsHost {
         }
     }
 
-    /** The document with the file's groups as they stand; the producer's object is left alone. */
+    /**
+     * The document with the file's groups as they stand; the producer's
+     * object is left alone. The groups it declares are taken into the file's
+     * declaration, each in place of the one of its id declared before; the
+     * file's other groups stay, since another diagram of the file may be
+     * showing the view that declared them.
+     */
     private publish(key: string, doc: GraphDocument): GraphDocument {
         const own = normalizeViewOptionGroups(doc.viewOptions ?? []);
         if (own.length === 0 && this.profileGroups.length === 0) {
-            this.declared.delete(key);
             return doc;
         }
         const declaration = normalizeViewOptionGroups([...this.profileGroups, ...own]);
-        this.declared.set(key, declaration);
+        const ids = new Set(declaration.map(group => group.id));
+        const before = (this.declared.get(key) ?? []).filter(group => !ids.has(group.id));
+        this.declared.set(key, [...declaration, ...before]);
         return { ...doc, viewOptions: applyViewOptionsState(declaration, this.choices.get(key)) };
     }
 

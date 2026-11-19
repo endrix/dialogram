@@ -24,7 +24,11 @@
 
 /** One row of a lazy group, as the host gives it. */
 export interface OutlinePageRow {
-    /** The product's id for it, unique in its group: what a click and a reveal name it by. */
+    /**
+     * The product's id for it, unique in its group: what a click and a reveal
+     * name it by. A row given without one keeps its place, and a click on it
+     * does nothing.
+     */
     id: string;
     /** What the row says. */
     label: string;
@@ -60,7 +64,11 @@ export interface OutlinePage {
     total: number;
     /** The `offset` asked for. */
     offset: number;
-    /** The rows from there, at most `limit` of them. */
+    /**
+     * The rows from there, at most `limit` of them. Fewer, short of `total`,
+     * and the panel asks for the rest from the first one missing; none, and
+     * the rest of what it asked is shown as not loaded.
+     */
     rows: OutlinePageRow[];
 }
 
@@ -140,20 +148,20 @@ export function normalizeOutlinePageRequest(raw: Partial<OutlinePageRequest>): O
 
 /**
  * A producer's answer made safe to show: a whole, non-negative total, the
- * offset asked for, and at most `limit` rows that have an id, each with a
- * label (its id when it gave none).
+ * offset asked for, and at most `limit` rows, each with a label (its id when
+ * it gave none). A row without an id keeps its place, with an empty id, so
+ * that the rows after it are still where the producer put them and the rest
+ * of a short page is asked from the right row.
  */
 export function normalizeOutlinePage(raw: unknown, request: OutlinePageRequest): OutlinePage {
     const given = (raw && typeof raw === 'object' ? raw : {}) as Partial<OutlinePage>;
     const rows: OutlinePageRow[] = [];
     for (const candidate of Array.isArray(given.rows) ? given.rows.slice(0, request.limit) : []) {
         if (!candidate || typeof candidate !== 'object') {
+            rows.push({ id: '', label: '' });
             continue;
         }
         const id = typeof candidate.id === 'string' ? candidate.id : '';
-        if (id === '') {
-            continue;
-        }
         const row: OutlinePageRow = { id, label: line(candidate.label) || id };
         const detail = line(candidate.detail);
         if (detail !== '') {
