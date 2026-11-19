@@ -953,10 +953,11 @@ platform that hands it one.
   edge and reaches the right one, where keeping its middle left of the
   palette would have cut off 167 and left 117 of the canvas empty on the
   right.
-- **Fit and Center leave the chat card and an open outline clear.** Fit
-  avoided the palette, the canvas's buttons, the breadcrumb and a floating
-  property panel, but put content under the chat and under the outline,
-  the platform's own included.
+- **Fit and Center leave the chat card and an open outline clear** when the
+  content fits the area they leave; content that does not stays on the
+  canvas, under them if need be. Fit avoided the palette, the canvas's
+  buttons, the breadcrumb and a floating property panel, but put content
+  under the chat and under the outline, the platform's own included.
 - **The first view is done once, when it can be right**: when the canvas has
   a size and the content has bounds (a surface's included, which may come
   after the model). It was a centre two frames after every model set,
