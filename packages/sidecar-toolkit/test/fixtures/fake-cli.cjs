@@ -22,6 +22,12 @@ const logFile = process.env.FAKE_CLI_LOG;
 if (logFile) {
     fs.appendFileSync(logFile, `${JSON.stringify(process.argv.slice(2))}\n`);
 }
+// FAKE_CLI_CWD_LOG: the directory it was started in, one line per start, for the
+// tests that pin where each of the toolkit's CLI starts runs (cli-start-folder.test.ts).
+const cwdLogFile = process.env.FAKE_CLI_CWD_LOG;
+if (cwdLogFile) {
+    fs.appendFileSync(cwdLogFile, `${process.cwd()}\n`);
+}
 
 if (process.env.FAKE_CLI_FAIL === '1') {
     process.stderr.write('simulated wfpy plan runtime failure: module raised on import\n');

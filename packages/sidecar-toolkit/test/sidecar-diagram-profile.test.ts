@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { Uri, workspace } from './vscode-mock';
+import { Uri, openWorkspaceFolders, resetWorkspace, workspace } from './vscode-mock';
 import {
     createSidecarDiagramProfile,
     type SidecarProfileInput
@@ -254,19 +254,18 @@ describe('createSidecarDiagramProfile', () => {
 
 describe('runCli: the product’s CLI, started as a run starts it', () => {
     const temps: string[] = [];
-    const savedWorkspace = { ...workspace };
     afterEach(() => {
-        Object.assign(workspace, savedWorkspace);
+        resetWorkspace();
         for (const dir of temps.splice(0)) {
             fs.rmSync(dir, { recursive: true, force: true });
         }
     });
 
-    /** A project of the test's own (a `package.json`, so the run root), with a CLI `name` whose script is `body` (node). */
+    /** A project of the test's own, open as the workspace folder (so the run root), with a CLI `name` whose script is `body` (node). */
     function project(name: string, body: string[]): { dir: string; command: string; file: any } {
         const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'run-cli-')));
         temps.push(dir);
-        fs.writeFileSync(path.join(dir, 'package.json'), '{}');
+        openWorkspaceFolders(dir);
         fs.mkdirSync(path.join(dir, 'flows'));
         fs.writeFileSync(path.join(dir, 'flows', 'main.py'), '');
         const command = path.join(dir, name);
@@ -329,6 +328,25 @@ describe('runCli: the product’s CLI, started as a run starts it', () => {
             stderr: 'said on stderr\n',
             cwd: dir
         });
+    });
+
+    it.skipIf(process.platform === 'win32')('runs in the workspace folder, not at a `.git` above it, and in the file’s folder outside every folder', async () => {
+        const { dir, command } = project('x-cli', ECHO);
+        // The folder is inside a directory kept in git (a home directory's dotfiles).
+        const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'run-cli-home-')));
+        temps.push(home);
+        fs.mkdirSync(path.join(home, '.git'));
+        const folder = path.join(home, 'project');
+        fs.mkdirSync(path.join(folder, 'flows'), { recursive: true });
+        openWorkspaceFolders(folder);
+        const p = createSidecarDiagramProfile(baseInput({ cliCommandDefault: command }));
+        const inFolder = await p.runCli!(Uri.file(path.join(folder, 'flows', 'main.py')) as any, []);
+        expect(inFolder).toMatchObject({ exitCode: 0, cwd: folder });
+        expect(JSON.parse(inFolder.stdout).cwd).toBe(folder);
+        // `dir` is no longer open: a file in it is outside every folder.
+        const outside = await p.runCli!(Uri.file(path.join(dir, 'flows', 'main.py')) as any, []);
+        expect(outside).toMatchObject({ exitCode: 0, cwd: path.join(dir, 'flows') });
+        expect(JSON.parse(outside.stdout).cwd).toBe(path.join(dir, 'flows'));
     });
 
     it.skipIf(process.platform === 'win32')('starts an interpreter with the module form, as a run does', async () => {

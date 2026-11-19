@@ -1,41 +1,70 @@
 /**
- * Where a run of a source file starts: the run driver's rule, kept here so
- * that `runCli` (`cli-invocation.ts`), which a product's host code is handed
- * on its profile, starts the CLI where a run does.
+ * Where a run of a source file starts: the one rule for the working
+ * directory of every start of a product's CLI the toolkit makes (a run,
+ * `runCli` in `cli-invocation.ts`, the `cli-plan` graph export and the chat's
+ * graph from it, a status source's reports), so they all agree on the folder.
  */
+import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { fileExists } from './server/source-files';
 
 /**
- * The directory a run of `forUri` starts in: from the file's workspace folder
- * (the first one when it is in none, the file's own directory without any),
- * the nearest directory holding a `package.json` or a `.git`; that folder when
- * none does.
+ * The directory a run of `file` (a Uri, or an absolute path) starts in: the
+ * workspace folder that holds the file, as VS Code names it, the innermost
+ * one where folders are inside one another; the file's own directory when no
+ * workspace folder holds it, or no folder is open. Never above the workspace
+ * folder: a `.git` or a `package.json` above it (a home directory kept in
+ * git, one planted in `/tmp`) does not move a run, and neither does one
+ * between the file and its folder.
+ *
+ * VS Code matches the file by the path it is named by. When it says the
+ * file is in no folder, the folders and the file are compared once more with
+ * their links followed: a file named by the path a link to a folder leads
+ * to, or itself a link to a file in one, is in that folder. A file VS Code
+ * counts as a folder's is that folder's, wherever a link in it leads.
  */
-export async function resolveRunRoot(forUri: vscode.Uri): Promise<string> {
-    const wsFolder = vscode.workspace.getWorkspaceFolder(forUri) ?? vscode.workspace.workspaceFolders?.[0];
-    const base = wsFolder ? wsFolder.uri.fsPath : path.dirname(forUri.fsPath);
-    return (await findProjectRoot(base)) ?? base;
+export async function resolveRunRoot(file: vscode.Uri | string): Promise<string> {
+    const forUri = typeof file === 'string' ? vscode.Uri.file(file) : file;
+    const folder = vscode.workspace.getWorkspaceFolder(forUri) ?? (await folderThroughLinks(forUri));
+    return folder ? folder.uri.fsPath : path.dirname(forUri.fsPath);
 }
 
-async function findProjectRoot(startDir: string): Promise<string | undefined> {
-    let current = startDir;
-    for (;;) {
-        // Both looked for at once, at each level; nothing is kept between
-        // calls, so a `package.json` or `.git` made since is seen.
-        const found = await Promise.all([
-            fileExists(path.resolve(current, 'package.json')),
-            fileExists(path.resolve(current, '.git'))
-        ]);
-        if (found.some(Boolean)) {
-            return current;
-        }
-        const parent = path.dirname(current);
-        if (parent === current) {
-            break;
-        }
-        current = parent;
+/**
+ * The innermost open workspace folder that holds `forUri` once every link on
+ * both paths is followed, the file's own included (a link to a file in the
+ * folder); undefined when none does, or when neither the file nor its
+ * directory can be resolved (they are gone, or not on this disk).
+ */
+async function folderThroughLinks(forUri: vscode.Uri): Promise<vscode.WorkspaceFolder | undefined> {
+    const folders = vscode.workspace.workspaceFolders ?? [];
+    if (folders.length === 0 || forUri.scheme !== 'file') {
+        return undefined;
     }
-    return undefined;
+    const realFile = (await realPath(forUri.fsPath)) ?? (await realPath(path.dirname(forUri.fsPath)));
+    if (!realFile) {
+        return undefined;
+    }
+    const resolved = await Promise.all(folders.map(folder => (folder.uri.scheme === 'file' ? realPath(folder.uri.fsPath) : undefined)));
+    let best: { folder: vscode.WorkspaceFolder; real: string } | undefined;
+    folders.forEach((folder, index) => {
+        const real = resolved[index];
+        if (real && isInside(realFile, real) && (!best || real.length > best.real.length)) {
+            best = { folder, real };
+        }
+    });
+    return best?.folder;
+}
+
+async function realPath(file: string): Promise<string | undefined> {
+    try {
+        return await fs.realpath(file);
+    } catch {
+        return undefined;
+    }
+}
+
+/** Whether `file` is `folder` or inside it, both resolved; by whole names, so `/work-other` is not in `/work`. */
+function isInside(file: string, folder: string): boolean {
+    const relative = path.relative(folder, file);
+    return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }

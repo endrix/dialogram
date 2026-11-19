@@ -133,8 +133,8 @@ platform that hands it one.
   what a run would find instead of copying the rules for where and how a run
   starts, which stay the toolkit's own (`cli-invocation.ts` and
   `run-root.ts`, which the run driver now calls too). The profile's other
-  CLI starts (the `cli-plan` graph export, a status source) do not go
-  through it yet.
+  CLI starts (the `cli-plan` graph export, a status source) start in the
+  same folder (see Changed).
   - A run whose CLI setting and default are both blank says only that
     (`Cannot run: ... names no command`); it no longer names a workspace
     folder, `package.json` or `.git`, which cannot cause it, and no longer
@@ -936,6 +936,42 @@ platform that hands it one.
 
 ### Changed
 
+- **A run never starts above the workspace folder, and every start of a
+  product's CLI starts where a run does.** The run root is the workspace
+  folder that holds the file (the innermost, where folders are inside one
+  another), and the file's own folder when no workspace folder holds it or
+  no folder is open. It used to climb from the workspace folder to the
+  nearest `.git` or `package.json` above it, up to `/`: with dotfiles kept
+  in a `~/.git`, a project with no marker of its own ran in `~`, and a
+  `/tmp/.git` someone planted moved a `/tmp/job` run to `/tmp`. A file
+  outside every folder ran in the first workspace folder, or above it. A
+  marker between the file and its workspace folder never moved a run, and
+  does not now: below the workspace folder nothing changes. A file named by
+  the path a symbolic link leads to is in the folder opened through that
+  link, though VS Code matches it by name alone.
+  - The `cli-plan` graph export (the plan, the hierarchy export, the plan
+    for a child's node identities, and the chat's graph from the plan)
+    started the CLI wherever the extension host was started, and a status
+    source's `cli(args)` in the file's own folder. Both now start it in the
+    run root, as a run and `runCli` do, so a product's CLI finds the same
+    files from each. The sidecar still starts at the file's Python package
+    root, which an import of the file needs.
+  - A plan and a hierarchy export are kept per folder they started in: a
+    workspace folder opened since moves the run root, and the file is
+    planned again from there.
+  - The model source's plans read the CLI setting for the file's folder, as
+    a run, `runCli`, the chat's graph and a status source already did; they
+    used to read the window's setting alone. The `-m <module>` form is as it was: a
+    plan, the chat's graph and a status source add it for every file, a run
+    and `runCli` for a Python source only.
+  - A file outside every workspace folder that is itself a link to a file
+    in one runs in that folder. Links are followed only where VS Code finds
+    no folder for the file: a file it counts as a folder's, by the path it is
+    named by, runs in that folder.
+  - A CLI whose folder is gone (the file's folder removed or renamed under
+    an open diagram) says so, `failed to start: the folder it starts in,
+    <folder>, does not exist`, rather than Node's `spawn <command> ENOENT`,
+    which reads as a command that is not installed.
 - **The members of a bus opened on a register are named by the field each
   carries.** A register's pins are named by what they are (`d`, `en`, `q`),
   and a register of a bundle (chisel-ide's signal view) has a `d` and a `q`

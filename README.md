@@ -142,9 +142,10 @@ platform bundle (see [The bundle-boundary law](#the-bundle-boundary-law)).
 The profile it returns also has `runCli(file, args)`, where the CLI runs a
 diagram (`cliRuns` is not `false`): the product's own host code runs its CLI
 with it, started exactly as a run of the file starts it (the command, the
-module form for an interpreter, the run root), stopped at the deadline: on
-POSIX the CLI leads its own process group and the whole group is stopped, on
-Windows only the CLI itself, not what it started. A product asks the CLI what
+module form for an interpreter, the run root: see
+[Execution overlays and run drivers](#execution-overlays-and-run-drivers)),
+stopped at the deadline: on POSIX the CLI leads its own process group and the
+whole group is stopped, on Windows only the CLI itself, not what it started. A product asks the CLI what
 a run would find this way, rather than copying where and how a run starts.
 
 A consumer whose diagram is a pure projection of a file — drawn by a CLI,
@@ -324,6 +325,21 @@ states. The platform registers the commands, offers "Show <label>" and "Clear
 <label>" on the canvas's context menu, and publishes what `collect` answers.
 The toolkit's `SidecarProfileInput.statusSource` gives `collect` a runner for
 the product's configured CLI that resolves to its JSON.
+
+Every start of a product's CLI the toolkit makes runs in one folder, the run
+root: a run, the profile's `runCli`, the `cli-plan` graph export (the plan,
+the hierarchy export, a child's node identities, the chat's graph from the
+plan) and a status source's reports. It is the workspace folder that holds
+the file, the innermost one where folders are inside one another, and never a
+folder above it: a `.git` or a `package.json` above the workspace folder (a
+home directory kept in git, one planted in `/tmp`) does not move a run, and
+neither does one between the file and its folder. A file outside every
+workspace folder, or in a window with no folder, runs in its own folder. A
+file VS Code finds in no folder is compared once more with symbolic links
+followed, its own included: named by the path a link leads to, or itself a
+link to a file in a workspace folder, it runs in that folder. The sidecar is
+not the CLI: it starts at the file's Python package root, which an import of
+the file needs.
 
 ## Development
 

@@ -4,7 +4,8 @@
  * A read-only profile (`SidecarProfileInput.readOnly`) draws its diagram from
  * the document the CLI plan emits, and the chat's `get_graph` and context need
  * that same graph. This runs the plan the way the model source does (the same
- * argv builder, the same `--workflow` scoping, the same deadline) and answers
+ * argv builder, the same `--workflow` scoping, the same deadline, from the
+ * same folder) and answers
  * in the envelope the sidecar export would have used, `{ status: 'ok',
  * diagnostic: { graph, partial, errors } }`, so the chat tools and the
  * source-reference context read it unchanged whichever transport fed them.
@@ -23,6 +24,8 @@ export interface CliGraphExportOptions {
     networkName?: string;
     /** Deadline for the plan, in ms; the child-process default when absent. */
     timeoutMs?: number;
+    /** Where the plan starts: the run root of the file, as the model source's plan starts (`resolveRunRoot`). */
+    cwd?: string;
 }
 
 /**
@@ -37,7 +40,7 @@ export async function exportGraphFromCli(filePath: string, options: CliGraphExpo
         args.push('--workflow', networkName);
     }
     try {
-        const result = await runChildProcess(options.cmd, args, { timeoutMs: options.timeoutMs });
+        const result = await runChildProcess(options.cmd, args, { cwd: options.cwd, timeoutMs: options.timeoutMs });
         const failure = describeChildFailure(options.cmd, result);
         if (failure) {
             return {

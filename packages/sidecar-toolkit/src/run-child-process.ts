@@ -26,6 +26,7 @@
  *    after a short grace period even if `close` never arrives.
  */
 import type { ChildProcess } from 'node:child_process';
+import { statSync } from 'node:fs';
 
 /**
  * Default deadline for a one-shot child.
@@ -107,7 +108,7 @@ export async function runChildProcess(
                 code: -1,
                 stdout: '',
                 stderr: '',
-                spawnError: error instanceof Error ? error : new Error(String(error)),
+                spawnError: startError(error instanceof Error ? error : new Error(String(error)), options.cwd),
                 timedOut: false,
                 timeoutMs
             });
@@ -186,7 +187,7 @@ export async function runChildProcess(
         child.stderr?.on('data', (chunk: string) => (stderr += chunk));
 
         child.on('error', error => {
-            settle({ code: -1, stdout, stderr, spawnError: error, timedOut, timeoutMs });
+            settle({ code: -1, stdout, stderr, spawnError: startError(error, options.cwd), timedOut, timeoutMs });
         });
         // Prefer `close` (pipes drained) but never wait for it forever.
         child.on('exit', code => {
@@ -204,6 +205,39 @@ export async function runChildProcess(
             child.stdin?.write(options.input);
         }
         child.stdin?.end();
+    });
+}
+
+/**
+ * Why `spawn` failed, said of the folder when that is what is missing: Node
+ * answers a `cwd` that is not there with the same ENOENT as a command that is
+ * not installed (`spawn <cmd> ENOENT`, its `path` the command), which sends
+ * the reader to look for the wrong thing. A file whose folder was removed or
+ * renamed under an open diagram is the usual way to get here. Only a folder
+ * that is not there is said to be missing; any other answer from looking at
+ * it leaves Node's error as it was. Looked at on this failure alone, once.
+ */
+function startError(error: Error, cwd: string | undefined): Error {
+    if (cwd === undefined || (error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        return error;
+    }
+    try {
+        statSync(cwd);
+        return error;
+    } catch (statError) {
+        const code = (statError as NodeJS.ErrnoException).code;
+        if (code !== 'ENOENT' && code !== 'ENOTDIR') {
+            return error;
+        }
+    }
+    const node = error as NodeJS.ErrnoException & { spawnargs?: string[] };
+    return Object.assign(new Error(`the folder it starts in, ${cwd}, does not exist`), {
+        code: node.code,
+        errno: node.errno,
+        syscall: node.syscall,
+        // What is missing is the folder, not the command Node names.
+        path: cwd,
+        spawnargs: node.spawnargs
     });
 }
 

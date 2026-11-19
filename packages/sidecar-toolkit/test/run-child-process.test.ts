@@ -9,6 +9,8 @@
  * (`error` vs `exit` vs `close`, signals, process groups), which a fake would
  * only restate.
  */
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
     DEFAULT_CHILD_TIMEOUT_MS,
@@ -48,6 +50,23 @@ describe('runChildProcess', () => {
         expect(result.spawnError).toBeDefined();
         expect(result.code).toBe(-1);
         expect(result.timedOut).toBe(false);
+    });
+
+    it('says the folder it starts in is gone, rather than that the command is', async () => {
+        // Node answers a missing `cwd` with the ENOENT of a command that is not installed.
+        const gone = path.join(os.tmpdir(), `run-child-gone-${process.pid}-${Date.now()}`);
+        const result = await runChildProcess(process.execPath, ['-e', ''], { cwd: gone });
+
+        expect(result.code).toBe(-1);
+        expect(describeChildFailure(process.execPath, result)).toBe(
+            `${process.execPath}: failed to start: the folder it starts in, ${gone}, does not exist`
+        );
+        // Node's fields kept, its `path` the folder rather than the command it named.
+        expect(result.spawnError).toMatchObject({ code: 'ENOENT', path: gone, spawnargs: ['-e', ''] });
+        // A command that is not there, from a folder that is, is still said as before.
+        const missing = await runChildProcess(path.join(gone, 'no-such-command'), [], { cwd: os.tmpdir() });
+        expect(missing.spawnError?.message).toMatch(/ENOENT/);
+        expect(missing.spawnError?.message).not.toMatch(/does not exist/);
     });
 
     it('kills a process that never exits, and says the deadline did it', async () => {
