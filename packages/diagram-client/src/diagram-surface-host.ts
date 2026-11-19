@@ -131,7 +131,7 @@ export function normalizeSurfaceSelection(selection: SurfaceSelection): SurfaceS
         ? [{ text: String(row.value ?? ''), link: row.link }]
         : value(row.value);
     const sections: SurfaceSection[] = Array.isArray(selection.sections)
-        ? selection.sections.filter(section => section && typeof section.title === 'string' && Array.isArray(section.rows)).map(section => ({
+        ? selection.sections.filter((section: SurfaceSection) => section && typeof section.title === 'string' && Array.isArray(section.rows)).map((section: SurfaceSection) => ({
             title: section.title,
             rows: section.rows.filter(row => row && typeof row.label === 'string').map(row => ({ label: row.label, value: rowValue(row) })),
             ...(typeof section.more === 'number' && section.more > 0 ? { more: Math.floor(section.more) } : {}),

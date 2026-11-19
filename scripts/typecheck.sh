@@ -31,6 +31,19 @@ for package in "${PACKAGES[@]}"; do
     fi
 done
 
+# The diagram client once more, as a product checks it: strict, with the
+# library products compile for. Each package's own tsconfig is not strict, so
+# an implicit `any` in the client passes above and fails in every product
+# that pulls these sources into its webview program.
+printf '== %-16s ' 'client, strict'
+if npx tsc --noEmit -p packages/diagram-client/tsconfig.consumer.json > /tmp/dialogram-typecheck-client-strict.log 2>&1; then
+    echo 'OK'
+else
+    echo 'FAIL'
+    cat /tmp/dialogram-typecheck-client-strict.log
+    failed+=('diagram-client as a product checks it')
+fi
+
 if [ ${#failed[@]} -gt 0 ]; then
     echo
     echo "TYPECHECK FAILED: ${failed[*]}"
