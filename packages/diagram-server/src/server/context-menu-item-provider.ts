@@ -288,6 +288,10 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
                 if (meta && typeof meta === 'object') {
                     return { actions: parseNodeActions((meta as Record<string, unknown>)['actions']), elementId: String(current.id) };
                 }
+                // Nor does a node stand for the frame it is in (an open node's, which is that node).
+                if (String(current.type).startsWith('node:') && current.parent?.type === WorkflowDiagramTypes.NODE_GROUP) {
+                    break;
+                }
                 current = current.parent;
             }
             return { actions: [], elementId: undefined };

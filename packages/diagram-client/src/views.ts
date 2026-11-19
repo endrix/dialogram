@@ -576,7 +576,7 @@ function roundedTopPath(width: number, height: number, radius: number): string {
 /**
  * Where an edge crosses a group's frame: a dot on the frame line. On an open
  * node's frame, one of the node's own ports (`FRAME_PIN`) is such a dot with
- * its name beside it, inside the frame, and a clock's wedge before the name
+ * its name inside the frame, above the wire, and a clock's wedge at the frame
  * when its role is `clock`, as on a register's symbol.
  */
 @injectable()
@@ -589,7 +589,7 @@ export class GroupBoundaryPortView extends ShapeView {
         const pin = args[WorkflowDiagramMetadata.FRAME_PIN] === true;
         const extras: VNode[] = [];
         if (pin) {
-            const name = String(args[WorkflowDiagramMetadata.ENTITY_NAME] ?? '');
+            const name = String(args[WorkflowDiagramMetadata.PORT_NAME] ?? '');
             const output = args[WorkflowDiagramMetadata.PORT_DIRECTION] === 'output';
             const clock = args[WorkflowDiagramMetadata.PORT_ROLE] === 'clock';
             const y = height / 2;

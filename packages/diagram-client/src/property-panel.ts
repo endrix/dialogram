@@ -579,11 +579,14 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         // so offering it "Input Ports (0)" and "Output Ports (0)", each with an
         // add button, describes something that cannot exist. Its own type and
         // direction are already on the Basic Info section above.
+        // Nor, empty, for the frame of an open node that keeps no pins: its
+        // ports are not drawn while it is open, which is not having none.
+        const listsEmptyPorts = !!entityType && node.type !== WorkflowDiagramTypes.NODE_GROUP;
         if (!isBoundary && sections?.ports !== false) {
-            if (inputPorts.length > 0 || entityType) {
+            if (inputPorts.length > 0 || listsEmptyPorts) {
                 content.appendChild(this.buildEntityPortsSection(node, entityType, 'input', inputPorts));
             }
-            if (outputPorts.length > 0 || entityType) {
+            if (outputPorts.length > 0 || listsEmptyPorts) {
                 content.appendChild(this.buildEntityPortsSection(node, entityType, 'output', outputPorts));
             }
         }

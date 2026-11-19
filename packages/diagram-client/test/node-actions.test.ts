@@ -192,3 +192,39 @@ describe('a node the product’s command names to be shown', () => {
         expect(RevealNodeAction.is(RevealNodeAction.create('g1'))).toBe(true);
     });
 });
+
+/**
+ * An open node whose frame is that node (open-nodes.ts): the frame carries
+ * the node's `meta`, and with it what its producer offers on it.
+ */
+describe('what a producer offers on a node that is open', () => {
+    function opened() {
+        const root: any = { id: 'root', type: 'graph', children: [], args: { sourceUri: SOURCE } };
+        const frame: any = {
+            id: 'scope:open:node:proc', type: WorkflowDiagramTypes.NODE_GROUP, parent: root, root, children: [],
+            args: { [WorkflowDiagramMetadata.ENTITY_NAME]: 'regs', 'wf:graphNodeId': 'node:proc', [WorkflowDiagramMetadata.NODE_META]: { actions: [{ id: 'show', label: 'Show', doubleClick: 'node' }] } }
+        };
+        const pin: any = { id: 'scope:open:node:proc::pin::clk', type: WorkflowDiagramTypes.PORT_GROUP_BOUNDARY, parent: frame, children: [], args: { [WorkflowDiagramMetadata.PORT_NAME]: 'clk', [WorkflowDiagramMetadata.FRAME_PIN]: true } };
+        // What the frame holds: a node of its own, which says nothing of itself, and one that does.
+        const bare: any = { id: 'scope:open:node:proc/q', type: WorkflowDiagramTypes.NODE_ACTOR, parent: frame, children: [], args: { [WorkflowDiagramMetadata.ENTITY_NAME]: 'q' } };
+        const barePort: any = { id: 'scope:open:node:proc/q_port_d', type: 'port:input', parent: bare, children: [], args: { [WorkflowDiagramMetadata.PORT_NAME]: 'd' } };
+        bare.children.push(barePort);
+        const own: any = { id: 'scope:open:node:proc/r', type: WorkflowDiagramTypes.NODE_ACTOR, parent: frame, children: [], args: { [WorkflowDiagramMetadata.NODE_META]: { actions: [{ id: 'trace', label: 'Trace' }] } } };
+        frame.children.push(pin, bare, own);
+        root.children.push(frame);
+        return { frame, pin, bare, barePort, own };
+    }
+
+    it('is offered on its frame and on a pin of it, as on the node and its ports', () => {
+        const { frame, pin } = opened();
+        expect(nodeWithActions(frame)?.node).toBe(frame);
+        expect(nodeWithActions(pin)?.node).toBe(frame);
+    });
+
+    it('is not offered on what the frame holds: a node in it stands for itself', () => {
+        const { bare, barePort, own } = opened();
+        expect(nodeWithActions(bare)).toBeUndefined();
+        expect(nodeWithActions(barePort)).toBeUndefined();
+        expect(nodeWithActions(own)?.actions.map(action => action.id)).toEqual(['trace']);
+    });
+});

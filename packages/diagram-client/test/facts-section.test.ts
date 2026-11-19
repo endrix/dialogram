@@ -80,6 +80,9 @@ class TestPanel extends PropertyPanel {
     facts(args: Record<string, unknown> | undefined): any {
         return this.buildFactsSection(args);
     }
+    freeText(parameters: unknown): string[] {
+        return this.normalizeEditableEntityParameters(parameters).map(parameter => parameter.name);
+    }
 }
 
 const sectionFor = (facts: unknown): any =>
@@ -148,5 +151,18 @@ describe('the Facts section', () => {
 
         expect(titleOf(section)).toBe('Facts (1)');
         expect(rowsOf(section).map(keyOf)).toEqual(['Clock']);
+    });
+});
+
+
+describe('a parameter its producer marked editable', () => {
+    it('is a field of the Fields section, and is not listed again as free text among the instance parameters', () => {
+        const panel = new TestPanel();
+        // All of them fields: no instance parameter is left, so no section of them.
+        expect(panel.freeText([{ name: 'kind', value: 'always_ff', editable: true, choices: ['always', 'always_ff'] }, { name: 'activation', value: 'posedge clk', editable: true }])).toEqual([]);
+        // Beside ones that are not: those are the instance parameters.
+        expect(panel.freeText([{ name: 'WIDTH', value: '8' }, { name: 'kind', value: 'always_ff', editable: true }])).toEqual(['WIDTH']);
+        // `editable: false`, or nothing said, is as before.
+        expect(panel.freeText([{ name: 'DEPTH', value: '16', editable: false }, { name: 'WIDTH', value: '8' }])).toEqual(['DEPTH', 'WIDTH']);
     });
 });

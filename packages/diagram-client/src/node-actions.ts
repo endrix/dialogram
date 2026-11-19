@@ -22,6 +22,7 @@ import {
     NodeActionAction,
     parseNodeActions,
     WorkflowDiagramMetadata,
+    WorkflowDiagramTypes,
     type NodeActionRequest,
     type NodeActionSpec
 } from '@dialogram/shared';
@@ -41,7 +42,12 @@ export function nodeWithActions(target: GModelElement | undefined): { node: GMod
             const actions = parseNodeActions((meta as Args)['actions']);
             return actions.length > 0 ? { node: current, actions } : undefined;
         }
-        current = (current as unknown as { parent?: GModelElement }).parent;
+        const parent = (current as unknown as { parent?: GModelElement }).parent;
+        // A node does not stand for the frame it is in (an open node's, which is that node).
+        if (String(current.type).startsWith('node:') && parent?.type === WorkflowDiagramTypes.NODE_GROUP) {
+            return undefined;
+        }
+        current = parent;
     }
     return undefined;
 }

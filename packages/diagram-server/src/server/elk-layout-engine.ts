@@ -16,6 +16,7 @@ import { GlspElkLayoutEngine, ElkFactory, ElementFilter, LayoutConfigurator } fr
 import { ElkExtendedEdge, ElkNode, ElkPort, ElkShape } from 'elkjs';
 import { injectable } from 'inversify';
 import { isBoundaryNodeType, WorkflowDiagramTypes, WORKFLOW_LAYOUT_PERSISTENCE_KEY } from '@dialogram/shared';
+import { isUnwiredPin, placeUnwiredPins } from './group-geometry';
 import { WorkflowDiagramConstants, WorkflowDiagramMetadata, portRowOffset, portSide, type PortSide } from '@dialogram/shared';
 import {
     AUTOMATON_MARGIN_PX, AUTOMATON_SPREADS, PORT_COLUMN_GAP_PX, automatonClutter, automatonDrawingBox, automatonElkGraph, automatonGeometryInputs,
@@ -725,7 +726,10 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         }
 
         // Ports are always forwarded so ELK can route edges and place port labels.
-        elkNode.ports = this.findChildren(node, GPort).map(child => (this as any).transformToElk(child));
+        // But for a pin of an open node's frame no edge ends on: the frame places
+        // it, under its members (`placeUnwiredPins`), where a saved layout opened
+        // again can put it back; the layout would place it where nothing records.
+        elkNode.ports = this.findChildren(node, GPort).filter(port => !isUnwiredPin(port)).map(child => (this as any).transformToElk(child));
 
         // Node labels are not required for Workflow layout (sizes are server-provided), but
         // forwarding them is harmless and can help with debugging.
@@ -975,6 +979,9 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
             if (elkShape.width !== undefined && elkShape.height !== undefined) {
                 shape.size = { width: elkShape.width, height: elkShape.height };
             }
+        }
+        if (shape instanceof GNode && shape.type === WorkflowDiagramTypes.NODE_GROUP) {
+            placeUnwiredPins(shape);
         }
     }
 

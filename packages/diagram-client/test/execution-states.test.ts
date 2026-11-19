@@ -146,6 +146,22 @@ describe('how a state is drawn', () => {
         });
     });
 
+    it('not on the frame of an open node, where every member would take the state', () => {
+        const { root, contract } = model();
+        // An open node's frame carries its node's id (open-nodes.ts); what it holds is drawn in it.
+        const frame = {
+            id: 'scope:open:node:scope:root:A-009', type: 'node:group', cssClasses: ['workflow-node'],
+            args: { 'wf:graphNodeId': 'node:scope:root:A-009' }, children: [] as any[]
+        };
+        root.children.push(frame as any);
+
+        const changed = applyExecutionStates(root, [...STATES, { nodeId: 'node:scope:root:A-009', status: 'failed' }]);
+
+        expect(changed).not.toContain(frame.id);
+        expect(frame.cssClasses).toEqual(['workflow-node']);
+        expect(contract.cssClasses).toEqual(['workflow-node', 'cal-node-error']);
+    });
+
     it('on the node the producer named, wherever it sits, the node’s own classes kept', () => {
         const { root, contract, verified, question, plain } = model();
 

@@ -78,20 +78,43 @@ platform that hands it one.
 
 ### Added
 
-- **A node opened in place may start open, keep its ports on its frame, and
-  stays itself.** For a node that is a container of a design, such as a
-  block of code and the registers it holds, a producer says two things of
-  the graph it gives the node (`meta.inner`). `open: true` draws the node
-  open to begin with; the reader's closing it is what the layout file then
-  keeps (`ToggleNodeOpenOperation.CLOSED`, beside `OPEN`). `pins: true`
-  keeps the node's own ports on its frame as pins, named as they were on the
-  node: an edge on one of them ends there instead of being carried on to the
-  inner pins, the wires inside run from and to the pin, a pin nothing is
-  wired to is on the frame all the same, and one of role `clock` has a
-  clock's wedge before its name, as on a register's symbol. Without the
-  flags nothing changes. An open node's frame also carries the node's name,
-  type, `meta` and producer id now, so selecting the frame shows the node's
-  fields and facts and an edit made there names the node.
+- **A node opened in place may start open, keep its ports on its frame and
+  be titled, and is then still that node.** For a node that is a container
+  of a design, such as a block of code and the registers it holds, a producer
+  says three things of the graph it gives the node (`meta.inner`).
+
+  `open: true` draws the node open to begin with; the reader's closing it is
+  what the layout file then keeps (`ToggleNodeOpenOperation.CLOSED`, beside
+  `OPEN`). A layout saved while such a node was drawn closed, before its
+  producer said so, is laid out again once, rather than opened with each
+  frame over its neighbours.
+
+  `pins: true` keeps the node's own ports on its frame as pins, named as
+  they were on the node, inputs on the left and outputs on the right. An
+  edge on one of them ends there, under its own id and with its ends named
+  as before, instead of being carried on to the inner pins; the wires inside
+  run from and to the pin, and across the frame where an input is wired
+  straight to an output. A pin no edge ends on (a clock whose net the
+  diagram leaves out) is on the frame all the same, under the members,
+  placed by the frame and not by the layout, so every pin is where it was
+  when a saved layout is opened again. A pin of role `clock` has a clock's
+  wedge at the frame, under its name, as on a register's symbol: the one
+  role the platform reads here. A pin is one port: a bundle of the node's
+  ports is its members, each a pin, and a port's `side` is not read.
+
+  `title` is what the frame is titled, drawn as written where a group's name
+  is set in capitals, in a frame at least as wide as it.
+
+  A node that says `open` or `pins` is a container, and its frame is that
+  node: it carries everything the node carries closed (its name, type and
+  producer id, its `meta` without the graph it now shows, its place in the
+  source, its fields, facts and views, an error in its source, which marks
+  the frame), so it is selected, shown in the panel, edited, gone to and
+  found by name as the node is, and its pins are listed as the node's ports.
+  What its producer offers on it (`meta.actions`) is offered on the frame
+  and on its pins, not on what the frame holds. A run state is not drawn on
+  a frame, as before. A node that says neither opens as it did: its frame
+  is a group's, and none of this applies to it.
 
 - **A product's host code runs its CLI as a run does.** The profile
   `createSidecarDiagramProfile` returns has `runCli(file, args, { timeoutMs })`

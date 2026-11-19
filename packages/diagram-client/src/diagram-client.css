@@ -1336,6 +1336,28 @@ body.vscode-high-contrast-light .node-center-image-light {
     stroke-opacity: 1;
 }
 
+/* A title its producer gave the frame says what a source says (a block's
+   kind and the signals that activate it): as written, where a group's name
+   is set in capitals. */
+.workflow-node-group.workflow-group-titled > .group-label {
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+/* An open node with an error or a warning in its source: on its frame, as on
+   the node closed, and not on what the frame holds. */
+.workflow-node-group.workflow-group-source-error > .group-frame {
+    stroke: var(--workflow-node-error-stroke);
+    stroke-opacity: 1;
+    stroke-width: 2.5px;
+}
+
+.workflow-node-group.workflow-group-source-warning > .group-frame {
+    stroke: var(--vscode-editorWarning-foreground, #cca700);
+    stroke-opacity: 1;
+    stroke-width: 2px;
+}
+
 .workflow-node-group .group-label {
     /* From the title's x, as the view places it: a general text rule centred it. */
     text-anchor: start;
