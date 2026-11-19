@@ -1035,6 +1035,13 @@ platform that hands it one.
   panel** where a product shows instance parameters: once in the Fields
   section with its choices, once more as free text.
 
+- **A group's ports are where they were when a saved layout is opened
+  again.** A boundary port's saved route was looked up by its edge's id,
+  where a route is saved under its edge's ends when the edge names them:
+  such a port went level with the member it leads to, not where its route
+  crossed the frame. And two ports with no saved route that lead to one
+  place went on one spot: the second now goes under the first.
+
 - **A child process's output keeps a character split between two reads.**
   `runChildProcess` added each chunk as a string, so a UTF-8 character the
   pipe delivered in two pieces became two replacement characters. Output is
