@@ -76,7 +76,9 @@ const NODES = { one: 'node', other: 'nodes' };
  * A group's detail that only repeats how many rows it lists ("182" on a
  * group of 182, "113,750"): a producer with no other place for a group's
  * count put it there. It is said once, on the right. Any other number (a
- * width, a layer) is the producer's detail, and is shown as one.
+ * width, a layer) is the producer's detail, and is shown as one. A lazy
+ * group lists none of its rows here: its detail is the count when it
+ * repeats the group's `count`.
  */
 export function numericDetail(entry: HierarchyOutlineEntry): number | undefined {
     if (entry.role !== 'group' || !entry.detail) {
@@ -88,7 +90,7 @@ export function numericDetail(entry: HierarchyOutlineEntry): number | undefined 
         return undefined;
     }
     const count = Number(said.replace(/\D/g, ''));
-    return count === entry.children.length ? count : undefined;
+    return count === (entry.lazy ? entry.count : entry.children.length) ? count : undefined;
 }
 
 /**

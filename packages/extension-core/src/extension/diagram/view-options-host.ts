@@ -23,9 +23,11 @@
  * change the host made just before can have left another state than the
  * click showed there, and the diagram follows the host's.
  *
- * A file's diagrams can show views of it that declare different groups (two
- * editors, each in another view): the file's declaration is every group its
- * graphs have declared, the newest declaration of each.
+ * A file's diagrams can show views of it that declare different groups, or
+ * one group with other lines (two editors, each in another view): the
+ * file's declaration is every group its graphs have declared, the newest
+ * declaration of each, with the lines an older one declared that the newest
+ * lacks.
  */
 import type {
     DiagramModelSource,
@@ -90,7 +92,7 @@ export class ViewOptionsHost {
     /** What the reader chose, per file key; loaded from the store on first need. */
     private readonly choices = new Map<string, ViewOptionsState>();
     private readonly loading = new Map<string, Promise<ViewOptionsState>>();
-    /** The groups each file's graphs declared, the profile's first, the newest declaration of each group. */
+    /** The groups each file's graphs declared, the profile's first, the newest declaration of each group with older lines it lacks. */
     private readonly declared = new Map<string, ViewOptionGroup[]>();
     /** The URI each key was last seen as, for the messages. */
     private readonly uris = new Map<string, string>();
@@ -235,9 +237,9 @@ export class ViewOptionsHost {
     /**
      * The document with the file's groups as they stand; the producer's
      * object is left alone. The groups it declares are taken into the file's
-     * declaration, each in place of the one of its id declared before; the
-     * file's other groups stay, since another diagram of the file may be
-     * showing the view that declared them.
+     * declaration ({@link mergeDeclarations}); the file's other groups, and
+     * the lines of a group it declares with fewer, stay, since another
+     * diagram of the file may be showing the view that declared them.
      */
     private publish(key: string, doc: GraphDocument): GraphDocument {
         const own = normalizeViewOptionGroups(doc.viewOptions ?? []);
@@ -245,9 +247,7 @@ export class ViewOptionsHost {
             return doc;
         }
         const declaration = normalizeViewOptionGroups([...this.profileGroups, ...own]);
-        const ids = new Set(declaration.map(group => group.id));
-        const before = (this.declared.get(key) ?? []).filter(group => !ids.has(group.id));
-        this.declared.set(key, [...declaration, ...before]);
+        this.declared.set(key, mergeDeclarations(declaration, this.declared.get(key) ?? []));
         return { ...doc, viewOptions: applyViewOptionsState(declaration, this.choices.get(key)) };
     }
 
@@ -288,4 +288,39 @@ export class ViewOptionsHost {
         }
         return pending;
     }
+}
+
+/**
+ * A file's declaration after one of its graphs declared `newest`: the
+ * newest's groups first, then the groups declared before that it does not
+ * declare. A group it declares again keeps the lines declared before that
+ * it lacks, after its own: two views of the file can list other lines under
+ * one group, and All, None and Only turn every line of it, from either. A
+ * pick is kept where it turns a line from what the host holds, which for a
+ * line not chosen yet is the newest's default: a pick in another view that
+ * matches that default is not kept. What the
+ * newest declares wins: a group's label, `choice` and `collapsed`, and a
+ * line's label, colour, `disabled` and default. In a `one` group the line
+ * checked by default is the newest's; a line kept from before is not
+ * checked by default. A group is `reload` if any declaration of it is, and
+ * not kept (`persist: false`) if any declaration of it is not: a change made
+ * in any view of it then has the producer asked again, and none is written
+ * beside the file.
+ */
+function mergeDeclarations(newest: ViewOptionGroup[], before: ViewOptionGroup[]): ViewOptionGroup[] {
+    const earlier = new Map(before.map(group => [group.id, group]));
+    const merged = newest.map(group => {
+        const older = earlier.get(group.id);
+        if (!older) {
+            return group;
+        }
+        const ids = new Set(group.items.map(item => item.id));
+        const kept = older.items.filter(item => !ids.has(item.id));
+        const reload = group.reload === true || older.reload === true;
+        const persist = group.persist !== false && older.persist !== false;
+        // Made safe as one declaration: a `one` group keeps its newest line checked.
+        return normalizeViewOptionGroups([{ ...group, reload, persist, items: [...group.items, ...kept] }])[0];
+    });
+    const ids = new Set(newest.map(group => group.id));
+    return [...merged, ...before.filter(group => !ids.has(group.id))];
 }

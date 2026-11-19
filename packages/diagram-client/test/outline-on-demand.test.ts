@@ -3,7 +3,7 @@
  * height, which of them a scroll position shows, a lazy group's rows asked
  * of the host a page at a time, and the words a row says.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
     countInWords,
     normalizeOutlinePage,
@@ -304,32 +304,61 @@ describe('the pages of a lazy group', () => {
  * The outline of `groups` lazy groups of 500 rows each, laid out again after
  * every answer and asking for what it shows, as the panel's `render()` does:
  * every lazy group's count under a filter, every opened one's without.
+ * `perFrame` lays it out at most once a frame instead, as the panel's
+ * `relayout()` does; `hostMs` is how long the host takes to answer; `type`
+ * changes the filter, as the panel's `setFilter` does.
  */
-function outlineOfLazyGroups(groups: number, query: string) {
+function outlineOfLazyGroups(groups: number, query: string, options: { hostMs?: number; perFrame?: boolean } = {}) {
     const lazies: HierarchyOutlineEntry[] = Array.from({ length: groups }, (_, at) => ({
         path: [`#g${at}`], workflowName: 'top', role: 'group', label: `Group ${at}`, count: 500, lazy: { id: `g${at}` }, children: []
     }));
     const root: HierarchyOutlineEntry = { path: [], workflowName: 'top', children: lazies };
     const asked: string[] = [];
+    /** Every request, with its filter. */
+    const requests: Array<{ group: string; offset: number; query: string }> = [];
+    let answering = 0;
+    let largestQueue = 0;
+    let filter = query;
     let stopped = false;
+    let frameQueued = false;
+    const redraw = (): void => {
+        if (!options.perFrame) {
+            setTimeout(render, 0);
+        } else if (!frameQueued) {
+            frameQueued = true;
+            setTimeout(() => {
+                frameQueued = false;
+                render();
+            }, 16);
+        }
+    };
     const pager: OutlinePager = new OutlinePager({
-        page: (group, offset, limit) => {
+        page: (group, offset, limit, asking) => {
             asked.push(`${group}@${offset}`);
+            requests.push({ group, offset, query: asking });
+            answering++;
             const rows = Array.from({ length: Math.min(limit, 500 - offset) }, (_, at) => ({ id: `r${offset + at}`, label: `row ${offset + at}` }));
             // The host answers a little later, as over the webview's messages.
-            return new Promise(resolve => setTimeout(() => resolve({ page: { total: 500, offset, rows } }), 1));
+            return new Promise(resolve => setTimeout(() => {
+                answering--;
+                resolve({ page: { total: 500, offset, rows } });
+            }, options.hostMs ?? 1));
         },
         locate: async () => ({})
-    }, () => setTimeout(render, 0), 100);
+    }, redraw, 100);
+    /** The pager's queue of pages asked for by name. */
+    const queue = (): number => (pager as unknown as { asked: unknown[] }).asked.length;
     function render(): void {
         if (stopped) {
             return;
         }
+        const query = filter;
         const layout = layOutOutline(root, {
             expanded: new Set(['', ...(query === '' ? lazies.map(rowId) : [])]),
             query,
             lazyTotal: group => pager.total(group.lazy!.id, query)
         });
+        largestQueue = Math.max(largestQueue, queue());
         const { first, last } = visibleRows(0, 440, OUTLINE_ROW_HEIGHT, layout.total);
         const shown = new Map<string, { group: string; query: string; from: number; to: number }>();
         for (let index = first; index <= last; index++) {
@@ -343,7 +372,21 @@ function outlineOfLazyGroups(groups: number, query: string) {
         pager.want([...shown.values()]);
     }
     render();
-    return { asked, stop: () => { stopped = true; } };
+    /** How many groups the host has counted under the filter typed last. */
+    const counted = (): number => lazies.filter(group => pager.known(group.lazy!.id, filter) !== undefined).length;
+    return {
+        asked,
+        requests,
+        counted,
+        largestQueue: () => largestQueue,
+        /** Every count of the filter typed last is here, and nothing is asked or on its way. */
+        settled: () => counted() === groups && answering === 0 && queue() === 0,
+        type: (typed: string) => {
+            filter = typed;
+            render();
+        },
+        stop: () => { stopped = true; }
+    };
 }
 
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -367,6 +410,247 @@ describe('the pages of many lazy groups', () => {
             });
         }
     }
+});
+
+describe('the counts of many lazy groups while the reader types', () => {
+    // Ten keystrokes, each reaching the host's filter (160 ms apart, past the
+    // panel's 150 ms wait): eleven filters with the one before the first. The
+    // counts of a filter come eight at a time: 13 groups take two answers, 40
+    // take five, so at 100 ms for 13 and at 50 ms for 40 the reader types
+    // before the counts before have all come.
+    const word = 'abcdefghij';
+    const filters = word.length + 1;
+    for (const groups of [13, 40]) {
+        for (const hostMs of [20, 50, 100]) {
+            for (const perFrame of [true, false]) {
+                it(`asks each at most once a filter: ${groups} groups, the host answering in ${hostMs} ms, laid out ${perFrame ? 'once a frame' : 'after every answer'}`, async () => {
+                    vi.useFakeTimers();
+                    const outline = outlineOfLazyGroups(groups, '', { hostMs, perFrame });
+                    try {
+                        for (let typed = 1; typed <= word.length; typed++) {
+                            await vi.advanceTimersByTimeAsync(160);
+                            outline.type(word.slice(0, typed));
+                        }
+                        let shownAfter: number | undefined;
+                        for (let waited = 0; ; waited += 5) {
+                            if (shownAfter === undefined && outline.counted() === groups) {
+                                shownAfter = waited;
+                            }
+                            // Ten times what asking each filter once costs is enough to fail on.
+                            if (outline.settled() || waited >= 5_000 || outline.requests.length > 10 * groups * filters) {
+                                break;
+                            }
+                            await vi.advanceTimersByTimeAsync(5);
+                        }
+                        const settled = outline.requests.length;
+                        await vi.advanceTimersByTimeAsync(1_000);
+
+                        // Nothing after it settled, and no group asked twice under one filter.
+                        expect(outline.requests.length).toBe(settled);
+                        expect(new Set(outline.requests.map(ask => `${ask.group}\u0000${ask.query}`)).size).toBe(settled);
+                        expect(settled).toBeLessThanOrEqual(groups * filters);
+                        // One entry a page, and what was queued under a filter left
+                        // goes at the first answer after, which comes before the
+                        // next keystroke: two filters' counts at most.
+                        expect(outline.largestQueue()).toBeLessThanOrEqual(2 * groups);
+                        // Every count of the last filter, as soon as the host can
+                        // give them: what is on its way when the reader types,
+                        // then eight at a time.
+                        expect(outline.counted()).toBe(groups);
+                        expect(shownAfter).toBeDefined();
+                        expect(shownAfter!).toBeLessThanOrEqual((Math.ceil(groups / 8) + 1) * hostMs + 5);
+                    } finally {
+                        outline.stop();
+                        vi.useRealTimers();
+                    }
+                });
+            }
+        }
+    }
+
+    it('drops a count queued under a filter the reader has left, and asks it again when the filter is back', async () => {
+        const host = fakeHost(1_000);
+        const pager = new OutlinePager(host.transport, () => undefined, 100);
+        const groups = Array.from({ length: 10 }, (_, at) => `g${at}`);
+        const under = (query: string) => host.asked.filter(ask => ask.query === query).map(ask => ask.group);
+        host.holdAnswers();
+        // Eight asked at once, two queued.
+        groups.forEach(group => pager.total(group, 'row 1'));
+        groups.forEach(group => pager.total(group, 'row 2'));
+        for (let i = 0; i < 5; i++) {
+            host.answerAll();
+            await settle();
+        }
+        expect(under('row 1')).toEqual(groups.slice(0, 8));
+        expect(groups.every(group => pager.known(group, 'row 2') === 111)).toBe(true);
+
+        // Back to the first filter: the two dropped are asked now.
+        groups.forEach(group => pager.total(group, 'row 1'));
+        for (let i = 0; i < 5; i++) {
+            host.answerAll();
+            await settle();
+        }
+        expect(under('row 1').filter(group => group === 'g8' || group === 'g9')).toEqual(['g8', 'g9']);
+        expect(groups.every(group => pager.known(group, 'row 1') === 111)).toBe(true);
+    });
+
+    it('still asks a page queued under a filter the reader has left when a caller waits for it', async () => {
+        const host = fakeHost(1_000);
+        const pager = new OutlinePager(host.transport, () => undefined, 100);
+        // More than the panel keeps of other filters than the one in use.
+        const groups = Array.from({ length: 16 }, (_, at) => `g${at}`);
+        host.holdAnswers();
+        groups.forEach(group => pager.total(group, 'row 1'));
+        // A reveal under the first filter, waiting on a page that is queued, and
+        // one that is not asked yet.
+        const queued = pager.rowAt('g9', 'row 1', 5);
+        groups.forEach(group => pager.total(group, 'row 2'));
+        const after = pager.rowAt('g8', 'row 1', 105);
+        let answered = 0;
+        void Promise.all([queued, after]).then(() => answered++);
+        for (let i = 0; i < 8; i++) {
+            host.answerAll();
+            await settle();
+        }
+        expect(answered).toBe(1);
+        expect((await queued)?.label).toBe('row 14');
+        expect((await after)?.label).toBe('row 194');
+        expect(host.asked.filter(ask => ask.query === 'row 1' && ask.group === 'g8').map(ask => ask.offset)).toEqual([100]);
+    });
+
+    it('keeps the counts of the filter in use when an answer under a filter left comes after them', async () => {
+        const pending = new Map<string, () => void>();
+        const asked: string[] = [];
+        const pager = new OutlinePager({
+            page: (group, offset, _limit, query) => {
+                asked.push(`${group}@${query}`);
+                return new Promise(resolve => pending.set(`${group}@${query}`, () => resolve({ page: { total: 1, offset, rows: [{ id: 'r0', label: 'row 0' }] } })));
+            },
+            locate: async () => ({})
+        }, () => undefined, 100);
+        const groups = Array.from({ length: 16 }, (_, at) => `g${at}`);
+        let filter = 'row 1';
+        // Laid out again after every answer, as the panel is.
+        const layOut = () => groups.forEach(group => pager.total(group, filter));
+        const answer = async (id: string) => {
+            pending.get(id)!();
+            pending.delete(id);
+            await settle();
+            layOut();
+        };
+        layOut();
+        filter = 'row 2';
+        layOut();
+        // A slot frees: a count of the second filter is asked, and comes.
+        await answer('g0@row 1');
+        await answer('g0@row 2');
+        // The rest of the first filter's, late.
+        for (const group of groups.slice(1, 8)) {
+            await answer(`${group}@row 1`);
+        }
+        while (pending.size > 0) {
+            await answer([...pending.keys()][0]);
+        }
+        expect(asked.filter(id => id.endsWith('@row 2'))).toEqual(groups.map(group => `${group}@row 2`));
+        expect(groups.every(group => pager.known(group, 'row 2') === 1)).toBe(true);
+    });
+});
+
+/** A host of 500 rows a group, each row's id its group and place, answering after `ms`; it counts what it was asked. */
+function timedHost(ms: number) {
+    const asked: Array<{ group: string; offset: number; query: string }> = [];
+    const transport: OutlinePagerTransport = {
+        page: (group, offset, limit, query) => {
+            asked.push({ group, offset, query });
+            const rows = Array.from({ length: Math.min(limit, 500 - offset) }, (_, at) => ({ id: `${group}/${offset + at}`, label: `row ${offset + at}` }));
+            return new Promise(resolve => setTimeout(() => resolve({ page: { total: 500, offset, rows } }), ms));
+        },
+        locate: async () => ({})
+    };
+    return { transport, asked };
+}
+
+describe('rows asked for by place under a filter not in use', () => {
+    const pins = (pager: OutlinePager) => (pager as unknown as { pinned: Map<string, number> }).pinned;
+    /** `count` groups counted under the filter typed, as the panel's layout does. */
+    async function counted(pager: OutlinePager, count: number): Promise<string[]> {
+        const groups = Array.from({ length: count }, (_, at) => `c${at}`);
+        groups.forEach(group => pager.total(group, 'typed'));
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(groups.every(group => pager.known(group, 'typed') === 500)).toBe(true);
+        return groups;
+    }
+
+    // More than eight wait: one is still queued when an answer comes, and
+    // its listing is made before the call answered reads its own.
+    for (const [inUse, waiting] of [[13, 9], [40, 9], [40, 10], [40, 16]]) {
+        it(`are each asked for once and found: ${inUse} groups counted under the filter typed, ${waiting} rows waited for without it`, async () => {
+            vi.useFakeTimers();
+            try {
+                const host = timedHost(20);
+                const pager = new OutlinePager(host.transport, () => undefined, 100);
+                await counted(pager, inUse);
+                const found: string[] = [];
+                const calls = Array.from({ length: waiting }, (_, at) => pager.rowAt(`w${at}`, '', 250 + at).then(row => {
+                    found[at] = row?.id ?? 'none';
+                }));
+                // Ten requests a call is enough to fail on.
+                for (let waited = 0; waited < 5_000 && found.filter(Boolean).length < waiting && host.asked.length < inUse + 10 * waiting; waited += 20) {
+                    await vi.advanceTimersByTimeAsync(20);
+                }
+                const settled = host.asked.length;
+                await vi.advanceTimersByTimeAsync(1_000);
+
+                expect(host.asked.length).toBe(settled);
+                expect(host.asked.filter(ask => ask.query === '').map(ask => `${ask.group}@${ask.offset}`))
+                    .toEqual(Array.from({ length: waiting }, (_, at) => `w${at}@200`));
+                expect(found).toEqual(Array.from({ length: waiting }, (_, at) => `w${at}/${250 + at}`));
+                expect(pins(pager).size).toBe(0);
+                await Promise.all(calls);
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+    }
+
+    it('let every waiting call go at a reset, and a call from before it does not let go of a pin made after it', async () => {
+        vi.useFakeTimers();
+        try {
+            const host = timedHost(20);
+            const pager = new OutlinePager(host.transport, () => undefined, 100);
+            const groups = await counted(pager, 13);
+            const waiting = Array.from({ length: 9 }, (_, at) => `w${at}`);
+            const before = waiting.map((group, at) => pager.rowAt(group, '', 250 + at));
+            expect(pins(pager).size).toBe(9);
+
+            // The outline changes while they wait; the panel counts again, and
+            // the same rows are revealed again before the calls from before end.
+            pager.reset();
+            expect(pins(pager).size).toBe(0);
+            const asked = host.asked.length;
+            groups.forEach(group => pager.total(group, 'typed'));
+            const found: string[] = [];
+            const after = waiting.map((group, at) => pager.rowAt(group, '', 250 + at).then(row => {
+                found[at] = row?.id ?? 'none';
+            }));
+            expect(await Promise.all(before)).toEqual(waiting.map(() => undefined));
+            expect(pins(pager).size).toBe(9);
+            for (let waited = 0; waited < 5_000 && found.filter(Boolean).length < 9 && host.asked.length < asked + 13 + 90; waited += 20) {
+                await vi.advanceTimersByTimeAsync(20);
+            }
+            await vi.advanceTimersByTimeAsync(1_000);
+
+            expect(host.asked.length - asked).toBe(13 + 9);
+            expect(found).toEqual(waiting.map((group, at) => `${group}/${250 + at}`));
+            expect(pins(pager).size).toBe(0);
+            await Promise.all(after);
+            // And again, from what is here.
+            expect((await pager.rowAt('w3', '', 253))?.id).toBe('w3/253');
+            expect(host.asked.length - asked).toBe(13 + 9);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
 });
 
 describe('a page as the host passes it on', () => {
@@ -416,6 +700,15 @@ describe('the words a row says', () => {
         expect(shownDetail(width)).toBe('32');
         expect(rowMeta(width)).toEqual({ text: '2' });
         expect(rowMeta(group({ countNoun: { one: 'thing', other: 'things' } })).text).toBe('3 things');
+    });
+
+    it('drop a lazy group’s detail that only repeats its count, which it does not list', () => {
+        expect(numericDetail({ ...lazy, detail: '200,000' })).toBe(ROWS);
+        expect(shownDetail({ ...lazy, detail: '200,000' })).toBeUndefined();
+        expect(rowMeta({ ...lazy, detail: '200,000' }).text).toBe('200,000 rows');
+        // Any other number is the producer's, none of its rows listed or not.
+        expect(shownDetail({ ...lazy, detail: '0' })).toBe('0');
+        expect(shownDetail({ ...lazy, detail: '32' })).toBe('32');
     });
 
     it('say how much of a list cut short is listed, and say it right', () => {

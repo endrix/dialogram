@@ -199,8 +199,15 @@ platform that hands it one.
     things calls; every open diagram of the file follows. Both are optional
     on the handle: a Dialogram older than them reports the same API
     version, so a product checks before calling. A file's declaration is
-    every group its graphs have declared, the newest of each, so two editors
-    showing views that declare different groups each keep theirs.
+    every group its graphs have declared, the newest of each, with the lines
+    an older declaration of it listed that the newest lacks (after the
+    newest's own; the newest's label, kind, `disabled` and defaults win, and
+    in a `one` group its line is the one checked by default; a group
+    reloads, or is not kept, if any declaration of it says so), so two
+    editors showing views that declare different groups, or one group with
+    other lines, each keep theirs, save a pick equal to the newest's default
+    for a line not chosen yet, which is not kept: All, None and Only turn
+    every line.
   - A click is in force in the webview at once: the platform dispatches
     `ViewOptionsChangedAction` (`dialogram.viewOptionsChanged`), which a
     product's client module handles to redraw with no round trip, and asks
@@ -369,7 +376,10 @@ platform that hands it one.
     A scroll asks for the pages it stops on, not every page on the way
     (`outline-pager.ts`); past what a browser scrolls, a pixel of scrolling
     stands for more rows. Each lazy group's first page carries its count,
-    and is asked for once however many lazy groups the outline has.
+    and is asked for once under the filter typed, however many lazy groups
+    the outline has; a count still to be asked under a filter the reader
+    has typed past is not asked. Coming back to a filter asks for the counts
+    of it the panel has not kept.
   - A page may hold fewer rows than asked (a producer that reads in smaller
     batches): the panel asks for the rest from the first row missing. Only
     `total` ends the list; an answer with no rows short of it shows the rest

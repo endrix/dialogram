@@ -359,8 +359,13 @@ export interface DiagramOutline {
    * stops at a time budget): the panel asks again from the first row it did
    * not get. Only `total` ends the list: an answer with no rows short of it
    * shows the rest of what was asked as not loaded, and it is not asked
-   * again until the outline changes. A row given without an `id` keeps its
-   * place and does nothing when clicked.
+   * again while the panel keeps what it read of the group under that
+   * filter: until the outline changes, or, under a filter other than the
+   * one typed now, until the panel forgets it for newer ones (it keeps every
+   * group under the filter typed now and any a reveal is reading, and
+   * others while it keeps no more than twelve in all), when it is asked
+   * again if the reader comes back to that filter. A row given without an `id` keeps its place and does
+   * nothing when clicked.
    */
   page(file: string, request: OutlinePageRequest): OutlinePage | Promise<OutlinePage>;
   /**
@@ -368,7 +373,8 @@ export interface DiagramOutline {
    * or `undefined` when it is not there. Asked to reveal a row whose place
    * the product did not give ({@link OutlineRowReveal.index}), or with a
    * filter typed. Without it, such a row is revealed only when a page the
-   * panel has read already holds it; otherwise the reveal does nothing. A
+   * panel has read already holds it; otherwise the reveal opens the groups
+   * down to the row (and the panel, with `show`) and selects nothing. A
    * filter that hides the row is cleared only when the row is there without
    * it.
    */
@@ -808,10 +814,11 @@ export interface DiagramProfileHandle extends vscode.Disposable {
   /**
    * The view options of the file at `uri` (a URI string, a `vscode.Uri` or
    * an absolute path) as they stand: every group its graphs have declared
-   * since the window opened, the newest declaration of each (two editors of
-   * the file can show views that declare different groups), or the
-   * profile's when no diagram of it has been opened yet, with the reader's
-   * choices applied. See {@link DiagramViewOptions}.
+   * since the window opened, the newest declaration of each with the lines
+   * an older one declared that it lacks (two editors of the file can show
+   * views that declare different groups, or one group with other lines), or
+   * the profile's when no diagram of it has been opened yet, with the
+   * reader's choices applied. See {@link DiagramViewOptions}.
    *
    * Absent on a Dialogram older than this, which reports the same API
    * version: check for it before calling.

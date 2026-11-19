@@ -215,6 +215,29 @@ describe('the webview’s copy', () => {
         expect(service.isChecked('detail', 'low')).toBe(false);
     });
 
+    it('keeps one line of a one-of group checked when a host pick races the reader’s click', () => {
+        const service = new TestService();
+        const lod: ViewOptionGroup = {
+            id: 'lod', label: 'Detail', choice: 'one',
+            items: [{ id: 'low', label: 'Low' }, { id: 'mid', label: 'Mid', checked: false }, { id: 'high', label: 'High', checked: false }]
+        };
+        service.modelRootChanged(rootOf([lod]));
+        service.change({ group: 'lod', item: 'high', checked: true });
+        // The host picked another line before the click reached it.
+        service.hostTurned(FILE, [{ group: 'lod', item: 'low', checked: false }, { group: 'lod', item: 'mid', checked: true }]);
+        expect(states(service.groups, 'lod')).toEqual({ low: false, mid: false, high: true });
+        // Then the click, as the host made it after its own pick.
+        service.hostTurned(FILE, [{ group: 'lod', item: 'mid', checked: false }, { group: 'lod', item: 'high', checked: true }]);
+        expect(states(service.groups, 'lod')).toEqual({ low: false, mid: false, high: true });
+        // The product was never told of two lines checked.
+        for (const action of service.dispatched) {
+            expect(action.groups[0].items.filter((item: { checked?: boolean }) => item.checked !== false)).toHaveLength(1);
+        }
+        // A host pick on what the diagram shows is followed.
+        service.hostTurned(FILE, [{ group: 'lod', item: 'high', checked: false }, { group: 'lod', item: 'low', checked: true }]);
+        expect(states(service.groups, 'lod')).toEqual({ low: true, mid: false, high: false });
+    });
+
     it('takes the host’s answer to its own click without telling the product again', () => {
         const service = new TestService();
         service.modelRootChanged(rootOf([kinds]));

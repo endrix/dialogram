@@ -67,7 +67,8 @@ export interface ViewOptionGroup {
      * Whether the reader's choice is kept beside the file's layout, for the
      * next time it is opened. Default `true`. `false` for a choice that is
      * about how the reader is looking right now rather than about the file:
-     * it lasts as long as the window does.
+     * it lasts as long as the window does. A group that several views of a
+     * file declare is kept only if none of them says `false`.
      */
     persist?: boolean;
     /**
@@ -75,7 +76,8 @@ export interface ViewOptionGroup {
      * `false`: the webview follows on its own (a renderer reading
      * {@link ViewOptionsChangedAction}). `true` for a choice the producer
      * applies itself, leaving things out of the graph it gives: its
-     * `getGraph` reads the choices from `options.viewOptions`.
+     * `getGraph` reads the choices from `options.viewOptions`. A group that
+     * several views of a file declare reloads if any of them says `true`.
      */
     reload?: boolean;
 }
