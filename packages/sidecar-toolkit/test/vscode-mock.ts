@@ -225,11 +225,28 @@ export const workspace = {
     getWorkspaceFolder: (_uri: Uri): undefined => undefined
 };
 
+/** `workspace` as this module defines it, for {@link resetWorkspace}. */
+const pristineWorkspace = { ...workspace };
+
+/**
+ * Puts `workspace` back as this module defines it: what a test assigned
+ * (`getConfiguration`, `getWorkspaceFolder`) is restored, and what it added
+ * (`workspaceFolders`) is gone. For an `afterEach`.
+ */
+export function resetWorkspace(): void {
+    for (const key of Object.keys(workspace)) {
+        if (!(key in pristineWorkspace)) {
+            delete (workspace as Record<string, unknown>)[key];
+        }
+    }
+    Object.assign(workspace, pristineWorkspace);
+}
+
 /**
  * Opens `folders` in the test's window, in that order: `workspace.workspaceFolders`
  * lists them, and `workspace.getWorkspaceFolder` answers as VS Code does, by
  * the path the file is named by: the innermost folder that holds it, without
- * following a symbolic link. A test that calls it restores `workspace` after.
+ * following a symbolic link. A test that calls it calls {@link resetWorkspace} after.
  */
 export function openWorkspaceFolders(...folders: string[]): void {
     const workspaceFolders = folders.map((folder, index) => ({ uri: Uri.file(folder), name: nodePath.basename(folder), index }));

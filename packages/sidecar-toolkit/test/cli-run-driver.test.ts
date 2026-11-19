@@ -10,7 +10,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
-import { openWorkspaceFolders, resetRegisteredCommands, workspace } from './vscode-mock';
+import { openWorkspaceFolders, resetRegisteredCommands, resetWorkspace } from './vscode-mock';
 
 // Fake the CLI spawn so the run command completes deterministically without a
 // real child process, capturing the invocation so we can assert the args that
@@ -183,19 +183,13 @@ describe('CliRunDriver agent-tool overrides', () => {
 });
 
 describe('CliRunDriver: where a run starts', () => {
-    const savedWorkspace = { ...workspace };
     const temps: string[] = [];
     beforeEach(() => {
         spawnCalls.length = 0;
         resetRegisteredCommands();
     });
     afterEach(() => {
-        for (const key of Object.keys(workspace)) {
-            if (!(key in savedWorkspace)) {
-                delete (workspace as Record<string, unknown>)[key];
-            }
-        }
-        Object.assign(workspace, savedWorkspace);
+        resetWorkspace();
         for (const dir of temps.splice(0)) {
             fs.rmSync(dir, { recursive: true, force: true });
         }

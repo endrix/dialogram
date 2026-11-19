@@ -42,16 +42,14 @@ async function folderThroughLinks(forUri: vscode.Uri): Promise<vscode.WorkspaceF
     if (!fileDir) {
         return undefined;
     }
+    const resolved = await Promise.all(folders.map(folder => (folder.uri.scheme === 'file' ? realDirectory(folder.uri.fsPath) : undefined)));
     let best: { folder: vscode.WorkspaceFolder; real: string } | undefined;
-    for (const folder of folders) {
-        if (folder.uri.scheme !== 'file') {
-            continue;
-        }
-        const real = await realDirectory(folder.uri.fsPath);
+    folders.forEach((folder, index) => {
+        const real = resolved[index];
         if (real && isInside(fileDir, real) && (!best || real.length > best.real.length)) {
             best = { folder, real };
         }
-    }
+    });
     return best?.folder;
 }
 

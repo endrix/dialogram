@@ -15,7 +15,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscodeMock from './vscode-mock';
-import { Uri, openWorkspaceFolders, workspace } from './vscode-mock';
+import { Uri, openWorkspaceFolders, resetWorkspace, workspace } from './vscode-mock';
 import { createSidecarModelSource } from '../src/server/cli-graph-model-source';
 import { type SidecarRuntimeConfig } from '../src/server/sidecar-runtime-config';
 import { createSidecarDiagramProfile, type SidecarProfileInput } from '../src/sidecar-diagram-profile';
@@ -43,15 +43,9 @@ afterAll(() => {
 });
 
 const temps: string[] = [];
-const savedWorkspace = { ...workspace };
 afterEach(() => {
     delete process.env.FAKE_CLI_CWD_LOG;
-    for (const key of Object.keys(workspace)) {
-        if (!(key in savedWorkspace)) {
-            delete (workspace as Record<string, unknown>)[key];
-        }
-    }
-    Object.assign(workspace, savedWorkspace);
+    resetWorkspace();
     for (const dir of temps.splice(0)) {
         fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -129,6 +123,38 @@ describe('the cli-plan graph export starts the CLI in the run root', () => {
         await source.getNodeIdentities!(Uri.file(file).toString(), { requestOptions: { networkName: 'child' } });
 
         expect(starts()).toEqual([folder]);
+    });
+
+    it('plans again, from the new folder, when a workspace folder opened since moves the run root', async () => {
+        const { home, loose, starts } = homeWithProject();
+        const source = createSidecarModelSource(planCfg());
+
+        await source.getGraph(Uri.file(loose).toString(), { requestOptions: {} });
+        await source.getGraph(Uri.file(loose).toString(), { requestOptions: {} });
+        expect(starts()).toEqual([path.dirname(loose)]);
+        // The file is unchanged; the folder its plan starts in is not: the
+        // home directory is opened beside the project, and holds the file.
+        openWorkspaceFolders(path.join(home, 'project'), home);
+        await source.getGraph(Uri.file(loose).toString(), { requestOptions: {} });
+
+        expect(starts()).toEqual([path.dirname(loose), home]);
+    });
+
+    it('starts the command the file’s folder sets, as a run does, for each plan', async () => {
+        const { folder, file, starts } = homeWithProject();
+        // The folder names the CLI; the window's setting names one that is not there.
+        workspace.getConfiguration = ((_section?: string, scope?: { fsPath?: string }) => ({
+            get: <T>(key: string, fallback?: T) => (key === 'wfpyCommand'
+                ? (scope?.fsPath?.startsWith(folder + path.sep) ? process.execPath : path.join(os.tmpdir(), 'no-such-cli'))
+                : fallback) as T
+        })) as typeof workspace.getConfiguration;
+        const source = createSidecarModelSource(planCfg());
+
+        await source.getGraph(Uri.file(file).toString(), { requestOptions: { networkName: 'main' } });
+        await source.getNodeIdentities!(Uri.file(file).toString(), { requestOptions: { networkName: 'child' } });
+
+        // The hierarchy export and the plan after it, then the identities.
+        expect(starts()).toEqual([folder, folder, folder]);
     });
 
     it('runs the plan of a file outside every workspace folder in the file’s own folder', async () => {

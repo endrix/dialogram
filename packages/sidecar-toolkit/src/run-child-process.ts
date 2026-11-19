@@ -26,6 +26,7 @@
  *    after a short grace period even if `close` never arrives.
  */
 import type { ChildProcess } from 'node:child_process';
+import { statSync } from 'node:fs';
 
 /**
  * Default deadline for a one-shot child.
@@ -107,7 +108,7 @@ export async function runChildProcess(
                 code: -1,
                 stdout: '',
                 stderr: '',
-                spawnError: error instanceof Error ? error : new Error(String(error)),
+                spawnError: startError(error instanceof Error ? error : new Error(String(error)), options.cwd),
                 timedOut: false,
                 timeoutMs
             });
@@ -186,7 +187,7 @@ export async function runChildProcess(
         child.stderr?.on('data', (chunk: string) => (stderr += chunk));
 
         child.on('error', error => {
-            settle({ code: -1, stdout, stderr, spawnError: error, timedOut, timeoutMs });
+            settle({ code: -1, stdout, stderr, spawnError: startError(error, options.cwd), timedOut, timeoutMs });
         });
         // Prefer `close` (pipes drained) but never wait for it forever.
         child.on('exit', code => {
@@ -205,6 +206,29 @@ export async function runChildProcess(
         }
         child.stdin?.end();
     });
+}
+
+/**
+ * Why `spawn` failed, said of the folder when that is what is missing: Node
+ * answers a `cwd` that is not there with the same ENOENT as a command that is
+ * not installed (`spawn <cmd> ENOENT`), which sends the reader to look for the
+ * wrong thing. A file whose folder was removed or renamed under an open
+ * diagram is the usual way to get here.
+ */
+function startError(error: Error, cwd: string | undefined): Error {
+    if (cwd === undefined || (error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        return error;
+    }
+    try {
+        if (statSync(cwd).isDirectory()) {
+            return error;
+        }
+    } catch {
+        // not there: said below
+    }
+    const missing: NodeJS.ErrnoException = new Error(`the folder it starts in, ${cwd}, does not exist`);
+    missing.code = 'ENOENT';
+    return missing;
 }
 
 /**

@@ -956,6 +956,16 @@ platform that hands it one.
     run root, as a run and `runCli` do, so a product's CLI finds the same
     files from each. The sidecar still starts at the file's Python package
     root, which an import of the file needs.
+  - A plan and a hierarchy export are kept per folder they started in: a
+    workspace folder opened since moves the run root, and the file is
+    planned again from there.
+  - The model source's plans start the command the file's folder sets, as
+    a run, `runCli`, the chat's graph and a status source already did; they
+    read the window's setting alone.
+  - A CLI whose folder is gone (the file's folder removed or renamed under
+    an open diagram) says so, `failed to start: the folder it starts in,
+    <folder>, does not exist`, rather than Node's `spawn <command> ENOENT`,
+    which reads as a command that is not installed.
 - **The members of a bus opened on a register are named by the field each
   carries.** A register's pins are named by what they are (`d`, `en`, `q`),
   and a register of a bundle (chisel-ide's signal view) has a `d` and a `q`

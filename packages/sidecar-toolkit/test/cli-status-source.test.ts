@@ -17,7 +17,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { openWorkspaceFolders, workspace } from './vscode-mock';
+import { openWorkspaceFolders, resetWorkspace } from './vscode-mock';
 import type { ExecutionNodeState } from '@dialogram/shared';
 import { createCliStatusSource, runCliJson, type SidecarStatusSourceInput } from '../src/cli-status-source';
 import { createSidecarDiagramProfile, type SidecarProfileInput } from '../src/sidecar-diagram-profile';
@@ -70,14 +70,8 @@ const RUNTIME = { settingsNamespace: 'product', cliCommandSettingKey: 'cliComman
 
 describe('the status source the platform gets', () => {
     const temps: string[] = [];
-    const savedWorkspace = { ...workspace };
     afterEach(() => {
-        for (const key of Object.keys(workspace)) {
-            if (!(key in savedWorkspace)) {
-                delete (workspace as Record<string, unknown>)[key];
-            }
-        }
-        Object.assign(workspace, savedWorkspace);
+        resetWorkspace();
         for (const dir of temps.splice(0)) {
             fs.rmSync(dir, { recursive: true, force: true });
         }

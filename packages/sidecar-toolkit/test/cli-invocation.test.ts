@@ -7,19 +7,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { Uri, openWorkspaceFolders, workspace } from './vscode-mock';
+import { Uri, openWorkspaceFolders, resetWorkspace, workspace } from './vscode-mock';
 import { resolveCliInvocation } from '../src/cli-invocation';
 
 const temps: string[] = [];
-const savedWorkspace = { ...workspace };
 
 afterEach(() => {
-    for (const key of Object.keys(workspace)) {
-        if (!(key in savedWorkspace)) {
-            delete (workspace as Record<string, unknown>)[key];
-        }
-    }
-    Object.assign(workspace, savedWorkspace);
+    resetWorkspace();
     for (const dir of temps.splice(0)) {
         fs.rmSync(dir, { recursive: true, force: true });
     }

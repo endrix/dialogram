@@ -73,7 +73,7 @@ export class CliGraphModelSource implements DiagramModelSource {
     private static readonly PLAN_GRAPH_CACHE_MAX = 24;
 
     /** One export per hierarchy root, when the runtime can make one. */
-    private readonly hierarchyCache = new HierarchyCache((rootFile, rootWorkflow) => this.exportHierarchy(rootFile, rootWorkflow));
+    private readonly hierarchyCache = new HierarchyCache((rootFile, rootWorkflow, cwd) => this.exportHierarchy(rootFile, rootWorkflow, cwd));
 
     constructor(
         private readonly cfg: SidecarRuntimeConfig,
@@ -98,7 +98,7 @@ export class CliGraphModelSource implements DiagramModelSource {
         }
 
         const { spawn } = await import('node:child_process');
-        const cliInvocation = this.getCliInvocation();
+        const cliInvocation = this.getCliInvocation(workflowFilePath);
 
         const localWorkflowNames = await this.getLocalWorkflowNames(workflowFilePath);
         const requestedWorkflowName = typeof opts.networkName === 'string' && opts.networkName.trim() !== ''
@@ -125,9 +125,14 @@ export class CliGraphModelSource implements DiagramModelSource {
             args.push('--view', view);
         }
 
+        // Where a run of the file starts, so the plan, a run, `runCli` and a status source agree
+        // on the folder (its workspace folder, its own folder outside every folder).
+        const cwd = await resolveRunRoot(workflowFilePath);
+
         // Skip re-running the workflow when on-disk content is unchanged (e.g. debounced live
-        // updates, reopen). The key includes the content hash, so a save misses and re-runs.
-        const planCacheKey = await this.computePlanCacheKey(workflowFilePath, view ? `${selectedWorkflowName ?? ''}@${view}` : selectedWorkflowName);
+        // updates, reopen). The key includes the content hash, so a save misses and re-runs,
+        // and the folder the plan starts in, which a workspace folder opened since moves.
+        const planCacheKey = await this.computePlanCacheKey(workflowFilePath, view ? `${selectedWorkflowName ?? ''}@${view}` : selectedWorkflowName, cwd);
         if (planCacheKey) {
             const entry = this.planGraphCache.get(planCacheKey);
             const cached = entry && (await this.definitionsUnchanged(entry)) ? entry.json : undefined;
@@ -151,7 +156,7 @@ export class CliGraphModelSource implements DiagramModelSource {
         // unstartable command (ENOENT) reports as an event rather than a throw, which is
         // the other way this used to never settle. Both end up as `failure` below.
         const result = await runChildProcess(cliInvocation.cmd, args, {
-            cwd: await this.runRoot(workflowFilePath),
+            cwd,
             timeoutMs: this.graphLoadTimeoutMs(workflowFilePath)
         });
         const { stdout } = result;
@@ -230,13 +235,13 @@ export class CliGraphModelSource implements DiagramModelSource {
         if (!this.cfg.cliGraphArgs) {
             return undefined;
         }
-        const cliInvocation = this.getCliInvocation();
+        const cliInvocation = this.getCliInvocation(filePath);
         const args: string[] = [...cliInvocation.argsPrefix, ...this.cfg.cliGraphArgs(filePath, workflowName), '--workflow', workflowName];
         // Same deadline as the plan run: this drills into a child workflow, which runs the
         // same user code and can wedge the same way. Identities are optional — a failure
         // here degrades the result rather than failing the load — but it must still END.
         const result = await runChildProcess(cliInvocation.cmd, args, {
-            cwd: await this.runRoot(filePath),
+            cwd: await resolveRunRoot(filePath),
             timeoutMs: this.graphLoadTimeoutMs(filePath)
         });
         if (result.code !== 0 || result.stdout.trim() === '') {
@@ -272,7 +277,8 @@ export class CliGraphModelSource implements DiagramModelSource {
         if (!root) {
             return undefined;
         }
-        const exported = await this.hierarchyCache.get(root.file, root.workflow);
+        // Kept per folder it was exported from, as the plan is.
+        const exported = await this.hierarchyCache.get(root.file, root.workflow, await resolveRunRoot(root.file));
         if (!exported) {
             return undefined;
         }
@@ -296,16 +302,16 @@ export class CliGraphModelSource implements DiagramModelSource {
         return { ...(instance.graph as GraphDocument), hierarchy: outline };
     }
 
-    /** Runs the runtime's hierarchy export; its stdout, or undefined when it fails. */
-    private async exportHierarchy(rootFile: string, rootWorkflow: string): Promise<string | undefined> {
+    /** Runs the runtime's hierarchy export from `cwd`, the root file's run root; its stdout, or undefined when it fails. */
+    private async exportHierarchy(rootFile: string, rootWorkflow: string, cwd: string): Promise<string | undefined> {
         if (!this.cfg.cliHierarchyArgs) {
             return undefined;
         }
-        const cliInvocation = this.getCliInvocation();
+        const cliInvocation = this.getCliInvocation(rootFile);
         const result = await runChildProcess(
             cliInvocation.cmd,
             [...cliInvocation.argsPrefix, ...this.cfg.cliHierarchyArgs(rootFile, rootWorkflow)],
-            { cwd: await this.runRoot(rootFile), timeoutMs: this.graphLoadTimeoutMs(rootFile) }
+            { cwd, timeoutMs: this.graphLoadTimeoutMs(rootFile) }
         );
         const failure = describeChildFailure(cliInvocation.cmd, result);
         if (failure || result.stdout.trim() === '') {
@@ -322,24 +328,17 @@ export class CliGraphModelSource implements DiagramModelSource {
 
     /**
      * Resolve the CLI command/args-prefix to invoke, from the current runtime config/VS Code
-     * settings. Falls back to the configured default command outside a VS Code host (tests).
+     * settings scoped to `filePath` when given (a folder's own setting, as a run, `runCli`, the
+     * chat's graph and a status source read it). Falls back to the configured default command
+     * outside a VS Code host (tests).
      */
-    getCliInvocation(): { cmd: string; argsPrefix: string[] } {
+    getCliInvocation(filePath?: string): { cmd: string; argsPrefix: string[] } {
         try {
             const vscode = require('vscode') as typeof import('vscode');
-            return getCliInvocation(this.cfg, vscode);
+            return getCliInvocation(this.cfg, vscode, filePath !== undefined ? vscode.Uri.file(filePath) : undefined);
         } catch {
             return { cmd: this.cfg.cliCommandDefault, argsPrefix: [] };
         }
-    }
-
-    /**
-     * Where the CLI starts for this file: where a run of it starts, so the plan, a run, `runCli`
-     * and a status source agree on the folder (the file's workspace folder, its own folder
-     * outside every folder).
-     */
-    private runRoot(filePath: string): Promise<string> {
-        return resolveRunRoot(filePath);
     }
 
     /**
@@ -377,10 +376,10 @@ export class CliGraphModelSource implements DiagramModelSource {
         return true;
     }
 
-    private async computePlanCacheKey(filePath: string, workflowName: string | undefined): Promise<string | undefined> {
+    private async computePlanCacheKey(filePath: string, workflowName: string | undefined, cwd: string): Promise<string | undefined> {
         // The same hash the definition files are checked by: a large file's is kept (file-memo.ts).
         const hash = await fileHash(filePath);
-        return hash === undefined ? undefined : `${filePath}::${workflowName ?? ''}::${hash}`;
+        return hash === undefined ? undefined : `${filePath}::${workflowName ?? ''}::${hash}::${cwd}`;
     }
 }
 
