@@ -111,24 +111,38 @@ platform that hands it one.
 - **A load nobody waits for any more is told so** (`ModelSourceOptions.signal`,
   an `AbortSignal` beside `progress`). It is aborted when the diagram's
   editor closes, and when a newer request for the same diagram arrives
-  while the load runs (a save, another view, a refresh): GLSP runs a
-  session's requests one at a time, so the newer one would otherwise wait
-  for the old to finish, and then draw over it. The reason says which
-  (an `AbortError`). A product stops its compiler, worker or request; the
-  platform draws nothing of an aborted load, whatever `getGraph` returns,
-  and does not end the loading indicator for it, which the newer load now
-  speaks for. A request nobody is waiting on (a run's overlay redrawn)
-  neither aborts a load nor is aborted by one, only by the editor closing.
-  The session's dispatcher sees the newer request arrive
-  (`LoadCancellingActionDispatcher`, bound by `WorkflowDiagramModule`; a
-  product's own diagram module gets it by extending that one).
+  while `getGraph` runs (a save, another view, a refresh), once the diagram
+  shows a graph: GLSP runs a session's requests one at a time, so the newer
+  one would otherwise wait for the old to finish, and then draw over it.
+  The reason says which (an `AbortError`). A product stops its compiler,
+  worker or request; the platform draws nothing of a load whose signal was
+  aborted, whatever `getGraph` returns, and does not end the loading
+  indicator for it, which the newer load now speaks for.
+  - The signal covers `getGraph` and nothing after it. Once `getGraph` has
+    answered, nothing aborts it, and the platform draws the answer even when
+    a newer request arrives during the layout; the newer one then draws
+    over it.
+  - A request replaced while it still waits behind another never calls
+    `getGraph`: a save, then a refresh, during a slow load runs the load for
+    the refresh only.
+  - A diagram's first load is not replaced. Until a diagram shows a graph,
+    the reader waits for a picture, any picture: the first load is drawn,
+    and the newer request after it, as before. Only the editor closing
+    aborts it.
+  - A request nobody is waiting on (a run's overlay redrawn) neither aborts
+    a load nor is aborted by one, only by the editor closing.
+  - The session's dispatcher sees the newer request arrive
+    (`LoadCancellingActionDispatcher`, bound by `WorkflowDiagramModule`; a
+    product's own diagram module gets it by extending that one).
 - **A product can say what its diagram is doing after the platform has
   drawn it** (`DiagramProfileHandle.loading.report(uri, progress)`,
   `loading.end(uri)`): a layout it streams in, a second pass. The same
   indicator the platform's load uses, on every editor of the file, centred
   while the diagram is empty and as a pill once it has a picture. A product
   reached it through an internal import of the client's
-  `loading-indicator`.
+  `loading-indicator`. `loading` is optional on the handle: a Dialogram
+  older than this reports the same API version and has none, so a product
+  calls `handle.loading?.report(...)`.
 - **A product can put its own words in place of the platform's loading
   steps, or none** (`DiagramProfile.loadPhaseWords(phase, words, facts)`,
   with `phase` one of `reading`, `drawing`, `laying-out`, `routing`).
@@ -156,6 +170,11 @@ platform that hands it one.
   globs see is asked about, and so is each save of a source in the editor;
   the diagrams it names are reloaded, with the changed file's own. Changes
   within the quarter-second debounce are taken together. Without it, nothing
+  changes. `watch.globs` may now be left out, for the globs the source
+  extensions give (every file, with none declared), so that `watch` can
+  carry `affects` alone; an empty list watches nothing on disk, and only a
+  save in the editor reloads.
+
   changes.
 - **View options in the palette.** What a reader may show and hide is the
   producer's to declare and the platform's to draw: checkable groups under

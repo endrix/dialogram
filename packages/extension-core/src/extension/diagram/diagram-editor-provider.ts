@@ -143,20 +143,14 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     outlineHost?: Pick<OutlineHost, 'onWebviewRequest' | 'onWebviewActivate'>;
 
     /**
-     * Fires with a document's URI string each time a webview (re)registers for it
-     * (initial open and every reopen). The host wires this to drain the
-     * execution-overlay replay buffer through the bridge so a webview reopened
-     * mid-run comes back with the live "Running agents" bar rather than empty.
-     * The URI is emitted as `document.uri.toString()` — the same representation
-     * run drivers emit with — so the replay lookup keys match.
-     */
-    private readonly registerClientEmitter = new vscode.EventEmitter<string>();
-    readonly onDidRegisterClient: vscode.Event<string> = this.registerClientEmitter.event;
-
-    /**
-     * The same, with the client that registered: what is replayed goes to
-     * the editor that is new, and not to the file's other editor, which has
-     * it already.
+     * Fires each time a webview (re)registers for a document (initial open and
+     * every reopen), with the document's URI string and the client that
+     * registered. The host wires this to drain the execution-overlay replay
+     * buffer through the bridge so a webview reopened mid-run comes back with
+     * the live "Running agents" bar rather than empty: to the editor that is
+     * new, and not to the file's other editor, which has it already. The URI
+     * is emitted as `document.uri.toString()` — the same representation run
+     * drivers emit with — so the replay lookup keys match.
      */
     private readonly registerEditorEmitter = new vscode.EventEmitter<{ uri: string; clientId: string }>();
     readonly onDidRegisterEditor: vscode.Event<{ uri: string; clientId: string }> = this.registerEditorEmitter.event;
@@ -249,7 +243,7 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     ) {
         super(glspVscodeConnector);
 
-        extensionContext.subscriptions.push(this.registerClientEmitter, this.registerEditorEmitter);
+        extensionContext.subscriptions.push(this.registerEditorEmitter);
 
         // Listen for document changes for live preview (debounced)
         extensionContext.subscriptions.push(
@@ -315,7 +309,6 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         // execution-overlay events for this source into the (re)opened webview.
         // Fired synchronously here: the drain runs before any later live batch on
         // the single-threaded host loop, preserving replay-before-live order.
-        this.registerClientEmitter.fire(document.uri.toString());
         this.registerEditorEmitter.fire({ uri: document.uri.toString(), clientId });
 
         // Which of a file's editors was used last: the one a command for "the"

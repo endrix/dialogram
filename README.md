@@ -212,15 +212,21 @@ over the overlay bridge) and `postToWebview(uri, message)` (raw
 the diagram's loading indicator: `loading.report(uri, { message, detail })`
 and `loading.end(uri)`, for work the product does for a file's diagram
 outside `getGraph` (a layout streamed in after the graph is drawn). Each
-reaches every editor open on the file; a file can have two.
+reaches every editor open on the file; a file can have two. `loading` is
+optional: a Dialogram older than it reports the same API version without
+it, so a product calls `handle.loading?.report(...)`.
 
 What a load is given and told:
 
 - `getGraph(sourceUri, options)` gets `options.progress`, to say what it is
   doing while it reads, and `options.signal`, an `AbortSignal` aborted when
   nobody waits for the graph any more: the editor closed, or a newer request
-  for the same diagram (a save, another view) arrived. Nothing of an aborted
-  load is drawn, whatever it returns.
+  for the same diagram (a save, another view) arrived while `getGraph` ran,
+  once the diagram shows a graph (a first load is let finish). Nothing of a
+  load whose signal was aborted is drawn, whatever it returns; once
+  `getGraph` has answered, the signal is never aborted, and the answer is
+  drawn. A request replaced while it still waited behind another never
+  calls `getGraph`.
 - The Problems panel names a graph diagnostic's source by the profile's
   `displayName` (it said `workflow` for every product).
 

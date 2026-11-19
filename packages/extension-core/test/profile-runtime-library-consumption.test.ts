@@ -131,8 +131,10 @@ describe('activateProfileRuntime — library consumption (custom serverDiagramMo
         const context = makeContext();
         const handle = await activateProfileRuntime(context, libraryProfile());
 
-        handle.loading.report('file:///m.mlir', { message: 'Placing cells', detail: 'stage 2 of 3' });
-        handle.loading.end('file:///m.mlir');
+        // Optional in the API (a Dialogram older than it has none); this one has it.
+        expect(handle.loading).toBeDefined();
+        handle.loading!.report('file:///m.mlir', { message: 'Placing cells', detail: 'stage 2 of 3' });
+        handle.loading!.end('file:///m.mlir');
 
         expect(hoisted.postLoadingToDocument.mock.calls).toEqual([
             ['file:///m.mlir', { state: 'progress', message: 'Placing cells', detail: 'stage 2 of 3' }],
