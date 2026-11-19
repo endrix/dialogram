@@ -11,7 +11,8 @@
  * The node list (`storageOptions.nodeList`) is the other: it finds its nodes
  * as the canvas colours them, by the families the client is given
  * (`clientBehavior.nodeFamilies`, else `storageOptions.nodeFamilies`, as the
- * diagram editor provider hands them over), so those are folded in beside it.
+ * diagram editor provider hands them over), so the client's are folded in
+ * beside it.
  *
  * The only subtlety is a profile that suppresses creation and carries no storage
  * options at all. Something has to be bound for the flag to arrive, so one is
@@ -34,9 +35,8 @@ export function composeStorageRuntimeOptions(
         // that never had storage options does not acquire them by accident.
         return undefined;
     }
-    const clientNodeFamilies = profile.storageOptions?.nodeList
-        ? profile.clientBehavior?.nodeFamilies ?? profile.storageOptions.nodeFamilies
-        : undefined;
+    // The server falls back to `nodeFamilies` itself (`attachNodeList`).
+    const clientNodeFamilies = profile.storageOptions?.nodeList ? profile.clientBehavior?.nodeFamilies : undefined;
     return {
         settingsNamespace: '',
         operationPrefix: '',

@@ -166,23 +166,24 @@ export const NODE_LIST_ARG = 'wf:nodeList';
 export interface NodeListOutline {
     title: string;
     codicon?: string;
+    /** The run's arguments a view's root carries (`wf:viewerOverlayRunId`, ...), the root of every node listed. */
+    rootArgs?: Record<string, unknown>;
     /** The root instance, holding the instances and nodes listed. */
     outline: HierarchyOutlineEntry;
 }
 
 /**
- * A node of another view, as the canvas would draw it: the element, the
- * edges into it with what the last run left on them, and the root's run
- * arguments (`wf:viewerOverlayRunId`, ...). Enough for a product's node
- * opener, which reads a node, its root's edges and its root's arguments,
- * to work on it as on a node of the view shown.
+ * A node of another view, as the canvas would draw it: the element and the
+ * edges into it with what the last run left on them. With the list's run
+ * arguments (`NodeListOutline.rootArgs`) on their root, enough for a
+ * product's node opener, which reads a node, its root's edges and its
+ * root's arguments, to work on it as on a node of the view shown.
  */
 export interface DetachedNode {
     id: string;
     type: string;
     args?: Record<string, unknown>;
     edges: Array<{ id: string; type: string; sourceId: string; targetId: string; args?: Record<string, unknown> }>;
-    rootArgs?: Record<string, unknown>;
 }
 
 /**

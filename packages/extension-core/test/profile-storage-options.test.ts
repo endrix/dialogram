@@ -61,8 +61,9 @@ describe('composeStorageRuntimeOptions', () => {
         // The client's families, which a product may give the client alone.
         expect(composeStorageRuntimeOptions({ storageOptions: { ...base, nodeList }, clientBehavior: { nodeFamilies: [viewer] } } as any))
             .toMatchObject({ nodeList, clientNodeFamilies: [viewer] });
+        // Without, the server reads its own (`attachNodeList`).
         expect(composeStorageRuntimeOptions({ storageOptions: { ...base, nodeList, nodeFamilies: [viewer] } } as any))
-            .toMatchObject({ clientNodeFamilies: [viewer] });
+            .not.toHaveProperty('clientNodeFamilies');
         // No list, no families folded in: the server's own stay as they were.
         expect(composeStorageRuntimeOptions({ storageOptions: base, clientBehavior: { nodeFamilies: [viewer] } } as any))
             .not.toHaveProperty('clientNodeFamilies');

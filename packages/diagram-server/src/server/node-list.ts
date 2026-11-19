@@ -47,7 +47,7 @@ export interface NodeListInput {
     transform(document: GraphDocument): GModelElement;
     /** The run's token on an edge; absent with no run. */
     tokenOf?: OverlayTokenOf;
-    /** The run's arguments a view's root carries (`wf:viewerOverlayRunId`, `wf:viewerOverlayOutDir`). */
+    /** The run's arguments a view's root carries (`wf:viewerOverlayRunId`, `wf:viewerOverlayOutDir`), published once with the list. */
     rootArgs?: Record<string, unknown>;
 }
 
@@ -116,8 +116,7 @@ function nodeRow(
         id: node.id,
         type: node.type,
         ...(node.args ? { args: node.args } : {}),
-        edges: into,
-        ...(input.rootArgs ? { rootArgs: input.rootArgs } : {})
+        edges: into
     };
     return {
         path: [...instance.path, name],
@@ -143,17 +142,46 @@ type FamilyNodes = { family: string; nodes: GModelElement[]; edges: GModelElemen
  */
 const familyNodesByDocument = new WeakMap<object, FamilyNodes>();
 
-function familyNodesOf(instance: HierarchyGraph, input: NodeListInput): FamilyNodes | undefined {
+/**
+ * Whether a producer's document may hold a node with `annotation`: the
+ * name is somewhere in it, as a key (`meta.viewer`, `meta.annotations.viewer`)
+ * or as a `name` (`meta.definitionAnnotations`). A document that does not is
+ * not transformed, which is most of a hierarchy.
+ */
+function mayHold(document: unknown, annotation: string): boolean {
+    const stack: unknown[] = [document];
+    while (stack.length > 0) {
+        const value = stack.pop();
+        if (Array.isArray(value)) {
+            stack.push(...value);
+        } else if (value && typeof value === 'object') {
+            if ((value as { name?: unknown }).name === annotation || Object.prototype.hasOwnProperty.call(value, annotation)) {
+                return true;
+            }
+            stack.push(...Object.values(value));
+        }
+    }
+    return false;
+}
+
+function familyNodesOf(instance: HierarchyGraph, input: NodeListInput, annotation: string): FamilyNodes | undefined {
     const known = familyNodesByDocument.get(instance.document);
     if (known && known.family === input.spec.family) {
         return known;
+    }
+    const none: FamilyNodes = { family: input.spec.family, nodes: [], edges: [] };
+    if (!mayHold(instance.document, annotation)) {
+        familyNodesByDocument.set(instance.document, none);
+        return none;
     }
     let graph: GModelElement;
     try {
         graph = input.transform(instance.document);
     } catch (error) {
+        // Said once per export: the same document fails the same way.
         console.warn(`[node-list] the graph of ${pathKey(instance.path) || 'the root'} could not be read: ${String(error)}`);
-        return undefined;
+        familyNodesByDocument.set(instance.document, none);
+        return none;
     }
     const elements = [...elementsOf(graph)];
     const nodes = elements.filter(element => inFamily(element, input.spec.family, input.families));
@@ -170,8 +198,8 @@ function familyNodesOf(instance: HierarchyGraph, input: NodeListInput): FamilyNo
 }
 
 /** The rows of the family's nodes in one instance, in the graph's order. */
-function rowsOfInstance(instance: HierarchyGraph, input: NodeListInput): HierarchyOutlineEntry[] {
-    const found = familyNodesOf(instance, input);
+function rowsOfInstance(instance: HierarchyGraph, input: NodeListInput, annotation: string): HierarchyOutlineEntry[] {
+    const found = familyNodesOf(instance, input, annotation);
     return found ? found.nodes.map(node => nodeRow(node, found.edges, instance, input)) : [];
 }
 
@@ -183,7 +211,9 @@ function rowsOfInstance(instance: HierarchyGraph, input: NodeListInput): Hierarc
 export function buildNodeList(input: NodeListInput): NodeListOutline | undefined {
     const graphByPath = new Map(input.graphs.map(graph => [pathKey(graph.path), graph]));
     const rootGraph = graphByPath.get('');
-    if (!rootGraph) {
+    // The family's annotation, for a cheap look at each graph before its transform.
+    const annotation = input.families.find(family => nodeFamilyName(family) === input.spec.family)?.annotation;
+    if (!rootGraph || !annotation) {
         return undefined;
     }
     let listed = 0;
@@ -217,7 +247,7 @@ export function buildNodeList(input: NodeListInput): NodeListOutline | undefined
 
     const instanceRow = (path: string[]): HierarchyOutlineEntry | undefined => {
         const graph = graphByPath.get(pathKey(path));
-        const nodes = graph ? rowsOfInstance(graph, input) : [];
+        const nodes = graph ? rowsOfInstance(graph, input, annotation) : [];
         listed += nodes.length;
         const below = orderedChildren(path)
             .map(instanceRow)
@@ -239,5 +269,10 @@ export function buildNodeList(input: NodeListInput): NodeListOutline | undefined
     if (!outline || listed === 0) {
         return undefined;
     }
-    return { title: input.spec.title, ...(input.spec.codicon ? { codicon: input.spec.codicon } : {}), outline };
+    return {
+        title: input.spec.title,
+        ...(input.spec.codicon ? { codicon: input.spec.codicon } : {}),
+        ...(input.rootArgs ? { rootArgs: input.rootArgs } : {}),
+        outline
+    };
 }

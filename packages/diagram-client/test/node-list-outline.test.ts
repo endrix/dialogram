@@ -7,7 +7,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { GModelElement } from '@eclipse-glsp/sprotty';
-import { NODE_LIST_ARG, type HierarchyOutlineEntry, type NodeListOutline } from '@dialogram/shared';
+import { NODE_LIST_ARG, OUTLINE_REVEAL_MESSAGE, type HierarchyOutlineEntry, type NodeListOutline } from '@dialogram/shared';
 import { NodeListOutlinePanel } from '../src/node-list-outline';
 import { placeInButtonStack } from '../src/hierarchy-outline';
 import type { NodeOpener, NodeOpenerContext } from '../src/node-opener';
@@ -19,8 +19,7 @@ const viewerRow = (path: string[], id: string, token?: string): HierarchyOutline
     path, workflowName: 'top', role: 'node', nodeId: `g-${id}`, label: path[path.length - 1], family: 'viewer',
     detachedNode: {
         id, type: 'node:external-actor', args: { 'cal:entityName': path[path.length - 1] },
-        edges: [{ id: `e-${id}`, type: 'edge:connection', sourceId: 'src_port_Out', targetId: `${id}_port_In`, args: token ? { [TOKEN]: token } : {} }],
-        rootArgs: token ? { 'wf:viewerOverlayRunId': 'run-1' } : undefined
+        edges: [{ id: `e-${id}`, type: 'edge:connection', sourceId: 'src_port_Out', targetId: `${id}_port_In`, args: token ? { [TOKEN]: token } : {} }]
     },
     children: []
 });
@@ -28,6 +27,7 @@ const viewerRow = (path: string[], id: string, token?: string): HierarchyOutline
 const listWith = (tokens: { report?: string; plot?: string }): NodeListOutline => ({
     title: 'Viewers',
     codicon: 'eye',
+    ...(tokens.report || tokens.plot ? { rootArgs: { 'wf:viewerOverlayRunId': 'run-1' } } : {}),
     outline: {
         path: [], workflowName: 'top', sourceUri: FILE,
         children: [
@@ -157,6 +157,39 @@ describe('the node list', () => {
         expect(rowSaying('report')!.classList.contains('unavailable')).toBe(true);
         panel.modelRootChanged(rootWith(listWith({ report: '/runs/2/report.html' })));
         expect(rowSaying('report')!.classList.contains('unavailable')).toBe(false);
+    });
+
+    it('leaves the host\'s "show this row" to the hierarchy', async () => {
+        try {
+            localStorage.setItem('dialogram.nodeListOutline.open', '0');
+        } catch {
+            // happy-dom has it
+        }
+        const closed = new TestPanel(opener);
+        closed.modelRootChanged(rootWith(listWith({})));
+        window.dispatchEvent(new MessageEvent('message', { data: { type: OUTLINE_REVEAL_MESSAGE, payload: { id: 'inner', show: true } } }));
+        await settle();
+        expect(document.getElementById('workflow-node-list-outline')!.hidden).toBe(true);
+    });
+
+    it('says why a rejected opener could not open a row, and goes on', async () => {
+        const rejecting: NodeOpener = {
+            id: 'viewer',
+            canOpen: () => true,
+            open: () => [Promise.reject(new Error('no host'))]
+        };
+        const warned: unknown[] = [];
+        const warn = console.warn;
+        console.warn = (...args: unknown[]) => { warned.push(args[0]); };
+        try {
+            const own = new TestPanel(rejecting);
+            own.modelRootChanged(rootWith(listWith({ plot: '/p' })));
+            rowSaying('plot')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+            await settle();
+        } finally {
+            console.warn = warn;
+        }
+        expect(warned).toContain('[dialogram] a node list row could not be opened');
     });
 
     it('is offered only while the model carries one', () => {

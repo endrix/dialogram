@@ -114,6 +114,12 @@ export interface OutlinePanelConfig {
     under: string[];
     /** A class of its own beside the outline's, for its own styles. */
     className?: string;
+    /**
+     * Whether the host's outline messages are this panel's: its answers for
+     * lazy groups and its "show this row" (`DiagramProfile.outline`). Only
+     * one panel's, the hierarchy's.
+     */
+    hostRows: boolean;
 }
 
 const HIERARCHY_PANEL: OutlinePanelConfig = {
@@ -122,7 +128,8 @@ const HIERARCHY_PANEL: OutlinePanelConfig = {
     arg: 'wf:hierarchy',
     codicon: 'type-hierarchy',
     shortcut: 'o',
-    under: [CHAT_TOGGLE_ID]
+    under: [CHAT_TOGGLE_ID],
+    hostRows: true
 };
 
 function storedOpen(key: string): boolean {
@@ -425,7 +432,7 @@ export class HierarchyOutlinePanel {
 
     /** The host's answers, and its "show this row". */
     private listen(): void {
-        if (this.listening || typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
+        if (this.listening || !this.config.hostRows || typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
             return;
         }
         this.listening = true;

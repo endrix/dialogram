@@ -96,8 +96,11 @@ platform that hands it one.
   by the sidecar toolkit's model source with `cliHierarchyArgs`), found by
   the family rule the canvas colours by (now one function, shared
   `resolveNodeFamily`, used by the canvas and the server too), and given
-  the run's tokens by the canvas's own matching; each export's graphs are
-  transformed once. A row may also be made unavailable by its producer
+  the run's tokens by the rule the canvas's edges are given theirs by (one
+  function now, `edge-tokens.ts`, so at a trace step a row opens the step's
+  token as the node does). Only the graphs that name the family's
+  annotation are transformed, each once per export, and the run's
+  arguments are published once with the list. A row may also be made unavailable by its producer
   (`HierarchyOutlineEntry.unavailable`). The outline panel is now one kind
   of panel (`OutlinePanelConfig`) of which the hierarchy and the node list
   are two.

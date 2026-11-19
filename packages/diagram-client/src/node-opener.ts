@@ -111,15 +111,16 @@ export function nodeOpenability(
 
 /**
  * A node of another view as an element, as the canvas would hold it: its
- * `root` holds it and the edges into it, and carries the run's arguments.
+ * `root` holds it and the edges into it, and carries the run's arguments
+ * (`NodeListOutline.rootArgs`).
  * Enough for an opener that reads a node, its root's edges and its root's
  * arguments; it is no element of the canvas's model.
  */
-export function detachedElement(detached: DetachedNode): GModelElement {
+export function detachedElement(detached: DetachedNode, rootArgs?: Record<string, unknown>): GModelElement {
     const root: Record<string, unknown> & { children: unknown[] } = {
         id: `${detached.id}~detached-root`,
         type: 'graph',
-        args: { ...(detached.rootArgs ?? {}) },
+        args: { ...(rootArgs ?? {}) },
         children: []
     };
     root.root = root;

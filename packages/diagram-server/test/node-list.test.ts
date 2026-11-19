@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest';
 import { WorkflowDiagramMetadata, type GraphDocument, type HierarchyGraph, type HierarchyOutlineEntry } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument } from '../src/model/graph-gmodel-source';
 import { buildNodeList, type NodeListInput } from '../src/server/node-list';
-import { overlayTokenOf } from '../src/server/source-model-storage';
 
 const FAMILIES = [
     { annotation: 'source', color: '#4fa97a' },
@@ -83,14 +82,15 @@ describe('a node list', () => {
         // The edge ends at one of the viewer's ports, as the opener looks it up.
         expect(report.edges[0].targetId).toBe(`${report.id}_port_In`);
         expect(report.edges[0].args?.[TOKEN]).toBe('/runs/1/report.html');
-        expect(report.rootArgs).toEqual({ 'wf:viewerOverlayRunId': 'run-1' });
+        // The run's arguments once, for every node's root.
+        expect(list.rootArgs).toEqual({ 'wf:viewerOverlayRunId': 'run-1' });
     });
 
     it('carries no token without a run', () => {
-        const report = buildNodeList(input())!.outline.children[0].detachedNode!;
+        const list = buildNodeList(input())!;
 
-        expect(report.edges[0].args?.[TOKEN]).toBeUndefined();
-        expect(report.rootArgs).toBeUndefined();
+        expect(list.outline.children[0].detachedNode!.edges[0].args?.[TOKEN]).toBeUndefined();
+        expect(list.rootArgs).toBeUndefined();
     });
 
     it('is none for a hierarchy without the family\'s nodes', () => {
@@ -102,37 +102,38 @@ describe('a node list', () => {
         expect(labels(buildNodeList(input({ hierarchy: undefined }))!.outline)).toEqual({ '(root)': ['report', { trace: ['plot'] }] });
     });
 
-    it('transforms an export\'s document once, however often the list is built', () => {
-        let transforms = 0;
+    it('transforms an export\'s document once, however often the list is built, and one without the family not at all', () => {
+        const transformed: string[] = [];
         const counted = (document: GraphDocument) => {
-            transforms++;
+            transformed.push((document.graph as any).nodes.map((node: any) => node.label).join(','));
             return transform(document);
         };
         const own = graphs.map(graph => ({ ...graph, document: { ...graph.document } }));
         buildNodeList(input({ graphs: own, transform: counted }));
         buildNodeList(input({ graphs: own, transform: counted, tokenOf: () => ({ token: 'x' }) }));
 
-        expect(transforms).toBe(own.length);
+        // The root and `trace`; `quiet` names no viewer.
+        expect(transformed).toEqual(['decode,report,trace', 'a,plot']);
     });
-});
 
-describe('the token on an edge', () => {
-    const analysis = {
-        buildOverlaySignatureCandidates: (entry: any) => (entry.toEntity ? [`${entry.fromEntity}>${entry.toEntity}`] : []),
-        buildOverlayAstPathCandidates: (args: any) => (args?.['wf:astPath'] ? [args['wf:astPath']] : [])
-    };
-
-    it('is the entry at its AST path, overridden by the one its signature names, as on the canvas', () => {
-        const tokenOf = overlayTokenOf({
-            runId: 'r', outDir: '/o',
-            edges: {
-                'ast:1': { lastToken: 'by-path' },
-                sig: { fromEntity: 'a', toEntity: 'b', lastToken: 'by-signature' } as any
+    it('tries a document that cannot be transformed once, and lists the others', () => {
+        let tries = 0;
+        const own = graphs.map(graph => ({ ...graph, document: { ...graph.document } }));
+        const failing = (document: GraphDocument) => {
+            if (document === own[1].document) {
+                tries++;
+                throw new Error('no');
             }
-        }, analysis);
+            return transform(document);
+        };
+        const first = buildNodeList(input({ graphs: own, transform: failing }))!;
+        buildNodeList(input({ graphs: own, transform: failing }));
 
-        expect(tokenOf({ 'wf:astPath': 'ast:1' })).toEqual({ token: 'by-path' });
-        expect(tokenOf({ 'wf:astPath': 'ast:1', 'wf:from': 'a', 'wf:to': 'b' })).toEqual({ token: 'by-signature' });
-        expect(tokenOf({ 'wf:astPath': 'ast:2' })).toBeUndefined();
+        expect(tries).toBe(1);
+        expect(labels(first.outline)).toEqual({ '(root)': ['report'] });
+    });
+
+    it('is none when the product has no such family', () => {
+        expect(buildNodeList(input({ families: [] }))).toBeUndefined();
     });
 });

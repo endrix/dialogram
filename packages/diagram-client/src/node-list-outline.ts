@@ -26,7 +26,9 @@ const NODE_LIST_PANEL: OutlinePanelConfig = {
     arg: NODE_LIST_ARG,
     codicon: 'list-tree',
     under: ['workflow-hierarchy-outline-toggle', 'workflow-chat-toggle-btn'],
-    className: 'workflow-node-list'
+    className: 'workflow-node-list',
+    // The host's outline messages are the hierarchy's: the list has no rows of the host's.
+    hostRows: false
 };
 
 /** A title or codicon the product wrote, as plain words: it goes into markup. */
@@ -40,6 +42,8 @@ export class NodeListOutlinePanel extends HierarchyOutlinePanel {
     protected readonly contributedOpeners: readonly NodeOpener[] | undefined;
 
     private listTitle = 'Nodes';
+    /** The run's arguments every node's root carries (`NodeListOutline.rootArgs`). */
+    private rootArgs: Record<string, unknown> | undefined;
     /** Why each node row cannot be opened now, by row id; asked again for each outline. */
     private readonly reasons = new Map<string, string | undefined>();
     /** The rows seen before: one new to the list is opened, one the reader closed stays closed. */
@@ -59,6 +63,7 @@ export class NodeListOutlinePanel extends HierarchyOutlinePanel {
         if (!list || typeof list !== 'object' || !list.outline || !Array.isArray(list.outline.children)) {
             return undefined;
         }
+        this.rootArgs = list.rootArgs && typeof list.rootArgs === 'object' ? list.rootArgs : undefined;
         const title = typeof list.title === 'string' ? list.title.trim() : '';
         this.listTitle = PLAIN_TITLE.test(title) ? title : 'Nodes';
         if (typeof list.codicon === 'string' && CODICON.test(list.codicon)) {
@@ -107,7 +112,9 @@ export class NodeListOutlinePanel extends HierarchyOutlinePanel {
             return;
         }
         for (const action of opened) {
-            void Promise.resolve(action).then(resolved => this.dispatcher.dispatch(resolved as never));
+            void Promise.resolve(action)
+                .then(resolved => this.dispatcher.dispatch(resolved as never))
+                .catch(error => console.warn('[dialogram] a node list row could not be opened', error));
         }
     }
 
@@ -116,7 +123,7 @@ export class NodeListOutlinePanel extends HierarchyOutlinePanel {
     }
 
     private elementOf(entry: HierarchyOutlineEntry): GModelElement {
-        return detachedElement(entry.detachedNode!);
+        return detachedElement(entry.detachedNode!, this.rootArgs);
     }
 
     /** What the canvas's double click tells an opener: the editor's file. */
