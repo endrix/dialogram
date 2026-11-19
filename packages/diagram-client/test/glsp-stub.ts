@@ -392,7 +392,6 @@ const centerFitModule = requireGlsp('sprotty/lib/features/viewport/center-fit');
 const viewportModelModule = requireGlsp('sprotty/lib/features/viewport/model');
 export const CenterCommand = centerFitModule.CenterCommand;
 export const FitToScreenCommand = centerFitModule.FitToScreenCommand;
-export const CenterKeyboardListener = centerFitModule.CenterKeyboardListener;
 export const limitViewport = viewportModelModule.limitViewport;
 
 export const ModifyCSSFeedbackAction = {

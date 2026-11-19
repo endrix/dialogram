@@ -88,6 +88,64 @@ export function viewportCentredIn(content: Rect, area: Rect, zoom: number): View
 }
 
 /**
+ * `viewport` moved, along each axis on which `content` (in the model's units)
+ * fits the canvas at the viewport's zoom but runs off it, back onto the
+ * canvas, `margin` screen pixels inside the edge where there is room for it.
+ * Centred in a free area narrower than it, content that fits the canvas
+ * would run off the canvas's edge: it stops inside the edge instead, as near
+ * the free area's middle as the canvas lets it. Content already all on the
+ * canvas, and content larger than it, are left where they are.
+ */
+export function keepOnCanvas(viewport: Viewport, content: Rect, canvas: { width: number; height: number }, margin = FIT_MARGIN): Viewport {
+    const zoom = viewport.zoom;
+    const along = (scroll: number, start: number, size: number, extent: number): number => {
+        const shown = size * zoom;
+        if (!(shown <= extent)) {
+            return scroll;
+        }
+        const at = (start - scroll) * zoom;
+        if (at >= 0 && at + shown <= extent) {
+            return scroll;
+        }
+        const room = Math.min(margin, (extent - shown) / 2);
+        const kept = Math.min(Math.max(at, room), extent - shown - room);
+        return kept === at ? scroll : start - kept / zoom;
+    };
+    return {
+        scroll: {
+            x: along(viewport.scroll.x, content.x, content.width, canvas.width),
+            y: along(viewport.scroll.y, content.y, content.height, canvas.height)
+        },
+        zoom
+    };
+}
+
+/**
+ * `viewport` at a zoom within `limits`, with the middle of `content` (in the
+ * model's units) kept where `viewport` draws it on screen: a fit that wants
+ * more than the limit is a fit at the limit, still centred, not one whose
+ * scroll was worked out for a zoom it did not get.
+ */
+export function withinZoomLimits(viewport: Viewport, content: Rect, limits: { min: number; max: number } | undefined): Viewport {
+    if (!limits || !(limits.min > 0) || !(limits.max >= limits.min)) {
+        return viewport;
+    }
+    const zoom = Math.min(limits.max, Math.max(limits.min, viewport.zoom));
+    if (zoom === viewport.zoom) {
+        return viewport;
+    }
+    const middle = { x: content.x + content.width / 2, y: content.y + content.height / 2 };
+    const ratio = viewport.zoom / zoom;
+    return {
+        scroll: {
+            x: middle.x - (middle.x - viewport.scroll.x) * ratio,
+            y: middle.y - (middle.y - viewport.scroll.y) * ratio
+        },
+        zoom
+    };
+}
+
+/**
  * The viewport that draws `content` (in the model's units) as big as it can
  * be, `margin` screen pixels inside one of the canvas's free areas, centred
  * there; nothing when no free area has room for the margin. (A fit's

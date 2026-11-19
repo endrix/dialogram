@@ -9,7 +9,7 @@ import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
 import { CenterAction, FitToScreenAction } from '@eclipse-glsp/protocol';
 import { FitClearOfOverlaysCommand } from '../src/fit-clear-of-overlays';
-import { HiddenRenderRecord, SurfaceAwareCenterCommand, ZoomKeepingCenterKeyboardListener, combineBounds, viewportContentBounds } from '../src/viewport-content';
+import { HiddenRenderRecord, SurfaceAwareCenterCommand, combineBounds, viewportContentBounds } from '../src/viewport-content';
 import { FIT_MARGIN, largestFreeArea, viewportCentredIn } from '../src/fit-geometry';
 import { createRequire } from 'node:module';
 
@@ -173,21 +173,6 @@ describe('the free area', () => {
         const viewport = viewportCentredIn({ x: 0, y: 0, width: 10, height: 10 }, area, 1);
         // The content's middle (5, 5) lands at the area's middle (550, 300).
         expect((5 - viewport.scroll.x) * viewport.zoom).toBe(550);
-    });
-});
-
-describe('the Center key', () => {
-    it('keeps the zoom as the Center command does; the Fit key is left alone', () => {
-        const listener = new ZoomKeepingCenterKeyboardListener();
-        const key = (code: string) => ({ code, key: code.slice(3).toLowerCase(), ctrlKey: true, metaKey: false, shiftKey: true, altKey: false }) as unknown as KeyboardEvent;
-        // Sprotty reads Ctrl or Cmd from the window's platform: Ctrl off a Mac.
-        (globalThis as any).window = { navigator: { platform: 'Linux x86_64', userAgent: 'Linux' } };
-        try {
-            expect(listener.keyDown(undefined as never, key('KeyC'))).toEqual([{ kind: 'center', elementIds: [], animate: true, retainZoom: true }]);
-            expect(listener.keyDown(undefined as never, key('KeyF'))).toMatchObject([{ kind: 'fit', elementIds: [] }]);
-        } finally {
-            delete (globalThis as any).window;
-        }
     });
 });
 

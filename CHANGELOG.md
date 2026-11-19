@@ -250,19 +250,27 @@ platform that hands it one.
     the platform's own model updates, and put in the chat's selection
     context. It is cleared as any selection is: by Escape, by a node selected
     (and a node's selection by it), and, for a surface that hears no clicks,
-    by a click on nothing. A link in a row goes back to the surface
+    by a click on nothing, which leaves the panel showing it, as a click that
+    deselects a node does. A link in a row goes back to the surface
     (`followLink`); it carries no `href`, so the panel never reads it as a
     graph node's. A double-click there is the surface's too (`clickCount`
     2): over a surface that hears clicks, the graph's whitespace no longer
     shows the root's properties on a double-click, which replaced what the
     surface had just selected.
-  - The palette's export button saves the surface's `exportImage()` as a PNG
-    through the export path the SVG uses (its dialog, beside the file);
-    without one the export is the SVG, as before.
-  - Its context offers `setViewport`, `reveal` (centred at the zoom there is,
-    or fitted), `fit`, and `freeArea()`: the largest part of the canvas the
-    platform's overlays leave free, so a product places what it reveals
-    there instead of keeping its own copy of the overlay list.
+  - The palette's export button, and the product's export command
+    (`commands.exportSvg`, which asks the webview for the same export), save
+    the surface's `exportImage()` as a PNG through the export path the SVG
+    uses (its dialog, beside the file); without one the export is the SVG,
+    as before.
+  - Its context offers `setViewport`, `reveal`, `fit`, and `freeArea()`: the
+    largest part of the canvas the platform's overlays leave free, so a
+    product places what it reveals there instead of keeping its own copy of
+    the overlay list. `reveal` centres a rectangle at the zoom there is, as
+    Center does (all of it on the canvas when it fits there), or with `fit`
+    fits it as Fit does (into the whole canvas when no free area has room
+    for the margin), within the zoom limits. `reveal` and `fit` are animated
+    unless `animate: false`; `setViewport`, what a surface's own pan or zoom
+    calls, is not unless `animate: true`.
   - The palette's header and the breadcrumb get a background over a surface,
     which they did not need over the plain canvas.
   - An empty graph with a surface is a diagram like any other: the producer
@@ -283,7 +291,18 @@ platform that hands it one.
   rebinding of the viewer options lost; the platform now sets the one it is
   given on the built container. A floor below 0.1 widens the scroll range
   with it, or it could not be reached. A range that is not one is ignored
-  with a warning.
+  with a warning. With several surfaces bound, the range is that of the
+  surface used (the last one, a later binding of an `id` in an earlier
+  one's place).
+- **A Fit or Center the zoom range stops keeps the content in the middle.**
+  Sprotty clamps the zoom after working out the scroll for the zoom wanted,
+  and keeps that scroll: at a maximum of 5, a Fit of a single 100 × 50 node
+  on an 800 × 600 canvas put its middle at (260, 195), and at a floor of
+  0.25 a Fit of a 20 000 × 10 000 diagram put it below the canvas, which
+  showed nothing. The scroll is now worked out again for the zoom the range
+  allows, around the content's middle, for Fit, Center, the first view and a
+  surface's `reveal`. It reached every product at GLSP's own 0.1 to 20 too,
+  for a very small diagram or a very large one.
 - **A first view that fits.** `clientBehavior.initialView: 'fit'` shows a
   view never shown in the editor fitted rather than centred at zoom 1.
 - **A surface's selection in the chat's hooks.** `selectionContext.render`
@@ -911,16 +930,19 @@ platform that hands it one.
   (below), and the canvas it is measured against is the one they frame and
   `freeArea()` reports: the diagram's container, less the platform's
   overlays listed once in `canvas-overlays.ts`.
-- **Center keeps the zoom, for every product.** The Center command and the
-  Center key (Ctrl/Cmd+Shift+C) set zoom 1, which means nothing in
-  particular to a product whose units are not the graph's pixels, and threw
-  away the zoom a reader had chosen; every other centre (a link followed in
-  the panel, a node revealed) already kept it. A product that mutated the
-  `CenterAction` in flight to get this can stop. The first view, when it is a
-  centre, is still at zoom 1.
+- **Center keeps the zoom, for every product.** The Center command set
+  zoom 1, which means nothing in particular to a product whose units are
+  not the graph's pixels, and threw away the zoom a reader had chosen; every
+  other centre (a link followed in the panel, a node revealed) already kept
+  it. A product that mutated the `CenterAction` in flight to get this can
+  stop. The first view, when it is a centre, is still at zoom 1.
 - **Center puts the content in the middle of the free area**, as Fit does,
   rather than in the middle of the canvas, under the palette's edge or an
-  open outline.
+  open outline. Content that fits the canvas but not the free area stays on
+  the canvas, a margin inside its edge, as near the free area's middle as
+  that allows: a 1000 × 500 diagram on a 1200 × 800 canvas would otherwise
+  have lost its left 42 pixels past the edge, to keep its middle left of the
+  palette.
 - **Fit and Center leave the chat card and an open outline clear.** Fit
   avoided the palette, the canvas's buttons, the breadcrumb and a floating
   property panel, but put content under the chat and under the outline,
@@ -1306,7 +1328,9 @@ platform that hands it one.
   drawn as a symbol still have bounds, laid out for a box they are never
   drawn in, and Fit framed them: off-centre and zoomed out for nothing. What
   the hidden render, where GLSP measures, did not draw under a parent it
-  drew is now left out, with all it holds.
+  drew is now left out, with all it holds. When that would leave nothing (a
+  view that draws what it holds in its own markup, not through the render
+  of each child), everything is framed, as before.
 - **The first view no longer lands twice.** The centre of Sprotty's empty
   placeholder model could land after the real model's, so a diagram opened
   centred, then jumped.

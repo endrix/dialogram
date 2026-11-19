@@ -16,7 +16,7 @@
  * the canvas width over the scroll range, so with GLSP's ±100 000 a floor
  * below 0.1 would be unreachable on a wide canvas. They are widened only then.
  */
-import { isValidZoomLimits, type SurfaceZoomLimits } from './diagram-surface';
+import { isValidZoomLimits, surfacesBound, type DiagramSurface, type SurfaceZoomLimits } from './diagram-surface';
 
 /** GLSP's scroll range, each way. */
 const STOCK_SCROLL_LIMIT = 100_000;
@@ -76,8 +76,8 @@ export function applyViewportLimits(
     }
     let surfaceLimits: unknown;
     if (container.isBound(surfaceId)) {
-        const surfaces = container.getAll(surfaceId) as Array<{ zoomLimits?: unknown } | undefined>;
-        surfaceLimits = surfaces.at(-1)?.zoomLimits;
+        // The surface the host mounts, chosen as it chooses.
+        surfaceLimits = surfacesBound(container.getAll(surfaceId) as Array<Partial<DiagramSurface> | undefined>).at(-1)?.zoomLimits;
     }
     const limits = resolveViewportLimits(profileLimits, surfaceLimits);
     if (limits) {

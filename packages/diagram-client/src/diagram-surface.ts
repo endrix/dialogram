@@ -27,6 +27,7 @@
  * mounted, and at that times `devicePixelRatio` in device pixels.
  */
 import type { SurfaceSelectionSummary } from '@dialogram/shared';
+import { lastPerKey } from './contributions';
 
 /** A rectangle in the model's coordinates. */
 export interface SurfaceBounds {
@@ -145,7 +146,11 @@ export interface SurfaceModel {
      * when it sent none. Plain JSON; small, since it rides on every model.
      */
     readonly data: unknown;
-    /** The file the diagram shows, when the producer says so. */
+    /**
+     * The file the diagram shows: the URI the platform puts on the model's
+     * root, the one the diagram was asked for (a view shown in place is of
+     * its own file). Absent on a root that names none.
+     */
     readonly sourceUri?: string;
 }
 
@@ -158,7 +163,10 @@ export interface HostMessage {
     readonly [key: string]: unknown;
 }
 
-/** Undo what was done: stop listening. */
+/**
+ * Undo what was done: stop listening. What `onHostMessage` returns too, with
+ * or without a surface.
+ */
 export interface SurfaceDisposable {
     dispose(): void;
 }
@@ -189,14 +197,21 @@ export interface DiagramSurfaceContext {
     selection(): SurfaceSelection | undefined;
     /** The viewport now; `undefined` until the canvas has a size. */
     viewport(): SurfaceViewport | undefined;
-    /** Move the view, within the zoom limits. */
+    /**
+     * Move the view, within the zoom limits. Not animated unless
+     * `animate: true`: it is what a surface's own pan or zoom calls.
+     */
     setViewport(viewport: { scrollX: number; scrollY: number; zoom: number }, options?: { animate?: boolean }): void;
     /**
-     * Bring a rectangle into view, in the middle of the free area (`freeArea`):
-     * at the zoom there is, or fitted with `fit`.
+     * Bring a rectangle into view, as Center and Fit do: at the zoom there
+     * is, its middle in the middle of the free area (`freeArea`), and all of
+     * it on the canvas when it fits there; or, with `fit`, as big as it fits
+     * a margin inside the free area (the whole canvas when no free area has
+     * room for the margin), within the zoom limits. Animated unless
+     * `animate: false`.
      */
     reveal(bounds: SurfaceBounds, options?: { animate?: boolean; fit?: boolean }): void;
-    /** What the palette's Fit does. */
+    /** What the palette's Fit does. Animated unless `animate: false`. */
     fit(options?: { animate?: boolean }): void;
     /**
      * The largest part of the canvas the platform's overlays leave free (the
@@ -215,7 +230,8 @@ export interface DiagramSurfaceContext {
 /**
  * The contribution point. Bind one in a product's webview feature module:
  * `bind(DiagramSurface).toConstantValue(surface)`. One surface per diagram:
- * when several are bound, the last one wins.
+ * when several are bound, the last one wins (one per `id`, a later binding
+ * in an earlier one's place), and its `zoomLimits` are the ones applied.
  */
 export const DiagramSurface = Symbol.for('dialogram.DiagramSurface');
 
@@ -229,7 +245,9 @@ export interface DiagramSurface {
     readonly zoomLimits?: SurfaceZoomLimits;
     /**
      * Make the element to draw in. The platform puts it under the diagram's
-     * SVG, sized to the canvas, and calls `render` right after. Called once.
+     * SVG, sized to the canvas, at the first render of a real model, and
+     * calls `render` right after when the canvas has a size; else `render`
+     * comes with the first render that has one. Called once.
      */
     mount(context: DiagramSurfaceContext): HTMLElement;
     /**
@@ -263,6 +281,17 @@ export interface DiagramSurface {
     exportImage?(): Promise<SurfaceImage | undefined> | SurfaceImage | undefined;
     /** The diagram is going away. */
     dispose?(): void;
+}
+
+/**
+ * The surfaces a product bound that the platform can use (each with `mount`
+ * and `render`), one per `id`, a later binding in an earlier one's place:
+ * the last of them is the one used, for its drawing and its zoom limits.
+ */
+export function surfacesBound<T extends Partial<DiagramSurface>>(bound: readonly (T | undefined)[] | undefined): Array<T & DiagramSurface> {
+    const valid = (bound ?? []).filter((surface): surface is T & DiagramSurface =>
+        !!surface && typeof surface.mount === 'function' && typeof surface.render === 'function');
+    return lastPerKey(valid, surface => String(surface.id));
 }
 
 /** Plain-number checks on what a surface or a profile hands the platform. */

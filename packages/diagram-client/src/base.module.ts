@@ -39,7 +39,6 @@ import {
     GRoutingHandleView,
     FitToScreenCommand,
     CenterCommand,
-    CenterKeyboardListener,
     SetModelCommand,
     ComputedBoundsApplicator,
     ToolPalette
@@ -64,7 +63,7 @@ import { ViewToolPalette } from './view-tool-palette';
 import { ViewOptionsService } from './view-options';
 import { ViewOptionsChangedAction } from '@dialogram/shared';
 import { DiagramSurfaceHost, SurfaceClickListener } from './diagram-surface-host';
-import { HiddenRenderRecord, SurfaceAwareCenterCommand, ZoomKeepingCenterKeyboardListener } from './viewport-content';
+import { HiddenRenderRecord, SurfaceAwareCenterCommand } from './viewport-content';
 
 /**
  * The neutral base bindings shared by all diagram-client consumers. Loaded first
@@ -110,10 +109,6 @@ export const diagramBaseModule = new ContainerModule((bind, unbind, isBound, reb
         rebind(CenterCommand).to(SurfaceAwareCenterCommand);
     } else {
         bind(CenterCommand).to(SurfaceAwareCenterCommand);
-    }
-    // Its key too: Center keeps the zoom, whichever way it is asked for.
-    if (isBound(CenterKeyboardListener)) {
-        rebind(CenterKeyboardListener).to(ZoomKeepingCenterKeyboardListener).inSingletonScope();
     }
     // What the last hidden render drew, for the two above.
     bind(HiddenRenderRecord).toSelf().inSingletonScope();

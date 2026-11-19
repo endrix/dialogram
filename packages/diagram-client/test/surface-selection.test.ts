@@ -125,6 +125,15 @@ describe('the property panel shows a surface\'s selection', () => {
         expect(host.currentSelection()?.title).toBe('Rectangle 42');
     });
 
+    it('stays in the panel after a click on nothing clears it, as a node deselected by a click does', () => {
+        const { host, context } = surfaceHost();
+        panelOn(host);
+        context().setSelection(via);
+        host.click({ clientX: 40, clientY: 30, button: 0, detail: 1, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false });
+        expect(host.currentSelection()).toBeUndefined();
+        expect(rows('Basic Info')[0]).toEqual(['Name', 'Rectangle 42']);
+    });
+
     it('goes when Escape clears it, and gives way to a node selected', () => {
         const { host, context } = surfaceHost();
         const panel = panelOn(host);

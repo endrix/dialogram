@@ -143,7 +143,11 @@ describe('the zoom range', () => {
         const container = {
             isBound: (id: unknown) => id === VIEWER || id === SURFACE,
             get: () => options,
-            getAll: () => [{ zoomLimits: { min: 1, max: 2 } }, { zoomLimits: { min: 0.05, max: 4000 } }]
+            // Surfaces the host can mount (`mount`, `render`), as it chooses them.
+            getAll: () => [
+                { id: 'a', mount: () => undefined, render: () => undefined, zoomLimits: { min: 1, max: 2 } },
+                { id: 'b', mount: () => undefined, render: () => undefined, zoomLimits: { min: 0.05, max: 4000 } }
+            ]
         };
         applyViewportLimits(container, VIEWER, SURFACE, { min: 0.5, max: 50 });
         expect(options.zoomLimits).toEqual({ min: 0.05, max: 4000 });

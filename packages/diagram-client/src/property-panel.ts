@@ -148,14 +148,15 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
      * cleared by Escape or by the surface, the panel goes back to the view's
      * own properties, since what it showed is no longer selected anywhere. A
      * node selected instead clears it too, and the node's panel is already
-     * drawn then: nothing to do.
+     * drawn then: nothing to do. A click on nothing keeps what the panel
+     * shows, as a click that deselects a node does.
      */
     surfaceSelectionChanged(selection: SurfaceSelection | undefined, cause: SurfaceSelectionCause): void {
         if (selection) {
             this.showSurfaceSelection(selection);
             return;
         }
-        if (cause !== 'graph' && this.showingSurface) {
+        if (cause !== 'graph' && cause !== 'click' && this.showingSurface) {
             this.showNoSelection();
         }
     }

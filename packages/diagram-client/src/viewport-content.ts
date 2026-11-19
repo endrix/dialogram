@@ -18,13 +18,13 @@
  * The order is Sprotty's, with the surface's selection beside the graph's:
  * the elements named, else what is selected, else everything there is.
  */
-import { CenterCommand, CenterKeyboardListener, limitViewport, type Action, type Bounds, type Viewport } from '@eclipse-glsp/client';
+import { CenterCommand, limitViewport, type Bounds, type Viewport } from '@eclipse-glsp/client';
 import type { GModelRoot } from '@eclipse-glsp/sprotty';
 import { inject, injectable, optional } from 'inversify';
 import type { SurfaceBounds } from './diagram-surface';
 import { isValidBounds } from './diagram-surface';
 import { DiagramSurfaceHost } from './diagram-surface-host';
-import { largestFreeArea, viewportCentredIn } from './fit-geometry';
+import { keepOnCanvas, largestFreeArea, viewportCentredIn, withinZoomLimits } from './fit-geometry';
 import { overlaysOn } from './canvas-overlays';
 
 /** The union of two rectangles, an invalid one (negative size) ignored. */
@@ -129,7 +129,9 @@ export function viewportContentBounds(
     if (isValidBounds(surface?.selectionBounds)) {
         return surface!.selectionBounds;
     }
-    // Everything there is, but what the hidden render left out.
+    // Everything there is, but what the hidden render left out; everything,
+    // as Sprotty frames it, when that leaves nothing (a view that draws what
+    // it holds itself, not through the platform's render of each child).
     const leftOut = new Map<ContentElement, boolean>();
     const isLeftOut = (element: ContentElement): boolean => {
         const known = leftOut.get(element);
@@ -143,12 +145,14 @@ export function viewportContentBounds(
         return result;
     };
     const shown = all.filter(element => hasBounds(element) && !isLeftOut(element));
-    return combineBounds(union(shown), surface?.bounds);
+    const graph = union(shown) ?? union(all.filter(hasBounds));
+    return combineBounds(graph, surface?.bounds);
 }
 
 /**
  * Set a viewport command's old and new viewports around `bounds`, as Sprotty's
- * `BoundsAwareViewportCommand.initialize` does once it has its bounds.
+ * `BoundsAwareViewportCommand.initialize` does once it has its bounds; a zoom
+ * the limits change keeps the content's middle where the command put it.
  */
 export function frameBounds(
     model: GModelRoot,
@@ -169,9 +173,10 @@ export function frameBounds(
         return { oldViewport };
     }
     const options = (viewerOptions ?? {}) as any;
+    const zoomed = withinZoomLimits(proposed, bounds, options.zoomLimits);
     return {
         oldViewport,
-        newViewport: limitViewport(proposed, root.canvasBounds as any, options.horizontalScrollLimits, options.verticalScrollLimits, options.zoomLimits)
+        newViewport: limitViewport(zoomed, root.canvasBounds as any, options.horizontalScrollLimits, options.verticalScrollLimits, options.zoomLimits)
     };
 }
 
@@ -180,7 +185,9 @@ export function frameBounds(
  * surface's included, the labels no view draws left out. Its middle goes to
  * the middle of the largest part of the canvas the overlays leave free, as
  * Fit's does, rather than under the palette's edge; at the zoom Sprotty's
- * Center gives (1, or the one there is with `retainZoom`).
+ * Center gives (1, or the one there is with `retainZoom`), within the zoom
+ * limits. Content that fits the canvas is never left partly off it: where the
+ * free area is narrower than it, it stops a margin inside the canvas's edge.
  */
 @injectable()
 export class SurfaceAwareCenterCommand extends CenterCommand {
@@ -191,7 +198,11 @@ export class SurfaceAwareCenterCommand extends CenterCommand {
             return centred;
         }
         const area = largestFreeArea(canvas, overlaysOn(canvas));
-        return area ? viewportCentredIn(bounds, area, centred.zoom) : centred;
+        if (!area) {
+            return centred;
+        }
+        const zoom = withinZoomLimits(centred, bounds, (this.viewerOptions as { zoomLimits?: { min: number; max: number } } | undefined)?.zoomLimits).zoom;
+        return keepOnCanvas(viewportCentredIn(bounds, area, zoom), bounds, canvas);
     }
 
     @inject(DiagramSurfaceHost) @optional()
@@ -213,18 +224,5 @@ export class SurfaceAwareCenterCommand extends CenterCommand {
             this.oldViewport = framed.oldViewport;
             this.newViewport = framed.newViewport;
         }
-    }
-}
-
-/**
- * Sprotty's Center key (Ctrl/Cmd+Shift+C), keeping the zoom as the platform's
- * Center command does: one Center, whichever way it is asked for.
- */
-@injectable()
-export class ZoomKeepingCenterKeyboardListener extends CenterKeyboardListener {
-    override keyDown(element: never, event: KeyboardEvent): Action[] {
-        return super.keyDown(element, event).map(action => action.kind === CenterCommand.KIND
-            ? { ...action, animate: true, retainZoom: true } as Action
-            : action);
     }
 }

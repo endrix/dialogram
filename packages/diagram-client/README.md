@@ -336,15 +336,28 @@ startStockDiagram({ features: [new ContainerModule(bind => { bind(DiagramSurface
 - A selection (`setSelection({ ids, title, kind?, note?, source?, sections?, bounds? })`)
   is drawn by the property panel as a node's is, put in the chat's context,
   framed by Fit and Center by its `bounds`, and cleared by Escape or a node
-  selected (`selectionCleared` tells you). A row's `link`, or a value's
-  parts with links, come back to `followLink`.
+  selected (`selectionCleared` tells you); without a `click`, by a click on
+  no diagram element too, which leaves the panel as it is. A row's `link`,
+  or a value's parts with links, come back to `followLink`.
 - A double-click on no diagram element reaches `click` with `clickCount: 2`
   (after the first click's `1`) and is yours alone: with a `click`, the
   platform does not show the root's properties there, so what you select
   stays in the panel.
 - `context.reveal(bounds)` centres a rectangle in the free area at the zoom
-  there is (`{ fit: true }` fits it); `context.freeArea()` is that area, the
-  canvas less the platform's overlays.
+  there is, as Center does: a rectangle that fits the canvas but not the
+  free area stays on the canvas, a margin inside its edge. `{ fit: true }`
+  fits it as Fit does, into the whole canvas when no free area has room for
+  the margin, and a zoom the limits stop keeps it in the middle.
+  `context.freeArea()` is that area, the canvas less the platform's overlays.
+  `reveal` and `fit` are animated unless `{ animate: false }`; `setViewport`,
+  for your own pan and zoom, is not unless `{ animate: true }`.
+- The zoom limits are those of the surface used: with several bound, the
+  last, a later binding of an `id` taking an earlier one's place.
+- The host and the server are the installed Dialogram's, not your bundle's.
+  Until the release that bumps the API to 0.9, nothing at run time tells a
+  Dialogram that understands `meta.surface` from one that does not: an older
+  server leaves `modelChanged`'s `data` undefined, as a producer that sends
+  none does. Require 0.9 once it is out.
 - The profile's `clientBehavior.initialView: 'fit'` makes the first view a
   fit, done once the canvas has a size and `bounds()` answers: data that
   comes later over `context.host` is waited for, as long as `boundsChanged()`

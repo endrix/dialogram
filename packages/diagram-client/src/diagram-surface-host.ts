@@ -19,6 +19,7 @@ import { WorkflowDiagramMetadata } from '@dialogram/shared';
 import {
     DiagramSurface,
     isValidBounds,
+    surfacesBound,
     type DiagramSurfaceContext,
     type SurfaceBounds,
     type SurfacePoint,
@@ -31,8 +32,7 @@ import {
     type SurfaceDisposable
 } from './diagram-surface';
 import { hostMessaging } from './host-messages';
-import { lastPerKey } from './contributions';
-import { FIT_MARGIN, largestFreeArea, viewportCentredIn, viewportClearOf } from './fit-geometry';
+import { FIT_MARGIN, keepOnCanvas, largestFreeArea, viewportCentredIn, viewportClearOf, withinZoomLimits } from './fit-geometry';
 import { overlaysOn } from './canvas-overlays';
 
 /** The body class while a surface is mounted: what the platform's CSS keys on. */
@@ -179,7 +179,7 @@ export class DiagramSurfaceHost implements ISelectionListener {
     protected readonly actionDispatcher!: IActionDispatcher;
 
     @inject(TYPES.ViewerOptions) @optional()
-    protected readonly viewerOptions?: { baseDiv?: string };
+    protected readonly viewerOptions?: { baseDiv?: string; zoomLimits?: { min: number; max: number } };
 
     private resolved = false;
     private bound: DiagramSurface | undefined;
@@ -208,9 +208,7 @@ export class DiagramSurfaceHost implements ISelectionListener {
     surface(): DiagramSurface | undefined {
         if (!this.resolved) {
             this.resolved = true;
-            const valid = (this.contributedSurfaces ?? []).filter(surface =>
-                surface && typeof surface.mount === 'function' && typeof surface.render === 'function');
-            const surfaces = lastPerKey(valid, surface => String(surface.id));
+            const surfaces = surfacesBound(this.contributedSurfaces);
             if (surfaces.length > 1) {
                 // eslint-disable-next-line no-console
                 console.warn(`[dialogram] ${surfaces.length} diagram surfaces are bound (${surfaces.map(s => s.id).join(', ')}); the last one, ${surfaces.at(-1)!.id}, is used`);
@@ -575,9 +573,15 @@ export class DiagramSurfaceHost implements ISelectionListener {
         }
         const animate = options.animate !== false;
         const canvas = this.root!.canvasBounds;
+        // As Fit and Center do it: fitted clear of the overlays (else into the
+        // whole canvas), at a zoom within the limits with the middle kept; or
+        // centred in the free area at the zoom there is, on the canvas.
+        const fitted = options.fit
+            ? viewportClearOf(bounds, canvas, overlaysOn(canvas), FIT_MARGIN) ?? viewportClearOf(bounds, canvas, [], FIT_MARGIN)
+            : undefined;
         const framed = options.fit
-            ? viewportClearOf(bounds, canvas, overlaysOn(canvas), FIT_MARGIN)
-            : viewportCentredIn(bounds, this.freeArea() ?? { x: 0, y: 0, width: viewport.width, height: viewport.height }, viewport.zoom);
+            ? fitted && withinZoomLimits(fitted, bounds, this.viewerOptions?.zoomLimits)
+            : keepOnCanvas(viewportCentredIn(bounds, this.freeArea() ?? { x: 0, y: 0, width: viewport.width, height: viewport.height }, viewport.zoom), bounds, canvas);
         if (framed) {
             this.setViewport({ scrollX: framed.scroll.x, scrollY: framed.scroll.y, zoom: framed.zoom }, animate);
         }
