@@ -75,7 +75,30 @@ export interface GraphSourceAnalysis {
     normalizeWorkflowReferenceName(value: string | undefined): string | undefined;
 }
 
-/** Neutral graph document couriered from a model source to the server's storage. */
+/**
+ * Neutral graph document couriered from a model source to the server's storage.
+ *
+ * ## A graph drawn by a surface
+ *
+ * A product whose webview binds a diagram surface (diagram-client
+ * `diagram-surface.ts`) draws its content itself, on a canvas under the SVG,
+ * and the graph need not hold it. `graph.meta.surface` is that surface's
+ * data: any JSON, passed through unread to the root's `wf:surface` arg and
+ * handed to the surface's `modelChanged` whenever it changes. Keep it small
+ * (where to fetch what is drawn, a revision, a unit); the bulk goes over the
+ * product's own messages (`DiagramProfile.onWebviewMessage` and
+ * `postToWebview` on the host, `postToHost` and `onHostMessage` in the
+ * webview), which carry `ArrayBuffer`s.
+ *
+ * Such a graph may have no nodes at all: `{ nodes: [], edges: [], meta: {
+ * surface, facts } }` is a first-class view. The root still carries the
+ * facts (its property panel), the hierarchy (the outline, its lazy groups
+ * included), the view options (`viewOptions` below, the surface redrawing
+ * as they turn) and the surface's data; Fit and Center frame the surface's
+ * bounds; the palette and the chat are there as for any view. No placeholder node is needed to hold the
+ * canvas open, and one that is drawn as nothing still has bounds a Fit
+ * would frame.
+ */
 export interface GraphDocument {
     version?: string;
     graph: unknown;
@@ -93,9 +116,32 @@ export interface GraphDocument {
      * groups the palette draws under its tools (`view-options.ts`). The
      * profile's own groups (`DiagramProfile.viewOptions.groups`) come first.
      * Published on the root model as `wf:viewOptions`, with the reader's
-     * choices for the file applied.
+     * choices for the file applied. Those of a load that was abandoned
+     * (`ModelSourceOptions.signal`) are not taken as the file's.
      */
     viewOptions?: ViewOptionGroup[];
+}
+
+/**
+ * What the chat is told about a diagram surface's selection: the webview's
+ * `chat.selection` and `chat.sendMessage` carry it as `surfaceSelection`
+ * beside `selectedNodeIds`, and the chat's turn context says it (or a
+ * profile's `selectionContext.render` and `turnContextProvider`, which get it
+ * as their third argument, and a slash command's `ctx.surfaceSelection`).
+ *
+ * Text only, capped: at most 50 ids and 40 rows, each value at most 200
+ * characters. A row's links keep their text and lose their targets, which
+ * mean something to the surface and nothing to an agent.
+ */
+export interface SurfaceSelectionSummary {
+    /** The surface's own stable ids for what is selected; no graph element's. */
+    ids: string[];
+    /** What it is called. */
+    title: string;
+    /** What kind of thing it is. */
+    kind?: string;
+    /** The panel's rows, as text, with the section each is in. */
+    rows: Array<{ section?: string; label: string; value: string }>;
 }
 
 /**

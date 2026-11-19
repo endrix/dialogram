@@ -219,6 +219,8 @@ diagram open (`getViewOptions(uri)`, `setViewOptions(uri, changes)`).
 `loading`, `revealOutlineRow`, `getViewOptions` and `setViewOptions` are
 optional: a Dialogram older than them reports the same API version without
 them, so a product checks before calling (`handle.loading?.report(...)`).
+What answers one webview's message, `onWebviewMessage`'s `ctx.postToWebview`,
+goes to that editor alone.
 
 What a load is given and told:
 

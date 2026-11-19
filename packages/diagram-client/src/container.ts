@@ -38,6 +38,9 @@ import { WorkflowContextMenuService } from './context-menu-service';
 import { diagramBaseModule } from './base.module';
 import { workflowViewsModule } from './stock-views.module';
 import { workflowFeaturesModule } from './stock-features.module';
+import { applyViewportLimits } from './viewport-limits';
+import { DiagramSurface } from './diagram-surface';
+import { clientBehavior } from './profile';
 
 /** Options for {@link createDiagramContainer}. */
 export interface DiagramContainerOptions {
@@ -147,6 +150,9 @@ export function createDiagramContainer(
     ) as Container;
 
     rebindContextMenuService(created);
+    // After every module: GLSP's diagram options, loaded last, fix the zoom
+    // range a product module could not rebind (viewport-limits.ts).
+    applyViewportLimits(created as never, TYPES.ViewerOptions, DiagramSurface, clientBehavior().zoomLimits);
     return created;
 }
 

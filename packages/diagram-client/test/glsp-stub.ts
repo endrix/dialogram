@@ -101,6 +101,7 @@ export const TYPES = {
     ViewerOptions: Symbol.for('stub.ViewerOptions'),
     ISelectionListener: Symbol.for('stub.ISelectionListener'),
     IVNodePostprocessor: Symbol.for('stub.IVNodePostprocessor'),
+    HiddenVNodePostprocessor: Symbol.for('stub.HiddenVNodePostprocessor'),
     IGModelRootListener: Symbol.for('stub.IGModelRootListener'),
     IDiagramStartup: Symbol.for('stub.IDiagramStartup'),
     IContextMenuService: Symbol.for('stub.IContextMenuService'),
@@ -163,13 +164,6 @@ export class GGraph {}
 export class GIssueMarker {}
 export class GRoutingHandle {}
 export class SetModelCommand {}
-/** Sprotty's fit: the action it was given, and the viewport the whole canvas gives. */
-export class FitToScreenCommand {
-    constructor(protected readonly action: any = {}) {}
-    getNewViewport(_bounds: unknown, _model: unknown): unknown {
-        return undefined;
-    }
-}
 export const Dimension = { isValid: (d: any): boolean => !!d && d.width >= 0 && d.height >= 0 };
 export const UpdateModelAction = { KIND: 'updateModel', is: (action: any): boolean => action?.kind === 'updateModel' };
 export const SetModelAction = { KIND: 'setModel', is: (action: any): boolean => action?.kind === 'setModel' };
@@ -389,6 +383,16 @@ const moveFeedbackModule = requireGlsp('@eclipse-glsp/client/lib/features/tools/
 export const ChangeBoundsTool = changeBoundsToolModule.ChangeBoundsTool;
 export const ChangeBoundsListener = changeBoundsToolModule.ChangeBoundsListener;
 export const FeedbackMoveMouseListener = moveFeedbackModule.FeedbackMoveMouseListener;
+
+// Sprotty's own Center and Fit, and the limits they apply: the viewport tests
+// run Fit and Center as Sprotty does (`initialize`, `getNewViewport`,
+// `boundsInViewport`, the limits), so they prove what the reader would see,
+// not what a re-implementation here would.
+const centerFitModule = requireGlsp('sprotty/lib/features/viewport/center-fit');
+const viewportModelModule = requireGlsp('sprotty/lib/features/viewport/model');
+export const CenterCommand = centerFitModule.CenterCommand;
+export const FitToScreenCommand = centerFitModule.FitToScreenCommand;
+export const limitViewport = viewportModelModule.limitViewport;
 
 export const ModifyCSSFeedbackAction = {
     KIND: 'modifyCSSFeedback',

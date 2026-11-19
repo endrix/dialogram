@@ -190,6 +190,12 @@ export namespace WorkflowDiagramMetadata {
     /** On the root: what the producer offers on the canvas (`graph.meta.actions`, node-actions.ts). */
     export const ACTIONS = 'wf:actions';
     /**
+     * On the root: the producer's `graph.meta.surface`, as it sent it, for the
+     * diagram's surface (diagram-client `diagram-surface.ts`), which hears it
+     * through `modelChanged`. The platform never reads it.
+     */
+    export const SURFACE = 'wf:surface';
+    /**
      * Short marks a producer puts on a node's header, as it listed them on
      * `meta.badges`: `[{ text, tone? }]`, drawn right-aligned in the header
      * in that order. `tone` is `neutral` (the default), `info`, `warning` or

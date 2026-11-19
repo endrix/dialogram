@@ -297,6 +297,83 @@ Openers are asked in the order their ids were first bound, and the first
 that answers wins; a later binding for an id replaces the earlier one. The
 stock bundle binds none; wfpy-ide's binds its `@viewer` opener.
 
+**A diagram surface.** To draw the diagram's content yourself (a canvas, a
+WebGL context) while the platform keeps the viewport, Fit and Center, the
+palette, the outline, the property panel and the chat, bind a
+`DiagramSurface` (`diagram-surface.ts`). It never sees a Sprotty or GLSP
+type; coordinates are the model's, and a model point `(x, y)` is drawn at
+CSS pixel `((x - scrollX) * zoom, (y - scrollY) * zoom)` of your element.
+
+```ts
+import { ContainerModule } from 'inversify';
+import { DiagramSurface, type DiagramSurfaceContext } from '@dialogram/diagram-client';
+import { startStockDiagram } from '@dialogram/diagram-client/stock-starter';
+
+let context: DiagramSurfaceContext;
+const canvas = document.createElement('canvas');
+const surface: DiagramSurface = {
+    id: 'my-surface',
+    zoomLimits: { min: 0.01, max: 5000 },          // over clientBehavior.zoomLimits, over GLSP's 0.1–20
+    mount(c) { context = c; return canvas; },        // put under the SVG, sized to the canvas
+    render(viewport) { draw(canvas, viewport); },    // every viewport change, the first included
+    bounds: () => dataBounds,                        // Fit and Center frame it with the graph
+    modelChanged({ data }) { load(data); context.boundsChanged(); context.requestRender(); },
+    click(point) { context.setSelection(pick(point.x, point.y)); },   // a click on no diagram element
+    followLink(link) { context.setSelection(selectionFor(link)); },   // a link in the panel's rows
+    exportImage: () => new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
+};
+startStockDiagram({ features: [new ContainerModule(bind => { bind(DiagramSurface).toConstantValue(surface); })] });
+```
+
+- The producer sends the surface's data on the graph: `meta.surface` reaches
+  `modelChanged` (plain, small JSON, once per change). An empty graph
+  (`nodes: []`) with a surface is a diagram like any other; no scaffold node.
+  Larger data goes over the product's own channel: `postToHost(message)` and
+  `onHostMessage(listener)` (also `context.host`), heard on the host by
+  `DiagramProfile.onWebviewMessage` and answered with `postToWebview`. Types
+  starting with `dialogram.` or `chat.` are the platform's and are refused.
+  Do not reach for `window.__calVscodeApi`.
+- A selection (`setSelection({ ids, title, kind?, note?, source?, sections?, bounds? })`)
+  is drawn by the property panel as a node's is, put in the chat's context,
+  framed by Fit and Center by its `bounds`, and cleared by Escape or a node
+  selected (`selectionCleared` tells you); without a `click`, by a click on
+  no diagram element too, which leaves the panel as it is. A row's `link`,
+  or a value's parts with links, come back to `followLink`.
+- A double-click on no diagram element reaches `click` with `clickCount: 2`
+  (after the first click's `1`) and is yours alone: with a `click`, the
+  platform does not show the root's properties there, so what you select
+  stays in the panel.
+- `context.reveal(bounds)` centres a rectangle in the free area at the zoom
+  there is, as Center does: a rectangle that fits the canvas but not the
+  free area stays on the canvas, a margin inside its edge, and one wider or
+  taller than the canvas covers its whole width or height, as near the free
+  area's middle as that allows. `{ fit: true }` fits it as Fit does, into
+  the whole canvas when no free area has room for the margin; a zoom the
+  limits stop keeps it in the middle, and on the canvas by the same rule.
+  `context.freeArea()` is that area, the canvas less the platform's overlays.
+  `reveal` and `fit` are animated unless `{ animate: false }`; `setViewport`,
+  for your own pan and zoom, is not unless `{ animate: true }`.
+- The zoom limits are those of the surface used: with several bound, the
+  last, a later binding of an `id` taking an earlier one's place.
+- The host and the server are the installed Dialogram's, not your bundle's.
+  Until the release that bumps the API to 0.9, nothing at run time tells a
+  Dialogram that understands `meta.surface` from one that does not: an older
+  server leaves `modelChanged`'s `data` undefined, as a producer that sends
+  none does. Require 0.9 once it is out.
+- The profile's `clientBehavior.initialView: 'fit'` makes the first view a
+  fit, done once the canvas has a size and `bounds()` answers: data that
+  comes later over `context.host` is waited for, as long as `boundsChanged()`
+  is called when it is in.
+- The rest of the diagram works with a surface as without one. What the
+  reader shows and hides reaches it as it reaches any module (§6: handle
+  `ViewOptionsChangedAction`, then `requestRender()`); the outline, its lazy
+  groups too, sits beside it, and Fit and `freeArea()` keep clear of it. A
+  selection the outline should show as well goes to the host, which calls
+  `DiagramProfileHandle.revealOutlineRow`; a click on a product's row in the
+  outline reaches the host's `outline.activate`, which can tell the surface
+  with `postToWebview`. Each editor of a file has its own surface; a
+  `postToWebview` reaches all of them, `ctx.postToWebview` only the asker.
+
 **A diagram of your own.** When you compose the container yourself:
 
 ```ts

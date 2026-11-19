@@ -221,7 +221,8 @@ platform that hands it one.
     it. A change is taken only for a file its editor shows. A group marked `reload` has the
     model asked for again, and `getGraph` is handed the choices
     (`options.viewOptions`) for a producer that leaves things out itself;
-    `persist: false` keeps a choice for the session only.
+    `persist: false` keeps a choice for the session only. A load abandoned
+    on the way (`options.signal` aborted) declares nothing for the file.
   - A palette with no tools no longer says "No results found." with view
     options, or with nothing at all (its empty body is not drawn); it says
     so when a filter matched neither a tool nor a line.
@@ -231,6 +232,98 @@ platform that hands it one.
     reader picks another, so one line stays checked.
   - A product that declares none sees no change: no root argument, no
     palette section, the same documents from its model source.
+- **A diagram surface: a product draws the diagram's content itself.** A
+  picture of millions of shapes is no graph of nodes; a product that draws
+  one on a canvas or in WebGL kept the platform's viewport, Fit, palette,
+  outline, property panel and chat only by reaching into Sprotty's DOM and
+  GLSP's classes. It now binds a `DiagramSurface` in its webview module
+  (`diagram-surface.ts`, exported from `@dialogram/diagram-client`), plain
+  data and plain DOM with no Sprotty or GLSP type in it, and the platform
+  does the rest (`diagram-surface-host.ts`):
+  - The element the surface makes is put under the diagram's SVG, sized to
+    the canvas, the SVG's background made transparent above it. The surface
+    is told the viewport (`scrollX`, `scrollY`, `zoom`, the canvas's size and
+    the device pixel ratio) at the first render and at every change after,
+    each frame of an animated Fit included, and nothing when nothing moved;
+    told a new size, a new theme (VS Code's four kinds) and new
+    `graph.meta.surface` data from the producer; and disposed with the page.
+  - Fit and Center frame its `bounds()` with the graph's, and its selection's
+    bounds as they frame a selected node.
+  - A click where no diagram element is, and not a pan, reaches its `click`
+    in the model's coordinates. What it selects (`context.setSelection`: a
+    title, a kind, a note, where it is written, sections of rows whose values
+    may hold links) is drawn by the property panel with its own section
+    builder, opened by the same rule as a node's (when pinned), kept through
+    the platform's own model updates, and put in the chat's selection
+    context. It is cleared as any selection is: by Escape, by a node selected
+    (and a node's selection by it), and, for a surface that hears no clicks,
+    by a click on nothing, which leaves the panel showing it, as a click that
+    deselects a node does. A link in a row goes back to the surface
+    (`followLink`); it carries no `href`, so the panel never reads it as a
+    graph node's. A double-click there is the surface's too (`clickCount`
+    2): over a surface that hears clicks, the graph's whitespace no longer
+    shows the root's properties on a double-click, which replaced what the
+    surface had just selected.
+  - The palette's export button, and the product's export command
+    (`commands.exportSvg`, which asks the webview for the same export), save
+    the surface's `exportImage()` as a PNG through the export path the SVG
+    uses (its dialog, beside the file); without one the export is the SVG,
+    as before.
+  - Its context offers `setViewport`, `reveal`, `fit`, and `freeArea()`: the
+    largest part of the canvas the platform's overlays leave free, so a
+    product places what it reveals there instead of keeping its own copy of
+    the overlay list. `reveal` centres a rectangle at the zoom there is, as
+    Center does (all of it on the canvas when it fits there, the whole
+    canvas covered when it is larger), or with `fit` fits it as Fit does
+    (into the whole canvas when no free area has room for the margin),
+    within the zoom limits. `reveal` and `fit` are animated
+    unless `animate: false`; `setViewport`, what a surface's own pan or zoom
+    calls, is not unless `animate: true`.
+  - The palette's header and the breadcrumb get a background over a surface,
+    which they did not need over the plain canvas.
+  - An empty graph with a surface is a diagram like any other: the producer
+    sends `nodes: []` and `meta.surface`, and the server passes the data on
+    the root's `wf:surface` (`WorkflowDiagramMetadata.SURFACE`). No scaffold
+    node is needed.
+- **A supported channel for a product's own webview messages.**
+  `postToHost(message)` and `onHostMessage(listener)` (also a surface's
+  `context.host`) replace reaching for the platform's `window.__calVscodeApi`.
+  The host side is the existing `DiagramProfile.onWebviewMessage` and
+  `postToWebview`. Types starting with `dialogram.` or `chat.` are the
+  platform's: posting one is refused, and listeners never hear them, nor
+  GLSP's own traffic.
+- **The zoom range is a profile's or a surface's to set.**
+  `clientBehavior.zoomLimits` (`{ min, max }`), and a surface's `zoomLimits`
+  over it, replace GLSP's 0.1 to 20 for the wheel, Fit, Center and a set
+  viewport. GLSP sets its range after every product module, so a product's
+  rebinding of the viewer options lost; the platform now sets the one it is
+  given on the built container. A floor below 0.1 widens the scroll range
+  with it, or it could not be reached. A range that is not one is ignored
+  with a warning. With several surfaces bound, the range is that of the
+  surface used (the last one, a later binding of an `id` in an earlier
+  one's place).
+- **A Fit or Center the zoom range stops keeps the content in the middle,
+  on the canvas.** Sprotty clamps the zoom after working out the scroll for
+  the zoom wanted, and keeps that scroll: at a maximum of 5, a Fit of a
+  single 100 × 50 node on an 800 × 600 canvas put its middle at (260, 195),
+  and at a floor of 0.25 a Fit of a 20 000 × 10 000 diagram put it below the
+  canvas, which showed nothing. The scroll is now worked out again for the
+  zoom the range allows, around the content's middle, for Fit, Center, the
+  first view and a surface's `reveal`, and the content is then kept on the
+  canvas as Center keeps it: fitted at a floor of 0.5, a 2200 × 1000 diagram
+  on a 1200 × 800 canvas stops a margin inside the left edge, where keeping
+  its middle left of the palette would have cut off 92 pixels. A Fit the
+  range leaves alone is not moved. It reached every product at GLSP's own
+  0.1 to 20 too, for a very small diagram or a very large one.
+- **A first view that fits.** `clientBehavior.initialView: 'fit'` shows a
+  view never shown in the editor fitted rather than centred at zoom 1.
+- **A surface's selection in the chat's hooks.** `selectionContext.render`
+  and `turnContextProvider` are called with a third argument, a
+  `SurfaceSelectionSummary` (ids, title, kind, rows as text, capped), when the
+  surface has a selection, and only then; a slash command's context carries
+  it as `surfaceSelection`. Without a `render`, the turn context says what is
+  selected and its rows.
+
 - **A diagram that is loading says so, and says what it is doing.** A large
   design takes seconds to read and seconds more to lay out, and for all of
   that the canvas was empty. It now shows a turning circle with, under it,
@@ -848,8 +941,38 @@ platform that hands it one.
 - **The outline sizes against the canvas.** It is at most half as wide as
   the canvas and no wider than the canvas left of its button, where it was
   half the window: with the property panel docked in a narrow editor it
-  covered the canvas. Fit leaves room for it when it is open
-  (`fit-clear-of-overlays.ts`, one line).
+  covered the canvas. Fit and Center leave room for it when it is open
+  (below), and the canvas it is measured against is the one they frame and
+  `freeArea()` reports: the diagram's container, less the platform's
+  overlays listed once in `canvas-overlays.ts`.
+- **Center keeps the zoom, for every product.** The Center command set
+  zoom 1, which means nothing in particular to a product whose units are
+  not the graph's pixels, and threw away the zoom a reader had chosen; every
+  other centre (a link followed in the panel, a node revealed) already kept
+  it. A product that mutated the `CenterAction` in flight to get this can
+  stop. The first view, when it is a centre, is still at zoom 1.
+- **Center puts the content in the middle of the free area**, as Fit does,
+  rather than in the middle of the canvas, under the palette's edge or an
+  open outline. Content that fits the canvas but not the free area stays on
+  the canvas, a margin inside its edge, as near the free area's middle as
+  that allows: a 1000 × 500 diagram on a 1200 × 800 canvas would otherwise
+  have lost its left 42 pixels past the edge, to keep its middle left of the
+  palette. Content wider than the canvas covers its whole width, and content
+  taller than it its whole height, as near the free area's middle as that
+  allows: a 1250 × 500 diagram on that canvas loses 50 pixels past the left
+  edge and reaches the right one, where keeping its middle left of the
+  palette would have cut off 167 and left 117 of the canvas empty on the
+  right.
+- **Fit and Center leave the chat card and an open outline clear** when the
+  content fits the area they leave; content that does not stays on the
+  canvas, under them if need be. Fit avoided the palette, the canvas's
+  buttons, the breadcrumb and a floating property panel, but put content
+  under the chat and under the outline, the platform's own included.
+- **The first view is done once, when it can be right**: when the canvas has
+  a size and the content has bounds (a surface's included, which may come
+  after the model). It was a centre two frames after every model set,
+  Sprotty's empty placeholder root included. If the reader moves the view
+  first, theirs stands.
 
 - **A wire outside the viewport is not drawn**, as a node outside it is
   not; one within a few pixels of it still is, since its arrowhead and its
@@ -1201,7 +1324,11 @@ platform that hands it one.
   goes with its last editor. A save, a change on disk, a live preview, a
   refresh, a run's overlay and a product's post reach every editor of the
   file, each refreshed to its own view; a load's words go to the editor
-  whose load it is (they went to whichever had the entry). What goes to one
+  whose load it is (they went to whichever had the entry). A view option
+  the reader turns in one editor is shown in the other; an outline page
+  goes to the editor that asked for it, and nowhere once that editor has
+  closed; a row the product reveals is shown in each editor of the file,
+  once (`seams-two-editors.test.ts`). What goes to one
   editor (opening a graph by name, Export as SVG, the grid, layout on
   demand, the chat's edit session) goes to the active one, or else the one
   used last. A run's replay goes to the editor that has just opened, not to
@@ -1217,6 +1344,17 @@ platform that hands it one.
   boundary refuses them. A test calls each through the extension's own
   `activate()` (`chat-functions-over-api.test.ts`).
 - **The READMEs give the API version as 0.8.0**, where they still said 0.4.0.
+- **Fit and Center frame what is drawn.** A label a node's view leaves out
+  (its name, drawn elsewhere or not at all) and a compartment of a node
+  drawn as a symbol still have bounds, laid out for a box they are never
+  drawn in, and Fit framed them: off-centre and zoomed out for nothing. What
+  the hidden render, where GLSP measures, did not draw under a parent it
+  drew is now left out, with all it holds. When that would leave nothing (a
+  view that draws what it holds in its own markup, not through the render
+  of each child), everything is framed, as before.
+- **The first view no longer lands twice.** The centre of Sprotty's empty
+  placeholder model could land after the real model's, so a diagram opened
+  centred, then jumped.
 
 - **The refresh command refreshes the view that is on screen.** Navigating in
   place, that can be a workflow in another file than the editor's document.

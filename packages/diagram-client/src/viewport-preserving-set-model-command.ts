@@ -151,7 +151,7 @@ export class ViewportPreservingSetModelCommand extends FeedbackAwareSetModelComm
         this.workflowNavUi?.onModelChanged(newRoot);
 
         if (settleViewport(previousRoot, newRoot, viewportsByView) === 'center') {
-            this.initialViewport.centerSoon();
+            this.initialViewport.arm(newRoot);
         }
 
         const idsToSelect = this.postEditSelection.consumeMatchingIds(newRoot);

@@ -117,6 +117,30 @@ export {
     type DiagramCommandKey,
     type DiagramOperationKey
 } from './profile';
+// A product's own messages to and from its extension host (host-messages.ts),
+// instead of the platform's private copy of the VS Code API.
+export { postToHost, onHostMessage, isReservedMessageType } from './host-messages';
+// A diagram surface: what a product draws under the SVG itself, in the
+// diagram's coordinates (diagram-surface.ts; README §4).
+export {
+    DiagramSurface,
+    type DiagramSurfaceContext,
+    type SurfaceBounds,
+    type SurfaceViewport,
+    type SurfaceTheme,
+    type SurfaceZoomLimits,
+    type SurfacePoint,
+    type SurfaceSelection,
+    type SurfaceSection,
+    type SurfaceRow,
+    type SurfaceValue,
+    type SurfaceValuePart,
+    type SurfaceModel,
+    type SurfaceImage,
+    type HostMessage,
+    type HostMessaging,
+    type SurfaceDisposable
+} from './diagram-surface';
 export { renderMarkdownSafe, renderDocumentMarkdownSafe, looksLikeMarkdown } from './markdown';
 export { isBlock, looksLikeDiff, parseEmbedded, formatAgentOutputs } from './agent-outputs';
 // How much text the diagram draws at a zoom, and the classes a product's own

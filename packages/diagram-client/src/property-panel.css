@@ -762,3 +762,27 @@
 .property-panel .pp-prow:hover .pp-prow-del {
     opacity: 1;
 }
+
+/* A link of a diagram surface selection's row: it goes back to the surface
+   (diagram-surface.ts `followLink`), not to a file, and carries no href. */
+.property-panel .pp-surface-link {
+    color: var(--vscode-textLink-foreground, #3794ff);
+    cursor: pointer;
+    text-decoration: none;
+}
+.property-panel .pp-surface-link:hover,
+.property-panel .pp-surface-link:focus-visible {
+    color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground, #3794ff));
+    text-decoration: underline;
+}
+/* The line under a surface selection's name ("1 of 2 here: …"), and the
+   count of rows a section left out. */
+.property-panel .pp-surface-note,
+.property-panel .pp-surface-more {
+    padding: 2px 0;
+    font-size: 12px;
+    color: var(--pp-muted);
+}
+.property-panel .pp-surface-note {
+    font-style: italic;
+}

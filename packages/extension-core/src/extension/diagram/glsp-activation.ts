@@ -18,7 +18,6 @@ import {
     RequestModelAction,
     TriggerLayoutAction,
     FitToScreenAction,
-    CenterAction,
     UndoAction,
     RedoAction
 } from '@eclipse-glsp/protocol';
@@ -26,6 +25,7 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import type { ContainerModule } from 'inversify';
 import { registerWorkflowEditorProvider } from './diagram-editor-provider';
+import { centerKeepingZoom } from './viewport-commands';
 import type { DiagramViewRecord, WorkflowEditorProvider } from './diagram-editor-provider';
 import { ExecutionOverlayRegistry } from './execution-overlay';
 import { forwardExecutionOverlayEvents, forwardExecutionOverlayStates, type ExecutionOverlayWebviewSink } from './execution-overlay-bridge';
@@ -1519,12 +1519,10 @@ function registerCalDiagramCommands(
         })
     );
 
-    // Command: Center diagram
+    // Command: Center diagram, at the zoom the reader chose (viewport-commands.ts).
     context.subscriptions.push(
         vscode.commands.registerCommand(profile.commands.center, async () => {
-            dispatchToActiveDiagram(CenterAction.create([], {
-                animate: true
-            }));
+            dispatchToActiveDiagram(centerKeepingZoom());
         })
     );
 

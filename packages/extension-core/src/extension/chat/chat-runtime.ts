@@ -30,6 +30,57 @@ import {
 import { attachAcpEventForwarding } from "./acp-event-forwarding";
 import { copySessionId, openSessionNatively, type NativeSession } from "./native-session.js";
 import { KNOWN_CONNECTORS } from "./acp-connectors.js";
+import type { SurfaceSelectionSummary } from "@dialogram/shared";
+
+/**
+ * A surface's selection as the chat's turn context says it, by default: what
+ * it is, its ids, its rows. The rows are what the property panel shows; the
+ * agent reads the same thing the person does.
+ */
+export function surfaceSelectionText(selection: SurfaceSelectionSummary): string {
+  const what = selection.kind ? `${selection.kind} "${selection.title}"` : `"${selection.title}"`;
+  const lines = [
+    `The user currently has ${what} selected in the diagram` +
+      (selection.ids.length > 0 ? ` (id${selection.ids.length === 1 ? "" : "s"}: ${selection.ids.slice(0, 20).join(", ")})` : "") +
+      ". When they say \"this\"/\"the selection\", they mean it.",
+  ];
+  let section: string | undefined;
+  for (const row of selection.rows) {
+    if (row.section && row.section !== section) {
+      section = row.section;
+      lines.push(`${section}:`);
+    }
+    lines.push(`- ${row.label}: ${row.value}`);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * The surface selection a webview message carries, checked: the webview is
+ * the platform's own, but a message is still data from another process.
+ */
+export function readSurfaceSelection(raw: unknown): SurfaceSelectionSummary | undefined {
+  const candidate = raw as Partial<SurfaceSelectionSummary> | null | undefined;
+  if (!candidate || typeof candidate !== "object" || typeof candidate.title !== "string") {
+    return undefined;
+  }
+  const rows = Array.isArray(candidate.rows)
+    ? candidate.rows
+        .filter((row) => row && typeof row.label === "string")
+        .slice(0, 40)
+        .map((row) => ({
+          ...(typeof row.section === "string" ? { section: row.section } : {}),
+          label: row.label,
+          value: String(row.value ?? ""),
+        }))
+    : [];
+  return {
+    ids: Array.isArray(candidate.ids) ? candidate.ids.slice(0, 50).map(String) : [],
+    title: candidate.title,
+    ...(typeof candidate.kind === "string" && candidate.kind !== "" ? { kind: candidate.kind } : {}),
+    rows,
+  };
+}
 
 /** Core chat settings section (shared by every profile, not namespaced). */
 /** workspaceState key of the last model the user explicitly chose. */
@@ -72,13 +123,20 @@ export interface ChatRuntimeConfig {
   turnContextProvider?: (
     file: string,
     selectedNodeIds: string[],
+    surfaceSelection?: SurfaceSelectionSummary,
   ) => Promise<any[]> | any[];
   /**
    * Per-turn selection injection. Enabled by default (`false` disables it);
    * pass an object with `render` to customize the injected text.
    */
   selectionContext?:
-    false | { render?: (file: string, selectedNodeIds: string[]) => string };
+    false | {
+      render?: (
+        file: string,
+        selectedNodeIds: string[],
+        surfaceSelection?: SurfaceSelectionSummary,
+      ) => string;
+    };
   /** In-process MCP tools served over loopback HTTP. */
   tools?: InProcessChatTool[];
   /**
@@ -153,6 +211,8 @@ export class ChatRuntime {
   private pendingModel: string | undefined;
   /** Latest diagram selection (node ids) per file, fed to the turn context. */
   private readonly selectionByFile = new Map<string, string[]>();
+  /** Latest diagram surface selection per file, fed to the turn context beside the nodes. */
+  private readonly surfaceSelectionByFile = new Map<string, SurfaceSelectionSummary>();
   /** The nested view on screen per file, when it is not the root (see `viewContextText`). */
   private readonly viewTrailByFile = new Map<string, ViewCrumb[]>();
   private readonly output: vscode.OutputChannel;
@@ -204,12 +264,17 @@ export class ChatRuntime {
       if (view) {
         blocks.push({ type: "text", text: view });
       }
+      // A surface's selection rides as an extra argument, and only when there
+      // is one: a profile without a surface is called exactly as before.
+      const surface = file ? this.surfaceSelectionByFile.get(file) : undefined;
+      const withSurface = surface ? [surface] as const : ([] as const);
       if (file && this.config.selectionContext !== false) {
         const selected = this.selectionByFile.get(file) ?? [];
         if (selected.length > 0) {
           const rendered = this.config.selectionContext?.render?.(
             file,
             selected,
+            ...withSurface,
           );
           blocks.push({
             type: "text",
@@ -219,6 +284,9 @@ export class ChatRuntime {
                 `${selected.slice(0, 20).join(", ")}. When they say "this"/"the selected node(s)", ` +
                 "they mean these.",
           });
+        } else if (surface) {
+          const rendered = this.config.selectionContext?.render?.(file, [], surface);
+          blocks.push({ type: "text", text: rendered || surfaceSelectionText(surface) });
         }
       }
       if (file && this.config.turnContextProvider) {
@@ -226,6 +294,7 @@ export class ChatRuntime {
           const extra = await this.config.turnContextProvider(
             file,
             this.selectionByFile.get(file) ?? [],
+            ...withSurface,
           );
           if (Array.isArray(extra)) blocks.push(...extra);
         } catch {
@@ -517,6 +586,16 @@ export class ChatRuntime {
     await this.sendModels(uri);
   }
 
+  /** A diagram surface's selection for the file, or none (`readSurfaceSelection`). */
+  private setSurfaceSelection(file: string, raw: unknown): void {
+    const selection = readSurfaceSelection(raw);
+    if (selection) {
+      this.surfaceSelectionByFile.set(file, selection);
+    } else {
+      this.surfaceSelectionByFile.delete(file);
+    }
+  }
+
   private setViewTrail(file: string, raw: unknown): void {
     const trail = Array.isArray(raw)
       ? raw.filter((c: any) => c && typeof c.workflowName === "string")
@@ -710,11 +789,13 @@ export class ChatRuntime {
             ? data.selectedNodeIds.map(String)
             : [],
         );
+        this.setSurfaceSelection(file, data?.surfaceSelection);
         this.setViewTrail(file, data?.viewTrail);
         return;
       case "chat.sendMessage": {
         if (Array.isArray(data?.selectedNodeIds)) {
           this.selectionByFile.set(file, data.selectedNodeIds.map(String));
+          this.setSurfaceSelection(file, data?.surfaceSelection);
         }
         this.setViewTrail(file, data?.viewTrail);
         await this.ensureStarted(cwd);
@@ -779,6 +860,9 @@ export class ChatRuntime {
             uri,
             sessionId,
             selectedNodeIds: this.selectionByFile.get(file) ?? [],
+            ...(this.surfaceSelectionByFile.has(file)
+              ? { surfaceSelection: this.surfaceSelectionByFile.get(file) }
+              : {}),
             mode,
           };
           let result: { success: boolean; error?: string; info?: string };

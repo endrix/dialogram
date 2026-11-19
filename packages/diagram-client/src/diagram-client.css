@@ -4222,3 +4222,45 @@ textarea.source-lines {
         animation-duration: 4s;
     }
 }
+
+/* --- A diagram surface (diagram-surface.ts) ---
+   The base div is the surface's stacking context and takes the editor's
+   background from the SVG: the surface's pane, at z-index -1, is then over
+   that background and under the SVG and everything else in the div. */
+.dialogram-surface-host {
+    position: relative;
+    isolation: isolate;
+    background-color: var(--sprotty-background);
+}
+
+.dialogram-surface {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: -1;
+    overflow: hidden;
+    /* The SVG above keeps every interaction: pan, zoom, select, the click a
+       surface hears comes through it. */
+    pointer-events: none;
+}
+
+/* The SVG draws nothing over the surface: no background, and no grid dots,
+   which are the graph's. */
+body.dialogram-has-surface .sprotty-graph {
+    background-color: transparent;
+    background-image: none;
+}
+
+/* The toolbar and the breadcrumb float as icons and text, which read over a
+   diagram's plain background and not over a dense picture: over a surface
+   they get the editor widget's. */
+body.dialogram-has-surface .tool-palette .palette-header,
+body.dialogram-has-surface .workflow-breadcrumb-overlay {
+    background-color: color-mix(in srgb, var(--vscode-editorWidget-background, #252526) 92%, transparent);
+}
+
+body.dialogram-has-surface .workflow-breadcrumb-overlay {
+    padding: 1px 6px;
+    border: 1px solid var(--vscode-editorWidget-border, transparent);
+    border-radius: 3px;
+}

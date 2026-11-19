@@ -30,6 +30,8 @@ import { NodeSectionContribution, type NodeInfoRow, type NodeSectionContext } fr
 import { createPropertySection, shortenPath } from './property-section';
 import { isReadOnlyView } from './read-only-view';
 import { elementPanelSignature, networkPanelSignature } from './panel-signature';
+import { DiagramSurfaceHost, type SurfaceSelectionCause } from './diagram-surface-host';
+import type { SurfaceSelection, SurfaceValue, SurfaceValuePart } from './diagram-surface';
 
 /**
  * IGModelRootListener interface — fire on every model root change
@@ -65,6 +67,10 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     /** What products add to a node's panel; see `node-section.ts`. */
     @multiInject(NodeSectionContribution) @optional()
     protected readonly contributedNodeSections: readonly NodeSectionContribution[] | undefined;
+
+    /** A diagram surface's selection, shown as a node's is; see `diagram-surface.ts`. */
+    @inject(DiagramSurfaceHost) @optional()
+    protected readonly surfaceHost: DiagramSurfaceHost | undefined;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     protected lastRoot: any | undefined;
@@ -124,13 +130,109 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         }, true);
     }
 
-    /** After injection: the node sections' one-time setup. */
+    /** After injection: the node sections' one-time setup, and the surface's selection heard. */
     @postConstruct()
     protected installNodeSections(): void {
         const host = { redrawIfShowing: (elementId: string) => this.redrawIfShowing(elementId) };
         for (const contribution of this.nodeSections()) {
             contribution.install?.(host);
         }
+        this.surfaceHost?.onSelectionChanged((selection, cause) => this.surfaceSelectionChanged(selection, cause));
+    }
+
+    /** Whether the panel shows the surface's selection (`showSurfaceSelection`). */
+    private showingSurface = false;
+
+    /**
+     * The surface's selection changed: shown as a node is, and, when it is
+     * cleared by Escape or by the surface, the panel goes back to the view's
+     * own properties, since what it showed is no longer selected anywhere. A
+     * node selected instead clears it too, and the node's panel is already
+     * drawn then: nothing to do. A click on nothing keeps what the panel
+     * shows, as a click that deselects a node does.
+     */
+    surfaceSelectionChanged(selection: SurfaceSelection | undefined, cause: SurfaceSelectionCause): void {
+        if (selection) {
+            this.showSurfaceSelection(selection);
+            return;
+        }
+        if (cause !== 'graph' && cause !== 'click' && this.showingSurface) {
+            this.showNoSelection();
+        }
+    }
+
+    /**
+     * Draw what a surface selected: Basic Info (its name and kind, as a
+     * node's), then its sections, rows as the producer's facts are drawn. A
+     * value's links go back to the surface (`followLink`), not to the host:
+     * they are the surface's own strings and carry no `href`, so the panel's
+     * link handling leaves them alone.
+     */
+    protected showSurfaceSelection(selection: SurfaceSelection): void {
+        const content = document.getElementById('property-content');
+        if (!content) {
+            return;
+        }
+        content.innerHTML = '';
+        this.lastRenderedNodeId = undefined;
+        // Nothing of the model's: a model change neither redraws nor replaces it.
+        this.shown = undefined;
+        this.showingSurface = true;
+        const row = (label: string, value: SurfaceValue) => html`<div class="pp-arow">
+            <span class="pp-akey">${label}</span>
+            <span class="pp-aval pp-aval-wrap">${this.surfaceValue(value)}</span>
+        </div>`;
+        // Where it is written, as a node's Opens row: an `href`, so the panel's
+        // own link handling opens the file at the line.
+        const source = selection.source;
+        const sourcePath = source ? decodeURIComponentSafe(source.uri.replace(/^file:\/\//, '')) : '';
+        const opens = source
+            ? html`<div class="pp-arow">
+                  <span class="pp-akey">Opens</span>
+                  <span class="pp-aval pp-aval-wrap">
+                      <a href=${source.line ? `${source.uri}#L${source.line}` : source.uri} title=${sourcePath}
+                          >${shortenPath(sourcePath)}${source.line ? `:${source.line}` : ''}</a>
+                  </span>
+              </div>`
+            : nothing;
+        content.appendChild(this.litSection('Basic Info', {
+            body: html`${row('Name', selection.title)}${selection.kind ? row('Type', selection.kind) : nothing}${opens}${selection.note
+                ? html`<div class="pp-surface-note">${selection.note}</div>`
+                : nothing}`,
+            extraClass: 'pp-surface-selection'
+        }));
+        for (const section of selection.sections ?? []) {
+            content.appendChild(this.litSection(section.title, {
+                body: html`${section.rows.map(r => row(r.label, r.value))}${section.more
+                    ? html`<div class="pp-surface-more">and ${section.more} more</div>`
+                    : nothing}`,
+                collapsed: section.collapsed
+            }));
+        }
+        if (this.chrome.pinned) {
+            this.chrome.show();
+        }
+    }
+
+    private surfaceValue(value: SurfaceValue): TemplateResult | string {
+        if (!Array.isArray(value)) {
+            return String(value);
+        }
+        const follow = (event: Event, link: string) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.surfaceHost?.followLink(link);
+        };
+        return html`${(value as readonly SurfaceValuePart[]).map(part => part.link === undefined
+            ? html`<span title=${part.title ?? nothing}>${part.text}</span>`
+            : html`<a class="pp-surface-link" role="link" tabindex="0" title=${part.title ?? nothing}
+                    data-surface-link=${part.link}
+                    @click=${(event: Event) => follow(event, part.link!)}
+                    @keydown=${(event: KeyboardEvent) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                            follow(event, part.link!);
+                        }
+                    }}>${part.text}</a>`)}`;
     }
 
     /**
@@ -383,6 +485,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
 
     protected showNoSelection(): void {
         this.lastRenderedNodeId = undefined;
+        this.showingSurface = false;
         const content = document.getElementById('property-content');
         if (content) {
             content.innerHTML = '';
@@ -410,6 +513,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         const requestAgentDiscovery = options.requestAgentDiscovery !== false;
 
         content.innerHTML = '';
+        this.showingSurface = false;
         this.shown = {
             id: element.id,
             fallbackId: element.type?.startsWith('port') ? element.parent?.id : undefined,

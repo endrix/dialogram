@@ -53,6 +53,11 @@
  * of `dialogram.viewOptionsChanged`, the action it dispatches to a product's
  * client modules, so that the action is known whether or not a product
  * handles it.
+ * So is the diagram surface's seam (diagram-surface.ts): its host (bound to itself, as a vnode
+ * postprocessor and as a selection listener), its click listener (bound to itself and as a mouse
+ * listener), the record of what the hidden render drew (bound to itself and as a hidden vnode
+ * postprocessor), and Center bound to the `SurfaceAwareCenterCommand` that frames the content as
+ * Fit does (viewport-content.ts).
  * The oracle still does its job: it fails on any binding this composition gains
  * or loses, and updating the fixture is the deliberate act of accepting one.
  * Regenerate it only after confirming the diff contains exactly the bindings the
