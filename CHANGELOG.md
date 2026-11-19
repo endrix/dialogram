@@ -961,11 +961,13 @@ platform that hands it one.
     planned again from there.
   - The model source's plans read the CLI setting for the file's folder, as
     a run, `runCli`, the chat's graph and a status source already did; they
-    read the window's setting alone. The `-m <module>` form is as it was: a
+    used to read the window's setting alone. The `-m <module>` form is as it was: a
     plan, the chat's graph and a status source add it for every file, a run
     and `runCli` for a Python source only.
-  - A file that is itself a link to a file in a workspace folder runs in
-    that folder.
+  - A file outside every workspace folder that is itself a link to a file
+    in one runs in that folder. Links are followed only where VS Code finds
+    no folder for the file: a file it counts as a folder's, by the path it is
+    named by, runs in that folder.
   - A CLI whose folder is gone (the file's folder removed or renamed under
     an open diagram) says so, `failed to start: the folder it starts in,
     <folder>, does not exist`, rather than Node's `spawn <command> ENOENT`,

@@ -17,10 +17,11 @@ import * as vscode from 'vscode';
  * git, one planted in `/tmp`) does not move a run, and neither does one
  * between the file and its folder.
  *
- * A file named by the path a symbolic link leads to is in the folder opened
- * through that link: VS Code matches the file by the path it is named by, so
- * when it says the file is in no folder, the folders and the file are
- * compared once more with their links followed.
+ * VS Code matches the file by the path it is named by. When it says the
+ * file is in no folder, the folders and the file are compared once more with
+ * their links followed: a file named by the path a link to a folder leads
+ * to, or itself a link to a file in one, is in that folder. A file VS Code
+ * counts as a folder's is that folder's, wherever a link in it leads.
  */
 export async function resolveRunRoot(file: vscode.Uri | string): Promise<string> {
     const forUri = typeof file === 'string' ? vscode.Uri.file(file) : file;

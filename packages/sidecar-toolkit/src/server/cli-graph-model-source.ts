@@ -268,7 +268,7 @@ export class CliGraphModelSource implements DiagramModelSource {
         workflowName: string | undefined,
         opts: Record<string, unknown>,
         /** The run root of `workflowFilePath`, already resolved. */
-        cwd?: string
+        cwd: string
     ): Promise<GraphDocument | undefined> {
         if (!this.cfg.cliHierarchyArgs || typeof opts.content === 'string') {
             return undefined;
@@ -282,7 +282,7 @@ export class CliGraphModelSource implements DiagramModelSource {
         }
         // Exported from the root file's run root, as a run of the root starts, and kept per folder
         // as the plan is.
-        const rootCwd = root.file === workflowFilePath && cwd !== undefined ? cwd : await resolveRunRoot(root.file);
+        const rootCwd = root.file === workflowFilePath ? cwd : await resolveRunRoot(root.file);
         const exported = await this.hierarchyCache.get(root.file, root.workflow, rootCwd);
         if (!exported) {
             return undefined;

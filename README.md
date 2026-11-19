@@ -335,9 +335,11 @@ folder above it: a `.git` or a `package.json` above the workspace folder (a
 home directory kept in git, one planted in `/tmp`) does not move a run, and
 neither does one between the file and its folder. A file outside every
 workspace folder, or in a window with no folder, runs in its own folder. A
-file named by the path a symbolic link leads to is in the workspace folder
-opened through that link. The sidecar is not the CLI: it starts at the file's
-Python package root, which an import of the file needs.
+file VS Code finds in no folder is compared once more with symbolic links
+followed, its own included: named by the path a link leads to, or itself a
+link to a file in a workspace folder, it runs in that folder. The sidecar is
+not the CLI: it starts at the file's Python package root, which an import of
+the file needs.
 
 ## Development
 

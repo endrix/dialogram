@@ -228,14 +228,14 @@ describe('a view read from the hierarchy', () => {
                 { sourceUri: URI.file(top).toString(), workflowName: 'top' },
                 { sourceUri: URI.file(block).toString(), workflowName: 'block', workflowInstanceName: 'b2' }
             )
-        });
+        }, path.dirname(block));
 
         expect(doc).toBeUndefined();
     });
 
     it('leaves unsaved text being previewed to a plan of its own', async () => {
         const { src, top } = await source();
-        const doc = await src.viewFromHierarchy(URI.file(top).toString(), top, 'top', { content: 'unsaved' });
+        const doc = await src.viewFromHierarchy(URI.file(top).toString(), top, 'top', { content: 'unsaved' }, path.dirname(top));
         expect(doc).toBeUndefined();
     });
 });
