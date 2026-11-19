@@ -21,10 +21,10 @@ export function getGraphDiagnosticsCollection(vscode: typeof import('vscode')): 
 }
 
 /**
- * What a graph diagnostic names as its source in the Problems panel ("Chisel
- * Diagram" in `Chisel Diagram(FIRRTL-001)`): the product's name, so that a
- * reader with two products open knows which one is speaking. Bound per
- * session from `createWorkflowGlspVscodeServer({ diagnosticSource })`.
+ * What a graph diagnostic names as its source in the Problems panel ("Fixture
+ * Viewer" in `Fixture Viewer(E001)`): the product's name, so that a reader
+ * with two products open knows which one is speaking. Bound per session from
+ * `createWorkflowGlspVscodeServer({ diagnosticSource })`.
  */
 export const DIAGNOSTIC_SOURCE = Symbol('DiagnosticSource');
 

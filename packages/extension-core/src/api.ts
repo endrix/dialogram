@@ -456,9 +456,11 @@ export interface DiagramProfile {
    * agent, git, a build), and which diagrams such a change reloads.
    *
    * `globs` are what is watched; absent, the globs follow from
-   * {@link sourceExtensions}. A change to one of the product's sources reloads
-   * every open diagram (one may import another); a file that is not a source
-   * reloads nothing, unless `affects` is given.
+   * {@link sourceExtensions} (every file, when it declares none), so `watch`
+   * can carry `affects` alone. An empty list watches nothing on disk: only a
+   * save in the editor reloads a diagram. A change to one of the product's
+   * sources reloads every open diagram (one may import another); a file that
+   * is not a source reloads nothing, unless `affects` is given.
    *
    * `affects` says which diagrams a change reloads: handed the changed file
    * and the files with a diagram open (URIs, as `vscode.Uri.toString()` spells
@@ -473,7 +475,7 @@ export interface DiagramProfile {
    * reloads what it always did.
    */
   watch?: {
-    globs: string[];
+    globs?: string[];
     affects?: DiagramWatchAffects;
   };
   /**
@@ -589,7 +591,8 @@ export interface DiagramProfileHandle extends vscode.Disposable {
     showLog(): void;
   };
   /**
-   * Dispatch a host→client action to the webview owning `uri`, over the ungated
+   * Dispatch a host→client action to every diagram editor open on `uri` (a
+   * file can have two, after View: Split Editor Right), over the ungated
    * `sendMessageToClient` overlay-bridge path — it reaches the client even for
    * kinds the client did not advertise in `clientActions`. No-op when no diagram
    * client is registered for the URI.
@@ -599,9 +602,10 @@ export interface DiagramProfileHandle extends vscode.Disposable {
     action: { kind: string } & Record<string, unknown>,
   ): void;
   /**
-   * Post a raw message straight to the webview panel owning `uri`
-   * (`webview.postMessage`), for the consumer's own cursor-sync / graph-era
-   * channel. No-op when no panel is registered for the URI.
+   * Post a raw message straight to the webview of every diagram editor open
+   * on `uri` (`webview.postMessage`; a file can have two), for the consumer's
+   * own cursor-sync / graph-era channel. No-op when no panel is registered
+   * for the URI.
    */
   postToWebview(uri: string, message: unknown): void;
   /**
@@ -616,8 +620,11 @@ export interface DiagramProfileHandle extends vscode.Disposable {
    * and words with no message show nothing. A file with no diagram open is
    * told nothing. The same indicator the platform's own load uses: what is
    * said last shows, whoever said it.
+   *
+   * Absent on a Dialogram older than this, which reports the same API
+   * version: call it as `handle.loading?.report(...)`.
    */
-  loading: {
+  loading?: {
     report(uri: string, progress: LoadProgress): void;
     end(uri: string): void;
   };
