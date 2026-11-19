@@ -14,6 +14,9 @@ export default defineConfig({
             // specifier still resolves to src/index.ts.
             '@dialogram/diagram-server': path.resolve(__dirname, '../diagram-server/src'),
             '@dialogram/diagram-client': path.resolve(__dirname, '../diagram-client/src/index.ts'),
+            // Before the bare package: the extension's entry (`packages/extension/src/main.ts`)
+            // imports the API contract by this subpath, and a test goes through that entry.
+            '@dialogram/extension-core/api': path.resolve(__dirname, 'src/api.ts'),
             '@dialogram/extension-core': path.resolve(__dirname, 'src/index.ts')
         }
     },

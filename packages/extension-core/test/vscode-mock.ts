@@ -103,6 +103,15 @@ export class TabInputNotebook {
     constructor(public readonly uri: Uri, public readonly notebookType: string) {}
 }
 
+/** VS Code's values: `Beside` and `Active` are the two that name no group of their own. */
+export enum ViewColumn {
+    Active = -1,
+    Beside = -2,
+    One = 1,
+    Two = 2,
+    Three = 3
+}
+
 /** A bitmask, as in VS Code: a symbolic link to a file is `File | SymbolicLink`. */
 export enum FileType {
     Unknown = 0,

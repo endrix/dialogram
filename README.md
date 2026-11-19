@@ -180,15 +180,15 @@ CSP, esbuild options, timing constraints) is in
 ## The `DiagramProfile` contract
 
 `packages/extension-core/src/api.ts` is the single source of truth
-(`DIALOGRAM_API_VERSION = '0.4.0'`). A profile carries, in outline:
+(`DIALOGRAM_API_VERSION = '0.8.0'`). A profile carries, in outline:
 
 | Group | Fields |
 | --- | --- |
 | Identity | `key`, `displayName`, `settingsNamespace`, `customEditorViewType`, `glspClientId`, `glspClientName`, `sourceExtensions` (which files this diagram is a view of) |
 | Commands | `commands` (21 consumer-owned command ids), `operationKinds` (port create/delete kind strings) |
 | Model & edits | `modelSource` factory, `edits` (`'read-only'` or a strategy with operation modules), `serverModules`, `serverDiagramModule` (library mode only), `storageOptions`, `supportsElementCreation` (`false` empties the creation palette) |
-| Client | `clientBehavior` (neutral capability flags injected into the webview), `clientAssets` (custom webview bundle — data only), `clientStylesheets` (the product's own stylesheets, served after the platform's — data only), `onWebviewMessage` (inbound message hook) |
-| Features | `watch` (file globs), `navigation` (cross-file drill-down), `canOpenSource` (openability predicate), `editBackend` (chat mutation seam), `chat` (chat carry-overs), `runDriver` (factory receiving a `DiagramRunHost`), `statusSource` (node states from a report, shown on demand), `newSourceFile` |
+| Client | `clientBehavior` (neutral capability flags injected into the webview), `clientAssets` (custom webview bundle — data only), `clientStylesheets` (the product's own stylesheets, served after the platform's — data only), `onWebviewMessage` (inbound message hook; its `ctx.revealRange(uri, range, { beside, preserveFocus })` opens a source over the diagram, or beside it) |
+| Features | `watch` (file globs, and `affects`: which open diagrams a changed file reloads), `onEditorOpened` / `onEditorClosed` (a file's first diagram editor opened, its last closed), `loadPhaseWords` (the product's words, or none, for the platform's loading steps), `navigation` (cross-file drill-down), `canOpenSource` (openability predicate), `editBackend` (chat mutation seam), `chat` (chat carry-overs), `runDriver` (factory receiving a `DiagramRunHost`), `statusSource` (node states from a report, shown on demand), `newSourceFile` |
 
 Everything optional degrades gracefully: no `chat` → no chat backend, no
 `runDriver` → no run/stop commands or live glow, no `clientAssets` → the
@@ -205,17 +205,45 @@ and the profile's `storageOptions.entityPaletteItems` alike. It says nothing
 about edits that DO have somewhere to go: moves, routing and the persisted
 layout are unaffected, and so is `edits`.
 
-The returned `DiagramProfileHandle` exposes chat diagnostics plus two
+The returned `DiagramProfileHandle` exposes chat diagnostics, two
 webview channels: `dispatchToWebview(uri, action)` (host→client GLSP action
 over the overlay bridge) and `postToWebview(uri, message)` (raw
-`webview.postMessage` for consumer-owned protocols such as cursor sync).
+`webview.postMessage` for consumer-owned protocols such as cursor sync), and
+the diagram's loading indicator: `loading.report(uri, { message, detail })`
+and `loading.end(uri)`, for work the product does for a file's diagram
+outside `getGraph` (a layout streamed in after the graph is drawn). Each
+reaches every editor open on the file; a file can have two. `loading` is
+optional: a Dialogram older than it reports the same API version without
+it, so a product calls `handle.loading?.report(...)`.
+
+What a load is given and told:
+
+- `getGraph(sourceUri, options)` gets `options.progress`, to say what it is
+  doing while it reads, and `options.signal`, an `AbortSignal` aborted when
+  nobody waits for the graph any more: the editor closed, or a newer request
+  for the same diagram (a save, another view) arrived while `getGraph` ran,
+  once the diagram shows a graph (a first load is let finish). Nothing of a
+  load whose signal was aborted is drawn, whatever it returns; once
+  `getGraph` has answered, the signal is never aborted, and the answer is
+  drawn. A request replaced while it still waited behind another never
+  calls `getGraph`.
+- The Problems panel names a graph diagnostic's source by the profile's
+  `displayName` (it said `workflow` for every product).
+
+The functions in `chat` (each tool's `handler`, `graphContextProvider`,
+`turnContextProvider`, `selectionContext.render`, each slash command's
+`handler`) are supported over `activateDiagramProfile`: every extension runs
+in the one extension-host realm and the profile object is handed over as it
+is. What does not cross is a DI object (`serverDiagramModule`,
+`serverModules`, `edits.operationModules`); see the bundle-boundary law
+below.
 
 ### API versioning
 
 Pre-1.0, **major.minor must match exactly** — a minor bump may break.
 Consumers must call `isApiVersionCompatible(api.apiVersion)` at activation
-and fail with an actionable message. `0.4.0` is the DiagramProfile v2
-contract described here.
+and fail with an actionable message. `0.8.0` is the contract described
+here.
 
 ## The bundle-boundary law
 
@@ -344,7 +372,7 @@ consumer's profile input — never to extend the allow-list.
 ## Status
 
 The DiagramProfile v2 program (fully neutral core, sidecar toolkit, client
-library, first library-mode consumer) is complete at API `0.4.0`. Known open items: a
+library, first library-mode consumer) is complete; the API is at `0.8.0`. Known open items: a
 `DiagramProfile.diagramType` field, publishing the `@dialogram/api` npm
 package and the Marketplace publisher, and passing `opencodePath` into the
 ACP client explicitly instead of via the environment.

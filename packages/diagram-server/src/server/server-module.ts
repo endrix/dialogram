@@ -25,7 +25,7 @@ import { NodeActionDispatchScope } from '@eclipse-glsp/server/node';
 import { configureELKLayoutModule, ElkFactory, ElementFilter, LayoutConfigurator, GlspElkLayoutEngine } from '@eclipse-glsp/layout-elk';
 import { NodeMcpServerModule } from '@eclipse-glsp/server-mcp/lib/node';
 import { ContainerModule, interfaces } from 'inversify';
-import type { EditStrategy, DiagramModelSource } from '@dialogram/shared';
+import type { EditStrategy, DiagramModelSource, LoadPhaseWords } from '@dialogram/shared';
 import { WorkflowDiagramModule } from './diagram-glsp-module';
 import { DiagramMcpModule } from './mcp-diagram-module';
 import type { McpServerModuleOptions } from './mcp-diagram-module';
@@ -39,7 +39,9 @@ import { WorkflowRerouteEdgesAvoidOverlapsOperationHandler } from '../operations
 import { WorkflowLayoutBoundaryFlowOperationHandler } from '../operations/layout-boundary-flow-handler';
 import { DIAGRAM_MODEL_SOURCE } from './model-source-token';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
-import { LOAD_PROGRESS_SINK, LoadProgressReporter, type LoadProgressSink } from './load-progress';
+import { LOAD_PHASE_WORDS, LOAD_PROGRESS_SINK, LoadProgressReporter, type LoadProgressSink } from './load-progress';
+import { LoadCancellation } from './load-cancellation';
+import { DIAGNOSTIC_SOURCE } from './graph-diagnostics';
 import { createElkFactory, type ElkServerOptions } from './elk-server/index';
 import { WorkflowServerLogger } from './disposed-request-logger';
 
@@ -127,6 +129,16 @@ export function createWorkflowServerModules(
          * nothing is said and the diagram shows only that it is opening.
          */
         loadProgress?: LoadProgressSink;
+        /**
+         * The product's own words for the platform's steps of a load
+         * (`DiagramProfile.loadPhaseWords`). Absent, the platform's.
+         */
+        loadPhaseWords?: LoadPhaseWords;
+        /**
+         * What the Problems panel names as the source of a graph's
+         * diagnostics: the product's name. Absent, `workflow`, as before.
+         */
+        diagnosticSource?: string;
     }
 ): ServerModule[] {
     const serverModule = new ServerModule();
@@ -247,6 +259,8 @@ export function createWorkflowServerModules(
     // session, since a wait is several requests long, and the host's sink
     // when it gave one. Without a sink the reporter says nothing.
     const loadProgress = options?.loadProgress;
+    const loadPhaseWords = options?.loadPhaseWords;
+    const diagnosticSource = options?.diagnosticSource?.trim() || undefined;
     additionalModules.push(
         new ContainerModule((bind, _unbind, isBound) => {
             if (loadProgress && !isBound(LOAD_PROGRESS_SINK)) {
@@ -254,6 +268,16 @@ export function createWorkflowServerModules(
             }
             if (!isBound(LoadProgressReporter)) {
                 bind(LoadProgressReporter).toSelf().inSingletonScope();
+            }
+            if (loadPhaseWords && !isBound(LOAD_PHASE_WORDS)) {
+                bind(LOAD_PHASE_WORDS).toConstantValue(loadPhaseWords);
+            }
+            // One per session: what is cancelled is that session's loads.
+            if (!isBound(LoadCancellation)) {
+                bind(LoadCancellation).toSelf().inSingletonScope();
+            }
+            if (diagnosticSource && !isBound(DIAGNOSTIC_SOURCE)) {
+                bind(DIAGNOSTIC_SOURCE).toConstantValue(diagnosticSource);
             }
         })
     );

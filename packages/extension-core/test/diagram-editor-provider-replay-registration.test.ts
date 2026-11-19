@@ -1,8 +1,8 @@
 // Task 4: the editor provider announces each webview (re)registration via
-// `onDidRegisterClient` so the host can drain the execution-overlay replay buffer
+// `onDidRegisterEditor` so the host can drain the execution-overlay replay buffer
 // into a webview reopened mid-run. This pins the seam: the event fires on every
 // setUpWebview with the document URI string (the same representation run drivers
-// emit with), and it fires again on reopen. The provider is exercised through the
+// emit with) and the client that registered, and it fires again on reopen. The provider is exercised through the
 // same GLSP-base stub the sibling provider tests use.
 import { describe, it, expect, vi } from 'vitest';
 import * as vscode from 'vscode';
@@ -50,23 +50,23 @@ function makeProvider() {
     return new WorkflowEditorProvider(context, connector, STOCK_PROFILE, vscode.Uri.file('/fake-ext'));
 }
 
-describe('WorkflowEditorProvider.onDidRegisterClient (Task 4 replay seam)', () => {
+describe('WorkflowEditorProvider.onDidRegisterEditor (Task 4 replay seam)', () => {
     it('fires with the document URI string when a webview registers', () => {
         const provider = makeProvider();
-        const seen: string[] = [];
-        provider.onDidRegisterClient(uri => seen.push(uri));
+        const seen: Array<{ uri: string; clientId: string }> = [];
+        provider.onDidRegisterEditor(registered => seen.push(registered));
 
         const { panel } = makeWebviewPanel();
         const document = { uri: vscode.Uri.parse(DOCUMENT_URI) } as vscode.CustomDocument;
         provider.setUpWebview(document, panel, {} as vscode.CancellationToken, 'client-0');
 
-        expect(seen).toEqual([DOCUMENT_URI]);
+        expect(seen).toEqual([{ uri: DOCUMENT_URI, clientId: 'client-0' }]);
     });
 
     it('fires again on reopen (close then re-register the same source)', () => {
         const provider = makeProvider();
-        const seen: string[] = [];
-        provider.onDidRegisterClient(uri => seen.push(uri));
+        const seen: Array<{ uri: string; clientId: string }> = [];
+        provider.onDidRegisterEditor(registered => seen.push(registered));
         const document = { uri: vscode.Uri.parse(DOCUMENT_URI) } as vscode.CustomDocument;
 
         const first = makeWebviewPanel();
@@ -76,6 +76,9 @@ describe('WorkflowEditorProvider.onDidRegisterClient (Task 4 replay seam)', () =
         const second = makeWebviewPanel();
         provider.setUpWebview(document, second.panel, {} as vscode.CancellationToken, 'client-1');
 
-        expect(seen).toEqual([DOCUMENT_URI, DOCUMENT_URI]);
+        expect(seen).toEqual([
+            { uri: DOCUMENT_URI, clientId: 'client-0' },
+            { uri: DOCUMENT_URI, clientId: 'client-1' }
+        ]);
     });
 });

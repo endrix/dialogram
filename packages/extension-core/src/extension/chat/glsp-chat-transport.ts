@@ -34,6 +34,37 @@ export interface GlspChatTransport {
     dispose(): void;
 }
 
+/**
+ * The ids of the webviews the messenger can still reach, or nothing when it
+ * cannot say (then every panel is taken as there). The messenger drops a
+ * panel's webview when the panel is disposed.
+ */
+function liveWebviewIds(messenger: GlspVscodeConnector['messenger']): Set<string> | undefined {
+    try {
+        const info = (messenger as { diagnosticApi?: () => { extensionInfo(): { webviews: Array<{ id: string }> } } })
+            .diagnosticApi?.()
+            .extensionInfo();
+        return info ? new Set(info.webviews.map(webview => webview.id)) : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+function webviewIdOf(participant: MessageParticipant): string | undefined {
+    const id = (participant as { webviewId?: unknown }).webviewId;
+    return typeof id === 'string' ? id : undefined;
+}
+
+function isLive(participant: MessageParticipant, live: Set<string>): boolean {
+    const id = webviewIdOf(participant);
+    return id === undefined || live.has(id);
+}
+
+function sameParticipant(a: MessageParticipant, b: MessageParticipant): boolean {
+    const ida = webviewIdOf(a);
+    return ida !== undefined ? ida === webviewIdOf(b) : a === b;
+}
+
 function fallbackUri(): string | undefined {
     const activeTab = vscode.window.tabGroups.activeTabGroup?.activeTab;
     const input = activeTab?.input as { uri?: vscode.Uri } | undefined;
@@ -48,13 +79,36 @@ export function createGlspChatTransport(opts: {
     getConnector(): GlspVscodeConnector | undefined;
     log(message: string): void;
 }): GlspChatTransport {
-    const participantByUri = new Map<string, MessageParticipant>();
+    // The panels that have spoken for each file, the last to speak last. A
+    // file can have two diagram editors, each with its panel: a reply goes to
+    // the one that spoke last, and to the other once that one has closed. One
+    // panel per file was kept, and a reply after its editor closed went to a
+    // webview that was gone, while the editor left open heard nothing.
+    const participantsByUri = new Map<string, MessageParticipant[]>();
     let messenger: GlspVscodeConnector['messenger'] | undefined;
     let disposed = false;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
+    /** The panel of `uri` to reply to: the last to speak whose webview is still there. */
+    const participantFor = (uri: string): MessageParticipant | undefined => {
+        const participants = participantsByUri.get(uri);
+        if (!messenger || !participants || participants.length === 0) {
+            return undefined;
+        }
+        const live = liveWebviewIds(messenger);
+        const alive = live ? participants.filter(participant => isLive(participant, live)) : participants;
+        if (alive.length === 0) {
+            participantsByUri.delete(uri);
+            return undefined;
+        }
+        if (alive.length !== participants.length) {
+            participantsByUri.set(uri, alive);
+        }
+        return alive[alive.length - 1];
+    };
+
     const sink: ChatMessageSink = (uri, payload) => {
-        const participant = participantByUri.get(uri);
+        const participant = participantFor(uri);
         if (messenger && participant) {
             messenger.sendNotification(ChatToClient, participant, { type: payload.type, data: payload.data });
         }
@@ -87,7 +141,8 @@ export function createGlspChatTransport(opts: {
                 opts.log(`chat message '${env?.type}' dropped: no workflow URI resolvable`);
                 return;
             }
-            participantByUri.set(uri, sender);
+            const others = (participantsByUri.get(uri) ?? []).filter(participant => !sameParticipant(participant, sender));
+            participantsByUri.set(uri, [...others, sender]);
             void runtime.handleMessage(uri, { type: env.type, data: env.data });
         });
         opts.log('chat transport wired to GLSP connector (vscode-messenger)');
@@ -95,7 +150,7 @@ export function createGlspChatTransport(opts: {
 
     return {
         sink,
-        canReach: (uri) => Boolean(messenger && participantByUri.has(uri)),
+        canReach: (uri) => participantFor(uri) !== undefined,
         connect(runtime): void {
             wire(runtime);
         },
@@ -105,7 +160,7 @@ export function createGlspChatTransport(opts: {
                 clearTimeout(retryTimer);
                 retryTimer = undefined;
             }
-            participantByUri.clear();
+            participantsByUri.clear();
         }
     };
 }

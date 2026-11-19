@@ -14,12 +14,15 @@
 
 import { ClientId } from '@eclipse-glsp/server';
 import { inject, injectable, optional } from 'inversify';
-import type { LoadProgress, LoadingUpdate } from '@dialogram/shared';
+import { wordsForPhase, type LoadPhase, type LoadPhaseFacts, type LoadPhaseWords, type LoadProgress, type LoadingUpdate } from '@dialogram/shared';
 
 /** The host's side: post `update` to the diagram of the client `clientId`. */
 export type LoadProgressSink = (clientId: string, update: LoadingUpdate) => void;
 
 export const LOAD_PROGRESS_SINK = Symbol('LoadProgressSink');
+
+/** The profile's words for the platform's own steps (`DiagramProfile.loadPhaseWords`), when it has any. */
+export const LOAD_PHASE_WORDS = Symbol('LoadPhaseWords');
 
 /**
  * Tell the host, if there is one to tell.
@@ -103,6 +106,10 @@ export class LoadProgressReporter {
     @optional()
     protected clientId?: string;
 
+    @inject(LOAD_PHASE_WORDS)
+    @optional()
+    protected phaseWords?: LoadPhaseWords;
+
     /** Something has been said that has not been ended. */
     private said = false;
 
@@ -123,6 +130,22 @@ export class LoadProgressReporter {
         }
         this.said = true;
         tellLoading(this.sink, this.clientId, { state: 'progress', ...progress });
+    }
+
+    /**
+     * One of the platform's own steps, in the platform's `words` unless the
+     * profile put others in their place or silenced the step: a product
+     * whose graph is not its content says what the reader is really waiting
+     * for, or nothing, rather than "1 node, 0 edges".
+     */
+    sayPhase(phase: LoadPhase, words: LoadProgress, facts: LoadPhaseFacts): void {
+        if (!this.telling) {
+            return;
+        }
+        const chosen = wordsForPhase(this.phaseWords, phase, words, facts);
+        if (chosen) {
+            this.say(chosen);
+        }
     }
 
     /** What was being waited for is over, and its model is about to be sent. */

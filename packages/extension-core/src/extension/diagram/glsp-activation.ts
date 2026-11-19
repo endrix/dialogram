@@ -26,7 +26,7 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import type { ContainerModule } from 'inversify';
 import { registerWorkflowEditorProvider } from './diagram-editor-provider';
-import type { WorkflowEditorProvider } from './diagram-editor-provider';
+import type { DiagramViewRecord, WorkflowEditorProvider } from './diagram-editor-provider';
 import { ExecutionOverlayRegistry } from './execution-overlay';
 import { forwardExecutionOverlayEvents, forwardExecutionOverlayStates, type ExecutionOverlayWebviewSink } from './execution-overlay-bridge';
 import { registerStatusSource } from './status-source';
@@ -404,7 +404,12 @@ export async function activateGlspIntegration(
         elkServer,
         // What a load is doing, shown in the diagram that is waiting for it.
         // The provider is made further down; by the first load it is there.
-        loadProgress: (clientId, update) => loadProgressTarget?.postLoading(clientId, update)
+        loadProgress: (clientId, update) => loadProgressTarget?.postLoading(clientId, update),
+        // The product's words for the platform's steps, where it has its own.
+        loadPhaseWords: profile.loadPhaseWords,
+        // The Problems panel names the product a diagnostic came from: its
+        // display name, which also heads its output channels.
+        diagnosticSource: profile.displayName
     });
 
     // Start the server
@@ -754,7 +759,7 @@ export async function activateGlspIntegration(
                                         ...(networkName && networkName !== '' ? { networkName } : {}),
                                         ...(typeof navTrail === 'string' ? { navTrail } : {}),
                                         ...(requestedRunId ? { runId: requestedRunId } : {})
-                                    });
+                                    }, clientId);
                                 }
                                 rememberRecentNavigation(state, sourceRaw, {
                                     ...(networkName && networkName !== '' ? { networkName } : {}),
@@ -913,13 +918,20 @@ export async function activateGlspIntegration(
                 };
                 if (typeof sourceUri === 'string') {
                     const finalOptions = (patched.action.options as any) ?? {};
-                    // Keyed by the editor the request came from, not the file it
+                    // Kept for the editor the request came from, not the file it
                     // asks for: navigating in place, an editor shows workflows of
                     // other files, and refreshes them as views of its own root.
-                    const editorDocumentUri = typeof (message as any).clientId === 'string'
-                        ? editorProvider?.getDocumentUriForClientId((message as any).clientId)
+                    // And for that editor alone: a file's other editor can be on
+                    // another view of it.
+                    const requestingClientId = typeof (message as any).clientId === 'string'
+                        ? (message as any).clientId as string
                         : undefined;
-                    editorProvider?.setRefreshContext(editorDocumentUri ?? sourceUri, {
+                    const recordView = (view: DiagramViewRecord): void => {
+                        if (requestingClientId === undefined || !editorProvider?.setRefreshContextForClient(requestingClientId, view)) {
+                            editorProvider?.setRefreshContext(sourceUri, view);
+                        }
+                    };
+                    recordView({
                         shownSourceUri: sourceUri,
                         ...(typeof finalOptions.networkName === 'string' && finalOptions.networkName.trim() !== ''
                             ? { networkName: finalOptions.networkName.trim() }
@@ -983,18 +995,22 @@ export async function activateGlspIntegration(
     // in `clientActions`, so it silently drops this batch — see the bridge note.
     // sendMessageToClient is protected on GlspVscodeConnector (same reason the
     // showGrid toggle below casts) — the bridge only needs that one method.
-    const sendOverlayBatch = (uri: string, events: unknown[], origin: 'live' | 'replay'): void => {
-        const clientId = editorProvider.getClientIdForDocumentUri(vscode.Uri.parse(uri));
+    // Live batches go to every editor of the file; a replay to the one editor
+    // that has just (re)registered, since the others have had them already.
+    const sendOverlayBatch = (uri: string, events: unknown[], origin: 'live' | 'replay', onlyClientId?: string): void => {
+        const clientIds = onlyClientId !== undefined ? [onlyClientId] : editorProvider.getClientIdsForDocumentUri(uri);
         // eslint-disable-next-line no-console
-        console.log(`[wf-lang overlay] host: bridge ${origin} uri=${uri} events=${events.length} clientId=${clientId ?? 'undefined'}`);
+        console.log(`[wf-lang overlay] host: bridge ${origin} uri=${uri} events=${events.length} clientId=${clientIds.join(',') || 'undefined'}`);
         const sink = glspVscodeConnector as unknown as ExecutionOverlayWebviewSink;
-        forwardExecutionOverlayEvents(sink, clientId, uri, events, reason => {
-            // UNGATED on purpose: a dropped batch (no diagram registered yet for the
-            // source URI when the batch is emitted) is the one place a run's events
-            // can vanish silently. Keep it visible so the next live run bisects.
-            // eslint-disable-next-line no-console
-            console.warn(reason);
-        });
+        for (const clientId of clientIds.length > 0 ? clientIds : [undefined]) {
+            forwardExecutionOverlayEvents(sink, clientId, uri, events, reason => {
+                // UNGATED on purpose: a dropped batch (no diagram registered yet for the
+                // source URI when the batch is emitted) is the one place a run's events
+                // can vanish silently. Keep it visible so the next live run bisects.
+                // eslint-disable-next-line no-console
+                console.warn(reason);
+            });
+        }
     };
     const executionOverlaySubscription = executionOverlay.onDidEmitEvents((uri, events) => {
         sendOverlayBatch(uri, events, 'live');
@@ -1003,31 +1019,33 @@ export async function activateGlspIntegration(
     // the whole set on every change, over the same ungated path as the events.
     // Unlike the events they are kept, so a diagram that registers later gets
     // the set it should be showing.
-    const sendOverlayStates = (uri: string): void => {
-        const clientId = editorProvider.getClientIdForDocumentUri(vscode.Uri.parse(uri));
-        forwardExecutionOverlayStates(
-            glspVscodeConnector as unknown as ExecutionOverlayWebviewSink,
-            clientId,
-            uri,
-            executionOverlay.get(uri)
-        );
+    const sendOverlayStates = (uri: string, onlyClientId?: string): void => {
+        const clientIds = onlyClientId !== undefined ? [onlyClientId] : editorProvider.getClientIdsForDocumentUri(uri);
+        for (const clientId of clientIds) {
+            forwardExecutionOverlayStates(
+                glspVscodeConnector as unknown as ExecutionOverlayWebviewSink,
+                clientId,
+                uri,
+                executionOverlay.get(uri)
+            );
+        }
     };
-    const executionStatesSubscription = executionOverlay.onDidChange(sendOverlayStates);
+    const executionStatesSubscription = executionOverlay.onDidChange(uri => sendOverlayStates(uri));
     // Replay-on-(re)registration: when a webview registers for a source URI, drain
     // its bounded replay window through the SAME bridge BEFORE any subsequent live
     // batch. The drain is synchronous within the provider's registration event, so
     // on the single-threaded host loop the replayed window is enqueued ahead of any
     // live batch emitted afterwards (postMessage preserves order). A fresh source
     // has an empty window → nothing is sent. The states it should show go first.
-    const executionOverlayReplaySubscription = editorProvider.onDidRegisterClient(uri => {
+    const executionOverlayReplaySubscription = editorProvider.onDidRegisterEditor(({ uri, clientId }) => {
         if (executionOverlay.get(uri).length > 0) {
-            sendOverlayStates(uri);
+            sendOverlayStates(uri, clientId);
         }
         const replay = executionOverlay.replayEvents(uri);
         if (replay.length === 0) {
             return;
         }
-        sendOverlayBatch(uri, replay, 'replay');
+        sendOverlayBatch(uri, replay, 'replay', clientId);
     });
 
     // Register additional Workflow-specific commands
@@ -1466,7 +1484,12 @@ function registerCalDiagramCommands(
                 vscode.window.showWarningMessage('No active diagram found. Focus an open diagram tab and try again.');
                 return;
             }
-            editorProvider.postToWebview(uri.toString(), { type: 'dialogram.svg.extract' });
+            // To the one editor the command is about: two editors on the file
+            // would each extract, and ask twice where to save.
+            const clientId = editorProvider.getClientIdForDocumentUri(uri);
+            if (!clientId || !editorProvider.postToClient(clientId, { type: 'dialogram.svg.extract' })) {
+                vscode.window.showWarningMessage('No active diagram found. Focus an open diagram tab and try again.');
+            }
         })
     );
 
@@ -1541,30 +1564,33 @@ function registerCalDiagramCommands(
         // WorkflowRequestModelActionHandler matches on them).
         const requestRunRefresh = (sourceUriStr: string, kind: 'full' | 'agentContextOnly', networkName?: string): void => {
             const uri = vscode.Uri.parse(sourceUriStr);
-            const clientId = editorProvider.getClientIdForDocumentUri(uri);
-            if (!clientId) {
+            const clientIds = editorProvider.getClientIdsForDocumentUri(uri);
+            if (clientIds.length === 0) {
                 runOutput.appendLine(`[wf-lang live] SKIP ${kind === 'agentContextOnly' ? 'agent-ctx' : 'full'} refresh: provider=true clientId=undefined`);
                 return;
             }
-            // The run is the root's; the view may be a nested workflow under it,
-            // in another file. Refresh the view the editor shows -- its file,
-            // workflow and trail -- or a run would pull it back to the root.
-            const view = editorProvider.getRefreshContext(uri);
-            const refreshAction = RequestModelAction.create({
-                requestId: (kind === 'agentContextOnly' ? 'refresh-agent-ctx-' : 'refresh-during-run-') + Date.now(),
-                options: {
-                    sourceUri: view?.shownSourceUri ?? uri.toString(),
-                    diagramType: WORKFLOW_DIAGRAM_TYPE,
-                    ...(kind === 'agentContextOnly' ? { agentContextOnly: true } : {}),
-                    queueTraceVisible: getQueueTraceVisible(),
-                    ...(view?.networkName
-                        ? { networkName: view.networkName }
-                        : (networkName ? { networkName } : {})),
-                    ...(view?.navTrail ? { [NAV_TRAIL_ARG]: view.navTrail } : {})
-                }
-            });
-            runOutput.appendLine(`[wf-lang live] dispatching ${kind === 'agentContextOnly' ? 'agent-ctx-only refresh' : 'full refresh'}`);
-            connector.dispatchAction(refreshAction, clientId);
+            // Every editor of the file shows the run.
+            for (const clientId of clientIds) {
+                // The run is the root's; the view may be a nested workflow under it,
+                // in another file. Refresh the view the editor shows -- its file,
+                // workflow and trail -- or a run would pull it back to the root.
+                const view = editorProvider.getRefreshContextForClient(clientId);
+                const refreshAction = RequestModelAction.create({
+                    requestId: (kind === 'agentContextOnly' ? 'refresh-agent-ctx-' : 'refresh-during-run-') + Date.now(),
+                    options: {
+                        sourceUri: view?.shownSourceUri ?? uri.toString(),
+                        diagramType: WORKFLOW_DIAGRAM_TYPE,
+                        ...(kind === 'agentContextOnly' ? { agentContextOnly: true } : {}),
+                        queueTraceVisible: getQueueTraceVisible(),
+                        ...(view?.networkName
+                            ? { networkName: view.networkName }
+                            : (networkName ? { networkName } : {})),
+                        ...(view?.navTrail ? { [NAV_TRAIL_ARG]: view.navTrail } : {})
+                    }
+                });
+                runOutput.appendLine(`[wf-lang live] dispatching ${kind === 'agentContextOnly' ? 'agent-ctx-only refresh' : 'full refresh'}`);
+                connector.dispatchAction(refreshAction, clientId);
+            }
         };
 
         // Live-execution glow: the driver publishes each watched diagram's overlay

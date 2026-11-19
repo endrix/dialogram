@@ -8,6 +8,7 @@
 import 'reflect-metadata';
 
 import {
+    ActionDispatcher,
     ActionHandlerConstructor,
     BindingTarget,
     CommandStack,
@@ -31,6 +32,7 @@ import {
 import { injectable } from 'inversify';
 import { WORKFLOW_DIAGRAM_TYPE, type EditStrategy } from '@dialogram/shared';
 import { WorkflowSourceModelStorage } from './source-model-storage';
+import { LoadCancellingActionDispatcher } from './load-cancelling-dispatcher';
 import { ReadOnlySourceModelStorage } from './read-only-source-model-storage';
 import { WorkflowDiagramConfiguration } from './diagram-configuration';
 import {
@@ -265,5 +267,14 @@ export class WorkflowDiagramModule extends GModelDiagramModule {
      */
     protected override bindModelSubmissionHandler(): BindingTarget<ModelSubmissionHandler> {
         return WorkflowModelSubmissionHandler;
+    }
+
+    /**
+     * GLSP's dispatcher, which also abandons a load whose reader has gone:
+     * the editor closed, or a newer request for the model arrived (see
+     * `load-cancellation.ts`).
+     */
+    protected override bindActionDispatcher(): BindingTarget<ActionDispatcher> {
+        return LoadCancellingActionDispatcher;
     }
 }
