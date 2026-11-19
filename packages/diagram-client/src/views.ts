@@ -573,15 +573,44 @@ function roundedTopPath(width: number, height: number, radius: number): string {
     return `M 0 ${height} L 0 ${r} Q 0 0 ${r} 0 L ${width - r} 0 Q ${width} 0 ${width} ${r} L ${width} ${height} Z`;
 }
 
-/** Where an edge crosses a group's frame: a dot on the frame line. */
+/**
+ * Where an edge crosses a group's frame: a dot on the frame line. On an open
+ * node's frame, one of the node's own ports (`FRAME_PIN`) is such a dot with
+ * its name beside it, inside the frame, and a clock's wedge before the name
+ * when its role is `clock`, as on a register's symbol.
+ */
 @injectable()
 export class GroupBoundaryPortView extends ShapeView {
     override render(port: Readonly<any>, _context: RenderingContext, _args?: IViewArgs): VNode {
         const size = WorkflowDiagramConstants.GROUP_BOUNDARY_PORT_SIZE_PX;
         const width = port.size?.width > 0 ? port.size.width : size;
         const height = port.size?.height > 0 ? port.size.height : size;
+        const args = (port.args ?? {}) as Record<string, unknown>;
+        const pin = args[WorkflowDiagramMetadata.FRAME_PIN] === true;
+        const extras: VNode[] = [];
+        if (pin) {
+            const name = String(args[WorkflowDiagramMetadata.ENTITY_NAME] ?? '');
+            const output = args[WorkflowDiagramMetadata.PORT_DIRECTION] === 'output';
+            const clock = args[WorkflowDiagramMetadata.PORT_ROLE] === 'clock';
+            const y = height / 2;
+            // Inside the frame: to the right of an input's dot, to the left of
+            // an output's, and above the line, where the wire inside runs on
+            // from the dot. A clock's wedge is on the line, at the frame.
+            const inward = output ? -1 : 1;
+            const x = (output ? 0 : width) + inward * 3;
+            if (clock) {
+                extras.push(svg('path', {
+                    class: { 'frame-pin-clock': true },
+                    attrs: { d: `M ${x} ${y - 5} L ${x + inward * 7} ${y} L ${x} ${y + 5}` }
+                }));
+            }
+            extras.push(svg('text', {
+                class: { 'frame-pin-label': true, 'frame-pin-label-output': output },
+                attrs: { x: x + inward * 2, y: y - 7 }
+            }, name));
+        }
         return svg('g', {
-            class: { [WorkflowDiagramCss.GROUP_BOUNDARY_PORT]: true },
+            class: { [WorkflowDiagramCss.GROUP_BOUNDARY_PORT]: true, [WorkflowDiagramCss.GROUP_FRAME_PIN]: pin },
             attrs: {
                 transform: `translate(${port.position.x}, ${port.position.y})`,
                 'data-cal-port-id': port.id
@@ -590,7 +619,8 @@ export class GroupBoundaryPortView extends ShapeView {
             svg('circle', {
                 class: { 'group-boundary-dot': true },
                 attrs: { cx: width / 2, cy: height / 2, r: Math.min(width, height) / 2 - 1 }
-            })
+            }),
+            ...extras
         );
     }
 }

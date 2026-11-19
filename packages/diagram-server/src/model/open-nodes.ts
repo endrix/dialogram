@@ -19,6 +19,21 @@
  * The inner nodes are named under their frame's id (`innerNodeId`), so they
  * meet no other node's id or saved place, and are drawn as they are: one
  * holding a graph of its own is not opened again.
+ *
+ * Two things a producer may say of the graph it gives a node:
+ *
+ * - `meta.inner.open: true` draws the node open to begin with: a block of a
+ *   design whose registers are what the reader came for. Closing it is then
+ *   what the layout file records (`ToggleNodeOpenOperation.CLOSED`).
+ * - `meta.inner.pins: true` keeps the node's own ports on its frame, as pins
+ *   named as they were on the node: an edge on one of them ends there, and
+ *   the wires inside run from the pin to what it feeds and to it from what
+ *   drives it. A pin nothing is wired to (a clock whose net the diagram
+ *   leaves out) is on the frame all the same. Without it the frame has no
+ *   pins of its own and edges are carried on to the inner pins, as above.
+ * - `meta.inner.title` is what the frame is titled, where the node's name
+ *   alone does not say what it is once its type is no longer under it
+ *   (`counters: always @(posedge clk)`). Without it, the node's name.
  */
 import { ToggleNodeOpenOperation, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import type { PyGraphDocument, PyGraphEdge, PyGraphNode, PyGraphScope } from './graph-gmodel-source';
@@ -51,6 +66,33 @@ export function openFrameId(nodeId: string): string {
     return `scope:${openScopeId(nodeId)}`;
 }
 
+/** Whether its producer draws a node open to begin with (`meta.inner.open`). */
+export function startsOpen(node: Pick<PyGraphNode, 'meta'>): boolean {
+    return (node.meta?.['inner'] as { open?: unknown } | undefined)?.open === true;
+}
+
+/** What an open node's frame is titled: what its producer says (`meta.inner.title`), else its name. */
+function titleOf(node: Pick<PyGraphNode, 'meta' | 'label'>): string {
+    const title = (node.meta?.['inner'] as { title?: unknown } | undefined)?.title;
+    return typeof title === 'string' && title.trim() !== '' ? title.trim() : node.label;
+}
+
+/** Whether a node's own ports stay on its frame as pins when it is open (`meta.inner.pins`). */
+export function keepsPins(node: Pick<PyGraphNode, 'meta'>): boolean {
+    return (node.meta?.['inner'] as { pins?: unknown } | undefined)?.pins === true;
+}
+
+/**
+ * Whether the node under `key` is open: as the reader left it, and as its
+ * producer draws it while the reader has not said. A node that starts open
+ * is open until it is listed closed; any other is closed until listed open.
+ */
+export function isOpenIn(state: PortBusState | undefined, key: string, node: Pick<PyGraphNode, 'meta'>): boolean {
+    return startsOpen(node)
+        ? !(state?.isExpanded(key, ToggleNodeOpenOperation.CLOSED) ?? false)
+        : (state?.isExpanded(key, ToggleNodeOpenOperation.OPEN) ?? false);
+}
+
 /** Whether a node can open: it holds a graph, and sits where a group can (not in an `if` or a loop). */
 export function canOpen(node: Pick<PyGraphNode, 'meta' | 'scope'>, scopes: readonly PyGraphScope[] | undefined): boolean {
     if (!innerGraphOf(node)) {
@@ -77,7 +119,7 @@ const push = <K, V>(map: Map<K, V[]>, key: K, value: V): void => {
 /** `doc` with the nodes `state` says are open drawn as the groups of what they hold. */
 export function openNodes(doc: PyGraphDocument, state: PortBusState | undefined, ids: StableNodeIds): PyGraphDocument {
     const opened = doc.graph.nodes.filter(node =>
-        canOpen(node, doc.graph.subgraphs) && state?.isExpanded(stableNodeId(ids, node), ToggleNodeOpenOperation.OPEN));
+        canOpen(node, doc.graph.subgraphs) && isOpenIn(state, stableNodeId(ids, node), node));
     if (opened.length === 0) {
         return doc;
     }
@@ -95,6 +137,7 @@ export function openNodes(doc: PyGraphDocument, state: PortBusState | undefined,
         through: Map<string, string[]>;  // own input -> own outputs
         edges: PyGraphEdge[];            // inside the frame
         cells: PyGraphNode[];
+        pinned: boolean;                 // its own ports stay on the frame
     }
     const insides: Inside[] = [];
     const ownerOf = new Map<string, Inside>();
@@ -117,7 +160,7 @@ export function openNodes(doc: PyGraphDocument, state: PortBusState | undefined,
             }
         }
         const inside: Inside = {
-            node, scopeId, own, nodeOfPin, cells,
+            node, scopeId, own, nodeOfPin, cells, pinned: keepsPins(node),
             into: new Map(), outOf: new Map(), reads: new Map(), through: new Map(), edges: []
         };
         // Edges naming a pin no inner node has are no edges: a wire to nothing.
@@ -145,6 +188,20 @@ export function openNodes(doc: PyGraphDocument, state: PortBusState | undefined,
                 }
             }
         }
+        if (inside.pinned) {
+            // Its ports are pins of the frame: the wires inside start and end on them.
+            let k = 0;
+            for (const [input, pins] of inside.into) {
+                for (const pin of pins) {
+                    inside.edges.push({ id: `${node.id}/in:${k++}`, from: input, to: pin, scope: scopeId });
+                }
+            }
+            for (const [output, pins] of inside.outOf) {
+                for (const pin of pins) {
+                    inside.edges.push({ id: `${node.id}/out:${k++}`, from: pin, to: output, scope: scopeId });
+                }
+            }
+        }
         insides.push(inside);
         for (const portId of own.keys()) {
             ownerOf.set(portId, inside);
@@ -159,6 +216,22 @@ export function openNodes(doc: PyGraphDocument, state: PortBusState | undefined,
         const toIn = ownerOf.get(edge.to);
         if (!fromIn && !toIn) {
             edges.push(edge);
+            continue;
+        }
+        if (fromIn !== toIn && (fromIn?.pinned || toIn?.pinned)) {
+            // An end on a frame's pin stays there; an end on a node opened
+            // without pins is carried on to the inner pins, as below.
+            const froms: Array<string | undefined> = fromIn && !fromIn.pinned ? (fromIn.outOf.get(edge.from) ?? []) : [undefined];
+            const tos: Array<string | undefined> = toIn && !toIn.pinned ? (toIn.into.get(edge.to) ?? []) : [undefined];
+            let k = 0;
+            for (const from of froms) {
+                for (const to of tos) {
+                    edges.push(withEnd(edge, `${edge.id}@${k++}`, {
+                        ...(fromIn ? { from: from ?? edge.from, fromNode: from ? fromIn.nodeOfPin.get(from) : undefined } : {}),
+                        ...(toIn ? { to: to ?? edge.to, toNode: to ? toIn.nodeOfPin.get(to) : undefined } : {})
+                    }));
+                }
+            }
             continue;
         }
         if (toIn && fromIn !== toIn) {
@@ -208,11 +281,15 @@ export function openNodes(doc: PyGraphDocument, state: PortBusState | undefined,
         subgraphs.push({
             id: inside.scopeId,
             kind: 'group',
-            label: node.label,
+            label: titleOf(node),
             parent: parent ? parent.id : (node.scope ?? null),
             nodes: inside.cells.map(cell => cell.id),
             edges: inside.edges.map(edge => edge.id),
             openNodeKey: stableNodeId(ids, node),
+            // The frame is the node, drawn open: it keeps what the node says of itself,
+            // and its ports where the producer asks for them.
+            openNode: node,
+            ...(inside.pinned ? { pins: node.ports } : {}),
             // Opened in a group laid out in rows, its frame keeps its row.
             ...(typeof node.meta?.['row'] === 'number' ? { row: node.meta['row'] } : {}),
             ...(bundles.length ? { openNodeBundles: bundles } : {})

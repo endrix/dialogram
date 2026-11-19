@@ -1406,6 +1406,10 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     protected normalizeEditableEntityParameters(raw: unknown): Array<{ name: string; inputValue: string; detailText?: string }> {
         if (Array.isArray(raw)) {
             return raw
+                // One the producer marked editable is a field of the Fields
+                // section (producer-fields.ts), with its choices: listing it
+                // here too would show it twice, the second time as free text.
+                .filter(entry => !(entry && typeof entry === 'object' && (entry as { editable?: unknown }).editable === true))
                 .map(entry => this.normalizeEditableEntityParameterEntry(undefined, entry))
                 .filter((entry): entry is { name: string; inputValue: string; detailText?: string } => entry !== undefined);
         }

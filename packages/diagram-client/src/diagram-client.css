@@ -1378,6 +1378,27 @@ body.vscode-high-contrast-light .node-center-image-light {
     display: none;
 }
 
+/* One of an open node's own ports, on its frame: its name inside the frame,
+   and a clock's wedge before it, as on a register's symbol. */
+.workflow-group-frame-pin .frame-pin-label {
+    font-size: 11px;
+    fill: var(--vscode-editor-foreground, #cccccc);
+    text-anchor: start;
+    pointer-events: none;
+}
+
+.workflow-group-frame-pin .frame-pin-label.frame-pin-label-output {
+    text-anchor: end;
+}
+
+.workflow-group-frame-pin .frame-pin-clock {
+    fill: none;
+    stroke: var(--vscode-foreground, #cccccc);
+    stroke-width: 1.5px;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
 /* What happens in a group and stays in it: one loop on the frame, drawn as
    an edge is. */
 .workflow-node-group .group-loop {
@@ -3808,6 +3829,7 @@ details[open] > summary .agent-chat-expand-arrow {
    line, its badges, how many a port takes, what a wire carries and its
    bits. */
 .detail-far text.port-label,
+.detail-far text.frame-pin-label,
 .detail-far text.type-footer-label,
 .detail-far g.header-badge,
 .detail-far text.multiplicity-badge,
@@ -3815,6 +3837,7 @@ details[open] > summary .agent-chat-expand-arrow {
 .detail-far text.cal-edge-index-label,
 .detail-far .zoom-detail,
 .detail-mid text.port-label,
+.detail-mid text.frame-pin-label,
 .detail-mid text.type-footer-label:not(.symbol-caption),
 .detail-mid text.header-label.label-type,
 .detail-mid g.header-badge,

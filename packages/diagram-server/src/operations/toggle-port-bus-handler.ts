@@ -303,6 +303,10 @@ export class WorkflowTogglePortBusOperationHandler extends OperationHandler {
                 if (key && !open.has(key)) {
                     open.set(key, new Set<string>());
                 }
+                if (key && args[WorkflowDiagramMetadata.NODE_STARTS_OPEN] === true) {
+                    // Drawn closed though its producer draws it open: the reader closed it.
+                    open.get(key)!.add(ToggleNodeOpenOperation.CLOSED);
+                }
             }
             const group = args?.[WorkflowDiagramMetadata.PORT_BUS_GROUP];
             if (typeof group === 'string') {

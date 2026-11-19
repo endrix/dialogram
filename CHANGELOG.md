@@ -78,6 +78,21 @@ platform that hands it one.
 
 ### Added
 
+- **A node opened in place may start open, keep its ports on its frame, and
+  stays itself.** For a node that is a container of a design, such as a
+  block of code and the registers it holds, a producer says two things of
+  the graph it gives the node (`meta.inner`). `open: true` draws the node
+  open to begin with; the reader's closing it is what the layout file then
+  keeps (`ToggleNodeOpenOperation.CLOSED`, beside `OPEN`). `pins: true`
+  keeps the node's own ports on its frame as pins, named as they were on the
+  node: an edge on one of them ends there instead of being carried on to the
+  inner pins, the wires inside run from and to the pin, a pin nothing is
+  wired to is on the frame all the same, and one of role `clock` has a
+  clock's wedge before its name, as on a register's symbol. Without the
+  flags nothing changes. An open node's frame also carries the node's name,
+  type, `meta` and producer id now, so selecting the frame shows the node's
+  fields and facts and an edit made there names the node.
+
 - **A product's host code runs its CLI as a run does.** The profile
   `createSidecarDiagramProfile` returns has `runCli(file, args, { timeoutMs })`
   where the CLI runs a diagram (not with `cliRuns: false`). It starts the CLI
@@ -992,6 +1007,10 @@ platform that hands it one.
   is built for it); without it layouts stay on elkjs, as before.
 
 ### Fixed
+
+- **A field the producer marked editable was listed twice in the property
+  panel** where a product shows instance parameters: once in the Fields
+  section with its choices, once more as free text.
 
 - **A child process's output keeps a character split between two reads.**
   `runChildProcess` added each chunk as a string, so a UTF-8 character the

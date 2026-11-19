@@ -130,6 +130,8 @@ export namespace WorkflowDiagramCss {
     export const GROUP_BOUNDARY_PORT = 'workflow-group-boundary-port';
     /** A boundary port where edges arrive at the group itself: no dot, the arrowhead meets the frame. */
     export const GROUP_END_PORT = 'workflow-group-end-port';
+    /** On a boundary port that is an open node's own port, named on its frame. */
+    export const GROUP_FRAME_PIN = 'workflow-group-frame-pin';
     /** A group whose loop stands for an edge in error. */
     export const GROUP_LOOP_ERROR = 'workflow-group-loop-error';
     /** An edge the producer marked as in error. */
@@ -381,6 +383,17 @@ export namespace WorkflowDiagramMetadata {
     export const NODE_OPENABLE = 'wf:openable';
     /** On the frame an open node is drawn as: the node's key, to close it by. */
     export const OPEN_NODE_KEY = 'wf:openNodeKey';
+    /**
+     * On such a node, and on its frame: its producer draws it open to begin
+     * with (`meta.inner.open`), so closing it is what the layout file records.
+     */
+    export const NODE_STARTS_OPEN = 'wf:startsOpen';
+    /**
+     * On a boundary port of an open node's frame: it is one of the node's own
+     * ports (`meta.inner.pins`), drawn on the frame with its name, and with a
+     * clock's wedge when its role is `clock`.
+     */
+    export const FRAME_PIN = 'wf:framePin';
     /** On that frame: the node's open bundles, saved again while they are not drawn. */
     export const OPEN_NODE_BUNDLES = 'wf:openNodeBundles';
     /** What a node is drawn as, when not a box (`SymbolKind`, symbol-geometry.ts). */

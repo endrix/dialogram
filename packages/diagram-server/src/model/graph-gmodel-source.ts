@@ -3,11 +3,11 @@ import { parseBadgesMeta, parseFactsMeta, parseLinesMeta, parseViewsMeta, type U
 import { BoundaryPortGeometry, estimatePinLabelSize, estimateTextSize, isBoundaryNodeType, portLabelSlot, SymbolGeometry, textColumns, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findLoopEdges } from './feedback-edges';
-import { arrangeGroupRows, groupLayoutOptions, isGroupRow, splitEdgesAtGroups } from './group-edges';
+import { arrangeGroupRows, framePin, framePinLabelWidth, groupLayoutOptions, isGroupRow, splitEdgesAtGroups } from './group-edges';
 import { URI } from 'vscode-uri';
 import { boundaryMargin, bundlePorts, portSideOf, type PortBus, type PortBusState } from './port-bundles';
 import { stableNodeId as stableNodeIdOf, stableNodeIds, stablePortNames } from './stable-ids';
-import { canOpen, openNodes, openScopeId } from './open-nodes';
+import { canOpen, openNodes, openScopeId, startsOpen } from './open-nodes';
 import { compressAutomaton } from './automaton-compress';
 import { listColumns, listRowOf, type ListColumns, type ListMember } from './list-rows';
 
@@ -94,6 +94,10 @@ export type PyGraphScope = {
     openNodeKey?: string;
     /** The platform's: that node's open bundles, kept while it is open and they are not drawn. */
     openNodeBundles?: string[];
+    /** The platform's: the open node itself, whose name, type and `meta` its frame keeps. */
+    openNode?: PyGraphNode;
+    /** The platform's: that node's own ports, drawn as pins of its frame (`meta.inner.pins`). */
+    pins?: PyGraphPort[];
     children?: string[];
     nodes?: string[];
     edges?: string[];
@@ -712,6 +716,10 @@ export class GraphGModelSource {
             if (openable) {
                 // It holds a graph of its own: it can be opened in place.
                 gnode.args = { ...(gnode.args ?? {}), [WorkflowDiagramMetadata.NODE_OPENABLE]: true };
+                if (startsOpen(node)) {
+                    // Drawn closed, it was closed by the reader: what the layout file is to keep.
+                    gnode.args[WorkflowDiagramMetadata.NODE_STARTS_OPEN] = true;
+                }
             }
             const openTarget = this.openTarget(node.meta?.['open']);
             if (openTarget) {
@@ -1197,7 +1205,7 @@ export class GraphGModelSource {
         if (groupScopes.length > 0) {
             const groupNodes = new Map<string, GNode>();
             for (const scope of groupScopes) {
-                const group = this.createGroupNode(scope, scopeNodes, irNodeToStableId, nodeMap, removedNodeIds);
+                const group = this.createGroupNode(scope, scopeNodes, irNodeToStableId, nodeMap, removedNodeIds, portIdMap);
                 groupNodes.set(scope.id, group);
                 groupNodeByModelId.set(group.id, group);
             }
@@ -1664,7 +1672,8 @@ export class GraphGModelSource {
         scopeNodes: Map<string, string[]>,
         irNodeToStableId: Map<string, string>,
         nodeMap: Map<string, GNode>,
-        removedNodeIds: Set<string>
+        removedNodeIds: Set<string>,
+        portIdMap: Map<string, string>
     ): GNode {
         const nodeId = `scope:${scope.id}`;
         // A label the producer gave is the label, an empty one included: a
@@ -1693,6 +1702,52 @@ export class GraphGModelSource {
                 ...(scope.openNodeBundles ? { [WorkflowDiagramMetadata.OPEN_NODE_BUNDLES]: scope.openNodeBundles } : {})
             }
         };
+        const opened = scope.openNode;
+        if (opened) {
+            // An open node's frame is that node: selected, it shows the node's
+            // name, type, fields and facts, and an edit of them names the node.
+            const meta = opened.meta ? { ...opened.meta } : undefined;
+            if (meta) {
+                delete meta['inner'];
+            }
+            Object.assign(node.args!, {
+                [WorkflowDiagramMetadata.ENTITY_NAME]: opened.label,
+                [WorkflowDiagramMetadata.ENTITY_TYPE]: opened.type,
+                'wf:entityInstanceName': opened.label,
+                'wf:entityRef': opened.type,
+                'wf:nodeKind': opened.kind,
+                [WorkflowDiagramMetadata.GRAPH_NODE_ID]: opened.id,
+                ...(meta ? { [WorkflowDiagramMetadata.NODE_META]: meta } : {}),
+                ...(startsOpen(opened) ? { [WorkflowDiagramMetadata.NODE_STARTS_OPEN]: true } : {})
+            });
+            // What the property panel reads of a node, as the node itself carries it.
+            const facts = parseFactsMeta(meta?.['facts']);
+            if (facts) {
+                node.args![WorkflowDiagramMetadata.FACTS] = facts as any;
+            }
+            for (const [key, arg] of [
+                ['parameters', WorkflowDiagramMetadata.ENTITY_PARAMETERS],
+                ['definitionParams', WorkflowDiagramMetadata.ENTITY_DEFINITION_PARAMETERS],
+                ['definitionAnnotations', WorkflowDiagramMetadata.ENTITY_DEFINITION_ANNOTATIONS]
+            ] as const) {
+                if (meta?.[key]) {
+                    node.args![arg] = meta[key] as any;
+                }
+            }
+        }
+        if (scope.pins?.length) {
+            // Its own ports, on the frame: inputs on the left, outputs on the
+            // right, each with its name inside the frame, which makes room.
+            const room = { in: 0, out: 0 };
+            for (const pin of scope.pins) {
+                const direction = pin.direction === 'out' ? 'out' : 'in';
+                const pinId = `${nodeId}::pin::${pin.id}`;
+                portIdMap.set(pin.id, pinId);
+                node.children!.push(framePin(pinId, direction, pin.name, pin.role));
+                room[direction] = Math.max(room[direction], framePinLabelWidth(pin.name, pin.role));
+            }
+            node.layoutOptions = groupLayoutOptions(false, { left: room.in, right: room.out });
+        }
         const memberIds = new Set<string>();
         for (const irId of scope.nodes ?? []) {
             const stableId = irNodeToStableId.get(irId);
