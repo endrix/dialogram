@@ -57,6 +57,19 @@ describe('a long name in its header', () => {
         expect(portY(wrapped) - portY(short)).toBe(2 * WorkflowDiagramConstants.HEADER_LINE_HEIGHT_PX);
     });
 
+    it('keeps a name on one line when the node is wide enough for it anyway', () => {
+        // Its ports make it wide: the name fits on one line in that room.
+        const [wide] = transform([node('The fetch unit and its memory port', {
+            ports: [
+                { id: 'p:w:in', name: 'instruction_memory_request_valid', direction: 'in' },
+                { id: 'p:w:out', name: 'instruction_memory_response_ready', direction: 'out' }
+            ]
+        })]);
+        expect(nameLabel(wide).args?.[WorkflowDiagramMetadata.HEADER_LINES]).toBeUndefined();
+        const [narrow] = transform([node('The fetch unit and its memory port')]);
+        expect(nameLabel(narrow).args?.[WorkflowDiagramMetadata.HEADER_LINES]).toHaveLength(2);
+    });
+
     it('leaves a short name, and a name with nowhere to break, on one line', () => {
         expect(nameLabel(short).args?.[WorkflowDiagramMetadata.HEADER_LINES]).toBeUndefined();
         const [identifier] = transform([node('picorv32_axi_adapter_with_a_very_long_name')]);

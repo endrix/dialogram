@@ -49,30 +49,68 @@ function charEms(char: string): number {
     return charColumns(char) === 2 ? 1.05 : 0.7;
 }
 
-/** How wide a line of a header's name is drawn, in pixels. */
-export function headerTextWidth(text: string): number {
+/**
+ * The fonts it was measured in are Linux's; a webview draws the header in
+ * `--vscode-font-family`, SF Pro on macOS and Segoe UI on Windows, which
+ * could not be measured here. A name is sized this much wider than the
+ * table says, so a face a little wider still clears its badges.
+ */
+const UNMEASURED_FONT_MARGIN = 1.04;
+
+function rawWidth(text: string): number {
     let width = 0;
     for (const char of text) {
         width += charEms(char) * WorkflowDiagramConstants.HEADER_LABEL_FONT_SIZE_PX + LETTER_SPACING_PX;
     }
-    return Math.ceil(width);
+    return width * UNMEASURED_FONT_MARGIN;
 }
 
-function wrap(words: readonly string[], width: number): string[] {
+/** How wide a line of a header's name is drawn, in pixels. */
+export function headerTextWidth(text: string): number {
+    return Math.ceil(rawWidth(text));
+}
+
+/**
+ * The lines `words` take at `width`: each word on the line before it while
+ * the line fits, a word wider than `width` on a line of its own. Each word
+ * measured once (`widths`), a line as wide as its words and the spaces
+ * between them, so a long name costs as many steps as it has words.
+ */
+function wrap(words: readonly string[], widths: readonly number[], space: number, width: number): string[] {
     const lines: string[] = [];
     let line = '';
-    for (const word of words) {
-        if (line && headerTextWidth(`${line} ${word}`) > width) {
+    let lineWidth = 0;
+    words.forEach((word, index) => {
+        const wordWidth = widths[index];
+        if (!line) {
+            line = word;
+            lineWidth = wordWidth;
+        } else if (lineWidth + space + wordWidth > width) {
             lines.push(line);
             line = word;
+            lineWidth = wordWidth;
         } else {
-            line = line ? `${line} ${word}` : word;
+            line = `${line} ${word}`;
+            lineWidth += space + wordWidth;
         }
-    }
+    });
     if (line) {
         lines.push(line);
     }
     return lines;
+}
+
+/** The narrowest whole width in [low, high] at which `fits` holds; `fits(high)` must. */
+function narrowest(low: number, high: number, fits: (width: number) => boolean): number {
+    while (low < high) {
+        const mid = Math.floor((low + high) / 2);
+        if (fits(mid)) {
+            high = mid;
+        } else {
+            low = mid + 1;
+        }
+    }
+    return high;
 }
 
 export function headerLines(
@@ -81,28 +119,26 @@ export function headerLines(
     maxLines: number = WorkflowDiagramConstants.HEADER_MAX_LINES
 ): string[] {
     const words = text.trim().split(/\s+/).filter(word => word.length > 0);
-    if (words.length < 2 || headerTextWidth(text.trim()) <= maxWidth || maxLines < 2) {
+    if (words.length < 2 || maxLines < 2) {
         return [text];
     }
-    let width = maxWidth;
-    let lines = wrap(words, width);
-    while (lines.length > maxLines) {
-        width += 8;
-        lines = wrap(words, width);
+    const widths = words.map(rawWidth);
+    const space = rawWidth(' ');
+    const total = widths.reduce((sum, width) => sum + width, 0) + space * (words.length - 1);
+    if (total <= maxWidth) {
+        return [text];
     }
-    // The narrowest width that keeps this many lines: no line narrower than
-    // the longest word, none wider than the width found.
-    let low = Math.max(...words.map(headerTextWidth));
-    let high = width;
-    while (low < high) {
-        const mid = Math.floor((low + high) / 2);
-        if (wrap(words, mid).length <= lines.length) {
-            high = mid;
-        } else {
-            low = mid + 1;
-        }
+    const longest = Math.ceil(Math.max(...widths));
+    const lineCount = (width: number) => wrap(words, widths, space, width).length;
+    // At the cap, or wider when the name needs more than `maxLines` lines
+    // there: the narrowest width that fits it in `maxLines`.
+    let width = Math.max(Math.ceil(maxWidth), longest);
+    if (lineCount(width) > maxLines) {
+        width = narrowest(width, Math.ceil(total), w => lineCount(w) <= maxLines);
     }
-    return wrap(words, low);
+    // Balanced: the narrowest width that keeps this many lines.
+    const count = lineCount(width);
+    return wrap(words, widths, space, narrowest(longest, width, w => lineCount(w) <= count));
 }
 
 /** A node header's height for a name of `lineCount` lines: one line's header, and a line more for each. */

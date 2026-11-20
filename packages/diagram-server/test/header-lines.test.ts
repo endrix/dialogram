@@ -40,6 +40,23 @@ describe('a node name in its header', () => {
         expect(headerTextWidth('ABC')).toBeGreaterThan(headerTextWidth('abc'));
     });
 
+    it('costs as many steps as the name has words, however long it is', () => {
+        // A paragraph for a label: once 10 s per model build, each step
+        // re-measuring the line so far.
+        const paragraph = Array.from({ length: 500 }, (_, i) => `word${i}`).join(' ');
+        const started = performance.now();
+        const lines = headerLines(paragraph);
+        expect(performance.now() - started).toBeLessThan(100);
+        expect(lines).toHaveLength(WorkflowDiagramConstants.HEADER_MAX_LINES);
+        expect(lines.join(' ')).toBe(paragraph);
+    });
+
+    it('breaks at a wider room when the node has it, and not at all when the name fits there', () => {
+        const name = 'The fetch unit and its memory port';
+        expect(headerLines(name)).toHaveLength(2);
+        expect(headerLines(name, 450)).toEqual([name]);
+    });
+
     it('grows the header by a line height per line', () => {
         expect(headerHeight(1)).toBe(WorkflowDiagramConstants.HEADER_HEIGHT_PX);
         expect(headerHeight(3)).toBe(WorkflowDiagramConstants.HEADER_HEIGHT_PX + 2 * WorkflowDiagramConstants.HEADER_LINE_HEIGHT_PX);
