@@ -124,7 +124,67 @@ describe('a submenu', () => {
     });
 });
 
+describe('a submenu, from review', () => {
+    it('gives the keyboard back to its item when the pointer closes it', () => {
+        vi.useFakeTimers();
+        service().show(layoutMenu() as any, { x: 10, y: 10 }, () => hidden++);
+        const layout = button('Layout');
+        layout.focus();
+        layout.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        expect(document.activeElement).toBe(button('Default Layout'));
+
+        button('Go to Source').dispatchEvent(new MouseEvent('mouseenter'));
+        vi.advanceTimersByTime(1000);
+        expect(menus()).toHaveLength(1);
+        expect(document.activeElement).toBe(layout);
+    });
+
+    it('runs what its item does itself on a click, and opens on hover', async () => {
+        const menu = [{ label: 'Open', actions: [{ kind: 'open' }], children: [{ label: 'Open Beside', actions: [{ kind: 'beside' }] }] }];
+        service().show(menu as any, { x: 10, y: 10 }, () => hidden++);
+        button('Open').dispatchEvent(new MouseEvent('mouseenter'));
+        expect(itemsOf(menus()[1])).toEqual(['Open Beside']);
+
+        button('Open').click();
+        await settle();
+        expect(dispatched).toEqual(['open']);
+        expect(menus()).toHaveLength(0);
+    });
+
+    it('goes to the last item on the up arrow when no item has the keyboard', () => {
+        service().show(layoutMenu() as any, { x: 10, y: 10 }, () => hidden++);
+        menus()[0].focus();
+        menus()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+        expect(document.activeElement).toBe(button('Layout'));
+        menus()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+        expect(document.activeElement).toBe(button('Go to Source'));
+    });
+
+    it('a choice still running does not close a menu opened since', async () => {
+        let finish: () => void = () => undefined;
+        const menu = service() as any;
+        menu.actionDispatcher = { dispatch: () => new Promise<void>(resolve => { finish = resolve; }) };
+        menu.show(layoutMenu(), { x: 10, y: 10 }, () => hidden++);
+        button('Go to Source').click();
+        menu.show(layoutMenu(), { x: 40, y: 40 }, () => hidden++);
+
+        finish();
+        await settle();
+        expect(menus()).toHaveLength(1);
+        expect(hidden).toBe(0);
+    });
+});
+
 describe('the menu drawn', () => {
+    it('drops an item whose children were all left out, unless it does something itself', () => {
+        const shown = menuToShow([
+            { label: 'Producer actions', children: [] },
+            { label: 'Run', actions: [{ kind: 'run' }], children: [] }
+        ] as any);
+
+        expect(shown.map(item => [item.label, item.children])).toEqual([['Run', undefined]]);
+    });
+
     it('puts an unlabeled item\'s children in its place and drops a submenu with nothing in it', () => {
         const shown = menuToShow([
             { label: '', children: [{ label: 'Delete', actions: [{ kind: 'delete' }] }] },

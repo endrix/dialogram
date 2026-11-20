@@ -20,20 +20,21 @@ type AnyMenuItem = {
 /**
  * The menu as it is drawn: items without a label are not drawn, but the
  * children of an unlabeled item take its place (a producer's grouping, as
- * before submenus were drawn); a labeled item with children is a submenu,
- * dropped when none of them is drawn and it does nothing itself.
+ * before submenus were drawn); a labeled item with children is a submenu.
+ * An item that has a list of children (`children: []` too, as
+ * `offeredMenuItems` leaves one whose children were all left out) and none
+ * drawn is dropped, unless it does something itself.
  */
 export function menuToShow<T extends AnyMenuItem>(items: readonly T[]): T[] {
     const out: T[] = [];
     for (const item of items) {
-        const children = Array.isArray(item.children) && item.children.length > 0
-            ? menuToShow(item.children as T[])
-            : [];
+        const listed = Array.isArray(item.children);
+        const children = listed ? menuToShow(item.children as T[]) : [];
         if ((item.label ?? '').trim() === '') {
             out.push(...children);
         } else if (children.length > 0) {
             out.push({ ...item, children });
-        } else if (!Array.isArray(item.children) || item.children.length === 0 || (item.actions ?? []).length > 0) {
+        } else if (!listed || (item.actions ?? []).length > 0) {
             out.push({ ...item, children: undefined });
         }
     }
@@ -173,19 +174,24 @@ export class WorkflowContextMenuService implements IContextMenuService {
         // Onto another item of this menu: its open submenu closes, after a
         // moment in case the pointer is on its way there.
         button.addEventListener('mouseenter', () => this.closeLater(depth + 1));
-        button.addEventListener('click', async () => {
-            const actions = item.actions ?? [];
-            for (const action of actions) {
-                const kind = (action as any)?.kind as string | undefined;
-                if (kind === 'dialogram.duplicate') {
-                    const elementIds = ((action as any)?.elementIds ?? []) as string[];
-                    this.postEditSelection.prepareForDuplicate(elementIds, (this.editorContext as any).modelRoot);
-                }
-                await this.actionDispatcher.dispatch(action);
-            }
-            this.dismiss();
-        });
+        button.addEventListener('click', () => void this.run(item));
         return button;
+    }
+
+    /** Run what an item does, then close the menu -- unless another menu was opened meanwhile. */
+    private async run(item: AnyMenuItem): Promise<void> {
+        const shown = this.menus[0];
+        for (const action of item.actions ?? []) {
+            const kind = (action as any)?.kind as string | undefined;
+            if (kind === 'dialogram.duplicate') {
+                const elementIds = ((action as any)?.elementIds ?? []) as string[];
+                this.postEditSelection.prepareForDuplicate(elementIds, (this.editorContext as any).modelRoot);
+            }
+            await this.actionDispatcher.dispatch(action);
+        }
+        if (this.menus[0] === shown) {
+            this.dismiss();
+        }
     }
 
     private submenuItem(item: AnyMenuItem, children: AnyMenuItem[], depth: number): HTMLButtonElement {
@@ -202,10 +208,20 @@ export class WorkflowContextMenuService implements IContextMenuService {
         chevron.className = 'workflow-context-menu-chevron codicon codicon-chevron-right';
         chevron.setAttribute('aria-hidden', 'true');
         button.append(label, chevron);
+        // An item that does something itself does it on a click (or Enter),
+        // as before submenus were drawn; its submenu opens on hover or the
+        // right arrow. One that does nothing opens it on a click too.
+        const ownActions = (item.actions ?? []).length > 0;
         button.addEventListener('mouseenter', () => this.openSubmenu(button, children, depth + 1, false));
-        button.addEventListener('click', () => this.openSubmenu(button, children, depth + 1, true));
+        button.addEventListener('click', () => {
+            if (ownActions) {
+                void this.run(item);
+            } else {
+                this.openSubmenu(button, children, depth + 1, true);
+            }
+        });
         button.addEventListener('keydown', event => {
-            if (event.key === 'ArrowRight' || event.key === 'Enter' || event.key === ' ') {
+            if (event.key === 'ArrowRight' || (!ownActions && (event.key === 'Enter' || event.key === ' '))) {
                 event.preventDefault();
                 event.stopPropagation();
                 this.openSubmenu(button, children, depth + 1, true);
@@ -239,7 +255,9 @@ export class WorkflowContextMenuService implements IContextMenuService {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault();
             const step = event.key === 'ArrowDown' ? 1 : -1;
-            buttons[(at + step + buttons.length) % buttons.length]?.focus();
+            // Nothing of this menu focused yet: down is the first item, up the last.
+            const next = at < 0 ? (step > 0 ? 0 : buttons.length - 1) : (at + step + buttons.length) % buttons.length;
+            buttons[next]?.focus();
         } else if (event.key === 'ArrowLeft' && depth > 0) {
             event.preventDefault();
             const owner = this.owners[depth];
@@ -268,6 +286,10 @@ export class WorkflowContextMenuService implements IContextMenuService {
 
     /** Close the submenus at `depth` and deeper (0: everything). */
     private closeFrom(depth: number): void {
+        // The keyboard was in a submenu that closes: back to the item that opened it.
+        const focused = document.activeElement;
+        const inClosing = depth > 0 && this.menus.some((menu, index) => index >= depth && menu.contains(focused));
+        const refocus = inClosing ? this.owners[depth] : undefined;
         for (let index = this.menus.length - 1; index >= depth; index--) {
             this.menus[index].remove();
             const owner = this.owners[index];
@@ -276,6 +298,9 @@ export class WorkflowContextMenuService implements IContextMenuService {
         }
         this.menus.length = Math.min(this.menus.length, depth);
         this.owners.length = Math.min(this.owners.length, depth);
+        if (refocus?.isConnected) {
+            refocus.focus();
+        }
     }
 
     /** Closed by the reader: a choice, Escape or a click elsewhere. */

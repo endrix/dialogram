@@ -52,7 +52,8 @@ export class NodeListOutlinePanel extends HierarchyOutlinePanel {
 
     protected override panelConfig(): OutlinePanelConfig {
         // Its own copy: the codicon is the product's, read with the list.
-        return { ...NODE_LIST_PANEL, under: [...NODE_LIST_PANEL.under] };
+        const under = NODE_LIST_PANEL.under;
+        return { ...NODE_LIST_PANEL, under: Array.isArray(under) ? [...under] : under };
     }
 
     protected override title(): string {

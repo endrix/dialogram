@@ -1138,9 +1138,7 @@ export function placeInButtonStack(
     }
     toggle.classList.remove('floating');
     if (under === 'top') {
-        if (stack.lastElementChild !== toggle) {
-            stack.appendChild(toggle);
-        }
+        keepOnTop(toggle, stack);
         return;
     }
     const above = under
@@ -1153,6 +1151,41 @@ export function placeInButtonStack(
     } else if (toggle.parentElement !== stack) {
         stack.appendChild(toggle);
     }
+}
+
+/** The button each stack keeps on top: one per stack, the last placed there. */
+const topOfStack = new WeakMap<Element, HTMLElement>();
+
+/**
+ * Put `toggle` at the top of `stack` and keep it there: a button that joins
+ * the stack later (the chat's arrives when its panel is made) is appended
+ * after it, and would sit above it and move as it shows and hides. One
+ * button is kept on top of a stack, the last placed there; two would each
+ * put itself last for ever.
+ */
+function keepOnTop(toggle: HTMLElement, stack: Element): void {
+    const previous = topOfStack.get(stack);
+    topOfStack.set(stack, toggle);
+    if (stack.lastElementChild !== toggle) {
+        stack.appendChild(toggle);
+    }
+    if (previous === toggle || typeof MutationObserver === 'undefined') {
+        return;
+    }
+    const observer = new MutationObserver(() => {
+        if (topOfStack.get(stack) !== toggle || toggle.parentElement !== stack) {
+            // Another button took the top, or this one left: no longer its to keep.
+            observer.disconnect();
+            if (topOfStack.get(stack) === toggle) {
+                topOfStack.delete(stack);
+            }
+            return;
+        }
+        if (stack.lastElementChild !== toggle) {
+            stack.appendChild(toggle);
+        }
+    });
+    observer.observe(stack, { childList: true });
 }
 
 /** The navigation trail a model root carries (`wf:navTrail`, JSON or a list). */

@@ -202,6 +202,13 @@ describe('the node list', () => {
 });
 
 describe('its button', () => {
+    // The panels of the tests above place their buttons again a frame after
+    // each model: let those frames pass before a stack of these tests exists.
+    beforeEach(async () => {
+        await new Promise(resolve => requestAnimationFrame(() => resolve(undefined)));
+        document.body.replaceChildren();
+    });
+
     it('sits at the top of the stack, above the hierarchy\'s and the chat\'s, whichever is placed first', () => {
         document.body.replaceChildren();
         const stack = document.createElement('div');
@@ -219,6 +226,43 @@ describe('its button', () => {
         // A reversed column: what comes first sits lowest.
         expect(Array.from(stack.children).map(button => button.id))
             .toEqual(['run-history', 'workflow-hierarchy-outline-toggle', 'workflow-chat-toggle-btn', 'workflow-node-list-outline-toggle']);
+    });
+
+    it('is placed at the top by the panel itself', () => {
+        expect((new TestPanel(opener) as any).config.under).toBe('top');
+    });
+
+    it('stays at the top when a button joins the stack after it', async () => {
+        document.body.replaceChildren();
+        const stack = document.createElement('div');
+        stack.className = 'workflow-fab-stack';
+        const hierarchy = Object.assign(document.createElement('button'), { id: 'workflow-hierarchy-outline-toggle' });
+        const list = Object.assign(document.createElement('button'), { id: 'workflow-node-list-outline-toggle' });
+        stack.append(hierarchy);
+        document.body.append(stack, list);
+        placeInButtonStack(list, document, 'top');
+
+        const chat = Object.assign(document.createElement('button'), { id: 'workflow-chat-toggle-btn' });
+        stack.appendChild(chat);
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        expect(Array.from(stack.children).map(button => button.id))
+            .toEqual(['workflow-hierarchy-outline-toggle', 'workflow-chat-toggle-btn', 'workflow-node-list-outline-toggle']);
+    });
+
+    it('is the one button kept on top of a stack: a second placed there takes it over, and neither loops', async () => {
+        document.body.replaceChildren();
+        const stack = document.createElement('div');
+        stack.className = 'workflow-fab-stack';
+        const first = Object.assign(document.createElement('button'), { id: 'first' });
+        const second = Object.assign(document.createElement('button'), { id: 'second' });
+        document.body.append(stack);
+        placeInButtonStack(first, document, 'top');
+        placeInButtonStack(second, document, 'top');
+        stack.appendChild(Object.assign(document.createElement('button'), { id: 'late' }));
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        expect(Array.from(stack.children).map(button => button.id)).toEqual(['first', 'late', 'second']);
     });
 
     it('moves no other button when it shows or hides', () => {
