@@ -14,9 +14,9 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { GEdge, GModelRoot } from '@eclipse-glsp/server';
-import { WorkflowDiagramMetadata } from '@dialogram/shared';
+import { WorkflowDiagramMetadata, trailInstancePath } from '@dialogram/shared';
 import { WorkflowSourceModelStorage } from '../src/server/source-model-storage';
-import { edgesOfInstance } from '../src/server/overlay-scope';
+import { edgesOfInstance, fromRunRoot, runRootPrefix } from '../src/server/overlay-scope';
 
 const tempDirs: string[] = [];
 afterEach(async () => {
@@ -76,12 +76,30 @@ function model(): { root: GModelRoot; out: GEdge; byAst: GEdge } {
     return { root, out, byAst };
 }
 
-async function apply(edges: Record<string, unknown>, instance: 'a' | 'b', step?: number) {
+type Crumb = { sourceUri: string; workflowName: string; workflowInstanceName?: string };
+
+/**
+ * The view at the end of `trail` (by default `top` > `middle` as `instance` > `inner` as `i`),
+ * with the run's records `edges`; `run` adds to what the run's overlay says (its root's file and
+ * workflow), `trace` replaces the one-step trace.
+ */
+async function apply(
+    edges: Record<string, unknown>,
+    instance: 'a' | 'b',
+    step?: number,
+    opts: { trail?: Crumb[]; run?: Record<string, unknown>; trace?: unknown[] } = {}
+) {
     const dir = await runDir(step !== undefined);
+    if (opts.trace) {
+        await fs.writeFile(path.join(dir, 'run.wf-queues.json'), JSON.stringify({
+            version: 1,
+            steps: [{ step: 1, actorInstanceName: 'p', queueSizes: opts.trace }]
+        }));
+    }
     const storage: any = new (WorkflowSourceModelStorage as any)();
     storage.storageOptions = { settingsNamespace: 'wfLang', operationPrefix: 'wfpy' };
     storage.isLiveExecutionGlowEnabled = async () => true;
-    storage.tryLoadLatestViewerOverlay = async () => ({ runId: 'r', outDir: dir, running: false, active: [], edges });
+    storage.tryLoadLatestViewerOverlay = async () => ({ runId: 'r', outDir: dir, running: false, active: [], edges, ...opts.run });
     storage.ensureModelSource = () => ({
         analysis: {
             buildOverlayAstPathCandidates: (args: any) => (args?.astPath ? [args.astPath] : []),
@@ -94,7 +112,7 @@ async function apply(edges: Record<string, unknown>, instance: 'a' | 'b', step?:
     });
     const m = model();
     const applied = await storage.applyViewerOverlayToEdges(
-        m.root, '/w/inner.py', 'inner', TRAIL(instance), ['top', 'middle', 'inner'], step, true, ['/w/inner.py']
+        m.root, '/w/inner.py', 'inner', opts.trail ?? TRAIL(instance), ['top', 'middle', 'inner'], step, true, ['/w/inner.py']
     );
     return { ...m, applied };
 }
@@ -139,10 +157,102 @@ describe('the edges of a nested workflow instance', () => {
     });
 });
 
+const ARGS = { 'wf:from': 'p', 'wf:outPort': 'Out', 'wf:to': 'WF', 'wf:inPort': 'Out' };
+
+describe('a run whose root is not the trail\'s root', () => {
+    // `middle` run on its own: its records count from `middle`, so `a/i` is `i` there.
+    const MIDDLE_RUN = { sourcePath: '/w/middle.py', workflowName: 'middle' };
+    const MIDDLE_EDGES = {
+        'queue:i/p.Out-->WF.Out': { queueId: 'p.Out-->WF.Out', ...ENDS, instancePath: ['i'], lastToken: 'own' }
+    };
+
+    it('shows its records in the view of an instance under it, measured from the run\'s root', async () => {
+        const a = await apply(MIDDLE_EDGES, 'a', undefined, { run: MIDDLE_RUN });
+        expect(token(a.out)).toBe('own');
+    });
+
+    it('gives the node list only the rows under the run\'s root, measured from it', async () => {
+        const { applied } = await apply(MIDDLE_EDGES, 'a', undefined, { run: MIDDLE_RUN });
+        expect(applied.tokenOf(ARGS, ['a', 'i'])).toEqual({ token: 'own' });
+        expect(applied.tokenOf(ARGS)).toEqual({ token: 'own' });
+        // `b` is another instance of `middle`, which this run did not run.
+        expect(applied.tokenOf(ARGS, ['b', 'i'])).toBeUndefined();
+    });
+
+    it('is read from the trail\'s root when no crumb is its root, as before', async () => {
+        const a = await apply(SCOPED_EDGES, 'a', undefined, { run: { sourcePath: '/elsewhere/top.py', workflowName: 'top' } });
+        expect(token(a.out)).toBe('left');
+    });
+});
+
+describe('a crumb that names no instance', () => {
+    // Drilled into `middle` without an instance name: the view and the hierarchy both take its workflow's name.
+    const trail: Crumb[] = [
+        { sourceUri: 'file:///w/top.py', workflowName: 'top' },
+        { sourceUri: 'file:///w/middle.py', workflowName: 'middle' },
+        { sourceUri: 'file:///w/inner.py', workflowName: 'inner', workflowInstanceName: 'i' }
+    ];
+    const EDGES = {
+        'queue:middle/i/p.Out-->WF.Out': { queueId: 'p.Out-->WF.Out', ...ENDS, instancePath: ['middle', 'i'], lastToken: 'by-name' },
+        'queue:a/i/p.Out-->WF.Out': { queueId: 'p.Out-->WF.Out', ...ENDS, instancePath: ['a', 'i'], lastToken: 'left' }
+    };
+
+    it('puts the canvas and the node list on the same instance', async () => {
+        const view = await apply(EDGES, 'a', undefined, { trail });
+        expect(token(view.out)).toBe('by-name');
+        expect(view.applied.tokenOf(ARGS)).toEqual(view.applied.tokenOf(ARGS, ['middle', 'i']));
+    });
+});
+
+describe('a run that says its instances in one of its two files', () => {
+    it('reads the other by instance too', async () => {
+        // Only the trace says instances; the final records are the top's own.
+        const topOnly = {
+            'queue:p.Out-->WF.Out': { queueId: 'p.Out-->WF.Out', ...ENDS, lastToken: 'top' }
+        };
+        const queue = (instancePath: string[] | undefined, size: number, lastToken: string) => ({
+            queueId: 'p.Out-->WF.Out', ...ENDS, ...(instancePath ? { instancePath } : {}), size, lastToken
+        });
+        // The top's queue comes last, and with the same ends would win if the trace were read whole.
+        const a = await apply(topOnly, 'a', 0, { trace: [queue(['a', 'i'], 3, 'a-t'), queue(undefined, 9, 'top-t')] });
+        expect(size(a.out)).toBe(3);
+        expect(token(a.out)).toBe('a-t');
+
+        // A trace that knows another of `a/i`'s queues: this edge falls back to the final records,
+        // where the top's own record, with the same ends, is not `a/i`'s.
+        const other = { queueId: 'q.Out-->p.In', fromEntity: 'q', outPort: 'Out', toEntity: 'p', inPort: 'In', instancePath: ['a', 'i'], size: 1, lastToken: 'q' };
+        const fallback = await apply(topOnly, 'a', 0, { trace: [other] });
+        expect(token(fallback.out)).toBeUndefined();
+    });
+});
+
 describe('an instance\'s edge records', () => {
     it('are keyed as its own edges look them up: the instance path taken off the key', () => {
         expect(Object.keys(edgesOfInstance(SCOPED_EDGES, ['b', 'i']))).toEqual(['queue:p.Out-->WF.Out', 'ast:7']);
         expect(Object.keys(edgesOfInstance(SCOPED_EDGES, []))).toEqual(['queue:left.Out-->a.In']);
         expect(edgesOfInstance(UNSCOPED_EDGES, ['a', 'i'])).toBe(UNSCOPED_EDGES);
+    });
+
+    it('lose the path as the runtime wrote it into the key, spaces and all', () => {
+        const spaced = { ' a/i/ast:7': { instancePath: [' a', 'i'], lastToken: 'x' } };
+        expect(Object.keys(edgesOfInstance(spaced, ['a', 'i']))).toEqual(['ast:7']);
+    });
+});
+
+describe('where a run\'s root sits on a trail', () => {
+    const trail: Crumb[] = TRAIL('a');
+    const isFile = (file: string) => (crumb: Crumb) => crumb.sourceUri === file;
+
+    it('is the instance path of its crumb, or the trail\'s root', () => {
+        expect(runRootPrefix(trail, isFile('file:///w/middle.py'), trailInstancePath)).toEqual(['a']);
+        expect(runRootPrefix(trail, isFile('file:///w/top.py'), trailInstancePath)).toEqual([]);
+        expect(runRootPrefix(trail, isFile('file:///w/none.py'), trailInstancePath)).toEqual([]);
+    });
+
+    it('measures the paths under it from it, and none outside it', () => {
+        expect(fromRunRoot(['a', 'i'], ['a'])).toEqual(['i']);
+        expect(fromRunRoot(['a'], ['a'])).toEqual([]);
+        expect(fromRunRoot(['b', 'i'], ['a'])).toBeUndefined();
+        expect(fromRunRoot([], ['a'])).toBeUndefined();
     });
 });

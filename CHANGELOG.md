@@ -1430,8 +1430,10 @@ platform that hands it one.
   run record of a nested instance now says the instance it is in
   (`instancePath`, instance names from the run's root), and a view reads only
   its own instance's records: the canvas those of the instance the
-  navigation trail leads to, the node list those of each row's instance. A
-  run none of whose records says an instance shows as before.
+  navigation trail leads to, the node list those of each row's instance,
+  both measured from the run's root, also when that is a workflow further
+  down the trail run on its own (its error is placed the same way). A run
+  none of whose records says an instance shows as before.
 - **The chat's button is in the floating stack whenever there is one.** The
   navigation moved it there only when it drew after the button was made;
   a button made after the last draw stayed on its own, fixed where the

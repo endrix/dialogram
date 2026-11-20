@@ -19,6 +19,7 @@ import type {
     GraphSourceAnalysis,
     ModelSourceOptions
 } from '@dialogram/shared';
+import { trailInstancePath } from '@dialogram/shared';
 import {
     GRAPH_SOURCE_URI_ARG,
     NAV_TRAIL_ARG,
@@ -287,7 +288,7 @@ export class CliGraphModelSource implements DiagramModelSource {
         if (!exported) {
             return undefined;
         }
-        const path = trail.slice(1).map(crumb => crumb.workflowInstanceName ?? crumb.workflowName);
+        const path = trailInstancePath(trail);
         const outline = outlineOf(exported.hierarchy);
         if (path.length === 0) {
             if (workflowFilePath !== root.file || (workflowName && workflowName !== root.workflow)) {

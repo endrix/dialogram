@@ -10,6 +10,16 @@ export interface HierarchyCrumb {
     workflowInstanceName?: string;
 }
 
+/**
+ * The instance a navigation trail leads to, by instance names from the trail's
+ * root: one name per crumb after the root, its instance's, or its workflow's
+ * when the crumb names no instance. The view a trail opens and the run
+ * records that view reads are both looked up by this path.
+ */
+export function trailInstancePath(trail: readonly Pick<HierarchyCrumb, 'workflowName' | 'workflowInstanceName'>[]): string[] {
+    return trail.slice(1).map(crumb => crumb.workflowInstanceName ?? crumb.workflowName);
+}
+
 /** An entry's children as paths see them: a group row's children in its place. */
 export function hierarchyPathChildren(entry: HierarchyOutlineEntry): HierarchyOutlineEntry[] {
     return entry.children.flatMap(child => (child.role === 'group' ? hierarchyPathChildren(child) : [child]));
