@@ -78,6 +78,13 @@ platform that hands it one.
 
 ### Added
 
+- **A node says what it is to the picture.** A node's `meta.role` becomes a
+  `node-role-<role>` class, the way an edge's role does: a hook the platform
+  does not style and a product's stylesheet names. ndf-ide marks the clauses
+  of other documents that a document's diagram draws only so its edges have
+  somewhere to go, and draws them quieter; the kind (a neighbour is a
+  requirement all the same) and whether a node opens (the project's own
+  documents do) could not say that.
 - **A list of one node family across the hierarchy, beside the hierarchy
   outline.** A product names a family (`nodeList: { family, title, codicon }`
   on its sidecar profile, `DiagramStorageOptions.nodeList`), and the canvas
@@ -1420,6 +1427,18 @@ platform that hands it one.
 
 ### Fixed
 
+- **A connection's role reaches its line.** The server's `edge-role-<role>`
+  class landed only on the edge's outer group (`.sprotty-edge`), while the
+  line is drawn in the `.workflow-edge` group inside it, beside `selected`
+  and `hover`. A product stylesheet that styled lines as
+  `.workflow-edge.edge-role-x` matched nothing: ndf-ide drew every edge as
+  the same grey line, whether it refined, verified or blocked, and
+  chisel-ide drew its channels, wires, clocks and resets alike. The edge
+  views give the line group the role classes too, so both
+  `.sprotty-edge.edge-role-x .workflow-edge` and `.workflow-edge.edge-role-x`
+  reach it. The selection trace's colours win over a role colour that gives
+  way to the selection (chisel-ide's and ac-ide's outranked them), and give
+  way themselves to the pointer and to the run's last token.
 - **A nested workflow instance's edges show that instance's tokens.** Two
   instances of one workflow, or two workflows that name their actors alike,
   have edges with the same ends (`p.Out --> Out`), and the overlay took the

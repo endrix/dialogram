@@ -1913,7 +1913,8 @@ export class GraphGModelSource {
     /**
      * A styling hook derived from a producer-supplied word.
      *
-     * `<value>-node`, `port-role-<value>`, `edge-role-<value>` — derived rather
+     * `<value>-node`, `node-role-<value>`, `port-role-<value>`,
+     * `edge-role-<value>` — derived rather
      * than enumerated, so a product can style something this file has never
      * heard of. The pattern check is what keeps it from being an injection: the
      * value is interpolated into a class name, so it has to look like one.
@@ -1938,6 +1939,17 @@ export class GraphGModelSource {
         const kindClass = this.derivedCssClass('', node.kind, '-node');
         if (kindClass) {
             classes.push(kindClass);
+        }
+        // What the node is to this picture, as the producer sees it, the way
+        // `edge-role-<role>` says what a connection is: the clauses a
+        // document's diagram is of, say, and the neighbours drawn only so its
+        // edges have somewhere to go. Not its kind (a neighbour is a
+        // requirement all the same) nor whether it can be opened (the
+        // project's own documents can be); the platform derives the hook and
+        // the product's stylesheet names it.
+        const roleClass = this.derivedCssClass('node-role-', node.meta?.['role'] as string | undefined);
+        if (roleClass) {
+            classes.push(roleClass);
         }
         const defAnnots = node.meta?.['definitionAnnotations'] as Array<{ name?: string }> | undefined;
         const family = this.nodeFamilyOf(Array.isArray(defAnnots) ? defAnnots : undefined);

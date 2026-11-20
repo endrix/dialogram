@@ -50,6 +50,7 @@ import { nodeLinesHeight, nodeLinesOf, renderNodeLines } from './node-lines';
 import { listRowOf, renderListRow } from './list-row-view';
 import { GROUP_INITIAL_MARK_ROOM_PX, groupInitialMark, isGroupInitial } from './group-initial-mark';
 import { isDrawnBackwards } from './feedback-direction';
+import { edgeRoleClasses } from './edge-role-classes';
 import { WorkflowDiagramConstants, estimatePinLabelBox, estimatePortLabelSize, portLabelParts } from '@dialogram/shared';
 
 /** Walk to the model root; the drag-active window is tracked per root. */
@@ -1824,6 +1825,7 @@ export class WorkflowEdgeView extends PolylineEdgeView {
 
         return svg('g', {
             class: {
+                ...edgeRoleClasses(edge),
                 'workflow-edge': true,
                 'edge-has-last-token': hasViewerToken,
                 'structure-conditional': isConditional,

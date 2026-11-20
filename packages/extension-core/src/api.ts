@@ -536,10 +536,19 @@ export interface DiagramProfile {
    * `localResourceRoots`.
    *
    * The platform writes hooks it does not style: `<kind>-node` for a kind of
-   * its own, `edge-role-<role>` for what a connection is, the family classes.
+   * its own, `node-role-<role>` for what a node is to the picture (its
+   * `meta.role`), `edge-role-<role>` for what a connection is, the family
+   * classes.
    * A product that wants `refines` solid and `conflicts-with` red, or its pins
    * smaller, says so here in CSS and nowhere else, without composing a webview
    * bundle of its own for one stylesheet.
+   *
+   * `edge-role-<role>` is on both an edge's outer group (`.sprotty-edge`) and
+   * its line group inside it (`.workflow-edge`, which also carries `selected`
+   * and `hover`). Style the line through the line group, giving way to the
+   * selection: `.workflow-edge.edge-role-x:not(.selected):not(.hover)`. A rule
+   * on the bare class matches both groups, so an `opacity` there applies
+   * twice.
    */
   clientStylesheets?: string[];
   /** Edit strategy: `'read-only'` disables writes; an editable strategy carries the

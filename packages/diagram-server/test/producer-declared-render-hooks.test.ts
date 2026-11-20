@@ -95,6 +95,28 @@ describe('a node kind', () => {
     });
 });
 
+describe('a node role', () => {
+    it('gets a derived hook, apart from its kind and whether it opens', () => {
+        // A word the platform has never heard of, on a node that also opens
+        // (network) and on one that does not: the role is its own fact.
+        const children = transform([
+            actor({ id: 'node:n', kind: 'requirement', label: 'n', meta: { role: 'neighbour', networkInstance: true } }),
+            actor({ id: 'node:o', kind: 'requirement', label: 'o', meta: { role: 'neighbour' } }),
+            actor({ id: 'node:p', kind: 'requirement', label: 'p' })
+        ]);
+
+        expect(nodeNamed(children, 'n').cssClasses).toEqual(expect.arrayContaining(['node-role-neighbour', 'requirement-node', 'network-node']));
+        expect(nodeNamed(children, 'o').cssClasses).toEqual(expect.arrayContaining(['node-role-neighbour', 'actor-node']));
+        expect(nodeNamed(children, 'p').cssClasses.some((c: string) => c.startsWith('node-role-'))).toBe(false);
+    });
+
+    it('refuses a role that would not be a class name', () => {
+        const hostile = nodeNamed(transform([actor({ label: 'x', meta: { role: 'a b" onload=x' } })]), 'x');
+
+        expect(hostile.cssClasses.some((c: string) => c.startsWith('node-role-'))).toBe(false);
+    });
+});
+
 describe('a port role', () => {
     it('gets a derived hook so it can be styled and hidden', () => {
         // A role the platform has never heard of, deliberately: the mechanism
