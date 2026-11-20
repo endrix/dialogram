@@ -532,6 +532,9 @@ describe('an open node that keeps its ports on its frame', () => {
             .toEqual([['q', 'output', undefined], ['t', 'output', undefined], ['a', 'input', undefined], ['b', 'input', undefined], ['clk', 'input', 'clock']]);
         // As a port of the node says them, which is how the panel lists them; and a pin is no node of that name.
         expect(pins.map((pin: any) => pin.args[WorkflowDiagramMetadata.IS_INPUT_PORT])).toEqual([false, false, true, true, true]);
+        // Its role, as a closed node's port says it, for the producer's stylesheet.
+        expect(pins.map((pin: any) => pin.cssClasses.filter((c: string) => c.startsWith('port-role-'))))
+            .toEqual([[], [], [], [], ['port-role-clock']]);
         expect(pins.every((pin: any) => pin.args[WorkflowDiagramMetadata.ENTITY_NAME] === undefined)).toBe(true);
         expect(pins.every((pin: any) => pin.type === WorkflowDiagramTypes.PORT_GROUP_BOUNDARY)).toBe(true);
         // Nothing crosses the frame anywhere else: no other boundary port, no edge cut in pieces.

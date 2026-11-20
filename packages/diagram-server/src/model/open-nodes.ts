@@ -36,6 +36,9 @@
  *   A pin is one port: a bundle of the node's ports (`group`) is its members
  *   here, each a pin, and a port's `side` is not read (inputs are on the
  *   left of a frame, outputs on its right).
+ * - `meta.inner.column: true` stands what the frame holds in one column, one
+ *   under another in the order the producer lists it: the statements of a
+ *   block, the branches of an `if`, as they are written.
  * - `meta.inner.title` is what the frame is titled, where the node's name
  *   alone does not say what it is once its type is no longer under it
  *   (`counters: always @(posedge clk)`). Without it, the node's name.
@@ -336,6 +339,7 @@ function openOnce(doc: PyGraphDocument, state: PortBusState | undefined, ids: St
             ...(isContainer(node) ? { openNode: node } : {}),
             ...(title !== undefined ? { titled: true } : {}),
             ...(inside.pinned ? { pins: node.ports } : {}),
+            ...((node.meta?.['inner'] as { column?: unknown } | undefined)?.column === true ? { column: true } : {}),
             // Opened in a group laid out in rows, its frame keeps its row.
             ...(typeof node.meta?.['row'] === 'number' ? { row: node.meta['row'] } : {}),
             ...(bundles.length ? { openNodeBundles: bundles } : {})

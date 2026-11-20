@@ -274,7 +274,7 @@ function ifBlock(): PyGraphDocument {
             meta: {
                 row: k,
                 inner: {
-                    open: true, pins: true,
+                    open: true, pins: true, column: true,
                     nodes: body.map(([label, reads, wrote], j) => ({
                         id: `${id}/a${j}`, kind: 'logic', label, scope: 'root',
                         ports: [...reads.map(n => port(`${id}/a${j}`, n, 'in')), port(`${id}/a${j}`, wrote, 'out')]
@@ -288,7 +288,8 @@ function ifBlock(): PyGraphDocument {
         };
     };
     const branches = [
-        branch(0, 'if (start)', ['start', 'load'], [['busy <= 1', [], 'busy'], ['count <= load', ['load'], 'count']]),
+        // As written: a statement that reads nothing (`busy <= 1`) between two that read.
+        branch(0, 'if (start)', ['start', 'load'], [['busy <= 1', [], 'busy'], ['count <= load', ['load'], 'count'], ['busy <= 0', [], 'busy'], ['count <= load + 1', ['load'], 'count']]),
         branch(1, 'else if (stop || count == 0)', ['stop', 'count'], [['busy <= 0', [], 'busy']]),
         branch(2, 'else if (busy)', ['busy', 'count'], [['count <= count - 1', ['count'], 'count']])
     ];
@@ -297,7 +298,7 @@ function ifBlock(): PyGraphDocument {
         ports: [...['start', 'load', 'stop', 'count', 'busy'].map(n => port(IF, n, 'in')), ...['busy', 'count'].map(n => port(IF, n, 'out'))],
         meta: {
             inner: {
-                open: true, nodes: branches,
+                open: true, column: true, nodes: branches,
                 edges: branches.flatMap(b => b.ports.map(p => (p.direction === 'in'
                     ? { from: `${IF}:in:${p.name}`, to: p.id }
                     : { from: p.id, to: `${IF}:out:${p.name}` })))
@@ -338,8 +339,8 @@ function ifBlock(): PyGraphDocument {
     };
 }
 
-describe('a group whose members are open frames, a row each', () => {
-    it('is one column, laid out to the right, its frames in their rows’ order', () => {
+describe('a column', () => {
+    it('is laid out to the right, its members in their rows’ order', () => {
         const root = transform(ifBlock());
         const frames = (find(root, 'scope:open:scope:open:node:run/node:run/if')?.children ?? [])
             .filter(child => child.type === 'node:group');
@@ -349,9 +350,33 @@ describe('a group whose members are open frames, a row each', () => {
         expect(theIf.args?.[WorkflowDiagramMetadata.GROUP_ROWS]).toBe(true);
         expect(frames.map(frame => frame.args?.[WorkflowDiagramMetadata.GROUP_ROW])).toEqual([0, 1, 2]);
         expect(frames.every(frame => frame.layoutOptions?.['elk.alignment'] === 'LEFT')).toBe(true);
+        expect(theIf.args?.[WorkflowDiagramMetadata.GROUP_COLUMN]).toBe(true);
     });
 
-    it('stacks the frames one under another, their left edges on one line, every pin on its side', async () => {
+    it('takes no column it is not asked for: frames a row each are rows, as before', () => {
+        const doc = ifBlock();
+        const run: any = doc.graph.nodes.find(n => n.id === 'node:run');
+        delete run.meta.inner.nodes[0].meta.inner.column;
+        const theIf = find(transform(doc), 'scope:open:scope:open:node:run/node:run/if')!;
+        expect(theIf.layoutOptions?.['elk.direction']).toBe('DOWN');
+        expect(theIf.args?.[WorkflowDiagramMetadata.GROUP_COLUMN]).toBeUndefined();
+    });
+
+    it('keeps the order the members are given in where they have no row: statements as written', () => {
+        const doc = ifBlock();
+        const run: any = doc.graph.nodes.find(n => n.id === 'node:run');
+        const branches = run.meta.inner.nodes[0].meta.inner.nodes;
+        for (const branch of branches) {
+            delete branch.meta.row;
+        }
+        branches.reverse();
+        const theIf = find(transform(doc), 'scope:open:scope:open:node:run/node:run/if')!;
+        const labels = (theIf.children ?? []).filter(child => child.type === 'node:group')
+            .map(frame => frame.args?.[WorkflowDiagramMetadata.GROUP_LABEL]);
+        expect(labels).toEqual(['else if (busy)', 'else if (stop || count == 0)', 'if (start)']);
+    });
+
+    it('stands its members one under another, their left edges on one line, every pin on its side', async () => {
         const byId = await laidOut(ifBlock());
         const frames = [...byId.values()]
             .filter(e => e.type === 'node:group' && typeof e.args?.[WorkflowDiagramMetadata.GROUP_ROW] === 'number')
@@ -369,6 +394,17 @@ describe('a group whose members are open frames, a row each', () => {
                 const name = `${frame.args[WorkflowDiagramMetadata.GROUP_LABEL]}: ${pin.args[WorkflowDiagramMetadata.PORT_NAME]}`;
                 expect(left, name).toBe(pin.args[WorkflowDiagramMetadata.PORT_DIRECTION] === 'input');
             }
+        }
+    });
+
+    it('keeps its members in the order given, in one layer, those that read nothing too', async () => {
+        const byId = await laidOut(ifBlock());
+        const first = [...byId.values()].find(e => e.type === 'node:group' && e.args?.[WorkflowDiagramMetadata.GROUP_LABEL] === 'if (start)')!;
+        const members = (first.children ?? []).filter((c: any) => c.size && typeof c.sourceId !== 'string' && c.type !== 'port:group-boundary');
+        expect(members.map((m: any) => m.id.split('/').pop())).toEqual(['a0', 'a1', 'a2', 'a3']);
+        for (let k = 1; k < members.length; k++) {
+            expect(members[k - 1].position.y + members[k - 1].size.height, `a${k}`).toBeLessThanOrEqual(members[k].position.y);
+            expect(Math.abs(members[k].position.x - members[0].position.x), `a${k}`).toBeLessThanOrEqual(1);
         }
     });
 });
