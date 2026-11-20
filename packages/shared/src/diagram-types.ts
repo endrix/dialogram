@@ -211,6 +211,12 @@ export namespace WorkflowDiagramMetadata {
      * opening the panel: a modality, a status, a count.
      */
     export const BADGES = 'wf:badges';
+    /**
+     * On a node's name label: its name in lines, when it is long enough to
+     * break (header-lines.ts). The server sized the node by them; the client
+     * draws them, and the header as tall as they need.
+     */
+    export const HEADER_LINES = 'wf:headerLines';
     /** What a double-click on the node opens, `{ uri, line? }`, as the
      *  producer said on `meta.open` (`{ file, line? }`): a file the node stands
      *  for, such as the code a specification clause names. It wins over a

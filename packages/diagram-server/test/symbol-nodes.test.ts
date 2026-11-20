@@ -4,7 +4,7 @@
  * mux's select below its data), a register's pins named by what they are.
  */
 import { describe, expect, it } from 'vitest';
-import { estimatePinLabelBox, estimatePinLabelSize, estimatePortLabelSize, estimateTextSize, portLabelParts, portLabelX, portLabelY, SymbolGeometry, WorkflowDiagramConstants, WorkflowDiagramCss, WorkflowDiagramMetadata } from '@dialogram/shared';
+import { estimatePinLabelBox, estimatePinLabelSize, estimatePortLabelSize, estimateTextSize, headerTextWidth, portLabelParts, portLabelX, portLabelY, SymbolGeometry, WorkflowDiagramConstants, WorkflowDiagramCss, WorkflowDiagramMetadata } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument, type PyGraphNode } from '../src/model/graph-gmodel-source';
 
 const port = (node: string, name: string, direction: 'in' | 'out', pins?: string[]) =>
@@ -400,10 +400,14 @@ describe('port names before the client measures them', () => {
         expect(estimateTextSize('時間', 12).width).toBe(estimateTextSize('ab', 12).width);
     });
 
-    it('size a node by its name as they always did, whatever characters it has', () => {
+    it('leave a node sized by its name as its header draws it, a wide character wide', () => {
+        // The name is sized by header-lines.ts, character by character as
+        // drawn, not by the port labels' columns: a wide character takes
+        // about an em, twice a Latin letter.
         const width = (name: string) => transform([{ id: 'n:x', kind: 'logic', label: name, scope: 'root', ports: [] }])
             .children.find((c: any) => c.id === name).size.width;
-        expect(width('時間'.repeat(15))).toBe(width('ab'.repeat(15)));
+        expect(width('時間'.repeat(15))).toBeGreaterThan(width('ab'.repeat(15)));
+        expect(width('ab'.repeat(15))).toBe(Math.max(140, headerTextWidth('ab'.repeat(15)) + WorkflowDiagramConstants.HEADER_LABEL_EXTRA_WIDTH_PX));
     });
 
     it('are estimated as the server sized them when they are a symbol pin, with their slot', () => {

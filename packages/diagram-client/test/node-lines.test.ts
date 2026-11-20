@@ -89,7 +89,8 @@ describe('the lines of a node', () => {
 
     it('are drawn by the node view, the family’s mark centred in the body above them', () => {
         expect(VIEWS).toContain('const openHeight = bodyHeight - nodeLinesHeight(lines);');
-        expect(VIEWS).toContain('renderNodeCenterIcon(family, width, openHeight)');
+        // Under the header, as tall as the name's lines (header-name-lines.ts).
+        expect(VIEWS).toContain('renderNodeCenterIcon(family, width, openHeight, headerH)');
         expect(VIEWS).toContain('...renderNodeLines(lines, width, bodyHeight)');
     });
 

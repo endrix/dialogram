@@ -888,9 +888,17 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
     fill-opacity: 0.24;
 }
 
+/* 12px, as the server sizes it (HEADER_LABEL_FONT_SIZE_PX, header-lines.ts).
+   `.sprotty text.sprotty-label` set every label's size over the 11px this
+   rule said, so the name was drawn wider than sized; the size alone, so a
+   product's colour for a header's label still applies. */
+.sprotty text.sprotty-label.header-label {
+   font-size: 12px;
+}
+
 .header-label {
    font-weight: bold;
-   font-size: 11px;
+   font-size: 12px;
    letter-spacing: 0.5px;
    fill: var(--vscode-editor-foreground, #ffffff);
    pointer-events: none;

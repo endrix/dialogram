@@ -3,7 +3,8 @@
 
 export const WorkflowDiagramConstants = {
     // Text sizes (px)
-    HEADER_LABEL_FONT_SIZE_PX: 11,
+    // A node's name in its header: bold, at the size `.header-label` draws it.
+    HEADER_LABEL_FONT_SIZE_PX: 12,
     PORT_LABEL_FONT_SIZE_PX: 12,
 
     // Port label placement/geometry: the gap between a port's dot and its name.
@@ -15,6 +16,13 @@ export const WorkflowDiagramConstants = {
     // Header height (px) – must match the rendered header in views.ts / HeaderCompartmentView.
     // Used by the server to align port Y positions below the header.
     HEADER_HEIGHT_PX: 24,
+
+    // A node's name breaks between words past this width, onto at most
+    // HEADER_MAX_LINES lines, each adding HEADER_LINE_HEIGHT_PX to the header
+    // (header-lines.ts); the client spaces the lines the same.
+    HEADER_WRAP_WIDTH_PX: 200,
+    HEADER_MAX_LINES: 3,
+    HEADER_LINE_HEIGHT_PX: 14,
 
     // Vertical padding between the bottom of the header and the top edge of the first port.
     // Using the same value for bottom padding keeps nodes visually symmetric.

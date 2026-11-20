@@ -970,6 +970,22 @@ platform that hands it one.
 
 ### Changed
 
+- **A long name breaks onto lines in its header.** Past 200 px a node's name
+  breaks between words onto up to three balanced lines, and the header grows
+  taller instead of the node wider (`header-lines.ts`, `wf:headerLines` on the
+  name label; the ports and the family's mark move down with it). A sentence
+  for a title, as an NDF clause has, made a node three times as wide as its
+  neighbours: picorv32's trap document is 30 % narrower, its pipeline 31 %. A
+  name that needs more lines widens them rather than being cut; a name with
+  no spaces (an identifier, a module) stays one line.
+- **A header's name is sized as it is drawn.** The name was drawn at 12 px
+  (`.sprotty text.sprotty-label` outranked the 11 px of `.header-label`) and
+  sized at 7 px a character: a capital is nearer 9, a lowercase letter 6.5, so
+  `ENABLE_REGS_DUALPORT` ran under its badges and a sentence was sized too
+  wide. It is sized character by character from widths measured in Chrome
+  (the widest of the fonts a webview falls back to), at the 12 px it is drawn
+  at, which both rules now say. Nodes with a long lowercase name get a little
+  narrower, those with a capitalised one a little wider.
 - **The layouts are in a Layout submenu.** The canvas's background menu
   had five layouts in a row; it now has one "Layout" item opening Default
   Layout (what was Layout Diagram: the product's `defaultLayout`, else the

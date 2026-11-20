@@ -1,6 +1,6 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
 import { parseBadgesMeta, parseFactsMeta, parseLinesMeta, parseViewsMeta, type UnitBadge } from '../server/graph-load-request-options';
-import { BoundaryPortGeometry, estimatePinLabelSize, estimateTextSize, isBoundaryNodeType, portLabelSlot, SymbolGeometry, textColumns, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
+import { BoundaryPortGeometry, estimatePinLabelSize, estimateTextSize, headerHeight, headerLines, headerTextWidth, isBoundaryNodeType, portLabelSlot, SymbolGeometry, textColumns, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import { normalizeViewOptionGroups, VIEW_OPTIONS_ARG } from '@dialogram/shared';
 import { nodeFamilyName, resolveNodeFamily } from '@dialogram/shared';
 import * as path from 'node:path';
@@ -512,8 +512,16 @@ export class GraphGModelSource {
             const portW = WorkflowDiagramConstants.PORT_WIDTH_PX;
             const portH = WorkflowDiagramConstants.PORT_HEIGHT_PX;
             const portRowH = portH + WorkflowDiagramConstants.PORT_ROW_VERTICAL_GAP_PX;
-            const yStart = WorkflowDiagramConstants.HEADER_HEIGHT_PX + WorkflowDiagramConstants.PORT_AREA_PADDING_PX;
-            const minHeight = node.kind === 'if' || node.kind === 'loop' ? 160 : 60;
+            // A long name breaks onto lines in its header (header-lines.ts),
+            // which grows taller rather than the node wider: a node with a
+            // header of its own, not a symbol, a state or a frame.
+            const nameLines = !symbolKind && node.kind !== 'state' && node.kind !== 'if' && node.kind !== 'loop'
+                ? headerLines(node.label)
+                : [node.label];
+            const headerH = headerHeight(nameLines.length);
+            const yStart = headerH + WorkflowDiagramConstants.PORT_AREA_PADDING_PX;
+            // The body keeps its height under a taller header, its family's mark with it.
+            const minHeight = (node.kind === 'if' || node.kind === 'loop' ? 160 : 60) + headerH - WorkflowDiagramConstants.HEADER_HEIGHT_PX;
             const defaultWidth = node.kind === 'if' || node.kind === 'loop' ? 260 : 140;
 
             const maxPorts = Math.max(inputs.length, outputs.length);
@@ -556,7 +564,7 @@ export class GraphGModelSource {
             const unitBadges = parseBadgesMeta(node.meta?.['badges']) ?? [];
             // An openable node's header starts with its toggle (node-open-toggle.ts),
             // on both sides of the centred name.
-            const headerLabelW = estimateTextSize(node.label, WorkflowDiagramConstants.HEADER_LABEL_FONT_SIZE_PX).width
+            const headerLabelW = Math.max(...nameLines.map(headerTextWidth))
                 + WorkflowDiagramConstants.HEADER_LABEL_EXTRA_WIDTH_PX
                 + this.badgesWidth(unitBadges)
                 + (openable ? 2 * OPEN_TOGGLE_ROOM_PX : 0);
@@ -607,7 +615,7 @@ export class GraphGModelSource {
                     width: Math.max(defaultWidth, labelRequiredWidth, headerLabelW, linesWidth),
                     // The lines are under what the node is without them, so
                     // its ports and its family's mark keep their room.
-                    height: (portless ? WorkflowDiagramConstants.HEADER_HEIGHT_PX : Math.max(minHeight, requiredHeight))
+                    height: (portless ? headerH : Math.max(minHeight, requiredHeight))
                         + linesHeight + footerReserve
                 };
             // A state of an automaton is its name in a pill: no header, no
@@ -960,7 +968,7 @@ export class GraphGModelSource {
                     ...(symbolCaption !== undefined ? { [WorkflowDiagramMetadata.SYMBOL_CAPTION]: symbolCaption } : {})
                 };
             } else if (!isState && !listRow) {
-                gnode.children!.push(this.createHeaderCompartment(headerLabelId, node.label, subtitle, headerClasses, unitBadges));
+                gnode.children!.push(this.createHeaderCompartment(headerLabelId, node.label, subtitle, headerClasses, unitBadges, nameLines));
             }
             if (unitBadges.length > 0) {
                 gnode.args = {
@@ -1849,13 +1857,16 @@ export class GraphGModelSource {
         text: string,
         subtitle?: string,
         cssClasses?: string[],
-        badges: readonly UnitBadge[] = []
+        badges: readonly UnitBadge[] = [],
+        lines: readonly string[] = [text]
     ): GModelElement {
         const children: GModelElement[] = [
             {
                 id: id,
                 type: WorkflowDiagramTypes.LABEL_NAME,
-                text
+                text,
+                // The name in the lines the node was sized by, when it breaks.
+                ...(lines.length > 1 ? { args: { [WorkflowDiagramMetadata.HEADER_LINES]: [...lines] } } : {})
             } as any
         ];
         if (subtitle && subtitle.trim()) {
