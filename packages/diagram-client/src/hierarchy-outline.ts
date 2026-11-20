@@ -35,7 +35,7 @@
  *
  * The panel is one of a kind of panel (`OutlinePanelConfig`): the node list
  * (`node-list-outline.ts`) is another, fed by another argument, with its own
- * button at the top of the floating stack.
+ * button directly under the chat's, above the hierarchy's.
  */
 import { inject, injectable, multiInject, optional } from 'inversify';
 import { raiseFloatingPanel, stackAsFloatingPanel } from './floating-panels';
@@ -85,8 +85,10 @@ import {
 } from './outline-rows';
 import { OutlinePager } from './outline-pager';
 
-/** The chat's button, which the hierarchy's sits directly under. */
-const CHAT_TOGGLE_ID = 'workflow-chat-toggle-btn';
+/** The chat's button, at the top of the floating stack. */
+export const CHAT_TOGGLE_ID = 'workflow-chat-toggle-btn';
+/** The node list's button, directly under the chat's; the hierarchy's sits under it when it is there. */
+export const NODE_LIST_TOGGLE_ID = 'workflow-node-list-outline-toggle';
 /** The class of a row's family colour, an existing class of the stylesheet. */
 const FAMILY_COLOR_CLASS = 'workflow-hierarchy-outline-chip';
 /** How long a click waits to find out it was the first half of a double click. */
@@ -110,12 +112,8 @@ export interface OutlinePanelConfig {
     codicon: string;
     /** The key that opens and closes it, if any. */
     shortcut?: string;
-    /**
-     * Where its button sits in the floating stack: directly under the first
-     * of these buttons there, or `'top'`, above every other, so that its
-     * showing and hiding moves no other button.
-     */
-    under: string[] | 'top';
+    /** Where its button sits in the floating stack: directly under the first of these buttons there. */
+    under: string[];
     /** A class of its own beside the outline's, for its own styles. */
     className?: string;
     /**
@@ -132,7 +130,9 @@ const HIERARCHY_PANEL: OutlinePanelConfig = {
     arg: 'wf:hierarchy',
     codicon: 'type-hierarchy',
     shortcut: 'o',
-    under: [CHAT_TOGGLE_ID],
+    // Under the node list's when there is one, so the list's button sits
+    // above it and showing the list moves only the chat's.
+    under: [NODE_LIST_TOGGLE_ID, CHAT_TOGGLE_ID],
     hostRows: true
 };
 
@@ -1118,18 +1118,19 @@ export function panelPlacement(
 
 /**
  * Put an outline's button in the floating button stack, directly under the
- * first of the buttons `under` names that is in the stack (the hierarchy's
- * under the chat button), or at its top (`'top'`, the node list's: a button
- * put under another pushes that one and every one above it up a place, and
- * a click where the hierarchy's had always been opened the list). The stack
- * is a reversed column -- what comes first in it sits lowest -- so "under"
- * is just before it and the top is its end. Without a stack yet, the button
+ * first of the buttons `under` names that is in the stack (the node list's
+ * under the chat button, the hierarchy's under the node list's), or at its
+ * top if none is there yet: a button that joins later, the chat's, is
+ * appended above it. The stack is a reversed column -- what comes first in
+ * it sits lowest -- so "under" is just before it. A button put under another
+ * pushes that one and every one above it up a place, so a button that comes
+ * and goes sits above the ones that stay. Without a stack yet, the button
  * floats on its own until one exists.
  */
 export function placeInButtonStack(
     toggle: HTMLElement,
     doc: Pick<Document, 'querySelector' | 'getElementById'> = document,
-    under: readonly string[] | 'top' = [CHAT_TOGGLE_ID]
+    under: readonly string[] = [CHAT_TOGGLE_ID]
 ): void {
     const stack = doc.querySelector('.workflow-fab-stack');
     if (!stack) {
@@ -1137,10 +1138,6 @@ export function placeInButtonStack(
         return;
     }
     toggle.classList.remove('floating');
-    if (under === 'top') {
-        keepOnTop(toggle, stack);
-        return;
-    }
     const above = under
         .map(id => doc.getElementById(id))
         .find(button => button !== null && button !== toggle && button.parentElement === stack);
@@ -1151,41 +1148,6 @@ export function placeInButtonStack(
     } else if (toggle.parentElement !== stack) {
         stack.appendChild(toggle);
     }
-}
-
-/** The button each stack keeps on top: one per stack, the last placed there. */
-const topOfStack = new WeakMap<Element, HTMLElement>();
-
-/**
- * Put `toggle` at the top of `stack` and keep it there: a button that joins
- * the stack later (the chat's arrives when its panel is made) is appended
- * after it, and would sit above it and move as it shows and hides. One
- * button is kept on top of a stack, the last placed there; two would each
- * put itself last for ever.
- */
-function keepOnTop(toggle: HTMLElement, stack: Element): void {
-    const previous = topOfStack.get(stack);
-    topOfStack.set(stack, toggle);
-    if (stack.lastElementChild !== toggle) {
-        stack.appendChild(toggle);
-    }
-    if (previous === toggle || typeof MutationObserver === 'undefined') {
-        return;
-    }
-    const observer = new MutationObserver(() => {
-        if (topOfStack.get(stack) !== toggle || toggle.parentElement !== stack) {
-            // Another button took the top, or this one left: no longer its to keep.
-            observer.disconnect();
-            if (topOfStack.get(stack) === toggle) {
-                topOfStack.delete(stack);
-            }
-            return;
-        }
-        if (stack.lastElementChild !== toggle) {
-            stack.appendChild(toggle);
-        }
-    });
-    observer.observe(stack, { childList: true });
 }
 
 /** The navigation trail a model root carries (`wf:navTrail`, JSON or a list). */
