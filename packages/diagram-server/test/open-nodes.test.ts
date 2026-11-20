@@ -11,7 +11,7 @@ import { ToggleNodeOpenOperation, WorkflowDiagramMetadata, WorkflowDiagramTypes 
 import { GraphGModelSource, type PyGraphDocument, type PyGraphNode } from '../src/model/graph-gmodel-source';
 import { portBusStateOf } from '../src/model/port-bundles';
 import { stableNodeIds } from '../src/model/stable-ids';
-import { OPEN_NODE_SPACING, innerNodeId, isOpenIn, openFrameId, openNodes, withOpenNodePositions } from '../src/model/open-nodes';
+import { MAX_OPEN_DEPTH, OPEN_NODE_SPACING, innerNodeId, isOpenIn, nestedIds, openFrameId, openNodes, withOpenNodePositions } from '../src/model/open-nodes';
 import { convertToGModelRoot } from '../src/server/gmodel-convert';
 import { relativeToParent, restoreGroupGeometry } from '../src/server/group-geometry';
 import { collectEdgeRoutes, collectNodePositions, nodeLayoutKeyOf } from '../src/server/layout-snapshot';
@@ -282,7 +282,7 @@ describe('a node opened in place, in the corners', () => {
         expect(frame.args[WorkflowDiagramMetadata.OPEN_NODE_BUNDLES]).toEqual(['ab']);
     });
 
-    it('draws its inner nodes as they are: one holding a graph is not offered to open', () => {
+    it('offers an inner node holding a graph of its own to open, closed until the reader opens it', () => {
         const nested: PyGraphDocument = {
             ...doc,
             graph: {
@@ -295,7 +295,8 @@ describe('a node opened in place, in the corners', () => {
         };
         const graph: any = new GraphGModelSource().transform(nested, { portBuses: openState(true) }).graph;
         const frame = graph.children.find((c: any) => c.id === openFrameId(P));
-        expect(frame.children.some((c: any) => c.args?.[WorkflowDiagramMetadata.NODE_OPENABLE])).toBe(false);
+        expect(frame.children.filter((c: any) => c.args?.[WorkflowDiagramMetadata.NODE_OPENABLE] === true)).toHaveLength(3);
+        expect(frame.children.some((c: any) => c.type === WorkflowDiagramTypes.NODE_GROUP)).toBe(false);
     });
 
     it('wires a pin reading the node’s own output from the pin driving it', () => {
@@ -406,6 +407,171 @@ describe('a node its producer draws open', () => {
     });
 });
 
+/**
+ * An always block whose inside is its statement (`if (a) q <= b;`): the block
+ * holds the branch, the branch holds the assignment. Both draw open, their
+ * ports on their frames.
+ */
+const B = `${P}/if:0`;
+const A = `${B}/assign:0`;
+const branch: PyGraphNode = {
+    id: B, kind: 'logic', label: 'if (a)', scope: 'root',
+    ports: [port(B, 'a', 'in'), port(B, 'b', 'in'), port(B, 'q', 'out')],
+    meta: {
+        inner: {
+            open: true, pins: true,
+            nodes: [{ id: A, kind: 'logic', label: 'q <= b', scope: 'root', ports: [port(A, 'b', 'in'), port(A, 'q', 'out')] }],
+            edges: [{ from: `${B}:b`, to: `${A}:b` }, { from: `${A}:q`, to: `${B}:q` }]
+        }
+    }
+};
+const statement: PyGraphDocument = {
+    ...doc,
+    graph: {
+        ...doc.graph,
+        nodes: [boundary('a', 'wf-input'), boundary('b', 'wf-input'), boundary('q', 'wf-output'), {
+            ...proc,
+            ports: [port(P, 'q', 'out'), port(P, 'a', 'in'), port(P, 'b', 'in')],
+            meta: {
+                process: 'always',
+                inner: {
+                    open: true, pins: true, nodes: [branch],
+                    edges: [{ from: `${P}:a`, to: `${B}:a` }, { from: `${P}:b`, to: `${B}:b` }, { from: `${B}:q`, to: `${P}:q` }]
+                }
+            }
+        }],
+        edges: doc.graph.edges.filter(e => e.id !== 'e:t')
+    }
+};
+/** The branch's id in the model, under the block's frame, and the key it is saved by. */
+const BI = innerNodeId(P, B);
+/** The assignment's, under the branch's frame: by what its id adds to the branch's. */
+const AI = `${openFrameId(BI)}/assign:0`;
+
+describe('a node opened inside an open node', () => {
+    const nothing = portBusStateOf(new Map());
+
+    it('opens in turn, its frame in its parent’s, the wires running pin to pin through both', () => {
+        const opened = openNodes(statement, nothing, stableNodeIds(statement.graph.nodes));
+        const outer = opened.graph.subgraphs!.find(s => s.id === `open:${P}`)!;
+        const inner = opened.graph.subgraphs!.find(s => s.id === `open:${BI}`)!;
+        expect(outer).toMatchObject({ parent: 'root' });
+        expect(inner).toMatchObject({ kind: 'group', label: 'if (a)', parent: `open:${P}`, openNodeKey: BI });
+        expect(inner.pins!.map(pin => pin.name)).toEqual(['a', 'b', 'q']);
+        expect(opened.graph.nodes.map(n => n.id).filter(id => id === P || id === BI)).toEqual([]);
+        expect(opened.graph.nodes.find(n => n.id === AI)?.scope).toBe(`open:${BI}`);
+        expect(opened.graph.edges.map(e => `${e.from} -> ${e.to}`).sort()).toEqual([
+            `b:a:a -> ${P}:a`, `b:b:b -> ${P}:b`, `${P}:q -> b:q:q`,
+            `${P}:a -> ${B}:a`, `${P}:b -> ${B}:b`, `${B}:q -> ${P}:q`,
+            `${B}:b -> ${A}:b`, `${A}:q -> ${B}:q`
+        ].sort());
+        expect(new Set(opened.graph.edges.map(e => e.id)).size).toBe(opened.graph.edges.length);
+    });
+
+    it('is a frame in a frame in the model, which closes on its own, its parent staying open', () => {
+        const frames = (state: ReturnType<typeof portBusStateOf>) => {
+            const graph: any = new GraphGModelSource().transform(statement, { portBuses: state }).graph;
+            const outer = graph.children.find((c: any) => c.id === openFrameId(P));
+            return { graph, outer, inner: outer?.children.find((c: any) => c.id === openFrameId(BI)) };
+        };
+        const open = frames(nothing);
+        expect(open.inner.type).toBe(WorkflowDiagramTypes.NODE_GROUP);
+        expect(open.inner.args[WorkflowDiagramMetadata.OPEN_NODE_KEY]).toBe(BI);
+        const closed = frames(portBusStateOf(new Map([[BI, new Set([ToggleNodeOpenOperation.CLOSED])]])));
+        expect(closed.inner).toBeUndefined();
+        const node = closed.outer.children.find((c: any) => c.args?.[WorkflowDiagramMetadata.GRAPH_NODE_ID] === BI);
+        expect(node.args[WorkflowDiagramMetadata.NODE_OPENABLE]).toBe(true);
+        // Closing the block closes all of it: the branch is not drawn, open or not.
+        const shut = frames(portBusStateOf(new Map([[KEY, new Set([ToggleNodeOpenOperation.CLOSED])]])));
+        expect(shut.outer).toBeUndefined();
+        expect(shut.graph.children.find((c: any) => c.args?.[WorkflowDiagramMetadata.GRAPH_NODE_ID] === P)
+            .args[WorkflowDiagramMetadata.NODE_OPENABLE]).toBe(true);
+    });
+
+    it('is named by what its id adds to its parent’s, the ids growing with the depth, not its square', () => {
+        const opened = openNodes(statement, nothing, stableNodeIds(statement.graph.nodes));
+        // The branch, held in a node of the document's own graph, keeps its id as ever (layouts are saved by it).
+        expect(BI).toBe(`${openFrameId(P)}/${B}`);
+        expect(opened.graph.nodes.map(n => n.id)).toEqual(expect.arrayContaining([AI]));
+        expect(opened.graph.subgraphs!.map(s => s.id)).toEqual(expect.arrayContaining([`open:${P}`, `open:${BI}`]));
+    });
+
+    it('keeps the ids of what an inner node holds where one of them does not start with the node’s', () => {
+        expect(nestedIds('h', ['h/x', 'h/y'])).toEqual(['x', 'y']);
+        // `h/x` and `x` would be one, `h` and `h/h` too.
+        expect(nestedIds('h', ['h/x', 'x'])).toEqual(['h/x', 'x']);
+        expect(nestedIds('h', ['h', 'h/h'])).toEqual(['h', 'h/h']);
+        const cell = (id: string): any => ({ id, kind: 'logic', label: id, scope: 'root', ports: [] });
+        const holder: any = { ...cell('h'), meta: { inner: { open: true, nodes: [cell('h/x'), cell('x')], edges: [] } } };
+        const doc: PyGraphDocument = {
+            ...statement,
+            graph: { ...statement.graph, nodes: statement.graph.nodes.map(n => (n.id === P ? { ...n, meta: { ...n.meta, inner: { open: true, nodes: [holder], edges: [] } } } : n)) }
+        };
+        const ids = openNodes(doc, nothing, stableNodeIds(doc.graph.nodes)).graph.nodes.map(n => n.id);
+        expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it('ends, opened in a graph that holds itself', () => {
+        const again: any = { id: B, kind: 'logic', label: 'again', scope: 'root', ports: [], meta: { inner: { open: true, nodes: [], edges: [] } } };
+        again.meta.inner.nodes.push(again);
+        const looped: PyGraphDocument = {
+            ...statement,
+            graph: { ...statement.graph, nodes: statement.graph.nodes.map(n => (n.id === P ? { ...n, meta: { ...n.meta, inner: { open: true, nodes: [again], edges: [] } } } : n)) }
+        };
+        const opened = openNodes(looped, nothing, stableNodeIds(looped.graph.nodes));
+        expect(opened.graph.subgraphs!.filter(s => s.id.startsWith('open:'))).toHaveLength(MAX_OPEN_DEPTH);
+    });
+
+    it('opened with its parent and never laid out, is left for the layout to place, with what it holds', () => {
+        const graph: any = new GraphGModelSource().transform(statement, { portBuses: nothing }).graph;
+        const at = withOpenNodePositions(graph, new Map([[KEY, { x: 200, y: 100 }]]));
+        expect(at.get(openFrameId(P))).toEqual({ x: 200, y: 100 });
+        // Without a size, the members below it would be stacked over it: the view is laid out again.
+        expect(at.has(openFrameId(BI))).toBe(false);
+        expect(at.has(AI)).toBe(false);
+    });
+
+    it('opened with its parent and of a known size, has a place, and so has what it holds', () => {
+        const graph: any = new GraphGModelSource().transform(statement, { portBuses: nothing }).graph;
+        const find = (element: any): any => element.id === openFrameId(BI) ? element : (element.children ?? []).map(find).find(Boolean);
+        find(graph).size = { width: 220, height: 120 };
+        const at = withOpenNodePositions(graph, new Map([[KEY, { x: 200, y: 100 }]]));
+        expect(at.has(openFrameId(BI))).toBe(true);
+        // From its own frame's place, which its parent's gave it just now.
+        expect(at.get(AI)!.x).toBeGreaterThan(at.get(openFrameId(BI))!.x);
+        expect(countCoincidentNodes(at.values())).toBe(0);
+    });
+
+    it('closed with its parent, has its places dropped with the parent’s', () => {
+        const graph: any = new GraphGModelSource().transform(statement, { portBuses: portBusStateOf(new Map([[KEY, new Set([ToggleNodeOpenOperation.CLOSED])]])) }).graph;
+        const at = withOpenNodePositions(graph, new Map([
+            [openFrameId(P), { x: 200, y: 100 }], [openFrameId(BI), { x: 216, y: 140 }], [AI, { x: 232, y: 180 }]
+        ]));
+        expect(at.get(KEY)).toEqual({ x: 200, y: 100 });
+        expect([...at.keys()]).toEqual([KEY]);
+    });
+
+    it('drawn open by its producer, saved by a layout that never had it open, is left for the layout to place', () => {
+        const graph: any = new GraphGModelSource().transform(statement, { portBuses: nothing }).graph;
+        const at = withOpenNodePositions(graph, new Map([[openFrameId(P), { x: 200, y: 100 }]]), true);
+        // As a frame of the diagram's own is: the view is laid out again, not opened over its neighbours.
+        expect(at.has(openFrameId(BI))).toBe(false);
+        expect(at.has(AI)).toBe(false);
+    });
+
+    it('is closed and opened again by its toggle, the layout keeping which', async () => {
+        const d = diagram(places, statement);
+        expect(d.find(openFrameId(BI))).toBeDefined();
+        await d.command(openFrameId(BI)).execute();
+        expect(d.open().get(BI)).toEqual(new Set([ToggleNodeOpenOperation.CLOSED]));
+        expect(d.find(openFrameId(BI))).toBeUndefined();
+        expect(d.find(openFrameId(P))).toBeDefined();
+        await d.command(BI).execute();
+        expect(d.open().get(BI)?.has(ToggleNodeOpenOperation.CLOSED)).toBe(false);
+        expect(d.find(openFrameId(BI))).toBeDefined();
+    });
+});
+
 describe('an open node that keeps its ports on its frame', () => {
     const pinned = withBlock(block({ pins: true }));
     const frameOf = (): any =>
@@ -439,6 +605,9 @@ describe('an open node that keeps its ports on its frame', () => {
             .toEqual([['q', 'output', undefined], ['t', 'output', undefined], ['a', 'input', undefined], ['b', 'input', undefined], ['clk', 'input', 'clock']]);
         // As a port of the node says them, which is how the panel lists them; and a pin is no node of that name.
         expect(pins.map((pin: any) => pin.args[WorkflowDiagramMetadata.IS_INPUT_PORT])).toEqual([false, false, true, true, true]);
+        // Its role, as a closed node's port says it, for the producer's stylesheet.
+        expect(pins.map((pin: any) => pin.cssClasses.filter((c: string) => c.startsWith('port-role-'))))
+            .toEqual([[], [], [], [], ['port-role-clock']]);
         expect(pins.every((pin: any) => pin.args[WorkflowDiagramMetadata.ENTITY_NAME] === undefined)).toBe(true);
         expect(pins.every((pin: any) => pin.type === WorkflowDiagramTypes.PORT_GROUP_BOUNDARY)).toBe(true);
         // Nothing crosses the frame anywhere else: no other boundary port, no edge cut in pieces.

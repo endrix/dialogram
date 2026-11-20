@@ -17,8 +17,9 @@
  * its own and keeps its geometry, as for any group.
  *
  * The inner nodes are named under their frame's id (`innerNodeId`), so they
- * meet no other node's id or saved place, and are drawn as they are: one
- * holding a graph of its own is not opened again.
+ * meet no other node's id or saved place. One holding a graph of its own
+ * opens in turn, as any node does, its frame inside its parent's: a choice
+ * in a sequence, a case of the choice, as deep as the producer nests them. Each opens and closes on its own and is saved under its own key.
  *
  * Three things a producer may say of the graph it gives a node:
  *
@@ -34,6 +35,9 @@
  *   A pin is one port: a bundle of the node's ports (`group`) is its members
  *   here, each a pin, and a port's `side` is not read (inputs are on the
  *   left of a frame, outputs on its right).
+ * - `meta.inner.column: true` stands what the frame holds in one column, one
+ *   under another in the order the producer lists it: the steps of a
+ *   sequence, the cases of a choice, in their order.
  * - `meta.inner.title` is what the frame is titled, where the node's name
  *   alone does not say what it is once its type is no longer under it
  *   (`counters: always @(posedge clk)`). Without it, the node's name.
@@ -122,6 +126,24 @@ export function innerNodeId(nodeId: string, innerId: string): string {
     return `${openFrameId(nodeId)}/${innerId}`;
 }
 
+/**
+ * What the nodes held in an inner node are named by under its frame: their
+ * own ids, less the inner node's where every one of them starts with it
+ * (`b/x`, `b/y` held in `b`: `x`, `y`). A producer names what it nests by
+ * a path, which the frame's id has already said: kept, the ids would grow
+ * with the square of the depth. Where one of them does not start so, all
+ * keep their ids: `b/x` and `x` would be one.
+ */
+export function nestedIds(holderId: string, innerIds: readonly string[]): string[] {
+    const prefix = `${holderId}/`;
+    return innerIds.every(id => id.startsWith(prefix) && id.length > prefix.length)
+        ? innerIds.map(id => id.slice(prefix.length))
+        : [...innerIds];
+}
+
+/** The most levels of open nodes drawn one inside another: a producer's graph that holds itself ends there. */
+export const MAX_OPEN_DEPTH = 64;
+
 const push = <K, V>(map: Map<K, V[]>, key: K, value: V): void => {
     const list = map.get(key);
     if (list) {
@@ -131,8 +153,28 @@ const push = <K, V>(map: Map<K, V[]>, key: K, value: V): void => {
     }
 };
 
-/** `doc` with the nodes `state` says are open drawn as the groups of what they hold. */
+/**
+ * `doc` with the nodes `state` says are open drawn as the groups of what they
+ * hold, and, inside those, the nodes that are open in turn.
+ */
 export function openNodes(doc: PyGraphDocument, state: PortBusState | undefined, ids: StableNodeIds): PyGraphDocument {
+    // One level a pass: the nodes a pass draws in a frame are the next one's
+    // to open, until a pass opens nothing (or the depth is absurd: a graph
+    // in memory may hold itself).
+    const producerIds = new Map<string, string>();
+    for (let depth = 0; depth < MAX_OPEN_DEPTH; depth++) {
+        const next = openOnce(doc, state, ids, producerIds);
+        if (next === doc) {
+            return doc;
+        }
+        doc = next;
+    }
+    return doc;
+}
+
+/** `doc` with the nodes of its graph that are open drawn as the groups of what they hold, once. */
+function openOnce(doc: PyGraphDocument, state: PortBusState | undefined, ids: StableNodeIds,
+    producerIds: Map<string, string>): PyGraphDocument {
     const opened = doc.graph.nodes.filter(node =>
         canOpen(node, doc.graph.subgraphs) && isOpenIn(state, stableNodeId(ids, node), node));
     if (opened.length === 0) {
@@ -160,13 +202,15 @@ export function openNodes(doc: PyGraphDocument, state: PortBusState | undefined,
         const inner = innerGraphOf(node)!;
         const scopeId = openScopeId(node.id);
         const own = new Map(node.ports.map(port => [port.id, port]));
-        // Inner nodes are drawn as they are, not opened again: what they hold is not drawn.
-        const cells = inner.nodes.map(cell => {
-            const meta = cell.meta ? { ...cell.meta } : undefined;
-            if (meta) {
-                delete meta['inner'];
-            }
-            return { ...cell, id: innerNodeId(node.id, cell.id), scope: scopeId, ...(meta ? { meta } : {}) };
+        // An inner node keeps what it holds: the next pass opens it, where it is open. Held in a node
+        // that is itself inner, it is named by what its id adds to that node's (the ids of a node of the
+        // document's own graph, and of what it holds, are as they always were: layouts are saved by them).
+        const holder = producerIds.get(node.id);
+        const named = holder === undefined ? inner.nodes.map(cell => cell.id) : nestedIds(holder, inner.nodes.map(cell => cell.id));
+        const cells = inner.nodes.map((cell, k) => {
+            const id = innerNodeId(node.id, named[k]);
+            producerIds.set(id, cell.id);
+            return { ...cell, id, scope: scopeId };
         });
         const nodeOfPin = new Map<string, string>();
         for (const cell of cells) {
@@ -324,6 +368,7 @@ export function openNodes(doc: PyGraphDocument, state: PortBusState | undefined,
             ...(isContainer(node) ? { openNode: node } : {}),
             ...(title !== undefined ? { titled: true } : {}),
             ...(inside.pinned ? { pins: node.ports } : {}),
+            ...((node.meta?.['inner'] as { column?: unknown } | undefined)?.column === true ? { column: true } : {}),
             // Opened in a group laid out in rows, its frame keeps its row.
             ...(typeof node.meta?.['row'] === 'number' ? { row: node.meta['row'] } : {}),
             ...(bundles.length ? { openNodeBundles: bundles } : {})
@@ -371,6 +416,7 @@ export const OPEN_NODE_SPACING = { padding: 16, column: 40, row: 16 } as const;
 export function withOpenNodePositions(graph: unknown, positions: Map<string, Point>, asSaved = false): Map<string, Point> {
     let filled: Map<string, Point> | undefined;
     const writable = (): Map<string, Point> => (filled ??= new Map(positions));
+    const current = (): Map<string, Point> => filled ?? positions;
     const all: any[] = [];
     const walk = (element: any): void => {
         all.push(element);
@@ -389,14 +435,15 @@ export function withOpenNodePositions(graph: unknown, positions: Map<string, Poi
             if (!frameKey) {
                 continue;
             }
-            const origin = positions.get(frameKey) ?? positions.get(nodeKey);
+            // (A frame in a frame just opened has its place from its parent's, above.)
+            const origin = current().get(frameKey) ?? current().get(nodeKey);
             if (!origin) {
                 continue;
             }
             if (asSaved && !positions.has(frameKey) && args[WorkflowDiagramMetadata.NODE_STARTS_OPEN] === true) {
                 continue;
             }
-            if (!positions.has(frameKey)) {
+            if (!current().has(frameKey)) {
                 writable().set(frameKey, { ...origin });
             }
             // Open, the node itself is not drawn: its place, now the frame's,
@@ -406,11 +453,19 @@ export function withOpenNodePositions(graph: unknown, positions: Map<string, Poi
             }
             const unplaced = members.filter(member => {
                 const key = nodeLayoutKeyOf(member);
-                return key !== undefined && !positions.has(key);
+                return key !== undefined && !current().has(key);
             });
+            // A member that is a frame is left without a place where it has no size yet (it was never laid
+            // out: the columns would stack the rest over it), and where its producer draws it open and the
+            // file has no place for it, as such a frame of the diagram's own is (above). Unplaced, the view
+            // is laid out again.
+            const unsaved = new Set(members.filter(member => member.type === WorkflowDiagramTypes.NODE_GROUP && (
+                !(member.size?.width > 0 && member.size?.height > 0)
+                || (asSaved && member.args?.[WorkflowDiagramMetadata.NODE_STARTS_OPEN] === true && !positions.has(nodeLayoutKeyOf(member) ?? ''))))
+                .map(member => nodeLayoutKeyOf(member)));
             if (unplaced.length > 0) {
                 for (const [key, at] of columnsFor(members, edges, origin)) {
-                    if (!positions.has(key)) {
+                    if (!current().has(key) && !unsaved.has(key)) {
                         writable().set(key, at);
                     }
                 }
@@ -426,10 +481,11 @@ export function withOpenNodePositions(graph: unknown, positions: Map<string, Poi
             if (frameAt && !positions.has(nodeKey)) {
                 writable().set(nodeKey, { ...frameAt });
             }
-            // Closed, its frame and members (named under the frame's id) are not drawn.
+            // Closed, its frame and members (named under the frame's id) are not drawn, nor the frames in
+            // it and theirs (`scope:open:scope:open:<id>/...`, the frame's id inside theirs).
             const memberPrefix = `${frameKey}/`;
-            for (const key of positions.keys()) {
-                if (key === frameKey || key.startsWith(memberPrefix)) {
+            for (const key of [...current().keys()]) {
+                if (key === frameKey || key.startsWith(memberPrefix) || key.includes(`:${memberPrefix}`)) {
                     writable().delete(key);
                 }
             }

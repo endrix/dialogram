@@ -106,6 +106,11 @@ export type PyGraphScope = {
     titled?: boolean;
     /** The platform's: that node's own ports, drawn as pins of its frame (`meta.inner.pins`). */
     pins?: PyGraphPort[];
+    /** A `group` scope whose members stand in one column, one under another in
+     *  the order given (by `row` where they have one), their left edges on one
+     *  line (group-edges.ts): the steps of a sequence, as listed. Only `true`
+     *  counts. */
+    column?: boolean;
     children?: string[];
     nodes?: string[];
     edges?: string[];
@@ -1737,6 +1742,7 @@ export class GraphGModelSource {
                 ...(isGroupRow(scope.row) ? { [WorkflowDiagramMetadata.GROUP_ROW]: scope.row } : {}),
                 ...(scope.pin === 'top' || scope.pin === 'left' ? { [WorkflowDiagramMetadata.GROUP_PIN]: scope.pin } : {}),
                 ...(scope.list === true ? { [WorkflowDiagramMetadata.GROUP_LIST]: true } : {}),
+                ...(scope.column === true ? { [WorkflowDiagramMetadata.GROUP_COLUMN]: true } : {}),
                 ...(scope.initial === true ? { [WorkflowDiagramMetadata.GROUP_INITIAL]: true } : {}),
                 ...(scope.openNodeKey ? { [WorkflowDiagramMetadata.OPEN_NODE_KEY]: scope.openNodeKey } : {}),
                 ...(scope.openNodeBundles ? { [WorkflowDiagramMetadata.OPEN_NODE_BUNDLES]: scope.openNodeBundles } : {})

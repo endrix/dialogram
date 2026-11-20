@@ -59,15 +59,16 @@ export function applyBoundaryFlowLayerConstraints(
 ): Map<string, Record<string, unknown> | undefined> {
     const previousLayoutOptionsByNodeId = new Map<string, Record<string, unknown> | undefined>();
 
-    const visit = (element: any): void => {
+    const visit = (element: any, inColumn = false): void => {
         if (!element) {
             return;
         }
 
         // A member of a group laid out in rows is placed by its row, which a
-        // layer constraint would contradict.
+        // layer constraint would contradict; a member of a column stands in
+        // its one layer, in the order given, whether it has inputs or not.
         const inRows = (element as any).layoutOptions?.['elk.partitioning.partition'] !== undefined;
-        if (isTaskNode(element) && !inRows) {
+        if (isTaskNode(element) && !inRows && !inColumn) {
             const nodeId = String(element.id);
             if (!hasSelection || selectedMovableNodeIds.has(nodeId)) {
                 const hasInput = nodeHasPortDirection(element, 'input');
@@ -94,8 +95,12 @@ export function applyBoundaryFlowLayerConstraints(
 
         const children = element.children as any[] | undefined;
         if (Array.isArray(children)) {
+            // A column laid out as one (`arrangeGroupRows` marks it rows); one
+            // whose members have an edge between them is laid out as any group.
+            const column = element.args?.[WorkflowDiagramMetadata.GROUP_COLUMN] === true
+                && element.args?.[WorkflowDiagramMetadata.GROUP_ROWS] === true;
             for (const child of children) {
-                visit(child);
+                visit(child, column);
             }
         }
     };
