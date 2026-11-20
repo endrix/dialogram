@@ -84,9 +84,12 @@ describe('a product or a producer that keeps names on one line', () => {
     const CODE = 'data_out <= {fifo[rd_ptr][7:0], parity, stop_bits, start_bit, frame_error}';
     const linesOf = (gnode: any) => nameLabel(gnode).args?.[WorkflowDiagramMetadata.HEADER_LINES];
 
-    it('breaks a long name by default', () => {
+    it('breaks a long name by default: a product that says nothing, a node whose meta says nothing of it', () => {
         const [wrapped] = transform([node(CODE)]);
         expect(linesOf(wrapped).length).toBeGreaterThan(1);
+        // Every product hands over its options; one without `headerWrap` wraps.
+        const [silent] = transform([node(CODE, { meta: { role: 'neighbour' } })], { settingsNamespace: 'test', operationPrefix: 'test' });
+        expect(linesOf(silent).length).toBeGreaterThan(1);
     });
 
     it('keeps every name on one line, sized by it, when the product turns the wrap off', () => {
