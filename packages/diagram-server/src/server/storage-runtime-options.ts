@@ -81,6 +81,15 @@ export interface StorageRuntimeOptions {
      * the view had.
      */
     toggleLayout?: ToggleLayout;
+    /**
+     * Whether a long node name breaks onto lines in its header
+     * (`header-lines.ts`). Default `true`. `false` keeps every name on one
+     * line, for a product whose names are code that must read as written
+     * (`data_out <= {fifo[rd_ptr][7:0], parity}`). A node's own
+     * `meta.headerWrap` (a boolean) wins over it either way, so a producer
+     * can keep the wrap off for its code nodes and on for the rest.
+     */
+    headerWrap?: boolean;
 }
 
 /** What a bus or node toggle does to the rest of the view. */

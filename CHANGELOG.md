@@ -78,6 +78,12 @@ platform that hands it one.
 
 ### Added
 
+- **A product, or a producer per node, keeps names on one line.** The header
+  wrap is on by default; `storageOptions.headerWrap: false` (the sidecar
+  toolkit's `headerWrap`) turns it off for a product whose names are code
+  that must read as written, and a node's `meta.headerWrap` (a boolean) wins
+  over the product either way, so a producer can keep its code nodes on one
+  line and let its prose break.
 - **A node says what it is to the picture.** A node's `meta.role` becomes a
   `node-role-<role>` class, the way an edge's role does: a hook the platform
   does not style and a product's stylesheet names. ndf-ide marks the clauses

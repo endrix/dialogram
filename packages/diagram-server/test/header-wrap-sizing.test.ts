@@ -6,12 +6,13 @@
 import { describe, expect, it } from 'vitest';
 import { headerTextWidth, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument, type PyGraphNode } from '../src/model/graph-gmodel-source';
+import type { StorageRuntimeOptions } from '../src/server/storage-runtime-options';
 
 const LONG = 'Q-003: an undecoded instruction hangs when `CATCH_ILLINSN` is off and a co-processor is present';
 
-function transform(nodes: PyGraphNode[]): any[] {
+function transform(nodes: PyGraphNode[], storage?: StorageRuntimeOptions): any[] {
     const doc: PyGraphDocument = { version: '1', graph: { id: 'root', nodes, edges: [] } };
-    return new GraphGModelSource().transform(doc).graph.children ?? [];
+    return new GraphGModelSource(storage).transform(doc).graph.children ?? [];
 }
 
 function node(label: string, extra: Partial<PyGraphNode> = {}): PyGraphNode {
@@ -75,5 +76,45 @@ describe('a long name in its header', () => {
         const [identifier] = transform([node('picorv32_axi_adapter_with_a_very_long_name')]);
         expect(nameLabel(identifier).args?.[WorkflowDiagramMetadata.HEADER_LINES]).toBeUndefined();
         expect(identifier.size.height).toBe(short.size.height);
+    });
+});
+
+describe('a product or a producer that keeps names on one line', () => {
+    const product = (headerWrap: boolean): StorageRuntimeOptions => ({ settingsNamespace: 'test', operationPrefix: 'test', headerWrap });
+    const CODE = 'data_out <= {fifo[rd_ptr][7:0], parity, stop_bits, start_bit, frame_error}';
+    const linesOf = (gnode: any) => nameLabel(gnode).args?.[WorkflowDiagramMetadata.HEADER_LINES];
+
+    it('breaks a long name by default: a product that says nothing, a node whose meta says nothing of it', () => {
+        const [wrapped] = transform([node(CODE)]);
+        expect(linesOf(wrapped).length).toBeGreaterThan(1);
+        // Every product hands over its options; one without `headerWrap` wraps.
+        const [silent] = transform([node(CODE, { meta: { role: 'neighbour' } })], { settingsNamespace: 'test', operationPrefix: 'test' });
+        expect(linesOf(silent).length).toBeGreaterThan(1);
+    });
+
+    it('keeps every name on one line, sized by it, when the product turns the wrap off', () => {
+        const [code] = transform([node(CODE)], product(false));
+        expect(linesOf(code)).toBeUndefined();
+        expect(code.size.width).toBeGreaterThanOrEqual(headerTextWidth(CODE));
+        const [short] = transform([node('A trap is a halt')], product(false));
+        expect(code.size.height).toBe(short.size.height);
+    });
+
+    it('keeps a node on one line that its producer marks, and wraps the others', () => {
+        const [code, prose] = transform([
+            node(CODE, { meta: { headerWrap: false } }),
+            node(LONG, { id: 'prose' })
+        ]);
+        expect(linesOf(code)).toBeUndefined();
+        expect(linesOf(prose)).toHaveLength(3);
+    });
+
+    it('wraps a node its producer marks, in a product that turned the wrap off', () => {
+        const [prose, code] = transform([
+            node(LONG, { meta: { headerWrap: true } }),
+            node(CODE, { id: 'code' })
+        ], product(false));
+        expect(linesOf(prose)).toHaveLength(3);
+        expect(linesOf(code)).toBeUndefined();
     });
 });
