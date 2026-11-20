@@ -127,13 +127,18 @@ export function innerNodeId(nodeId: string, innerId: string): string {
 }
 
 /**
- * What a node held in an inner node is named by under its frame: its own id,
- * less the inner node's where it starts with it (`b/x` held in `b`: `x`).
- * A producer names what it nests by a path, which the frame's id has already
- * said: kept, the ids would grow with the square of the depth.
+ * What the nodes held in an inner node are named by under its frame: their
+ * own ids, less the inner node's where every one of them starts with it
+ * (`b/x`, `b/y` held in `b`: `x`, `y`). A producer names what it nests by
+ * a path, which the frame's id has already said: kept, the ids would grow
+ * with the square of the depth. Where one of them does not start so, all
+ * keep their ids: `b/x` and `x` would be one.
  */
-export function nestedId(holderId: string, innerId: string): string {
-    return innerId.startsWith(`${holderId}/`) && innerId.length > holderId.length + 1 ? innerId.slice(holderId.length + 1) : innerId;
+export function nestedIds(holderId: string, innerIds: readonly string[]): string[] {
+    const prefix = `${holderId}/`;
+    return innerIds.every(id => id.startsWith(prefix) && id.length > prefix.length)
+        ? innerIds.map(id => id.slice(prefix.length))
+        : [...innerIds];
 }
 
 /** The most levels of open nodes drawn one inside another: a producer's graph that holds itself ends there. */
@@ -201,8 +206,9 @@ function openOnce(doc: PyGraphDocument, state: PortBusState | undefined, ids: St
         // that is itself inner, it is named by what its id adds to that node's (the ids of a node of the
         // document's own graph, and of what it holds, are as they always were: layouts are saved by them).
         const holder = producerIds.get(node.id);
-        const cells = inner.nodes.map(cell => {
-            const id = innerNodeId(node.id, holder === undefined ? cell.id : nestedId(holder, cell.id));
+        const named = holder === undefined ? inner.nodes.map(cell => cell.id) : nestedIds(holder, inner.nodes.map(cell => cell.id));
+        const cells = inner.nodes.map((cell, k) => {
+            const id = innerNodeId(node.id, named[k]);
             producerIds.set(id, cell.id);
             return { ...cell, id, scope: scopeId };
         });
@@ -449,10 +455,13 @@ export function withOpenNodePositions(graph: unknown, positions: Map<string, Poi
                 const key = nodeLayoutKeyOf(member);
                 return key !== undefined && !current().has(key);
             });
-            // A member that is a frame its producer draws open, which the file has no place for, is left
-            // without one, as such a frame of the diagram's own is (above).
-            const unsaved = new Set(members.filter(member => asSaved && member.type === WorkflowDiagramTypes.NODE_GROUP
-                && member.args?.[WorkflowDiagramMetadata.NODE_STARTS_OPEN] === true && !positions.has(nodeLayoutKeyOf(member) ?? ''))
+            // A member that is a frame is left without a place where it has no size yet (it was never laid
+            // out: the columns would stack the rest over it), and where its producer draws it open and the
+            // file has no place for it, as such a frame of the diagram's own is (above). Unplaced, the view
+            // is laid out again.
+            const unsaved = new Set(members.filter(member => member.type === WorkflowDiagramTypes.NODE_GROUP && (
+                !(member.size?.width > 0 && member.size?.height > 0)
+                || (asSaved && member.args?.[WorkflowDiagramMetadata.NODE_STARTS_OPEN] === true && !positions.has(nodeLayoutKeyOf(member) ?? ''))))
                 .map(member => nodeLayoutKeyOf(member)));
             if (unplaced.length > 0) {
                 for (const [key, at] of columnsFor(members, edges, origin)) {

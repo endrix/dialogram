@@ -11,7 +11,7 @@ import { ToggleNodeOpenOperation, WorkflowDiagramMetadata, WorkflowDiagramTypes 
 import { GraphGModelSource, type PyGraphDocument, type PyGraphNode } from '../src/model/graph-gmodel-source';
 import { portBusStateOf } from '../src/model/port-bundles';
 import { stableNodeIds } from '../src/model/stable-ids';
-import { MAX_OPEN_DEPTH, OPEN_NODE_SPACING, innerNodeId, isOpenIn, openFrameId, openNodes, withOpenNodePositions } from '../src/model/open-nodes';
+import { MAX_OPEN_DEPTH, OPEN_NODE_SPACING, innerNodeId, isOpenIn, nestedIds, openFrameId, openNodes, withOpenNodePositions } from '../src/model/open-nodes';
 import { convertToGModelRoot } from '../src/server/gmodel-convert';
 import { relativeToParent, restoreGroupGeometry } from '../src/server/group-geometry';
 import { collectEdgeRoutes, collectNodePositions, nodeLayoutKeyOf } from '../src/server/layout-snapshot';
@@ -496,6 +496,21 @@ describe('a node opened inside an open node', () => {
         expect(opened.graph.subgraphs!.map(s => s.id)).toEqual(expect.arrayContaining([`open:${P}`, `open:${BI}`]));
     });
 
+    it('keeps the ids of what an inner node holds where one of them does not start with the node’s', () => {
+        expect(nestedIds('h', ['h/x', 'h/y'])).toEqual(['x', 'y']);
+        // `h/x` and `x` would be one, `h` and `h/h` too.
+        expect(nestedIds('h', ['h/x', 'x'])).toEqual(['h/x', 'x']);
+        expect(nestedIds('h', ['h', 'h/h'])).toEqual(['h', 'h/h']);
+        const cell = (id: string): any => ({ id, kind: 'logic', label: id, scope: 'root', ports: [] });
+        const holder: any = { ...cell('h'), meta: { inner: { open: true, nodes: [cell('h/x'), cell('x')], edges: [] } } };
+        const doc: PyGraphDocument = {
+            ...statement,
+            graph: { ...statement.graph, nodes: statement.graph.nodes.map(n => (n.id === P ? { ...n, meta: { ...n.meta, inner: { open: true, nodes: [holder], edges: [] } } } : n)) }
+        };
+        const ids = openNodes(doc, nothing, stableNodeIds(doc.graph.nodes)).graph.nodes.map(n => n.id);
+        expect(new Set(ids).size).toBe(ids.length);
+    });
+
     it('ends, opened in a graph that holds itself', () => {
         const again: any = { id: B, kind: 'logic', label: 'again', scope: 'root', ports: [], meta: { inner: { open: true, nodes: [], edges: [] } } };
         again.meta.inner.nodes.push(again);
@@ -507,10 +522,20 @@ describe('a node opened inside an open node', () => {
         expect(opened.graph.subgraphs!.filter(s => s.id.startsWith('open:'))).toHaveLength(MAX_OPEN_DEPTH);
     });
 
-    it('opened with its parent, has a place, and so has what it holds', () => {
+    it('opened with its parent and never laid out, is left for the layout to place, with what it holds', () => {
         const graph: any = new GraphGModelSource().transform(statement, { portBuses: nothing }).graph;
         const at = withOpenNodePositions(graph, new Map([[KEY, { x: 200, y: 100 }]]));
         expect(at.get(openFrameId(P))).toEqual({ x: 200, y: 100 });
+        // Without a size, the members below it would be stacked over it: the view is laid out again.
+        expect(at.has(openFrameId(BI))).toBe(false);
+        expect(at.has(AI)).toBe(false);
+    });
+
+    it('opened with its parent and of a known size, has a place, and so has what it holds', () => {
+        const graph: any = new GraphGModelSource().transform(statement, { portBuses: nothing }).graph;
+        const find = (element: any): any => element.id === openFrameId(BI) ? element : (element.children ?? []).map(find).find(Boolean);
+        find(graph).size = { width: 220, height: 120 };
+        const at = withOpenNodePositions(graph, new Map([[KEY, { x: 200, y: 100 }]]));
         expect(at.has(openFrameId(BI))).toBe(true);
         // From its own frame's place, which its parent's gave it just now.
         expect(at.get(AI)!.x).toBeGreaterThan(at.get(openFrameId(BI))!.x);
