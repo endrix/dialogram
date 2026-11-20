@@ -444,6 +444,11 @@ export class PropertyPanelChrome {
 
             const onMouseMove = (ev: MouseEvent) => {
                 if (!this.dragState) return;
+                if ((ev.buttons & 1) === 0) {
+                    // Released outside the webview, which never heard it: the panel stays where it was left.
+                    onMouseUp();
+                    return;
+                }
                 const dx = ev.clientX - this.dragState.startX;
                 const dy = ev.clientY - this.dragState.startY;
                 panel.style.left = `${this.dragState.panelStartX + dx}px`;
@@ -455,10 +460,12 @@ export class PropertyPanelChrome {
                 header.style.cursor = '';
                 document.removeEventListener('mousemove', onMouseMove);
                 document.removeEventListener('mouseup', onMouseUp);
+                window.removeEventListener('blur', onMouseUp);
             };
 
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
+            window.addEventListener('blur', onMouseUp);
         });
     }
 }
