@@ -19,7 +19,7 @@ import { RequestModelAction, SaveModelAction } from '@eclipse-glsp/protocol';
 import { inject, injectable, optional } from 'inversify';
 import { URI } from 'vscode-uri';
 import { instanceLayoutFor, type LayoutTarget, viewKey } from './layout-target';
-import { errorInView, normalizeLoadProgress, parseNodeActions, type LoadProgress } from '@dialogram/shared';
+import { errorInView, normalizeLoadProgress, parseNodeActions, trailInstancePath, type LoadProgress } from '@dialogram/shared';
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import {
@@ -39,6 +39,7 @@ import {
 import { GraphGModelSource } from '../model/graph-gmodel-source';
 import { buildNodeList, type OverlayTokenOf } from './node-list';
 import { edgeTokensOf } from './edge-tokens';
+import { edgesOfInstance, fromRunRoot, instancePathOf, recordsOfInstance, runRootPrefix, saysInstances } from './overlay-scope';
 import { FileMemo } from '../services/file-memo';
 import { portBusStateOf } from '../model/port-bundles';
 import { allowsStateEdits, placeHeldStates, withUnwrittenStates } from '../model/unwritten-states';
@@ -1444,48 +1445,87 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 return analysis?.buildOverlayAstPathCandidates(args) ?? [];
             };
 
-            const overlayBySignature = new Map<string, unknown>();
-            for (const entry of Object.values(overlay.edges)) {
-                for (const signature of signatureCandidatesForOverlay(entry as any)) {
-                    if (Object.prototype.hasOwnProperty.call(entry, 'lastToken')) {
-                        overlayBySignature.set(signature, (entry as any).lastToken);
-                    }
+            // The rule for the edges of one workflow instance, from that instance's records alone
+            // (overlay-scope.ts): the view's instance for the canvas, each row's for the node list.
+            // Whether the run records its instances apart is decided once, over both files.
+            const scoped = saysInstances(Object.values(overlay.edges)) || (queueTrace !== undefined && saysInstances(queueTrace.queues));
+            const tokensByInstance = new Map<string, ReturnType<typeof edgeTokensOf>>();
+            const tokensIn = (instancePath: readonly string[]): ReturnType<typeof edgeTokensOf> => {
+                const known = tokensByInstance.get(JSON.stringify(instancePath));
+                if (known) {
+                    return known;
                 }
-            }
-
-            const queueByAstPath = new Map<string, number>();
-            const queueBySignature = new Map<string, number>();
-            const queueTokenByAstPath = new Map<string, unknown>();
-            const queueTokenBySignature = new Map<string, unknown>();
-            if (queueTrace) {
-                for (const q of queueTrace.queues) {
-                    if (typeof q.astPath === 'string' && q.astPath.trim() !== '') {
-                        queueByAstPath.set(q.astPath, q.size);
-                        if (Object.prototype.hasOwnProperty.call(q, 'lastToken')) {
-                            queueTokenByAstPath.set(q.astPath, (q as any).lastToken);
-                        }
-                        continue;
-                    }
-                    for (const signature of signatureCandidatesForOverlay(q as any)) {
-                        queueBySignature.set(signature, q.size);
-                        if (Object.prototype.hasOwnProperty.call(q, 'lastToken')) {
-                            queueTokenBySignature.set(signature, (q as any).lastToken);
+                const overlayEdges = edgesOfInstance(overlay.edges, instancePath, scoped);
+                const overlayBySignature = new Map<string, unknown>();
+                for (const entry of Object.values(overlayEdges)) {
+                    for (const signature of signatureCandidatesForOverlay(entry as any)) {
+                        if (Object.prototype.hasOwnProperty.call(entry, 'lastToken')) {
+                            overlayBySignature.set(signature, (entry as any).lastToken);
                         }
                     }
                 }
-            }
 
-            const tokensOfEdge = edgeTokensOf({
-                overlayEdges: overlay.edges,
-                overlayBySignature,
-                queueByAstPath,
-                queueBySignature,
-                queueTokenByAstPath,
-                queueTokenBySignature,
-                atTrace: queueTrace !== undefined,
-                astPathCandidates: astPathCandidatesForEdge,
-                signatureCandidates: signatureCandidatesForEdge
-            });
+                const queueByAstPath = new Map<string, number>();
+                const queueBySignature = new Map<string, number>();
+                const queueTokenByAstPath = new Map<string, unknown>();
+                const queueTokenBySignature = new Map<string, unknown>();
+                if (queueTrace) {
+                    for (const q of recordsOfInstance(queueTrace.queues, instancePath, scoped)) {
+                        if (typeof q.astPath === 'string' && q.astPath.trim() !== '') {
+                            queueByAstPath.set(q.astPath, q.size);
+                            if (Object.prototype.hasOwnProperty.call(q, 'lastToken')) {
+                                queueTokenByAstPath.set(q.astPath, (q as any).lastToken);
+                            }
+                            continue;
+                        }
+                        for (const signature of signatureCandidatesForOverlay(q as any)) {
+                            queueBySignature.set(signature, q.size);
+                            if (Object.prototype.hasOwnProperty.call(q, 'lastToken')) {
+                                queueTokenBySignature.set(signature, (q as any).lastToken);
+                            }
+                        }
+                    }
+                }
+
+                const tokens = edgeTokensOf({
+                    overlayEdges,
+                    overlayBySignature,
+                    queueByAstPath,
+                    queueBySignature,
+                    queueTokenByAstPath,
+                    queueTokenBySignature,
+                    atTrace: queueTrace !== undefined,
+                    astPathCandidates: astPathCandidatesForEdge,
+                    signatureCandidates: signatureCandidatesForEdge
+                });
+                tokensByInstance.set(JSON.stringify(instancePath), tokens);
+                return tokens;
+            };
+            // The run's instance paths start at the run's root: the trail's root, or a workflow
+            // further down the trail when that one was run on its own. The view's path, and each
+            // node-list row's, start at the trail's root, so both are measured from the run's root.
+            const runSource = typeof overlay.sourcePath === 'string' && overlay.sourcePath.trim() !== ''
+                ? path.resolve(overlay.sourcePath)
+                : undefined;
+            const crumbFile = (sourceUri: string): string => {
+                try {
+                    const parsed = URI.parse(sourceUri);
+                    return path.resolve(parsed.scheme === 'file' ? parsed.fsPath : sourceUri);
+                } catch {
+                    return path.resolve(sourceUri);
+                }
+            };
+            const runRootAt = runRootPrefix<(typeof navigationTrail)[number]>(
+                navigationTrail,
+                crumb => runSource !== undefined
+                    && crumb.workflowName === overlay.workflowName?.trim()
+                    && crumbFile(crumb.sourceUri) === runSource,
+                trailInstancePath
+            );
+            // The view's instance, by instance names from the run's root. The view is the trail's
+            // last crumb, and the run's root a crumb on the way to it, so the view is under it.
+            const viewInstancePath = fromRunRoot(trailInstancePath(navigationTrail), runRootAt) ?? trailInstancePath(navigationTrail);
+            const tokensOfEdge = tokensIn(viewInstancePath);
 
             const activeNames = overlay.active && Array.isArray(overlay.active)
                 ? overlay.active
@@ -1522,9 +1562,6 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             const errorPath = showsLastStep && Array.isArray(rawErrorPath)
                 ? rawErrorPath.filter((part): part is string => typeof part === 'string' && part.trim() !== '')
                 : [];
-            const viewInstancePath = navigationTrail
-                .map(entry => entry.workflowInstanceName?.trim() ?? '')
-                .filter(part => part !== '');
             const errorLocation = errorPath.length > 0 ? errorInView(errorPath, viewInstancePath) : undefined;
             const errorEntityName = errorPath.length > 0
                 ? errorLocation?.nodeName
@@ -1639,7 +1676,11 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             return {
                 runId: overlay.runId,
                 outDir: overlay.outDir,
-                tokenOf: args => tokensOfEdge(args).shown
+                tokenOf: (args, instancePath) => {
+                    // A row's path starts at the trail's root; one outside the run ran in none of it.
+                    const inRun = instancePath ? fromRunRoot(instancePath, runRootAt) : viewInstancePath;
+                    return inRun ? tokensIn(inRun)(args).shown : undefined;
+                }
             };
         } catch (err) {
             console.warn('[WorkflowSourceModelStorage] Failed to apply viewer overlay', err);
@@ -2174,6 +2215,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             inPort?: string;
             size: number;
             lastToken?: unknown;
+            /** The workflow instance the queue is in, from the run's root; none for the root's own. */
+            instancePath?: string[];
         }>;
     } | undefined> {
         const path = await import('path');
@@ -2214,7 +2257,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                     toEntity: typeof entry?.toEntity === 'string' ? entry.toEntity : undefined,
                     inPort: typeof entry?.inPort === 'string' ? entry.inPort : undefined,
                     size,
-                    ...(Object.prototype.hasOwnProperty.call(entry ?? {}, 'lastToken') ? { lastToken: entry.lastToken } : {})
+                    ...(Object.prototype.hasOwnProperty.call(entry ?? {}, 'lastToken') ? { lastToken: entry.lastToken } : {}),
+                    ...(instancePathOf(entry).length > 0 ? { instancePath: instancePathOf(entry) } : {})
                 };
             })
             .filter((v: any): v is {
@@ -2225,6 +2269,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 inPort?: string;
                 size: number;
                 lastToken?: unknown;
+                instancePath?: string[];
             } => !!v);
 
         const actorInstanceName = typeof step.actorInstanceName === 'string' && step.actorInstanceName.trim() !== ''
@@ -2254,6 +2299,9 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         outDir: string;
         running: boolean;
         edges: Record<string, { lastToken?: unknown }>;
+        /** The run's root: the file and workflow it ran, which its instance paths start at. */
+        sourcePath?: string;
+        workflowName?: string;
         active?: Array<{ entityInstanceName?: string; entityInstancePath?: string[] }>;
         error?: { entityInstanceName?: string; entityInstancePath?: string[]; message?: string };
     } | undefined> {
@@ -2296,6 +2344,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             outDir: string;
             running: boolean;
             edges: Record<string, { lastToken?: unknown }>;
+            sourcePath?: string;
+            workflowName?: string;
             active?: Array<{ entityInstanceName?: string; entityInstancePath?: string[] }>;
             error?: { entityInstanceName?: string; entityInstancePath?: string[]; message?: string };
         };
@@ -2364,6 +2414,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 outDir: overlay.outDir,
                 running: overlay.running === true,
                 edges: overlay.edges as Record<string, { lastToken?: unknown }>,
+                ...(typeof overlay.sourcePath === 'string' ? { sourcePath: overlay.sourcePath } : {}),
+                ...(typeof overlay.workflowName === 'string' ? { workflowName: overlay.workflowName } : {}),
                 active,
                 ...(error ? { error } : {})
             };
@@ -2469,6 +2521,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                     outDir: string;
                     running: boolean;
                     edges: Record<string, { lastToken?: unknown }>;
+                    sourcePath?: string;
+                    workflowName?: string;
                     active?: Array<{ entityInstanceName?: string; entityInstancePath?: string[] }>;
                     startedAt?: string;
                     finishedAt?: string;
