@@ -87,8 +87,14 @@ import { OutlinePager } from './outline-pager';
 
 /** The chat's button, at the top of the floating stack. */
 export const CHAT_TOGGLE_ID = 'workflow-chat-toggle-btn';
+/** An outline panel's button, from its element id. */
+export function outlineToggleId(panelId: string): string {
+    return `${panelId}-toggle`;
+}
+/** The node list's panel (`node-list-outline.ts`). */
+export const NODE_LIST_PANEL_ID = 'workflow-node-list-outline';
 /** The node list's button, directly under the chat's; the hierarchy's sits under it when it is there. */
-export const NODE_LIST_TOGGLE_ID = 'workflow-node-list-outline-toggle';
+export const NODE_LIST_TOGGLE_ID = outlineToggleId(NODE_LIST_PANEL_ID);
 /** The class of a row's family colour, an existing class of the stylesheet. */
 const FAMILY_COLOR_CLASS = 'workflow-hierarchy-outline-chip';
 /** How long a click waits to find out it was the first half of a double click. */
@@ -185,7 +191,7 @@ export class HierarchyOutlinePanel {
         panel: this.config.id,
         body: `${this.config.id}-body`,
         search: `${this.config.id}-search`,
-        toggle: `${this.config.id}-toggle`
+        toggle: outlineToggleId(this.config.id)
     };
     protected outline: HierarchyOutlineEntry | undefined;
     private renderedJson: string | undefined;

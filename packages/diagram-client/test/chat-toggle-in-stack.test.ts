@@ -6,11 +6,28 @@
  * button is, over it. The button now joins a stack that is already there.
  */
 import 'reflect-metadata';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatPanel } from '../src/chat-panel-integrated';
 import { placeInButtonStack } from '../src/hierarchy-outline';
 
-afterEach(() => document.body.replaceChildren());
+// Each panel adds its Ctrl+Shift+C listener to the document: take them off after each test.
+const added: Array<[string, EventListenerOrEventListenerObject]> = [];
+
+beforeEach(() => {
+    const add = document.addEventListener.bind(document);
+    vi.spyOn(document, 'addEventListener').mockImplementation((type: string, listener: any, options?: any) => {
+        added.push([type, listener]);
+        add(type, listener, options);
+    });
+});
+
+afterEach(() => {
+    vi.restoreAllMocks();
+    for (const [type, listener] of added.splice(0)) {
+        document.removeEventListener(type, listener);
+    }
+    document.body.replaceChildren();
+});
 
 function stackWith(...ids: string[]): HTMLElement {
     const stack = document.createElement('div');
@@ -28,6 +45,7 @@ describe('the chat\'s button', () => {
         (new ChatPanel() as any).createToggleButton();
         expect(document.getElementById('workflow-chat-toggle-btn')?.parentElement).toBe(stack);
         expect(stack.lastElementChild?.id).toBe('workflow-chat-toggle-btn');
+        expect(added.map(([type]) => type)).toContain('keydown');
     });
 
     it('sits on its own when there is no stack yet, for the navigation to move', () => {

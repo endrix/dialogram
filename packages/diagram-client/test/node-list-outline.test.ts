@@ -10,7 +10,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { GModelElement } from '@eclipse-glsp/sprotty';
 import { NODE_LIST_ARG, OUTLINE_REVEAL_MESSAGE, type HierarchyOutlineEntry, type NodeListOutline } from '@dialogram/shared';
 import { NodeListOutlinePanel } from '../src/node-list-outline';
-import { HierarchyOutlinePanel, placeInButtonStack } from '../src/hierarchy-outline';
+import { HierarchyOutlinePanel, outlineToggleId, placeInButtonStack } from '../src/hierarchy-outline';
 import type { NodeOpener, NodeOpenerContext } from '../src/node-opener';
 
 const FILE = 'file:///w/top.py';
@@ -260,9 +260,11 @@ describe('its button', () => {
         expect(ids(parts.stack)).toEqual(ORDER);
     });
 
-    it('is placed under the chat\'s by the panel itself, and the hierarchy\'s under it', () => {
+    it('is placed under the chat\'s by the panel itself, and the hierarchy\'s under it, by the button the panel draws', () => {
         expect(listUnder()).toEqual(['workflow-chat-toggle-btn']);
         expect(HIERARCHY_UNDER).toEqual(['workflow-node-list-outline-toggle', 'workflow-chat-toggle-btn']);
+        // The id the hierarchy places under is the one the list's panel gives its button.
+        expect(outlineToggleId((new TestPanel(opener) as any).config.id)).toBe(HIERARCHY_UNDER[0]);
     });
 
     it('moves only the chat\'s button when it shows or hides', () => {

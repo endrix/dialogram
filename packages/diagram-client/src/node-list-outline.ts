@@ -17,12 +17,13 @@
 import { injectable, multiInject, optional } from 'inversify';
 import type { GModelElement } from '@eclipse-glsp/sprotty';
 import { NODE_LIST_ARG, type HierarchyOutlineEntry, type NodeListOutline } from '@dialogram/shared';
-import { CHAT_TOGGLE_ID, entryKey, HierarchyOutlinePanel, type OutlinePanelConfig } from './hierarchy-outline';
+import { CHAT_TOGGLE_ID, entryKey, HierarchyOutlinePanel, NODE_LIST_PANEL_ID, type OutlinePanelConfig } from './hierarchy-outline';
 import { rowId } from './hierarchy-outline-tree';
 import { detachedElement, NodeOpener, nodeOpenability, openNode, openersInOrder, type NodeOpenerContext } from './node-opener';
 
 const NODE_LIST_PANEL: OutlinePanelConfig = {
-    id: 'workflow-node-list-outline',
+    // The hierarchy places its button under this one's, by this id.
+    id: NODE_LIST_PANEL_ID,
     storageKey: 'dialogram.nodeListOutline.open',
     arg: NODE_LIST_ARG,
     codicon: 'list-tree',
