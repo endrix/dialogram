@@ -46,6 +46,9 @@ const EDITING_MENU_ITEMS: ReadonlySet<string> = new Set([
 const GO_TO_ERROR_KIND = 'dialogram.goToError';
 const OPEN_VIEW_KIND = 'dialogram.openView';
 
+/** The background menu's submenu of layouts (Default, Compact, Serpentine Mesh, Untangled, Free Ports). */
+export const LAYOUT_MENU_ID = 'dialogram.layout';
+
 /**
  * "Go to Error": the action that opens the view where the shown run failed and
  * selects the node that did, built from the hierarchy on the root (`wf:hierarchy`)
@@ -499,63 +502,47 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
             if (goToError) {
                 items.push({ id: 'dialogram.goToError', label: 'Go to Error', sortString: 'a0', actions: [goToError as any] });
             }
+            // The layouts in a submenu of their own: Default Layout is the
+            // product's (`defaultLayout`, else the boundary flow), the others
+            // are the ones a reader may try instead.
             items.push({
-                id: 'dialogram.layoutDiagramBoundaryFlow',
-                label: 'Layout Diagram',
+                id: LAYOUT_MENU_ID,
+                label: 'Layout',
                 sortString: 'g2',
                 group: 'layout',
-                actions: [
+                // Opens the submenu; does nothing itself.
+                actions: [],
+                children: [
                     {
-                        kind: LAYOUT_BOUNDARY_FLOW_KIND,
-                        isOperation: true
-                    } as any
-                ]
-            });
-
-            items.push({
-                id: 'dialogram.layoutDiagram',
-                label: 'Compact Layout',
-                sortString: 'g2.2',
-                group: 'layout',
-                actions: [LayoutOperation.create()]
-            });
-
-            items.push({
-                id: 'dialogram.layoutDiagramSerpentineMesh',
-                label: 'Serpentine Mesh Layout',
-                sortString: 'g2.3',
-                group: 'layout',
-                actions: [
+                        id: 'dialogram.layoutDiagramBoundaryFlow',
+                        label: 'Default Layout',
+                        sortString: 'g2.1',
+                        actions: [{ kind: LAYOUT_BOUNDARY_FLOW_KIND, isOperation: true } as any]
+                    },
                     {
-                        kind: LAYOUT_SERPENTINE_MESH_KIND,
-                        isOperation: true
-                    } as any
-                ]
-            });
-
-            items.push({
-                id: 'dialogram.layoutDiagramUntangled',
-                label: 'Untangled Layout',
-                sortString: 'g2.4',
-                group: 'layout',
-                actions: [
+                        id: 'dialogram.layoutDiagram',
+                        label: 'Compact Layout',
+                        sortString: 'g2.2',
+                        actions: [LayoutOperation.create()]
+                    },
                     {
-                        kind: LAYOUT_UNTANGLED_KIND,
-                        isOperation: true
-                    } as any
-                ]
-            });
-
-            items.push({
-                id: 'dialogram.layoutDiagramFreePorts',
-                label: 'Free Ports Layout',
-                sortString: 'g2.5',
-                group: 'layout',
-                actions: [
+                        id: 'dialogram.layoutDiagramSerpentineMesh',
+                        label: 'Serpentine Mesh Layout',
+                        sortString: 'g2.3',
+                        actions: [{ kind: LAYOUT_SERPENTINE_MESH_KIND, isOperation: true } as any]
+                    },
                     {
-                        kind: LAYOUT_FREE_PORTS_KIND,
-                        isOperation: true
-                    } as any
+                        id: 'dialogram.layoutDiagramUntangled',
+                        label: 'Untangled Layout',
+                        sortString: 'g2.4',
+                        actions: [{ kind: LAYOUT_UNTANGLED_KIND, isOperation: true } as any]
+                    },
+                    {
+                        id: 'dialogram.layoutDiagramFreePorts',
+                        label: 'Free Ports Layout',
+                        sortString: 'g2.5',
+                        actions: [{ kind: LAYOUT_FREE_PORTS_KIND, isOperation: true } as any]
+                    }
                 ]
             });
 

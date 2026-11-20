@@ -850,9 +850,30 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
     text-overflow: ellipsis;
 }
 
-.workflow-context-menu-item:hover {
+.workflow-context-menu-item:hover,
+.workflow-context-menu-item:focus-visible,
+.workflow-context-menu-item.open {
     background: var(--vscode-menu-selectionBackground);
     color: var(--vscode-menu-selectionForeground, var(--vscode-menu-foreground));
+    outline: none;
+}
+
+/* An item that opens a submenu ("Layout"): its label, and a chevron at the right. */
+.workflow-context-menu-item.has-children {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+}
+
+.workflow-context-menu-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.workflow-context-menu-chevron {
+    flex: none;
+    font-size: 12px;
 }
 
 .workflow-context-menu-separator {
