@@ -88,6 +88,8 @@ describe('the limits a drag keeps to', () => {
         expect(drawerHeight(50, 1000)).toBe(120);
         expect(drawerHeight(300, 1000)).toBe(300);
         expect(drawerHeight(900, 1000)).toBe(600);
+        // A window too short for both: the greatest wins, as max-height does in the CSS.
+        expect(drawerHeight(300, 150)).toBe(90);
     });
 
     it('keeps the card between its least width and the window less 28 px', () => {
@@ -116,6 +118,15 @@ describe('dragging an edge', () => {
         panel.style.setProperty('--chat-drawer-height', '450px');
         drag(handleOn(panel, 'top'), 0, -1);
         expect(panel.style.getPropertyValue('--chat-drawer-height')).toBe(`${DRAWER_HEIGHT + 1}px`);
+    });
+
+    it('starts a drawer still opening from the height it was opening to', () => {
+        const panel = card();
+        const scroll = panel.querySelector<HTMLElement>('.chat-scroll')!;
+        // Mid-transition the drawer is 60 px; with the transition off it is at its 305 px.
+        scroll.getBoundingClientRect = () => box(PANEL_WIDTH, panel.classList.contains('resizing') ? 305 : 60)();
+        drag(handleOn(panel, 'top'), 0, -5);
+        expect(panel.style.getPropertyValue('--chat-drawer-height')).toBe('310px');
     });
 
     it('a side moves both sides, so the edge under the pointer follows it', () => {

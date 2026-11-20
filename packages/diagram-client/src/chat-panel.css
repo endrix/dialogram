@@ -61,6 +61,8 @@
 .chat-resize-handle {
   position: absolute;
   z-index: 2;
+  /* A finger or pen drags the edge instead of panning, which would cancel the drag. */
+  touch-action: none;
 }
 .chat-resize-handle.top {
   top: 0;

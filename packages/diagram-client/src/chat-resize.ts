@@ -26,13 +26,20 @@ export type ChatResizeEdge = 'top' | 'left' | 'right' | 'top-left' | 'top-right'
 /** The handles the card draws, one per edge or corner. */
 export const CHAT_RESIZE_EDGES: readonly ChatResizeEdge[] = ['top', 'left', 'right', 'top-left', 'top-right'];
 
-/** `px`, kept between the drawer's least and greatest heights. */
+/**
+ * `px`, kept between the drawer's least and greatest heights. In a window too
+ * short for both the greatest wins, as `max-height` does over `height`.
+ */
 export function drawerHeight(px: number, windowHeight: number): number {
-    const most = Math.max(CHAT_DRAWER_MIN_HEIGHT_PX, windowHeight * CHAT_DRAWER_MAX_HEIGHT_RATIO);
+    const most = windowHeight * CHAT_DRAWER_MAX_HEIGHT_RATIO;
     return Math.round(Math.min(most, Math.max(CHAT_DRAWER_MIN_HEIGHT_PX, px)));
 }
 
-/** `px`, kept between the card's least width and the window's width less the room beside it. */
+/**
+ * `px`, kept between the card's least width and the window's width less the
+ * room beside it. In a window too narrow for both the least wins, as
+ * `min-width` does over `max-width`.
+ */
 export function panelWidth(px: number, windowWidth: number): number {
     const most = Math.max(CHAT_PANEL_MIN_WIDTH_PX, windowWidth - CHAT_PANEL_SIDE_ROOM_PX);
     return Math.round(Math.min(most, Math.max(CHAT_PANEL_MIN_WIDTH_PX, px)));
@@ -65,18 +72,19 @@ export function startChatResize(panel: HTMLElement, event: PointerEvent, edge: C
     const scroll = panel.querySelector<HTMLElement>('.chat-scroll');
     // A closed drawer has no height to drag: its handles are hidden, and a
     // corner drag changes the width only, so the saved height stays.
-    const drawerOpen = !panel.classList.contains('drawer-closed') && !!scroll && scroll.getBoundingClientRect().height > 0;
-    const top = edge.startsWith('top') && drawerOpen;
+    const top = edge.startsWith('top') && !panel.classList.contains('drawer-closed') && !!scroll;
     const side = edge.endsWith('left') ? -1 : edge.endsWith('right') ? 1 : 0;
     if (!top && side === 0) {
         return;
     }
+    // Transition off before measuring: a drawer still opening snaps to the
+    // height it was opening to, which is where the drag starts from.
+    panel.classList.add('resizing');
     const startX = event.clientX;
     const startY = event.clientY;
     const startHeight = scroll?.getBoundingClientRect().height ?? 0;
     const startWidth = panel.getBoundingClientRect().width;
 
-    panel.classList.add('resizing');
     const cursor = handle ? getComputedStyle(handle).cursor : '';
     document.body.style.cursor = cursor;
     try {
