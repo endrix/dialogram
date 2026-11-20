@@ -1235,7 +1235,10 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     toggleBtn.innerHTML = '<span class="codicon codicon-comment-discussion"></span>';
     toggleBtn.title = 'Toggle Chat (Ctrl+Shift+C)';
     toggleBtn.addEventListener('click', () => this.toggle());
-    document.body.appendChild(toggleBtn);
+    // At the top of the floating stack when the navigation has made it already
+    // (it moves the button there itself when it makes the stack later); on its
+    // own it would sit where the stack's lowest button is, over it.
+    (document.querySelector('.workflow-fab-stack') ?? document.body).appendChild(toggleBtn);
 
     document.addEventListener('keydown', (e) => {
       if (e.ctrlKey && e.shiftKey && e.key === 'C') {

@@ -971,10 +971,13 @@ platform that hands it one.
   item's `children` as a submenu, opened on hover, click or the right
   arrow and placed on the left when the window has no room on the right;
   it used to draw them flattened under their parent.
-- **The node list's button is at the top of the floating stack.** It sat
-  under the hierarchy's, and putting it there pushed the hierarchy's button
-  and every one above up a place: a click where the hierarchy's had always
-  been opened the node list. `placeInButtonStack` takes `'top'`.
+- **The node list's button sits under the chat's, above the hierarchy's.**
+  It sat under the hierarchy's, and putting it there pushed the hierarchy's
+  button and every one above up a place: a click where the hierarchy's had
+  always been opened the node list. Above the hierarchy's, it moves only the
+  chat's, which stays at the top of the stack. The hierarchy's button is
+  placed under the node list's when there is one (`NODE_LIST_TOGGLE_ID`),
+  under the chat's otherwise.
 - **A run never starts above the workspace folder, and every start of a
   product's CLI starts where a run does.** The run root is the workspace
   folder that holds the file (the innermost, where folders are inside one
@@ -1416,6 +1419,12 @@ platform that hands it one.
   is built for it); without it layouts stay on elkjs, as before.
 
 ### Fixed
+
+- **The chat's button is in the floating stack whenever there is one.** The
+  navigation moved it there only when it drew after the button was made;
+  a button made after the last draw stayed on its own, fixed where the
+  stack's lowest button is, over the debug button. It now joins a stack
+  that is already there, at its top.
 
 - **The chat card resizes as fast as the pointer moves, and by its sides
   too.** The drawer eased toward each new height over a quarter second, so

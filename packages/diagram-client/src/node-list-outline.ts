@@ -4,7 +4,8 @@
  * instances holding them (shared `NodeListSpec`, published as `wf:nodeList`).
  *
  * It is the hierarchy outline's panel with other rows: the same tree, filter
- * and floating panel, its button directly under the hierarchy's. A single
+ * and floating panel, its button directly under the chat's, above the
+ * hierarchy's, so that showing it moves only the chat's. A single
  * click on a node finds it in its view, as the hierarchy's node rows do. A
  * double click opens what a double click on that node opens, without its view
  * being opened: the row carries the node as the canvas would draw it
@@ -16,17 +17,18 @@
 import { injectable, multiInject, optional } from 'inversify';
 import type { GModelElement } from '@eclipse-glsp/sprotty';
 import { NODE_LIST_ARG, type HierarchyOutlineEntry, type NodeListOutline } from '@dialogram/shared';
-import { entryKey, HierarchyOutlinePanel, type OutlinePanelConfig } from './hierarchy-outline';
+import { CHAT_TOGGLE_ID, entryKey, HierarchyOutlinePanel, NODE_LIST_PANEL_ID, type OutlinePanelConfig } from './hierarchy-outline';
 import { rowId } from './hierarchy-outline-tree';
 import { detachedElement, NodeOpener, nodeOpenability, openNode, openersInOrder, type NodeOpenerContext } from './node-opener';
 
 const NODE_LIST_PANEL: OutlinePanelConfig = {
-    id: 'workflow-node-list-outline',
+    // The hierarchy places its button under this one's, by this id.
+    id: NODE_LIST_PANEL_ID,
     storageKey: 'dialogram.nodeListOutline.open',
     arg: NODE_LIST_ARG,
     codicon: 'list-tree',
-    // Above every other button: showing it moves none of them.
-    under: 'top',
+    // Under the chat's, above the hierarchy's (which sits under it): showing it moves only the chat's.
+    under: [CHAT_TOGGLE_ID],
     className: 'workflow-node-list',
     // The host's outline messages are the hierarchy's: the list has no rows of the host's.
     hostRows: false
@@ -52,8 +54,7 @@ export class NodeListOutlinePanel extends HierarchyOutlinePanel {
 
     protected override panelConfig(): OutlinePanelConfig {
         // Its own copy: the codicon is the product's, read with the list.
-        const under = NODE_LIST_PANEL.under;
-        return { ...NODE_LIST_PANEL, under: Array.isArray(under) ? [...under] : under };
+        return { ...NODE_LIST_PANEL, under: [...NODE_LIST_PANEL.under] };
     }
 
     protected override title(): string {
