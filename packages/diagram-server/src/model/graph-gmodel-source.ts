@@ -1939,6 +1939,17 @@ export class GraphGModelSource {
         if (kindClass) {
             classes.push(kindClass);
         }
+        // What the node is to this picture, as the producer sees it, the way
+        // `edge-role-<role>` says what a connection is: the clauses a
+        // document's diagram is of, say, and the neighbours drawn only so its
+        // edges have somewhere to go. Not its kind (a neighbour is a
+        // requirement all the same) nor whether it can be opened (the
+        // project's own documents can be); the platform derives the hook and
+        // the product's stylesheet names it.
+        const roleClass = this.derivedCssClass('node-role-', node.meta?.['role'] as string | undefined);
+        if (roleClass) {
+            classes.push(roleClass);
+        }
         const defAnnots = node.meta?.['definitionAnnotations'] as Array<{ name?: string }> | undefined;
         const family = this.nodeFamilyOf(Array.isArray(defAnnots) ? defAnnots : undefined);
         if (this.isNetworkInstanceNode(node)) {

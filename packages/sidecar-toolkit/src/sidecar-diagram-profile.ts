@@ -122,7 +122,7 @@ export interface SidecarProfileInput {
     /**
      * The product's own stylesheets, absolute paths, served into the stock
      * webview after the platform's: how the product's `<kind>-node`,
-     * `edge-role-<role>` and family hooks look. Data only; threaded straight
+     * `node-role-<role>`, `edge-role-<role>` and family hooks look. Data only; threaded straight
      * onto `DiagramProfile.clientStylesheets`.
      */
     clientStylesheets?: string[];

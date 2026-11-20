@@ -61,9 +61,18 @@ describe('the selection trace', () => {
         // A product's role colour that gives way to the selection scores (0,4,0)
         // or more; the trace's rules score (0,3,0), so they need the last word.
         for (const trace of ['wf-trace-upstream', 'wf-trace-downstream', 'wf-trace-focus']) {
-            const rule = new RegExp(`\\.sprotty-edge\\.${trace} \\.workflow-edge\\s*\\{([^}]*)\\}`).exec(css);
+            const rule = new RegExp(`\\.sprotty-edge\\.${trace} \\.workflow-edge([^{]*)\\{([^}]*)\\}`).exec(css);
             expect(rule, trace).not.toBeNull();
-            expect(rule![1], trace).toMatch(/color:[^;]*!important/);
+            expect(rule![2], trace).toMatch(/color:[^;]*!important/);
+        }
+    });
+
+    it('gives way to the pointer and to the run\'s last token', () => {
+        // With the last word, the trace would otherwise hide both on its edges.
+        for (const trace of ['wf-trace-upstream', 'wf-trace-downstream', 'wf-trace-focus']) {
+            const rule = new RegExp(`\\.sprotty-edge\\.${trace} \\.workflow-edge([^{]*)\\{`).exec(css);
+            expect(rule![1], trace).toContain(':not(.hover)');
+            expect(rule![1], trace).toContain(':not(.edge-has-last-token)');
         }
     });
 });
