@@ -1723,7 +1723,9 @@ body.vscode-high-contrast-light .node-center-image-light {
    which outranks these three, and the trace is the selection too. They give
    way in turn to the pointer (an edge under it shows it can be picked) and
    to the run's last token, the platform's own states that a traced edge
-   kept before. */
+   kept before: the token's colour on a traced edge and on the other pieces
+   of a selected one; the selected piece itself is the focus colour, as it
+   was (the token's rule gives way to the selection). */
 .sprotty-edge.wf-trace-upstream .workflow-edge:not(.hover):not(.edge-has-last-token) {
     color: var(--vscode-charts-green, #89d185) !important;
 }

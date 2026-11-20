@@ -1913,7 +1913,8 @@ export class GraphGModelSource {
     /**
      * A styling hook derived from a producer-supplied word.
      *
-     * `<value>-node`, `port-role-<value>`, `edge-role-<value>` — derived rather
+     * `<value>-node`, `node-role-<value>`, `port-role-<value>`,
+     * `edge-role-<value>` — derived rather
      * than enumerated, so a product can style something this file has never
      * heard of. The pattern check is what keeps it from being an injection: the
      * value is interpolated into a class name, so it has to look like one.

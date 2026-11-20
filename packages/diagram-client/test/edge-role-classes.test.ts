@@ -71,6 +71,7 @@ describe('the selection trace', () => {
         // With the last word, the trace would otherwise hide both on its edges.
         for (const trace of ['wf-trace-upstream', 'wf-trace-downstream', 'wf-trace-focus']) {
             const rule = new RegExp(`\\.sprotty-edge\\.${trace} \\.workflow-edge([^{]*)\\{`).exec(css);
+            expect(rule, trace).not.toBeNull();
             expect(rule![1], trace).toContain(':not(.hover)');
             expect(rule![1], trace).toContain(':not(.edge-has-last-token)');
         }
