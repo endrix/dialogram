@@ -17,7 +17,10 @@
   left: 50%;
   right: auto;
   bottom: calc(var(--workflow-wf-nav-height, 28px) + 16px);
-  width: 50%;
+  /* Set by dragging a side (chat-resize.ts keeps its limits in step with these);
+     border in, so the width a drag measures is the one it sets. */
+  box-sizing: border-box;
+  width: var(--chat-panel-width, 50%);
   min-width: 480px;
   max-width: calc(100vw - 28px);
   height: auto;
@@ -52,19 +55,61 @@
   overflow: hidden;
 }
 
-/* Resize handle (inside the rounded card, along its top edge) */
+/* Resize handles (chat-resize.ts): the top edge sets the drawer's height, a
+   side the card's width, a top corner both. The sides straddle the card's
+   border, so the drawer's scrollbar stays grabbable. */
 .chat-resize-handle {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 5px;
-  cursor: ns-resize;
   z-index: 2;
 }
-.chat-resize-handle:hover {
+.chat-resize-handle.top {
+  top: 0;
+  left: 10px;
+  right: 10px;
+  height: 5px;
+  cursor: ns-resize;
+}
+.chat-resize-handle.left,
+.chat-resize-handle.right {
+  top: 10px;
+  bottom: 10px;
+  width: 8px;
+  cursor: ew-resize;
+}
+.chat-resize-handle.left {
+  left: -4px;
+}
+.chat-resize-handle.right {
+  right: -4px;
+}
+.chat-resize-handle.top-left,
+.chat-resize-handle.top-right {
+  top: -4px;
+  width: 14px;
+  height: 14px;
+}
+.chat-resize-handle.top-left {
+  left: -4px;
+  cursor: nwse-resize;
+}
+.chat-resize-handle.top-right {
+  right: -4px;
+  cursor: nesw-resize;
+}
+.chat-resize-handle:is(.top, .left, .right):hover {
   background: var(--vscode-focusBorder);
   opacity: 0.4;
+}
+/* A closed drawer has no height to drag. */
+.workflow-chat-panel.drawer-closed .chat-resize-handle:is(.top, .top-left, .top-right) {
+  display: none;
+}
+/* While a drag is on, the drawer follows the pointer instead of easing after it. */
+.workflow-chat-panel.resizing {
+  user-select: none;
+}
+.workflow-chat-panel.resizing .chat-scroll {
+  transition: none;
 }
 
 /* ── Top bar ── */
@@ -158,6 +203,8 @@
 /* ── Message area: fixed-height drawer that slides open ── */
 .chat-scroll {
   flex: none;
+  /* The drawer's whole height, padding in: the height a drag measures is the one it sets. */
+  box-sizing: border-box;
   height: var(--chat-drawer-height);
   max-height: 60vh;
   overflow-y: auto;

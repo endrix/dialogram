@@ -13,6 +13,7 @@ import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { renderMarkdownSafe } from './markdown';
 import { formatAgentOutputs } from './agent-outputs';
 import { shouldStick } from './chat-scroll';
+import { CHAT_RESIZE_EDGES, restoreChatSize, startChatResize } from './chat-resize';
 import {
   RunAgentStreamActionHandler,
   type LiveAgentPart,
@@ -197,9 +198,6 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   private initialized = false;
 
   private static readonly VISIBLE_BODY_CLASS = 'workflow-chat-visible';
-  private static readonly PANEL_HEIGHT_STORAGE_KEY = 'workflow.diagram.chatPanel.heightPx';
-  private static readonly DRAWER_MIN_HEIGHT_PX = 120;
-  private static readonly PANEL_MAX_HEIGHT_RATIO = 0.6;
 
   // ── DOM hosts ──
   private panel: HTMLElement | null = null;
@@ -1223,11 +1221,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     this.panel = panel;
     stackAsFloatingPanel(panel);
 
-    // Restore the saved message-drawer height.
-    const savedHeight = localStorage.getItem(ChatPanel.PANEL_HEIGHT_STORAGE_KEY);
-    if (savedHeight) {
-      this.panel.style.setProperty('--chat-drawer-height', savedHeight);
-    }
+    // The drawer height and card width the last drag left.
+    restoreChatSize(this.panel);
   }
 
   private createToggleButton(): void {
@@ -1248,34 +1243,6 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         this.toggle();
       }
     });
-  }
-
-  /** Drag the card's top edge to resize the message drawer. */
-  private startResize(e: MouseEvent): void {
-    if (!this.panel) return;
-    e.preventDefault();
-    const scroll = this.panel.querySelector('.chat-scroll') as HTMLElement | null;
-    const startY = e.clientY;
-    const startHeight = scroll?.offsetHeight ?? 300;
-    document.body.style.cursor = 'ns-resize';
-
-    const onMove = (ev: MouseEvent) => {
-      const deltaY = startY - ev.clientY;
-      const newHeight = Math.max(
-        ChatPanel.DRAWER_MIN_HEIGHT_PX,
-        Math.min(window.innerHeight * ChatPanel.PANEL_MAX_HEIGHT_RATIO, startHeight + deltaY)
-      );
-      this.panel!.style.setProperty('--chat-drawer-height', `${newHeight}px`);
-    };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      document.body.style.cursor = '';
-      const value = this.panel!.style.getPropertyValue('--chat-drawer-height');
-      if (value) localStorage.setItem(ChatPanel.PANEL_HEIGHT_STORAGE_KEY, value);
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
   }
 
   // ── Rendering ──────────────────────────────────────────────────────────
@@ -1353,7 +1320,10 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   private template(): TemplateResult {
     return html`
-      <div class="chat-resize-handle" @mousedown=${(e: MouseEvent) => this.startResize(e)}></div>
+      ${CHAT_RESIZE_EDGES.map(edge => html`<div
+        class="chat-resize-handle ${edge}"
+        @pointerdown=${(e: PointerEvent) => this.panel && startChatResize(this.panel, e, edge)}
+      ></div>`)}
       ${this.topbarTemplate()}
       <div class="chat-scroll">
         ${this.view.kind === 'agent' ? this.agentTranscriptTemplate(this.view.instance) : this.sessionBodyTemplate()}

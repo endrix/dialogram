@@ -1417,6 +1417,21 @@ platform that hands it one.
 
 ### Fixed
 
+- **The chat card resizes as fast as the pointer moves, and by its sides
+  too.** The drawer eased toward each new height over a quarter second, so
+  while the top edge was dragged it trailed the pointer, by 170 px after
+  25 moves; a drag now turns that transition off while it lasts. Each drag
+  also started 12 px off (the drawer was measured with its padding and set
+  without), and a release outside the webview, which never reaches it, left
+  the drag on: the card went on resizing when the pointer came back. A
+  drag now ends at the first move with the button up, or when the webview
+  loses focus. The card's sides and top corners resize it too, both sides
+  at once since it is centred, and its width is kept beside the drawer's
+  height (`chat-resize.ts`). A closed drawer hides its top handles, so a
+  drag there no longer overwrites the saved height. Dragging the floating
+  property panel by its header lost a release outside the webview the same
+  way, and now ends the same way.
+
 - **Over a surface that hears clicks, the property panel opens on the
   view's own properties.** A product that draws the diagram on its own
   surface and answers its clicks (#203) opened with "Select an element to
