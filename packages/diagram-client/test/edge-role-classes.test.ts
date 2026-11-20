@@ -53,3 +53,17 @@ describe('the edge views', () => {
         expect(lineGroup(read('automaton-views.ts'))).toContain('...edgeRoleClasses(edge)');
     });
 });
+
+describe('the selection trace', () => {
+    const css = read('diagram-client.css').replace(/\/\*[\s\S]*?\*\//g, '');
+
+    it('colours a traced edge over a product\'s colour for its role', () => {
+        // A product's role colour that gives way to the selection scores (0,4,0)
+        // or more; the trace's rules score (0,3,0), so they need the last word.
+        for (const trace of ['wf-trace-upstream', 'wf-trace-downstream', 'wf-trace-focus']) {
+            const rule = new RegExp(`\\.sprotty-edge\\.${trace} \\.workflow-edge\\s*\\{([^}]*)\\}`).exec(css);
+            expect(rule, trace).not.toBeNull();
+            expect(rule![1], trace).toMatch(/color:[^;]*!important/);
+        }
+    });
+});

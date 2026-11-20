@@ -1716,18 +1716,22 @@ body.vscode-high-contrast-light .node-center-image-light {
 }
 
 /* An edge's line and arrowhead are drawn in `currentColor`: one colour moves
-   both, and a product's dash patterns per edge type stay as they are. */
+   both, and a product's dash patterns per edge type stay as they are. The
+   trace's colours win over a product's colour for an edge's role, whatever
+   that rule's specificity: a product writes its role colours to give way to
+   the selection (`.workflow-edge.edge-role-x:not(.selected):not(.hover)`),
+   which outranks these three, and the trace is the selection too. */
 .sprotty-edge.wf-trace-upstream .workflow-edge {
-    color: var(--vscode-charts-green, #89d185);
+    color: var(--vscode-charts-green, #89d185) !important;
 }
 
 .sprotty-edge.wf-trace-downstream .workflow-edge {
-    color: var(--vscode-charts-blue, #3794ff);
+    color: var(--vscode-charts-blue, #3794ff) !important;
 }
 
 /* The other pieces of a selected edge look selected too: they are the same edge. */
 .sprotty-edge.wf-trace-focus .workflow-edge {
-    color: var(--vscode-focusBorder, #007fd4);
+    color: var(--vscode-focusBorder, #007fd4) !important;
 }
 
 .wf-trace-upstream > .node-body {
