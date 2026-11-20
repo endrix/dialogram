@@ -584,9 +584,14 @@ export class GraphGModelSource {
             // header of its own, not a symbol, a state or a frame. It breaks
             // past the cap, or past the room the node has anyway when its
             // ports or its lines make it wider: a name that fits there on one
-            // line stays on one.
+            // line stays on one. Unless the producer says otherwise for the
+            // node (`meta.headerWrap`) or the product for all of them
+            // (`StorageRuntimeOptions.headerWrap`): a name that is code reads
+            // as written.
             const room = Math.max(defaultWidth, labelRequiredWidth, linesWidth) - headerChrome;
-            const nameLines = !symbolKind && !framed && node.kind !== 'state'
+            const nodeWrap = node.meta?.['headerWrap'];
+            const wraps = typeof nodeWrap === 'boolean' ? nodeWrap : this.storageOptions?.headerWrap !== false;
+            const nameLines = wraps && !symbolKind && !framed && node.kind !== 'state'
                 ? headerLines(node.label, Math.max(WorkflowDiagramConstants.HEADER_WRAP_WIDTH_PX, room))
                 : [node.label];
             const headerLabelW = Math.max(...nameLines.map(headerTextWidth)) + headerChrome;

@@ -127,6 +127,10 @@ export interface DiagramStorageOptions {
    *  node and push down the ones under it (`make-room`) (diagram-server
    *  `toggle-port-bus-handler.ts`). */
   toggleLayout?: 'relayout' | 'make-room';
+  /** Whether a long node name breaks onto lines in its header. Default
+   *  `true`; `false` keeps names on one line. A node's `meta.headerWrap`
+   *  (a boolean) wins over it (diagram-server `storage-runtime-options.ts`). */
+  headerWrap?: boolean;
 }
 
 /**
@@ -542,6 +546,11 @@ export interface DiagramProfile {
    * A product that wants `refines` solid and `conflicts-with` red, or its pins
    * smaller, says so here in CSS and nowhere else, without composing a webview
    * bundle of its own for one stylesheet.
+   *
+   * A long node name breaks onto lines in its header. A product that wants
+   * names on one line (code, say) turns it off with
+   * `storageOptions.headerWrap: false`, or a producer per node with
+   * `meta.headerWrap: false`; a node's `true` turns it back on.
    *
    * `edge-role-<role>` is on both an edge's outer group (`.sprotty-edge`) and
    * its line group inside it (`.workflow-edge`, which also carries `selected`

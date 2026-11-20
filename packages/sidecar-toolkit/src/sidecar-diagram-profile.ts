@@ -240,6 +240,13 @@ export interface SidecarProfileInput {
      * keeps every node and pushes down the ones under the toggled one.
      */
     toggleLayout?: 'relayout' | 'make-room';
+    /**
+     * Whether a long node name breaks onto lines in its header. Default
+     * `true`; `false` keeps names on one line, for names that are code. A
+     * node's `meta.headerWrap` (a boolean) wins over it, so the sidecar can
+     * keep the wrap off for some nodes only.
+     */
+    headerWrap?: boolean;
 
     // Chat edit backend.
     exportOp?: string;
@@ -848,7 +855,8 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
             nodeList: input.nodeList,
             nestedNavigation: input.clientBehavior?.nestedNavigation,
             defaultLayout: input.defaultLayout,
-            toggleLayout: input.toggleLayout
+            toggleLayout: input.toggleLayout,
+            headerWrap: input.headerWrap
         },
         watch: { globs: input.watchGlobs ?? sourceExtensions.map(ext => `**/*${ext}`) },
         // No provider at all for a product that resolves nothing itself: the
