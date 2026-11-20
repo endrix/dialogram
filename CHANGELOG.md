@@ -1420,6 +1420,16 @@ platform that hands it one.
 
 ### Fixed
 
+- **A connection's role reaches its line.** The server's `edge-role-<role>`
+  class landed only on the edge's outer group (`.sprotty-edge`), while the
+  line is drawn in the `.workflow-edge` group inside it, beside `selected`
+  and `hover`. A product stylesheet that styled lines as
+  `.workflow-edge.edge-role-x` matched nothing: ndf-ide drew every edge as
+  the same grey line, whether it refined, verified or blocked, and
+  chisel-ide drew its channels, wires, clocks and resets alike. The edge
+  views give the line group the role classes too, so both
+  `.sprotty-edge.edge-role-x .workflow-edge` and `.workflow-edge.edge-role-x`
+  reach it.
 - **A nested workflow instance's edges show that instance's tokens.** Two
   instances of one workflow, or two workflows that name their actors alike,
   have edges with the same ends (`p.Out --> Out`), and the overlay took the

@@ -46,6 +46,7 @@ import type { VNode } from 'snabbdom';
 import { WorkflowEdge, WorkflowNode } from './model';
 import { nodeOpenToggle } from './node-open-toggle';
 import { isKeptBySelection } from './selection-links';
+import { edgeRoleClasses } from './edge-role-classes';
 import { unionBox, type Box, type Point } from './transition-geometry';
 
 /** A state of an automaton. */
@@ -305,6 +306,7 @@ export class TransitionEdgeView implements IView {
         return svg('g', { class: { 'sprotty-edge': true, mouseover: edge.hoverFeedback } },
             svg('g', {
                 class: {
+                    ...edgeRoleClasses(edge),
                     'workflow-edge': true,
                     'transition-edge': true,
                     'transition-stub': !!chip,
