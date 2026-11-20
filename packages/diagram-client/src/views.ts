@@ -1825,7 +1825,6 @@ export class WorkflowEdgeView extends PolylineEdgeView {
 
         return svg('g', {
             class: {
-                // The role first, so a class of the view's own wins a clash.
                 ...edgeRoleClasses(edge),
                 'workflow-edge': true,
                 'edge-has-last-token': hasViewerToken,

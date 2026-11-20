@@ -32,11 +32,17 @@ describe('the role classes of an edge', () => {
 });
 
 describe('the edge views', () => {
+    /** The class object of the line group, up to its `'workflow-edge'` key. */
     const lineGroup = (source: string): string => {
         // The last such group: before it, the line hidden while its node is dragged.
         const at = source.lastIndexOf("'workflow-edge': true");
         expect(at, 'the line group').toBeGreaterThan(-1);
-        return source.slice(Math.max(0, at - 200), at);
+        const opens = source.lastIndexOf('class: {', at);
+        expect(opens, 'its class object').toBeGreaterThan(-1);
+        const object = source.slice(opens, at);
+        // Nothing closes between the object's start and the key: it is the same object.
+        expect(object.includes('}'), object).toBe(false);
+        return object;
     };
 
     it('give the role classes to the line group of a connection', () => {
