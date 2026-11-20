@@ -562,19 +562,20 @@ const GROUP_ROWS_LAYOUT: Record<string, string> = {
  * given, their left edges on one line. It is laid out to the right, every
  * member in the one layer between the group's inputs and its outputs (no edge
  * runs between them; `FIRST` on each member, which the boundary pass leaves
- * alone), in that order: the sweep that orders a layer keeps the order of
- * the members' positions (`semiInteractive`, a position each). With the model
- * order alone it moved a member that reads nothing (`busy <= 1`, which no
- * wire comes into) below the next one. Laid out downward in rows instead, the
- * layout moved members sideways to shorten the wires from the side, and put
- * some pins of a member that is a frame on the side they are not on: an
- * output on the left, an input on the right.
+ * alone), in that order. The model order sets it; the greedy switch, which
+ * swaps two neighbours of a layer where that saves a crossing after the
+ * order is set, is off: with it, a member no edge comes into moved below the
+ * next one. The layout places a member by its margin, which its ports make:
+ * `alignColumn` puts their left edges on one line after it. Laid out downward
+ * in rows instead, the layout moved members sideways to shorten the wires
+ * from the side, and put some pins of a member that is a frame on the side
+ * they are not on: an output on the left, an input on the right.
  */
 const GROUP_COLUMN_LAYOUT: Record<string, string> = {
     'elk.separateConnectedComponents': 'false',
     'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
     'elk.layered.crossingMinimization.forceNodeModelOrder': 'true',
-    'elk.layered.crossingMinimization.semiInteractive': 'true',
+    'elk.layered.crossingMinimization.greedySwitch.type': 'OFF',
     'elk.spacing.nodeNode': '16'
 };
 
@@ -614,11 +615,14 @@ export function isGroupRow(value: unknown): value is number {
  * - a column (`GROUP_COLUMN`) is laid out as one (`GROUP_COLUMN_LAYOUT`), in
  *   the order of the members' rows where they have them, else as given;
  * - a group with an edge between two of its own members keeps the plain
- *   layout. Rows are for members that relate only to what is outside the
- *   group (the actions of a state, each leading to another state). With an
- *   edge between two of them the layering puts the edge's ends in different
- *   layers, which splits a row, and keeping the producer's order within a
- *   row sends the edge through the members between its ends.
+ *   layout, a column as well. Rows are for members that relate only to what
+ *   is outside the group (the actions of a state, each leading to another
+ *   state). With an edge between two of them the layering puts the edge's
+ *   ends in different layers, which splits a row, and keeping the producer's
+ *   order within a row sends the edge through the members between its ends.
+ *   A column cannot hold them in one layer: the layout refuses an edge into
+ *   a member held first. Its members stand as what flows between them puts
+ *   them, the edge's end to the right of its start.
  */
 export function arrangeGroupRows(children: GModelElement[]): void {
     const edges = children.filter(isEdge);
@@ -665,15 +669,14 @@ export function arrangeGroupRows(children: GModelElement[]): void {
                 .map(({ member }) => member);
             let next = 0;
             group.children = (group.children ?? []).map(child => (members.includes(child as GNode) ? byRow[next++] : child));
-            // One layer, and a place in it a member's row (or turn) gives.
-            byRow.forEach((member, k) => {
+            // One layer, its members in the order just set.
+            for (const member of byRow) {
                 member.layoutOptions = {
                     ...(member.layoutOptions ?? {}),
                     'elk.alignment': 'LEFT',
-                    'elk.layered.layering.layerConstraint': 'FIRST',
-                    'elk.position': `(0,${k * 100})`
+                    'elk.layered.layering.layerConstraint': 'FIRST'
                 };
-            });
+            }
             return;
         }
         const last = Math.max(...rows) + 1;

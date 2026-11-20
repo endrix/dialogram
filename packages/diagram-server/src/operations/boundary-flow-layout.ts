@@ -95,7 +95,10 @@ export function applyBoundaryFlowLayerConstraints(
 
         const children = element.children as any[] | undefined;
         if (Array.isArray(children)) {
-            const column = element.args?.[WorkflowDiagramMetadata.GROUP_COLUMN] === true;
+            // A column laid out as one (`arrangeGroupRows` marks it rows); one
+            // whose members have an edge between them is laid out as any group.
+            const column = element.args?.[WorkflowDiagramMetadata.GROUP_COLUMN] === true
+                && element.args?.[WorkflowDiagramMetadata.GROUP_ROWS] === true;
             for (const child of children) {
                 visit(child, column);
             }

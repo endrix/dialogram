@@ -339,6 +339,34 @@ function ifBlock(): PyGraphDocument {
     };
 }
 
+/**
+ * A column of members (`[label, what it reads from outside, what it writes]`) in a group `C`, read
+ * from the inputs and written to the outputs; `wires` between members (`[from, name, to]`).
+ */
+function statements(members: Array<[string, string[], string]>, wires: Array<[string, string, string]> = []): PyGraphDocument {
+    const port = (node: string, name: string, direction: 'in' | 'out') => ({ id: `${node}:${direction}:${name}`, name, direction });
+    const reads = [...new Set(members.flatMap(([, r]) => r))];
+    const nodes: any[] = members.map(([label, r, w], k) => ({
+        id: `n:${k}`, kind: 'logic', label, scope: 'scope:C',
+        ports: [...r.map(n => port(`n:${k}`, n, 'in')), ...wires.filter(([, , to]) => to === `n:${k}`).map(([, n]) => port(`n:${k}`, n, 'in')), port(`n:${k}`, w, 'out')]
+    }));
+    const io = (name: string, kind: 'wf-input' | 'wf-output') =>
+        ({ id: `io:${name}`, kind, label: name, scope: 'scope:root', ports: [port(`io:${name}`, name, kind === 'wf-input' ? 'out' : 'in')] });
+    return {
+        version: '1',
+        graph: {
+            id: 'root',
+            nodes: [...reads.map(n => io(n, 'wf-input')), ...nodes, ...members.map(([, , w]) => io(w, 'wf-output'))] as any,
+            edges: [
+                ...members.flatMap(([, r], k) => r.map(n => ({ id: `e:${n}:${k}`, from: `io:${n}:out:${n}`, to: `n:${k}:in:${n}`, scope: 'scope:root' }))),
+                ...members.map(([, , w], k) => ({ id: `e:${w}`, from: `n:${k}:out:${w}`, to: `io:${w}:in:${w}`, scope: 'scope:root' })),
+                ...wires.map(([from, n, to]) => ({ id: `w:${from}:${to}`, from: `${from}:out:${n}`, to: `${to}:in:${n}`, scope: 'scope:C' }))
+            ],
+            subgraphs: [{ id: 'scope:root', kind: 'root', parent: null }, { id: 'scope:C', kind: 'group', label: 'C', column: true, parent: 'scope:root' }]
+        }
+    } as any;
+}
+
 describe('a column', () => {
     it('is laid out to the right, its members in their rows’ order', () => {
         const root = transform(ifBlock());
@@ -395,6 +423,39 @@ describe('a column', () => {
                 expect(left, name).toBe(pin.args[WorkflowDiagramMetadata.PORT_DIRECTION] === 'input');
             }
         }
+    });
+
+    it('stands its members’ left edges on one line, the widest of them taking nothing in', async () => {
+        // The layout places a member by how far its ports stick out on the left: the wide one, with no
+        // input, stood further left than the one with.
+        const byId = await laidOut(statements([['q <= d', ['d'], 'q'], ['a_rather_long_register_name <= 0', [], 'r']]));
+        // (A node is named in the model by its label, where no other has it.)
+        const [narrow, wide] = ['q <= d', 'a_rather_long_register_name <= 0'].map(label => byId.get(label));
+        expect(wide.size.width).toBeGreaterThan(narrow.size.width);
+        expect(wide.position.x).toBe(narrow.position.x);
+        expect(narrow.position.y + narrow.size.height).toBeLessThanOrEqual(wide.position.y);
+        // The wires follow: into a member from the left, out of it to the right.
+        const edges = [...byId.values()].filter(e => typeof e.sourceId === 'string' && Array.isArray(e.routingPoints));
+        for (const edge of edges) {
+            const pts = edge.routingPoints;
+            expect(pts.length).toBeGreaterThanOrEqual(2);
+            expect(pts[1].x, edge.id).toBeGreaterThanOrEqual(pts[0].x);
+            expect(pts[pts.length - 1].x, edge.id).toBeGreaterThanOrEqual(pts[pts.length - 2].x);
+        }
+    });
+
+    it('whose members have a wire between them, is laid out as any group: what flows puts them', async () => {
+        // `t = a` then `y = t`: the layout will not hold the reader in the first layer with a wire into it.
+        const doc = statements([['t = a', ['a'], 't'], ['y = t', [], 'y'], ['z = 0', [], 'z']], [['n:0', 't', 'n:1']]);
+        const root: any = new GraphGModelSource().transform(doc);
+        const group = root.graph.children.find((c: any) => c.id === 'scope:scope:C');
+        expect(group.args?.[WorkflowDiagramMetadata.GROUP_COLUMN]).toBe(true);
+        expect(group.args?.[WorkflowDiagramMetadata.GROUP_ROWS]).toBeUndefined();
+        // Not a column's member, a source among them is pinned first as anywhere.
+        const changed = applyBoundaryFlowLayerConstraints(convertToGModelRoot(root) as any, new Set(), false);
+        expect([...changed.keys()]).toContain('z = 0');
+        const byId = await laidOut(doc);
+        expect(byId.get('y = t').position.x).toBeGreaterThan(byId.get('t = a').position.x);
     });
 
     it('keeps its members in the order given, in one layer, those that read nothing too', async () => {

@@ -88,6 +88,34 @@ function boxAround(boxes: readonly Box[]): Box | undefined {
     return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
+/**
+ * Whether a group was laid out as a column (`GROUP_COLUMN`, taken by
+ * `arrangeGroupRows`, which marks it `GROUP_ROWS`): its members in one layer.
+ */
+export function isLaidOutColumn(element: GModelElement): boolean {
+    return element.args?.[WorkflowDiagramMetadata.GROUP_COLUMN] === true && element.args?.[WorkflowDiagramMetadata.GROUP_ROWS] === true;
+}
+
+/**
+ * A column's members on one left line. The layout places each member of a
+ * layer by its margin, which its ports stick out by on the left (a node's
+ * input, a frame's pin, none for a member with no input): the widest member
+ * stands further left than the others when its margin is the smaller one.
+ * They move to the rightmost: the room is on their right, the layer being
+ * as wide as its widest member with its margins, and the wires' ends follow
+ * their ports when the routes are applied (`snapRouteEndpoints`).
+ */
+export function alignColumn(column: ElkNode): void {
+    const members = column.children ?? [];
+    if (members.length < 2) {
+        return;
+    }
+    const left = Math.max(...members.map(member => member.x ?? 0));
+    for (const member of members) {
+        member.x = left;
+    }
+}
+
 @injectable()
 export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
 
@@ -1116,6 +1144,9 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
 
         if (element instanceof GNode) {
             (this as any).applyShape(element, elkNode);
+            if (isLaidOutColumn(element)) {
+                alignColumn(elkNode);
+            }
         }
 
         // Apply port positions returned by ELK

@@ -108,7 +108,7 @@ export type PyGraphScope = {
     pins?: PyGraphPort[];
     /** A `group` scope whose members stand in one column, one under another in
      *  the order given (by `row` where they have one), their left edges on one
-     *  line (group-edges.ts): the statements of a block, as written. Only `true`
+     *  line (group-edges.ts): the steps of a sequence, as listed. Only `true`
      *  counts. */
     column?: boolean;
     children?: string[];

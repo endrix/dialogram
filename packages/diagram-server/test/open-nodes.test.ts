@@ -11,7 +11,7 @@ import { ToggleNodeOpenOperation, WorkflowDiagramMetadata, WorkflowDiagramTypes 
 import { GraphGModelSource, type PyGraphDocument, type PyGraphNode } from '../src/model/graph-gmodel-source';
 import { portBusStateOf } from '../src/model/port-bundles';
 import { stableNodeIds } from '../src/model/stable-ids';
-import { OPEN_NODE_SPACING, innerNodeId, isOpenIn, openFrameId, openNodes, withOpenNodePositions } from '../src/model/open-nodes';
+import { MAX_OPEN_DEPTH, OPEN_NODE_SPACING, innerNodeId, isOpenIn, openFrameId, openNodes, withOpenNodePositions } from '../src/model/open-nodes';
 import { convertToGModelRoot } from '../src/server/gmodel-convert';
 import { relativeToParent, restoreGroupGeometry } from '../src/server/group-geometry';
 import { collectEdgeRoutes, collectNodePositions, nodeLayoutKeyOf } from '../src/server/layout-snapshot';
@@ -445,6 +445,8 @@ const statement: PyGraphDocument = {
 };
 /** The branch's id in the model, under the block's frame, and the key it is saved by. */
 const BI = innerNodeId(P, B);
+/** The assignment's, under the branch's frame: by what its id adds to the branch's. */
+const AI = `${openFrameId(BI)}/assign:0`;
 
 describe('a node opened inside an open node', () => {
     const nothing = portBusStateOf(new Map());
@@ -457,7 +459,7 @@ describe('a node opened inside an open node', () => {
         expect(inner).toMatchObject({ kind: 'group', label: 'if (a)', parent: `open:${P}`, openNodeKey: BI });
         expect(inner.pins!.map(pin => pin.name)).toEqual(['a', 'b', 'q']);
         expect(opened.graph.nodes.map(n => n.id).filter(id => id === P || id === BI)).toEqual([]);
-        expect(opened.graph.nodes.find(n => n.id === innerNodeId(BI, A))?.scope).toBe(`open:${BI}`);
+        expect(opened.graph.nodes.find(n => n.id === AI)?.scope).toBe(`open:${BI}`);
         expect(opened.graph.edges.map(e => `${e.from} -> ${e.to}`).sort()).toEqual([
             `b:a:a -> ${P}:a`, `b:b:b -> ${P}:b`, `${P}:q -> b:q:q`,
             `${P}:a -> ${B}:a`, `${P}:b -> ${B}:b`, `${B}:q -> ${P}:q`,
@@ -484,6 +486,52 @@ describe('a node opened inside an open node', () => {
         expect(shut.outer).toBeUndefined();
         expect(shut.graph.children.find((c: any) => c.args?.[WorkflowDiagramMetadata.GRAPH_NODE_ID] === P)
             .args[WorkflowDiagramMetadata.NODE_OPENABLE]).toBe(true);
+    });
+
+    it('is named by what its id adds to its parent’s, the ids growing with the depth, not its square', () => {
+        const opened = openNodes(statement, nothing, stableNodeIds(statement.graph.nodes));
+        // The branch, held in a node of the document's own graph, keeps its id as ever (layouts are saved by it).
+        expect(BI).toBe(`${openFrameId(P)}/${B}`);
+        expect(opened.graph.nodes.map(n => n.id)).toEqual(expect.arrayContaining([AI]));
+        expect(opened.graph.subgraphs!.map(s => s.id)).toEqual(expect.arrayContaining([`open:${P}`, `open:${BI}`]));
+    });
+
+    it('ends, opened in a graph that holds itself', () => {
+        const again: any = { id: B, kind: 'logic', label: 'again', scope: 'root', ports: [], meta: { inner: { open: true, nodes: [], edges: [] } } };
+        again.meta.inner.nodes.push(again);
+        const looped: PyGraphDocument = {
+            ...statement,
+            graph: { ...statement.graph, nodes: statement.graph.nodes.map(n => (n.id === P ? { ...n, meta: { ...n.meta, inner: { open: true, nodes: [again], edges: [] } } } : n)) }
+        };
+        const opened = openNodes(looped, nothing, stableNodeIds(looped.graph.nodes));
+        expect(opened.graph.subgraphs!.filter(s => s.id.startsWith('open:'))).toHaveLength(MAX_OPEN_DEPTH);
+    });
+
+    it('opened with its parent, has a place, and so has what it holds', () => {
+        const graph: any = new GraphGModelSource().transform(statement, { portBuses: nothing }).graph;
+        const at = withOpenNodePositions(graph, new Map([[KEY, { x: 200, y: 100 }]]));
+        expect(at.get(openFrameId(P))).toEqual({ x: 200, y: 100 });
+        expect(at.has(openFrameId(BI))).toBe(true);
+        // From its own frame's place, which its parent's gave it just now.
+        expect(at.get(AI)!.x).toBeGreaterThan(at.get(openFrameId(BI))!.x);
+        expect(countCoincidentNodes(at.values())).toBe(0);
+    });
+
+    it('closed with its parent, has its places dropped with the parent’s', () => {
+        const graph: any = new GraphGModelSource().transform(statement, { portBuses: portBusStateOf(new Map([[KEY, new Set([ToggleNodeOpenOperation.CLOSED])]])) }).graph;
+        const at = withOpenNodePositions(graph, new Map([
+            [openFrameId(P), { x: 200, y: 100 }], [openFrameId(BI), { x: 216, y: 140 }], [AI, { x: 232, y: 180 }]
+        ]));
+        expect(at.get(KEY)).toEqual({ x: 200, y: 100 });
+        expect([...at.keys()]).toEqual([KEY]);
+    });
+
+    it('drawn open by its producer, saved by a layout that never had it open, is left for the layout to place', () => {
+        const graph: any = new GraphGModelSource().transform(statement, { portBuses: nothing }).graph;
+        const at = withOpenNodePositions(graph, new Map([[openFrameId(P), { x: 200, y: 100 }]]), true);
+        // As a frame of the diagram's own is: the view is laid out again, not opened over its neighbours.
+        expect(at.has(openFrameId(BI))).toBe(false);
+        expect(at.has(AI)).toBe(false);
     });
 
     it('is closed and opened again by its toggle, the layout keeping which', async () => {
