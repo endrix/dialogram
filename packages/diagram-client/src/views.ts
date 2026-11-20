@@ -50,8 +50,9 @@ import { nodeLinesHeight, nodeLinesOf, renderNodeLines } from './node-lines';
 import { listRowOf, renderListRow } from './list-row-view';
 import { GROUP_INITIAL_MARK_ROOM_PX, groupInitialMark, isGroupInitial } from './group-initial-mark';
 import { isDrawnBackwards } from './feedback-direction';
+import { nameLinesOf, nodeHeaderHeight } from './header-name-lines';
 import { edgeRoleClasses } from './edge-role-classes';
-import { WorkflowDiagramConstants, estimatePinLabelBox, estimatePortLabelSize, portLabelParts } from '@dialogram/shared';
+import { WorkflowDiagramConstants, estimatePinLabelBox, estimatePortLabelSize, headerHeight, portLabelParts } from '@dialogram/shared';
 
 /** Walk to the model root; the drag-active window is tracked per root. */
 function rootOfEdge(element: any): any {
@@ -168,14 +169,14 @@ export const __testables = { resolveNodeFamily, renderRunRing, renderNodeCenterI
 function renderNodeCenterImage(
     family: NodeFamilySpec,
     nodeWidth: number,
-    nodeHeight: number
+    nodeHeight: number,
+    bodyTop: number = HEADER_HEIGHT
 ): VNode[] {
     const image = family.image;
     if (!image?.dark) {
         return [];
     }
     const size = NODE_ICON_SIZE;
-    const bodyTop = HEADER_HEIGHT;
     const x = nodeWidth / 2 - size / 2;
     const y = bodyTop + (nodeHeight - bodyTop) / 2 - size / 2;
     const hasLight = Boolean(image.light);
@@ -196,9 +197,9 @@ function renderNodeCenterImage(
     )];
 }
 
-/** Whether a family's mark fits in a body `openHeight` tall above its lines, under the header. */
-function markFits(openHeight: number): boolean {
-    return openHeight - HEADER_HEIGHT >= NODE_ICON_SIZE / 2;
+/** Whether a family's mark fits in a body `openHeight` tall above its lines, under a header `headerH` tall. */
+function markFits(openHeight: number, headerH: number = HEADER_HEIGHT): boolean {
+    return openHeight - headerH >= NODE_ICON_SIZE / 2;
 }
 
 /**
@@ -208,11 +209,11 @@ function markFits(openHeight: number): boolean {
 function renderNodeCenterIcon(
     family: NodeFamilySpec,
     nodeWidth: number,
-    nodeHeight: number
+    nodeHeight: number,
+    bodyTop: number = HEADER_HEIGHT
 ): VNode {
     const iconSize = NODE_ICON_SIZE;
     // Center horizontally, center vertically in the body area below the header
-    const bodyTop = HEADER_HEIGHT;
     const bodyHeight = nodeHeight - bodyTop;
     const cx = nodeWidth / 2;
     const cy = bodyTop + bodyHeight / 2;
@@ -664,8 +665,15 @@ export class HeaderCompartmentView extends ShapeView {
         const parentBounds = parent && 'bounds' in parent ? (parent as any).bounds : undefined;
         const parentWidth = parentSize?.width > 0 ? parentSize.width : (parentBounds?.width ?? 0);
         const width = Math.max(0, parentWidth > 0 ? parentWidth : node.bounds.width);
-        // Use header height from bounds, or default to 24 (standard header height)
-        const height = node.bounds.height > 0 ? node.bounds.height : 24;
+        // A name the server broke onto lines (header-name-lines.ts) makes the
+        // header as tall as they need; the node was sized for it. Otherwise
+        // the header's height from its bounds, or the standard one.
+        const nameLabel = node.children.find((child): child is GLabel =>
+            child instanceof GLabel && child.type.includes('name') && !child.type.includes('badge'));
+        const nameLines = nameLabel ? nameLinesOf(nameLabel as any) : [];
+        const height = nameLines.length > 1
+            ? headerHeight(nameLines.length)
+            : node.bounds.height > 0 ? node.bounds.height : 24;
         
         // Badges first: pills right-aligned in the header, in the producer's
         // order from the left, each at its text width plus padding. What they
@@ -701,17 +709,21 @@ export class HeaderCompartmentView extends ShapeView {
         const centerX = (width - badgesWidth) / 2;
         const labelChildren: VNode[] = [];
         let labelY = height / 2; // Center vertically in header
-        const labelSpacing = 14; // Vertical spacing between labels
-        
-        // Count labels first for proper vertical distribution
+        const labelSpacing = WorkflowDiagramConstants.HEADER_LINE_HEIGHT_PX; // Vertical spacing between lines
+
+        // Count the lines first for proper vertical distribution: one per
+        // label, the name's as many as it breaks onto.
         const labels = node.children.filter(child => child instanceof GLabel && !isBadge(child));
+        const lineCount = labels.length + Math.max(0, nameLines.length - 1);
         if (labels.length > 0) {
-            const totalLabelHeight = labels.length * labelSpacing;
+            const totalLabelHeight = lineCount * labelSpacing;
             labelY = (height - totalLabelHeight) / 2 + labelSpacing / 2 + 4; // Start position
         }
-        
+
         for (const child of node.children) {
             if (child instanceof GLabel && !isBadge(child)) {
+                const rows = child === nameLabel && nameLines.length > 1 ? nameLines : undefined;
+                const firstY = labelY;
                 labelChildren.push(
                     svg('text', {
                         class: { 
@@ -723,13 +735,17 @@ export class HeaderCompartmentView extends ShapeView {
                         },
                         attrs: {
                             x: centerX,
-                            y: labelY,
+                            y: firstY,
                             'text-anchor': 'middle',
                             'dominant-baseline': 'middle'
                         }
-                    }, child.text || '')
+                    }, ...(rows
+                        ? rows.map((row, index) => svg('tspan', {
+                            attrs: { x: centerX, y: firstY + index * labelSpacing, 'dominant-baseline': 'middle' }
+                        }, row))
+                        : [child.text || '']))
                 );
-                labelY += labelSpacing;
+                labelY += labelSpacing * (rows ? rows.length : 1);
             }
         }
         
@@ -839,8 +855,10 @@ function renderEntityNode(
     }
     const { height: bodyHeight, footerLabel } = getNodeBody(node as any, { width, height });
     const lines = nodeLinesOf(node as any);
-    // The body above the lines: where the family's mark is centred.
+    // The body above the lines: where the family's mark is centred, under a
+    // header as tall as the name's lines.
     const openHeight = bodyHeight - nodeLinesHeight(lines);
+    const headerH = nodeHeaderHeight(node as any);
     const footerLabelNode = footerLabel
         ? svg('text', {
             class: { 'type-footer-label': true },
@@ -879,8 +897,8 @@ function renderEntityNode(
         ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
         // The mark only where the body above the lines has room for it: a
         // node that is its header and its lines has none.
-        ...(family?.icon && markFits(openHeight) ? [renderNodeCenterIcon(family, width, openHeight)] : []),
-        ...(family?.image && markFits(openHeight) ? renderNodeCenterImage(family, width, openHeight) : []),
+        ...(family?.icon && markFits(openHeight, headerH) ? [renderNodeCenterIcon(family, width, openHeight, headerH)] : []),
+        ...(family?.image && markFits(openHeight, headerH) ? renderNodeCenterImage(family, width, openHeight, headerH) : []),
         ...renderNodeLines(lines, width, bodyHeight),
         ...context.renderChildren(node),
         ...(footerLabelNode ? [footerLabelNode] : [])

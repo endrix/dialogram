@@ -1,6 +1,6 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
 import { parseBadgesMeta, parseFactsMeta, parseLinesMeta, parseViewsMeta, type UnitBadge } from '../server/graph-load-request-options';
-import { BoundaryPortGeometry, estimatePinLabelSize, estimateTextSize, isBoundaryNodeType, portLabelSlot, SymbolGeometry, textColumns, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
+import { BoundaryPortGeometry, estimatePinLabelSize, estimateTextSize, headerHeight, headerLines, headerTextWidth, isBoundaryNodeType, portLabelSlot, SymbolGeometry, textColumns, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import { normalizeViewOptionGroups, VIEW_OPTIONS_ARG } from '@dialogram/shared';
 import { nodeFamilyName, resolveNodeFamily } from '@dialogram/shared';
 import * as path from 'node:path';
@@ -512,17 +512,9 @@ export class GraphGModelSource {
             const portW = WorkflowDiagramConstants.PORT_WIDTH_PX;
             const portH = WorkflowDiagramConstants.PORT_HEIGHT_PX;
             const portRowH = portH + WorkflowDiagramConstants.PORT_ROW_VERTICAL_GAP_PX;
-            const yStart = WorkflowDiagramConstants.HEADER_HEIGHT_PX + WorkflowDiagramConstants.PORT_AREA_PADDING_PX;
-            const minHeight = node.kind === 'if' || node.kind === 'loop' ? 160 : 60;
             const defaultWidth = node.kind === 'if' || node.kind === 'loop' ? 260 : 140;
 
             const maxPorts = Math.max(inputs.length, outputs.length);
-            // Symmetric padding: PORT_AREA_PADDING_PX above the first port and below the last port.
-            // requiredHeight = yStart + maxPorts * portRowH - PORT_ROW_VERTICAL_GAP_PX + PORT_HEIGHT + PORT_AREA_PADDING_PX
-            const requiredHeight = yStart + maxPorts * portRowH
-                - WorkflowDiagramConstants.PORT_ROW_VERTICAL_GAP_PX
-                + WorkflowDiagramConstants.PORT_HEIGHT_PX
-                + WorkflowDiagramConstants.PORT_AREA_PADDING_PX;
 
             const labelGap = WorkflowDiagramConstants.PORT_LABEL_GAP_PX;
             const labelPad = WorkflowDiagramConstants.PORT_LABEL_PADDING_PX;
@@ -554,12 +546,6 @@ export class GraphGModelSource {
             // name's tail. Their widths follow the client's drawing: text at
             // the badge font, padding, a gap between badges.
             const unitBadges = parseBadgesMeta(node.meta?.['badges']) ?? [];
-            // An openable node's header starts with its toggle (node-open-toggle.ts),
-            // on both sides of the centred name.
-            const headerLabelW = estimateTextSize(node.label, WorkflowDiagramConstants.HEADER_LABEL_FONT_SIZE_PX).width
-                + WorkflowDiagramConstants.HEADER_LABEL_EXTRA_WIDTH_PX
-                + this.badgesWidth(unitBadges)
-                + (openable ? 2 * OPEN_TOGGLE_ROOM_PX : 0);
             const isNetworkInstanceNode = this.isNetworkInstanceNode(node);
             // Does this node get an italic type label under it? Mirrors the
             // condition used below when setting `wf:footerTypeLabel`.
@@ -587,6 +573,33 @@ export class GraphGModelSource {
             const lineColumnWidth = estimateTextSize('x', WorkflowDiagramConstants.NODE_LINE_FONT_SIZE_PX).width;
             const linesWidth = lines.length === 0 ? 0 : 2 * WorkflowDiagramConstants.NODE_LINE_PADDING_PX
                 + lineColumnWidth * Math.max(...lines.map(line => textColumns(line.text)));
+            // What the header holds besides the name: its padding, the badges,
+            // and an openable node's toggle (node-open-toggle.ts) on both
+            // sides of the centred name.
+            const headerChrome = WorkflowDiagramConstants.HEADER_LABEL_EXTRA_WIDTH_PX
+                + this.badgesWidth(unitBadges)
+                + (openable ? 2 * OPEN_TOGGLE_ROOM_PX : 0);
+            // A long name breaks onto lines in its header (header-lines.ts),
+            // which grows taller rather than the node wider: a node with a
+            // header of its own, not a symbol, a state or a frame. It breaks
+            // past the cap, or past the room the node has anyway when its
+            // ports or its lines make it wider: a name that fits there on one
+            // line stays on one.
+            const room = Math.max(defaultWidth, labelRequiredWidth, linesWidth) - headerChrome;
+            const nameLines = !symbolKind && !framed && node.kind !== 'state'
+                ? headerLines(node.label, Math.max(WorkflowDiagramConstants.HEADER_WRAP_WIDTH_PX, room))
+                : [node.label];
+            const headerLabelW = Math.max(...nameLines.map(headerTextWidth)) + headerChrome;
+            const headerH = headerHeight(nameLines.length);
+            const yStart = headerH + WorkflowDiagramConstants.PORT_AREA_PADDING_PX;
+            // The body keeps its height under a taller header, its family's mark with it.
+            const minHeight = (framed ? 160 : 60) + headerH - WorkflowDiagramConstants.HEADER_HEIGHT_PX;
+            // Symmetric padding: PORT_AREA_PADDING_PX above the first port and below the last port.
+            // requiredHeight = yStart + maxPorts * portRowH - PORT_ROW_VERTICAL_GAP_PX + PORT_HEIGHT + PORT_AREA_PADDING_PX
+            const requiredHeight = yStart + maxPorts * portRowH
+                - WorkflowDiagramConstants.PORT_ROW_VERTICAL_GAP_PX
+                + WorkflowDiagramConstants.PORT_HEIGHT_PX
+                + WorkflowDiagramConstants.PORT_AREA_PADDING_PX;
             // As wide as the label boxes drawn on the body, a bus's inset and
             // a member's rail slot with them.
             const pinNameWidth = (ps: PyGraphPort[]): number => Math.max(0, ...ps.map(p => labelOf(p).boxWidth));
@@ -607,7 +620,7 @@ export class GraphGModelSource {
                     width: Math.max(defaultWidth, labelRequiredWidth, headerLabelW, linesWidth),
                     // The lines are under what the node is without them, so
                     // its ports and its family's mark keep their room.
-                    height: (portless ? WorkflowDiagramConstants.HEADER_HEIGHT_PX : Math.max(minHeight, requiredHeight))
+                    height: (portless ? headerH : Math.max(minHeight, requiredHeight))
                         + linesHeight + footerReserve
                 };
             // A state of an automaton is its name in a pill: no header, no
@@ -960,7 +973,7 @@ export class GraphGModelSource {
                     ...(symbolCaption !== undefined ? { [WorkflowDiagramMetadata.SYMBOL_CAPTION]: symbolCaption } : {})
                 };
             } else if (!isState && !listRow) {
-                gnode.children!.push(this.createHeaderCompartment(headerLabelId, node.label, subtitle, headerClasses, unitBadges));
+                gnode.children!.push(this.createHeaderCompartment(headerLabelId, node.label, subtitle, headerClasses, unitBadges, nameLines));
             }
             if (unitBadges.length > 0) {
                 gnode.args = {
@@ -1849,13 +1862,16 @@ export class GraphGModelSource {
         text: string,
         subtitle?: string,
         cssClasses?: string[],
-        badges: readonly UnitBadge[] = []
+        badges: readonly UnitBadge[] = [],
+        lines: readonly string[] = [text]
     ): GModelElement {
         const children: GModelElement[] = [
             {
                 id: id,
                 type: WorkflowDiagramTypes.LABEL_NAME,
-                text
+                text,
+                // The name in the lines the node was sized by, when it breaks.
+                ...(lines.length > 1 ? { args: { [WorkflowDiagramMetadata.HEADER_LINES]: [...lines] } } : {})
             } as any
         ];
         if (subtitle && subtitle.trim()) {

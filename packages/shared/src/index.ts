@@ -25,6 +25,7 @@ export * from './chat-tools';
 export * from './entity-names';
 export * from './clipboard-payload';
 export * from './port-bus';
+export * from './header-lines';
 export * from './port-label-geometry';
 export * from './symbol-geometry';
 export * from './node-open';
