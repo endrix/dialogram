@@ -1417,6 +1417,19 @@ platform that hands it one.
 
 ### Fixed
 
+- **A nested workflow instance's edges show that instance's tokens.** Two
+  instances of one workflow, or two workflows that name their actors alike,
+  have edges with the same ends (`p.Out --> Out`), and the overlay took the
+  token of whichever run record with those ends came last: in a view of one
+  instance, every such edge showed what the other carried, at the end of the
+  run and at each step of the queue trace, and the node list's rows did the
+  same (double-clicking a viewer there opened the other instance's file). A
+  run record of a nested instance now says the instance it is in
+  (`instancePath`, instance names from the run's root), and a view reads only
+  its own instance's records: the canvas those of the instance the
+  navigation trail leads to, the node list those of each row's instance. A
+  run none of whose records says an instance shows as before.
+
 - **Over a surface that hears clicks, the property panel opens on the
   view's own properties.** A product that draws the diagram on its own
   surface and answers its clicks (#203) opened with "Select an element to

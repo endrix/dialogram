@@ -39,6 +39,7 @@ import {
 import { GraphGModelSource } from '../model/graph-gmodel-source';
 import { buildNodeList, type OverlayTokenOf } from './node-list';
 import { edgeTokensOf } from './edge-tokens';
+import { edgesOfInstance, instancePathOf, recordsOfInstance } from './overlay-scope';
 import { FileMemo } from '../services/file-memo';
 import { portBusStateOf } from '../model/port-bundles';
 import { allowsStateEdits, placeHeldStates, withUnwrittenStates } from '../model/unwritten-states';
@@ -1444,48 +1445,65 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 return analysis?.buildOverlayAstPathCandidates(args) ?? [];
             };
 
-            const overlayBySignature = new Map<string, unknown>();
-            for (const entry of Object.values(overlay.edges)) {
-                for (const signature of signatureCandidatesForOverlay(entry as any)) {
-                    if (Object.prototype.hasOwnProperty.call(entry, 'lastToken')) {
-                        overlayBySignature.set(signature, (entry as any).lastToken);
-                    }
+            // The rule for the edges of one workflow instance, from that instance's records alone
+            // (overlay-scope.ts): the view's instance for the canvas, each row's for the node list.
+            const tokensByInstance = new Map<string, ReturnType<typeof edgeTokensOf>>();
+            const tokensIn = (instancePath: readonly string[]): ReturnType<typeof edgeTokensOf> => {
+                const known = tokensByInstance.get(JSON.stringify(instancePath));
+                if (known) {
+                    return known;
                 }
-            }
-
-            const queueByAstPath = new Map<string, number>();
-            const queueBySignature = new Map<string, number>();
-            const queueTokenByAstPath = new Map<string, unknown>();
-            const queueTokenBySignature = new Map<string, unknown>();
-            if (queueTrace) {
-                for (const q of queueTrace.queues) {
-                    if (typeof q.astPath === 'string' && q.astPath.trim() !== '') {
-                        queueByAstPath.set(q.astPath, q.size);
-                        if (Object.prototype.hasOwnProperty.call(q, 'lastToken')) {
-                            queueTokenByAstPath.set(q.astPath, (q as any).lastToken);
-                        }
-                        continue;
-                    }
-                    for (const signature of signatureCandidatesForOverlay(q as any)) {
-                        queueBySignature.set(signature, q.size);
-                        if (Object.prototype.hasOwnProperty.call(q, 'lastToken')) {
-                            queueTokenBySignature.set(signature, (q as any).lastToken);
+                const overlayEdges = edgesOfInstance(overlay.edges, instancePath);
+                const overlayBySignature = new Map<string, unknown>();
+                for (const entry of Object.values(overlayEdges)) {
+                    for (const signature of signatureCandidatesForOverlay(entry as any)) {
+                        if (Object.prototype.hasOwnProperty.call(entry, 'lastToken')) {
+                            overlayBySignature.set(signature, (entry as any).lastToken);
                         }
                     }
                 }
-            }
 
-            const tokensOfEdge = edgeTokensOf({
-                overlayEdges: overlay.edges,
-                overlayBySignature,
-                queueByAstPath,
-                queueBySignature,
-                queueTokenByAstPath,
-                queueTokenBySignature,
-                atTrace: queueTrace !== undefined,
-                astPathCandidates: astPathCandidatesForEdge,
-                signatureCandidates: signatureCandidatesForEdge
-            });
+                const queueByAstPath = new Map<string, number>();
+                const queueBySignature = new Map<string, number>();
+                const queueTokenByAstPath = new Map<string, unknown>();
+                const queueTokenBySignature = new Map<string, unknown>();
+                if (queueTrace) {
+                    for (const q of recordsOfInstance(queueTrace.queues, instancePath)) {
+                        if (typeof q.astPath === 'string' && q.astPath.trim() !== '') {
+                            queueByAstPath.set(q.astPath, q.size);
+                            if (Object.prototype.hasOwnProperty.call(q, 'lastToken')) {
+                                queueTokenByAstPath.set(q.astPath, (q as any).lastToken);
+                            }
+                            continue;
+                        }
+                        for (const signature of signatureCandidatesForOverlay(q as any)) {
+                            queueBySignature.set(signature, q.size);
+                            if (Object.prototype.hasOwnProperty.call(q, 'lastToken')) {
+                                queueTokenBySignature.set(signature, (q as any).lastToken);
+                            }
+                        }
+                    }
+                }
+
+                const tokens = edgeTokensOf({
+                    overlayEdges,
+                    overlayBySignature,
+                    queueByAstPath,
+                    queueBySignature,
+                    queueTokenByAstPath,
+                    queueTokenBySignature,
+                    atTrace: queueTrace !== undefined,
+                    astPathCandidates: astPathCandidatesForEdge,
+                    signatureCandidates: signatureCandidatesForEdge
+                });
+                tokensByInstance.set(JSON.stringify(instancePath), tokens);
+                return tokens;
+            };
+            // The view's instance, by instance names from the root.
+            const viewInstancePath = navigationTrail
+                .map(entry => entry.workflowInstanceName?.trim() ?? '')
+                .filter(part => part !== '');
+            const tokensOfEdge = tokensIn(viewInstancePath);
 
             const activeNames = overlay.active && Array.isArray(overlay.active)
                 ? overlay.active
@@ -1522,9 +1540,6 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             const errorPath = showsLastStep && Array.isArray(rawErrorPath)
                 ? rawErrorPath.filter((part): part is string => typeof part === 'string' && part.trim() !== '')
                 : [];
-            const viewInstancePath = navigationTrail
-                .map(entry => entry.workflowInstanceName?.trim() ?? '')
-                .filter(part => part !== '');
             const errorLocation = errorPath.length > 0 ? errorInView(errorPath, viewInstancePath) : undefined;
             const errorEntityName = errorPath.length > 0
                 ? errorLocation?.nodeName
@@ -1639,7 +1654,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             return {
                 runId: overlay.runId,
                 outDir: overlay.outDir,
-                tokenOf: args => tokensOfEdge(args).shown
+                tokenOf: (args, instancePath) => tokensIn(instancePath ?? viewInstancePath)(args).shown
             };
         } catch (err) {
             console.warn('[WorkflowSourceModelStorage] Failed to apply viewer overlay', err);
@@ -2174,6 +2189,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             inPort?: string;
             size: number;
             lastToken?: unknown;
+            /** The workflow instance the queue is in, from the run's root; none for the root's own. */
+            instancePath?: string[];
         }>;
     } | undefined> {
         const path = await import('path');
@@ -2214,7 +2231,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                     toEntity: typeof entry?.toEntity === 'string' ? entry.toEntity : undefined,
                     inPort: typeof entry?.inPort === 'string' ? entry.inPort : undefined,
                     size,
-                    ...(Object.prototype.hasOwnProperty.call(entry ?? {}, 'lastToken') ? { lastToken: entry.lastToken } : {})
+                    ...(Object.prototype.hasOwnProperty.call(entry ?? {}, 'lastToken') ? { lastToken: entry.lastToken } : {}),
+                    ...(instancePathOf(entry).length > 0 ? { instancePath: instancePathOf(entry) } : {})
                 };
             })
             .filter((v: any): v is {
@@ -2225,6 +2243,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 inPort?: string;
                 size: number;
                 lastToken?: unknown;
+                instancePath?: string[];
             } => !!v);
 
         const actorInstanceName = typeof step.actorInstanceName === 'string' && step.actorInstanceName.trim() !== ''

@@ -14,7 +14,7 @@
  * The rows are built from the graphs of the hierarchy's export
  * (`GraphDocument.hierarchyGraphs`), each transformed as a view of it would
  * be, and their edges given the run's tokens by the same rule the canvas
- * uses (`OverlayTokenOf`). Nothing is laid out. A node is in the family the
+ * uses, from their own instance's records (`OverlayTokenOf`). Nothing is laid out. A node is in the family the
  * canvas colours it by: shared `resolveNodeFamily` over its definition's
  * annotations, with the families the canvas has.
  */
@@ -33,8 +33,15 @@ import {
 } from '@dialogram/shared';
 import type { GModelElement } from '../model/graph-gmodel-source';
 
-/** The token the last run left on an edge, by the edge's arguments; undefined when it left none. */
-export type OverlayTokenOf = (edgeArgs: Record<string, unknown> | undefined) => { token: unknown } | undefined;
+/**
+ * The token the last run left on an edge, by the edge's arguments and the
+ * workflow instance it is in (instance names from the root; the view's own
+ * when absent); undefined when it left none.
+ */
+export type OverlayTokenOf = (
+    edgeArgs: Record<string, unknown> | undefined,
+    instancePath?: readonly string[]
+) => { token: unknown } | undefined;
 
 export interface NodeListInput {
     spec: NodeListSpec;
@@ -103,7 +110,7 @@ function nodeRow(
         .map(edge => {
             const args = { ...(edge.args ?? {}) };
             delete args[WorkflowDiagramMetadata.VIEWER_LAST_TOKEN];
-            const carried = input.tokenOf?.(edge.args);
+            const carried = input.tokenOf?.(edge.args, instance.path);
             if (carried) {
                 args[WorkflowDiagramMetadata.VIEWER_LAST_TOKEN] = carried.token;
             }
