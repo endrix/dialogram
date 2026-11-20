@@ -25,7 +25,8 @@ const NODE_LIST_PANEL: OutlinePanelConfig = {
     storageKey: 'dialogram.nodeListOutline.open',
     arg: NODE_LIST_ARG,
     codicon: 'list-tree',
-    under: ['workflow-hierarchy-outline-toggle', 'workflow-chat-toggle-btn'],
+    // Above every other button: showing it moves none of them.
+    under: 'top',
     className: 'workflow-node-list',
     // The host's outline messages are the hierarchy's: the list has no rows of the host's.
     hostRows: false
@@ -51,7 +52,8 @@ export class NodeListOutlinePanel extends HierarchyOutlinePanel {
 
     protected override panelConfig(): OutlinePanelConfig {
         // Its own copy: the codicon is the product's, read with the list.
-        return { ...NODE_LIST_PANEL, under: [...NODE_LIST_PANEL.under] };
+        const under = NODE_LIST_PANEL.under;
+        return { ...NODE_LIST_PANEL, under: Array.isArray(under) ? [...under] : under };
     }
 
     protected override title(): string {

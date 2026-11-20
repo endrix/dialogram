@@ -3,7 +3,7 @@
  * The node list: a viewer the product's opener cannot open yet is dimmed,
  * says why, and takes no click; one it can is opened by a double click
  * straight from the row, the opener given the node as the canvas would
- * draw it; its button sits under the hierarchy's.
+ * draw it; its button sits at the top of the stack, moving no other.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { GModelElement } from '@eclipse-glsp/sprotty';
@@ -202,22 +202,81 @@ describe('the node list', () => {
 });
 
 describe('its button', () => {
-    it('sits directly under the hierarchy\'s, which sits under the chat\'s, whichever is placed first', () => {
+    // The panels of the tests above place their buttons again a frame after
+    // each model: let those frames pass before a stack of these tests exists.
+    beforeEach(async () => {
+        await new Promise(resolve => requestAnimationFrame(() => resolve(undefined)));
+        document.body.replaceChildren();
+    });
+
+    it('sits at the top of the stack, above the hierarchy\'s and the chat\'s, whichever is placed first', () => {
         document.body.replaceChildren();
         const stack = document.createElement('div');
         stack.className = 'workflow-fab-stack';
+        const run = Object.assign(document.createElement('button'), { id: 'run-history' });
         const chat = Object.assign(document.createElement('button'), { id: 'workflow-chat-toggle-btn' });
         const hierarchy = Object.assign(document.createElement('button'), { id: 'workflow-hierarchy-outline-toggle' });
         const list = Object.assign(document.createElement('button'), { id: 'workflow-node-list-outline-toggle' });
-        stack.append(chat);
+        stack.append(run, chat);
         document.body.append(stack, hierarchy, list);
-        const under = ['workflow-hierarchy-outline-toggle', 'workflow-chat-toggle-btn'];
         for (let round = 0; round < 3; round++) {
-            placeInButtonStack(list, document, under);
+            placeInButtonStack(list, document, 'top');
             placeInButtonStack(hierarchy);
         }
         // A reversed column: what comes first sits lowest.
         expect(Array.from(stack.children).map(button => button.id))
-            .toEqual(['workflow-node-list-outline-toggle', 'workflow-hierarchy-outline-toggle', 'workflow-chat-toggle-btn']);
+            .toEqual(['run-history', 'workflow-hierarchy-outline-toggle', 'workflow-chat-toggle-btn', 'workflow-node-list-outline-toggle']);
+    });
+
+    it('is placed at the top by the panel itself', () => {
+        expect((new TestPanel(opener) as any).config.under).toBe('top');
+    });
+
+    it('stays at the top when a button joins the stack after it', async () => {
+        document.body.replaceChildren();
+        const stack = document.createElement('div');
+        stack.className = 'workflow-fab-stack';
+        const hierarchy = Object.assign(document.createElement('button'), { id: 'workflow-hierarchy-outline-toggle' });
+        const list = Object.assign(document.createElement('button'), { id: 'workflow-node-list-outline-toggle' });
+        stack.append(hierarchy);
+        document.body.append(stack, list);
+        placeInButtonStack(list, document, 'top');
+
+        const chat = Object.assign(document.createElement('button'), { id: 'workflow-chat-toggle-btn' });
+        stack.appendChild(chat);
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        expect(Array.from(stack.children).map(button => button.id))
+            .toEqual(['workflow-hierarchy-outline-toggle', 'workflow-chat-toggle-btn', 'workflow-node-list-outline-toggle']);
+    });
+
+    it('is the one button kept on top of a stack: a second placed there takes it over, and neither loops', async () => {
+        document.body.replaceChildren();
+        const stack = document.createElement('div');
+        stack.className = 'workflow-fab-stack';
+        const first = Object.assign(document.createElement('button'), { id: 'first' });
+        const second = Object.assign(document.createElement('button'), { id: 'second' });
+        document.body.append(stack);
+        placeInButtonStack(first, document, 'top');
+        placeInButtonStack(second, document, 'top');
+        stack.appendChild(Object.assign(document.createElement('button'), { id: 'late' }));
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        expect(Array.from(stack.children).map(button => button.id)).toEqual(['first', 'late', 'second']);
+    });
+
+    it('moves no other button when it shows or hides', () => {
+        document.body.replaceChildren();
+        const stack = document.createElement('div');
+        stack.className = 'workflow-fab-stack';
+        const hierarchy = Object.assign(document.createElement('button'), { id: 'workflow-hierarchy-outline-toggle' });
+        const list = Object.assign(document.createElement('button'), { id: 'workflow-node-list-outline-toggle' });
+        stack.append(hierarchy);
+        document.body.append(stack, list);
+        placeInButtonStack(list, document, 'top');
+
+        // Nothing sits after it, so nothing above it can shift when it hides.
+        expect(list.nextElementSibling).toBeNull();
+        expect(hierarchy.nextElementSibling).toBe(list);
     });
 });

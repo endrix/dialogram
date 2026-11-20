@@ -118,9 +118,9 @@ export interface DiagramStorageOptions {
   /** How nested workflows are navigated; in place, a nested view's layout is
    *  the root's, per instance (diagram-server `layout-target.ts`). */
   nestedNavigation?: 'in-place' | 'new-editor';
-  /** The layout diagrams open with and Layout Diagram runs: Untangled or Free
-   *  Ports instead of Layout Diagram's own (diagram-server
-   *  `layout-tuned-handler.ts`). */
+  /** The layout diagrams open with and Layout > Default Layout runs:
+   *  Untangled or Free Ports instead of the boundary-flow layout
+   *  (diagram-server `layout-tuned-handler.ts`). */
   defaultLayout?: 'untangled' | 'free-ports';
   /** What opening or closing a bus, or a node in place, does to the rest of
    *  the view: lay it all out again (`relayout`, the default) or keep every

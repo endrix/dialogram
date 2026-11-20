@@ -963,6 +963,18 @@ platform that hands it one.
 
 ### Changed
 
+- **The layouts are in a Layout submenu.** The canvas's background menu
+  had five layouts in a row; it now has one "Layout" item opening Default
+  Layout (what was Layout Diagram: the product's `defaultLayout`, else the
+  boundary flow), Compact, Serpentine Mesh, Untangled and Free Ports. The
+  items' ids and actions are unchanged. The context menu draws a menu
+  item's `children` as a submenu, opened on hover, click or the right
+  arrow and placed on the left when the window has no room on the right;
+  it used to draw them flattened under their parent.
+- **The node list's button is at the top of the floating stack.** It sat
+  under the hierarchy's, and putting it there pushed the hierarchy's button
+  and every one above up a place: a click where the hierarchy's had always
+  been opened the node list. `placeInButtonStack` takes `'top'`.
 - **A run never starts above the workspace folder, and every start of a
   product's CLI starts where a run does.** The run root is the workspace
   folder that holds the file (the innermost, where folders are inside one

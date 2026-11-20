@@ -229,9 +229,9 @@ export interface SidecarProfileInput {
      */
     nodeList?: NodeListSpec;
     /**
-     * The layout the diagrams open with and Layout Diagram runs: `untangled`
-     * or `free-ports`, the Layout menu's other two. Absent, Layout Diagram's
-     * own.
+     * The layout the diagrams open with and Layout > Default Layout runs:
+     * `untangled` or `free-ports`, two of the Layout submenu's others.
+     * Absent, the boundary-flow layout.
      */
     defaultLayout?: 'untangled' | 'free-ports';
     /**
