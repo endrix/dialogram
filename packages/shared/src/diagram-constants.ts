@@ -79,6 +79,20 @@ export const WorkflowDiagramConstants = {
     /** The most lines a node draws. */
     NODE_LINE_MAX_COUNT: 6,
 
+    /** What a node says, in a paragraph in its body (`meta.summary`,
+     *  node-summary.ts): a clause's rule, a step's purpose. In the UI font,
+     *  a code span in the editor's; the server wraps it. */
+    SUMMARY_FONT_SIZE_PX: 11,
+    SUMMARY_LINE_HEIGHT_PX: 15,
+    /** Between the paragraph and the body's sides, and above and below it. */
+    SUMMARY_PADDING_PX: 8,
+    /** The width a paragraph asks of its node, unless it is shorter: a node
+     *  as narrow as its name made a sentence a column of words. */
+    SUMMARY_WIDTH_PX: 240,
+    /** The most lines a paragraph draws: the last ends in an ellipsis when
+     *  there is more. */
+    SUMMARY_MAX_LINES: 4,
+
     /** A member of a list (a group whose scope says `list`): one row of
      *  text, its name, its first line and its type in columns of a
      *  fixed-width font, under the row before it. */

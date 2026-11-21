@@ -1858,6 +1858,23 @@ body.vscode-high-contrast-light .node-center-image-light {
 
 /* `text-anchor` here and not only as an attribute: `.sprotty text` centres
    every text, and a rule outranks an attribute. */
+/* What a node says (`meta.summary`, node-summary.ts): a paragraph in its
+   body, in the UI font at SUMMARY_FONT_SIZE_PX, a code span in the editor's.
+   The text is `zoom-detail`: drawn only close in. */
+.sprotty text.node-summary {
+    fill: var(--vscode-foreground, #cccccc);
+    font-family: var(--vscode-font-family, sans-serif);
+    font-size: 11px;
+    font-weight: normal;
+    text-anchor: start;
+    pointer-events: none;
+}
+
+.sprotty text.node-summary tspan.node-summary-code {
+    font-family: var(--vscode-editor-font-family, monospace);
+    fill: var(--vscode-textPreformat-foreground, #d7ba7d);
+}
+
 .sprotty text.node-line-text {
     fill: var(--vscode-descriptionForeground, #8b8b8b);
     font-family: var(--vscode-editor-font-family, monospace);
