@@ -182,7 +182,7 @@ describe('unified runtime absorbed features', () => {
         expect(JSON.stringify(stored)).not.toContain('iVBORw0KGgo=');
     });
 
-    it('sends nothing, saying why, when the agent does not read images', async () => {
+    it('sends and stores nothing, and tells the panel why, when the agent does not read images', async () => {
         const { runtime, posts, acp } = makeRuntime();
         acp.agentName = 'text-only';
         acp.takesImages = () => false;
@@ -193,10 +193,28 @@ describe('unified runtime absorbed features', () => {
         });
         expect(acp.sendPrompt).not.toHaveBeenCalled();
         const types = posts.map(p => p.payload.type);
-        const sys = posts.find(p => p.payload.type === 'chat.message');
-        expect(sys!.payload.data.content).toBe('Not sent: text-only does not read images. Remove them and send again.');
-        expect(types.indexOf('chat.turnEnd')).toBeGreaterThan(types.indexOf('chat.message'));
+        const notSent = posts.find(p => p.payload.type === 'chat.messageNotSent');
+        expect(notSent!.payload.data).toEqual({ sessionId: 'session-1', reason: 'text-only does not read images', images: false });
+        expect(types.indexOf('chat.turnEnd')).toBeGreaterThan(types.indexOf('chat.messageNotSent'));
+        expect(types).not.toContain('chat.message');
         expect((runtime as any).sessions.getSessionMessages('session-1')).toEqual([]);
+    });
+
+    it('gives a message of images alone its opencode id, and the messages after it theirs', async () => {
+        const { runtime, acp } = makeRuntime();
+        acp.getMessagesWithIds = async () => [
+            { id: 'msg_1', role: 'user', text: '', images: 1 },
+            { id: 'msg_2', role: 'assistant', text: 'a red circle' },
+            { id: 'msg_3', role: 'user', text: 'fix the layout' },
+            { id: 'msg_4', role: 'user', text: 'rename it' }
+        ];
+        const ids = await (runtime as any).alignUserMessageIds('session-1', [
+            { content: '', images: 1 },
+            { content: 'only here' },
+            { content: 'fix the layout' },
+            { content: 'rename it' }
+        ]);
+        expect(ids).toEqual(['msg_1', undefined, 'msg_3', 'msg_4']);
     });
 
     it('says a slash command does not take the images it was sent with', async () => {

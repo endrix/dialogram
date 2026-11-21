@@ -128,6 +128,15 @@ describe('a picture of the diagram', () => {
         expect(raster.calls).toHaveLength(0);
     });
 
+    it("is the surface's image brought down to 2000 px on its longer side when nobody asks a size", async () => {
+        const raster = recordingRaster();
+        const host = { exportsImage: () => true, exportImage: async () => pngBytes(6000, 4000) } as any;
+        const picture = await diagramPng({}, raster, host);
+        expect(picture).toEqual({ data: 'UE5H', width: 2000, height: 1333 });
+        expect(raster.calls).toHaveLength(1);
+        expect(raster.calls[0].src.startsWith('data:image/png;base64,')).toBe(true);
+    });
+
     it("is the surface's image redrawn at the size asked", async () => {
         const raster = recordingRaster();
         const host = { exportsImage: () => true, exportImage: async () => pngBytes(640, 480) } as any;

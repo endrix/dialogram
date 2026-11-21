@@ -164,6 +164,66 @@ describe('images in the chat', () => {
         expect(panel.pendingImages).toHaveLength(1);
     });
 
+    it('puts a message the host did not send back in the composer, and its row out of the transcript', async () => {
+        const { panel } = makePanel();
+        panel.handleIncomingMessage('chat.connectionStatus', { connected: true, agent: 'text-only' });
+        await panel.attachFiles([pngFile()]);
+        panel.inputValue = 'look at this';
+        panel.sendMessage();
+        expect(panel.inputValue).toBe('');
+
+        panel.handleIncomingMessage('chat.messageNotSent', { reason: 'text-only does not read images', images: false });
+        expect(panel.inputValue).toBe('look at this');
+        expect(panel.pendingImages).toEqual([{ mimeType: 'image/png', data: PNG_BASE64 }]);
+        expect(panel.timeline.some((t: any) => t.role === 'user')).toBe(false);
+        expect(systemLines(panel).at(-1)).toBe('Not sent: text-only does not read images. Remove the images and send again.');
+        expect(panel.agentTakesImages).toBe(false);
+    });
+
+    it('keeps a message with images as written once the agent says it does not read them', async () => {
+        const { panel, sent } = makePanel();
+        await panel.attachFiles([pngFile()]);
+        panel.handleIncomingMessage('chat.connectionStatus', { connected: true, agent: 'text-only', images: false });
+        panel.inputValue = 'look';
+        panel.sendMessage();
+        expect(sent.some(s => s.env?.type === 'chat.sendMessage')).toBe(false);
+        expect(panel.inputValue).toBe('look');
+        expect(panel.pendingImages).toHaveLength(1);
+        expect(systemLines(panel).at(-1)).toBe('Not sent: text-only does not read images. Remove them and send again.');
+    });
+
+    it('forgets whether an agent reads images once it disconnects, or another connects', async () => {
+        const { panel } = makePanel();
+        panel.handleIncomingMessage('chat.connectionStatus', { connected: true, agent: 'a', images: false });
+        panel.handleIncomingMessage('chat.connectionStatus', { connected: false, reason: 'stopped' });
+        expect(panel.agentTakesImages).toBeUndefined();
+        panel.handleIncomingMessage('chat.connectionStatus', { connected: true, agent: 'a', images: false });
+        panel.handleIncomingMessage('chat.connectionStatus', { connected: true, agent: 'b' });
+        expect(panel.agentTakesImages).toBeUndefined();
+        await panel.attachFiles([pngFile()]);
+        expect(panel.pendingImages).toHaveLength(1);
+    });
+
+    it('sends a task its own prompt alone, and leaves what the composer holds', async () => {
+        const { panel, sent } = makePanel();
+        await panel.attachFiles([pngFile()]);
+        panel.inputValue = 'a draft';
+        panel.handleIncomingMessage('chat.startTask', { prompt: 'fix the run', mode: 'build', name: 'Fix' });
+        panel.handleIncomingMessage('chat.sessionCreated', { session: { id: 's2', name: 'Fix' } });
+        const message = sent.find(s => s.env?.type === 'chat.sendMessage');
+        expect(message!.env.data.text).toBe('fix the run');
+        expect('images' in message!.env.data).toBe(false);
+        expect(panel.inputValue).toBe('a draft');
+        expect(panel.pendingImages).toHaveLength(1);
+    });
+
+    it('counts images alone as a message being written', async () => {
+        const { panel } = makePanel();
+        expect(panel.isComposing()).toBe(false);
+        await panel.attachFiles([pngFile()]);
+        expect(panel.isComposing()).toBe(true);
+    });
+
     it('says how many images a restored message had', () => {
         const { panel } = makePanel();
         panel.handleIncomingMessage('chat.sessionHistory', {

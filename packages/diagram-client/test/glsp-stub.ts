@@ -143,9 +143,9 @@ export enum LogLevel {
 }
 
 export class ConsoleLogger {}
-/** sprotty's applicator of measured bounds: writes position and size directly. */
 export class DefaultPngDiagramExporter {}
 export class DefaultSvgDiagramExporter {}
+/** sprotty's applicator of measured bounds: writes position and size directly. */
 export class ComputedBoundsApplicator {
     protected applyBounds(element: any, newPosition: { x: number; y: number } | undefined, newSize: { width: number; height: number }): void {
         if (newPosition) {

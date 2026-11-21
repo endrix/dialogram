@@ -150,7 +150,8 @@ export function pngSize(bytes: Uint8Array): { width: number; height: number } {
 /**
  * A picture of the diagram, as a PNG: the surface's image where a surface
  * offers one, else the drawn SVG, rastered. Of the size asked (see
- * {@link pictureSize}); a surface's image nobody gave a size is as it came.
+ * {@link pictureSize}); a surface's image nobody gave a size is as it came,
+ * unless it is longer than {@link DEFAULT_MAX_SIDE}.
  */
 export async function diagramPng(
     asked: PictureSize = {},
@@ -164,10 +165,10 @@ export async function diagramPng(
         }
         const natural = pngSize(bytes);
         const data = bytesToBase64(bytes);
-        if (asked.width === undefined && asked.height === undefined && asked.scale === undefined) {
+        const size = pictureSize(natural, asked);
+        if (size.width === natural.width && size.height === natural.height) {
             return { data, ...natural };
         }
-        const size = pictureSize(natural, asked);
         return { data: await rasterize(`data:image/png;base64,${data}`, size), ...size };
     }
     const svg = diagramSvg();

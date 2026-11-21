@@ -228,6 +228,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   private inputValue = '';
   /** Images to send with the next message: pasted, dropped, or a picture of the diagram. */
   private pendingImages: ChatImage[] = [];
+  /** The message last sent, and its row, until the host answers: one it does not send is put back. */
+  private lastSent: { row: TimelineItem; text: string; images: ChatImage[]; fromComposer: boolean } | undefined;
   /** Whether the agent reads images, as the host says; unknown until it says. */
   private agentTakesImages: boolean | undefined;
   /** True while a picture of the diagram is drawn for the next message. */
@@ -384,7 +386,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   /** The user is in the middle of a message to the session. */
   private isComposing(): boolean {
-    return this.view.kind === 'session' && this.inputValue.trim().length > 0;
+    return this.view.kind === 'session' && (this.inputValue.trim().length > 0 || this.pendingImages.length > 0);
   }
 
   // ── Transport ───────────────────────────────────────────────────────────
@@ -554,8 +556,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         if (data?.session?.id && this.pendingTask) {
           const task = this.pendingTask;
           this.pendingTask = undefined;
-          this.inputValue = task.prompt;
-          this.sendMessage();
+          // Its prompt alone: what the composer holds (text, images) stays there.
+          this.sendPrompt(task.prompt.trim(), [], false);
         }
         break;
 
@@ -630,6 +632,10 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
       case 'chat.commands':
         this.availableCommands = Array.isArray(data?.commands) ? data.commands : [];
+        break;
+
+      case 'chat.messageNotSent':
+        this.messageNotSent(data);
         break;
 
       case 'chat.turnEnd':
@@ -865,6 +871,11 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   private setConnectionStatus(connected: boolean, reason?: string, agent?: string, images?: unknown): void {
     this.receivedStatus = true;
+    // Whether it reads images is the connected agent's: unknown once it is gone
+    // or another takes its place, until a status says.
+    if (!connected || (typeof agent === 'string' && agent && agent !== this.connectionAgent)) {
+      this.agentTakesImages = undefined;
+    }
     if (typeof images === 'boolean') this.agentTakesImages = images;
     if (this.statusHandshakeTimer !== null) {
       clearTimeout(this.statusHandshakeTimer);
@@ -914,7 +925,23 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     const text = this.inputValue.trim();
     const images = this.pendingImages;
     if (!text && images.length === 0) return;
+    if (images.length > 0 && this.agentTakesImages === false) {
+      // Attached before the agent said so: the message stays as written.
+      this.pushMessage('system', `Not sent: ${this.connectionAgent || 'the agent'} does not read images. Remove them and send again.`);
+      return;
+    }
+    this.inputValue = '';
+    this.pendingImages = [];
+    this.hideMenu();
+    this.sendPrompt(text, images, true);
+  }
 
+  /**
+   * Send `text` and `images` as the user's message: its row in the transcript,
+   * and the host asked to send it. What was sent is kept until the host answers,
+   * so a message it does not send goes back where it came from.
+   */
+  private sendPrompt(text: string, images: ChatImage[], fromComposer: boolean): void {
     this.finishStreamingMessage();
     // A real turn begins: subsequent agent streaming is genuine, not replay.
     this.suppressReplayStream = false;
@@ -922,9 +949,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     // tail, so the session is no longer in a reverted state.
     this.reverted = false;
     this.pushMessage('user', text, this.currentMode, undefined, undefined, images);
-    this.inputValue = '';
-    this.pendingImages = [];
-    this.hideMenu();
+    const row = this.timeline.at(-1);
+    this.lastSent = row ? { row, text, images, fromComposer } : undefined;
 
     const ok = this.sendToHost('chat.sendMessage', {
       text,
@@ -1013,6 +1039,27 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       this.pendingImages = [...this.pendingImages, image];
     }
     this.update();
+  }
+
+  /**
+   * The host did not send the message last sent (an agent that does not read
+   * its images): its row leaves the transcript, and what it held goes back to
+   * the composer, beside whatever was written since, to change and send again.
+   */
+  private messageNotSent(data: any): void {
+    if (data?.images === false) this.agentTakesImages = false;
+    const sent = this.lastSent;
+    this.lastSent = undefined;
+    if (sent) {
+      const at = this.timeline.lastIndexOf(sent.row);
+      if (at >= 0) this.timeline.splice(at, 1);
+      if (sent.fromComposer) {
+        if (!this.inputValue.trim()) this.inputValue = sent.text;
+        this.pendingImages = [...sent.images, ...this.pendingImages].slice(0, CHAT_IMAGE_MAX_COUNT);
+      }
+    }
+    const reason = typeof data?.reason === 'string' && data.reason ? data.reason : 'the agent did not take it';
+    this.pushMessage('system', `Not sent: ${reason}. Remove the images and send again.`);
   }
 
   /** Why `image` cannot go with the next message, or nothing when it can. */

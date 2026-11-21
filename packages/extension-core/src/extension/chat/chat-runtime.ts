@@ -830,14 +830,14 @@ export class ChatRuntime {
         const mode: "plan" | "build" = data.mode === "plan" ? "plan" : "build";
         if (images.length > 0 && this.acp.takesImages() === false) {
           // The panel refuses images an agent does not read; one that
-          // connected since may not: nothing is sent, and it says why.
+          // connected since may not: nothing is sent or stored, and the panel
+          // puts the message back in its composer, saying why.
           this.postToWebview(uri, {
-            type: "chat.message",
+            type: "chat.messageNotSent",
             data: {
-              role: "system",
-              content: `Not sent: ${this.acp.agent} does not read images. Remove them and send again.`,
-              timestamp: Date.now(),
-              mode,
+              sessionId,
+              reason: `${this.acp.agent} does not read images`,
+              images: false,
             },
           });
           this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
@@ -1171,14 +1171,15 @@ export class ChatRuntime {
    * Map each stored user message (in order) to its opencode message id, by
    * aligning against opencode's authoritative message list. Matches by content
    * (exact or endsWith — the first prompt of a session has context text
-   * prepended). Locally-only messages resolve to undefined without consuming
-   * an opencode entry, so they don't shift the mapping.
+   * prepended); a message of images alone, by the images opencode holds for
+   * the next one. Locally-only messages resolve to undefined without
+   * consuming an opencode entry, so they don't shift the mapping.
    */
   private async alignUserMessageIds(
     sessionId: string,
-    userContents: string[],
+    userMessages: Array<{ content?: string; images?: number }>,
   ): Promise<Array<string | undefined>> {
-    let oc: Array<{ id: string; text: string }> = [];
+    let oc: Array<{ id: string; text: string; images: number }> = [];
     try {
       const msgs = await this.acp.getMessagesWithIds(sessionId);
       oc = msgs
@@ -1189,19 +1190,21 @@ export class ChatRuntime {
         .map((m) => ({
           id: (m as any).id,
           text: String((m as any).text ?? "").trim(),
+          images: Number((m as any).images ?? 0),
         }));
     } catch {
-      return userContents.map(() => undefined);
+      return userMessages.map(() => undefined);
     }
     const out: Array<string | undefined> = [];
     let i = 0;
-    for (const raw of userContents) {
-      const content = (raw ?? "").trim();
-      if (
+    for (const message of userMessages) {
+      const content = (message.content ?? "").trim();
+      const matches =
         i < oc.length &&
-        content !== "" &&
-        (oc[i].text === content || oc[i].text.endsWith(content))
-      ) {
+        (content !== ""
+          ? oc[i].text === content || oc[i].text.endsWith(content)
+          : (message.images ?? 0) > 0 && oc[i].images > 0);
+      if (matches) {
         out.push(oc[i].id);
         i++;
       } else {
@@ -1218,10 +1221,10 @@ export class ChatRuntime {
     extra?: { mode?: "plan" | "build"; model?: string },
   ): Promise<void> {
     const stored = this.sessions.getSessionMessages(sessionId);
-    const userContents = stored
-      .filter((m) => m.role === "user")
-      .map((m) => m.content ?? "");
-    const ids = await this.alignUserMessageIds(sessionId, userContents);
+    const ids = await this.alignUserMessageIds(
+      sessionId,
+      stored.filter((m) => m.role === "user"),
+    );
     let reverted = false;
     try {
       reverted = Boolean(await this.acp.getRevertState(sessionId));
@@ -1252,10 +1255,10 @@ export class ChatRuntime {
     const uri = this.sessionUri.get(sessionId);
     if (!uri) return;
     const stored = this.sessions.getSessionMessages(sessionId);
-    const userContents = stored
-      .filter((m) => m.role === "user")
-      .map((m) => m.content ?? "");
-    const ids = await this.alignUserMessageIds(sessionId, userContents);
+    const ids = await this.alignUserMessageIds(
+      sessionId,
+      stored.filter((m) => m.role === "user"),
+    );
     let reverted = false;
     try {
       reverted = Boolean(await this.acp.getRevertState(sessionId));
