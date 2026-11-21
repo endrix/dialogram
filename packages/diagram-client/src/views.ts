@@ -453,14 +453,15 @@ const INDEX_LABEL_ROOM_PX = 4;
  * where it always went (`nearest`), unless it is too long to fit there, when
  * it goes back as far as keeps it clear of the port, so a long slice
  * (`{1'b0, lim}`) does not run into the node; then past the labels nearer
- * the port (`shift`). Never so far that it runs into the node at the wire's
- * other end (`length`, the route's): on a wire shorter than it, it stands
- * at the middle.
+ * the port (`shift`). The first at its port end goes no further back than
+ * keeps it clear of the node at the wire's other end (`length`, the
+ * route's): on a wire shorter than it, it stands at the middle.
  */
 export function indexLabelDistance(text: string, nearest: number, shift: number, length = Number.POSITIVE_INFINITY): number {
     const half = (text.length * INDEX_LABEL_CHAR_PX) / 2;
     const wanted = shift + Math.max(nearest, INDEX_LABEL_ROOM_PX + half);
-    if (wanted <= shift + nearest || wanted + half + INDEX_LABEL_ROOM_PX <= length) {
+    // (One after others at its port stays after them: back over them, it would hide them.)
+    if (wanted <= shift + nearest || shift > 0 || wanted + half + INDEX_LABEL_ROOM_PX <= length) {
         return wanted;
     }
     // Clear of the other end, where the wire is long enough for it; else at its middle.

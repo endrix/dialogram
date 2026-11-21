@@ -68,6 +68,8 @@ describe('an index label at a port', () => {
         expect(indexLabelDistance("{1'b0, lim}", 18, 0, 80)).toBe(4 + 33);
         expect(indexLabelDistance("{1'b0, lim}", 18, 0, 48)).toBe(24);
         expect(indexLabelDistance('[3]', 18, 0, 20)).toBe(18);
+        // After `[7:4]` (36 px with its gap) at the same end, it stays after it, however short the wire.
+        expect(indexLabelDistance("{1'b0, lim}", 18, 36, 60)).toBe(36 + 4 + 33);
     });
 });
 
