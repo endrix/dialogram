@@ -25,10 +25,18 @@ describe('an arrowhead', () => {
     });
 
     it('is given them back by no other rule', () => {
-        const others = rules.filter(rule => rule.selectors.some(selector => selector.includes('edge-arrow'))
-            && !rule.selectors.includes('.workflow-edge .edge-arrow'));
+        // A rule that names the arrow, or reaches it as any polygon or any
+        // child of an edge.
+        const reaches = (selector: string): boolean => selector.includes('edge-arrow')
+            || (/(workflow-edge|sprotty-edge)/.test(selector) && /(^|\s|>)(polygon|\*)$/.test(selector));
+        const others = rules.filter(rule => rule.selectors.some(reaches) && !rule.selectors.includes('.workflow-edge .edge-arrow'));
         for (const rule of others) {
-            expect(rule.body, rule.selectors.join(', ')).not.toMatch(/pointer-events:\s*(?!none)/);
+            expect(rule.body, rule.selectors.join(', ')).not.toMatch(/pointer-events:(?!\s*none\b)/);
         }
+    });
+
+    it('a rule that names it and gives none is not taken for one that gives some back', () => {
+        expect('pointer-events: none;').not.toMatch(/pointer-events:(?!\s*none\b)/);
+        expect('pointer-events: all;').toMatch(/pointer-events:(?!\s*none\b)/);
     });
 });
