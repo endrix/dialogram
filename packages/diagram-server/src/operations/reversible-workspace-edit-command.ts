@@ -1,7 +1,7 @@
-import { promises as fs } from 'node:fs';
 import * as vscode from 'vscode';
 import type { CommandThatMayChangeNothing, CommandThatMayRefuse } from '../server/command-stack';
 import type { CommandThatWritesOutOfBand, OutOfBandWrite } from '../server/out-of-band-writes';
+import { fileTheCopyLags, forTheEditor, messageOf, sameOnDisk, sameText, textOnDisk, writeOnDisk } from './file-on-disk';
 
 /**
  * The edits a command applies; nothing (or no edit) when there is nothing to
@@ -47,12 +47,15 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
     private refusedLast = false;
     /** The file as its producer left it, when the last execute had it written out of band. */
     private writtenOutOfBand: OutOfBandWrite | undefined;
+    /** The file, when the last undo or redo put it back in the editor and saved it. */
+    private savedInTheEditor: string | undefined;
 
     constructor(private readonly options: ReversibleWorkspaceEditCommandOptions) {}
 
     async execute(): Promise<void> {
         this.unchanged = false;
         this.writtenOutOfBand = undefined;
+        this.savedInTheEditor = undefined;
         const doc = await vscode.workspace.openTextDocument(this.options.uri);
         this.beforeText = doc.getText();
         const fileBefore = await textOnDisk(this.options.uri);
@@ -110,55 +113,64 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
     }
 
     async undo(): Promise<void> {
-        this.refusedLast = false;
-        if (this.beforeText === undefined || this.afterText === undefined) {
-            return;
-        }
-
-        const doc = await vscode.workspace.openTextDocument(this.options.uri);
-        const currentText = doc.getText();
-        if (currentText !== this.afterText) {
-            this.refusedLast = true;
-            void vscode.window.showWarningMessage(
-                `Cannot undo '${this.options.label}' because the document changed outside the diagram.`
-            );
-            return;
-        }
-
-        const workspaceEdit = new vscode.WorkspaceEdit();
-        workspaceEdit.set(this.options.uri, [new vscode.TextEdit(fullDocumentRange(doc), this.beforeText)]);
-        const applied = await vscode.workspace.applyEdit(workspaceEdit);
-        this.refusedLast = !applied;
-        if (applied) {
-            await this.persist(doc);
-            await this.options.afterApply?.('undo');
-        }
+        await this.putBack('undo');
     }
 
     async redo(): Promise<void> {
+        await this.putBack('redo');
+    }
+
+    /**
+     * Undo (or redo) the edit: the file, as the edit left (found) it, given
+     * the text it found (left). The file is the editor's copy, given the text
+     * and saved; or, where that copy lags the file on disk (a write made out
+     * of band that no file watcher reported, see file-on-disk.ts), the file
+     * on disk, written there and told to the host as a write out of band.
+     * The file as neither is refused, with a word to the user.
+     */
+    private async putBack(phase: 'undo' | 'redo'): Promise<void> {
         this.refusedLast = false;
+        this.writtenOutOfBand = undefined;
+        this.savedInTheEditor = undefined;
         if (this.beforeText === undefined || this.afterText === undefined) {
             return;
         }
+        const [from, to] = phase === 'undo' ? [this.afterText, this.beforeText] : [this.beforeText, this.afterText];
+        const uri = this.options.uri;
 
-        const doc = await vscode.workspace.openTextDocument(this.options.uri);
-        const currentText = doc.getText();
-        if (currentText !== this.beforeText) {
+        const doc = await vscode.workspace.openTextDocument(uri);
+        const onDisk = await fileTheCopyLags(uri, doc);
+        if (onDisk !== undefined ? !sameOnDisk(onDisk, from) : !sameText(doc.getText(), from)) {
             this.refusedLast = true;
             void vscode.window.showWarningMessage(
-                `Cannot redo '${this.options.label}' because the document changed outside the diagram.`
+                `Cannot ${phase} '${this.options.label}' because the document changed outside the diagram.`
             );
             return;
         }
 
-        const workspaceEdit = new vscode.WorkspaceEdit();
-        workspaceEdit.set(this.options.uri, [new vscode.TextEdit(fullDocumentRange(doc), this.afterText)]);
-        const applied = await vscode.workspace.applyEdit(workspaceEdit);
-        this.refusedLast = !applied;
-        if (applied) {
+        if (onDisk !== undefined) {
+            try {
+                await writeOnDisk(uri, to);
+            } catch (error) {
+                this.refusedLast = true;
+                void vscode.window.showWarningMessage(
+                    `Cannot ${phase} '${this.options.label}': ${uri.fsPath} could not be written (${messageOf(error)}).`
+                );
+                return;
+            }
+            this.writtenOutOfBand = { uri: uri.toString(), text: to };
+        } else {
+            const workspaceEdit = new vscode.WorkspaceEdit();
+            workspaceEdit.set(uri, [new vscode.TextEdit(fullDocumentRange(doc), forTheEditor(to))]);
+            const applied = await vscode.workspace.applyEdit(workspaceEdit);
+            if (!applied) {
+                this.refusedLast = true;
+                return;
+            }
             await this.persist(doc);
-            await this.options.afterApply?.('redo');
+            this.savedInTheEditor = uri.toString();
         }
+        await this.options.afterApply?.(phase);
     }
 
     /**
@@ -206,25 +218,22 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
         return after === before ? undefined : { uri: this.options.uri.toString(), text: after };
     }
 
-    /** The file the last execute had its producer write, as it was read back; none for an edit applied here. */
+    /**
+     * The file the last execute had its producer write, as it was read back,
+     * or the last undo or redo wrote on disk; none for an edit applied in
+     * the editor.
+     */
     outOfBandWrites(): readonly OutOfBandWrite[] {
         return this.writtenOutOfBand ? [this.writtenOutOfBand] : [];
     }
 
-    /** Whether the last undo or redo did nothing: the document had changed outside the diagram (it said so), or VS Code refused the edit. */
+    /** The file the last undo or redo put back in the editor, and saved. */
+    writtenInTheEditor(): readonly string[] {
+        return this.savedInTheEditor ? [this.savedInTheEditor] : [];
+    }
+
+    /** Whether the last undo or redo did nothing: the document had changed outside the diagram (it said so), or the edit or write was refused. */
     refused(): boolean {
         return this.refusedLast;
-    }
-}
-
-/** The text of the file `uri` names, on disk; nothing when it is not a file that can be read. */
-async function textOnDisk(uri: vscode.Uri): Promise<string | undefined> {
-    if (uri.scheme !== 'file') {
-        return undefined;
-    }
-    try {
-        return await fs.readFile(uri.fsPath, 'utf8');
-    } catch {
-        return undefined;
     }
 }

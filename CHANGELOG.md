@@ -1490,6 +1490,25 @@ platform that hands it one.
   comes, finds the text written and reloads nothing more; one that finds
   other text reloads as before. A file open with unsaved changes is left to
   the live preview, as the watcher leaves it.
+- **An edit the producer wrote is undone without the file watcher.** Undo
+  (and redo) first checks that the file is as the edit left it, and asked
+  the editor's copy of the file. That copy catches up with a write made on
+  disk only when VS Code's file watcher reports it, so with a watcher that
+  reports nothing (a machine out of inotify instances) the copy still held
+  the text before the edit, and every undo of an edit the producer wrote
+  was refused: "Cannot undo 'Create Connection' because the document
+  changed outside the diagram" (ndf-ide, a refinement drawn on the canvas).
+  Where the copy holds no unsaved change and is not the file's text, undo
+  and redo now ask the file on disk, put it back there, and tell the host
+  to reload the diagram as of a write the producer made; elsewhere they go
+  through the editor and save, as before, and so does a file in another
+  encoding than UTF-8. A file changed on disk by something else, its line
+  breaks included, is still refused, and so is one whose copy holds
+  unsaved changes. An undo of several files that cannot write one puts
+  back those it wrote and does nothing. Checked against the editor's copy,
+  a file that differs from the edit's text only by a byte order mark or its
+  line breaks is no longer refused, and the editor is no longer given the
+  mark as text.
 - **A connection drawn to a port with an arrow in it ends there.** An
   arrowhead is drawn over the port it points at, its tip on the port's
   centre, and it took the pointer's events: the click that should end a new
