@@ -82,3 +82,18 @@ describe('the selection trace', () => {
         }
     });
 });
+
+describe('a connection the producer flags', () => {
+    const css = read('diagram-client.css').replace(/\/\*[\s\S]*?\*\//g, '');
+
+    it('is drawn in the editor\'s colour for its tone, giving way to the selection, the pointer and the last token', () => {
+        for (const [tone, colour] of [['warning', 'editorWarning-foreground'], ['error', 'editorError-foreground']]) {
+            const rule = new RegExp(`\\.sprotty-graph \\.sprotty-edge \\.workflow-edge\\.edge-tone-${tone}([^{]*)\\{([^}]*)\\}`).exec(css);
+            expect(rule, tone).not.toBeNull();
+            for (const giveWay of [':not(.selected)', ':not(.hover)', ':not(.edge-has-last-token)']) {
+                expect(rule![1], `${tone} ${giveWay}`).toContain(giveWay);
+            }
+            expect(rule![2], tone).toContain(colour);
+        }
+    });
+});

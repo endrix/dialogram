@@ -103,9 +103,9 @@ describe('a root whose members carry a rank', () => {
         const children = new GraphGModelSource().transform(doc).graph.children as Element[];
         expect(find(children, 'loose')!.args?.[WorkflowDiagramMetadata.RANK]).toBe(1);
         expect(find(children, 'loose')!.layoutOptions?.['elk.partitioning.partition']).toBe('2');
-        for (const id of ['unranked', frame('L2')]) {
-            expect(find(children, id)!.layoutOptions?.['elk.partitioning.partition'], id).toBe('3');
-        }
+        expect(find(children, 'unranked')!.layoutOptions?.['elk.partitioning.partition']).toBe('3');
+        // Unranked, L2 has edges that only leave it: it starts the flow.
+        expect(find(children, frame('L2'))!.layoutOptions?.['elk.partitioning.partition']).toBe('0');
     });
 
     it('takes only a whole number from zero as a rank, and leaves a root with none as it was', () => {
@@ -115,6 +115,39 @@ describe('a root whose members carry a rank', () => {
             expect(find(graph.children as Element[], frame('L1'))!.args?.[WorkflowDiagramMetadata.RANK], String(rank)).toBeUndefined();
             expect(find(graph.children as Element[], frame('L1'))!.layoutOptions?.['elk.partitioning.partition'], String(rank)).toBeUndefined();
         }
+    });
+
+    it('stands what starts the flow before the first rank: a source, a group pinned left that an edge crosses', () => {
+        const doc = ladder();
+        doc.graph.nodes.push({ id: 'node:source', kind: 'requirement', label: 'source', scope: 'scope:root', ports: [{ id: 'port:node:source:out', name: 'out', direction: 'out' }] } as any);
+        doc.graph.edges.push(edge('source', 'intent') as any);
+        doc.graph.nodes.push(clause('state', 'scope:pinned') as any);
+        doc.graph.edges.push(edge('state', 'contract') as any);
+        (doc.graph.subgraphs as any[]).push({ id: 'scope:pinned', kind: 'group', label: 'pinned', pin: 'left' });
+        const children = new GraphGModelSource().transform(doc).graph.children as Element[];
+        expect(find(children, 'source')!.layoutOptions?.['elk.partitioning.partition']).toBe('0');
+        expect(find(children, 'scope:scope:pinned')!.layoutOptions?.['elk.partitioning.partition']).toBe('0');
+    });
+
+    it('keeps a tone on a wire several edges share only when every one of them has it', () => {
+        // Two edges leave `contract` for L2: inside L1 they are one piece.
+        const piece = (tones: Array<string | undefined>): Element => {
+            const doc = ladder();
+            doc.graph.nodes.push(clause('second', 'scope:L2') as any);
+            doc.graph.edges = [edge('contract', 'mechanism'), edge('contract', 'second')] as any;
+            doc.graph.edges.forEach((e: any, i) => { if (tones[i]) { e.meta = { role: 'refines', tone: tones[i] }; } else { e.meta = { role: 'refines' }; } });
+            const children = new GraphGModelSource().transform(doc).graph.children as Element[];
+            const all: Element[] = [];
+            const walk = (elements: Element[] | undefined) => (elements ?? []).forEach(e => { all.push(e); walk(e.children); });
+            walk(children);
+            const shared = all.find(e => Array.isArray(e.args?.[WorkflowDiagramMetadata.EDGES_OF]) && e.args![WorkflowDiagramMetadata.EDGES_OF].length === 2);
+            expect(shared, 'the shared piece').toBeDefined();
+            return shared!;
+        };
+        const tonesOf = (e: Element) => ((e as any).cssClasses ?? []).filter((cls: string) => cls.startsWith('edge-tone-'));
+        expect(tonesOf(piece(['warning', undefined]))).toEqual([]);
+        expect(tonesOf(piece([undefined, 'warning']))).toEqual([]);
+        expect(tonesOf(piece(['warning', 'warning']))).toEqual(['edge-tone-warning']);
     });
 
     it('stands a unit\'s inputs before the first rank', () => {
