@@ -165,6 +165,47 @@ function wrap(words: readonly Word[], widths: readonly number[], width: number, 
 }
 
 /**
+ * `lines`, `words` broken at `width`, balanced: broken again at the
+ * narrowest whole width that keeps their number. `lines` as they are when
+ * no whole width under `width` keeps it.
+ */
+function balanced(words: readonly Word[], widths: readonly number[], width: number, lines: Word[][]): Word[][] {
+    const fits = (at: number): boolean => !wrap(words, widths, at, lines.length).more;
+    let low = Math.ceil(Math.max(...widths));
+    let high = Math.floor(width);
+    if (lines.length < 2 || low > high || !fits(high)) {
+        return lines;
+    }
+    while (low < high) {
+        const mid = Math.floor((low + high) / 2);
+        if (fits(mid)) {
+            high = mid;
+        } else {
+            low = mid + 1;
+        }
+    }
+    return wrap(words, widths, high, lines.length).lines;
+}
+
+/** `word` as much of it from its start as fits in `room`, a character at a time. */
+function clipped(word: Word, room: number): Word {
+    const runs = word.map(run => ({ ...run }));
+    while (wordWidth(runs) > room) {
+        const last = runs[runs.length - 1];
+        const chars = [...last.text];
+        if (chars.length <= 1 && runs.length === 1) {
+            break;
+        }
+        chars.pop();
+        last.text = chars.join('');
+        if (last.text === '') {
+            runs.pop();
+        }
+    }
+    return runs;
+}
+
+/**
  * The paragraph's lines in a node `nodeWidth` wide: broken between words,
  * at most `maxLines`, the last ending in an ellipsis when there is more. A
  * paragraph that fits is balanced, as a header's name: the narrowest width
@@ -183,23 +224,10 @@ export function summaryLines(
     const width = nodeWidth - 2 * WorkflowDiagramConstants.SUMMARY_PADDING_PX;
     const { lines, more } = wrap(words, widths, width, maxLines);
     if (!more) {
-        if (lines.length < 2) {
-            return lines.map(lineText);
-        }
-        let low = Math.ceil(Math.max(...widths));
-        let high = Math.max(low, Math.floor(width));
-        while (low < high) {
-            const mid = Math.floor((low + high) / 2);
-            const at = wrap(words, widths, mid, lines.length);
-            if (!at.more) {
-                high = mid;
-            } else {
-                low = mid + 1;
-            }
-        }
-        return wrap(words, widths, high, lines.length).lines.map(lineText);
+        return balanced(words, widths, width, lines).map(lineText);
     }
-    // More than fits: the last line makes room for the ellipsis.
+    // More than fits: the last line makes room for the ellipsis, down to
+    // part of its first word.
     const gap = space();
     const last = [...lines[lines.length - 1]];
     const ellipsis = uiTextWidth(ELLIPSIS, WorkflowDiagramConstants.SUMMARY_FONT_SIZE_PX);
@@ -207,6 +235,7 @@ export function summaryLines(
     while (last.length > 1 && widthOf(last) + ellipsis > width) {
         last.pop();
     }
+    last[0] = clipped(last[0], width - ellipsis);
     return [...lines.slice(0, -1).map(lineText), `${lineText(last)}${ELLIPSIS}`];
 }
 

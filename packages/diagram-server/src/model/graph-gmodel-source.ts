@@ -628,8 +628,8 @@ export class GraphGModelSource {
             const captioned = !!symbolKind && SymbolGeometry.isCaptioned(symbolKind, symbolCaption);
             // A node with lines and no ports (a declaration: a variable and
             // its value, a function and its parameters) has no port area to
-            // keep: it is its header and its lines.
-            const portless = maxPorts === 0 && lines.length > 0 && !framed;
+            // keep: it is its header and its lines. Or its paragraph.
+            const portless = maxPorts === 0 && (lines.length > 0 || summaryAsk > 0) && !framed;
             const nodeWidth = Math.max(defaultWidth, labelRequiredWidth, headerLabelW, linesWidth, summaryAsk);
             const summary = summaryText ? summaryLines(summaryText, nodeWidth) : [];
             const size = symbolKind

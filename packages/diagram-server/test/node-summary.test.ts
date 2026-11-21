@@ -88,6 +88,38 @@ describe('a node that says something', () => {
         expect(lines[1].split(' ').length).toBeGreaterThan(1);
     });
 
+    it('loses no word to balancing, whatever fraction the node\'s width has', () => {
+        const text = 'At most one instruction MUST be';
+        expect(summaryLines(text, 141.2).join(' ')).toBe(text);
+        // From the width a node gets for the paragraph's widest word.
+        for (let width = 115; width < 260; width += 0.35) {
+            const lines = summaryLines(RULE, width, 20);
+            expect(lines.join(' '), String(width)).toBe(RULE);
+            for (const line of lines) {
+                expect(drawnWidth(line), `${width}: ${line}`).toBeLessThanOrEqual(width - 2 * PAD + 0.001);
+            }
+        }
+    });
+
+    it('cuts a last word that leaves no room for the ellipsis, inside the padding', () => {
+        const word = `\`${'cpu_state_id_rs2_latch_valid_'.repeat(2)}\``;
+        const text = `${'The core MUST hold it. '.repeat(9)}${word} and more.`;
+        const width = summaryWidth(word);
+        const lines = summaryLines(text, width);
+        expect(lines).toHaveLength(MAX);
+        // The word alone on the last line, cut short for the ellipsis.
+        expect(lines[MAX - 1]).toMatch(/^`cpu_state_id_rs2[^ ]*`…$/);
+        for (const line of lines) {
+            expect(drawnWidth(line), line).toBeLessThanOrEqual(width - 2 * PAD + 0.001);
+        }
+    });
+
+    it('stands under the header of a node with no ports, as a node\'s lines do', () => {
+        const [portless] = transform([node('portless', RULE, { ports: [] })]);
+        const lines = portless.args[WorkflowDiagramMetadata.NODE_SUMMARY].length;
+        expect(portless.size.height).toBe(WorkflowDiagramConstants.HEADER_HEIGHT_PX + lines * LINE + 2 * PAD);
+    });
+
     it('keeps a code span that breaks across lines in backticks on each', () => {
         const lines = summaryLines('A register `cpu state id rs2 latch` MUST hold it.', 120);
         for (const line of lines) {
