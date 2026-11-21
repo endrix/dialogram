@@ -479,48 +479,95 @@ function routeLength(points: ReadonlyArray<{ x: number; y: number }>): number {
 }
 
 /**
- * How long an edge's line is as drawn: its route, each turn rounded as the
- * edge view rounds it (`buildPath`: a quadratic through the corner, from
- * `cornerRadius` back along the leg coming in to as far along the one going
- * out, less where a leg is shorter than twice that). The view puts it on the
- * line as `--edge-length`, for a product's stylesheet to start a dash pattern
- * from the line's end (`stroke-dashoffset: calc(-1 * var(--edge-length))`):
- * dashed wires that end at one port then run in step where they share their
- * last stretch, which they would otherwise fill in for each other.
+ * How long an edge's line is as drawn: the path `buildPath` draws for these
+ * points, step by step (a straight stretch to each corner, or to the point
+ * `cornerRadius` before it and a quadratic through it to as far after; less
+ * where a leg is shorter than twice that).
  */
 export function drawnRouteLength(points: ReadonlyArray<{ x: number; y: number }>, cornerRadius: number): number {
-    let length = routeLength(points);
+    if (points.length < 2) {
+        return 0;
+    }
+    let length = 0;
+    let at = points[0];
+    const lineTo = (point: { x: number; y: number }) => {
+        length += Math.hypot(point.x - at.x, point.y - at.y);
+        at = point;
+    };
     for (let k = 1; k < points.length - 1; k++) {
         const prev = points[k - 1], corner = points[k], next = points[k + 1];
         const inDir = { x: Math.sign(corner.x - prev.x), y: Math.sign(corner.y - prev.y) };
         const outDir = { x: Math.sign(next.x - corner.x), y: Math.sign(next.y - corner.y) };
         const turns = inDir.x !== outDir.x || inDir.y !== outDir.y;
         if (!turns || (inDir.x === 0 && inDir.y === 0) || (outDir.x === 0 && outDir.y === 0)) {
+            lineTo(corner);
             continue;
         }
-        const r = Math.max(0, Math.min(cornerRadius, Math.hypot(corner.x - prev.x, corner.y - prev.y) / 2,
+        const r = Math.max(0, Math.min(Math.max(0, cornerRadius), Math.hypot(corner.x - prev.x, corner.y - prev.y) / 2,
             Math.hypot(next.x - corner.x, next.y - corner.y) / 2));
         if (r <= 0.001) {
+            lineTo(corner);
             continue;
         }
         const from = { x: corner.x - inDir.x * r, y: corner.y - inDir.y * r };
         const to = { x: corner.x + outDir.x * r, y: corner.y + outDir.y * r };
-        // The curve in place of the two stretches it cuts off.
-        let curve = 0;
-        let at = from;
+        lineTo(from);
         const STEPS = 32;
         for (let n = 1; n <= STEPS; n++) {
             const t = n / STEPS, u = 1 - t;
-            const point = {
+            lineTo({
                 x: u * u * from.x + 2 * u * t * corner.x + t * t * to.x,
                 y: u * u * from.y + 2 * u * t * corner.y + t * t * to.y
-            };
-            curve += Math.hypot(point.x - at.x, point.y - at.y);
-            at = point;
+            });
         }
-        length += curve - Math.hypot(corner.x - from.x, corner.y - from.y) - Math.hypot(to.x - corner.x, to.y - corner.y);
     }
+    lineTo(points[points.length - 1]);
     return length;
+}
+
+/**
+ * Where an edge's dashes start, as a `stroke-dashoffset`: from the end where
+ * it meets other wires at one port, so that wires that share a stretch there
+ * dash in step instead of filling in each other's gaps. That is its end where
+ * more than one wire comes in (`-length`: counted back from it), else its
+ * start (0), where wires that leave one port together start alike anyway.
+ */
+export function edgeDashOffset(edge: unknown, drawnLength: number): number {
+    const incoming: unknown = (edge as any)?.target?.incomingEdges;
+    let count = 0;
+    for (const _ of (incoming as Iterable<unknown> | undefined) ?? []) {
+        if (++count > 1) {
+            return -drawnLength;
+        }
+    }
+    return 0;
+}
+
+/**
+ * Whether two wires at one port end leave it (or reach it) together for as
+ * long as a label of `text` stands there: from the same point, the same way,
+ * both at least that far before they turn. Read from the routes they were
+ * laid out with; a wire without one is taken as going its own way.
+ */
+function togetherAt(a: unknown, b: unknown, end: 'from' | 'to', text: string): boolean {
+    const first = (edge: unknown) => {
+        const route = (edge as any)?.routingPoints as Array<{ x: number; y: number }> | undefined;
+        if (!Array.isArray(route) || route.length < 2) {
+            return undefined;
+        }
+        return end === 'from' ? [route[0], route[1]] : [route[route.length - 1], route[route.length - 2]];
+    };
+    const p = first(a), q = first(b);
+    if (!p || !q || Math.hypot(p[0].x - q[0].x, p[0].y - q[0].y) > 0.5) {
+        return false;
+    }
+    const dir = (s: Array<{ x: number; y: number }>) => ({ x: Math.sign(s[1].x - s[0].x), y: Math.sign(s[1].y - s[0].y) });
+    const dp = dir(p), dq = dir(q);
+    if (dp.x !== dq.x || dp.y !== dq.y) {
+        return false;
+    }
+    const reach = Math.min(Math.hypot(p[1].x - p[0].x, p[1].y - p[0].y), Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y));
+    return reach >= (end === 'from' ? 12 : 18) + text.length * INDEX_LABEL_CHAR_PX + INDEX_LABEL_GAP_PX;
 }
 
 /** The shifts worked out per port end, once per model (ports are new objects in each). */
@@ -575,19 +622,22 @@ export function indexLabelShift(edge: unknown, end: 'from' | 'to'): number {
             const tb = top(b.e.args[key]);
             return (Number.isFinite(ta) && Number.isFinite(tb) ? tb - ta : 0) || a.order - b.order;
         });
-        // A label the same as one before it (a variable's name on each wire
-        // that leaves with it) is not written again (indexLabelRepeats): the
-        // first one says it, and it takes no room of its own.
+        // A label the same as one before it, on a wire that leaves (or comes)
+        // with that one (a variable's name on each wire that leaves with it),
+        // is not written again (indexLabelRepeats): the first one says it, and
+        // it takes no room of its own. On a wire that goes its own way it is
+        // written, after the others.
         let shift = 0;
-        const placed = new Set<string>();
+        const placed = new Map<string, unknown[]>();
         for (const { e } of siblings) {
             const text = indexLabelText(e.args, end) ?? '';
-            if (placed.has(text)) {
+            const same = placed.get(text) ?? [];
+            if (same.some(other => togetherAt(other, e, end, text))) {
                 cache.set(cacheKey(String(e.id)), 0);
                 cache.set(`${end}\u0000again\u0000${String(e.id)}`, 1);
                 continue;
             }
-            placed.add(text);
+            placed.set(text, [...same, e]);
             cache.set(cacheKey(String(e.id)), shift);
             shift += text.length * INDEX_LABEL_CHAR_PX + INDEX_LABEL_GAP_PX;
         }
@@ -598,8 +648,9 @@ export function indexLabelShift(edge: unknown, end: 'from' | 'to'): number {
 
 /**
  * Whether an edge's label at a port end is the same as one written before it
- * there (indexLabelShift's order), and so is not written again: wires that
- * leave a port together, each carrying a variable's name, say it once.
+ * there (indexLabelShift's order) on a wire it leaves (or comes) with, and so
+ * is not written again: wires that leave a port together, each carrying a
+ * variable's name, say it once.
  */
 export function indexLabelRepeats(edge: unknown, end: 'from' | 'to'): boolean {
     indexLabelShift(edge, end);
@@ -1980,9 +2031,9 @@ export class WorkflowEdgeView extends PolylineEdgeView {
                     fill: 'none'
                 },
                 style: {
-                    // How long the line is as drawn, for a product's dash pattern
-                    // to start from its end (drawnRouteLength).
-                    '--edge-length': `${drawnLength.toFixed(2)}px`,
+                    // Where a product's dash pattern starts, to run in step with the
+                    // wires this one shares a stretch with (edgeDashOffset).
+                    '--edge-dash-offset': `${edgeDashOffset(edge, drawnLength).toFixed(2)}px`,
                     ...((edge as any)._debugReason ? {
                         stroke: (edge as any)._debugReason === 'stale' ? '#ffa500' : '#00cc44', // Orange (stale), Green (moving)
                         'stroke-dasharray': '5, 3',

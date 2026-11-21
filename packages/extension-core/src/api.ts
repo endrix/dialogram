@@ -561,11 +561,12 @@ export interface DiagramProfile {
    * on the bare class matches both groups, so an `opacity` there applies
    * twice.
    *
-   * An edge's line (`.edge-line`) carries `--edge-length`, how long it is as
-   * drawn. A dashed role starts its dashes from the line's end with
-   * `stroke-dashoffset: calc(-1 * var(--edge-length, 0px))`: then wires that
-   * end at one port run in step where they share their last stretch, which
-   * otherwise fill in each other's gaps and read as one solid line.
+   * An edge's line (`.edge-line`) carries `--edge-dash-offset`. A dashed role
+   * that sets `stroke-dashoffset: var(--edge-dash-offset, 0px)` dashes in step
+   * with the wires it shares a stretch with: counted back from its end where
+   * more than one wire comes into that port, else from its start. Out of step,
+   * wires sharing a stretch fill in each other's gaps and read as one solid
+   * line.
    */
   clientStylesheets?: string[];
   /** Edit strategy: `'read-only'` disables writes; an editable strategy carries the

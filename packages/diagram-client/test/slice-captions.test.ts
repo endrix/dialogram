@@ -39,20 +39,26 @@ describe('index labels sharing a port end', () => {
         expect(indexLabelShift(plain, 'to')).toBe(0);
     });
 
-    it('write a label the same as one before them once: not again, and taking no room', async () => {
+    it('write a label the same as one before them, on a wire leaving with it, once: not again, and taking no room', async () => {
         const { indexLabelShift, indexLabelRepeats } = await import('../src/views');
         const { WorkflowDiagramMetadata: M } = await import('@dialogram/shared');
         // A variable's name where each wire that carries it leaves the operator computing it.
-        const edge = (id: string, label: string) =>
-            ({ id, args: { [M.EDGE_FROM_INDEX]: label, [M.EDGE_FROM_INDEX_LABEL]: label, [M.EDGE_SLICE]: true } });
-        const a = edge('a', 't'), b = edge('b', 'u'), c = edge('c', 't');
-        const port = { outgoingEdges: [a, b, c] };
-        for (const e of [a, b, c]) {
+        const edge = (id: string, label: string, route: Array<{ x: number; y: number }>) =>
+            ({ id, args: { [M.EDGE_FROM_INDEX]: label, [M.EDGE_FROM_INDEX_LABEL]: label, [M.EDGE_SLICE]: true }, routingPoints: route });
+        // `a` and `c` leave together, 60 along before they part; `d` turns down at once, its own way.
+        const a = edge('a', 't', [{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: -40 }]);
+        const b = edge('b', 'u', [{ x: 0, y: 0 }, { x: 200, y: 0 }]);
+        const c = edge('c', 't', [{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 40 }]);
+        const d = edge('d', 't', [{ x: 0, y: 0 }, { x: 0, y: 80 }]);
+        const port = { outgoingEdges: [a, b, c, d] };
+        for (const e of [a, b, c, d]) {
             (e as any).source = port;
         }
-        expect([a, b, c].map(e => indexLabelRepeats(e, 'from'))).toEqual([false, false, true]);
+        expect([a, b, c, d].map(e => indexLabelRepeats(e, 'from'))).toEqual([false, false, true, false]);
         expect(indexLabelShift(a, 'from')).toBe(0);
         expect(indexLabelShift(b, 'from')).toBeGreaterThan(0);
+        // Written where its wire goes, after the others.
+        expect(indexLabelShift(d, 'from')).toBeGreaterThan(indexLabelShift(b, 'from'));
         // An edge with no label there, or alone, repeats nothing.
         expect(indexLabelRepeats({ id: 'x', args: {}, source: port }, 'from')).toBe(false);
         expect(indexLabelRepeats(a, 'to')).toBe(false);
@@ -130,6 +136,9 @@ describe('how long a line is as drawn', () => {
         // through the corner, 16 times the integral of sqrt(1 - 2t + 2t^2) over [0, 1]: 12.98.
         const turn = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }];
         expect(drawnRouteLength(turn, 8) - (150 - 16)).toBeCloseTo(12.98, 2);
+        // A leg that is not straight across or up: the path drawn, as the browser measures it
+        // (Chrome's getTotalLength of buildPath's path for these points: 202.81).
+        expect(drawnRouteLength([{ x: 0, y: 0 }, { x: 100, y: 20 }, { x: 100, y: 120 }], 6)).toBeCloseTo(202.81, 1);
         // Sharp, as when selected: the route itself. A leg shorter than twice the radius rounds less.
         expect(drawnRouteLength(turn, 0)).toBeCloseTo(150, 6);
         expect(drawnRouteLength([{ x: 0, y: 0 }, { x: 6, y: 0 }, { x: 6, y: 50 }], 8)).toBeLessThan(56);
@@ -141,6 +150,16 @@ describe('how long a line is as drawn', () => {
 
         const here = path.dirname(fileURLToPath(import.meta.url));
         const views = readFileSync(path.resolve(here, '../src/views.ts'), 'utf8');
-        expect(views).toContain("'--edge-length': `${drawnLength.toFixed(2)}px`");
+        expect(views).toContain("'--edge-dash-offset': `${edgeDashOffset(edge, drawnLength).toFixed(2)}px`");
+    });
+
+    it('starts the dashes from the end where the wire meets others: its end where more than one comes in, else its start', async () => {
+        const { edgeDashOffset } = await import('../src/views');
+        const into = (n: number) => ({ target: { incomingEdges: Array.from({ length: n }, (_, k) => ({ id: k })) } });
+        // Into a register from two branches: counted back from the end, in step along the trunk they share.
+        expect(edgeDashOffset(into(2), 120)).toBe(-120);
+        // Alone at its end (wires that leave one port together, or one alone): from its start.
+        expect(edgeDashOffset(into(1), 120)).toBe(0);
+        expect(edgeDashOffset({}, 120)).toBe(0);
     });
 });
