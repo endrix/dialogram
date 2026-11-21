@@ -27,6 +27,9 @@ export interface OpencodeMessage {
   role: string;
   /** Concatenated text of the message's text parts (used to align with the UI). */
   text: string;
+  /** How many images it carries (file parts of an image kind), when any: an
+   *  image-only message has no text to align on. */
+  images?: number;
 }
 
 export class OpencodeHttpClient {
@@ -37,7 +40,7 @@ export class OpencodeHttpClient {
    * flattened `{ id, role }[]` — enough to map a chat turn to a revert target.
    */
   async listMessages(sessionId: string): Promise<OpencodeMessage[]> {
-    const data = await this.request<Array<{ info?: OpencodeMessageInfo; parts?: Array<{ type?: string; text?: string }> }>>(
+    const data = await this.request<Array<{ info?: OpencodeMessageInfo; parts?: Array<{ type?: string; text?: string; mime?: string }> }>>(
       'GET',
       `/session/${encodeURIComponent(sessionId)}/message`
     );
@@ -53,7 +56,8 @@ export class OpencodeHttpClient {
           .map((p) => p.text as string)
           .join('')
           .trim();
-        return { id: info.id, role: typeof info.role === 'string' ? info.role : 'assistant', text };
+        const images = (entry.parts ?? []).filter((p) => p?.type === 'file' && String(p.mime ?? '').startsWith('image/')).length;
+        return { id: info.id, role: typeof info.role === 'string' ? info.role : 'assistant', text, ...(images > 0 ? { images } : {}) };
       });
   }
 

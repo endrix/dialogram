@@ -832,6 +832,92 @@
   background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.15));
 }
 
+/* Images to send: small, above the text, each with its remove button */
+.chat-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px 0;
+}
+.chat-attachment {
+  position: relative;
+}
+.chat-image-thumb {
+  display: block;
+  max-width: 96px;
+  max-height: 64px;
+  border: 1px solid var(--chat-border);
+  border-radius: 4px;
+  object-fit: contain;
+  background: var(--vscode-editor-background);
+}
+.chat-attachment-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--chat-border);
+  border-radius: 50%;
+  background: var(--vscode-editorWidget-background, var(--vscode-input-background));
+  color: var(--vscode-foreground);
+  cursor: pointer;
+}
+.chat-attachment-remove .codicon {
+  font-size: 10px;
+}
+.chat-attachment-remove:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.15));
+}
+
+/* The images a sent message carried, under its text */
+.chat-row-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.chat-row-images .chat-image-thumb {
+  max-width: 160px;
+  max-height: 110px;
+}
+.chat-row-image-count {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--chat-muted);
+}
+
+/* Picture of the diagram: a toolbar button beside send */
+.chat-picture {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+}
+.chat-picture:hover:not(:disabled) {
+  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.15));
+}
+.chat-picture:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.chat-picture .codicon {
+  font-size: 14px;
+}
+
 /* Send / stop */
 .chat-send {
   display: inline-flex;

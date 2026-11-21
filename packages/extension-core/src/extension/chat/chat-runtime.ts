@@ -30,7 +30,7 @@ import {
 import { attachAcpEventForwarding } from "./acp-event-forwarding";
 import { copySessionId, openSessionNatively, type NativeSession } from "./native-session.js";
 import { KNOWN_CONNECTORS } from "./acp-connectors.js";
-import type { SurfaceSelectionSummary } from "@dialogram/shared";
+import { readChatImages, type SurfaceSelectionSummary } from "@dialogram/shared";
 
 /**
  * A surface's selection as the chat's turn context says it, by default: what
@@ -478,6 +478,8 @@ export class ChatRuntime {
       "diagram tools are listed — do NOT edit the source " +
       "file directly for changes these tools can express: tool edits go through the " +
       "editor's undo stack, direct file edits do not. " +
+      "To see the diagram as the editor draws it (a layout, what an edit looks like), call " +
+      "diagram-png: it returns a picture of what is in view. " +
       "Diagram edits are undoable by the user via the editor's undo — do not attempt " +
       "tool-based undo / redo and do not hand-revert files after your own diagram edits " +
       "unless asked."
@@ -564,7 +566,7 @@ export class ChatRuntime {
       this.clearConnectWatchdog();
       this.postToWebview(uri, {
         type: "chat.connectionStatus",
-        data: { connected: true, agent: this.acp.agent },
+        data: { connected: true, agent: this.acp.agent, images: this.acp.takesImages() },
       });
       return true;
     } catch (err) {
@@ -629,7 +631,11 @@ export class ChatRuntime {
         // handshake must not wait out an opencode spawn.
         this.postToWebview(uri, {
           type: "chat.connectionStatus",
-          data: { connected: this.acp.isClientConnected(), agent: this.acp.agent },
+          data: {
+            connected: this.acp.isClientConnected(),
+            agent: this.acp.agent,
+            images: this.acp.takesImages(),
+          },
         });
         this.armConnectWatchdog();
         this.sendSessions(uri, file);
@@ -820,6 +826,23 @@ export class ChatRuntime {
         }
         this.sessionUri.set(sessionId, uri);
         this.sessions.setCurrentSession(sessionId);
+        const images = readChatImages(data?.images);
+        const mode: "plan" | "build" = data.mode === "plan" ? "plan" : "build";
+        if (images.length > 0 && this.acp.takesImages() === false) {
+          // The panel refuses images an agent does not read; one that
+          // connected since may not: nothing is sent or stored, and the panel
+          // puts the message back in its composer, saying why.
+          this.postToWebview(uri, {
+            type: "chat.messageNotSent",
+            data: {
+              sessionId,
+              reason: `${this.acp.agent} does not read images`,
+              images: false,
+            },
+          });
+          this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
+          return;
+        }
         // A session restored from storage (after a reload) isn't attached in
         // the freshly-started agent, so re-attach it before prompting — else
         // the agent has no context (file) for it.
@@ -831,8 +854,9 @@ export class ChatRuntime {
           content: data.text,
           timestamp: Date.now(),
           mode: data.mode,
+          // How many: the bytes would swell the stored sessions.
+          ...(images.length > 0 ? { images: images.length } : {}),
         });
-        const mode: "plan" | "build" = data.mode === "plan" ? "plan" : "build";
         let resolved: {
           contribution: ChatCommandContribution;
           args: Record<string, any>;
@@ -878,10 +902,13 @@ export class ChatRuntime {
             type: "chat.message",
             data: {
               role: "system",
-              content: result.success
+              content: (result.success
                 ? (result.info ??
                   `✓ Executed: /${resolved.contribution.command}`)
-                : `Error: ${result.error}`,
+                : `Error: ${result.error}`) +
+                (images.length > 0
+                  ? ` (The images were not sent: /${resolved.contribution.command} does not take them.)`
+                  : ""),
               timestamp: Date.now(),
               mode,
             },
@@ -890,7 +917,7 @@ export class ChatRuntime {
           return;
         }
         // Pass-through slash suggestions and natural language both go to the agent.
-        await this.acp.sendPrompt(sessionId, data.text);
+        await this.acp.sendPrompt(sessionId, data.text, images);
         if (this.config.postTurnHook) {
           await this.config
             .postTurnHook(file, String(data.text ?? ""))
@@ -1144,14 +1171,15 @@ export class ChatRuntime {
    * Map each stored user message (in order) to its opencode message id, by
    * aligning against opencode's authoritative message list. Matches by content
    * (exact or endsWith — the first prompt of a session has context text
-   * prepended). Locally-only messages resolve to undefined without consuming
-   * an opencode entry, so they don't shift the mapping.
+   * prepended); a message of images alone, by the images opencode holds for
+   * the next one. Locally-only messages resolve to undefined without
+   * consuming an opencode entry, so they don't shift the mapping.
    */
   private async alignUserMessageIds(
     sessionId: string,
-    userContents: string[],
+    userMessages: Array<{ content?: string; images?: number }>,
   ): Promise<Array<string | undefined>> {
-    let oc: Array<{ id: string; text: string }> = [];
+    let oc: Array<{ id: string; text: string; images: number }> = [];
     try {
       const msgs = await this.acp.getMessagesWithIds(sessionId);
       oc = msgs
@@ -1162,19 +1190,21 @@ export class ChatRuntime {
         .map((m) => ({
           id: (m as any).id,
           text: String((m as any).text ?? "").trim(),
+          images: Number((m as any).images ?? 0),
         }));
     } catch {
-      return userContents.map(() => undefined);
+      return userMessages.map(() => undefined);
     }
     const out: Array<string | undefined> = [];
     let i = 0;
-    for (const raw of userContents) {
-      const content = (raw ?? "").trim();
-      if (
+    for (const message of userMessages) {
+      const content = (message.content ?? "").trim();
+      const matches =
         i < oc.length &&
-        content !== "" &&
-        (oc[i].text === content || oc[i].text.endsWith(content))
-      ) {
+        (content !== ""
+          ? oc[i].text === content || oc[i].text.endsWith(content)
+          : (message.images ?? 0) > 0 && oc[i].images > 0);
+      if (matches) {
         out.push(oc[i].id);
         i++;
       } else {
@@ -1191,10 +1221,10 @@ export class ChatRuntime {
     extra?: { mode?: "plan" | "build"; model?: string },
   ): Promise<void> {
     const stored = this.sessions.getSessionMessages(sessionId);
-    const userContents = stored
-      .filter((m) => m.role === "user")
-      .map((m) => m.content ?? "");
-    const ids = await this.alignUserMessageIds(sessionId, userContents);
+    const ids = await this.alignUserMessageIds(
+      sessionId,
+      stored.filter((m) => m.role === "user"),
+    );
     let reverted = false;
     try {
       reverted = Boolean(await this.acp.getRevertState(sessionId));
@@ -1225,10 +1255,10 @@ export class ChatRuntime {
     const uri = this.sessionUri.get(sessionId);
     if (!uri) return;
     const stored = this.sessions.getSessionMessages(sessionId);
-    const userContents = stored
-      .filter((m) => m.role === "user")
-      .map((m) => m.content ?? "");
-    const ids = await this.alignUserMessageIds(sessionId, userContents);
+    const ids = await this.alignUserMessageIds(
+      sessionId,
+      stored.filter((m) => m.role === "user"),
+    );
     let reverted = false;
     try {
       reverted = Boolean(await this.acp.getRevertState(sessionId));

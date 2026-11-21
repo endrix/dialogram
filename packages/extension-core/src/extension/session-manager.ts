@@ -21,6 +21,8 @@ export interface MessageData {
   /** Assistant reasoning ("thinking") captured during the turn, persisted so it
    *  survives a panel reload (rendered as a collapsible block). */
   thinking?: string;
+  /** How many images a user's message carried (their bytes are not kept). */
+  images?: number;
   toolName?: string;
   toolArgs?: Record<string, any>;
   toolResult?: string;

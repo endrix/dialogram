@@ -41,6 +41,9 @@ import {
     CenterCommand,
     SetModelCommand,
     ComputedBoundsApplicator,
+    DefaultPngDiagramExporter,
+    DefaultSvgDiagramExporter,
+    type DiagramExporter,
     ToolPalette
 } from '@eclipse-glsp/client';
 import { EXECUTION_OVERLAY_ACTION_KIND } from '@dialogram/shared';
@@ -58,6 +61,7 @@ import { ContainedMovementRestrictor } from './contained-movement-restrictor';
 import { NodeSizePreservingBoundsApplicator } from './node-size-preserving-bounds-applicator';
 import { ExecutionStatesFeedbackCommand } from './execution-states';
 import { SelectionTraceFeedbackCommand, SelectionTraceListener } from './selection-trace';
+import { DiagramPngExporter, DiagramSvgExporter } from './diagram-picture';
 import { SelectionFocusPostprocessor } from './selection-focus';
 import { ViewToolPalette } from './view-tool-palette';
 import { ViewOptionsService } from './view-options';
@@ -134,6 +138,16 @@ export const diagramBaseModule = new ContainerModule((bind, unbind, isBound, reb
     // Draws the icons a product contributed. Without it their palette entries
     // render an empty slot, since a palette icon is only ever a class name.
     bindAsService(context, TYPES.IDiagramStartup, WorkflowPaletteIconStartup);
+
+    // A picture of the diagram, for the MCP tools `diagram-png` and `diagram-svg`
+    // (GLSP's export, asked by the server): the diagram as it is drawn, in place
+    // of GLSP's hidden copy, which the webview cannot load (diagram-picture.ts).
+    if (isBound(DefaultPngDiagramExporter)) {
+        rebind<DiagramExporter>(DefaultPngDiagramExporter).to(DiagramPngExporter).inSingletonScope();
+    }
+    if (isBound(DefaultSvgDiagramExporter)) {
+        rebind<DiagramExporter>(DefaultSvgDiagramExporter).to(DiagramSvgExporter).inSingletonScope();
+    }
 
     // The palette offers what the view shown allows: asked again with each model.
     if (isBound(ToolPalette)) {

@@ -163,6 +163,81 @@ describe('unified runtime absorbed features', () => {
         }
     });
 
+    it('sends the images a message carries to the agent, and keeps only how many', async () => {
+        const { runtime, acp } = makeRuntime();
+        acp.takesImages = () => true;
+        acp.sendPrompt = vi.fn(async () => undefined);
+        const image = { mimeType: 'image/png', data: 'iVBORw0KGgo=' };
+        await runtime.handleMessage('file:///ws/wf.py', {
+            type: 'chat.sendMessage',
+            data: {
+                text: 'look',
+                mode: 'build',
+                images: [image, { mimeType: 'image/bmp', data: 'Qk0=' }, { nonsense: true }]
+            }
+        });
+        expect(acp.sendPrompt).toHaveBeenCalledWith('session-1', 'look', [image]);
+        const stored = (runtime as any).sessions.getSessionMessages('session-1');
+        expect(stored.at(-1)).toMatchObject({ role: 'user', content: 'look', images: 1 });
+        expect(JSON.stringify(stored)).not.toContain('iVBORw0KGgo=');
+    });
+
+    it('sends and stores nothing, and tells the panel why, when the agent does not read images', async () => {
+        const { runtime, posts, acp } = makeRuntime();
+        acp.agentName = 'text-only';
+        acp.takesImages = () => false;
+        acp.sendPrompt = vi.fn(async () => undefined);
+        await runtime.handleMessage('file:///ws/wf.py', {
+            type: 'chat.sendMessage',
+            data: { text: 'look', mode: 'build', images: [{ mimeType: 'image/png', data: 'iVBORw0KGgo=' }] }
+        });
+        expect(acp.sendPrompt).not.toHaveBeenCalled();
+        const types = posts.map(p => p.payload.type);
+        const notSent = posts.find(p => p.payload.type === 'chat.messageNotSent');
+        expect(notSent!.payload.data).toEqual({ sessionId: 'session-1', reason: 'text-only does not read images', images: false });
+        expect(types.indexOf('chat.turnEnd')).toBeGreaterThan(types.indexOf('chat.messageNotSent'));
+        expect(types).not.toContain('chat.message');
+        expect((runtime as any).sessions.getSessionMessages('session-1')).toEqual([]);
+    });
+
+    it('gives a message of images alone its opencode id, and the messages after it theirs', async () => {
+        const { runtime, acp } = makeRuntime();
+        acp.getMessagesWithIds = async () => [
+            { id: 'msg_1', role: 'user', text: '', images: 1 },
+            { id: 'msg_2', role: 'assistant', text: 'a red circle' },
+            { id: 'msg_3', role: 'user', text: 'fix the layout' },
+            { id: 'msg_4', role: 'user', text: 'rename it' }
+        ];
+        const ids = await (runtime as any).alignUserMessageIds('session-1', [
+            { content: '', images: 1 },
+            { content: 'only here' },
+            { content: 'fix the layout' },
+            { content: 'rename it' }
+        ]);
+        expect(ids).toEqual(['msg_1', undefined, 'msg_3', 'msg_4']);
+    });
+
+    it('says a slash command does not take the images it was sent with', async () => {
+        const { runtime, posts, acp } = makeRuntime({
+            slashCommands: [{ command: 'ping', description: 'test', modes: ['build'], handler: async () => ({ success: true }) }]
+        });
+        acp.takesImages = () => true;
+        await runtime.handleMessage('file:///ws/wf.py', {
+            type: 'chat.sendMessage',
+            data: { text: '/ping', mode: 'build', images: [{ mimeType: 'image/png', data: 'iVBORw0KGgo=' }] }
+        });
+        const sys = posts.find(p => p.payload.type === 'chat.message');
+        expect(sys!.payload.data.content).toBe('✓ Executed: /ping (The images were not sent: /ping does not take them.)');
+    });
+
+    it('tells the panel whether the agent reads images', async () => {
+        const { runtime, posts, acp } = makeRuntime();
+        acp.takesImages = () => true;
+        await runtime.handleMessage('file:///ws/wf.py', { type: 'chat.ready', data: {} });
+        const status = posts.find(p => p.payload.type === 'chat.connectionStatus');
+        expect(status!.payload.data.images).toBe(true);
+    });
+
     it('slash failure posts a system error message, not a thrown error', async () => {
         const { runtime, posts } = makeRuntime({
             slashCommands: [

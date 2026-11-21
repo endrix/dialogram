@@ -9,8 +9,9 @@
  *
  * On top of the defaults it (1) removes the built-in `undo` / `redo` tools — the host, not the
  * GLSP command stack, owns undo in dialogram (see {@link DiagramMcpModule.configureToolHandlers})
- * — and (2) bridges any supplied read-only platform chat tools into diagram-scope MCP tool
- * handlers via {@link makePlatformToolHandlerClass}.
+ * — (2) bridges any supplied read-only platform chat tools into diagram-scope MCP tool
+ * handlers via {@link makePlatformToolHandlerClass}, and (3) has `diagram-png` picture the
+ * diagram as the editor draws it ({@link DrawnDiagramPngMcpResourceHandler}).
  *
  * The `bindModelSerializer` / `bindElementTypesProvider` hooks are intentionally left at
  * their defaults here — cleaner, diagram-aware overrides are a follow-up.
@@ -20,16 +21,19 @@ import {
     CreateNodesMcpToolHandler,
     DefaultMcpDiagramModule,
     DeleteElementsMcpToolHandler,
+    DiagramPngMcpResourceHandler,
     ModifyEdgesMcpToolHandler,
     ModifyNodesMcpToolHandler,
     RedoMcpToolHandler,
     SaveModelMcpToolHandler,
     UndoMcpToolHandler,
+    type McpDiagramResourceHandlerConstructor,
     type McpDiagramToolHandlerConstructor
 } from '@eclipse-glsp/server-mcp';
 import type { InstanceMultiBinding } from '@eclipse-glsp/server';
 import type { EditStrategy } from '@dialogram/shared';
 import { makePlatformToolHandlerClass, type PlatformMcpTool } from './mcp-platform-tool-adapter';
+import { DrawnDiagramPngMcpResourceHandler } from './diagram-picture-mcp-resource-handler';
 import { isDiagramOperationModule, type McpToolBinding } from './operation-modules';
 import { AgentDispatchCreateNodesMcpToolHandler } from './create-nodes-mcp-tool-handler';
 import { AgentDispatchCreateEdgesMcpToolHandler } from './create-edges-mcp-tool-handler';
@@ -106,6 +110,15 @@ export class DiagramMcpModule extends DefaultMcpDiagramModule {
     /** Each creatable type labelled with the palette rows it stands for, not "Create Node". */
     protected override bindElementTypesProvider(): ReturnType<DefaultMcpDiagramModule['bindElementTypesProvider']> {
         return PaletteElementTypesProvider;
+    }
+
+    /** `diagram-png` is the diagram as the editor draws it, sized by the client (diagram-picture-mcp-resource-handler.ts). */
+    protected override configureResourceHandlers(
+        binding: InstanceMultiBinding<McpDiagramResourceHandlerConstructor>
+    ): void {
+        super.configureResourceHandlers(binding);
+        binding.remove(DiagramPngMcpResourceHandler);
+        binding.add(DrawnDiagramPngMcpResourceHandler);
     }
 
     protected override configureToolHandlers(

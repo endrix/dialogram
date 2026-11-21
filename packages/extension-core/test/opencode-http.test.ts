@@ -61,6 +61,16 @@ describe('OpencodeHttpClient', () => {
     ]);
   });
 
+  it('listMessages counts the images a message carries', async () => {
+    fetchMock.mockResolvedValue(
+      ok([
+        { info: { id: 'msg_1', role: 'user' }, parts: [{ type: 'file', mime: 'image/png' }, { type: 'file', mime: 'image/jpeg' }, { type: 'file', mime: 'text/plain' }] },
+      ])
+    );
+    const messages = await new OpencodeHttpClient(base).listMessages('ses_1');
+    expect(messages).toEqual([{ id: 'msg_1', role: 'user', text: '', images: 2 }]);
+  });
+
   it('isReverted reflects the session revert marker', async () => {
     const client = new OpencodeHttpClient(base);
 
