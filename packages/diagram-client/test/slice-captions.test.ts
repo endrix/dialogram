@@ -39,6 +39,21 @@ describe('index labels sharing a port end', () => {
         expect(indexLabelShift(plain, 'to')).toBe(0);
     });
 
+    it('write a label the same as one before them once, in that one’s place', async () => {
+        const { indexLabelShift } = await import('../src/views');
+        const { WorkflowDiagramMetadata: M } = await import('@dialogram/shared');
+        // A variable's name where each wire that carries it leaves the operator computing it.
+        const edge = (id: string, label: string) =>
+            ({ id, args: { [M.EDGE_FROM_INDEX]: label, [M.EDGE_FROM_INDEX_LABEL]: label, [M.EDGE_SLICE]: true } });
+        const a = edge('a', 't'), b = edge('b', 'u'), c = edge('c', 't');
+        const port = { outgoingEdges: [a, b, c] };
+        for (const e of [a, b, c]) {
+            (e as any).source = port;
+        }
+        expect([a, c].map(e => indexLabelShift(e, 'from'))).toEqual([0, 0]);
+        expect(indexLabelShift(b, 'from')).toBeGreaterThan(0);
+    });
+
     it('are walked back along the wire round its bends, never past its other end', async () => {
         const { pointAlongRoute } = await import('../src/views');
         const route = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 10 }];

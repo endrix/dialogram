@@ -530,10 +530,20 @@ export function indexLabelShift(edge: unknown, end: 'from' | 'to'): number {
             const tb = top(b.e.args[key]);
             return (Number.isFinite(ta) && Number.isFinite(tb) ? tb - ta : 0) || a.order - b.order;
         });
+        // A label the same as one before it (a variable's name on each wire
+        // that leaves with it) takes that one's place: written once there.
         let shift = 0;
+        const placed = new Map<string, number>();
         for (const { e } of siblings) {
+            const text = indexLabelText(e.args, end) ?? '';
+            const at = placed.get(text);
+            if (at !== undefined) {
+                cache.set(cacheKey(String(e.id)), at);
+                continue;
+            }
+            placed.set(text, shift);
             cache.set(cacheKey(String(e.id)), shift);
-            shift += (indexLabelText(e.args, end) ?? '').length * INDEX_LABEL_CHAR_PX + INDEX_LABEL_GAP_PX;
+            shift += text.length * INDEX_LABEL_CHAR_PX + INDEX_LABEL_GAP_PX;
         }
         cache.set(done, 0);
     }

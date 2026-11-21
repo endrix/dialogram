@@ -58,13 +58,21 @@ export interface InnerGraph {
     edges: Array<{ from: string; to: string; width?: number; meta?: Record<string, unknown> }>;
 }
 
-/** The graph a node holds, when it holds one with something in it. */
+/**
+ * The graph a node holds, when it holds one with something in it: a node, or,
+ * in a frame that keeps its pins, a wire across it (a branch that passes a
+ * value on as it is: `else y = t`).
+ */
 export function innerGraphOf(node: Pick<PyGraphNode, 'meta'>): InnerGraph | undefined {
     const inner = node.meta?.['inner'] as Partial<InnerGraph> | undefined;
-    if (!inner || !Array.isArray(inner.nodes) || inner.nodes.length === 0) {
+    if (!inner || !Array.isArray(inner.nodes)) {
         return undefined;
     }
-    return { nodes: inner.nodes, edges: Array.isArray(inner.edges) ? inner.edges : [] };
+    const edges = Array.isArray(inner.edges) ? inner.edges : [];
+    if (inner.nodes.length === 0 && !(keepsPins(node) && edges.length > 0)) {
+        return undefined;
+    }
+    return { nodes: inner.nodes, edges };
 }
 
 /** The scope an open node becomes. */

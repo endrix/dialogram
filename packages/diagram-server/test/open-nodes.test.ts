@@ -11,7 +11,7 @@ import { ToggleNodeOpenOperation, WorkflowDiagramMetadata, WorkflowDiagramTypes 
 import { GraphGModelSource, type PyGraphDocument, type PyGraphNode } from '../src/model/graph-gmodel-source';
 import { portBusStateOf } from '../src/model/port-bundles';
 import { stableNodeIds } from '../src/model/stable-ids';
-import { MAX_OPEN_DEPTH, OPEN_NODE_SPACING, innerNodeId, isOpenIn, nestedIds, openFrameId, openNodes, withOpenNodePositions } from '../src/model/open-nodes';
+import { MAX_OPEN_DEPTH, OPEN_NODE_SPACING, canOpen, innerNodeId, isOpenIn, nestedIds, openFrameId, openNodes, withOpenNodePositions } from '../src/model/open-nodes';
 import { convertToGModelRoot } from '../src/server/gmodel-convert';
 import { relativeToParent, restoreGroupGeometry } from '../src/server/group-geometry';
 import { collectEdgeRoutes, collectNodePositions, nodeLayoutKeyOf } from '../src/server/layout-snapshot';
@@ -437,6 +437,40 @@ describe('what inner wires with the same ends, and a moved end, say', () => {
             { from: `${Q}:a`, to: `${Q}/cell:r:d` }
         ];
         expect(slices(open(made(true, inner)), `${Q}/cell:s:d`)).toEqual(['3:0>1:0']);
+    });
+});
+
+describe('a frame that holds a wire alone', () => {
+    // `else y = t`: a branch whose one statement passes a value on as it is, no node of its own.
+    const R = 'node:r';
+    const pin = (node: string, name: string, direction: 'in' | 'out') => ({ id: `${node}:${name}`, name, direction });
+    const made = (pins: boolean): PyGraphDocument => ({
+        version: '1',
+        graph: {
+            id: 'top',
+            nodes: [boundary('t', 'wf-input'), boundary('y', 'wf-output'), {
+                id: R, kind: 'logic', label: 'else', scope: 'root', ports: [pin(R, 't', 'in'), pin(R, 'y', 'out')],
+                meta: { inner: { open: true, ...(pins ? { pins: true } : {}), nodes: [], edges: [{ from: `${R}:t`, to: `${R}:y`, meta: { role: 'blocking' } }] } }
+            }],
+            edges: [
+                { id: 'e:t', from: 'b:t:t', to: `${R}:t`, scope: 'root' },
+                { id: 'e:y', from: `${R}:y`, to: 'b:y:y', scope: 'root' }
+            ],
+            subgraphs: [{ id: 'root', kind: 'root', parent: null, controlNodeId: null }]
+        }
+    });
+
+    it('opens where it keeps its pins: the wire across it, from pin to pin, saying what it says', () => {
+        const d = made(true);
+        expect(canOpen(d.graph.nodes[2], d.graph.subgraphs)).toBe(true);
+        const opened = openNodes(d, portBusStateOf(new Map()), stableNodeIds(d.graph.nodes));
+        const across = opened.graph.edges.filter(e => e.from === `${R}:t` && e.to === `${R}:y`);
+        expect(across.map(e => e.meta?.['role'])).toEqual(['blocking']);
+    });
+
+    it('is a node, as before, where its pins would go: there is nothing to put in its place', () => {
+        const d = made(false);
+        expect(canOpen(d.graph.nodes[2], d.graph.subgraphs)).toBe(false);
     });
 });
 
