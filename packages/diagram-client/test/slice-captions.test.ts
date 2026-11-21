@@ -39,8 +39,8 @@ describe('index labels sharing a port end', () => {
         expect(indexLabelShift(plain, 'to')).toBe(0);
     });
 
-    it('write a label the same as one before them once, in that one’s place', async () => {
-        const { indexLabelShift } = await import('../src/views');
+    it('write a label the same as one before them once: not again, and taking no room', async () => {
+        const { indexLabelShift, indexLabelRepeats } = await import('../src/views');
         const { WorkflowDiagramMetadata: M } = await import('@dialogram/shared');
         // A variable's name where each wire that carries it leaves the operator computing it.
         const edge = (id: string, label: string) =>
@@ -50,8 +50,19 @@ describe('index labels sharing a port end', () => {
         for (const e of [a, b, c]) {
             (e as any).source = port;
         }
-        expect([a, c].map(e => indexLabelShift(e, 'from'))).toEqual([0, 0]);
+        expect([a, b, c].map(e => indexLabelRepeats(e, 'from'))).toEqual([false, false, true]);
+        expect(indexLabelShift(a, 'from')).toBe(0);
         expect(indexLabelShift(b, 'from')).toBeGreaterThan(0);
+        // An edge with no label there, or alone, repeats nothing.
+        expect(indexLabelRepeats({ id: 'x', args: {}, source: port }, 'from')).toBe(false);
+        expect(indexLabelRepeats(a, 'to')).toBe(false);
+    });
+
+    it('are drawn only by the first of the wires that say the same', () => {
+        const here = path.dirname(fileURLToPath(import.meta.url));
+        const views = readFileSync(path.resolve(here, '../src/views.ts'), 'utf8');
+        expect(views).toContain("const fromIndexLabel = fromIndex && !indexLabelRepeats(edge, 'from') ? indexLabelText(edgeArgs, 'from') : undefined;");
+        expect(views).toContain("const toIndexLabel = toIndex && !indexLabelRepeats(edge, 'to') ? indexLabelText(edgeArgs, 'to') : undefined;");
     });
 
     it('are walked back along the wire round its bends, never past its other end', async () => {
@@ -107,5 +118,29 @@ describe('the bits as the producer writes them', () => {
         }
         expect(indexLabelShift(hi, 'to')).toBe(0);
         expect(indexLabelShift(lo, 'to')).toBeGreaterThan(indexLabelShift(short2, 'to'));
+    });
+});
+
+describe('how long a line is as drawn', () => {
+    it('is its route, each turn rounded as the view rounds it, and is on the line for a dash to start from its end', async () => {
+        const { drawnRouteLength } = await import('../src/views');
+        const straight = [{ x: 0, y: 0 }, { x: 100, y: 0 }];
+        expect(drawnRouteLength(straight, 8)).toBeCloseTo(100, 6);
+        // One right angle rounded by 8: the 16 of the two legs it cuts off become a quadratic
+        // through the corner, 16 times the integral of sqrt(1 - 2t + 2t^2) over [0, 1]: 12.98.
+        const turn = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }];
+        expect(drawnRouteLength(turn, 8) - (150 - 16)).toBeCloseTo(12.98, 2);
+        // Sharp, as when selected: the route itself. A leg shorter than twice the radius rounds less.
+        expect(drawnRouteLength(turn, 0)).toBeCloseTo(150, 6);
+        expect(drawnRouteLength([{ x: 0, y: 0 }, { x: 6, y: 0 }, { x: 6, y: 50 }], 8)).toBeLessThan(56);
+        // Two wires joining for their last stretch: they differ by what they do not share, so
+        // a dash counted back from their end runs in step along what they do.
+        const a = [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 100 }, { x: 80, y: 100 }];
+        const b = [{ x: 0, y: 60 }, { x: 40, y: 60 }, { x: 40, y: 100 }, { x: 80, y: 100 }];
+        expect(drawnRouteLength(a, 8) - drawnRouteLength(b, 8)).toBeCloseTo(60, 6);
+
+        const here = path.dirname(fileURLToPath(import.meta.url));
+        const views = readFileSync(path.resolve(here, '../src/views.ts'), 'utf8');
+        expect(views).toContain("'--edge-length': `${drawnLength.toFixed(2)}px`");
     });
 });

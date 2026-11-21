@@ -60,17 +60,22 @@ export interface InnerGraph {
 
 /**
  * The graph a node holds, when it holds one with something in it: a node, or,
- * in a frame that keeps its pins, a wire across it (a branch that passes a
- * value on as it is: `else y = t`).
+ * in a frame that keeps its pins, a wire across it from one of its pins to
+ * another (a branch that passes a value on as it is: `else y = t`). A wire
+ * naming a pin the node does not have is no wire (openOnce), so it alone
+ * leaves the node closed.
  */
-export function innerGraphOf(node: Pick<PyGraphNode, 'meta'>): InnerGraph | undefined {
+export function innerGraphOf(node: Pick<PyGraphNode, 'meta'> & Partial<Pick<PyGraphNode, 'ports'>>): InnerGraph | undefined {
     const inner = node.meta?.['inner'] as Partial<InnerGraph> | undefined;
     if (!inner || !Array.isArray(inner.nodes)) {
         return undefined;
     }
     const edges = Array.isArray(inner.edges) ? inner.edges : [];
-    if (inner.nodes.length === 0 && !(keepsPins(node) && edges.length > 0)) {
-        return undefined;
+    if (inner.nodes.length === 0) {
+        const pins = new Set((node.ports ?? []).map(port => port.id));
+        if (!keepsPins(node) || !edges.some(edge => pins.has(edge.from) && pins.has(edge.to))) {
+            return undefined;
+        }
     }
     return { nodes: inner.nodes, edges };
 }

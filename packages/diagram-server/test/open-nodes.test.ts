@@ -472,6 +472,13 @@ describe('a frame that holds a wire alone', () => {
         const d = made(false);
         expect(canOpen(d.graph.nodes[2], d.graph.subgraphs)).toBe(false);
     });
+
+    it('is a node, as before, when its wires name pins it does not have: they are no wires', () => {
+        const d = made(true);
+        const frame = d.graph.nodes[2];
+        (frame.meta!['inner'] as { edges: unknown[] }).edges = [{ from: `${R}:t`, to: `${R}:gone` }, { from: 'node:elsewhere:a', to: `${R}:y` }];
+        expect(canOpen(frame, d.graph.subgraphs)).toBe(false);
+    });
 });
 
 describe('a bus toggle beside an open node', () => {

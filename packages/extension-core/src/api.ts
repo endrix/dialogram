@@ -560,6 +560,12 @@ export interface DiagramProfile {
    * selection: `.workflow-edge.edge-role-x:not(.selected):not(.hover)`. A rule
    * on the bare class matches both groups, so an `opacity` there applies
    * twice.
+   *
+   * An edge's line (`.edge-line`) carries `--edge-length`, how long it is as
+   * drawn. A dashed role starts its dashes from the line's end with
+   * `stroke-dashoffset: calc(-1 * var(--edge-length, 0px))`: then wires that
+   * end at one port run in step where they share their last stretch, which
+   * otherwise fill in each other's gaps and read as one solid line.
    */
   clientStylesheets?: string[];
   /** Edit strategy: `'read-only'` disables writes; an editable strategy carries the
