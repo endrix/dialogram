@@ -179,6 +179,22 @@ describe('an edge role and width', () => {
         expect(edge.args[WorkflowDiagramMetadata.EDGE_WIDTH]).toBe(32);
     });
 
+    it('hooks the producer\'s tone on one connection, apart from its role', () => {
+        const edge = loopFixture({ role: 'refines', tone: 'warning' }).find((child: any) => child.id === 'back');
+
+        expect(edge.cssClasses).toContain('edge-tone-warning');
+        // The role stays what it is: edits read it.
+        expect(edge.cssClasses).toContain('edge-role-refines');
+        expect(edge.args[WorkflowDiagramMetadata.EDGE_ROLE]).toBe('refines');
+    });
+
+    it('hooks no tone that is not a class name', () => {
+        for (const tone of ['Warning', 'warn ing', 'x;y', 7]) {
+            const edge = loopFixture({ tone }).find((child: any) => child.id === 'back');
+            expect((edge.cssClasses ?? []).filter((cls: string) => cls.startsWith('edge-tone-')), String(tone)).toEqual([]);
+        }
+    });
+
     it('carries no width when the producer states none', () => {
         const edge = loopFixture()?.find((child: any) => child.id === 'back');
 

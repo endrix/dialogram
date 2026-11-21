@@ -326,6 +326,12 @@ function share(existing: GEdge, edge: GEdge): void {
         delete args[WorkflowDiagramMetadata.EDGE_ROLE];
         existing.cssClasses = (existing.cssClasses ?? []).filter(cls => !cls.startsWith('edge-role-'));
     }
+    // A tone says something of one connection: a piece several carry keeps
+    // it only when every one of them says it, whichever came first.
+    const toneOf = (cssClasses: string[] | undefined): string | undefined => cssClasses?.find(cls => cls.startsWith('edge-tone-'));
+    if (toneOf(existing.cssClasses) !== toneOf(edge.cssClasses)) {
+        existing.cssClasses = (existing.cssClasses ?? []).filter(cls => !cls.startsWith('edge-tone-'));
+    }
     if (existing.type !== edge.type && edge.type === WorkflowDiagramTypes.EDGE_CONNECTION) {
         existing.type = edge.type;
     }
@@ -591,6 +597,74 @@ const GROUP_LIST_LAYOUT: Record<string, string> = {
         + `left=${WorkflowDiagramConstants.LIST_FRAME_PADDING_PX},bottom=${WorkflowDiagramConstants.LIST_FRAME_PADDING_PX},`
         + `right=${WorkflowDiagramConstants.LIST_FRAME_PADDING_PX}]`
 };
+
+/**
+ * Lay out the root in ranks when the producer ranks any of its members
+ * (`RANK`, a node's `meta.rank` or a group scope's `rank`): each rank a
+ * partition of the root's layout, in order along the flow (left to right in
+ * a flow that runs right). A ladder of refinement layers, one frame each, is
+ * the case it was made for: the layout alone puts a frame wherever its edges
+ * pull it.
+ *
+ * Unlike a group's rows, edges between members are welcome: between ranks is
+ * where a ladder's edges run. One that runs against the ranks (from a later
+ * rank to an earlier one) is routed back by the layout, which is the
+ * producer's to avoid by drawing it the other way. What starts the flow
+ * stands before the first rank: a unit's inputs, a group pinned on the left
+ * that an edge keeps in the flow, an unranked member edges only leave.
+ * Everything else unranked, a unit's outputs among it, stands after the last.
+ *
+ * Sets each member's partition and returns the graph options that turn the
+ * ranks on, or `undefined` when nothing is ranked. Run once the groups are
+ * nested, so that the root's members are what it holds.
+ */
+export function rootRankOptions(children: GModelElement[]): Record<string, string> | undefined {
+    const members = children.filter(isNode) as GNode[];
+    const rankOf = (member: GNode): number | undefined => {
+        const rank = member.args?.[WorkflowDiagramMetadata.RANK];
+        return isGroupRow(rank) ? rank : undefined;
+    };
+    const ranks = members.map(rankOf).filter((rank): rank is number => rank !== undefined);
+    if (ranks.length === 0) {
+        return undefined;
+    }
+    // Which member each end of a root edge is in, to tell a source.
+    const memberOf = new Map<string, GNode>();
+    const claim = (element: GModelElement, member: GNode): void => {
+        memberOf.set(element.id, member);
+        for (const child of element.children ?? []) {
+            claim(child, member);
+        }
+    };
+    members.forEach(member => claim(member, member));
+    const leaving = new Set<GNode>();
+    const entering = new Set<GNode>();
+    for (const edge of children.filter(isEdge)) {
+        const [from, to] = [memberOf.get(edge.sourceId), memberOf.get(edge.targetId)];
+        if (from && to && from !== to) {
+            leaving.add(from);
+            entering.add(to);
+        }
+    }
+    const startsTheFlow = (member: GNode): boolean =>
+        member.type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT
+        || member.args?.[WorkflowDiagramMetadata.GROUP_PIN] === 'left'
+        || (leaving.has(member) && !entering.has(member));
+    const after = Math.max(...ranks) + 2;
+    for (const member of members) {
+        const rank = rankOf(member);
+        const partition = rank !== undefined ? rank + 1
+            : startsTheFlow(member) ? 0
+                : after;
+        member.layoutOptions = { ...(member.layoutOptions ?? {}), 'elk.partitioning.partition': String(partition) };
+    }
+    return {
+        'elk.partitioning.activate': 'true',
+        // Members with nothing between them are still one layout: on their
+        // own each would be a component, packed wherever it fits.
+        'elk.separateConnectedComponents': 'false'
+    };
+}
 
 /** Whether a group's layout options are the rows' (`groupLayoutOptions(true)`). */
 export function isRowsLayout(options: Record<string, unknown> | undefined): boolean {

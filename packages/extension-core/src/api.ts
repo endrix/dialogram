@@ -542,7 +542,9 @@ export interface DiagramProfile {
    * The platform writes hooks it does not style: `<kind>-node` for a kind of
    * its own, `node-role-<role>` for what a node is to the picture (its
    * `meta.role`), `edge-role-<role>` for what a connection is, the family
-   * classes.
+   * classes. One it does style: `edge-tone-<tone>` (a connection's
+   * `meta.tone`), `warning` and `error` in the editor's colours, over a
+   * product's colour for the role.
    * A product that wants `refines` solid and `conflicts-with` red, or its pins
    * smaller, says so here in CSS and nowhere else, without composing a webview
    * bundle of its own for one stylesheet.

@@ -1373,6 +1373,18 @@ body.vscode-high-contrast-light .node-center-image-light {
     stroke-width: var(--workflow-edge-width, 3.5px);
 }
 
+/* A connection the producer flags (`meta.tone`, `edge-tone-<tone>`): in the
+   editor's warning or error colour, over a product's colour for its role
+   (the extra `.sprotty-edge` outranks a role rule), giving way to the
+   selection, the hover and a run's last token as a role's colour does. The
+   selection trace's colours still win. */
+.sprotty-graph .sprotty-edge .workflow-edge.edge-tone-warning:not(.selected):not(.hover):not(.edge-has-last-token) {
+    color: var(--vscode-editorWarning-foreground, #cca700);
+}
+.sprotty-graph .sprotty-edge .workflow-edge.edge-tone-error:not(.selected):not(.hover):not(.edge-has-last-token) {
+    color: var(--vscode-editorError-foreground, #f14c4c);
+}
+
 .workflow-edge .edge-arrow {
     fill: currentColor;
     stroke: currentColor;

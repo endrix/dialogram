@@ -9,7 +9,8 @@
  * writes `.workflow-edge.edge-role-x:not(.selected)`, and that matched
  * nothing. The edge views give their line group the role classes too, so
  * both `.sprotty-edge.edge-role-x .workflow-edge` and
- * `.workflow-edge.edge-role-x` reach the line.
+ * `.workflow-edge.edge-role-x` reach the line. So does the producer's
+ * `edge-tone-<tone>` (`meta.tone`, a warning on this one connection).
  */
 export function edgeRoleClasses(edge: { cssClasses?: unknown }): Record<string, boolean> {
     const classes = edge.cssClasses;
@@ -18,7 +19,7 @@ export function edgeRoleClasses(edge: { cssClasses?: unknown }): Record<string, 
     }
     const roles: Record<string, boolean> = {};
     for (const cls of classes) {
-        if (typeof cls === 'string' && cls.startsWith('edge-role-')) {
+        if (typeof cls === 'string' && (cls.startsWith('edge-role-') || cls.startsWith('edge-tone-'))) {
             roles[cls] = true;
         }
     }
