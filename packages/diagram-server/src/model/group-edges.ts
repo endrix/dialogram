@@ -727,11 +727,36 @@ export function arrangeGroupRows(children: GModelElement[]): void {
             }
         };
         members.forEach(member => claim(member, member.id));
+        // In a column some of whose members have rows, the others feed them (what a choice's
+        // conditions compute): they stand before the rows, which keep their column.
+        const rowIds = new Set(members.filter(member => rowOf(member) !== undefined).map(member => member.id));
+        const feeding = column && rowIds.size > 0 && rowIds.size < members.length;
         const betweenMembers = edges.some(edge => {
             const [from, to] = [memberOf.get(edge.sourceId), memberOf.get(edge.targetId)];
-            return from !== undefined && to !== undefined && from !== to;
+            if (from === undefined || to === undefined || from === to) {
+                return false;
+            }
+            // A feeder into a feeder or into a row keeps the column; anything out of a row does not.
+            return !(feeding && !rowIds.has(from));
         });
         if (betweenMembers) {
+            return;
+        }
+        if (column && feeding) {
+            group.layoutOptions = { ...groupLayoutOptions(), ...GROUP_COLUMN_LAYOUT, 'elk.partitioning.activate': 'true' };
+            group.args = { ...(group.args ?? {}), [WorkflowDiagramMetadata.GROUP_ROWS]: true };
+            const ordered = members.map((member, k) => ({ member, k, row: rowOf(member) ?? -1 }))
+                .sort((a, b) => a.row - b.row || a.k - b.k)
+                .map(({ member }) => member);
+            let next = 0;
+            group.children = (group.children ?? []).map(child => (members.includes(child as GNode) ? ordered[next++] : child));
+            for (const member of ordered) {
+                member.layoutOptions = {
+                    ...(member.layoutOptions ?? {}),
+                    'elk.partitioning.partition': rowIds.has(member.id) ? '1' : '0',
+                    ...(rowIds.has(member.id) ? { 'elk.alignment': 'LEFT' } : {})
+                };
+            }
             return;
         }
         if (column) {

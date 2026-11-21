@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import { GGraph, GNode } from '@eclipse-glsp/server';
 import { DefaultElementFilter } from '@eclipse-glsp/layout-elk';
-import { ToggleNodeOpenOperation, WorkflowDiagramMetadata } from '@dialogram/shared';
+import { ToggleNodeOpenOperation, WorkflowDiagramConstants, WorkflowDiagramMetadata } from '@dialogram/shared';
 import { GraphGModelSource, type PyGraphDocument } from '../src/model/graph-gmodel-source';
 import { openNodes } from '../src/model/open-nodes';
 import { portBusStateOf } from '../src/model/port-bundles';
@@ -466,6 +466,124 @@ describe('a column', () => {
         for (let k = 1; k < members.length; k++) {
             expect(members[k - 1].position.y + members[k - 1].size.height, `a${k}`).toBeLessThanOrEqual(members[k].position.y);
             expect(Math.abs(members[k].position.x - members[0].position.x), `a${k}`).toBeLessThanOrEqual(1);
+        }
+    });
+});
+
+// ── A column whose rows are fed ─────────────────────────────────────────────
+
+/**
+ * The block of {@link ifBlock} with its second condition computed beside the
+ * branch, as a producer draws `else if (stop || count == 0)` in operators:
+ * `||`, `==` and the value `0` in the `if`'s frame, no row of their own, into
+ * the branch's one pin `cond`.
+ */
+function ifBlockWithOperators(): PyGraphDocument {
+    const doc = ifBlock();
+    const run: any = doc.graph.nodes.find(n => n.id === 'node:run');
+    const theIf = run.meta.inner.nodes[0];
+    const second = theIf.meta.inner.nodes[1];
+    const op = (name: string, glyph: string, ins: string[]) => ({
+        id: `${theIf.id}/c/${name}`, kind: 'logic', label: glyph, scope: 'root',
+        ports: [...ins.map(pin => ({ id: `${theIf.id}/c/${name}:${pin}`, name: pin, direction: 'in', pins: [pin] })),
+            { id: `${theIf.id}/c/${name}:y`, name: 'y', direction: 'out', pins: ['y'] }],
+        meta: { symbol: 'operator', operator: glyph }
+    });
+    const [or, eq, zero] = [op('or', '||', ['a', 'b']), op('eq', '==', ['a', 'b']), op('zero', '0', [])];
+    second.ports = [{ id: `${second.id}:cond`, name: 'cond', direction: 'in', role: 'condition' }, ...second.ports.filter((p: any) => p.direction === 'out')];
+    theIf.meta.inner.nodes = [or, eq, zero, ...theIf.meta.inner.nodes];
+    theIf.meta.inner.edges = [
+        ...theIf.meta.inner.edges.filter((e: any) => !e.to.startsWith(`${second.id}:in:`)),
+        { from: `${theIf.id}:in:stop`, to: `${or.id}:a` },
+        { from: `${theIf.id}:in:count`, to: `${eq.id}:a` },
+        { from: `${zero.id}:y`, to: `${eq.id}:b` },
+        { from: `${eq.id}:y`, to: `${or.id}:b` },
+        { from: `${or.id}:y`, to: `${second.id}:cond` }
+    ];
+    return doc;
+}
+
+describe('a column whose rows are fed by members of no row', () => {
+    const IF = 'scope:open:scope:open:node:run/node:run/if';
+
+    it('lays the feeders out in a partition before the rows’, the rows in theirs in order', () => {
+        const theIf = find(transform(ifBlockWithOperators()), IF)!;
+        expect(theIf.layoutOptions?.['elk.partitioning.activate']).toBe('true');
+        expect(theIf.args?.[WorkflowDiagramMetadata.GROUP_COLUMN]).toBe(true);
+        expect(theIf.args?.[WorkflowDiagramMetadata.GROUP_ROWS]).toBe(true);
+        const members = (theIf.children ?? []).filter(child => child.type?.startsWith('node'));
+        // The feeders first, as given; then the rows by row.
+        expect(members.map(m => m.args?.[WorkflowDiagramMetadata.GROUP_ROW] ?? m.args?.[WorkflowDiagramMetadata.SYMBOL_OPERATOR]))
+            .toEqual(['||', '==', '0', 0, 1, 2]);
+        expect(members.map(m => m.layoutOptions?.['elk.partitioning.partition'])).toEqual(['0', '0', '0', '1', '1', '1']);
+        // None held in a layer of its own: the layout refuses a wire into one.
+        expect(members.some(m => m.layoutOptions?.['elk.layered.layering.layerConstraint'] !== undefined)).toBe(false);
+    });
+
+    it('keeps the plain layout where a row feeds another member', () => {
+        const doc = ifBlockWithOperators();
+        const theIf: any = (doc.graph.nodes.find(n => n.id === 'node:run') as any).meta.inner.nodes[0];
+        theIf.meta.inner.edges.push({ from: `${theIf.id}/b0:out:busy`, to: `${theIf.id}/c/or:a` });
+        const laid = find(transform(doc), IF)!;
+        expect(laid.layoutOptions?.['elk.partitioning.activate']).toBeUndefined();
+        expect(laid.args?.[WorkflowDiagramMetadata.GROUP_ROWS]).toBeUndefined();
+    });
+
+    it('stands the rows one under another, left edges on one line, the feeders left of them', async () => {
+        const byId = await laidOut(ifBlockWithOperators());
+        const rows = [...byId.values()]
+            .filter(e => e.type === 'node:group' && typeof e.args?.[WorkflowDiagramMetadata.GROUP_ROW] === 'number')
+            .sort((a, b) => a.args[WorkflowDiagramMetadata.GROUP_ROW] - b.args[WorkflowDiagramMetadata.GROUP_ROW]);
+        expect(rows.map(r => r.args[WorkflowDiagramMetadata.GROUP_LABEL])).toEqual(['if (start)', 'else if (stop || count == 0)', 'else if (busy)']);
+        for (let k = 1; k < rows.length; k++) {
+            expect(rows[k - 1].position.y + rows[k - 1].size.height).toBeLessThanOrEqual(rows[k].position.y);
+            expect(Math.abs(rows[k].position.x - rows[0].position.x)).toBeLessThanOrEqual(1);
+        }
+        const feeders = [...byId.values()].filter(e => typeof e.args?.[WorkflowDiagramMetadata.SYMBOL_OPERATOR] === 'string');
+        expect(feeders).toHaveLength(3);
+        for (const feeder of feeders) {
+            expect(feeder.position.x + feeder.size.width, feeder.id).toBeLessThanOrEqual(rows[0].position.x);
+        }
+    });
+});
+
+describe('a wire across a frame in a column', () => {
+    it('runs inside the frame, from its pin to its pin', async () => {
+        // `count <= load` drawn as it is: no node, the branch's `load` wired straight to its `count`.
+        const doc = ifBlock();
+        const theIf: any = (doc.graph.nodes.find(n => n.id === 'node:run') as any).meta.inner.nodes[0];
+        const first = theIf.meta.inner.nodes[0];
+        const kept = first.meta.inner.nodes.filter((n: any) => !n.label.startsWith('count <='));
+        const ids = new Set(kept.flatMap((n: any) => n.ports.map((p: any) => p.id)));
+        first.meta.inner.nodes = kept;
+        first.meta.inner.edges = [
+            ...first.meta.inner.edges.filter((e: any) => ids.has(e.from) || ids.has(e.to)),
+            { from: `${first.id}:in:load`, to: `${first.id}:out:count` }
+        ];
+        const byId = await laidOut(doc);
+        const frame = [...byId.values()].find(e => e.type === 'node:group' && e.args?.[WorkflowDiagramMetadata.GROUP_LABEL] === 'if (start)')!;
+        const across = [...byId.values()].find(e => typeof e.id === 'string' && e.id.includes('/through:'))!;
+        expect(across).toBeDefined();
+        // Where the frame is on the page, as the edge's points are: every parent's position added.
+        const at = { x: 0, y: 0 };
+        for (let e: any = frame; e && e.position; e = e.parent) {
+            at.x += e.position.x;
+            at.y += e.position.y;
+        }
+        const holder = { x: 0, y: 0 };
+        for (let e: any = across.parent; e && e.position; e = e.parent) {
+            holder.x += e.position.x;
+            holder.y += e.position.y;
+        }
+        const points = (across.routingPoints as Array<{ x: number; y: number }>).map(p => ({ x: p.x + holder.x, y: p.y + holder.y }));
+        expect(points.length).toBeGreaterThanOrEqual(2);
+        // (A pin sits centred on the frame's border: the wire ends on its outer rim, a pin's width out.)
+        const rim = WorkflowDiagramConstants.PORT_WIDTH_PX;
+        for (const point of points) {
+            expect(point.x, JSON.stringify(points)).toBeGreaterThanOrEqual(at.x - rim);
+            expect(point.x, JSON.stringify(points)).toBeLessThanOrEqual(at.x + frame.size.width + rim);
+            expect(point.y, JSON.stringify(points)).toBeGreaterThanOrEqual(at.y);
+            expect(point.y, JSON.stringify(points)).toBeLessThanOrEqual(at.y + frame.size.height);
         }
     });
 });

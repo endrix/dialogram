@@ -36,6 +36,7 @@ function gportSide(port: GPort): PortSide {
 import { snapRouteEndpoints } from '../routing/persisted-edge-routes';
 import { FAST_LAYOUT_OPTIONS, countLayoutElements, layoutTierFor, type LayoutGraphSize, type LayoutTier } from './layout-configurator';
 import { isRowsLayout } from '../model/group-edges';
+import { joinPinToPinEdges, splitPinToPinEdges } from './pin-to-pin-edges';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -105,8 +106,8 @@ export function isLaidOutColumn(element: GModelElement): boolean {
  * as wide as its widest member with its margins, and the wires' ends follow
  * their ports when the routes are applied (`snapRouteEndpoints`).
  */
-export function alignColumn(column: ElkNode): void {
-    const members = column.children ?? [];
+export function alignColumn(column: ElkNode, only?: ReadonlySet<string>): void {
+    const members = (column.children ?? []).filter(member => only === undefined || only.has(member.id));
     if (members.length < 2) {
         return;
     }
@@ -249,7 +250,10 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
             // are laid out apart, then put in a band above what the layout made.
             const pinned = this.takePinnedGroups(root, elkGraph);
 
+            // A wire from a frame's pin to another of its pins, laid out inside it.
+            const splits = splitPinToPinEdges(elkGraph);
             const result = (await (this as any).elk.layout(elkGraph)) as ElkNode;
+            joinPinToPinEdges(result, splits);
             this.applyLayout(result);
             if (pinned.length > 0) {
                 await this.layoutPinnedGroups(root, pinned);
@@ -1145,7 +1149,10 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         if (element instanceof GNode) {
             (this as any).applyShape(element, elkNode);
             if (isLaidOutColumn(element)) {
-                alignColumn(elkNode);
+                // Where some members have rows, the others feed them and stand before: the rows line up.
+                const rows = new Set((element.children ?? []).filter(child => child.args?.[WorkflowDiagramMetadata.GROUP_ROW] !== undefined).map(child => child.id));
+                const nodes = (element.children ?? []).filter(child => typeof child.type === 'string' && child.type.startsWith('node'));
+                alignColumn(elkNode, rows.size > 0 && rows.size < nodes.length ? rows : undefined);
             }
         }
 
