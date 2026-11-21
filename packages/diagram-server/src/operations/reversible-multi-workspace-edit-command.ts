@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import type { CommandThatMayChangeNothing, CommandThatMayRefuse } from '../server/command-stack';
 import type { ApplyPhase } from './reversible-workspace-edit-command';
+import type { CommandThatWritesOutOfBand, OutOfBandWrite } from '../server/out-of-band-writes';
 
 /**
  * The edits a command applies, by file; nothing (or an empty list) when there
@@ -57,16 +58,25 @@ type Snapshot = {
     afterText: string;
 };
 
-export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChangeNothing, CommandThatMayRefuse {
+export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChangeNothing, CommandThatMayRefuse, CommandThatWritesOutOfBand {
     private snapshots: Snapshot[] | undefined;
     private unchanged = false;
     private refusedLast = false;
+    /** The files the last execute had its producer write, as it left them. */
+    private writtenOutOfBand: OutOfBandWrite[] = [];
 
     constructor(private readonly options: ReversibleMultiWorkspaceEditCommandOptions) {}
 
     async execute(): Promise<void> {
         this.unchanged = false;
         const plan = await this.options.computeEdits();
+        // The files the producer changed, read back where it wrote them: on
+        // disk whatever becomes of the edits below, files named with none
+        // and edits VS Code refuses included. What the host is told to
+        // reload from (see out-of-band-writes.ts).
+        this.writtenOutOfBand = (this.options.outOfBandSnapshots?.() ?? [])
+            .filter(s => s.beforeText !== s.afterText)
+            .map(s => ({ uri: s.uri.toString(), text: s.afterText }));
         if (!plan || plan.length === 0) {
             this.snapshots = undefined;
             this.unchanged = true;
@@ -135,6 +145,11 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
             && override.every(s => s.beforeText === s.afterText)
             && entries.every(e => named.has(e.uri.toString()));
         await this.options.afterApply?.('execute');
+    }
+
+    /** The files the last execute had its producer write, as they were read back; none for edits applied here. */
+    outOfBandWrites(): readonly OutOfBandWrite[] {
+        return this.writtenOutOfBand;
     }
 
     async undo(): Promise<void> {

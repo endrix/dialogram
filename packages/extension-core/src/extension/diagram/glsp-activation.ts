@@ -380,6 +380,7 @@ export async function activateGlspIntegration(
     // straight pass-through.
     const storageOptions = composeStorageRuntimeOptions(profile);
     let loadProgressTarget: Pick<WorkflowEditorProvider, 'postLoading'> | undefined;
+    let outOfBandWriteTarget: Pick<WorkflowEditorProvider, 'reloadAfterOutOfBandWrites'> | undefined;
 
     // The reader's view options, per file (view-options-host.ts). Made
     // before the server, whose model source it wraps; the editors it tells
@@ -441,6 +442,10 @@ export async function activateGlspIntegration(
         // What a load is doing, shown in the diagram that is waiting for it.
         // The provider is made further down; by the first load it is there.
         loadProgress: (clientId, update) => loadProgressTarget?.postLoading(clientId, update),
+        // What an edit's producer wrote itself, which nothing else in VS Code
+        // saw: the diagrams it affects are reloaded without waiting for the
+        // file watcher, which may never report it.
+        outOfBandWrites: writes => outOfBandWriteTarget?.reloadAfterOutOfBandWrites(writes),
         // The product's words for the platform's steps, where it has its own.
         loadPhaseWords: profile.loadPhaseWords,
         // The Problems panel names the product a diagnostic came from: its
@@ -1006,6 +1011,7 @@ export async function activateGlspIntegration(
         assetsUri
     );
     loadProgressTarget = editorProvider;
+    outOfBandWriteTarget = editorProvider;
     viewOptionsEditors = editorProvider;
     editorProvider.viewOptionsHost = viewOptions;
 

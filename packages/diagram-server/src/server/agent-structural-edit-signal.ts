@@ -10,7 +10,8 @@ function debugEnabled(): boolean {
  * create-edge issued through the MCP tool surface — is awaiting an automatic layout.
  *
  * The MCP tool handlers raise the flag the moment they dispatch the mutating operation. The
- * source rewrite lands, the file watcher reloads the model, and the model-submission handler
+ * source rewrite lands, the host reloads the model (told by the command stack that the producer
+ * wrote the file, or by its file watcher; see out-of-band-writes.ts), and the model-submission handler
  * consumes the flag on the first submit AFTER that reload to run a full boundary-flow layout — so
  * agent-added nodes never sit at their parked default positions and agent-added edges relayout
  * the graph. Palette / webview edits never raise the flag, so their placement path is untouched.
@@ -29,7 +30,7 @@ function debugEnabled(): boolean {
  * LATER source reload has advanced the generation. {@link noteSourceReloaded} (called from
  * {@link WorkflowSourceModelStorage.loadSourceModel}) bumps the generation; a submit with no
  * intervening reload — the post-op submit — sees `loadGeneration === markedGeneration` and cannot
- * consume it. The watcher reload that carries the edit bumps the generation, so the reload's own
+ * consume it. The reload that carries the edit bumps the generation, so the reload's own
  * submit consumes it and runs boundary-flow.
  *
  * Bound `toSelf().inSingletonScope()` in the per-session container, so one open diagram's agent
