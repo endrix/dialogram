@@ -14,6 +14,8 @@ export interface AcpEmitterLike {
     off(event: string, fn: (...a: any[]) => void): any;
     /** The name of the ACP connector the client spawned, for the status. */
     readonly agent?: string;
+    /** Whether the agent reads images in a prompt, for the status; unknown until connected. */
+    takesImages?(): boolean | undefined;
 }
 
 export interface AcpEventSinks {
@@ -93,7 +95,7 @@ export function attachAcpEventForwarding(acp: AcpEmitterLike, sinks: AcpEventSin
     const onPermissionRequest = (data: any) => sinks.broadcast({ type: 'chat.permissionRequest', data });
     const agentName = () => acp.agent ?? 'agent';
     const onConnected = () =>
-        sinks.broadcast({ type: 'chat.connectionStatus', data: { connected: true, agent: agentName() } });
+        sinks.broadcast({ type: 'chat.connectionStatus', data: { connected: true, agent: agentName(), images: acp.takesImages?.() } });
     const onDisconnected = () =>
         sinks.broadcast({ type: 'chat.connectionStatus', data: { connected: false, reason: `${agentName()} disconnected`, agent: agentName() } });
     const onError = (err: any) =>

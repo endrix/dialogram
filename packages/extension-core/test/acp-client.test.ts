@@ -438,6 +438,53 @@ describe('ACPClientService', () => {
     });
   });
 
+  describe('images in a prompt', () => {
+    const image = { mimeType: 'image/png', data: 'iVBORw0KGgo=' };
+
+    async function connectedSaying(promptCapabilities: Record<string, unknown> | undefined) {
+      mockConnection.initialize.mockResolvedValue(
+        promptCapabilities ? { agentCapabilities: { promptCapabilities } } : {}
+      );
+      await client.start('/test/workspace');
+      await client.createSession('/test/workspace', 'Test Session');
+    }
+
+    it('are sent as image blocks before the text, to an agent that reads them', async () => {
+      await connectedSaying({ image: true });
+      expect(client.takesImages()).toBe(true);
+      await client.sendPrompt('test-session-123', 'What is wrong here?', [image]);
+      expect(mockConnection.prompt).toHaveBeenCalledWith({
+        sessionId: 'test-session-123',
+        prompt: [
+          { type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo=' },
+          { type: 'text', text: 'What is wrong here?' },
+        ],
+      });
+    });
+
+    it('go alone when there is no text', async () => {
+      await connectedSaying({ image: true });
+      await client.sendPrompt('test-session-123', '', [image]);
+      expect(mockConnection.prompt.mock.calls[0][0].prompt).toEqual([
+        { type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo=' },
+      ]);
+    });
+
+    it('are not sent to an agent that does not say it reads them', async () => {
+      await connectedSaying(undefined);
+      expect(client.takesImages()).toBe(false);
+      await client.sendPrompt('test-session-123', 'hello', [image]);
+      expect(mockConnection.prompt.mock.calls[0][0].prompt).toEqual([{ type: 'text', text: 'hello' }]);
+    });
+
+    it('are unknown to take before the agent connects, and after it goes', async () => {
+      expect(client.takesImages()).toBeUndefined();
+      await connectedSaying({ image: true });
+      client.stop();
+      expect(client.takesImages()).toBeUndefined();
+    });
+  });
+
   describe('cancelPrompt', () => {
     beforeEach(async () => {
       await client.start('/test/workspace');

@@ -1,6 +1,6 @@
 import { inject, injectable, optional, postConstruct } from 'inversify';
 import { IDiagramStartup, ISelectionListener } from '@eclipse-glsp/client';
-import type { SurfaceSelectionSummary } from '@dialogram/shared';
+import { CHAT_IMAGE_MAX_COUNT, chatImageRefusal, type ChatImage, type SurfaceSelectionSummary } from '@dialogram/shared';
 import { DiagramSurfaceHost } from './diagram-surface-host';
 import { summarizeSurfaceSelection } from './diagram-surface';
 import { raiseFloatingPanel, stackAsFloatingPanel } from './floating-panels';
@@ -14,6 +14,8 @@ import { renderMarkdownSafe } from './markdown';
 import { formatAgentOutputs } from './agent-outputs';
 import { shouldStick } from './chat-scroll';
 import { CHAT_RESIZE_EDGES, restoreChatSize, startChatResize } from './chat-resize';
+import { diagramPng } from './diagram-picture';
+import { carriesImages, imageFiles, imageSrc, readImageFile } from './chat-images';
 import {
   RunAgentStreamActionHandler,
   type LiveAgentPart,
@@ -113,6 +115,10 @@ interface MessageItem {
   messageId?: string;
   /** Assistant reasoning, shown as a collapsible "Thinking" block. */
   thinking?: string;
+  /** The images a message the user sent carried, shown under it. */
+  images?: ChatImage[];
+  /** How many images a restored message carried: their bytes are not kept. */
+  imageCount?: number;
 }
 
 interface ToolItem {
@@ -220,6 +226,12 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   /** The ACP connector the chat is (or was) connected to, as the host names it. */
   private connectionAgent = '';
   private inputValue = '';
+  /** Images to send with the next message: pasted, dropped, or a picture of the diagram. */
+  private pendingImages: ChatImage[] = [];
+  /** Whether the agent reads images, as the host says; unknown until it says. */
+  private agentTakesImages: boolean | undefined;
+  /** True while a picture of the diagram is drawn for the next message. */
+  private takingPicture = false;
   private view: ChatView = { kind: 'session' };
   /** A running agent's question that arrived while the user was typing in
    *  the session: shown as a banner instead of switching the view. */
@@ -613,7 +625,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         break;
 
       case 'chat.connectionStatus':
-        this.setConnectionStatus(!!data?.connected, data?.reason, data?.agent);
+        this.setConnectionStatus(!!data?.connected, data?.reason, data?.agent, data?.images);
         break;
 
       case 'chat.commands':
@@ -807,6 +819,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         mode: m.mode,
         ...(typeof m.messageId === 'string' ? { messageId: m.messageId } : {}),
         ...(typeof m.thinking === 'string' && m.thinking ? { thinking: m.thinking } : {}),
+        ...(typeof m.images === 'number' && m.images > 0 ? { imageCount: m.images } : {}),
       });
     });
     if (data.mode === 'plan' || data.mode === 'build') {
@@ -850,8 +863,9 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   // ── Connection status ──────────────────────────────────────────────────
 
-  private setConnectionStatus(connected: boolean, reason?: string, agent?: string): void {
+  private setConnectionStatus(connected: boolean, reason?: string, agent?: string, images?: unknown): void {
     this.receivedStatus = true;
+    if (typeof images === 'boolean') this.agentTakesImages = images;
     if (this.statusHandshakeTimer !== null) {
       clearTimeout(this.statusHandshakeTimer);
       this.statusHandshakeTimer = null;
@@ -898,7 +912,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   private sendMessage(): void {
     const text = this.inputValue.trim();
-    if (!text) return;
+    const images = this.pendingImages;
+    if (!text && images.length === 0) return;
 
     this.finishStreamingMessage();
     // A real turn begins: subsequent agent streaming is genuine, not replay.
@@ -906,12 +921,14 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     // A new prompt continues from the revert point; opencode drops the reverted
     // tail, so the session is no longer in a reverted state.
     this.reverted = false;
-    this.pushMessage('user', text, this.currentMode);
+    this.pushMessage('user', text, this.currentMode, undefined, undefined, images);
     this.inputValue = '';
+    this.pendingImages = [];
     this.hideMenu();
 
     const ok = this.sendToHost('chat.sendMessage', {
       text,
+      ...(images.length > 0 ? { images } : {}),
       sessionId: this.currentSessionId,
       mode: this.currentMode,
       selectedNodeIds: this.selectedNodeIds,
@@ -966,13 +983,97 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     content: string,
     mode?: 'plan' | 'build',
     timestamp?: number,
-    opts?: { reveal?: boolean }
+    opts?: { reveal?: boolean },
+    images?: ChatImage[]
   ): void {
-    this.timeline.push({ kind: 'message', role, content, timestamp: timestamp ?? Date.now(), mode });
+    this.timeline.push({
+      kind: 'message',
+      role,
+      content,
+      timestamp: timestamp ?? Date.now(),
+      mode,
+      ...(images && images.length > 0 ? { images } : {}),
+    });
     this.update();
     // reveal:false = record without opening the drawer, for messages that can
     // arrive with no user interaction (background connection errors).
     if (opts?.reveal !== false) this.autoShow(`message:${role}:${content.slice(0, 60)}`);
+  }
+
+  // ── Images ─────────────────────────────────────────────────────────────
+
+  /** Add images to the next message, saying why any is left out. */
+  private attachImages(images: ChatImage[]): void {
+    for (const image of images) {
+      const refusal = this.imageRefusal(image);
+      if (refusal) {
+        this.pushMessage('system', `The image was not attached: ${refusal}.`);
+        continue;
+      }
+      this.pendingImages = [...this.pendingImages, image];
+    }
+    this.update();
+  }
+
+  /** Why `image` cannot go with the next message, or nothing when it can. */
+  private imageRefusal(image: ChatImage): string | undefined {
+    if (this.agentTakesImages === false) {
+      return `${this.connectionAgent || 'the agent'} does not read images`;
+    }
+    if (this.pendingImages.length >= CHAT_IMAGE_MAX_COUNT) {
+      return `a message carries at most ${CHAT_IMAGE_MAX_COUNT} images`;
+    }
+    return chatImageRefusal(image);
+  }
+
+  /** The image files pasted or dropped on the composer, read and attached. */
+  private async attachFiles(files: File[]): Promise<void> {
+    const images: ChatImage[] = [];
+    for (const file of files) {
+      try {
+        images.push(await readImageFile(file));
+      } catch (err) {
+        this.pushMessage('system', `The image was not attached: ${err instanceof Error ? err.message : String(err)}.`);
+      }
+    }
+    this.attachImages(images);
+  }
+
+  private removePendingImage(index: number): void {
+    this.pendingImages = this.pendingImages.filter((_, i) => i !== index);
+    this.update();
+  }
+
+  /** Attach a picture of the diagram, as it is drawn, to the next message. */
+  private async attachDiagramPicture(): Promise<void> {
+    if (this.takingPicture) return;
+    this.takingPicture = true;
+    this.update();
+    try {
+      const picture = await diagramPng();
+      this.attachImages([{ mimeType: 'image/png', data: picture.data }]);
+    } catch (err) {
+      this.pushMessage('system', `No picture of the diagram: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      this.takingPicture = false;
+      this.update();
+    }
+  }
+
+  /** The images a message carries, small, under its text; a restored one says how many it had. */
+  private messageImagesTemplate(item: MessageItem): TemplateResult | typeof nothing {
+    if (item.images && item.images.length > 0) {
+      return html`<div class="chat-row-images">
+        ${item.images.map((image) => html`<img class="chat-image-thumb" src=${imageSrc(image)} alt="Attached image" />`)}
+      </div>`;
+    }
+    if (item.imageCount) {
+      return html`<div class="chat-row-image-count">
+        <span class="codicon codicon-file-media"></span>
+        ${item.imageCount} image${item.imageCount === 1 ? '' : 's'}
+      </div>`;
+    }
+    return nothing;
   }
 
   private switchMode(mode: 'plan' | 'build'): void {
@@ -1746,9 +1847,11 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
             : nothing}
         </div>
         ${!isUser && item.thinking ? this.thinkingTemplate(item.thinking) : nothing}
-        <div class="chat-row-body">
-          ${isUser ? item.content : unsafeHTML(renderMarkdownMemo(readable(item.content)))}
-        </div>
+        ${isUser && !item.content
+          ? nothing
+          : // Flush with its tags: a user's text keeps its own line breaks (pre-wrap), and only those.
+            html`<div class="chat-row-body">${isUser ? item.content : unsafeHTML(renderMarkdownMemo(readable(item.content)))}</div>`}
+        ${isUser ? this.messageImagesTemplate(item) : nothing}
       </div>
     `;
   }
@@ -1813,7 +1916,30 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
                 ${this.surfaceSelection.title} selected — included as context
               </div>`
             : nothing}
-        <div class="chat-composer">
+        <div
+          class="chat-composer"
+          @dragover=${(e: DragEvent) => {
+            if (carriesImages(e.dataTransfer)) e.preventDefault();
+          }}
+          @drop=${(e: DragEvent) => {
+            const files = imageFiles(e.dataTransfer);
+            if (files.length === 0) return;
+            e.preventDefault();
+            void this.attachFiles(files);
+          }}
+        >
+          ${this.pendingImages.length
+            ? html`<div class="chat-attachments">
+                ${this.pendingImages.map(
+                  (image, i) => html`<div class="chat-attachment">
+                    <img class="chat-image-thumb" src=${imageSrc(image)} alt="Image to send" />
+                    <button class="chat-attachment-remove" title="Remove" @click=${() => this.removePendingImage(i)}>
+                      <span class="codicon codicon-close"></span>
+                    </button>
+                  </div>`
+                )}
+              </div>`
+            : nothing}
           <textarea
             class="chat-input"
             rows="1"
@@ -1829,6 +1955,10 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
               this.updateMenu();
             }}
             @keydown=${(e: KeyboardEvent) => this.onInputKeydown(e)}
+            @paste=${(e: ClipboardEvent) => {
+              const files = imageFiles(e.clipboardData);
+              if (files.length > 0) void this.attachFiles(files);
+            }}
           ></textarea>
           <div class="chat-composer-bar">
             <div class="chat-mode-seg" title="Agent mode (Ctrl+Shift+B / Ctrl+Shift+P)">
@@ -1861,6 +1991,16 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
                   )}
             </vscode-single-select>
             <div class="chat-composer-spacer"></div>
+            <button
+              class="chat-picture"
+              title=${this.agentTakesImages === false
+                ? `${this.connectionAgent || 'The agent'} does not read images`
+                : 'Attach a picture of the diagram'}
+              ?disabled=${this.takingPicture || this.agentTakesImages === false}
+              @click=${() => void this.attachDiagramPicture()}
+            >
+              <span class="codicon ${this.takingPicture ? 'codicon-loading codicon-modifier-spin' : 'codicon-device-camera'}"></span>
+            </button>
             <button
               class="chat-send ${this.isStreaming ? 'stop' : ''}"
               title=${this.isStreaming ? 'Stop' : 'Send (Enter)'}

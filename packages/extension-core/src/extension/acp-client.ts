@@ -30,6 +30,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { Readable, Writable } from "node:stream";
 import { OpencodeHttpClient, type OpencodeMessage } from "./opencode-http.js";
+import type { ChatImage } from "@dialogram/shared";
 
 interface TerminalState {
   process: ChildProcess;
@@ -196,6 +197,8 @@ export class ACPClientService extends EventEmitter {
    */
   private loadedSessionIds: Set<string> = new Set();
   private isConnected: boolean = false;
+  /** Whether the agent reads images in a prompt (its `promptCapabilities.image`); unknown until it connects. */
+  private promptImages: boolean | undefined;
 
   /**
    * opencode's HTTP API, served by the same `opencode acp` process on a port we
@@ -345,6 +348,11 @@ export class ACPClientService extends EventEmitter {
     return this.agentName;
   }
 
+  /** Whether the agent reads images in a prompt; unknown until it is connected. */
+  takesImages(): boolean | undefined {
+    return this.isConnected ? this.promptImages : undefined;
+  }
+
   /** The agent's `resume` template ({@link AcpAgentSpec.resume}), if it has one. */
   get resumeTemplate(): string | undefined {
     return this.agentResume;
@@ -430,7 +438,7 @@ export class ACPClientService extends EventEmitter {
       );
 
       // Initialize with capabilities
-      await this.connection.initialize({
+      const initialized = await this.connection.initialize({
         protocolVersion: 1,
         clientCapabilities: {
           fs: {
@@ -445,6 +453,8 @@ export class ACPClientService extends EventEmitter {
         },
       });
 
+      // An agent says whether it reads images; one that says nothing does not.
+      this.promptImages = initialized?.agentCapabilities?.promptCapabilities?.image === true;
       this.isConnected = true;
       this.emit("connected");
     } catch (error) {
@@ -757,9 +767,11 @@ export class ACPClientService extends EventEmitter {
   }
 
   /**
-   * Send a prompt to the agent
+   * Send a prompt to the agent: the text, and the images it carries (pasted, or
+   * a picture of the diagram), each an ACP `image` block before the text. An
+   * agent that does not read images is sent none: the chat refuses them first.
    */
-  async sendPrompt(sessionId: string, prompt: string): Promise<void> {
+  async sendPrompt(sessionId: string, prompt: string, images: readonly ChatImage[] = []): Promise<void> {
     if (!this.connection) {
       throw new Error("ACP client is not connected");
     }
@@ -779,7 +791,14 @@ export class ACPClientService extends EventEmitter {
         // Per-turn context is best-effort.
       }
     }
-    blocks.push({ type: "text", text: prompt });
+    if (this.promptImages) {
+      for (const image of images) {
+        blocks.push({ type: "image", mimeType: image.mimeType, data: image.data });
+      }
+    }
+    if (prompt || images.length === 0 || !this.promptImages) {
+      blocks.push({ type: "text", text: prompt });
+    }
 
     // Reset the assistant turn buffers so we can capture the full reply +
     // reasoning + ordered part structure for this turn.
@@ -1436,6 +1455,7 @@ export class ACPClientService extends EventEmitter {
 
     this.http = null;
     this.isConnected = false;
+    this.promptImages = undefined;
     this.emit("disconnected");
   }
 }

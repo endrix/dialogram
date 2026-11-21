@@ -22,6 +22,7 @@ export * from './client-behavior';
 export * from './view-options';
 export * from './command-ids';
 export * from './chat-tools';
+export * from './chat-images';
 export * from './entity-names';
 export * from './clipboard-payload';
 export * from './port-bus';

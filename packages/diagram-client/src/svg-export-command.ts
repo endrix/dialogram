@@ -23,7 +23,7 @@ export const SVG_EXTRACT_FAILED = 'dialogram.svg.failed';
 export const PNG_EXTRACTED = 'dialogram.png.extracted';
 
 /** The name the file is offered under: the workflow shown, or the diagram. */
-function diagramLabel(): string {
+export function diagramLabel(): string {
     try {
         const ctx = (globalThis as any).__calDiagramContext as { workflowName?: string } | undefined;
         return ctx?.workflowName || 'diagram';
@@ -57,7 +57,7 @@ export function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /** The PNG signature: what a surface's bytes must start with to be saved as one. */
-const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+export const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 /**
  * Export the diagram: the surface's image when one is mounted and offers it,

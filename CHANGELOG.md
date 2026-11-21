@@ -78,6 +78,25 @@ platform that hands it one.
 
 ### Added
 
+- **Images in the chat, and a picture of the diagram for any agent.** An
+  image pasted into the chat's composer (or dropped on it) waits above the
+  text, small, with a button to take it off; the camera button beside Send
+  attaches a picture of the diagram as it is drawn. They go to the agent
+  with the message as ACP `image` blocks, and show under it in the
+  transcript; a restored session says how many a message had (their bytes
+  are not stored). PNG, JPEG, GIF and WebP, 5 MB and ten to a message
+  (`@dialogram/shared` `chat-images.ts`); an agent that does not say it
+  reads images (`promptCapabilities.image`) is sent none, and the panel says
+  so. The diagram's MCP server answers `diagram-png` and `diagram-svg`, for
+  the chat's agent and any other client of it: GLSP's own exporters drew a
+  hidden copy through a `blob:` URL the webview refuses, so every call
+  failed. The client now answers with the diagram as it is drawn
+  (`diagram-picture.ts`, the export's SVG, or a surface's own image): what
+  is in view, at 1:1, at most 2000 px on its longer side unless the caller
+  gives a size or scale; the server asks for only that size, not one worked
+  out from the model, and waits up to 15 s. A window that draws nothing
+  gives an error, not an empty frame. The agent's hint names the tool.
+
 - **What a node says, in its body.** A producer's `meta.summary` (a
   clause's rule, a step's purpose) is a paragraph under the node's ports, in
   the place of its family's mark (`node-summary.ts`): the UI font, a code
