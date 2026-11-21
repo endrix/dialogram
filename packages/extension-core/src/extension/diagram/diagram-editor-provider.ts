@@ -617,6 +617,9 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         // Record the save so the on-disk watcher skips its duplicate refresh for
         // this same change (the loop below already force-reloads).
         this.lastSavedAt.set(savedUriString, Date.now());
+        // What it holds now is the save's: a producer's write before it is
+        // no longer the file's text to skip a report of.
+        this.reloadedOutOfBandWrites.delete(savedUriString);
 
         // Cancel any pending debounced change update for the saved document
         // since we're doing a full refresh.
@@ -665,11 +668,17 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         if (written && Date.now() - written.at < WorkflowEditorProvider.OUT_OF_BAND_ECHO_MS) {
             void holdsText(uri, written.digest).then(same => {
                 if (!same) {
+                    // Changed since: that write is no longer the file's
+                    // text, and a later report of it is a change back.
+                    if (this.reloadedOutOfBandWrites.get(canonical) === written) {
+                        this.reloadedOutOfBandWrites.delete(canonical);
+                    }
                     this.scheduleReloadFromDisk(uri);
                 }
             });
             return;
         }
+        this.reloadedOutOfBandWrites.delete(canonical);
         this.scheduleReloadFromDisk(uri);
     }
 
@@ -693,6 +702,13 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      * written and reloads nothing more ({@link handleExternalFileChange}).
      */
     reloadAfterOutOfBandWrites(writes: readonly OutOfBandWrite[]): void {
+        // Only writes the watcher may still report are kept.
+        const now = Date.now();
+        for (const [file, { at }] of this.reloadedOutOfBandWrites) {
+            if (now - at >= WorkflowEditorProvider.OUT_OF_BAND_ECHO_MS) {
+                this.reloadedOutOfBandWrites.delete(file);
+            }
+        }
         for (const write of writes) {
             const uri = vscode.Uri.parse(write.uri);
             const canonical = this.canonicalizeUriString(uri);

@@ -143,6 +143,30 @@ describe('what an edit\'s producer wrote, told to the host', () => {
         expect(outOfBandWrites({ execute: () => {}, undo: () => {}, redo: () => {} })).toEqual([]);
     });
 
+    it('is told when VS Code refuses the edit that follows the write: the file holds it all the same', async () => {
+        const told: OutOfBandWrite[][] = [];
+        (vscode.workspace as any).applyEdit = async () => false;
+        await commandStack(told).execute(outOfBand('B'));
+        await commandStack(told).execute(outOfBandInFiles([[other, 'M']]));
+        expect(told).toEqual([[{ uri: uri.toString(), text: 'B' }], [{ uri: other.toString(), text: 'M' }]]);
+    });
+
+    it('is told for files the producer wrote and named with no edit for them', async () => {
+        const told: OutOfBandWrite[][] = [];
+        let snapshots: Array<{ uri: vscode.Uri; beforeText: string; afterText: string }> = [];
+        const named = new ReversibleMultiWorkspaceEditCommand({
+            label: 'Named',
+            outOfBandSnapshots: () => snapshots,
+            computeEdits: async () => {
+                snapshots = [{ uri: other, beforeText: 'L', afterText: 'M' }];
+                texts.set(other.toString(), 'M');
+                return [{ uri: other, edits: [] }];
+            }
+        });
+        await commandStack(told).execute(named);
+        expect(told).toEqual([[{ uri: other.toString(), text: 'M' }]]);
+    });
+
     it('is told again by an edit run again, and not by its undo, which saves the file', async () => {
         const told: OutOfBandWrite[][] = [];
         const stack = commandStack(told);

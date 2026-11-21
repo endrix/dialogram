@@ -69,8 +69,14 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
 
     async execute(): Promise<void> {
         this.unchanged = false;
-        this.writtenOutOfBand = [];
         const plan = await this.options.computeEdits();
+        // The files the producer changed, read back where it wrote them: on
+        // disk whatever becomes of the edits below, files named with none
+        // and edits VS Code refuses included. What the host is told to
+        // reload from (see out-of-band-writes.ts).
+        this.writtenOutOfBand = (this.options.outOfBandSnapshots?.() ?? [])
+            .filter(s => s.beforeText !== s.afterText)
+            .map(s => ({ uri: s.uri.toString(), text: s.afterText }));
         if (!plan || plan.length === 0) {
             this.snapshots = undefined;
             this.unchanged = true;
@@ -138,11 +144,6 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
         this.unchanged = !!override && override.length > 0
             && override.every(s => s.beforeText === s.afterText)
             && entries.every(e => named.has(e.uri.toString()));
-        // The files the producer changed, read back where it wrote them: what
-        // the host is told to reload from (see out-of-band-writes.ts).
-        this.writtenOutOfBand = (override ?? [])
-            .filter(s => s.beforeText !== s.afterText)
-            .map(s => ({ uri: s.uri.toString(), text: s.afterText }));
         await this.options.afterApply?.('execute');
     }
 

@@ -58,6 +58,9 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
         const fileBefore = await textOnDisk(this.options.uri);
 
         const edits = await this.options.computeEdits();
+        // What the producer wrote is on disk whatever becomes of the edit
+        // below: the host is told of it even when VS Code refuses that.
+        this.writtenOutOfBand = this.producerWrite(fileBefore);
         if (!edits || edits.length === 0) {
             // Nothing to do; do not create an undo entry.
             this.beforeText = undefined;
@@ -101,11 +104,6 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
             // is read: the handler's own may be the editor's, which lags
             // what was last written out of band.
             this.unchanged = overrideBefore === overrideAfter;
-        }
-        // Written by the producer, read back where it was written: what the
-        // host is told to reload from (see out-of-band-writes.ts).
-        if (overrideAfter !== undefined && !this.unchanged) {
-            this.writtenOutOfBand = { uri: this.options.uri.toString(), text: overrideAfter };
         }
 
         await this.options.afterApply?.('execute');
@@ -190,6 +188,22 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
      */
     changedNothing(): boolean {
         return this.unchanged;
+    }
+
+    /**
+     * The file as the handler's producer left it (`_sourceAfterText`, read
+     * back where it was written), when it differs from the file before
+     * (read as `execute` reads it for undo); none for an edit applied here.
+     * What the host is told to reload from (see out-of-band-writes.ts).
+     */
+    private producerWrite(fileBefore: string | undefined): OutOfBandWrite | undefined {
+        const after = (this as any)._sourceAfterText as string | undefined;
+        if (after === undefined) {
+            return undefined;
+        }
+        const before = (this as any)._fileBeforeWrite as string | undefined
+            ?? fileBefore ?? (this as any)._sourceBeforeText as string | undefined;
+        return after === before ? undefined : { uri: this.options.uri.toString(), text: after };
     }
 
     /** The file the last execute had its producer write, as it was read back; none for an edit applied here. */

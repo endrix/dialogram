@@ -7,10 +7,18 @@
 // nothing more.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as vscode from 'vscode';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import type { DiagramProfile } from '../src/api';
+
+// The provider's read of a file, answered at once: what it finds is then known
+// within the test's turns, however slow the disk (a fixed number of turns was
+// too few for a real read on CI).
+vi.mock('node:fs/promises', async importOriginal => ({
+    ...(await importOriginal<typeof import('node:fs/promises')>()),
+    readFile: async (file: string, encoding: BufferEncoding) => readFileSync(file, encoding)
+}));
 
 vi.mock('@eclipse-glsp/vscode-integration', () => ({
     GlspEditorProvider: class {
@@ -120,6 +128,54 @@ describe('a file an edit\'s producer wrote', () => {
         await settle();
 
         expect(reloads(dispatched)).toEqual(['client-1', 'client-1']);
+    });
+
+    it('is reloaded again when it changes back to what was written, after a change since', async () => {
+        const { provider, dispatched } = makeProvider();
+        (provider as any).trackEditor(source, 'client-1');
+
+        producerWrites(provider, 'after\n');
+        await settle();
+        writeFileSync(source.fsPath, 'changed by someone else\n');
+        provider.handleExternalFileChange(source);
+        await settle();
+        writeFileSync(source.fsPath, 'after\n');
+        provider.handleExternalFileChange(source);
+        await settle();
+
+        expect(reloads(dispatched)).toEqual(['client-1', 'client-1', 'client-1']);
+    });
+
+    it('is reloaded again when it changes back to what was written, after a save', async () => {
+        const { provider, dispatched } = makeProvider();
+        (provider as any).trackEditor(source, 'client-1');
+
+        producerWrites(provider, 'after\n');
+        await settle();
+        writeFileSync(source.fsPath, 'saved\n');
+        (provider as any).handleDocumentSave({ uri: source } as unknown as vscode.TextDocument);
+        await settle();
+        vi.setSystemTime(Date.now() + 2000);
+        writeFileSync(source.fsPath, 'after\n');
+        provider.handleExternalFileChange(source);
+        await settle();
+
+        expect(reloads(dispatched)).toEqual(['client-1', 'client-1', 'client-1']);
+    });
+
+    it('keeps no write the watcher can no longer report', async () => {
+        const { provider } = makeProvider();
+        const lib = vscode.Uri.file(path.join(dir, 'lib.md'));
+        (provider as any).trackEditor(source, 'client-1');
+
+        producerWrites(provider, 'after\n');
+        vi.setSystemTime(Date.now() + 10_000);
+        writeFileSync(lib.fsPath, 'lib\n');
+        provider.reloadAfterOutOfBandWrites([{ uri: lib.toString(), text: 'lib\n' }]);
+        await settle();
+
+        const kept = [...(provider as any).reloadedOutOfBandWrites.keys()];
+        expect(kept).toEqual([(provider as any).canonicalizeUriString(lib)]);
     });
 
     it('is reloaded again for a report that comes long after the write', async () => {
