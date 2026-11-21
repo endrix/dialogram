@@ -608,6 +608,9 @@ export namespace WorkflowDiagramMetadata {
      *  `meta.lines`): bands across the bottom of its body, their text drawn
      *  only close in. */
     export const NODE_LINES = 'wf:nodeLines';
+    /** On a node: what it says, wrapped (`string[]`, from `meta.summary`;
+     *  node-summary.ts): a paragraph in its body, a code span in backticks. */
+    export const NODE_SUMMARY = 'wf:nodeSummary';
     /** On the root: the links drawn only while one of their ends is selected
      *  (`SelectionLink[]`, from the edges a producer marks `meta.onSelection`). */
     export const SELECTION_LINKS = 'wf:selectionLinks';

@@ -1866,6 +1866,23 @@ body.vscode-high-contrast-light .node-center-image-light {
     pointer-events: none;
 }
 
+/* What a node says (`meta.summary`, node-summary.ts): a paragraph in its
+   body, in the UI font at SUMMARY_FONT_SIZE_PX, a code span in the editor's.
+   The text is `zoom-detail`: drawn only close in. */
+.sprotty text.node-summary {
+    fill: var(--vscode-foreground, #cccccc);
+    font-family: var(--vscode-font-family, sans-serif);
+    font-size: 11px;
+    font-weight: normal;
+    text-anchor: start;
+    pointer-events: none;
+}
+
+.sprotty text.node-summary tspan.node-summary-code {
+    font-family: var(--vscode-editor-font-family, monospace);
+    fill: var(--vscode-textPreformat-foreground, #d7ba7d);
+}
+
 /* A member of a list (`list` on its group's scope): one row of a table, its
    name and its lines in columns of the editor's fixed-width font; a product
    colours the kinds of line it knows (`text.list-row-cell-<kind>`). The

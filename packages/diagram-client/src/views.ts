@@ -47,6 +47,7 @@ import { isBoundaryNodeType, BoundaryPortGeometry, SymbolGeometry, WorkflowDiagr
 import { renderSymbolBody, symbolPinsOf } from './symbol-views';
 import { NODE_OPEN_TOGGLE_RADIUS_PX, nodeOpenToggle } from './node-open-toggle';
 import { nodeLinesHeight, nodeLinesOf, renderNodeLines } from './node-lines';
+import { nodeSummaryOf, renderNodeSummary } from './node-summary';
 import { listRowOf, renderListRow } from './list-row-view';
 import { GROUP_INITIAL_MARK_ROOM_PX, groupInitialMark, isGroupInitial } from './group-initial-mark';
 import { isDrawnBackwards } from './feedback-direction';
@@ -855,9 +856,11 @@ function renderEntityNode(
     }
     const { height: bodyHeight, footerLabel } = getNodeBody(node as any, { width, height });
     const lines = nodeLinesOf(node as any);
+    const summary = nodeSummaryOf(node as any);
     // The body above the lines: where the family's mark is centred, under a
-    // header as tall as the name's lines.
+    // header as tall as the name's lines, or what the node says in its place.
     const openHeight = bodyHeight - nodeLinesHeight(lines);
+    const marked = summary.length === 0;
     const headerH = nodeHeaderHeight(node as any);
     const footerLabelNode = footerLabel
         ? svg('text', {
@@ -897,8 +900,9 @@ function renderEntityNode(
         ...(isExecuting ? [renderRunRing(width, bodyHeight)] : []),
         // The mark only where the body above the lines has room for it: a
         // node that is its header and its lines has none.
-        ...(family?.icon && markFits(openHeight, headerH) ? [renderNodeCenterIcon(family, width, openHeight, headerH)] : []),
-        ...(family?.image && markFits(openHeight, headerH) ? renderNodeCenterImage(family, width, openHeight, headerH) : []),
+        ...(marked && family?.icon && markFits(openHeight, headerH) ? [renderNodeCenterIcon(family, width, openHeight, headerH)] : []),
+        ...(marked && family?.image && markFits(openHeight, headerH) ? renderNodeCenterImage(family, width, openHeight, headerH) : []),
+        ...renderNodeSummary(summary, openHeight),
         ...renderNodeLines(lines, width, bodyHeight),
         ...context.renderChildren(node),
         ...(footerLabelNode ? [footerLabelNode] : [])

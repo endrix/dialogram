@@ -1,6 +1,6 @@
 import type { StorageRuntimeOptions } from '../server/storage-runtime-options';
 import { parseBadgesMeta, parseFactsMeta, parseLinesMeta, parseViewsMeta, type UnitBadge } from '../server/graph-load-request-options';
-import { BoundaryPortGeometry, estimatePinLabelSize, estimateTextSize, headerHeight, headerLines, headerTextWidth, isBoundaryNodeType, portLabelSlot, SymbolGeometry, textColumns, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
+import { BoundaryPortGeometry, estimatePinLabelSize, estimateTextSize, headerHeight, headerLines, headerTextWidth, isBoundaryNodeType, summaryHeight, summaryLines, summaryWidth, portLabelSlot, SymbolGeometry, textColumns, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import { normalizeViewOptionGroups, VIEW_OPTIONS_ARG } from '@dialogram/shared';
 import { nodeFamilyName, resolveNodeFamily } from '@dialogram/shared';
 import * as path from 'node:path';
@@ -582,6 +582,13 @@ export class GraphGModelSource {
             // What the header holds besides the name: its padding, the badges,
             // and an openable node's toggle (node-open-toggle.ts) on both
             // sides of the centred name.
+            // What the node says (`meta.summary`, node-summary.ts): a
+            // paragraph in its body under its ports, in the mark's place. A
+            // node with a header of its own; it asks for its width.
+            const summaryText = !symbolKind && !framed && node.kind !== 'state' && typeof node.meta?.['summary'] === 'string'
+                ? node.meta['summary'] as string
+                : undefined;
+            const summaryAsk = summaryWidth(summaryText);
             const headerChrome = WorkflowDiagramConstants.HEADER_LABEL_EXTRA_WIDTH_PX
                 + this.badgesWidth(unitBadges)
                 + (openable ? 2 * OPEN_TOGGLE_ROOM_PX : 0);
@@ -594,7 +601,7 @@ export class GraphGModelSource {
             // node (`meta.headerWrap`) or the product for all of them
             // (`StorageRuntimeOptions.headerWrap`): a name that is code reads
             // as written.
-            const room = Math.max(defaultWidth, labelRequiredWidth, linesWidth) - headerChrome;
+            const room = Math.max(defaultWidth, labelRequiredWidth, linesWidth, summaryAsk) - headerChrome;
             const nodeWrap = node.meta?.['headerWrap'];
             const wraps = typeof nodeWrap === 'boolean' ? nodeWrap : this.storageOptions?.headerWrap !== false;
             const nameLines = wraps && !symbolKind && !framed && node.kind !== 'state'
@@ -621,18 +628,21 @@ export class GraphGModelSource {
             const captioned = !!symbolKind && SymbolGeometry.isCaptioned(symbolKind, symbolCaption);
             // A node with lines and no ports (a declaration: a variable and
             // its value, a function and its parameters) has no port area to
-            // keep: it is its header and its lines.
-            const portless = maxPorts === 0 && lines.length > 0 && !framed;
+            // keep: it is its header and its lines. Or its paragraph.
+            const portless = maxPorts === 0 && (lines.length > 0 || summaryAsk > 0) && !framed;
+            const nodeWidth = Math.max(defaultWidth, labelRequiredWidth, headerLabelW, linesWidth, summaryAsk);
+            const summary = summaryText ? summaryLines(summaryText, nodeWidth) : [];
             const size = symbolKind
                 ? SymbolGeometry.size(symbolKind, rowInputs.length, outputs.length,
                     symbolKind === 'register' ? SymbolGeometry.registerBodyWidth(pinNameWidth(rowInputs), pinNameWidth(outputs)) : undefined,
                     captioned)
                 : {
-                    width: Math.max(defaultWidth, labelRequiredWidth, headerLabelW, linesWidth),
+                    width: nodeWidth,
                     // The lines are under what the node is without them, so
-                    // its ports and its family's mark keep their room.
-                    height: (portless ? headerH : Math.max(minHeight, requiredHeight))
-                        + linesHeight + footerReserve
+                    // its ports and its family's mark keep their room. A
+                    // paragraph takes the mark's place, under the ports.
+                    height: (portless ? headerH : summary.length > 0 ? requiredHeight : Math.max(minHeight, requiredHeight))
+                        + summaryHeight(summary.length) + linesHeight + footerReserve
                 };
             // A state of an automaton is its name in a pill: no header, no
             // ports, no lines; what it has to say is in its transitions.
@@ -665,6 +675,9 @@ export class GraphGModelSource {
                 gnode.args![WorkflowDiagramMetadata.LIST_ROW] = listRow as any;
             } else if (lines.length > 0 && !isState) {
                 gnode.args![WorkflowDiagramMetadata.NODE_LINES] = lines;
+            }
+            if (!listRow && summary.length > 0) {
+                gnode.args![WorkflowDiagramMetadata.NODE_SUMMARY] = summary;
             }
             if (isState && node.meta?.['initial'] === true) {
                 gnode.args![WorkflowDiagramMetadata.STATE_INITIAL] = true;
