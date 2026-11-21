@@ -40,6 +40,7 @@ import { WorkflowLayoutBoundaryFlowOperationHandler } from '../operations/layout
 import { DIAGRAM_MODEL_SOURCE } from './model-source-token';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
 import { LOAD_PHASE_WORDS, LOAD_PROGRESS_SINK, LoadProgressReporter, type LoadProgressSink } from './load-progress';
+import { OUT_OF_BAND_WRITE_SINK, type OutOfBandWriteSink } from './out-of-band-writes';
 import { LoadCancellation } from './load-cancellation';
 import { DIAGNOSTIC_SOURCE } from './graph-diagnostics';
 import { createElkFactory, type ElkServerOptions } from './elk-server/index';
@@ -129,6 +130,13 @@ export function createWorkflowServerModules(
          * nothing is said and the diagram shows only that it is opening.
          */
         loadProgress?: LoadProgressSink;
+        /**
+         * Where the command stack says which files an edit's producer wrote
+         * itself (see `out-of-band-writes.ts`): the host, which reloads the
+         * diagrams they affect. Absent, those diagrams are reloaded only when
+         * the host's file watcher reports the write.
+         */
+        outOfBandWrites?: OutOfBandWriteSink;
         /**
          * The product's own words for the platform's steps of a load
          * (`DiagramProfile.loadPhaseWords`). Absent, the platform's.
@@ -259,12 +267,16 @@ export function createWorkflowServerModules(
     // session, since a wait is several requests long, and the host's sink
     // when it gave one. Without a sink the reporter says nothing.
     const loadProgress = options?.loadProgress;
+    const outOfBandWrites = options?.outOfBandWrites;
     const loadPhaseWords = options?.loadPhaseWords;
     const diagnosticSource = options?.diagnosticSource?.trim() || undefined;
     additionalModules.push(
         new ContainerModule((bind, _unbind, isBound) => {
             if (loadProgress && !isBound(LOAD_PROGRESS_SINK)) {
                 bind(LOAD_PROGRESS_SINK).toConstantValue(loadProgress);
+            }
+            if (outOfBandWrites && !isBound(OUT_OF_BAND_WRITE_SINK)) {
+                bind(OUT_OF_BAND_WRITE_SINK).toConstantValue(outOfBandWrites);
             }
             if (!isBound(LoadProgressReporter)) {
                 bind(LoadProgressReporter).toSelf().inSingletonScope();

@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import * as vscode from 'vscode';
 import type { CommandThatMayChangeNothing, CommandThatMayRefuse } from '../server/command-stack';
+import type { CommandThatWritesOutOfBand, OutOfBandWrite } from '../server/out-of-band-writes';
 
 /**
  * The edits a command applies; nothing (or no edit) when there is nothing to
@@ -39,16 +40,19 @@ function sortEditsDescending(edits: vscode.TextEdit[]): vscode.TextEdit[] {
     });
 }
 
-export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothing, CommandThatMayRefuse {
+export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothing, CommandThatMayRefuse, CommandThatWritesOutOfBand {
     private beforeText: string | undefined;
     private afterText: string | undefined;
     private unchanged = false;
     private refusedLast = false;
+    /** The file as its producer left it, when the last execute had it written out of band. */
+    private writtenOutOfBand: OutOfBandWrite | undefined;
 
     constructor(private readonly options: ReversibleWorkspaceEditCommandOptions) {}
 
     async execute(): Promise<void> {
         this.unchanged = false;
+        this.writtenOutOfBand = undefined;
         const doc = await vscode.workspace.openTextDocument(this.options.uri);
         this.beforeText = doc.getText();
         const fileBefore = await textOnDisk(this.options.uri);
@@ -97,6 +101,11 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
             // is read: the handler's own may be the editor's, which lags
             // what was last written out of band.
             this.unchanged = overrideBefore === overrideAfter;
+        }
+        // Written by the producer, read back where it was written: what the
+        // host is told to reload from (see out-of-band-writes.ts).
+        if (overrideAfter !== undefined && !this.unchanged) {
+            this.writtenOutOfBand = { uri: this.options.uri.toString(), text: overrideAfter };
         }
 
         await this.options.afterApply?.('execute');
@@ -181,6 +190,11 @@ export class ReversibleWorkspaceEditCommand implements CommandThatMayChangeNothi
      */
     changedNothing(): boolean {
         return this.unchanged;
+    }
+
+    /** The file the last execute had its producer write, as it was read back; none for an edit applied here. */
+    outOfBandWrites(): readonly OutOfBandWrite[] {
+        return this.writtenOutOfBand ? [this.writtenOutOfBand] : [];
     }
 
     /** Whether the last undo or redo did nothing: the document had changed outside the diagram (it said so), or VS Code refused the edit. */

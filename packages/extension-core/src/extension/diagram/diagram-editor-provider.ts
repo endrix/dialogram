@@ -10,6 +10,8 @@ import { RequestModelAction } from '@eclipse-glsp/protocol';
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import { statSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import {
     LOADING_MESSAGE_TYPE,
     OUTLINE_ACTIVATE_MESSAGE,
@@ -25,6 +27,7 @@ import {
 import { type DiagramClientBehavior, type DiagramProfile, type DiagramWatchAffects, type RevealRangeOptions } from '../../api';
 import { listAcpConnectors, workspaceDirFor } from '../chat/acp-connectors';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
+import type { OutOfBandWrite } from '@dialogram/diagram-server/server/out-of-band-writes';
 import { matchesSourceExtension, sourceWatchGlobs } from './source-extensions';
 import { inPlace, openColumnFor } from './open-in-place';
 import type { OutlineHost } from './outline-host';
@@ -182,12 +185,21 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     /** When each source file was last saved through the editor, to skip the watcher's
      *  duplicate refresh for an in-editor save (the save handler already refreshed). */
     private lastSavedAt = new Map<string, number>();
+    /** Each file an edit's producer last wrote and its diagrams were reloaded for: what it then held (a digest), and when. */
+    private readonly reloadedOutOfBandWrites = new Map<string, { digest: string; at: number }>();
 
     /**
      * Debounce delay in milliseconds for live document changes.
      */
     private static readonly CHANGE_DEBOUNCE_MS = 500;
     private static readonly EXTERNAL_REFRESH_DEBOUNCE_MS = 250;
+    /**
+     * How long after a producer's write the watcher's report of a file
+     * holding that same text is taken for the report of that write, which
+     * the diagrams were already reloaded for. The report comes within a
+     * second or so of the write when the watcher works at all.
+     */
+    private static readonly OUT_OF_BAND_ECHO_MS = 5000;
 
     /**
      * Path segments that mark a watched source file as a build artifact /
@@ -624,30 +636,18 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      * React to a source file changing ON DISK from outside the editor — the chat agent
      * writing via the MCP edit backend, git, a formatter, etc. In-editor edits go
      * through handleDocumentChange/handleDocumentSave instead, so here we:
-     *  - skip files open with unsaved edits (the editor owns those), and
-     *  - skip a change we just produced via an in-editor save (deduped by time).
+     *  - skip files open with unsaved edits (the editor owns those),
+     *  - skip a change we just produced via an in-editor save (deduped by time), and
+     *  - skip the report of a producer's write already reloaded for (deduped by
+     *    content; see {@link reloadAfterOutOfBandWrites}).
      * A changed module can be a cross-file import of an open workflow, so — like
      * save — refresh every open diagram. Debounced to coalesce edit bursts.
      */
     protected handleExternalFileChange(uri: vscode.Uri): void {
-        // A file that is not a source is heard only by a profile that says what
-        // it affects: without that, a side file (a manifest, a configuration)
-        // would reload every diagram, as a source does. With it, the profile is
-        // asked about every file its watch globs see.
-        const affects = this.profile.watch?.affects;
-        if ((!affects && !matchesSourceExtension(uri.path, this.profile.sourceExtensions)) || this.editors.size === 0) {
+        if (!this.changeOnDiskReloads(uri)) {
             return;
         }
         const canonical = this.canonicalizeUriString(uri);
-
-        // Always reload when the changed file IS an open diagram's own source. For
-        // any OTHER watched file, keep the cross-file-import reload but skip build
-        // artifacts / irrelevant trees (see isUnderArtifactDir) so generated files
-        // under a build tree don't thrash open diagrams.
-        const isOwnSource = this.editorsOfDocument(canonical).length > 0;
-        if (!isOwnSource && this.isUnderArtifactDir(uri)) {
-            return;
-        }
 
         // The editor's own save handler already refreshed for this write.
         const savedAt = this.lastSavedAt.get(canonical);
@@ -655,16 +655,92 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             return;
         }
         // Unsaved in-editor edits are handled by the live-preview change handler.
-        const openDirty = vscode.workspace.textDocuments.some(
-            d => this.canonicalizeUriString(d.uri) === canonical && d.isDirty
-        );
-        if (openDirty) {
+        if (this.isOpenDirty(canonical)) {
             return;
         }
+        // The report of a write an edit's producer made, which the diagrams
+        // were reloaded for when it was made: the file still holds what it
+        // wrote. Holding anything else, it has changed since, and reloads.
+        const written = this.reloadedOutOfBandWrites.get(canonical);
+        if (written && Date.now() - written.at < WorkflowEditorProvider.OUT_OF_BAND_ECHO_MS) {
+            void holdsText(uri, written.digest).then(same => {
+                if (!same) {
+                    this.scheduleReloadFromDisk(uri);
+                }
+            });
+            return;
+        }
+        this.scheduleReloadFromDisk(uri);
+    }
 
-        // Every file changed in the window is kept: a burst that touches a side
-        // file and then a source reloads what either affects, not what the last
-        // one does.
+    /**
+     * Reload the diagrams that files an edit's producer wrote itself affect
+     * (`writes`, from the command stack; see out-of-band-writes.ts), without
+     * waiting for the file watcher.
+     *
+     * Nothing else in VS Code saw the write: the editor applied nothing, and
+     * the diagrams were reloaded only when the watcher reported the file
+     * changed. A watcher can report nothing (a machine out of inotify
+     * instances gives every new window one that does not), and the edit was
+     * then written and not drawn. The reload is the watcher's, with its
+     * wait, so the edits of a burst are one reload and the diagram's own
+     * submit after the edit is over first; and as the watcher's, it leaves a
+     * file open with unsaved changes to the live preview. A save of the
+     * file a moment before does not keep it back: this write is not that
+     * save's.
+     *
+     * The watcher's report of the same write, when it comes, finds the text
+     * written and reloads nothing more ({@link handleExternalFileChange}).
+     */
+    reloadAfterOutOfBandWrites(writes: readonly OutOfBandWrite[]): void {
+        for (const write of writes) {
+            const uri = vscode.Uri.parse(write.uri);
+            const canonical = this.canonicalizeUriString(uri);
+            if (!this.changeOnDiskReloads(uri) || this.isOpenDirty(canonical)) {
+                continue;
+            }
+            this.reloadedOutOfBandWrites.set(canonical, { digest: digestOf(write.text), at: Date.now() });
+            this.scheduleReloadFromDisk(uri);
+        }
+    }
+
+    /**
+     * Whether a change on disk to `uri` is one to reload diagrams for: a
+     * source, or any file for a profile that says what each affects, while a
+     * diagram is open, and not a build artifact unless it is an open
+     * diagram's own source.
+     */
+    private changeOnDiskReloads(uri: vscode.Uri): boolean {
+        // A file that is not a source is heard only by a profile that says what
+        // it affects: without that, a side file (a manifest, a configuration)
+        // would reload every diagram, as a source does. With it, the profile is
+        // asked about every file its watch globs see.
+        const affects = this.profile.watch?.affects;
+        if ((!affects && !matchesSourceExtension(uri.path, this.profile.sourceExtensions)) || this.editors.size === 0) {
+            return false;
+        }
+        // Always reload when the changed file IS an open diagram's own source. For
+        // any OTHER watched file, keep the cross-file-import reload but skip build
+        // artifacts / irrelevant trees (see isUnderArtifactDir) so generated files
+        // under a build tree don't thrash open diagrams.
+        const isOwnSource = this.editorsOfDocument(this.canonicalizeUriString(uri)).length > 0;
+        return isOwnSource || !this.isUnderArtifactDir(uri);
+    }
+
+    /** Whether the file `canonical` names is open in a text editor with unsaved changes. */
+    private isOpenDirty(canonical: string): boolean {
+        return vscode.workspace.textDocuments.some(
+            d => this.canonicalizeUriString(d.uri) === canonical && d.isDirty
+        );
+    }
+
+    /**
+     * Reload, from disk and after the watcher's wait, the diagrams a change to
+     * `uri` affects. Every file changed in the window is kept: a burst that
+     * touches a side file and then a source reloads what either affects, not
+     * what the last one does.
+     */
+    private scheduleReloadFromDisk(uri: vscode.Uri): void {
         this.pendingExternalChanges.add(uri.toString());
         if (this.externalRefreshTimer) {
             clearTimeout(this.externalRefreshTimer);
@@ -1874,4 +1950,21 @@ export function registerWorkflowEditorProvider(
         disposable: vscode.Disposable.from(registration),
         provider
     };
+}
+
+/** A digest of `text`, to tell whether a file still holds it without keeping it. */
+function digestOf(text: string): string {
+    return createHash('sha1').update(text).digest('hex');
+}
+
+/** Whether the file `uri` names holds, on disk, the text `digest` is of; false for one that cannot be read. */
+async function holdsText(uri: vscode.Uri, digest: string): Promise<boolean> {
+    if (uri.scheme !== 'file') {
+        return false;
+    }
+    try {
+        return digestOf(await readFile(uri.fsPath, 'utf8')) === digest;
+    } catch {
+        return false;
+    }
 }

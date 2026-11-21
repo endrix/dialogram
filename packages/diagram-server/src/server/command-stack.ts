@@ -1,6 +1,7 @@
 import { Command, CompoundCommand, CompoundOperationHandler, DefaultCommandStack } from '@eclipse-glsp/server';
 import type { CompoundOperation } from '@eclipse-glsp/protocol';
-import { injectable } from 'inversify';
+import { inject, injectable, optional } from 'inversify';
+import { OUT_OF_BAND_WRITE_SINK, type CommandThatWritesOutOfBand, type OutOfBandWrite, type OutOfBandWriteSink } from './out-of-band-writes';
 
 /**
  * A command that can say, once executed, whether it changed anything. An
@@ -56,6 +57,27 @@ export function refused(command: Command | undefined): boolean {
         return wrote.length > 0 && wrote.every(refused);
     }
     return false;
+}
+
+/**
+ * The files `command`, executed, had its producer write, each as it is now.
+ * A compound's are its parts', a file two parts wrote as the last left it;
+ * one that cannot say wrote nothing out of band.
+ */
+export function outOfBandWrites(command: Command): OutOfBandWrite[] {
+    const candidate = command as Partial<CommandThatWritesOutOfBand>;
+    if (typeof candidate.outOfBandWrites === 'function') {
+        return [...candidate.outOfBandWrites()];
+    }
+    if (command instanceof CompoundCommand) {
+        const byUri = new Map<string, OutOfBandWrite>();
+        for (const write of partsOf(command).flatMap(outOfBandWrites)) {
+            byUri.delete(write.uri);
+            byUri.set(write.uri, write);
+        }
+        return [...byUri.values()];
+    }
+    return [];
 }
 
 /** The parts of a compound command, in order (GLSP keeps them protected). */
@@ -152,9 +174,17 @@ export class WorkflowCompoundOperationHandler extends CompoundOperationHandler {
  * `execute`: a command that says it changed nothing (`changedNothing`)
  * leaves the stack as it was, the edits to redo included, and the
  * document's dirty state with it.
+ *
+ * A command whose producer wrote files itself is told to the host
+ * ({@link OUT_OF_BAND_WRITE_SINK}), which reloads what they affect: nothing
+ * else in VS Code saw the write.
  */
 @injectable()
 export class WorkflowCommandStack extends DefaultCommandStack {
+    @inject(OUT_OF_BAND_WRITE_SINK)
+    @optional()
+    protected readonly outOfBandWriteSink?: OutOfBandWriteSink;
+
     override async execute(command: Command): Promise<void> {
         try {
             await command.execute();
@@ -164,6 +194,7 @@ export class WorkflowCommandStack extends DefaultCommandStack {
         if (changedNothing(command)) {
             return;
         }
+        this.tellOutOfBandWrites(command);
         // The rest is DefaultCommandStack.execute's (GLSP 2.7): the edits to
         // redo go, the command goes on top, and a save made at a state no
         // longer reachable leaves the stack dirty for good.
@@ -172,6 +203,25 @@ export class WorkflowCommandStack extends DefaultCommandStack {
         ++this.top;
         if (this.saveIndex >= this.top) {
             this.saveIndex = -2;
+        }
+    }
+
+    /**
+     * Tell the host what `command` had its producer write. The edit is made
+     * whatever the host does with it: a host that fails is logged.
+     */
+    private tellOutOfBandWrites(command: Command): void {
+        if (!this.outOfBandWriteSink) {
+            return;
+        }
+        const writes = outOfBandWrites(command);
+        if (writes.length === 0) {
+            return;
+        }
+        try {
+            this.outOfBandWriteSink(writes);
+        } catch (error) {
+            console.warn('[WorkflowCommandStack] the host could not be told what the producer wrote:', error);
         }
     }
 

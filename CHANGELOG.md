@@ -1475,6 +1475,21 @@ platform that hands it one.
 
 ### Fixed
 
+- **An edit drawn on the canvas shows without the file watcher.** An edit a
+  product's producer writes itself (a connection, a node, a rename, a
+  delete) changes the file on disk, and the editor applies nothing: the
+  diagram was reloaded only when VS Code's file watcher reported the file
+  changed. A watcher can report nothing (a machine out of inotify
+  instances gives every new window one that does not), and the edit was
+  then written and not drawn until the diagram was reopened (ndf-ide, a
+  refinement drawn on the canvas). The command stack now tells the host
+  which files an edit's producer wrote and what they hold
+  (`createWorkflowGlspVscodeServer({ outOfBandWrites })`), and the host
+  reloads the diagrams they affect, with the watcher's wait so a burst of
+  edits is one reload. The watcher's report of the same write, when it
+  comes, finds the text written and reloads nothing more; one that finds
+  other text reloads as before. A file open with unsaved changes is left to
+  the live preview, as the watcher leaves it.
 - **A connection drawn to a port with an arrow in it ends there.** An
   arrowhead is drawn over the port it points at, its tip on the port's
   centre, and it took the pointer's events: the click that should end a new

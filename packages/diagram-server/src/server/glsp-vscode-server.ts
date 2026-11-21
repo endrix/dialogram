@@ -18,6 +18,7 @@ import type { StorageRuntimeOptions } from './storage-runtime-options';
 import type { ElkServerOptions } from './elk-server/index';
 import type { McpServerModuleOptions } from './mcp-diagram-module';
 import type { LoadProgressSink } from './load-progress';
+import type { OutOfBandWriteSink } from './out-of-band-writes';
 
 /**
  * NodeGlspVscodeServer that gates client→server forwarding on the per-client
@@ -59,6 +60,8 @@ export interface WorkflowGlspVscodeServerOptions extends Partial<Omit<NodeGlspVs
     elkServer?: ElkServerOptions;
     /** What each client's load is doing, for the host to post to its diagram (see load-progress.ts). */
     loadProgress?: LoadProgressSink;
+    /** Which files an edit's producer wrote itself, for the host to reload what they affect (see out-of-band-writes.ts). */
+    outOfBandWrites?: OutOfBandWriteSink;
     /** The product's words for the platform's steps of a load; absent, the platform's (see load-progress.ts). */
     loadPhaseWords?: LoadPhaseWords;
     /** The name the Problems panel gives a graph diagnostic's source; absent, `workflow` (see graph-diagnostics.ts). */
@@ -106,6 +109,7 @@ export function createWorkflowGlspVscodeServer(
             mcp: mergedOptions.mcp,
             elkServer: mergedOptions.elkServer,
             loadProgress: mergedOptions.loadProgress,
+            outOfBandWrites: mergedOptions.outOfBandWrites,
             loadPhaseWords: mergedOptions.loadPhaseWords,
             diagnosticSource: mergedOptions.diagnosticSource
         })
