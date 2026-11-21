@@ -1475,6 +1475,16 @@ platform that hands it one.
 
 ### Fixed
 
+- **A connection drawn to a port with an arrow in it ends there.** An
+  arrowhead is drawn over the port it points at, its tip on the port's
+  centre, and it took the pointer's events: the click that should end a new
+  connection on such a port hit the arrow, and the edge tool, finding no
+  connectable element under the pointer, ignored it, so the connection
+  never ended (ndf-ide, a refinement drawn to a clause already refined).
+  An arrowhead now takes no pointer events; the edge is still found along
+  its line. A click on an arrowhead now reaches what it points at, the port
+  or the node, in every tool: an edge is selected, hovered or reconnected
+  by its line.
 - **A connection's role reaches its line.** The server's `edge-role-<role>`
   class landed only on the edge's outer group (`.sprotty-edge`), while the
   line is drawn in the `.workflow-edge` group inside it, beside `selected`

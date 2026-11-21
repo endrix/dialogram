@@ -1385,10 +1385,17 @@ body.vscode-high-contrast-light .node-center-image-light {
     color: var(--vscode-editorError-foreground, #f14c4c);
 }
 
+/* An arrowhead is drawn over the port it points at, with its tip on the
+   port's centre, so a pointer there means the port. It takes no pointer
+   events, so a click that ends a connection on a port with an arrow already
+   in it reaches the port (it hit the arrow, and the edge tool, finding no
+   connectable element under it, ignored it), as does a reconnect or a
+   hover. The edge is still found along its line. */
 .workflow-edge .edge-arrow {
     fill: currentColor;
     stroke: currentColor;
     stroke-width: 0.5px;
+    pointer-events: none;
 }
 
 .workflow-edge.read-only {
