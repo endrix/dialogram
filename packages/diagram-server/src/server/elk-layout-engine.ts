@@ -1153,10 +1153,11 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         if (element instanceof GNode) {
             (this as any).applyShape(element, elkNode);
             if (isLaidOutColumn(element)) {
-                // Where some members have rows, the others feed them and stand before: the rows line up.
+                // Where the column was laid out in partitions, the members with no row feed the rows
+                // and stand before them: the rows line up. Else all of it is one column.
+                const fed = elkNode.layoutOptions?.['elk.partitioning.activate'] === 'true';
                 const rows = new Set((element.children ?? []).filter(child => child.args?.[WorkflowDiagramMetadata.GROUP_ROW] !== undefined).map(child => child.id));
-                const nodes = (element.children ?? []).filter(child => typeof child.type === 'string' && child.type.startsWith('node'));
-                alignColumn(elkNode, rows.size > 0 && rows.size < nodes.length ? rows : undefined);
+                alignColumn(elkNode, fed ? rows : undefined);
             }
         }
 

@@ -452,11 +452,29 @@ const INDEX_LABEL_ROOM_PX = 4;
  * How far back along the wire from its end an index label's middle goes:
  * where it always went (`nearest`), unless it is too long to fit there, when
  * it goes back as far as keeps it clear of the port, so a long slice
- * (`fifo[rd_ptr][7:0]`) never runs into the node; then past the labels
- * nearer the port (`shift`).
+ * (`{1'b0, lim}`) does not run into the node; then past the labels nearer
+ * the port (`shift`). Never so far that it runs into the node at the wire's
+ * other end (`length`, the route's): on a wire shorter than it, it stands
+ * at the middle.
  */
-export function indexLabelDistance(text: string, nearest: number, shift: number): number {
-    return shift + Math.max(nearest, INDEX_LABEL_ROOM_PX + (text.length * INDEX_LABEL_CHAR_PX) / 2);
+export function indexLabelDistance(text: string, nearest: number, shift: number, length = Number.POSITIVE_INFINITY): number {
+    const half = (text.length * INDEX_LABEL_CHAR_PX) / 2;
+    const wanted = shift + Math.max(nearest, INDEX_LABEL_ROOM_PX + half);
+    if (wanted <= shift + nearest || wanted + half + INDEX_LABEL_ROOM_PX <= length) {
+        return wanted;
+    }
+    // Clear of the other end, where the wire is long enough for it; else at its middle.
+    const furthest = length >= 2 * (half + INDEX_LABEL_ROOM_PX) ? length - half - INDEX_LABEL_ROOM_PX : length / 2;
+    return Math.max(shift + nearest, furthest);
+}
+
+/** How long a route is, end to end along its bends. */
+function routeLength(points: ReadonlyArray<{ x: number; y: number }>): number {
+    let length = 0;
+    for (let k = 1; k < points.length; k++) {
+        length += Math.hypot(points[k].x - points[k - 1].x, points[k].y - points[k - 1].y);
+    }
+    return length;
 }
 
 /** The shifts worked out per port end, once per model (ports are new objects in each). */
@@ -1849,8 +1867,9 @@ export class WorkflowEdgeView extends PolylineEdgeView {
         // labels go one after another along it, highest bits nearest the port.
         const fromShift = fromIndexLabel ? indexLabelShift(edge, 'from') : 0;
         const toShift = toIndexLabel ? indexLabelShift(edge, 'to') : 0;
-        const fromAlong = fromIndexLabel ? indexLabelDistance(fromIndexLabel, 12, fromShift) : 12;
-        const toAlong = toIndexLabel ? indexLabelDistance(toIndexLabel, 18, toShift) : 18;
+        const length = routeLength(normalizedSegments);
+        const fromAlong = fromIndexLabel ? indexLabelDistance(fromIndexLabel, 12, fromShift, length) : 12;
+        const toAlong = toIndexLabel ? indexLabelDistance(toIndexLabel, 18, toShift, length) : 18;
         const fromIndexPos = (fromIndexLabel && startSeg && startNext)
             ? (fromAlong > 12 ? pointAlongRoute(normalizedSegments, 'start', fromAlong, -10) : undefined)
                 ?? this.offsetPointAlongSegment(startSeg, startNext, 12, -10)

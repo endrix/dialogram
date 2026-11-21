@@ -60,6 +60,15 @@ describe('an index label at a port', () => {
         expect(indexLabelDistance('[3]', 18, 30)).toBe(48);
         expect(indexLabelDistance('fifo[rd_ptr][7:0]', 12, 30)).toBe(30 + 55);
     });
+
+    it('never runs into the node at the wire’s other end, and stands at the middle of a wire shorter than it', async () => {
+        const { indexLabelDistance } = await import('../src/views');
+        // `{1'b0, lim}` is 66 px: on a wire of 80 it stands clear of both ends; on one of 48 (where
+        // it cannot) at the middle; a short label as always.
+        expect(indexLabelDistance("{1'b0, lim}", 18, 0, 80)).toBe(4 + 33);
+        expect(indexLabelDistance("{1'b0, lim}", 18, 0, 48)).toBe(24);
+        expect(indexLabelDistance('[3]', 18, 0, 20)).toBe(18);
+    });
 });
 
 describe('the bits as the producer writes them', () => {
