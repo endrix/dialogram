@@ -445,6 +445,19 @@ function groupLoop(width: number, height: number, notes?: unknown): VNode {
 /** Roughly how wide an index label (`[7:4]`) is drawn. */
 const INDEX_LABEL_CHAR_PX = 6;
 const INDEX_LABEL_GAP_PX = 6;
+/** What an index label leaves clear between its near edge and the port it is at. */
+const INDEX_LABEL_ROOM_PX = 4;
+
+/**
+ * How far back along the wire from its end an index label's middle goes:
+ * where it always went (`nearest`), unless it is too long to fit there, when
+ * it goes back as far as keeps it clear of the port, so a long slice
+ * (`fifo[rd_ptr][7:0]`) never runs into the node; then past the labels
+ * nearer the port (`shift`).
+ */
+export function indexLabelDistance(text: string, nearest: number, shift: number): number {
+    return shift + Math.max(nearest, INDEX_LABEL_ROOM_PX + (text.length * INDEX_LABEL_CHAR_PX) / 2);
+}
 
 /** The shifts worked out per port end, once per model (ports are new objects in each). */
 const indexShifts = new WeakMap<object, Map<string, number>>();
@@ -1836,12 +1849,14 @@ export class WorkflowEdgeView extends PolylineEdgeView {
         // labels go one after another along it, highest bits nearest the port.
         const fromShift = fromIndexLabel ? indexLabelShift(edge, 'from') : 0;
         const toShift = toIndexLabel ? indexLabelShift(edge, 'to') : 0;
+        const fromAlong = fromIndexLabel ? indexLabelDistance(fromIndexLabel, 12, fromShift) : 12;
+        const toAlong = toIndexLabel ? indexLabelDistance(toIndexLabel, 18, toShift) : 18;
         const fromIndexPos = (fromIndexLabel && startSeg && startNext)
-            ? (fromShift > 0 ? pointAlongRoute(normalizedSegments, 'start', 12 + fromShift, -10) : undefined)
+            ? (fromAlong > 12 ? pointAlongRoute(normalizedSegments, 'start', fromAlong, -10) : undefined)
                 ?? this.offsetPointAlongSegment(startSeg, startNext, 12, -10)
             : undefined;
         const toIndexPos = (toIndexLabel && endSeg && endPrev)
-            ? (toShift > 0 ? pointAlongRoute(normalizedSegments, 'end', 18 + toShift, -10) : undefined)
+            ? (toAlong > 18 ? pointAlongRoute(normalizedSegments, 'end', toAlong, -10) : undefined)
                 ?? this.offsetPointAlongSegment(endSeg, endPrev, 18, -10)
             : undefined;
 
