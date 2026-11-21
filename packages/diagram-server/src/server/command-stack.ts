@@ -60,18 +60,21 @@ export function refused(command: Command | undefined): boolean {
 }
 
 /**
- * The files `command`, executed, had its producer write, each as it is now.
- * A compound's are its parts', a file two parts wrote as the last left it;
- * one that cannot say wrote nothing out of band.
+ * The files `command`, executed, undone or redone, wrote out of band (its
+ * producer, or its undo where the editor's copy lagged), each as it is now.
+ * A compound's are its parts', a file two parts wrote as the last to run
+ * left it: the first part, when the compound was `undone`, its parts undone
+ * last first. One that cannot say wrote nothing out of band.
  */
-export function outOfBandWrites(command: Command): OutOfBandWrite[] {
+export function outOfBandWrites(command: Command, undone = false): OutOfBandWrite[] {
     const candidate = command as Partial<CommandThatWritesOutOfBand>;
     if (typeof candidate.outOfBandWrites === 'function') {
         return [...candidate.outOfBandWrites()];
     }
     if (command instanceof CompoundCommand) {
         const byUri = new Map<string, OutOfBandWrite>();
-        for (const write of partsOf(command).flatMap(outOfBandWrites)) {
+        const parts = undone ? [...partsOf(command)].reverse() : partsOf(command);
+        for (const write of parts.flatMap(part => outOfBandWrites(part, undone))) {
             byUri.delete(write.uri);
             byUri.set(write.uri, write);
         }
@@ -177,7 +180,9 @@ export class WorkflowCompoundOperationHandler extends CompoundOperationHandler {
  *
  * A command whose producer wrote files itself is told to the host
  * ({@link OUT_OF_BAND_WRITE_SINK}), which reloads what they affect: nothing
- * else in VS Code saw the write.
+ * else in VS Code saw the write. So is an undo or redo that wrote them on
+ * disk, the editor's copy lagging them; one made in the editor is saved, and
+ * the save reloads it.
  */
 @injectable()
 export class WorkflowCommandStack extends DefaultCommandStack {
@@ -207,14 +212,14 @@ export class WorkflowCommandStack extends DefaultCommandStack {
     }
 
     /**
-     * Tell the host what `command` had its producer write. The edit is made
-     * whatever the host does with it: a host that fails is logged.
+     * Tell the host what `command` (`undone`) wrote out of band. The edit is
+     * made whatever the host does with it: a host that fails is logged.
      */
-    private tellOutOfBandWrites(command: Command): void {
+    private tellOutOfBandWrites(command: Command, undone = false): void {
         if (!this.outOfBandWriteSink) {
             return;
         }
-        const writes = outOfBandWrites(command);
+        const writes = outOfBandWrites(command, undone);
         if (writes.length === 0) {
             return;
         }
@@ -230,13 +235,19 @@ export class WorkflowCommandStack extends DefaultCommandStack {
      * did. One refused (the document changed outside the diagram) did
      * nothing, and stays the edit to undo: moved past, it would be redone
      * on a text it was not made on, and every undo below it be refused in
-     * turn, each finding the text of the one above.
+     * turn, each finding the text of the one above. One that wrote out of
+     * band is told to the host.
      */
     override async undo(): Promise<void> {
         const at = this.top;
         await super.undo();
-        if (this.top === at - 1 && refused(this.commands[at])) {
+        if (this.top !== at - 1) {
+            return;
+        }
+        if (refused(this.commands[at])) {
             this.top = at;
+        } else {
+            this.tellOutOfBandWrites(this.commands[at], true);
         }
     }
 
@@ -244,8 +255,13 @@ export class WorkflowCommandStack extends DefaultCommandStack {
     override async redo(): Promise<void> {
         const at = this.top;
         await super.redo();
-        if (this.top === at + 1 && refused(this.commands[at + 1])) {
+        if (this.top !== at + 1) {
+            return;
+        }
+        if (refused(this.commands[at + 1])) {
             this.top = at;
+        } else {
+            this.tellOutOfBandWrites(this.commands[at + 1]);
         }
     }
 }

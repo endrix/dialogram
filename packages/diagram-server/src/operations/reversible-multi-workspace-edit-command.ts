@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import type { CommandThatMayChangeNothing, CommandThatMayRefuse } from '../server/command-stack';
 import type { ApplyPhase } from './reversible-workspace-edit-command';
 import type { CommandThatWritesOutOfBand, OutOfBandWrite } from '../server/out-of-band-writes';
+import { fileTheCopyLags, forTheEditor, messageOf, sameText, writeOnDisk } from './file-on-disk';
 
 /**
  * The edits a command applies, by file; nothing (or an empty list) when there
@@ -147,92 +148,91 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
         await this.options.afterApply?.('execute');
     }
 
-    /** The files the last execute had its producer write, as they were read back; none for edits applied here. */
+    /**
+     * The files the last execute had its producer write, as they were read
+     * back, or the last undo or redo wrote on disk; none for edits applied
+     * in the editor.
+     */
     outOfBandWrites(): readonly OutOfBandWrite[] {
         return this.writtenOutOfBand;
     }
 
     async undo(): Promise<void> {
-        this.refusedLast = false;
-        if (!this.snapshots || this.snapshots.length === 0) {
-            return;
-        }
-
-        // Guard: all docs must match the after snapshot.
-        for (const s of this.snapshots) {
-            const doc = await vscode.workspace.openTextDocument(s.uri);
-            if (doc.getText() !== s.afterText) {
-                this.refusedLast = true;
-                void vscode.window.showWarningMessage(
-                    `Cannot undo '${this.options.label}' because a document changed outside the diagram.`
-                );
-                return;
-            }
-        }
-
-        const workspaceEdit = new vscode.WorkspaceEdit();
-        for (const s of this.snapshots) {
-            const doc = await vscode.workspace.openTextDocument(s.uri);
-            workspaceEdit.set(s.uri, [new vscode.TextEdit(fullDocumentRange(doc), s.beforeText)]);
-        }
-
-        const applied = await vscode.workspace.applyEdit(workspaceEdit);
-        this.refusedLast = !applied;
-        if (applied) {
-            await this.persistSnapshots();
-            await this.options.afterApply?.('undo');
-        }
+        await this.putBack('undo');
     }
 
     async redo(): Promise<void> {
+        await this.putBack('redo');
+    }
+
+    /**
+     * Undo (or redo) the edit in every file: each, as the edit left (found)
+     * it, given the text it found (left). A file is the editor's copy, given
+     * the text and saved; or, where that copy lags the file on disk (a write
+     * made out of band that no file watcher reported, see file-on-disk.ts),
+     * the file on disk, written there and told to the host as a write out of
+     * band. One file as neither refuses the whole, with a word to the user.
+     */
+    private async putBack(phase: 'undo' | 'redo'): Promise<void> {
         this.refusedLast = false;
+        this.writtenOutOfBand = [];
         if (!this.snapshots || this.snapshots.length === 0) {
             return;
         }
 
-        // Guard: all docs must match the before snapshot.
+        const files: Array<{ uri: vscode.Uri; doc: vscode.TextDocument; to: string; lags: boolean }> = [];
         for (const s of this.snapshots) {
+            const [from, to] = phase === 'undo' ? [s.afterText, s.beforeText] : [s.beforeText, s.afterText];
             const doc = await vscode.workspace.openTextDocument(s.uri);
-            if (doc.getText() !== s.beforeText) {
+            const onDisk = await fileTheCopyLags(s.uri, doc);
+            if (!sameText(onDisk ?? doc.getText(), from)) {
                 this.refusedLast = true;
                 void vscode.window.showWarningMessage(
-                    `Cannot redo '${this.options.label}' because a document changed outside the diagram.`
+                    `Cannot ${phase} '${this.options.label}' because a document changed outside the diagram.`
                 );
                 return;
             }
+            files.push({ uri: s.uri, doc, to, lags: onDisk !== undefined });
         }
 
-        const workspaceEdit = new vscode.WorkspaceEdit();
-        for (const s of this.snapshots) {
-            const doc = await vscode.workspace.openTextDocument(s.uri);
-            workspaceEdit.set(s.uri, [new vscode.TextEdit(fullDocumentRange(doc), s.afterText)]);
-        }
-
-        const applied = await vscode.workspace.applyEdit(workspaceEdit);
-        this.refusedLast = !applied;
-        if (applied) {
-            await this.persistSnapshots();
-            await this.options.afterApply?.('redo');
-        }
-    }
-
-    /**
-     * Flush the undo/redo edits to disk for every affected document.
-     *
-     * `applyEdit` only mutates the in-memory (dirty) buffers, but the diagram model is rebuilt
-     * FROM DISK. Without persisting, disk keeps the pre-undo content and the revert is not
-     * reflected until the user manually saves. Saving lets the normal on-save reload apply it.
-     */
-    private async persistSnapshots(): Promise<void> {
-        if (!this.snapshots) {
-            return;
-        }
-        for (const s of this.snapshots) {
-            const doc = await vscode.workspace.openTextDocument(s.uri);
-            if (doc.isDirty) {
-                await doc.save();
+        // The copies first, in one edit VS Code may refuse whole; then saved,
+        // the diagram being read from disk, and its save reloading it.
+        const inTheEditor = files.filter(file => !file.lags);
+        if (inTheEditor.length > 0) {
+            const workspaceEdit = new vscode.WorkspaceEdit();
+            for (const file of inTheEditor) {
+                workspaceEdit.set(file.uri, [new vscode.TextEdit(fullDocumentRange(file.doc), forTheEditor(file.to))]);
+            }
+            if (!await vscode.workspace.applyEdit(workspaceEdit)) {
+                this.refusedLast = true;
+                return;
+            }
+            for (const file of inTheEditor) {
+                if (file.doc.isDirty) {
+                    await file.doc.save();
+                }
             }
         }
+
+        const notWritten: string[] = [];
+        for (const file of files.filter(each => each.lags)) {
+            try {
+                await writeOnDisk(file.uri, file.to);
+                this.writtenOutOfBand.push({ uri: file.uri.toString(), text: file.to });
+            } catch (error) {
+                notWritten.push(`${file.uri.fsPath} (${messageOf(error)})`);
+            }
+        }
+        if (notWritten.length > 0) {
+            void vscode.window.showWarningMessage(
+                `Cannot ${phase} '${this.options.label}' whole: ${notWritten.join(', ')} could not be written.`
+            );
+            if (inTheEditor.length === 0 && this.writtenOutOfBand.length === 0) {
+                this.refusedLast = true;
+                return;
+            }
+        }
+        await this.options.afterApply?.(phase);
     }
 
     canUndo(): boolean {
@@ -250,7 +250,7 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
         return this.unchanged;
     }
 
-    /** Whether the last undo or redo did nothing: a document had changed outside the diagram (it said so), or VS Code refused the edit. */
+    /** Whether the last undo or redo did nothing: a document had changed outside the diagram (it said so), or the edit or every write was refused. */
     refused(): boolean {
         return this.refusedLast;
     }
