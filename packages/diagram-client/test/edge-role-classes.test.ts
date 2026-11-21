@@ -25,6 +25,11 @@ describe('the role classes of an edge', () => {
             .toEqual({ 'edge-role-verifies': true, 'edge-role-bidirectional': true });
     });
 
+    it('take the producer\'s tone with them, so a warning reaches the line', () => {
+        expect(edgeRoleClasses({ cssClasses: ['edge-role-refines', 'edge-tone-warning', 'cal-edge-error'] }))
+            .toEqual({ 'edge-role-refines': true, 'edge-tone-warning': true });
+    });
+
     it('are none for an edge with no classes', () => {
         expect(edgeRoleClasses({})).toEqual({});
         expect(edgeRoleClasses({ cssClasses: 'edge-role-x' })).toEqual({});

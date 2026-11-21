@@ -578,6 +578,14 @@ export namespace WorkflowDiagramMetadata {
      *  producer puts it in (a node's `meta.row`, a scope's `row`), the first
      *  row on top. */
     export const GROUP_ROW = 'wf:groupRow';
+    /**
+     * On a member of the root (a node, a group): where it stands along the
+     * diagram's flow, a whole number from zero (`meta.rank` on a node, `rank`
+     * on a group scope). With any member ranked, the root is laid out in
+     * ranks, rank 0 first (`group-edges.ts`, `rootRankOptions`): a ladder of
+     * layers, the stages of a pipeline. Edges run between ranks either way.
+     */
+    export const RANK = 'wf:rank';
     /** On a group: its members are laid out in rows (`GROUP_ROW`). */
     export const GROUP_ROWS = 'wf:groupRows';
     /** On a group: its members stand in one column, one under another in

@@ -592,6 +592,51 @@ const GROUP_LIST_LAYOUT: Record<string, string> = {
         + `right=${WorkflowDiagramConstants.LIST_FRAME_PADDING_PX}]`
 };
 
+/**
+ * Lay out the root in ranks when the producer ranks any of its members
+ * (`RANK`, a node's `meta.rank` or a group scope's `rank`): each rank a
+ * partition of the root's layout, in order along the flow (left to right in
+ * a flow that runs right). A ladder of refinement layers, one frame each, is
+ * the case it was made for: the layout alone puts a frame wherever its edges
+ * pull it.
+ *
+ * Unlike a group's rows, edges between members are welcome: between ranks is
+ * where a ladder's edges run. One that runs against the ranks (from a later
+ * rank to an earlier one) is routed back by the layout, which is the
+ * producer's to avoid by drawing it the other way. A unit's inputs stand
+ * before the first rank, and everything unranked, its outputs among them,
+ * after the last.
+ *
+ * Sets each member's partition and returns the graph options that turn the
+ * ranks on, or `undefined` when nothing is ranked. Run once the groups are
+ * nested, so that the root's members are what it holds.
+ */
+export function rootRankOptions(children: GModelElement[]): Record<string, string> | undefined {
+    const members = children.filter(isNode) as GNode[];
+    const rankOf = (member: GNode): number | undefined => {
+        const rank = member.args?.[WorkflowDiagramMetadata.RANK];
+        return isGroupRow(rank) ? rank : undefined;
+    };
+    const ranks = members.map(rankOf).filter((rank): rank is number => rank !== undefined);
+    if (ranks.length === 0) {
+        return undefined;
+    }
+    const after = Math.max(...ranks) + 2;
+    for (const member of members) {
+        const rank = rankOf(member);
+        const partition = rank !== undefined ? rank + 1
+            : member.type === WorkflowDiagramTypes.NODE_BOUNDARY_INPUT ? 0
+                : after;
+        member.layoutOptions = { ...(member.layoutOptions ?? {}), 'elk.partitioning.partition': String(partition) };
+    }
+    return {
+        'elk.partitioning.activate': 'true',
+        // Members with nothing between them are still one layout: on their
+        // own each would be a component, packed wherever it fits.
+        'elk.separateConnectedComponents': 'false'
+    };
+}
+
 /** Whether a group's layout options are the rows' (`groupLayoutOptions(true)`). */
 export function isRowsLayout(options: Record<string, unknown> | undefined): boolean {
     return options?.['elk.partitioning.activate'] === 'true';

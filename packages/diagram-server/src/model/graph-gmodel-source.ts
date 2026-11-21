@@ -5,7 +5,7 @@ import { normalizeViewOptionGroups, VIEW_OPTIONS_ARG } from '@dialogram/shared';
 import { nodeFamilyName, resolveNodeFamily } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findLoopEdges } from './feedback-edges';
-import { arrangeGroupRows, framePin, groupLayoutOptions, isGroupRow, settleFrames, splitEdgesAtGroups } from './group-edges';
+import { arrangeGroupRows, framePin, groupLayoutOptions, isGroupRow, rootRankOptions, settleFrames, splitEdgesAtGroups } from './group-edges';
 import { URI } from 'vscode-uri';
 import { boundaryMargin, bundlePorts, portSideOf, type PortBus, type PortBusState } from './port-bundles';
 import { stableNodeId as stableNodeIdOf, stableNodeIds, stablePortNames } from './stable-ids';
@@ -76,6 +76,10 @@ export type PyGraphScope = {
     /** The row of a `group` scope nested in a group laid out in rows, as a
      *  node's `meta.row`: a whole number from zero, the first row on top. */
     row?: number;
+    /** Where a `group` scope of the root stands along the flow, as a node's
+     *  `meta.rank`: a whole number from zero, rank 0 first. With any member
+     *  of the root ranked, the root is laid out in ranks (`rootRankOptions`). */
+    rank?: number;
     /** `'top'` pins a `group` scope above the rest of the diagram, out of its
      *  flow: what belongs to the whole picture rather than to a place in it
      *  (a legend, the variables a state machine works on); `'left'` pins it
@@ -165,6 +169,8 @@ export type GEdge = GModelElement & {
 
 export type GGraph = GModelElement & {
     type: typeof WorkflowDiagramTypes.GRAPH;
+    /** The graph options the model asks for itself (the root's ranks, `rootRankOptions`). */
+    layoutOptions?: Record<string, unknown>;
 };
 
 /** True for the element types an edge can actually be attached to. */
@@ -698,6 +704,11 @@ export class GraphGModelSource {
             const row = node.meta?.['row'];
             if (isGroupRow(row)) {
                 gnode.args![WorkflowDiagramMetadata.GROUP_ROW] = row;
+            }
+            // Its rank along the flow, as a member of the root.
+            const rank = node.meta?.['rank'];
+            if (isGroupRow(rank)) {
+                gnode.args![WorkflowDiagramMetadata.RANK] = rank;
             }
             if (node.meta) {
                 gnode.args = {
@@ -1485,6 +1496,14 @@ export class GraphGModelSource {
                 gedge.cssClasses = [...(gedge.cssClasses ?? []), edgeRoleClass];
                 (gedge.args as Record<string, unknown>)[WorkflowDiagramMetadata.EDGE_ROLE] = edgeMeta?.['role'];
             }
+            // What the producer has to say about this one connection, beside
+            // what it is: `warning` for one that breaks a rule of its own
+            // (a refinement running against its layers), as a badge's tone.
+            // Kept apart from the role, which edits read.
+            const edgeToneClass = this.derivedCssClass('edge-tone-', edgeMeta?.['tone'] as string | undefined);
+            if (edgeToneClass) {
+                gedge.cssClasses = [...(gedge.cssClasses ?? []), edgeToneClass];
+            }
             const edgeWidth = edgeMeta?.['width'];
             if (typeof edgeWidth === 'number' && Number.isFinite(edgeWidth)) {
                 (gedge.args as Record<string, unknown>)[WorkflowDiagramMetadata.EDGE_WIDTH] = edgeWidth;
@@ -1662,11 +1681,14 @@ export class GraphGModelSource {
                 graphArgs['wf:workflowSourceUri'] = workflowDefinitionSource.file;
             }
         }
+        // The root's members in ranks, when the producer ranks any of them.
+        const rankOptions = rootRankOptions(children);
         const graph: GGraph = {
             id: doc.graph.id,
             type: WorkflowDiagramTypes.GRAPH,
             children,
-            args: Object.keys(graphArgs).length > 0 ? graphArgs : undefined
+            args: Object.keys(graphArgs).length > 0 ? graphArgs : undefined,
+            ...(rankOptions ? { layoutOptions: rankOptions } : {})
         };
         return { graph };
     }
@@ -1758,6 +1780,8 @@ export class GraphGModelSource {
                 [WorkflowDiagramMetadata.GROUP_LABEL]: label,
                 // The row this group sits in, inside a group laid out in rows.
                 ...(isGroupRow(scope.row) ? { [WorkflowDiagramMetadata.GROUP_ROW]: scope.row } : {}),
+                // Its rank along the flow, as a member of the root.
+                ...(isGroupRow(scope.rank) ? { [WorkflowDiagramMetadata.RANK]: scope.rank } : {}),
                 ...(scope.pin === 'top' || scope.pin === 'left' ? { [WorkflowDiagramMetadata.GROUP_PIN]: scope.pin } : {}),
                 ...(scope.list === true ? { [WorkflowDiagramMetadata.GROUP_LIST]: true } : {}),
                 ...(scope.column === true ? { [WorkflowDiagramMetadata.GROUP_COLUMN]: true } : {}),
@@ -1935,7 +1959,7 @@ export class GraphGModelSource {
      * A styling hook derived from a producer-supplied word.
      *
      * `<value>-node`, `node-role-<value>`, `port-role-<value>`,
-     * `edge-role-<value>` — derived rather
+     * `edge-role-<value>`, `edge-tone-<value>` — derived rather
      * than enumerated, so a product can style something this file has never
      * heard of. The pattern check is what keeps it from being an injection: the
      * value is interpolated into a class name, so it has to look like one.

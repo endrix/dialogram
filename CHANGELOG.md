@@ -78,6 +78,19 @@ platform that hands it one.
 
 ### Added
 
+- **The root laid out in ranks.** A producer ranks the root's members
+  (`meta.rank` on a node, `rank` on a group scope, a whole number from zero)
+  and the root is laid out in that order along the flow, rank 0 first, one
+  ELK partition each (`rootRankOptions` in `group-edges.ts`): a document's
+  clauses in one frame per refinement layer, L0 to L3, where the layout
+  alone put a frame wherever its edges pulled it. Unlike a group's rows,
+  edges between the ranks are welcome; a unit's inputs stand before the first
+  rank and anything unranked after the last. Inside a frame nothing changes.
+- **A connection the producer flags.** An edge's `meta.tone` becomes an
+  `edge-tone-<tone>` class on its line, kept apart from its role (which edits
+  read); `warning` and `error` are drawn in the editor's warning and error
+  colours, over a product's colour for the role, and give way to the
+  selection, the hover and the selection trace as a role's colour does.
 - **A product, or a producer per node, keeps names on one line.** The header
   wrap is on by default; `storageOptions.headerWrap: false` (the sidecar
   toolkit's `headerWrap`) turns it off for a product whose names are code
