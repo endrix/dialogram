@@ -39,6 +39,64 @@ describe('index labels sharing a port end', () => {
         expect(indexLabelShift(plain, 'to')).toBe(0);
     });
 
+    it('write a label the same as one before them, on a wire leaving with it, once: not again, and taking no room', async () => {
+        const { indexLabelShift, indexLabelRepeats } = await import('../src/views');
+        const { WorkflowDiagramMetadata: M } = await import('@dialogram/shared');
+        // A variable's name where each wire that carries it leaves the operator computing it.
+        const edge = (id: string, label: string, route: Array<{ x: number; y: number }>) =>
+            ({ id, args: { [M.EDGE_FROM_INDEX]: label, [M.EDGE_FROM_INDEX_LABEL]: label, [M.EDGE_SLICE]: true }, routingPoints: route });
+        // `a` and `c` leave together, 60 along before they part (and after a stub of 6 as ELK draws them:
+        // 6 across, then down together, then apart); `b` goes up, `d` down at once, each its own way.
+        const a = edge('a', 't', [{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: -40 }]);
+        const b = edge('b', 'u', [{ x: 0, y: 0 }, { x: 0, y: -80 }]);
+        const c = edge('c', 't', [{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 40 }]);
+        const d = edge('d', 't', [{ x: 0, y: 0 }, { x: 0, y: 80 }]);
+        const port = { outgoingEdges: [a, b, c, d] };
+        for (const e of [a, b, c, d]) {
+            (e as any).source = port;
+        }
+        expect([a, b, c, d].map(e => indexLabelRepeats(e, 'from'))).toEqual([false, false, true, false]);
+        expect(indexLabelShift(a, 'from')).toBe(0);
+        expect(indexLabelShift(b, 'from')).toBeGreaterThan(0);
+        // Written where its wire goes, after the others.
+        expect(indexLabelShift(d, 'from')).toBeGreaterThan(indexLabelShift(b, 'from'));
+        // Together after a short stub, as far as the label stands: once.
+        const s1 = edge('s1', 't', [{ x: 0, y: 0 }, { x: 6, y: 0 }, { x: 6, y: 50 }, { x: 40, y: 50 }]);
+        const s2 = edge('s2', 't', [{ x: 0, y: 0 }, { x: 6, y: 0 }, { x: 6, y: 90 }, { x: 40, y: 90 }]);
+        const stub = { outgoingEdges: [s1, s2] };
+        for (const e of [s1, s2]) {
+            (e as any).source = stub;
+        }
+        expect([s1, s2].map(e => indexLabelRepeats(e, 'from'))).toEqual([false, true]);
+        // An edge with no label there, or alone, repeats nothing.
+        expect(indexLabelRepeats({ id: 'x', args: {}, source: port }, 'from')).toBe(false);
+        expect(indexLabelRepeats(a, 'to')).toBe(false);
+    });
+
+    it('are each written on its own wire where one that says something else, or nothing, runs with them', async () => {
+        const { indexLabelRepeats, indexLabelShift } = await import('../src/views');
+        const { WorkflowDiagramMetadata: M } = await import('@dialogram/shared');
+        // `[3:0]` on two wires and all of the port on a third, all three along one stretch: one `[3:0]` there
+        // would not say which wires take it.
+        const route = (y: number) => [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y }, { x: 90, y }];
+        const lo1 = { id: 'lo1', args: { [M.EDGE_FROM_INDEX]: '3:0', [M.EDGE_SLICE]: true }, routingPoints: route(-60) };
+        const all = { id: 'all', args: {}, routingPoints: route(0) };
+        const lo2 = { id: 'lo2', args: { [M.EDGE_FROM_INDEX]: '3:0', [M.EDGE_SLICE]: true }, routingPoints: route(60) };
+        const port = { outgoingEdges: [lo1, all, lo2] };
+        for (const e of [lo1, all, lo2]) {
+            (e as any).source = port;
+        }
+        expect(indexLabelRepeats(lo2, 'from')).toBe(false);
+        expect(indexLabelShift(lo2, 'from')).toBeGreaterThan(0);
+    });
+
+    it('are drawn only by the first of the wires that say the same', () => {
+        const here = path.dirname(fileURLToPath(import.meta.url));
+        const views = readFileSync(path.resolve(here, '../src/views.ts'), 'utf8');
+        expect(views).toContain("const fromIndexLabel = fromIndex && !indexLabelRepeats(edge, 'from') ? indexLabelText(edgeArgs, 'from') : undefined;");
+        expect(views).toContain("const toIndexLabel = toIndex && !indexLabelRepeats(edge, 'to') ? indexLabelText(edgeArgs, 'to') : undefined;");
+    });
+
     it('are walked back along the wire round its bends, never past its other end', async () => {
         const { pointAlongRoute } = await import('../src/views');
         const route = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 10 }];
@@ -46,6 +104,30 @@ describe('index labels sharing a port end', () => {
         expect(pointAlongRoute(route, 'end', 30, 0)).toEqual({ x: 80, y: 0 });
         // Never past the other end.
         expect(pointAlongRoute(route, 'end', 500, 0)).toEqual({ x: 0, y: 0 });
+    });
+});
+
+describe('an index label at a port', () => {
+    it('stands where it always did when short, and back from the port by its length when long', async () => {
+        const { indexLabelDistance } = await import('../src/views');
+        expect(indexLabelDistance('[3]', 18, 0)).toBe(18);
+        expect(indexLabelDistance('[7:4]', 18, 0)).toBe(19);
+        // Half of 17 characters, 6 px each, and the room it leaves: its near edge 4 px from the port.
+        expect(indexLabelDistance('fifo[rd_ptr][7:0]', 18, 0)).toBe(4 + 51);
+        // After the labels nearer the port.
+        expect(indexLabelDistance('[3]', 18, 30)).toBe(48);
+        expect(indexLabelDistance('fifo[rd_ptr][7:0]', 12, 30)).toBe(30 + 55);
+    });
+
+    it('never runs into the node at the wire’s other end, and stands at the middle of a wire shorter than it', async () => {
+        const { indexLabelDistance } = await import('../src/views');
+        // `{1'b0, lim}` is 66 px: on a wire of 80 it stands clear of both ends; on one of 48 (where
+        // it cannot) at the middle; a short label as always.
+        expect(indexLabelDistance("{1'b0, lim}", 18, 0, 80)).toBe(4 + 33);
+        expect(indexLabelDistance("{1'b0, lim}", 18, 0, 48)).toBe(24);
+        expect(indexLabelDistance('[3]', 18, 0, 20)).toBe(18);
+        // After `[7:4]` (36 px with its gap) at the same end, it stays after it, however short the wire.
+        expect(indexLabelDistance("{1'b0, lim}", 18, 36, 60)).toBe(36 + 4 + 33);
     });
 });
 
@@ -68,5 +150,42 @@ describe('the bits as the producer writes them', () => {
         }
         expect(indexLabelShift(hi, 'to')).toBe(0);
         expect(indexLabelShift(lo, 'to')).toBeGreaterThan(indexLabelShift(short2, 'to'));
+    });
+});
+
+describe('how long a line is as drawn', () => {
+    it('is its route, each turn rounded as the view rounds it, and is on the line for a dash to start from its end', async () => {
+        const { drawnRouteLength } = await import('../src/views');
+        const straight = [{ x: 0, y: 0 }, { x: 100, y: 0 }];
+        expect(drawnRouteLength(straight, 8)).toBeCloseTo(100, 6);
+        // One right angle rounded by 8: the 16 of the two legs it cuts off become a quadratic
+        // through the corner, 16 times the integral of sqrt(1 - 2t + 2t^2) over [0, 1]: 12.98.
+        const turn = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }];
+        expect(drawnRouteLength(turn, 8) - (150 - 16)).toBeCloseTo(12.98, 2);
+        // A leg that is not straight across or up: the path drawn, as the browser measures it
+        // (Chrome's getTotalLength of buildPath's path for these points: 202.81).
+        expect(drawnRouteLength([{ x: 0, y: 0 }, { x: 100, y: 20 }, { x: 100, y: 120 }], 6)).toBeCloseTo(202.81, 1);
+        // Sharp, as when selected: the route itself. A leg shorter than twice the radius rounds less.
+        expect(drawnRouteLength(turn, 0)).toBeCloseTo(150, 6);
+        expect(drawnRouteLength([{ x: 0, y: 0 }, { x: 6, y: 0 }, { x: 6, y: 50 }], 8)).toBeLessThan(56);
+        // Two wires joining for their last stretch: they differ by what they do not share, so
+        // a dash counted back from their end runs in step along what they do.
+        const a = [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 100 }, { x: 80, y: 100 }];
+        const b = [{ x: 0, y: 60 }, { x: 40, y: 60 }, { x: 40, y: 100 }, { x: 80, y: 100 }];
+        expect(drawnRouteLength(a, 8) - drawnRouteLength(b, 8)).toBeCloseTo(60, 6);
+
+        const here = path.dirname(fileURLToPath(import.meta.url));
+        const views = readFileSync(path.resolve(here, '../src/views.ts'), 'utf8');
+        expect(views).toContain("'--edge-dash-offset': `${edgeDashOffset(edge, drawnLength).toFixed(2)}px`");
+    });
+
+    it('starts the dashes from the end where the wire meets others: its end where more than one comes in, else its start', async () => {
+        const { edgeDashOffset } = await import('../src/views');
+        const into = (n: number) => ({ target: { incomingEdges: Array.from({ length: n }, (_, k) => ({ id: k })) } });
+        // Into a register from two branches: counted back from the end, in step along the trunk they share.
+        expect(edgeDashOffset(into(2), 120)).toBe(-120);
+        // Alone at its end (wires that leave one port together, or one alone): from its start.
+        expect(edgeDashOffset(into(1), 120)).toBe(0);
+        expect(edgeDashOffset({}, 120)).toBe(0);
     });
 });

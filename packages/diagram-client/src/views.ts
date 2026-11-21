@@ -445,6 +445,130 @@ function groupLoop(width: number, height: number, notes?: unknown): VNode {
 /** Roughly how wide an index label (`[7:4]`) is drawn. */
 const INDEX_LABEL_CHAR_PX = 6;
 const INDEX_LABEL_GAP_PX = 6;
+/** What an index label leaves clear between its near edge and the port it is at. */
+const INDEX_LABEL_ROOM_PX = 4;
+
+/**
+ * How far back along the wire from its end an index label's middle goes:
+ * where it always went (`nearest`), unless it is too long to fit there, when
+ * it goes back as far as keeps it clear of the port, so a long slice
+ * (`{1'b0, lim}`) does not run into the node; then past the labels nearer
+ * the port (`shift`). The first at its port end goes no further back than
+ * keeps it clear of the node at the wire's other end (`length`, the
+ * route's): on a wire shorter than it, it stands at the middle.
+ */
+export function indexLabelDistance(text: string, nearest: number, shift: number, length = Number.POSITIVE_INFINITY): number {
+    const half = (text.length * INDEX_LABEL_CHAR_PX) / 2;
+    const wanted = shift + Math.max(nearest, INDEX_LABEL_ROOM_PX + half);
+    // (One after others at its port stays after them: back over them, it would hide them.)
+    if (wanted <= shift + nearest || shift > 0 || wanted + half + INDEX_LABEL_ROOM_PX <= length) {
+        return wanted;
+    }
+    // Clear of the other end, where the wire is long enough for it; else at its middle.
+    const furthest = length >= 2 * (half + INDEX_LABEL_ROOM_PX) ? length - half - INDEX_LABEL_ROOM_PX : length / 2;
+    return Math.max(shift + nearest, furthest);
+}
+
+/** How long a route is, end to end along its bends. */
+function routeLength(points: ReadonlyArray<{ x: number; y: number }>): number {
+    let length = 0;
+    for (let k = 1; k < points.length; k++) {
+        length += Math.hypot(points[k].x - points[k - 1].x, points[k].y - points[k - 1].y);
+    }
+    return length;
+}
+
+/**
+ * How long an edge's line is as drawn: the path `buildPath` draws for these
+ * points, step by step (a straight stretch to each corner, or to the point
+ * `cornerRadius` before it and a quadratic through it to as far after; less
+ * where a leg is shorter than twice that).
+ */
+export function drawnRouteLength(points: ReadonlyArray<{ x: number; y: number }>, cornerRadius: number): number {
+    if (points.length < 2) {
+        return 0;
+    }
+    let length = 0;
+    let at = points[0];
+    const lineTo = (point: { x: number; y: number }) => {
+        length += Math.hypot(point.x - at.x, point.y - at.y);
+        at = point;
+    };
+    for (let k = 1; k < points.length - 1; k++) {
+        const prev = points[k - 1], corner = points[k], next = points[k + 1];
+        const inDir = { x: Math.sign(corner.x - prev.x), y: Math.sign(corner.y - prev.y) };
+        const outDir = { x: Math.sign(next.x - corner.x), y: Math.sign(next.y - corner.y) };
+        const turns = inDir.x !== outDir.x || inDir.y !== outDir.y;
+        if (!turns || (inDir.x === 0 && inDir.y === 0) || (outDir.x === 0 && outDir.y === 0)) {
+            lineTo(corner);
+            continue;
+        }
+        const r = Math.max(0, Math.min(Math.max(0, cornerRadius), Math.hypot(corner.x - prev.x, corner.y - prev.y) / 2,
+            Math.hypot(next.x - corner.x, next.y - corner.y) / 2));
+        if (r <= 0.001) {
+            lineTo(corner);
+            continue;
+        }
+        const from = { x: corner.x - inDir.x * r, y: corner.y - inDir.y * r };
+        const to = { x: corner.x + outDir.x * r, y: corner.y + outDir.y * r };
+        lineTo(from);
+        const STEPS = 32;
+        for (let n = 1; n <= STEPS; n++) {
+            const t = n / STEPS, u = 1 - t;
+            lineTo({
+                x: u * u * from.x + 2 * u * t * corner.x + t * t * to.x,
+                y: u * u * from.y + 2 * u * t * corner.y + t * t * to.y
+            });
+        }
+    }
+    lineTo(points[points.length - 1]);
+    return length;
+}
+
+/**
+ * Where an edge's dashes start, as a `stroke-dashoffset`: from the end where
+ * it meets other wires at one port, so that wires that share a stretch there
+ * dash in step instead of filling in each other's gaps. That is its end where
+ * more than one wire comes in (`-length`: counted back from it), else its
+ * start (0), where wires that leave one port together start alike anyway.
+ */
+export function edgeDashOffset(edge: unknown, drawnLength: number): number {
+    const incoming: unknown = (edge as any)?.target?.incomingEdges;
+    let count = 0;
+    for (const _ of (incoming as Iterable<unknown> | undefined) ?? []) {
+        if (++count > 1) {
+            return -drawnLength;
+        }
+    }
+    return 0;
+}
+
+/**
+ * Whether two wires at one port end leave it (or reach it) together as far as
+ * `reach` along them: on top of each other all that way, read from the routes
+ * they were laid out with (a wire without one goes its own way). A label at
+ * that distance on either stands in one place.
+ */
+function togetherAt(a: unknown, b: unknown, end: 'from' | 'to', reach: number): boolean {
+    const route = (edge: unknown) => {
+        const points = (edge as any)?.routingPoints as Array<{ x: number; y: number }> | undefined;
+        return Array.isArray(points) && points.length >= 2 ? points : undefined;
+    };
+    const p = route(a), q = route(b);
+    if (!p || !q || routeLength(p) < reach || routeLength(q) < reach) {
+        return false;
+    }
+    const fromEnd = end === 'from' ? 'start' : 'end';
+    for (let along = 0; ; along = Math.min(reach, along + 2)) {
+        const u = pointAlongRoute(p, fromEnd, along, 0), v = pointAlongRoute(q, fromEnd, along, 0);
+        if (!u || !v || Math.hypot(u.x - v.x, u.y - v.y) > 0.5) {
+            return false;
+        }
+        if (along >= reach) {
+            return true;
+        }
+    }
+}
 
 /** The shifts worked out per port end, once per model (ports are new objects in each). */
 const indexShifts = new WeakMap<object, Map<string, number>>();
@@ -498,14 +622,49 @@ export function indexLabelShift(edge: unknown, end: 'from' | 'to'): number {
             const tb = top(b.e.args[key]);
             return (Number.isFinite(ta) && Number.isFinite(tb) ? tb - ta : 0) || a.order - b.order;
         });
+        // A label the same as one before it, on a wire that leaves (or comes)
+        // with that one as far as it stands (a variable's name on each wire
+        // that leaves with it), is not written again (indexLabelRepeats): it
+        // would stand where that one does, which says it, and it takes no room
+        // of its own. Unless a wire that says something else, or nothing, runs
+        // there too: then the one label would not say which wires it is of,
+        // and each is written on its own wire, after the others, as one on a
+        // wire that goes its own way is.
+        const everyOne = attached ? [...(attached as Iterable<any>)] : [];
         let shift = 0;
+        const placed = new Map<string, unknown[]>();
         for (const { e } of siblings) {
+            const text = indexLabelText(e.args, end) ?? '';
+            const same = placed.get(text) ?? [];
+            const reach = indexLabelDistance(text, end === 'from' ? 12 : 18, 0);
+            const along = (other: unknown) => togetherAt(other, e, end, reach)
+                && !everyOne.some(w => w !== e && w !== other && indexLabelText(w?.args, end) !== text
+                    && togetherAt(other, w, end, reach));
+            if (same.some(along)) {
+                cache.set(cacheKey(String(e.id)), 0);
+                cache.set(`${end}\u0000again\u0000${String(e.id)}`, 1);
+                continue;
+            }
+            placed.set(text, [...same, e]);
             cache.set(cacheKey(String(e.id)), shift);
-            shift += (indexLabelText(e.args, end) ?? '').length * INDEX_LABEL_CHAR_PX + INDEX_LABEL_GAP_PX;
+            shift += text.length * INDEX_LABEL_CHAR_PX + INDEX_LABEL_GAP_PX;
         }
         cache.set(done, 0);
     }
     return cache.get(cacheKey(String((edge as any).id))) ?? 0;
+}
+
+/**
+ * Whether an edge's label at a port end is the same as one written before it
+ * there (indexLabelShift's order) on a wire it leaves (or comes) with, and so
+ * is not written again: wires that leave a port together, each carrying a
+ * variable's name, say it once.
+ */
+export function indexLabelRepeats(edge: unknown, end: 'from' | 'to'): boolean {
+    indexLabelShift(edge, end);
+    const port: any = end === 'from' ? (edge as any)?.source : (edge as any)?.target;
+    const cache = port && typeof port === 'object' ? indexShifts.get(port) : undefined;
+    return cache?.has(`${end}\u0000again\u0000${String((edge as any)?.id)}`) ?? false;
 }
 
 /**
@@ -1728,6 +1887,7 @@ export class WorkflowEdgeView extends PolylineEdgeView {
             normalizedSegments?: { x: number; y: number }[];
             isComputedOrthogonal?: boolean;
             path?: string;
+            drawnLength?: number;
         } | undefined;
 
         const canReuseCache = !!cache
@@ -1741,7 +1901,8 @@ export class WorkflowEdgeView extends PolylineEdgeView {
             && cache.handleEditActive === handleEditActive
             && Array.isArray(cache.normalizedSegments)
             && typeof cache.path === 'string'
-            && typeof cache.isComputedOrthogonal === 'boolean';
+            && typeof cache.isComputedOrthogonal === 'boolean'
+            && typeof cache.drawnLength === 'number';
 
         const normalizedSegments = canReuseCache
             ? (cache!.normalizedSegments as { x: number; y: number }[])
@@ -1753,9 +1914,13 @@ export class WorkflowEdgeView extends PolylineEdgeView {
             ? (cache!.isComputedOrthogonal as boolean)
             : this.isOrthogonal(segments);
 
+        const cornerRadius = (isSelected || handleEditActive) ? 0 : (isComputedOrthogonal ? 8 : 6);
         const path = canReuseCache
             ? (cache!.path as string)
-            : this.buildPath(normalizedSegments, (isSelected || handleEditActive) ? 0 : (isComputedOrthogonal ? 8 : 6));
+            : this.buildPath(normalizedSegments, cornerRadius);
+        const drawnLength = canReuseCache
+            ? (cache!.drawnLength as number)
+            : drawnRouteLength(normalizedSegments, cornerRadius);
 
         if (!canReuseCache) {
             (edge as any)._workflowEdgeRenderCache = {
@@ -1769,7 +1934,8 @@ export class WorkflowEdgeView extends PolylineEdgeView {
                 handleEditActive,
                 normalizedSegments,
                 isComputedOrthogonal,
-                path
+                path,
+                drawnLength
             };
         }
         
@@ -1829,19 +1995,23 @@ export class WorkflowEdgeView extends PolylineEdgeView {
         const endSeg = hasEndpoints ? normalizedSegments[normalizedSegments.length - 1] : undefined;
         const endPrev = hasEndpoints ? normalizedSegments[normalizedSegments.length - 2] : undefined;
 
-        const fromIndexLabel = fromIndex ? indexLabelText(edgeArgs, 'from') : undefined;
-        const toIndexLabel = toIndex ? indexLabelText(edgeArgs, 'to') : undefined;
+        // A label the same as one another wire at that port end writes is not written again.
+        const fromIndexLabel = fromIndex && !indexLabelRepeats(edge, 'from') ? indexLabelText(edgeArgs, 'from') : undefined;
+        const toIndexLabel = toIndex && !indexLabelRepeats(edge, 'to') ? indexLabelText(edgeArgs, 'to') : undefined;
 
         // Wires meeting one port end often share their last stretch: their
         // labels go one after another along it, highest bits nearest the port.
         const fromShift = fromIndexLabel ? indexLabelShift(edge, 'from') : 0;
         const toShift = toIndexLabel ? indexLabelShift(edge, 'to') : 0;
+        const length = routeLength(normalizedSegments);
+        const fromAlong = fromIndexLabel ? indexLabelDistance(fromIndexLabel, 12, fromShift, length) : 12;
+        const toAlong = toIndexLabel ? indexLabelDistance(toIndexLabel, 18, toShift, length) : 18;
         const fromIndexPos = (fromIndexLabel && startSeg && startNext)
-            ? (fromShift > 0 ? pointAlongRoute(normalizedSegments, 'start', 12 + fromShift, -10) : undefined)
+            ? (fromAlong > 12 ? pointAlongRoute(normalizedSegments, 'start', fromAlong, -10) : undefined)
                 ?? this.offsetPointAlongSegment(startSeg, startNext, 12, -10)
             : undefined;
         const toIndexPos = (toIndexLabel && endSeg && endPrev)
-            ? (toShift > 0 ? pointAlongRoute(normalizedSegments, 'end', 18 + toShift, -10) : undefined)
+            ? (toAlong > 18 ? pointAlongRoute(normalizedSegments, 'end', toAlong, -10) : undefined)
                 ?? this.offsetPointAlongSegment(endSeg, endPrev, 18, -10)
             : undefined;
 
@@ -1868,11 +2038,16 @@ export class WorkflowEdgeView extends PolylineEdgeView {
                     d: path,
                     fill: 'none'
                 },
-                style: (edge as any)._debugReason ? {
-                    stroke: (edge as any)._debugReason === 'stale' ? '#ffa500' : '#00cc44', // Orange (stale), Green (moving)
-                    'stroke-dasharray': '5, 3',
-                    'stroke-width': '2px'
-                } : {}
+                style: {
+                    // Where a product's dash pattern starts, to run in step with the
+                    // wires this one shares a stretch with (edgeDashOffset).
+                    '--edge-dash-offset': `${edgeDashOffset(edge, drawnLength).toFixed(2)}px`,
+                    ...((edge as any)._debugReason ? {
+                        stroke: (edge as any)._debugReason === 'stale' ? '#ffa500' : '#00cc44', // Orange (stale), Green (moving)
+                        'stroke-dasharray': '5, 3',
+                        'stroke-width': '2px'
+                    } : {})
+                }
             }),
             ...(captions && hasViewerToken ? this.renderEdgeOpenButton(workflowEdge as any, normalizedSegments as any) : []),
             ...(captions && queueSize !== undefined ? this.renderEdgeQueueSizeBadge(normalizedSegments as any, queueSize, hasViewerToken) : []),

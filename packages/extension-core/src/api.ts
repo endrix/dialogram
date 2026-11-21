@@ -560,6 +560,13 @@ export interface DiagramProfile {
    * selection: `.workflow-edge.edge-role-x:not(.selected):not(.hover)`. A rule
    * on the bare class matches both groups, so an `opacity` there applies
    * twice.
+   *
+   * An edge's line (`.edge-line`) carries `--edge-dash-offset`. A dashed role
+   * that sets `stroke-dashoffset: var(--edge-dash-offset, 0px)` dashes in step
+   * with the wires it shares a stretch with: counted back from its end where
+   * more than one wire comes into that port, else from its start. Out of step,
+   * wires sharing a stretch fill in each other's gaps and read as one solid
+   * line.
    */
   clientStylesheets?: string[];
   /** Edit strategy: `'read-only'` disables writes; an editable strategy carries the

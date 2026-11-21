@@ -36,6 +36,7 @@ function gportSide(port: GPort): PortSide {
 import { snapRouteEndpoints } from '../routing/persisted-edge-routes';
 import { FAST_LAYOUT_OPTIONS, countLayoutElements, layoutTierFor, type LayoutGraphSize, type LayoutTier } from './layout-configurator';
 import { isRowsLayout } from '../model/group-edges';
+import { joinPinToPinEdges, splitPinToPinEdges } from './pin-to-pin-edges';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -105,8 +106,8 @@ export function isLaidOutColumn(element: GModelElement): boolean {
  * as wide as its widest member with its margins, and the wires' ends follow
  * their ports when the routes are applied (`snapRouteEndpoints`).
  */
-export function alignColumn(column: ElkNode): void {
-    const members = column.children ?? [];
+export function alignColumn(column: ElkNode, only?: ReadonlySet<string>): void {
+    const members = (column.children ?? []).filter(member => only === undefined || only.has(member.id));
     if (members.length < 2) {
         return;
     }
@@ -249,7 +250,10 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
             // are laid out apart, then put in a band above what the layout made.
             const pinned = this.takePinnedGroups(root, elkGraph);
 
+            // A wire from a frame's pin to another of its pins, laid out inside it.
+            const splits = splitPinToPinEdges(elkGraph);
             const result = (await (this as any).elk.layout(elkGraph)) as ElkNode;
+            joinPinToPinEdges(result, splits);
             this.applyLayout(result);
             if (pinned.length > 0) {
                 await this.layoutPinnedGroups(root, pinned);
@@ -585,11 +589,15 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         if (around) {
             this.wrapLists(pinned, around.height);
         }
-        const band = (await (this as any).elk.layout({
+        // (A wire across a frame in a pinned group is laid out inside it too.)
+        const bandGraph: ElkNode = {
             id: `${root.id}::pinned`,
             layoutOptions: { 'elk.algorithm': 'layered', 'elk.direction': 'DOWN' },
             children: pinned
-        })) as ElkNode;
+        };
+        const splits = splitPinToPinEdges(bandGraph);
+        const band = (await (this as any).elk.layout(bandGraph)) as ElkNode;
+        joinPinToPinEdges(band, splits);
         const pinnedIds = new Set(pinned.map(node => node.id));
         for (const child of band.children ?? []) {
             this.applyLayoutWithOffset(child, { x: 0, y: 0 });
@@ -1145,7 +1153,11 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         if (element instanceof GNode) {
             (this as any).applyShape(element, elkNode);
             if (isLaidOutColumn(element)) {
-                alignColumn(elkNode);
+                // Where the column was laid out in partitions, the members with no row feed the rows
+                // and stand before them: the rows line up. Else all of it is one column.
+                const fed = elkNode.layoutOptions?.['elk.partitioning.activate'] === 'true';
+                const rows = new Set((element.children ?? []).filter(child => child.args?.[WorkflowDiagramMetadata.GROUP_ROW] !== undefined).map(child => child.id));
+                alignColumn(elkNode, fed ? rows : undefined);
             }
         }
 

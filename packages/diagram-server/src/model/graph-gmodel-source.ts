@@ -634,7 +634,9 @@ export class GraphGModelSource {
             const summary = summaryText ? summaryLines(summaryText, nodeWidth) : [];
             const size = symbolKind
                 ? SymbolGeometry.size(symbolKind, rowInputs.length, outputs.length,
-                    symbolKind === 'register' ? SymbolGeometry.registerBodyWidth(pinNameWidth(rowInputs), pinNameWidth(outputs)) : undefined,
+                    symbolKind === 'register' ? SymbolGeometry.registerBodyWidth(pinNameWidth(rowInputs), pinNameWidth(outputs))
+                        : symbolKind === 'operator' && typeof node.meta?.['operator'] === 'string'
+                            ? SymbolGeometry.operatorBodyWidth(node.meta['operator'] as string) : undefined,
                     captioned)
                 : {
                     width: nodeWidth,

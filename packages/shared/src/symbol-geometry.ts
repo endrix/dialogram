@@ -147,6 +147,19 @@ export namespace SymbolGeometry {
         return Math.max(BODY.register.width, widestInput + widestOutput + 2 * PIN_NAME_INSET_PX + PIN_NAME_SPACING_PX);
     }
 
+    /** An operator's glyph: drawn in the editor's monospace face at this size (`.symbol-operator`). */
+    export const OPERATOR_FONT_PX = 11;
+    /** The width of one character of the glyph, in ems: a monospace face's advance, a little over. */
+    export const OPERATOR_CHAR_EM = 0.62;
+    /** Room either side of the glyph, inside the body. */
+    export const OPERATOR_INSET_PX = 6;
+
+    /** An operator's body wide enough for its glyph (`count`, `8'hFF`, `[W-1:0]`): its kind's width at least. */
+    export function operatorBodyWidth(glyph: string | undefined): number {
+        const chars = [...(glyph ?? '')].length;
+        return Math.max(BODY.operator.width, Math.ceil(chars * OPERATOR_CHAR_EM * OPERATOR_FONT_PX) + 2 * OPERATOR_INSET_PX);
+    }
+
     /** How far an OR's (a NOR's, an XOR's, an XNOR's) back curves in at its middle. */
     export function backDepth(kind: SymbolKind): number {
         return BODY[kind].width * BACK_CURVE;

@@ -11,7 +11,7 @@ import { ToggleNodeOpenOperation, WorkflowDiagramMetadata, WorkflowDiagramTypes 
 import { GraphGModelSource, type PyGraphDocument, type PyGraphNode } from '../src/model/graph-gmodel-source';
 import { portBusStateOf } from '../src/model/port-bundles';
 import { stableNodeIds } from '../src/model/stable-ids';
-import { MAX_OPEN_DEPTH, OPEN_NODE_SPACING, innerNodeId, isOpenIn, nestedIds, openFrameId, openNodes, withOpenNodePositions } from '../src/model/open-nodes';
+import { MAX_OPEN_DEPTH, OPEN_NODE_SPACING, canOpen, innerNodeId, isOpenIn, nestedIds, openFrameId, openNodes, withOpenNodePositions } from '../src/model/open-nodes';
 import { convertToGModelRoot } from '../src/server/gmodel-convert';
 import { relativeToParent, restoreGroupGeometry } from '../src/server/group-geometry';
 import { collectEdgeRoutes, collectNodePositions, nodeLayoutKeyOf } from '../src/server/layout-snapshot';
@@ -323,6 +323,161 @@ describe('a node opened in place, in the corners', () => {
         const node = graph.children.find((c: any) => c.args?.[WorkflowDiagramMetadata.GRAPH_NODE_ID] === P);
         expect(node.args[WorkflowDiagramMetadata.SYMBOL]).toBeUndefined();
         expect(node.args[WorkflowDiagramMetadata.NODE_OPENABLE]).toBe(true);
+    });
+});
+
+describe('what an inner wire says', () => {
+    // `q <= a[3:0] & b`: the bits of `a` the gate takes are written where the wire reaches it.
+    const sliced = (pins: boolean): PyGraphDocument => {
+        const inner = structuredClone(proc.meta!['inner']) as any;
+        inner.pins = pins;
+        inner.edges = inner.edges.map((e: any) => e.to === `${P}/cell:and:a`
+            ? { ...e, meta: { toSlice: 'not[3:0]', toSliceLabel: 'not[3:0]' } }
+            : e.to === `${P}/cell:and:b` ? { ...e, meta: { toSlice: 'b[3:0]', toSliceLabel: 'b[3:0]' } } : e);
+        return { ...doc, graph: { ...doc.graph, nodes: doc.graph.nodes.map(n => (n.id === P ? { ...proc, meta: { ...proc.meta, inner } } : n)) } };
+    };
+    const said = (opened: PyGraphDocument, to: string) => opened.graph.edges.filter(e => e.to === to).map(e => e.meta?.['toSliceLabel']);
+
+    it('is said by the edge drawn for it, between two inner nodes and from a pin of the frame', () => {
+        const opened = openNodes(sliced(true), openState(true), stableNodeIds(doc.graph.nodes));
+        expect(said(opened, `${P}/cell:and:a`)).toEqual(['not[3:0]']);
+        expect(said(opened, `${P}/cell:and:b`)).toEqual(['b[3:0]']);
+    });
+
+    it('is said by the wire from outside carried on to the pin it reaches, where the frame keeps no pins', () => {
+        const opened = openNodes(sliced(false), openState(true), stableNodeIds(doc.graph.nodes));
+        const into = opened.graph.edges.filter(e => e.to === `${P}/cell:and:b`);
+        expect(into.map(e => e.from)).toEqual(['b:b:b']);
+        expect(into.map(e => e.meta?.['toSliceLabel'])).toEqual(['b[3:0]']);
+        // And reaches the model as the bits written at that end.
+        const root: any = new GraphGModelSource().transform(sliced(false), { portBuses: openState(true) }).graph;
+        const edges: any[] = [];
+        const walk = (e: any) => { if (String(e.type).startsWith('edge')) { edges.push(e); } (e.children ?? []).forEach(walk); };
+        walk(root);
+        // (Cut where it crosses the frame: the piece that reaches the gate.)
+        const carried = edges.filter(e => String(e.targetId).endsWith('/cell:and_port_b') && !String(e.targetId).includes('::in::'));
+        expect(carried.map(e => e.args?.[WorkflowDiagramMetadata.EDGE_TO_INDEX_LABEL])).toEqual(['b[3:0]']);
+    });
+});
+
+describe('what inner wires with the same ends, and a moved end, say', () => {
+    // proc(a[7:0]) -> y, inside `y = {a[3:0], a[7:4]}`: two wires from `a` to the cell `r`'s pin.
+    const Q = 'node:q';
+    const pin = (node: string, name: string, direction: 'in' | 'out') => ({ id: `${node}:${name}`, name, direction });
+    const reg = (name: string): PyGraphNode => ({
+        id: `${Q}/cell:${name}`, kind: 'logic', label: name, scope: 'root', ports: [pin(`${Q}/cell:${name}`, 'd', 'in'), pin(`${Q}/cell:${name}`, 'q', 'out')]
+    });
+    const state = portBusStateOf(new Map([['q', new Set([ToggleNodeOpenOperation.OPEN])]]));
+    const made = (pins: boolean, inner: any[], outer: { into?: Record<string, unknown>; outOf?: Record<string, unknown> } = {}): PyGraphDocument => ({
+        version: '1',
+        graph: {
+            id: 'top',
+            nodes: [boundary('a', 'wf-input'), boundary('y', 'wf-output'), {
+                id: Q, kind: 'logic', label: 'q', scope: 'root', ports: [pin(Q, 'a', 'in'), pin(Q, 'y', 'out')],
+                meta: { inner: { ...(pins ? { pins: true } : {}), nodes: [reg('r'), reg('s')], edges: inner } }
+            }],
+            edges: [
+                { id: 'e:a', from: 'b:a:a', to: `${Q}:a`, scope: 'root', ...(outer.into ? { meta: outer.into } : {}) },
+                { id: 'e:y', from: `${Q}:y`, to: 'b:y:y', scope: 'root', ...(outer.outOf ? { meta: outer.outOf } : {}) }
+            ],
+            subgraphs: [{ id: 'root', kind: 'root', parent: null, controlNodeId: null }]
+        }
+    });
+    const open = (d: PyGraphDocument) => openNodes(d, state, stableNodeIds(d.graph.nodes));
+    const slices = (d: PyGraphDocument, to: string) => d.graph.edges.filter(e => e.to === to)
+        .map(e => `${e.meta?.['fromSlice'] ?? '-'}>${e.meta?.['toSlice'] ?? '-'}`).sort();
+    const swap = [
+        { from: `${Q}:a`, to: `${Q}/cell:r:d`, meta: { fromSlice: '3:0', toSlice: '7:4' } },
+        { from: `${Q}:a`, to: `${Q}/cell:r:d`, meta: { fromSlice: '7:4', toSlice: '3:0' } },
+        { from: `${Q}/cell:r:q`, to: `${Q}:y` }
+    ];
+
+    it('is each wire’s own, from a pin of the frame and carried on from outside', () => {
+        expect(slices(open(made(true, swap)), `${Q}/cell:r:d`)).toEqual(['3:0>7:4', '7:4>3:0']);
+        // Carried on, its start is outside: only the bits it reaches are the inner wire's to say.
+        expect(slices(open(made(false, swap)), `${Q}/cell:r:d`)).toEqual(['->3:0', '->7:4']);
+    });
+
+    it('is nothing for a wire between inner nodes that says nothing, beside one that does', () => {
+        const inner = [
+            { from: `${Q}:a`, to: `${Q}/cell:r:d` },
+            { from: `${Q}/cell:r:q`, to: `${Q}/cell:s:d`, meta: { toSlice: '7:4' } },
+            { from: `${Q}/cell:r:q`, to: `${Q}/cell:s:d` },
+            { from: `${Q}/cell:s:q`, to: `${Q}:y` }
+        ];
+        expect(slices(open(made(true, inner)), `${Q}/cell:s:d`)).toEqual(['->-', '->7:4']);
+    });
+
+    it('of a moved end is the inner wire’s where that one says which bits it takes, else the outer’s', () => {
+        // The outer wire drives a[7:4]; the inner one takes a[7:4] whole into r.d: r.d is driven whole.
+        const taken = made(false, [{ from: `${Q}:a`, to: `${Q}/cell:r:d`, meta: { fromSlice: '7:4' } }, { from: `${Q}/cell:r:q`, to: `${Q}:y` }],
+            { into: { toSlice: '7:4' } });
+        expect(slices(open(taken), `${Q}/cell:r:d`)).toEqual(['->-']);
+        // `a` wired on whole: the bits of the port the outer wire drives are those of the pin.
+        const whole = made(false, [{ from: `${Q}:a`, to: `${Q}/cell:r:d` }, { from: `${Q}/cell:r:q`, to: `${Q}:y` }], { into: { toSlice: '7:4' } });
+        expect(slices(open(whole), `${Q}/cell:r:d`)).toEqual(['->7:4']);
+    });
+
+    it('of the whole wire is the outer wire’s, going in and coming out alike', () => {
+        const inner = [
+            { from: `${Q}:a`, to: `${Q}/cell:r:d`, meta: { label: 'inner-in', toSlice: '3:0' } },
+            { from: `${Q}/cell:r:q`, to: `${Q}:y`, meta: { label: 'inner-out', fromSlice: '1:0' } }
+        ];
+        const opened = open(made(false, inner, { into: { label: 'outer-in', tone: 'warm' }, outOf: { label: 'outer-out' } }));
+        const into = opened.graph.edges.find(e => e.to === `${Q}/cell:r:d`)!;
+        const outOf = opened.graph.edges.find(e => e.from === `${Q}/cell:r:q`)!;
+        expect(into.meta).toEqual({ label: 'outer-in', tone: 'warm', toSlice: '3:0' });
+        expect(outOf.meta).toEqual({ label: 'outer-out', fromSlice: '1:0' });
+    });
+
+    it('of a wire reading the node’s own output starts where the pin driving it says', () => {
+        const inner = [
+            { from: `${Q}/cell:r:q`, to: `${Q}:y`, meta: { fromSlice: '3:0' } },
+            { from: `${Q}:y`, to: `${Q}/cell:s:d`, meta: { fromSlice: '7:4', toSlice: '1:0' } },
+            { from: `${Q}:a`, to: `${Q}/cell:r:d` }
+        ];
+        expect(slices(open(made(true, inner)), `${Q}/cell:s:d`)).toEqual(['3:0>1:0']);
+    });
+});
+
+describe('a frame that holds a wire alone', () => {
+    // `else y = t`: a branch whose one statement passes a value on as it is, no node of its own.
+    const R = 'node:r';
+    const pin = (node: string, name: string, direction: 'in' | 'out') => ({ id: `${node}:${name}`, name, direction });
+    const made = (pins: boolean): PyGraphDocument => ({
+        version: '1',
+        graph: {
+            id: 'top',
+            nodes: [boundary('t', 'wf-input'), boundary('y', 'wf-output'), {
+                id: R, kind: 'logic', label: 'else', scope: 'root', ports: [pin(R, 't', 'in'), pin(R, 'y', 'out')],
+                meta: { inner: { open: true, ...(pins ? { pins: true } : {}), nodes: [], edges: [{ from: `${R}:t`, to: `${R}:y`, meta: { role: 'blocking' } }] } }
+            }],
+            edges: [
+                { id: 'e:t', from: 'b:t:t', to: `${R}:t`, scope: 'root' },
+                { id: 'e:y', from: `${R}:y`, to: 'b:y:y', scope: 'root' }
+            ],
+            subgraphs: [{ id: 'root', kind: 'root', parent: null, controlNodeId: null }]
+        }
+    });
+
+    it('opens where it keeps its pins: the wire across it, from pin to pin, saying what it says', () => {
+        const d = made(true);
+        expect(canOpen(d.graph.nodes[2], d.graph.subgraphs)).toBe(true);
+        const opened = openNodes(d, portBusStateOf(new Map()), stableNodeIds(d.graph.nodes));
+        const across = opened.graph.edges.filter(e => e.from === `${R}:t` && e.to === `${R}:y`);
+        expect(across.map(e => e.meta?.['role'])).toEqual(['blocking']);
+    });
+
+    it('is a node, as before, where its pins would go: there is nothing to put in its place', () => {
+        const d = made(false);
+        expect(canOpen(d.graph.nodes[2], d.graph.subgraphs)).toBe(false);
+    });
+
+    it('is a node, as before, when its wires name pins it does not have: they are no wires', () => {
+        const d = made(true);
+        const frame = d.graph.nodes[2];
+        (frame.meta!['inner'] as { edges: unknown[] }).edges = [{ from: `${R}:t`, to: `${R}:gone` }, { from: 'node:elsewhere:a', to: `${R}:y` }];
+        expect(canOpen(frame, d.graph.subgraphs)).toBe(false);
     });
 });
 
