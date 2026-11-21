@@ -589,11 +589,15 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         if (around) {
             this.wrapLists(pinned, around.height);
         }
-        const band = (await (this as any).elk.layout({
+        // (A wire across a frame in a pinned group is laid out inside it too.)
+        const bandGraph: ElkNode = {
             id: `${root.id}::pinned`,
             layoutOptions: { 'elk.algorithm': 'layered', 'elk.direction': 'DOWN' },
             children: pinned
-        })) as ElkNode;
+        };
+        const splits = splitPinToPinEdges(bandGraph);
+        const band = (await (this as any).elk.layout(bandGraph)) as ElkNode;
+        joinPinToPinEdges(band, splits);
         const pinnedIds = new Set(pinned.map(node => node.id));
         for (const child of band.children ?? []) {
             this.applyLayoutWithOffset(child, { x: 0, y: 0 });

@@ -516,8 +516,54 @@ describe('a column whose rows are fed by members of no row', () => {
         expect(members.map(m => m.args?.[WorkflowDiagramMetadata.GROUP_ROW] ?? m.args?.[WorkflowDiagramMetadata.SYMBOL_OPERATOR]))
             .toEqual(['||', '==', '0', 0, 1, 2]);
         expect(members.map(m => m.layoutOptions?.['elk.partitioning.partition'])).toEqual(['0', '0', '0', '1', '1', '1']);
-        // None held in a layer of its own: the layout refuses a wire into one.
-        expect(members.some(m => m.layoutOptions?.['elk.layered.layering.layerConstraint'] !== undefined)).toBe(false);
+        // None held in a layer of its own, nor left for the layout to hold: it refuses a wire into one.
+        expect(members.map(m => m.layoutOptions?.['elk.layered.layering.layerConstraint'])).toEqual(Array(6).fill('NONE'));
+    });
+
+    it('stands as one column where none of its members with no row feeds one with a row', () => {
+        const doc = ifBlockWithOperators();
+        const theIf: any = (doc.graph.nodes.find(n => n.id === 'node:run') as any).meta.inner.nodes[0];
+        // The operators read what comes into the column, and feed nothing in it.
+        theIf.meta.inner.edges = theIf.meta.inner.edges.filter((e: any) => !String(e.from).startsWith(`${theIf.id}/c/`));
+        const laid = find(transform(doc), IF)!;
+        expect(laid.layoutOptions?.['elk.partitioning.activate']).toBeUndefined();
+        const members = (laid.children ?? []).filter(child => child.type?.startsWith('node'));
+        expect(members.map(m => m.args?.[WorkflowDiagramMetadata.GROUP_ROW] ?? m.args?.[WorkflowDiagramMetadata.SYMBOL_OPERATOR]))
+            .toEqual([0, 1, 2, '||', '==', '0']);
+    });
+
+    it('lays out a row that only takes what comes into the column, and a feeder that only gives what leaves it', async () => {
+        // An `else if (load) $display(load);`, and a value wired straight out: alone, each is what the
+        // layout holds to the first layer or the last, against the partitions, and refused the whole diagram.
+        const doc = ifBlockWithOperators();
+        const theIf: any = (doc.graph.nodes.find(n => n.id === 'node:run') as any).meta.inner.nodes[0];
+        const b3 = `${theIf.id}/b3`;
+        const quiet = {
+            id: b3, kind: 'logic', label: 'else if (load)', scope: 'root',
+            ports: [{ id: `${b3}:in:load`, name: 'load', direction: 'in', role: 'condition' }],
+            meta: {
+                row: 3,
+                inner: {
+                    open: true, pins: true, column: true,
+                    nodes: [{ id: `${b3}/a0`, kind: 'logic', label: '$display(load)', scope: 'root', ports: [{ id: `${b3}/a0:in:load`, name: 'load', direction: 'in' }] }],
+                    edges: [{ from: `${b3}:in:load`, to: `${b3}/a0:in:load` }]
+                }
+            }
+        };
+        const k = `${theIf.id}/c/k`;
+        const value = { id: k, kind: 'logic', label: "8'hFF", scope: 'root', ports: [{ id: `${k}:y`, name: 'y', direction: 'out', pins: ['y'] }],
+            meta: { symbol: 'operator', operator: "8'hFF" } };
+        theIf.meta.inner.nodes.push(quiet, value);
+        theIf.meta.inner.edges.push({ from: `${theIf.id}:in:load`, to: `${b3}:in:load` }, { from: `${k}:y`, to: `${theIf.id}:out:busy` });
+        const byId = await laidOut(doc);
+        const rows = [...byId.values()]
+            .filter(e => e.type === 'node:group' && typeof e.args?.[WorkflowDiagramMetadata.GROUP_ROW] === 'number')
+            .sort((a, b) => a.args[WorkflowDiagramMetadata.GROUP_ROW] - b.args[WorkflowDiagramMetadata.GROUP_ROW]);
+        expect(rows).toHaveLength(4);
+        for (let k = 1; k < rows.length; k++) {
+            expect(rows[k - 1].position.y + rows[k - 1].size.height).toBeLessThanOrEqual(rows[k].position.y);
+            expect(Math.abs(rows[k].position.x - rows[0].position.x)).toBeLessThanOrEqual(1);
+        }
     });
 
     it('keeps the plain layout where a row feeds another member', () => {
@@ -543,6 +589,55 @@ describe('a column whose rows are fed by members of no row', () => {
         expect(feeders).toHaveLength(3);
         for (const feeder of feeders) {
             expect(feeder.position.x + feeder.size.width, feeder.id).toBeLessThanOrEqual(rows[0].position.x);
+        }
+    });
+});
+
+describe('a wire across a frame', () => {
+    it('runs inside the frame in a pinned group too', async () => {
+        const port = (node: string, name: string, direction: 'in' | 'out') => ({ id: `${node}:${direction}:${name}`, name, direction });
+        const frame = (id: string, scope: string) => ({
+            id, kind: 'logic', label: id, scope,
+            ports: [port(id, 'a', 'in'), port(id, 'b', 'in'), port(id, 'y', 'out'), port(id, 'z', 'out')],
+            meta: {
+                inner: {
+                    open: true, pins: true,
+                    nodes: [{ id: `${id}/m`, kind: 'logic', label: 'm', scope: 'root', ports: [{ id: `${id}/m:a`, name: 'a', direction: 'in' }, { id: `${id}/m:y`, name: 'y', direction: 'out' }] }],
+                    edges: [{ from: `${id}:in:a`, to: `${id}/m:a` }, { from: `${id}/m:y`, to: `${id}:out:y` }, { from: `${id}:in:b`, to: `${id}:out:z` }]
+                }
+            }
+        });
+        const doc: PyGraphDocument = {
+            version: '1',
+            graph: {
+                id: 'root',
+                nodes: [{ id: 'src', kind: 'actor', label: 'src', scope: 'scope:root', ports: [{ id: 'src:o', name: 'o', direction: 'out' }] },
+                    frame('node:F', 'scope:root'), frame('node:G', 'scope:P')] as any,
+                edges: [{ id: 'e1', from: 'src:o', to: 'node:F:in:a', scope: 'scope:root' }, { id: 'e2', from: 'src:o', to: 'node:F:in:b', scope: 'scope:root' }],
+                subgraphs: [{ id: 'scope:root', kind: 'root', parent: null } as any, { id: 'scope:P', kind: 'group', label: 'P', pin: 'top', parent: 'scope:root' } as any]
+            }
+        };
+        const byId = await laidOut(doc);
+        const absolute = (e: any) => {
+            const at = { x: 0, y: 0 };
+            for (let p: any = e; p && p.position; p = p.parent) {
+                at.x += p.position.x;
+                at.y += p.position.y;
+            }
+            return at;
+        };
+        const g = [...byId.values()].find(e => e.type === 'node:group' && String(e.id).endsWith('node:G'))!;
+        expect(g).toBeDefined();
+        const across = [...byId.values()].find(e => e.type?.startsWith('edge') && e.sourceId === 'node:G:in:b' || (e.type?.startsWith('edge') && String(e.sourceId).endsWith('node:G:in:b')))!;
+        expect(across).toBeDefined();
+        const at = absolute(g);
+        const holder = across.parent ? absolute(across.parent) : { x: 0, y: 0 };
+        const rim = WorkflowDiagramConstants.PORT_WIDTH_PX;
+        for (const point of across.routingPoints as Array<{ x: number; y: number }>) {
+            expect(point.x + holder.x).toBeGreaterThanOrEqual(at.x - rim);
+            expect(point.x + holder.x).toBeLessThanOrEqual(at.x + g.size.width + rim);
+            expect(point.y + holder.y).toBeGreaterThanOrEqual(at.y);
+            expect(point.y + holder.y).toBeLessThanOrEqual(at.y + g.size.height);
         }
     });
 });

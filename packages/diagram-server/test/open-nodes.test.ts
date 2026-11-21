@@ -326,6 +326,40 @@ describe('a node opened in place, in the corners', () => {
     });
 });
 
+describe('what an inner wire says', () => {
+    // `q <= a[3:0] & b`: the bits of `a` the gate takes are written where the wire reaches it.
+    const sliced = (pins: boolean): PyGraphDocument => {
+        const inner = structuredClone(proc.meta!['inner']) as any;
+        inner.pins = pins;
+        inner.edges = inner.edges.map((e: any) => e.to === `${P}/cell:and:a`
+            ? { ...e, meta: { toSlice: 'not[3:0]', toSliceLabel: 'not[3:0]' } }
+            : e.to === `${P}/cell:and:b` ? { ...e, meta: { toSlice: 'b[3:0]', toSliceLabel: 'b[3:0]' } } : e);
+        return { ...doc, graph: { ...doc.graph, nodes: doc.graph.nodes.map(n => (n.id === P ? { ...proc, meta: { ...proc.meta, inner } } : n)) } };
+    };
+    const said = (opened: PyGraphDocument, to: string) => opened.graph.edges.filter(e => e.to === to).map(e => e.meta?.['toSliceLabel']);
+
+    it('is said by the edge drawn for it, between two inner nodes and from a pin of the frame', () => {
+        const opened = openNodes(sliced(true), openState(true), stableNodeIds(doc.graph.nodes));
+        expect(said(opened, `${P}/cell:and:a`)).toEqual(['not[3:0]']);
+        expect(said(opened, `${P}/cell:and:b`)).toEqual(['b[3:0]']);
+    });
+
+    it('is said by the wire from outside carried on to the pin it reaches, where the frame keeps no pins', () => {
+        const opened = openNodes(sliced(false), openState(true), stableNodeIds(doc.graph.nodes));
+        const into = opened.graph.edges.filter(e => e.to === `${P}/cell:and:b`);
+        expect(into.map(e => e.from)).toEqual(['b:b:b']);
+        expect(into.map(e => e.meta?.['toSliceLabel'])).toEqual(['b[3:0]']);
+        // And reaches the model as the bits written at that end.
+        const root: any = new GraphGModelSource().transform(sliced(false), { portBuses: openState(true) }).graph;
+        const edges: any[] = [];
+        const walk = (e: any) => { if (String(e.type).startsWith('edge')) { edges.push(e); } (e.children ?? []).forEach(walk); };
+        walk(root);
+        // (Cut where it crosses the frame: the piece that reaches the gate.)
+        const carried = edges.filter(e => String(e.targetId).endsWith('/cell:and_port_b') && !String(e.targetId).includes('::in::'));
+        expect(carried.map(e => e.args?.[WorkflowDiagramMetadata.EDGE_TO_INDEX_LABEL])).toEqual(['b[3:0]']);
+    });
+});
+
 describe('a bus toggle beside an open node', () => {
     it('saves the node open, as the view shows it', async () => {
         const d = diagram({ a: { x: 0, y: 100 }, b: { x: 0, y: 160 }, q: { x: 600, y: 100 }, t: { x: 600, y: 160 }, [KEY]: { x: 200, y: 100 } });

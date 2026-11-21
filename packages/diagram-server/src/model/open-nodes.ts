@@ -55,7 +55,7 @@ import { nodeLayoutKeyOf, isMovableNode } from '../server/layout-snapshot';
 /** The graph inside a node, as a producer sends it. */
 export interface InnerGraph {
     nodes: PyGraphNode[];
-    edges: Array<{ from: string; to: string; width?: number }>;
+    edges: Array<{ from: string; to: string; width?: number; meta?: Record<string, unknown> }>;
 }
 
 /** The graph a node holds, when it holds one with something in it. */
@@ -192,6 +192,7 @@ function openOnce(doc: PyGraphDocument, state: PortBusState | undefined, ids: St
         outOf: Map<string, string[]>;    // own output -> the inner pin driving it
         reads: Map<string, string[]>;    // own output -> inner pins reading it
         through: Map<string, string[]>;  // own input -> own outputs
+        said: Map<string, Record<string, unknown>>;  // what an inner edge says (`meta`), by its ends
         edges: PyGraphEdge[];            // inside the frame
         cells: PyGraphNode[];
         pinned: boolean;                 // its own ports stay on the frame
@@ -220,10 +221,14 @@ function openOnce(doc: PyGraphDocument, state: PortBusState | undefined, ids: St
         }
         const inside: Inside = {
             node, scopeId, own, nodeOfPin, cells, pinned: keepsPins(node),
-            into: new Map(), outOf: new Map(), reads: new Map(), through: new Map(), edges: []
+            into: new Map(), outOf: new Map(), reads: new Map(), through: new Map(), said: new Map(), edges: []
         };
-        // Edges naming a pin no inner node has are no edges: a wire to nothing.
+        // Edges naming a pin no inner node has are no edges: a wire to nothing. What one says
+        // (`meta`: the bits it takes, `toSlice`) goes on the edge drawn for it.
         inner.edges.forEach((edge, k) => {
+            if (edge.meta && typeof edge.meta === 'object') {
+                inside.said.set(ends(edge.from, edge.to), edge.meta);
+            }
             const from = own.get(edge.from);
             const toOwn = own.has(edge.to);
             if (from && toOwn) {
@@ -235,7 +240,7 @@ function openOnce(doc: PyGraphDocument, state: PortBusState | undefined, ids: St
                 push(inside.outOf, edge.to, edge.from);
             } else if (nodeOfPin.has(edge.from) && nodeOfPin.has(edge.to)) {
                 // Widths stay on the pins, as on every other wire.
-                inside.edges.push({ id: `${node.id}/edge:${k}`, from: edge.from, to: edge.to, scope: scopeId });
+                inside.edges.push({ id: `${node.id}/edge:${k}`, from: edge.from, to: edge.to, scope: scopeId, ...saying(inside, edge.from, edge.to) });
             }
         });
         // An output it reads itself: from the pin driving it.
@@ -243,7 +248,7 @@ function openOnce(doc: PyGraphDocument, state: PortBusState | undefined, ids: St
             let k = 0;
             for (const driver of inside.outOf.get(output) ?? []) {
                 for (const reader of readers) {
-                    inside.edges.push({ id: `${node.id}/read:${output}@${k++}`, from: driver, to: reader, scope: scopeId });
+                    inside.edges.push({ id: `${node.id}/read:${output}@${k++}`, from: driver, to: reader, scope: scopeId, ...saying(inside, output, reader) });
                 }
             }
         }
@@ -252,18 +257,18 @@ function openOnce(doc: PyGraphDocument, state: PortBusState | undefined, ids: St
             let k = 0;
             for (const [input, pins] of inside.into) {
                 for (const pin of pins) {
-                    inside.edges.push({ id: `${node.id}/in:${k++}`, from: input, to: pin, scope: scopeId });
+                    inside.edges.push({ id: `${node.id}/in:${k++}`, from: input, to: pin, scope: scopeId, ...saying(inside, input, pin) });
                 }
             }
             for (const [output, pins] of inside.outOf) {
                 for (const pin of pins) {
-                    inside.edges.push({ id: `${node.id}/out:${k++}`, from: pin, to: output, scope: scopeId });
+                    inside.edges.push({ id: `${node.id}/out:${k++}`, from: pin, to: output, scope: scopeId, ...saying(inside, pin, output) });
                 }
             }
             // An input wired straight to an output: across the frame, from pin to pin.
             for (const [input, outputs] of inside.through) {
                 for (const output of outputs) {
-                    inside.edges.push({ id: `${node.id}/through:${k++}`, from: input, to: output, scope: scopeId });
+                    inside.edges.push({ id: `${node.id}/through:${k++}`, from: input, to: output, scope: scopeId, ...saying(inside, input, output) });
                 }
             }
         }
@@ -296,7 +301,9 @@ function openOnce(doc: PyGraphDocument, state: PortBusState | undefined, ids: St
                 for (const to of tos) {
                     edges.push(withEnd(edge, one ? edge.id : `${edge.id}@${k++}`, {
                         ...(fromIn ? { from: from ?? edge.from, fromNode: from ? fromIn.nodeOfPin.get(from) : undefined } : {}),
-                        ...(toIn ? { to: to ?? edge.to, toNode: to ? toIn.nodeOfPin.get(to) : undefined } : {})
+                        ...(toIn ? { to: to ?? edge.to, toNode: to ? toIn.nodeOfPin.get(to) : undefined } : {}),
+                        ...carried(edge, from && fromIn ? fromIn.said.get(ends(from, edge.from)) : undefined,
+                            to && toIn ? toIn.said.get(ends(edge.to, to)) : undefined)
                     }));
                 }
             }
@@ -313,12 +320,12 @@ function openOnce(doc: PyGraphDocument, state: PortBusState | undefined, ids: St
         if (toIn && fromIn !== toIn) {
             push(inbound, edge.to, edge);
             (toIn.into.get(edge.to) ?? []).forEach((pin, k) =>
-                edges.push(withEnd(edge, `${edge.id}>${k}`, { to: pin, toNode: toIn.nodeOfPin.get(pin) })));
+                edges.push(withEnd(edge, `${edge.id}>${k}`, { to: pin, toNode: toIn.nodeOfPin.get(pin), ...carried(edge, undefined, toIn.said.get(ends(edge.to, pin))) })));
         }
         if (fromIn && fromIn !== toIn) {
             push(outbound, edge.from, edge);
             (fromIn.outOf.get(edge.from) ?? []).forEach((pin, k) =>
-                edges.push(withEnd(edge, `${edge.id}<${k}`, { from: pin, fromNode: fromIn.nodeOfPin.get(pin) })));
+                edges.push(withEnd(edge, `${edge.id}<${k}`, { from: pin, fromNode: fromIn.nodeOfPin.get(pin), ...carried(edge, fromIn.said.get(ends(pin, edge.from)), undefined) })));
         }
         if (fromIn && fromIn === toIn) {
             // From the node back into itself: inside the frame, from the pin
@@ -327,7 +334,8 @@ function openOnce(doc: PyGraphDocument, state: PortBusState | undefined, ids: St
             for (const driver of fromIn.outOf.get(edge.from) ?? []) {
                 for (const fed of fromIn.into.get(edge.to) ?? []) {
                     fromIn.edges.push(withEnd(edge, `${edge.id}@${k++}`, {
-                        from: driver, fromNode: fromIn.nodeOfPin.get(driver), to: fed, toNode: fromIn.nodeOfPin.get(fed), scope: fromIn.scopeId
+                        from: driver, fromNode: fromIn.nodeOfPin.get(driver), to: fed, toNode: fromIn.nodeOfPin.get(fed), scope: fromIn.scopeId,
+                        ...carried(edge, fromIn.said.get(ends(driver, edge.from)), fromIn.said.get(ends(edge.to, fed)))
                     }));
                 }
             }
@@ -376,6 +384,33 @@ function openOnce(doc: PyGraphDocument, state: PortBusState | undefined, ids: St
     }
     const nodes = [...doc.graph.nodes.filter(node => !openedIds.has(node.id)), ...insides.flatMap(inside => inside.cells)];
     return { ...doc, graph: { ...doc.graph, nodes, edges, subgraphs } };
+}
+
+/** The key of an inner edge by its ends. */
+function ends(from: string, to: string): string {
+    return `${from}\u0000${to}`;
+}
+
+/** What an inner edge says, for the edge drawn for it (`{ meta }`, or nothing). */
+function saying(inside: { said: Map<string, Record<string, unknown>> }, from: string, to: string): { meta?: Record<string, unknown> } {
+    const said = inside.said.get(ends(from, to));
+    return said ? { meta: { ...said } } : {};
+}
+
+/**
+ * An edge carried on through an open node's port to a pin inside: what it
+ * says, with what the inner edge to that pin says of the end it reaches (and
+ * the one from the pin, of the end it leaves): the bits that pin takes
+ * (`toSlice`) are the inner edge's to say, not the outer one's.
+ */
+function carried(edge: PyGraphEdge, fromSaid: Record<string, unknown> | undefined,
+    toSaid: Record<string, unknown> | undefined): { meta?: Record<string, unknown> } {
+    if (!fromSaid && !toSaid) {
+        return {};
+    }
+    const leaving = Object.fromEntries(Object.entries(fromSaid ?? {}).filter(([key]) => key.startsWith('from')));
+    const reaching = Object.fromEntries(Object.entries(toSaid ?? {}).filter(([key]) => !key.startsWith('from')));
+    return { meta: { ...(edge.meta ?? {}), ...leaving, ...reaching } };
 }
 
 function withEnd(edge: PyGraphEdge, id: string, end: Record<string, unknown>): PyGraphEdge {

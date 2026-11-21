@@ -696,7 +696,16 @@ export function isGroupRow(value: unknown): value is number {
  *   order within a row sends the edge through the members between its ends.
  *   A column cannot hold them in one layer: the layout refuses an edge into
  *   a member held first. Its members stand as what flows between them puts
- *   them, the edge's end to the right of its start.
+ *   them, the edge's end to the right of its start;
+ * - but a column whose members with no row feed those with one (what an
+ *   `if`'s conditions compute, into its branches) keeps its column: in two
+ *   partitions, the feeders in the first, the rows in the second, one under
+ *   another in the order of their rows. Edges between feeders, and from a
+ *   feeder into a row, are what it is for; one out of a row is not, and the
+ *   plain layout is kept. No member is held to a layer, nor left for the
+ *   layout to hold: it holds one that only takes what comes into the group
+ *   to its first layer, and one that only gives what leaves it to its last,
+ *   against the partitions.
  */
 export function arrangeGroupRows(children: GModelElement[]): void {
     const edges = children.filter(isEdge);
@@ -730,7 +739,10 @@ export function arrangeGroupRows(children: GModelElement[]): void {
         // In a column some of whose members have rows, the others feed them (what a choice's
         // conditions compute): they stand before the rows, which keep their column.
         const rowIds = new Set(members.filter(member => rowOf(member) !== undefined).map(member => member.id));
-        const feeding = column && rowIds.size > 0 && rowIds.size < members.length;
+        const feeding = column && rowIds.size > 0 && rowIds.size < members.length && edges.some(edge => {
+            const [from, to] = [memberOf.get(edge.sourceId), memberOf.get(edge.targetId)];
+            return from !== undefined && to !== undefined && !rowIds.has(from) && rowIds.has(to);
+        });
         const betweenMembers = edges.some(edge => {
             const [from, to] = [memberOf.get(edge.sourceId), memberOf.get(edge.targetId)];
             if (from === undefined || to === undefined || from === to) {
@@ -754,6 +766,7 @@ export function arrangeGroupRows(children: GModelElement[]): void {
                 member.layoutOptions = {
                     ...(member.layoutOptions ?? {}),
                     'elk.partitioning.partition': rowIds.has(member.id) ? '1' : '0',
+                    'elk.layered.layering.layerConstraint': 'NONE',
                     ...(rowIds.has(member.id) ? { 'elk.alignment': 'LEFT' } : {})
                 };
             }
