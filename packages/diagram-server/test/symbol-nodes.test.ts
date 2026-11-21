@@ -178,6 +178,21 @@ describe('symbol nodes, in the corners', () => {
         expect(node.size.width).toBeGreaterThan(SymbolGeometry.size('register', 2, 1).width);
     });
 
+    it('widen an operator for its glyph, and keep a short one at its kind’s width', () => {
+        const operator = (id: string, glyph: string) => ({
+            id, kind: 'logic', label: glyph, scope: 'root',
+            ports: [port(id, 'y', 'out', ['y'])], meta: { symbol: 'operator', operator: glyph }
+        });
+        const graph = transform([operator('n:minus', '-'), operator('n:value', "8'hFF"), operator('n:slice', '[W-1:0]')]);
+        const width = (glyph: string) => graph.children.find((c: any) => c.args?.[WorkflowDiagramMetadata.SYMBOL_OPERATOR] === glyph).size.width;
+        expect(width('-')).toBe(SymbolGeometry.size('operator', 0, 1).width);
+        expect(width("8'hFF")).toBeGreaterThan(width('-'));
+        expect(width('[W-1:0]')).toBeGreaterThan(width("8'hFF"));
+        // As wide as its glyph is drawn, with room either side.
+        const drawn = '[W-1:0]'.length * SymbolGeometry.OPERATOR_CHAR_EM * SymbolGeometry.OPERATOR_FONT_PX;
+        expect(width('[W-1:0]') - 2 * SymbolGeometry.STUB_PX).toBeGreaterThanOrEqual(drawn + 2 * SymbolGeometry.OPERATOR_INSET_PX);
+    });
+
     it('name the members of a bus opened on a register by the field each carries', () => {
         // A register of a bundle: a `d` and a `q` per field, a bus each way.
         const doc = registerOf([field('valid', 'in', 'd', 'in'), field('bits_speculative_child', 'in', 'd', 'in'),
