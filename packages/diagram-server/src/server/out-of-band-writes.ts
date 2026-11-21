@@ -43,4 +43,11 @@ export interface CommandThatWritesOutOfBand extends Command {
      * nothing so.
      */
     outOfBandWrites(): readonly OutOfBandWrite[];
+    /**
+     * After `undo` or `redo`: the files it put back in the editor, and saved,
+     * as URI strings. In a compound, a part that runs later and puts a file
+     * back so supersedes an earlier part's write of it out of band: the file
+     * holds what the editor saved, and its save reloads it.
+     */
+    writtenInTheEditor?(): readonly string[];
 }

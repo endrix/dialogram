@@ -52,21 +52,47 @@ export function sameText(a: string, b: string): boolean {
     return a === b || lineBreaksAlike(forTheEditor(a)) === lineBreaksAlike(forTheEditor(b));
 }
 
+/**
+ * Whether `a` and `b`, both read on disk, are the same file: a byte order
+ * mark aside, every character alike, line breaks too. A file whose line
+ * breaks another tool changed is not the one the edit left.
+ */
+export function sameOnDisk(a: string, b: string): boolean {
+    return forTheEditor(a) === forTheEditor(b);
+}
+
 function lineBreaksAlike(text: string): string {
     return text.replace(/\r\n?/g, '\n');
+}
+
+/**
+ * Whether `onDisk`, the file read as UTF-8, is the file `copy` holds, read
+ * as the editor reads it. VS Code names the copy's encoding where it can
+ * (`TextDocument.encoding`, newer than the API this is built on); elsewhere,
+ * a file read as UTF-8 that it is not shows characters it could not read,
+ * or NULs (UTF-16), that the copy does not. A file in another encoding is
+ * left to the copy, on disk neither asked nor written.
+ */
+function readsAsTheCopy(onDisk: string, copy: vscode.TextDocument): boolean {
+    const encoding = (copy as { encoding?: unknown }).encoding;
+    if (typeof encoding === 'string') {
+        return encoding === 'utf8' || encoding === 'utf8bom';
+    }
+    const held = copy.getText();
+    return (!onDisk.includes('�') || held.includes('�')) && (!onDisk.includes('\0') || held.includes('\0'));
 }
 
 /**
  * The file `uri` names, as it is on disk, where `copy`, the editor's copy of
  * it, lags it: the copy holds no unsaved change and is not the file's text.
  * Nothing where the copy is the file, where it holds unsaved changes (they
- * are what the user sees, and would save), or where the file cannot be read:
- * the copy is then where the file stands.
+ * are what the user sees, and would save), or where the file cannot be read,
+ * or not as UTF-8: the copy is then where the file stands.
  */
 export async function fileTheCopyLags(uri: vscode.Uri, copy: vscode.TextDocument): Promise<string | undefined> {
     if (copy.isDirty) {
         return undefined;
     }
     const onDisk = await textOnDisk(uri);
-    return onDisk !== undefined && !sameText(onDisk, copy.getText()) ? onDisk : undefined;
+    return onDisk !== undefined && !sameText(onDisk, copy.getText()) && readsAsTheCopy(onDisk, copy) ? onDisk : undefined;
 }

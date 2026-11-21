@@ -1501,11 +1501,14 @@ platform that hands it one.
   Where the copy holds no unsaved change and is not the file's text, undo
   and redo now ask the file on disk, put it back there, and tell the host
   to reload the diagram as of a write the producer made; elsewhere they go
-  through the editor and save, as before. A file changed on disk by
-  something else is still refused, and so is one whose copy holds unsaved
-  changes. The check no longer refuses a file that differs from the edit's
-  text only by a byte order mark or its line breaks, and the editor is no
-  longer given the mark as text.
+  through the editor and save, as before, and so does a file in another
+  encoding than UTF-8. A file changed on disk by something else, its line
+  breaks included, is still refused, and so is one whose copy holds
+  unsaved changes. An undo of several files that cannot write one puts
+  back those it wrote and does nothing. Checked against the editor's copy,
+  a file that differs from the edit's text only by a byte order mark or its
+  line breaks is no longer refused, and the editor is no longer given the
+  mark as text.
 - **A connection drawn to a port with an arrow in it ends there.** An
   arrowhead is drawn over the port it points at, its tip on the port's
   centre, and it took the pointer's events: the click that should end a new

@@ -28,6 +28,8 @@ let lib: vscode.Uri;
 /** The editor's copies, by file: read from disk when first opened, and then only what the editor is given. */
 const copies = new Map<string, string>();
 const dirty = new Set<string>();
+/** The encoding VS Code names for a copy, where a test has it name one. */
+const encodings = new Map<string, string>();
 const saves: string[] = [];
 const warnings: string[] = [];
 const phases: ApplyPhase[] = [];
@@ -58,6 +60,7 @@ beforeEach(() => {
     writeFileSync(pathOf(lib), 'L');
     copies.clear();
     dirty.clear();
+    encodings.clear();
     saves.length = 0;
     warnings.length = 0;
     phases.length = 0;
@@ -71,6 +74,7 @@ beforeEach(() => {
         }
         const text = () => copies.get(key)!;
         return {
+            encoding: encodings.get(key),
             getText: text,
             get isDirty() { return dirty.has(key); },
             get lineCount() { return text().split('\n').length; },
@@ -241,6 +245,18 @@ describe('an edit the producer wrote, undone while the editor\'s copy lags the f
         expect(phases).toEqual(['execute']);
     });
 
+    it('is refused when another tool changed the line breaks of the file the edit left', async () => {
+        const stack = commandStack([]);
+        await vscode.workspace.openTextDocument(net);
+
+        await stack.execute(producerEdit('a\nb'));
+        writeFileSync(pathOf(net), 'a\r\nb');
+        await stack.undo();
+
+        expect(warnings).toEqual(["Cannot undo 'Connect' because the document changed outside the diagram."]);
+        expect(onDisk(net)).toBe('a\r\nb');
+    });
+
     it('keeps a byte order mark on disk, and puts none in the copy', async () => {
         writeFileSync(pathOf(net), '﻿A');
         const stack = commandStack([]);
@@ -309,5 +325,82 @@ describe('a compound of edits the producer wrote, undone while the copy lags', (
         expect(warnings).toEqual([]);
         expect([copyOf(net), onDisk(net)]).toEqual(['C', 'C']);
         expect(told).toHaveLength(2);
+    });
+});
+
+describe('a file in another encoding than UTF-8', () => {
+    /** An edit made in the editor on a Latin-1 file, saved as Latin-1. */
+    async function editedAndSaved(stack: WorkflowCommandStack): Promise<void> {
+        writeFileSync(pathOf(net), Buffer.from('caf\u00e9', 'latin1'));
+        catchUp(net, 'caf\u00e9');
+        await stack.execute(new ReversibleWorkspaceEditCommand({
+            label: 'Rename',
+            uri: net,
+            computeEdits: async () => [new vscode.TextEdit(new vscode.Range(0, 0, 0, 4), 'caf\u00e9!')]
+        }));
+        writeFileSync(pathOf(net), Buffer.from('caf\u00e9!', 'latin1'));
+        dirty.delete(net.toString());
+    }
+
+    it('is undone in the copy, as before, where VS Code names its encoding', async () => {
+        const stack = commandStack([]);
+        encodings.set(net.toString(), 'windows1252');
+        await editedAndSaved(stack);
+        await stack.undo();
+
+        expect(warnings).toEqual([]);
+        expect(copyOf(net)).toBe('caf\u00e9');
+    });
+
+    it('is undone in the copy, as before, where its UTF-8 read shows characters it could not read', async () => {
+        const stack = commandStack([]);
+        await editedAndSaved(stack);
+        await stack.undo();
+
+        expect(warnings).toEqual([]);
+        expect(copyOf(net)).toBe('caf\u00e9');
+    });
+});
+
+describe('an undo of several files that cannot write one', () => {
+    it('puts back the files it wrote, does nothing, and says why', async () => {
+        const told: OutOfBandWrite[][] = [];
+        const stack = commandStack(told);
+        await vscode.workspace.openTextDocument(net);
+        await vscode.workspace.openTextDocument(lib);
+
+        await stack.execute(producerEditInFiles([[net, 'B'], [lib, 'M']]));
+        const write = fs.promises.writeFile.bind(fs.promises);
+        let writes = 0;
+        vi.spyOn(fs.promises, 'writeFile').mockImplementation((async (file: any, data: any, options: any) => {
+            writes += 1;
+            if (writes === 2) {
+                throw new Error('EACCES: permission denied');
+            }
+            return write(file, data, options);
+        }) as any);
+        await stack.undo();
+
+        expect(warnings).toEqual([`Cannot undo 'Rename port': ${pathOf(lib)} could not be written (EACCES: permission denied).`]);
+        expect([onDisk(net), onDisk(lib)]).toEqual(['B', 'M']);
+        expect(stack.canUndo()).toBe(true);
+        expect(told).toHaveLength(1);
+        expect(phases).toEqual(['execute']);
+    });
+});
+
+describe('a compound whose parts put one file back, one on disk and one in the editor', () => {
+    it('tells the host nothing of the write the editor\'s save superseded', async () => {
+        const told: OutOfBandWrite[][] = [];
+        const stack = commandStack(told);
+
+        await stack.execute(new CompoundCommandThatMayChangeNothing([producerEdit('B'), producerEdit('C')]));
+        catchUp(net, 'B');
+        await stack.undo();
+
+        expect(warnings).toEqual([]);
+        expect([copyOf(net), onDisk(net)]).toEqual(['A', 'A']);
+        expect(saves).toEqual([net.toString()]);
+        expect(told).toHaveLength(1);
     });
 });

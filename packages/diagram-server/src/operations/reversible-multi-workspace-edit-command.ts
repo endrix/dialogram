@@ -2,7 +2,18 @@ import * as vscode from 'vscode';
 import type { CommandThatMayChangeNothing, CommandThatMayRefuse } from '../server/command-stack';
 import type { ApplyPhase } from './reversible-workspace-edit-command';
 import type { CommandThatWritesOutOfBand, OutOfBandWrite } from '../server/out-of-band-writes';
-import { fileTheCopyLags, forTheEditor, messageOf, sameText, writeOnDisk } from './file-on-disk';
+import { fileTheCopyLags, forTheEditor, messageOf, sameOnDisk, sameText, writeOnDisk } from './file-on-disk';
+
+/** Put back the files `written`, last written first, each as it `was`: as far as each can be written. */
+async function putBackOnDisk(written: Array<{ uri: vscode.Uri; was: string }>): Promise<void> {
+    for (const { uri, was } of [...written].reverse()) {
+        try {
+            await writeOnDisk(uri, was);
+        } catch {
+            // As it can be: the warning that follows says the whole was not done.
+        }
+    }
+}
 
 /**
  * The edits a command applies, by file; nothing (or an empty list) when there
@@ -65,11 +76,14 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
     private refusedLast = false;
     /** The files the last execute had its producer write, as it left them. */
     private writtenOutOfBand: OutOfBandWrite[] = [];
+    /** The files the last undo or redo put back in the editor, and saved. */
+    private savedInTheEditor: string[] = [];
 
     constructor(private readonly options: ReversibleMultiWorkspaceEditCommandOptions) {}
 
     async execute(): Promise<void> {
         this.unchanged = false;
+        this.savedInTheEditor = [];
         const plan = await this.options.computeEdits();
         // The files the producer changed, read back where it wrote them: on
         // disk whatever becomes of the edits below, files named with none
@@ -157,6 +171,11 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
         return this.writtenOutOfBand;
     }
 
+    /** The files the last undo or redo put back in the editor, and saved. */
+    writtenInTheEditor(): readonly string[] {
+        return this.savedInTheEditor;
+    }
+
     async undo(): Promise<void> {
         await this.putBack('undo');
     }
@@ -176,34 +195,56 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
     private async putBack(phase: 'undo' | 'redo'): Promise<void> {
         this.refusedLast = false;
         this.writtenOutOfBand = [];
+        this.savedInTheEditor = [];
         if (!this.snapshots || this.snapshots.length === 0) {
             return;
         }
 
-        const files: Array<{ uri: vscode.Uri; doc: vscode.TextDocument; to: string; lags: boolean }> = [];
+        const files: Array<{ uri: vscode.Uri; doc: vscode.TextDocument; to: string; onDisk: string | undefined }> = [];
         for (const s of this.snapshots) {
             const [from, to] = phase === 'undo' ? [s.afterText, s.beforeText] : [s.beforeText, s.afterText];
             const doc = await vscode.workspace.openTextDocument(s.uri);
             const onDisk = await fileTheCopyLags(s.uri, doc);
-            if (!sameText(onDisk ?? doc.getText(), from)) {
+            if (onDisk !== undefined ? !sameOnDisk(onDisk, from) : !sameText(doc.getText(), from)) {
                 this.refusedLast = true;
                 void vscode.window.showWarningMessage(
                     `Cannot ${phase} '${this.options.label}' because a document changed outside the diagram.`
                 );
                 return;
             }
-            files.push({ uri: s.uri, doc, to, lags: onDisk !== undefined });
+            files.push({ uri: s.uri, doc, to, onDisk });
         }
 
-        // The copies first, in one edit VS Code may refuse whole; then saved,
-        // the diagram being read from disk, and its save reloading it.
-        const inTheEditor = files.filter(file => !file.lags);
+        // On disk first: a write that fails, or the editor's edit refused
+        // after, puts back the files written before it, and nothing is done.
+        const written: Array<{ uri: vscode.Uri; was: string }> = [];
+        for (const file of files) {
+            if (file.onDisk === undefined) {
+                continue;
+            }
+            try {
+                await writeOnDisk(file.uri, file.to);
+                written.push({ uri: file.uri, was: file.onDisk });
+            } catch (error) {
+                await putBackOnDisk(written);
+                this.refusedLast = true;
+                void vscode.window.showWarningMessage(
+                    `Cannot ${phase} '${this.options.label}': ${file.uri.fsPath} could not be written (${messageOf(error)}).`
+                );
+                return;
+            }
+        }
+
+        // The copies in one edit VS Code may refuse whole; then saved, the
+        // diagram being read from disk, and its save reloading it.
+        const inTheEditor = files.filter(file => file.onDisk === undefined);
         if (inTheEditor.length > 0) {
             const workspaceEdit = new vscode.WorkspaceEdit();
             for (const file of inTheEditor) {
                 workspaceEdit.set(file.uri, [new vscode.TextEdit(fullDocumentRange(file.doc), forTheEditor(file.to))]);
             }
             if (!await vscode.workspace.applyEdit(workspaceEdit)) {
+                await putBackOnDisk(written);
                 this.refusedLast = true;
                 return;
             }
@@ -214,24 +255,8 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
             }
         }
 
-        const notWritten: string[] = [];
-        for (const file of files.filter(each => each.lags)) {
-            try {
-                await writeOnDisk(file.uri, file.to);
-                this.writtenOutOfBand.push({ uri: file.uri.toString(), text: file.to });
-            } catch (error) {
-                notWritten.push(`${file.uri.fsPath} (${messageOf(error)})`);
-            }
-        }
-        if (notWritten.length > 0) {
-            void vscode.window.showWarningMessage(
-                `Cannot ${phase} '${this.options.label}' whole: ${notWritten.join(', ')} could not be written.`
-            );
-            if (inTheEditor.length === 0 && this.writtenOutOfBand.length === 0) {
-                this.refusedLast = true;
-                return;
-            }
-        }
+        this.writtenOutOfBand = files.filter(file => file.onDisk !== undefined).map(file => ({ uri: file.uri.toString(), text: file.to }));
+        this.savedInTheEditor = inTheEditor.map(file => file.uri.toString());
         await this.options.afterApply?.(phase);
     }
 
@@ -250,7 +275,7 @@ export class ReversibleMultiWorkspaceEditCommand implements CommandThatMayChange
         return this.unchanged;
     }
 
-    /** Whether the last undo or redo did nothing: a document had changed outside the diagram (it said so), or the edit or every write was refused. */
+    /** Whether the last undo or redo did nothing: a document had changed outside the diagram (it said so), or the edit or a write was refused. */
     refused(): boolean {
         return this.refusedLast;
     }

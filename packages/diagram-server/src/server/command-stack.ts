@@ -64,21 +64,29 @@ export function refused(command: Command | undefined): boolean {
  * producer, or its undo where the editor's copy lagged), each as it is now.
  * A compound's are its parts', a file two parts wrote as the last to run
  * left it: the first part, when the compound was `undone`, its parts undone
- * last first. One that cannot say wrote nothing out of band.
+ * last first; and none when that part put it back in the editor and saved
+ * it. One that cannot say wrote nothing out of band.
  */
 export function outOfBandWrites(command: Command, undone = false): OutOfBandWrite[] {
+    const byUri = new Map<string, OutOfBandWrite>();
+    for (const { uri, text } of writesOf(command, undone)) {
+        byUri.delete(uri);
+        if (text !== undefined) {
+            byUri.set(uri, { uri, text });
+        }
+    }
+    return [...byUri.values()];
+}
+
+/** The files `command` wrote, in the order its parts ran: out of band with the `text` written, in the editor with none. */
+function writesOf(command: Command, undone: boolean): Array<{ uri: string; text?: string }> {
     const candidate = command as Partial<CommandThatWritesOutOfBand>;
     if (typeof candidate.outOfBandWrites === 'function') {
-        return [...candidate.outOfBandWrites()];
+        return [...(candidate.writtenInTheEditor?.() ?? []).map(uri => ({ uri })), ...candidate.outOfBandWrites()];
     }
     if (command instanceof CompoundCommand) {
-        const byUri = new Map<string, OutOfBandWrite>();
         const parts = undone ? [...partsOf(command)].reverse() : partsOf(command);
-        for (const write of parts.flatMap(part => outOfBandWrites(part, undone))) {
-            byUri.delete(write.uri);
-            byUri.set(write.uri, write);
-        }
-        return [...byUri.values()];
+        return parts.flatMap(part => writesOf(part, undone));
     }
     return [];
 }
