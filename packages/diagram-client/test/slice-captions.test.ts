@@ -45,9 +45,10 @@ describe('index labels sharing a port end', () => {
         // A variable's name where each wire that carries it leaves the operator computing it.
         const edge = (id: string, label: string, route: Array<{ x: number; y: number }>) =>
             ({ id, args: { [M.EDGE_FROM_INDEX]: label, [M.EDGE_FROM_INDEX_LABEL]: label, [M.EDGE_SLICE]: true }, routingPoints: route });
-        // `a` and `c` leave together, 60 along before they part; `d` turns down at once, its own way.
+        // `a` and `c` leave together, 60 along before they part (and after a stub of 6 as ELK draws them:
+        // 6 across, then down together, then apart); `b` goes up, `d` down at once, each its own way.
         const a = edge('a', 't', [{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: -40 }]);
-        const b = edge('b', 'u', [{ x: 0, y: 0 }, { x: 200, y: 0 }]);
+        const b = edge('b', 'u', [{ x: 0, y: 0 }, { x: 0, y: -80 }]);
         const c = edge('c', 't', [{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 40 }]);
         const d = edge('d', 't', [{ x: 0, y: 0 }, { x: 0, y: 80 }]);
         const port = { outgoingEdges: [a, b, c, d] };
@@ -59,9 +60,34 @@ describe('index labels sharing a port end', () => {
         expect(indexLabelShift(b, 'from')).toBeGreaterThan(0);
         // Written where its wire goes, after the others.
         expect(indexLabelShift(d, 'from')).toBeGreaterThan(indexLabelShift(b, 'from'));
+        // Together after a short stub, as far as the label stands: once.
+        const s1 = edge('s1', 't', [{ x: 0, y: 0 }, { x: 6, y: 0 }, { x: 6, y: 50 }, { x: 40, y: 50 }]);
+        const s2 = edge('s2', 't', [{ x: 0, y: 0 }, { x: 6, y: 0 }, { x: 6, y: 90 }, { x: 40, y: 90 }]);
+        const stub = { outgoingEdges: [s1, s2] };
+        for (const e of [s1, s2]) {
+            (e as any).source = stub;
+        }
+        expect([s1, s2].map(e => indexLabelRepeats(e, 'from'))).toEqual([false, true]);
         // An edge with no label there, or alone, repeats nothing.
         expect(indexLabelRepeats({ id: 'x', args: {}, source: port }, 'from')).toBe(false);
         expect(indexLabelRepeats(a, 'to')).toBe(false);
+    });
+
+    it('are each written on its own wire where one that says something else, or nothing, runs with them', async () => {
+        const { indexLabelRepeats, indexLabelShift } = await import('../src/views');
+        const { WorkflowDiagramMetadata: M } = await import('@dialogram/shared');
+        // `[3:0]` on two wires and all of the port on a third, all three along one stretch: one `[3:0]` there
+        // would not say which wires take it.
+        const route = (y: number) => [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y }, { x: 90, y }];
+        const lo1 = { id: 'lo1', args: { [M.EDGE_FROM_INDEX]: '3:0', [M.EDGE_SLICE]: true }, routingPoints: route(-60) };
+        const all = { id: 'all', args: {}, routingPoints: route(0) };
+        const lo2 = { id: 'lo2', args: { [M.EDGE_FROM_INDEX]: '3:0', [M.EDGE_SLICE]: true }, routingPoints: route(60) };
+        const port = { outgoingEdges: [lo1, all, lo2] };
+        for (const e of [lo1, all, lo2]) {
+            (e as any).source = port;
+        }
+        expect(indexLabelRepeats(lo2, 'from')).toBe(false);
+        expect(indexLabelShift(lo2, 'from')).toBeGreaterThan(0);
     });
 
     it('are drawn only by the first of the wires that say the same', () => {

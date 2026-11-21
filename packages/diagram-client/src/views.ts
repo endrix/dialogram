@@ -544,30 +544,30 @@ export function edgeDashOffset(edge: unknown, drawnLength: number): number {
 }
 
 /**
- * Whether two wires at one port end leave it (or reach it) together for as
- * long as a label of `text` stands there: from the same point, the same way,
- * both at least that far before they turn. Read from the routes they were
- * laid out with; a wire without one is taken as going its own way.
+ * Whether two wires at one port end leave it (or reach it) together as far as
+ * `reach` along them: on top of each other all that way, read from the routes
+ * they were laid out with (a wire without one goes its own way). A label at
+ * that distance on either stands in one place.
  */
-function togetherAt(a: unknown, b: unknown, end: 'from' | 'to', text: string): boolean {
-    const first = (edge: unknown) => {
-        const route = (edge as any)?.routingPoints as Array<{ x: number; y: number }> | undefined;
-        if (!Array.isArray(route) || route.length < 2) {
-            return undefined;
-        }
-        return end === 'from' ? [route[0], route[1]] : [route[route.length - 1], route[route.length - 2]];
+function togetherAt(a: unknown, b: unknown, end: 'from' | 'to', reach: number): boolean {
+    const route = (edge: unknown) => {
+        const points = (edge as any)?.routingPoints as Array<{ x: number; y: number }> | undefined;
+        return Array.isArray(points) && points.length >= 2 ? points : undefined;
     };
-    const p = first(a), q = first(b);
-    if (!p || !q || Math.hypot(p[0].x - q[0].x, p[0].y - q[0].y) > 0.5) {
+    const p = route(a), q = route(b);
+    if (!p || !q || routeLength(p) < reach || routeLength(q) < reach) {
         return false;
     }
-    const dir = (s: Array<{ x: number; y: number }>) => ({ x: Math.sign(s[1].x - s[0].x), y: Math.sign(s[1].y - s[0].y) });
-    const dp = dir(p), dq = dir(q);
-    if (dp.x !== dq.x || dp.y !== dq.y) {
-        return false;
+    const fromEnd = end === 'from' ? 'start' : 'end';
+    for (let along = 0; ; along = Math.min(reach, along + 2)) {
+        const u = pointAlongRoute(p, fromEnd, along, 0), v = pointAlongRoute(q, fromEnd, along, 0);
+        if (!u || !v || Math.hypot(u.x - v.x, u.y - v.y) > 0.5) {
+            return false;
+        }
+        if (along >= reach) {
+            return true;
+        }
     }
-    const reach = Math.min(Math.hypot(p[1].x - p[0].x, p[1].y - p[0].y), Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y));
-    return reach >= (end === 'from' ? 12 : 18) + text.length * INDEX_LABEL_CHAR_PX + INDEX_LABEL_GAP_PX;
 }
 
 /** The shifts worked out per port end, once per model (ports are new objects in each). */
@@ -623,16 +623,24 @@ export function indexLabelShift(edge: unknown, end: 'from' | 'to'): number {
             return (Number.isFinite(ta) && Number.isFinite(tb) ? tb - ta : 0) || a.order - b.order;
         });
         // A label the same as one before it, on a wire that leaves (or comes)
-        // with that one (a variable's name on each wire that leaves with it),
-        // is not written again (indexLabelRepeats): the first one says it, and
-        // it takes no room of its own. On a wire that goes its own way it is
-        // written, after the others.
+        // with that one as far as it stands (a variable's name on each wire
+        // that leaves with it), is not written again (indexLabelRepeats): it
+        // would stand where that one does, which says it, and it takes no room
+        // of its own. Unless a wire that says something else, or nothing, runs
+        // there too: then the one label would not say which wires it is of,
+        // and each is written on its own wire, after the others, as one on a
+        // wire that goes its own way is.
+        const everyOne = attached ? [...(attached as Iterable<any>)] : [];
         let shift = 0;
         const placed = new Map<string, unknown[]>();
         for (const { e } of siblings) {
             const text = indexLabelText(e.args, end) ?? '';
             const same = placed.get(text) ?? [];
-            if (same.some(other => togetherAt(other, e, end, text))) {
+            const reach = indexLabelDistance(text, end === 'from' ? 12 : 18, 0);
+            const along = (other: unknown) => togetherAt(other, e, end, reach)
+                && !everyOne.some(w => w !== e && w !== other && indexLabelText(w?.args, end) !== text
+                    && togetherAt(other, w, end, reach));
+            if (same.some(along)) {
                 cache.set(cacheKey(String(e.id)), 0);
                 cache.set(`${end}\u0000again\u0000${String(e.id)}`, 1);
                 continue;
