@@ -724,7 +724,7 @@ export class ChatRuntime {
         this.sessionUri.set(data.sessionId, uri);
         this.sessions.setCurrentSession(data.sessionId);
         await this.postHistory(uri, data.sessionId, {
-          mode: this.acp.getSessionMode(data.sessionId) ?? loaded.mode,
+          mode: this.acp.getSessionMode(data.sessionId),
           model: this.acp.getSessionModel(data.sessionId) ?? loaded.provider,
         });
         return;
@@ -915,6 +915,19 @@ export class ChatRuntime {
           });
           this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
           return;
+        }
+        // A message runs in the mode it was sent in (its row says so): an agent
+        // holding another -- a session re-attached above takes the agent's -- is
+        // told first.
+        if (
+          (data.mode === "plan" || data.mode === "build") &&
+          this.acp.getSessionMode(sessionId) !== data.mode
+        ) {
+          const sentIn: "plan" | "build" = data.mode;
+          await this.acp
+            .setSessionMode(sessionId, sentIn)
+            .then(() => this.sessions.updateSessionMode(sentIn))
+            .catch((error) => console.warn(`[chat] could not set mode '${sentIn}':`, error));
         }
         // Pass-through slash suggestions and natural language both go to the agent.
         await this.acp.sendPrompt(sessionId, data.text, images);

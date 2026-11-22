@@ -198,9 +198,10 @@ describe('SessionManager', () => {
     it('should load existing session', async () => {
       const session = await sessionManager.loadSession('test-session-123');
 
-      // loadSession now threads the workflow dir + file through so the ACP
-      // client can re-load the session in the agent after a restart.
-      expect(mockACPClient.loadSession).toHaveBeenCalledWith('test-session-123', '/test', '/test/workflow.py');
+      // loadSession threads the workflow dir + file through so the ACP client
+      // can re-load the session in the agent after a restart, and the stored
+      // mode, which the session is in when the agent does not say.
+      expect(mockACPClient.loadSession).toHaveBeenCalledWith('test-session-123', '/test', '/test/workflow.py', 'build');
       expect(session).toBeDefined();
       expect(session?.id).toBe('test-session-123');
       expect(sessionManager.getCurrentSessionId()).toBe('test-session-123');

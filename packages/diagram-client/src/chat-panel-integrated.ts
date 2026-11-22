@@ -212,6 +212,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   private isVisible = false;
   private isCompact = false;
   private currentMode: 'plan' | 'build' = 'build';
+  /** The mode the turn in progress was sent in: its reply's, though the mode is switched while it runs. */
+  private turnMode: 'plan' | 'build' | undefined;
   /** A task the host asked for (`chat.startTask`), sent once its session exists. */
   private pendingTask: { name: string; mode: 'plan' | 'build'; prompt: string } | undefined;
   private currentSessionId: string | null = null;
@@ -805,7 +807,10 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     this.clearTimeline();
 
     const messages: any[] = Array.isArray(data.messages) ? data.messages : [];
+    // A stored reply has no mode of its own: it is the mode of the message it answers.
+    let askedIn: 'plan' | 'build' | undefined;
     messages.forEach((m, i) => {
+      if (m.role === 'user') askedIn = m.mode === 'plan' || m.mode === 'build' ? m.mode : undefined;
       // Persisted tool calls restore as tool timeline items — the same chip the
       // live path renders — keeping the text parts on either side distinct.
       if (m.role === 'tool') {
@@ -822,7 +827,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         role: m.role === 'assistant' || m.role === 'user' ? m.role : 'system',
         content: m.content ?? '',
         timestamp: m.timestamp ?? Date.now(),
-        mode: m.mode,
+        mode: m.mode ?? (m.role === 'assistant' ? askedIn : undefined),
         ...(typeof m.messageId === 'string' ? { messageId: m.messageId } : {}),
         ...(typeof m.thinking === 'string' && m.thinking ? { thinking: m.thinking } : {}),
         ...(typeof m.images === 'number' && m.images > 0 ? { imageCount: m.images } : {}),
@@ -831,6 +836,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     if (data.mode === 'plan' || data.mode === 'build') {
       this.currentMode = data.mode;
     }
+    if (!this.isStreaming) this.turnMode = undefined;
     if (typeof data.model === 'string' && data.model) {
       this.currentModel = data.model;
     }
@@ -948,6 +954,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     // A new prompt continues from the revert point; opencode drops the reverted
     // tail, so the session is no longer in a reverted state.
     this.reverted = false;
+    this.turnMode = this.currentMode;
     this.pushMessage('user', text, this.currentMode, undefined, undefined, images);
     const row = this.timeline.at(-1);
     this.lastSent = row ? { row, text, images, fromComposer } : undefined;
@@ -992,7 +999,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         role: 'assistant',
         content: this.streamingText,
         timestamp: Date.now(),
-        mode: this.currentMode,
+        mode: this.turnMode ?? this.currentMode,
         ...(this.streamingThinking ? { thinking: this.streamingThinking } : {}),
       });
       this.streamingText = '';
@@ -1121,6 +1128,12 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       </div>`;
     }
     return nothing;
+  }
+
+  /** What the composer asks for: a question or a plan in Plan, which changes nothing; the commands only where the product has some. */
+  private placeholder(): string {
+    const ask = this.currentMode === 'plan' ? 'Ask about this diagram, or plan a change…' : 'Describe a change or ask anything…';
+    return this.availableCommands.length > 0 ? `${ask}  ("/" for commands)` : ask;
   }
 
   private switchMode(mode: 'plan' | 'build'): void {
@@ -1285,7 +1298,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       this.update();
       return true;
     }
-    if (e.key === 'Enter' || e.key === 'Tab') {
+    if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
       e.preventDefault();
       this.applyMenuSelection(this.menuIndex);
       return true;
@@ -1990,9 +2003,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
           <textarea
             class="chat-input"
             rows="1"
-            placeholder=${this.currentMode === 'plan'
-              ? 'Ask about this workflow…  ("/" for commands)'
-              : 'Describe a change or ask anything…  ("/" for commands)'}
+            placeholder=${this.placeholder()}
             .value=${this.inputValue}
             @input=${(e: Event) => {
               const el = e.target as HTMLTextAreaElement;
@@ -2008,7 +2019,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
             }}
           ></textarea>
           <div class="chat-composer-bar">
-            <div class="chat-mode-seg" title="Agent mode (Ctrl+Shift+B / Ctrl+Shift+P)">
+            <div class="chat-mode-seg" title="Agent mode (Shift+Tab switches)">
               <button
                 class=${this.currentMode === 'build' ? 'active' : ''}
                 @click=${() => this.switchMode('build')}
@@ -2072,13 +2083,13 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       }
       return;
     }
-    if (e.ctrlKey && e.shiftKey && e.key === 'P') {
+    // Shift+Tab switches between Plan and Build, as agents' own prompts do. Not
+    // Ctrl+Shift+P / B: the webview hands those on to VS Code too, which opens
+    // its Command Palette or build tasks over the chat and takes the focus.
+    if (e.key === 'Tab' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
       e.preventDefault();
-      this.switchMode('plan');
-    }
-    if (e.ctrlKey && e.shiftKey && e.key === 'B') {
-      e.preventDefault();
-      this.switchMode('build');
+      e.stopPropagation();
+      this.switchMode(this.currentMode === 'plan' ? 'build' : 'plan');
     }
   }
 }

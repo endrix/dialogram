@@ -11,7 +11,7 @@
  * Before the fix the whole turn was flattened into one concatenated assistant
  * message ("AB"), dropping the tool call and destroying the boundary.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ChatRuntime } from '../src/extension/chat/chat-runtime';
 import type { ChatPayload } from '../src/api';
 
@@ -82,5 +82,45 @@ describe('restored transcript keeps tool calls and part boundaries', () => {
         expect(assistantTexts).toEqual(['A', 'B']);
         // No run-on message that concatenates across the tool call.
         expect(assistantTexts).not.toContain('AB');
+    });
+});
+
+describe('the mode a session runs in', () => {
+    it("is shown, restored, as the agent's", async () => {
+        const { runtime, posts, acp } = makeRuntime();
+        await createSessionAndTurn(runtime, acp);
+        acp.getSessionMode = () => 'plan';
+        await runtime.handleMessage(URI, { type: 'chat.loadSession', data: { sessionId: 'session-1' } });
+        const history = posts.filter(p => p.payload.type === 'chat.sessionHistory').pop();
+        expect(history!.payload.data.mode).toBe('plan');
+    });
+
+    it('is the one a message was sent in: an agent holding another is told first, and the choice stored', async () => {
+        const { runtime, acp } = makeRuntime();
+        await createSessionAndTurn(runtime, acp);
+        let mode = 'plan';
+        const order: string[] = [];
+        acp.getSessionMode = () => mode;
+        acp.setSessionMode = vi.fn(async (_id: string, m: string) => {
+            order.push(`mode:${m}`);
+            mode = m;
+        });
+        acp.sendPrompt = vi.fn(async () => {
+            order.push('prompt');
+        });
+        await runtime.handleMessage(URI, { type: 'chat.sendMessage', data: { sessionId: 'session-1', text: 'edit it', mode: 'build' } });
+        expect(order).toEqual(['mode:build', 'prompt']);
+        expect((runtime as any).sessions.getSession('session-1')?.mode).toBe('build');
+    });
+
+    it('is left as it is for a message that names none', async () => {
+        const { runtime, acp } = makeRuntime();
+        await createSessionAndTurn(runtime, acp);
+        acp.getSessionMode = () => 'plan';
+        acp.setSessionMode = vi.fn(async () => undefined);
+        acp.sendPrompt = vi.fn(async () => undefined);
+        await runtime.handleMessage(URI, { type: 'chat.sendMessage', data: { sessionId: 'session-1', text: 'what is this?' } });
+        expect(acp.setSessionMode).not.toHaveBeenCalled();
+        expect(acp.sendPrompt).toHaveBeenCalled();
     });
 });
