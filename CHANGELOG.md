@@ -1499,8 +1499,10 @@ platform that hands it one.
   the agent's answer to `session/load` and recorded a default. It now takes
   the mode the agent says, else the one stored, and a session is in the mode
   last chosen for it: an agent that says another (opencode takes the mode of
-  the session's last message) is told, and one that refuses keeps its own,
-  which the panel then shows. A reply is tagged with the mode its message was
+  the session's last message) or says none is told, and one that cannot be
+  keeps its own, which the panel then shows (the choice stays stored). A
+  message runs in the mode it was sent in: an agent holding another is told
+  before the prompt. A reply is tagged with the mode its message was
   sent in, though the mode is switched while it runs, and a restored reply
   with that of the message it answers (it had none). The mode shortcuts were
   Ctrl+Shift+P and Ctrl+Shift+B, which the webview also hands to VS Code: its
