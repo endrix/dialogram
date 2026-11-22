@@ -1494,6 +1494,21 @@ platform that hands it one.
 
 ### Fixed
 
+- **The chat's Plan and Build are what the agent runs.** A session opened
+  again after a reload showed Build whatever it was in: the client dropped
+  the agent's answer to `session/load` and recorded a default. It now takes
+  the mode the agent says, else the one stored, and a session is in the mode
+  last chosen for it: an agent that says another (opencode takes the mode of
+  the session's last message) is told, and one that refuses keeps its own,
+  which the panel then shows. A reply is tagged with the mode its message was
+  sent in, though the mode is switched while it runs, and a restored reply
+  with that of the message it answers (it had none). The mode shortcuts were
+  Ctrl+Shift+P and Ctrl+Shift+B, which the webview also hands to VS Code: its
+  Command Palette or build tasks opened over the chat and took what was typed
+  next. Shift+Tab in the composer switches the mode now. The Plan placeholder
+  says "diagram", not "workflow", and the "/" hint shows only where there are
+  commands.
+
 - **An edit drawn on the canvas shows without the file watcher.** An edit a
   product's producer writes itself (a connection, a node, a rename, a
   delete) changes the file on disk, and the editor applies nothing: the

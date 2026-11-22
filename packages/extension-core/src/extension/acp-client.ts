@@ -640,6 +640,7 @@ export class ACPClientService extends EventEmitter {
     sessionId: string,
     cwd?: string,
     workflowFile?: string,
+    storedMode?: "plan" | "build",
   ): Promise<void> {
     if (!this.connection) {
       throw new Error("ACP client is not connected");
@@ -673,7 +674,7 @@ export class ACPClientService extends EventEmitter {
 
     // Re-attach the same MCP servers (e.g. the runtime's MCP server) the session was
     // created with — otherwise a resumed session loses its tools.
-    await withTimeout(
+    const loaded = await withTimeout(
       this.connection.loadSession({
         sessionId,
         cwd: loadCwd,
@@ -689,7 +690,7 @@ export class ACPClientService extends EventEmitter {
     // Make sure the session is tracked locally so later mode/model/prompt calls
     // can find it.
     if (!session) {
-      this.sessions.set(sessionId, {
+      session = {
         id: sessionId,
         name: `Session ${sessionId.slice(0, 8)}`,
         cwd: loadCwd,
@@ -697,8 +698,14 @@ export class ACPClientService extends EventEmitter {
         mode: "build",
         availableModes: ["plan", "build"],
         workflowFile: wf,
-      });
+      };
+      this.sessions.set(sessionId, session);
     }
+    // Its mode is the one it was left in: what the agent says (opencode answers
+    // session/load with its config options), else what was stored -- never a
+    // default, which the panel would show while the agent runs another.
+    if (storedMode) session.mode = storedMode;
+    this.applyConfigOptions(session, (loaded as any)?.configOptions);
   }
 
   /**

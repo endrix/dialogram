@@ -438,6 +438,33 @@ describe('ACPClientService', () => {
     });
   });
 
+  describe('a session loaded again after a restart', () => {
+    const modeOption = (currentValue: string) => ({
+      configOptions: [{ id: 'mode', category: 'mode', currentValue, options: [{ value: 'build' }, { value: 'plan' }] }],
+    });
+
+    it('is in the mode the agent says it is in', async () => {
+      await client.start('/test/workspace');
+      mockConnection.loadSession.mockResolvedValue(modeOption('plan'));
+      await client.loadSession('ses_old', '/test/workspace', undefined, 'build');
+      expect(client.getSessionMode('ses_old')).toBe('plan');
+    });
+
+    it('is in the mode it was stored in when the agent does not say', async () => {
+      await client.start('/test/workspace');
+      mockConnection.loadSession.mockResolvedValue({});
+      await client.loadSession('ses_old', '/test/workspace', undefined, 'plan');
+      expect(client.getSessionMode('ses_old')).toBe('plan');
+    });
+
+    it('is in build when nothing says otherwise', async () => {
+      await client.start('/test/workspace');
+      mockConnection.loadSession.mockResolvedValue({});
+      await client.loadSession('ses_old', '/test/workspace');
+      expect(client.getSessionMode('ses_old')).toBe('build');
+    });
+  });
+
   describe('images in a prompt', () => {
     const image = { mimeType: 'image/png', data: 'iVBORw0KGgo=' };
 

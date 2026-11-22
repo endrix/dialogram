@@ -139,7 +139,8 @@ export class SessionManager {
       await this.acpClient.loadSession(
         sessionId,
         this.getWorkflowDirectory(session.workflowFile),
-        session.workflowFile
+        session.workflowFile,
+        session.mode
       );
       this.currentSessionId = sessionId;
       return session;
