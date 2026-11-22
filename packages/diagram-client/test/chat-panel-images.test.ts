@@ -28,6 +28,9 @@ function makePanel() {
     const panel = new ChatPanel();
     (panel as any).channel = { sendToHost: (method: string, env: any) => sent.push({ method, env }) };
     (panel as any).show = () => undefined;
+    // A chat is open: a message sent with none waits for its session first
+    // (chat-panel-first-message.test.ts).
+    (panel as any).currentSessionId = 'ses_1';
     return { panel: panel as any, sent };
 }
 
@@ -209,7 +212,8 @@ describe('images in the chat', () => {
         await panel.attachFiles([pngFile()]);
         panel.inputValue = 'a draft';
         panel.handleIncomingMessage('chat.startTask', { prompt: 'fix the run', mode: 'build', name: 'Fix' });
-        panel.handleIncomingMessage('chat.sessionCreated', { session: { id: 's2', name: 'Fix' } });
+        // The host names the request back.
+        panel.handleIncomingMessage('chat.sessionCreated', { session: { id: 's2', name: 'Fix' }, requestId: panel.createRequest });
         const message = sent.find(s => s.env?.type === 'chat.sendMessage');
         expect(message!.env.data.text).toBe('fix the run');
         expect('images' in message!.env.data).toBe(false);
@@ -227,7 +231,7 @@ describe('images in the chat', () => {
     it('says how many images a restored message had', () => {
         const { panel } = makePanel();
         panel.handleIncomingMessage('chat.sessionHistory', {
-            sessionId: 's1',
+            sessionId: 'ses_1',
             messages: [{ role: 'user', content: 'look', timestamp: 1, images: 2 }]
         });
         const row = panel.timeline.at(-1);

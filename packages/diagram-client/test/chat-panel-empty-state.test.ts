@@ -44,8 +44,11 @@ describe('chat panel empty-state + new session', () => {
         (panel as any).streamingText = 'half';
         (panel as any).showTyping = true;
 
+        // "+": the panel asks for it, and shows the one made.
+        (panel as any).createNewSession();
         (panel as any).handleIncomingMessage('chat.sessionCreated', {
-            session: { id: 's-new', name: 'Session 2' }
+            session: { id: 's-new', name: 'Session 2' },
+            requestId: (panel as any).createRequest
         });
 
         const timeline = (panel as any).timeline as Array<any>;

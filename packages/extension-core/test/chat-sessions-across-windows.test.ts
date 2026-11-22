@@ -53,6 +53,11 @@ function makeWindow(sessionId: string, kept?: SessionData[]) {
 }
 
 async function turn(w: ReturnType<typeof makeWindow>, sessionId: string, asked: string, answer: string): Promise<void> {
+    // A turn takes the agent seconds; a window's stamps run a millisecond or
+    // two ahead of the clock when it keeps two in one. Without this wait, two
+    // windows' turns in one millisecond (a fast machine) tie, and the order
+    // read back is no longer the order they were taken in.
+    await new Promise((resolve) => setTimeout(resolve, 10));
     await w.send('chat.sendMessage', { sessionId, text: asked, mode: 'build' });
     w.acp.emit('turnComplete', { sessionId, text: answer, model: 'model-a', parts: [{ type: 'text', text: answer }] });
     await w.settled();
@@ -461,6 +466,48 @@ describe('a chat across windows on the same folder (local, Remote-SSH)', () => {
         }
         await local.send('chat.getSessions', { shown: 'ses_1', keys: [] });
         expect(local.last('chat.sessionDeleted').data.reason).toBe('This chat was deleted. Create or select a session to continue.');
+    });
+
+    it('a message from a panel with no chat open makes a chat, not into the one current', async () => {
+        const w = makeWindow('ses_1');
+        await w.send('chat.createSession', { name: 'Review', mode: 'build' });
+        w.acp.createSession = async () => 'ses_2';
+        await w.send('chat.sendMessage', { sessionId: null, text: 'a new question', mode: 'build' });
+        expect(w.last('chat.sessionCreated').data).toMatchObject({ session: { id: 'ses_2' } });
+        expect(w.acp.sendPrompt.mock.calls.at(-1)?.[0]).toBe('ses_2');
+    });
+
+    it('made for a message sent with no chat open: no name asked, the next default one, its request named back', async () => {
+        const w = makeWindow('ses_1');
+        const ask = vi.spyOn(vscode.window, 'showInputBox');
+        try {
+            await w.send('chat.createSession', { mode: 'build', ask: false, requestId: 'create-1' });
+            expect(ask).not.toHaveBeenCalled();
+        } finally {
+            ask.mockRestore();
+        }
+        expect(w.last('chat.sessionCreated').data).toMatchObject({ session: { id: 'ses_1', name: 'Session 1' }, requestId: 'create-1' });
+    });
+
+    it('not made: the panel is told, for its request, and why', async () => {
+        const w = makeWindow('ses_1');
+        w.acp.createSession = async () => {
+            throw new Error('the agent went away');
+        };
+        await w.send('chat.createSession', { mode: 'build', ask: false, requestId: 'create-2' });
+        expect(w.last('chat.sessionCreateAborted').data).toEqual({ requestId: 'create-2' });
+        expect(w.last('chat.error').data.message).toMatch(/the agent went away/);
+    });
+
+    it('made, then something after fails: the panel is told it was made, and the error', async () => {
+        const w = makeWindow('ses_1');
+        (w.runtime as any).applyPending = async () => {
+            throw new Error('the mode could not be set');
+        };
+        await w.send('chat.createSession', { mode: 'build', ask: false, requestId: 'create-3' });
+        expect(w.last('chat.sessionCreateAborted')).toBeUndefined();
+        expect(w.last('chat.sessionCreated').data).toMatchObject({ session: { id: 'ses_1' }, requestId: 'create-3' });
+        expect(w.last('chat.error').data.message).toMatch(/the mode could not be set/);
     });
 
     it('deleted in one window leaves the other', async () => {

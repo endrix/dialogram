@@ -1494,6 +1494,19 @@ platform that hands it one.
 
 ### Fixed
 
+- **A first message sent with no chat open stays on screen.** The panel
+  sent it, the host made a session for it on the way, and the panel cleared
+  its transcript for that session, taking the message away while its answer
+  streamed in below nothing. Now the panel asks for the session first
+  (`chat.createSession` with `ask: false`: no name asked, the next default
+  one), shows "Creating session…", and sends the message once the session
+  exists, as it sends a "Fix with AI" task's. Until then another message
+  waits in the composer and "+" asks for no second session; a chat picked
+  meanwhile wins, and the waiting message goes back to the composer, as it
+  does when the session does not come (name prompt cancelled, an error, the
+  agent gone). A session made with "+" no longer shows a turn still running
+  in the chat left. A message sent with no session (`sessionId: null`)
+  makes one on the host rather than going into its current session.
 - **A chat is the machine's, not the window's: a local window and a
   Remote-SSH window on the same folder see the same chats.** Sessions and
   their transcripts were kept in the window's `workspaceState`, which VS Code
