@@ -582,13 +582,24 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         this.isLoadingSession = false;
         if (data?.session?.id) {
           this.currentSessionId = data.session.id;
-          // A fresh session starts with an empty transcript — clear whatever the
-          // previous session left on screen so its rows don't leak in. A brand-new
-          // session has no history to replay, so drop the replay guard too.
-          this.clearTimeline();
+          // Made for the message just sent, with no session open: that message
+          // (and what came after it) is the session's first turn, and stays.
+          const sent = data.forMessage ? this.lastSent?.row : undefined;
+          const first = sent ? this.timeline.indexOf(sent) : -1;
+          if (first >= 0) {
+            // What was on screen before it goes; the turn (streaming, typing) goes on.
+            this.timeline = this.timeline.slice(first);
+          } else {
+            // A fresh session starts with an empty transcript — clear whatever the
+            // previous session left on screen so its rows don't leak in.
+            this.clearTimeline();
+          }
+          // A brand-new session has no history to replay: drop the replay guard.
           this.suppressReplayStream = false;
           this.loadSessions();
           this.pushMessage('system', `Created session: ${data.session.name ?? data.session.id}`);
+          // Said before the turn it was made for.
+          if (first >= 0) this.timeline.unshift(this.timeline.pop()!);
         }
         this.update();
         // A task's session: send its message, as if typed, so it is in the

@@ -1494,6 +1494,13 @@ platform that hands it one.
 
 ### Fixed
 
+- **A first message sent with no chat open stays on screen.** The host makes
+  a session for it and tells the panel (`chat.sessionCreated`, now with
+  `forMessage: true`), and the panel used to clear its transcript as for any
+  new session, taking the message away while its answer streamed in below
+  nothing. The message now stays, under the "Created session" line, as the
+  session's first turn; what was on screen before it still goes. A session
+  made with "+" starts empty as before.
 - **A chat is the machine's, not the window's: a local window and a
   Remote-SSH window on the same folder see the same chats.** Sessions and
   their transcripts were kept in the window's `workspaceState`, which VS Code

@@ -922,7 +922,8 @@ export class ChatRuntime {
           await this.applyPending(sessionId);
           this.postToWebview(uri, {
             type: "chat.sessionCreated",
-            data: { session },
+            // Made for the message being sent: the panel keeps it on screen.
+            data: { session, forMessage: true },
           });
           await this.sendSessions(uri, file);
         }
