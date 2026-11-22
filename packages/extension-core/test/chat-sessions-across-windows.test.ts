@@ -53,6 +53,11 @@ function makeWindow(sessionId: string, kept?: SessionData[]) {
 }
 
 async function turn(w: ReturnType<typeof makeWindow>, sessionId: string, asked: string, answer: string): Promise<void> {
+    // A turn takes the agent seconds; a window's stamps run a millisecond or
+    // two ahead of the clock when it keeps two in one. Without this wait, two
+    // windows' turns in one millisecond (a fast machine) tie, and the order
+    // read back is no longer the order they were taken in.
+    await new Promise((resolve) => setTimeout(resolve, 10));
     await w.send('chat.sendMessage', { sessionId, text: asked, mode: 'build' });
     w.acp.emit('turnComplete', { sessionId, text: answer, model: 'model-a', parts: [{ type: 'text', text: answer }] });
     await w.settled();
@@ -461,6 +466,15 @@ describe('a chat across windows on the same folder (local, Remote-SSH)', () => {
         }
         await local.send('chat.getSessions', { shown: 'ses_1', keys: [] });
         expect(local.last('chat.sessionDeleted').data.reason).toBe('This chat was deleted. Create or select a session to continue.');
+    });
+
+    it('a message from a panel with no chat open makes a chat, not into the one current', async () => {
+        const w = makeWindow('ses_1');
+        await w.send('chat.createSession', { name: 'Review', mode: 'build' });
+        w.acp.createSession = async () => 'ses_2';
+        await w.send('chat.sendMessage', { sessionId: null, text: 'a new question', mode: 'build' });
+        expect(w.last('chat.sessionCreated').data).toMatchObject({ session: { id: 'ses_2' }, forMessage: true });
+        expect(w.acp.sendPrompt.mock.calls.at(-1)?.[0]).toBe('ses_2');
     });
 
     it('deleted in one window leaves the other', async () => {

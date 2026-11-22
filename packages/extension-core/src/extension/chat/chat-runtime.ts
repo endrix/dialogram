@@ -907,9 +907,13 @@ export class ChatRuntime {
         }
         this.setViewTrail(file, data?.viewTrail);
         await this.ensureStarted(cwd);
-        // Fall back to the current session if the panel didn't pass one.
+        // A panel with no chat open says so (null): its message makes a chat,
+        // never goes into one it does not show. Fall back to the current
+        // session only for a caller that names none.
         let sessionId: string | undefined =
-          data.sessionId || this.sessions.getCurrentSessionId() || undefined;
+          data.sessionId === null
+            ? undefined
+            : data.sessionId || this.sessions.getCurrentSessionId() || undefined;
         if (!sessionId) {
           const session = await this.sessions.createSession(
             file,

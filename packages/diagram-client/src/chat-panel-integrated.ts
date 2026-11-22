@@ -579,16 +579,24 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         break;
 
       case 'chat.sessionCreated':
+        // Made for a message sent with no chat open, while another chat has
+        // been picked since: that one stays on screen; the new one is listed.
+        if (data?.forMessage && this.currentSessionId && this.currentSessionId !== data.session?.id) {
+          this.loadSessions();
+          break;
+        }
         this.isLoadingSession = false;
         if (data?.session?.id) {
           this.currentSessionId = data.session.id;
           // Made for the message just sent, with no session open: that message
-          // (and what came after it) is the session's first turn, and stays.
+          // is the session's first turn, and stays.
           const sent = data.forMessage ? this.lastSent?.row : undefined;
           const first = sent ? this.timeline.indexOf(sent) : -1;
           if (first >= 0) {
-            // What was on screen before it goes; the turn (streaming, typing) goes on.
-            this.timeline = this.timeline.slice(first);
+            // The turn's rows come after this, so the message alone stays: what
+            // the panel said before it (a note, "Stopped") goes, and the turn
+            // (streaming, typing) goes on.
+            this.timeline = [sent!];
           } else {
             // A fresh session starts with an empty transcript — clear whatever the
             // previous session left on screen so its rows don't leak in.
@@ -603,8 +611,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         }
         this.update();
         // A task's session: send its message, as if typed, so it is in the
-        // transcript like any other.
-        if (data?.session?.id && this.pendingTask) {
+        // transcript like any other. One made for a typed message is not it.
+        if (data?.session?.id && this.pendingTask && !data.forMessage) {
           const task = this.pendingTask;
           this.pendingTask = undefined;
           // Its prompt alone: what the composer holds (text, images) stays there.

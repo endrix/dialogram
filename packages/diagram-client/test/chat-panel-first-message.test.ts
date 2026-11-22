@@ -60,6 +60,37 @@ describe('the first message, sent with no session open', () => {
     });
 });
 
+describe('while the agent starts, after the first message was sent', () => {
+    it('a note the panel made after the message goes when the session is made', () => {
+        const { panel } = makePanel();
+        panel.sendPrompt('hello', [], true);
+        panel.pushMessage('system', 'Stopped');
+        panel.handleIncomingMessage('chat.sessionCreated', { session: { id: 'ses_1', name: 'Session 1' }, forMessage: true });
+        expect(said(panel)).toEqual(['system: Created session: Session 1', 'user: hello']);
+    });
+
+    it('a chat picked meanwhile stays on screen; the new one is only listed', () => {
+        const { panel, sent } = makePanel();
+        panel.sendPrompt('hello', [], true);
+        panel.loadSession('ses_A');
+        panel.handleIncomingMessage('chat.sessionCreated', { session: { id: 'ses_new', name: 'Session 2' }, forMessage: true });
+        expect(panel.currentSessionId).toBe('ses_A');
+        expect(panel.isLoadingSession).toBe(true);
+        expect(sent.at(-1)?.type).toBe('chat.getSessions');
+    });
+
+    it('a task asked for meanwhile waits for its own session', () => {
+        const { panel, sent } = makePanel();
+        panel.sendPrompt('hello', [], true);
+        panel.handleIncomingMessage('chat.startTask', { prompt: 'fix the run', mode: 'build', name: 'Fix' });
+        panel.handleIncomingMessage('chat.sessionCreated', { session: { id: 'ses_1', name: 'Session 1' }, forMessage: true });
+        expect(sent.filter((e) => e.type === 'chat.sendMessage').map((e) => e.data.text)).toEqual(['hello']);
+        panel.handleIncomingMessage('chat.turnEnd', { sessionId: 'ses_1' });
+        panel.handleIncomingMessage('chat.sessionCreated', { session: { id: 'ses_2', name: 'Fix' } });
+        expect(sent.filter((e) => e.type === 'chat.sendMessage').map((e) => e.data.text)).toEqual(['hello', 'fix the run']);
+    });
+});
+
 describe('a session made with "+"', () => {
     it('starts on an empty transcript, as before', () => {
         const { panel } = makePanel();
