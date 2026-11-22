@@ -723,7 +723,6 @@ export class ChatRuntime {
         }
         this.sessionUri.set(data.sessionId, uri);
         this.sessions.setCurrentSession(data.sessionId);
-        await this.restoreSessionMode(data.sessionId, loaded.mode);
         await this.postHistory(uri, data.sessionId, {
           mode: this.acp.getSessionMode(data.sessionId),
           model: this.acp.getSessionModel(data.sessionId) ?? loaded.provider,
@@ -917,6 +916,19 @@ export class ChatRuntime {
           this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
           return;
         }
+        // A message runs in the mode it was sent in (its row says so): an agent
+        // holding another -- a session re-attached above takes the agent's -- is
+        // told first.
+        if (
+          (data.mode === "plan" || data.mode === "build") &&
+          this.acp.getSessionMode(sessionId) !== data.mode
+        ) {
+          const sentIn: "plan" | "build" = data.mode;
+          await this.acp
+            .setSessionMode(sessionId, sentIn)
+            .then(() => this.sessions.updateSessionMode(sentIn))
+            .catch((error) => console.warn(`[chat] could not set mode '${sentIn}':`, error));
+        }
         // Pass-through slash suggestions and natural language both go to the agent.
         await this.acp.sendPrompt(sessionId, data.text, images);
         if (this.config.postTurnHook) {
@@ -1097,23 +1109,6 @@ export class ChatRuntime {
       await this.acp
         .setProvider(sessionId, this.pendingModel)
         .catch(() => undefined);
-    }
-  }
-
-  /**
-   * A session loaded again is in the mode last chosen for it (stored). An agent
-   * started since may say another -- opencode takes the mode of the session's
-   * last message, which a switch made after it is not -- so it is told; one
-   * that refuses keeps its own, and the record follows it, so the panel never
-   * shows a mode the agent does not run.
-   */
-  private async restoreSessionMode(sessionId: string, chosen: "plan" | "build" | undefined): Promise<void> {
-    const running = this.acp.getSessionMode(sessionId);
-    if (!chosen || chosen === running) return;
-    try {
-      await this.acp.setSessionMode(sessionId, chosen);
-    } catch {
-      await this.sessions.updateSessionMode(running);
     }
   }
 

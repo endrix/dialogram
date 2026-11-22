@@ -85,44 +85,42 @@ describe('restored transcript keeps tool calls and part boundaries', () => {
     });
 });
 
-describe('a session loaded again', () => {
-    /** The agent, restarted, says the session is in `said`; it takes a mode it is told unless `refuses`. */
-    function agentSaying(acp: any, said: 'plan' | 'build', refuses = false) {
-        let mode = said;
-        acp.getSessionMode = () => mode;
-        acp.setSessionMode = vi.fn(async (_id: string, m: 'plan' | 'build') => {
-            if (refuses) throw new Error('no such mode');
-            mode = m;
-        });
-    }
-
-    it('is in the mode last chosen for it: the agent, saying another, is told', async () => {
+describe('the mode a session runs in', () => {
+    it("is shown, restored, as the agent's", async () => {
         const { runtime, posts, acp } = makeRuntime();
         await createSessionAndTurn(runtime, acp);
-        await runtime.handleMessage(URI, { type: 'chat.setMode', data: { sessionId: 'session-1', mode: 'plan' } });
-        agentSaying(acp, 'build');
+        acp.getSessionMode = () => 'plan';
         await runtime.handleMessage(URI, { type: 'chat.loadSession', data: { sessionId: 'session-1' } });
-        expect(acp.setSessionMode).toHaveBeenCalledWith('session-1', 'plan');
         const history = posts.filter(p => p.payload.type === 'chat.sessionHistory').pop();
         expect(history!.payload.data.mode).toBe('plan');
     });
 
-    it('tells the agent nothing when it says the mode last chosen', async () => {
+    it('is the one a message was sent in: an agent holding another is told first, and the choice stored', async () => {
         const { runtime, acp } = makeRuntime();
         await createSessionAndTurn(runtime, acp);
-        agentSaying(acp, 'build');
-        await runtime.handleMessage(URI, { type: 'chat.loadSession', data: { sessionId: 'session-1' } });
-        expect(acp.setSessionMode).not.toHaveBeenCalled();
+        let mode = 'plan';
+        const order: string[] = [];
+        acp.getSessionMode = () => mode;
+        acp.setSessionMode = vi.fn(async (_id: string, m: string) => {
+            order.push(`mode:${m}`);
+            mode = m;
+        });
+        acp.sendPrompt = vi.fn(async () => {
+            order.push('prompt');
+        });
+        await runtime.handleMessage(URI, { type: 'chat.sendMessage', data: { sessionId: 'session-1', text: 'edit it', mode: 'build' } });
+        expect(order).toEqual(['mode:build', 'prompt']);
+        expect((runtime as any).sessions.getSession('session-1')?.mode).toBe('build');
     });
 
-    it("shows, and stores, the agent's mode when it does not take the one chosen", async () => {
-        const { runtime, posts, acp } = makeRuntime();
+    it('is left as it is for a message that names none', async () => {
+        const { runtime, acp } = makeRuntime();
         await createSessionAndTurn(runtime, acp);
-        await runtime.handleMessage(URI, { type: 'chat.setMode', data: { sessionId: 'session-1', mode: 'plan' } });
-        agentSaying(acp, 'build', true);
-        await runtime.handleMessage(URI, { type: 'chat.loadSession', data: { sessionId: 'session-1' } });
-        const history = posts.filter(p => p.payload.type === 'chat.sessionHistory').pop();
-        expect(history!.payload.data.mode).toBe('build');
-        expect((runtime as any).sessions.getSession('session-1')?.mode).toBe('build');
+        acp.getSessionMode = () => 'plan';
+        acp.setSessionMode = vi.fn(async () => undefined);
+        acp.sendPrompt = vi.fn(async () => undefined);
+        await runtime.handleMessage(URI, { type: 'chat.sendMessage', data: { sessionId: 'session-1', text: 'what is this?' } });
+        expect(acp.setSessionMode).not.toHaveBeenCalled();
+        expect(acp.sendPrompt).toHaveBeenCalled();
     });
 });

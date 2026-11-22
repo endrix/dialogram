@@ -531,8 +531,9 @@ export class ACPClientService extends EventEmitter {
   private applyConfigOptions(
     session: SessionInfo,
     configOptions: any[] | null | undefined,
-  ): void {
-    if (!Array.isArray(configOptions)) return;
+  ): "plan" | "build" | undefined {
+    if (!Array.isArray(configOptions)) return undefined;
+    let reported: "plan" | "build" | undefined;
 
     const modeOption = configOptions.find(
       (o) => o?.id === "mode" || o?.category === "mode",
@@ -547,6 +548,7 @@ export class ACPClientService extends EventEmitter {
         modeOption.currentValue === "build"
       ) {
         session.mode = modeOption.currentValue;
+        reported = modeOption.currentValue;
       }
     }
 
@@ -562,6 +564,7 @@ export class ACPClientService extends EventEmitter {
         .map((o: any) => ({ id: o.value, name: o.name || o.value }));
       if (options.length) this.modelOptions = options;
     }
+    return reported;
   }
 
   /**
@@ -701,11 +704,21 @@ export class ACPClientService extends EventEmitter {
       };
       this.sessions.set(sessionId, session);
     }
-    // Its mode is the one it was left in: what the agent says (opencode answers
-    // session/load with its config options), else what was stored -- never a
-    // default, which the panel would show while the agent runs another.
-    if (storedMode) session.mode = storedMode;
-    this.applyConfigOptions(session, (loaded as any)?.configOptions);
+    // It is in the mode last chosen for it (stored). The agent says the mode
+    // it holds (opencode answers session/load with its config options: the mode
+    // of the session's last message, which a switch made after it is not), or
+    // says none; either way, where that is not the one chosen, it is told.
+    const reported = this.applyConfigOptions(session, (loaded as any)?.configOptions);
+    if (storedMode && reported !== storedMode && session.availableModes.includes(storedMode)) {
+      try {
+        await this.setSessionMode(sessionId, storedMode);
+      } catch (error) {
+        // Not told: it runs what it said it holds (shown so), or, saying none,
+        // what was chosen is the best known. The choice stays stored either way.
+        console.warn(`[acp] could not restore mode '${storedMode}' of session ${sessionId}:`, error);
+        if (reported === undefined) session.mode = storedMode;
+      }
+    }
   }
 
   /**

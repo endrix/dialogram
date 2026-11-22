@@ -442,19 +442,53 @@ describe('ACPClientService', () => {
     const modeOption = (currentValue: string) => ({
       configOptions: [{ id: 'mode', category: 'mode', currentValue, options: [{ value: 'build' }, { value: 'plan' }] }],
     });
+    const modeSets = () =>
+      mockConnection.setSessionConfigOption.mock.calls.filter((c: any[]) => c[0]?.configId === 'mode').map((c: any[]) => c[0].value);
 
-    it('is in the mode the agent says it is in', async () => {
+    it('takes the mode the agent says, when nothing was chosen', async () => {
       await client.start('/test/workspace');
       mockConnection.loadSession.mockResolvedValue(modeOption('plan'));
-      await client.loadSession('ses_old', '/test/workspace', undefined, 'build');
+      await client.loadSession('ses_old', '/test/workspace');
+      expect(client.getSessionMode('ses_old')).toBe('plan');
+      expect(modeSets()).toEqual([]);
+    });
+
+    it('tells nothing to an agent that says the mode chosen', async () => {
+      await client.start('/test/workspace');
+      mockConnection.loadSession.mockResolvedValue(modeOption('plan'));
+      await client.loadSession('ses_old', '/test/workspace', undefined, 'plan');
+      expect(client.getSessionMode('ses_old')).toBe('plan');
+      expect(modeSets()).toEqual([]);
+    });
+
+    it('tells the mode chosen to an agent that says another', async () => {
+      await client.start('/test/workspace');
+      mockConnection.loadSession.mockResolvedValue(modeOption('build'));
+      await client.loadSession('ses_old', '/test/workspace', undefined, 'plan');
+      expect(modeSets()).toEqual(['plan']);
       expect(client.getSessionMode('ses_old')).toBe('plan');
     });
 
-    it('is in the mode it was stored in when the agent does not say', async () => {
+    it('tells the mode chosen to an agent that says none', async () => {
       await client.start('/test/workspace');
       mockConnection.loadSession.mockResolvedValue({});
       await client.loadSession('ses_old', '/test/workspace', undefined, 'plan');
+      expect(modeSets()).toEqual(['plan']);
       expect(client.getSessionMode('ses_old')).toBe('plan');
+    });
+
+    it("shows the agent's mode when it cannot be told, and the chosen one when it said none", async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      await client.start('/test/workspace');
+      mockConnection.setSessionConfigOption.mockRejectedValue(new Error('connection lost'));
+      mockConnection.loadSession.mockResolvedValue(modeOption('build'));
+      await client.loadSession('ses_a', '/test/workspace', undefined, 'plan');
+      expect(client.getSessionMode('ses_a')).toBe('build');
+      mockConnection.loadSession.mockResolvedValue({});
+      await client.loadSession('ses_b', '/test/workspace', undefined, 'plan');
+      expect(client.getSessionMode('ses_b')).toBe('plan');
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
     });
 
     it('is in build when nothing says otherwise', async () => {

@@ -84,4 +84,29 @@ describe('plan and build in the chat', () => {
         expect(panel.currentMode).toBe('build');
         expect(palette.defaultPrevented || buildTask.defaultPrevented).toBe(false);
     });
+
+    it('switches with Shift+Tab while the "/" menu is open, where Tab takes the command', () => {
+        const { panel } = makePanel();
+        panel.handleIncomingMessage('chat.commands', { commands: [{ command: 'layout', description: 'Lay out' }] });
+        panel.inputValue = '/';
+        panel.updateMenu();
+        expect(panel.menuItems).toHaveLength(1);
+        panel.onInputKeydown(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, cancelable: true }));
+        expect(panel.currentMode).toBe('plan');
+        expect(panel.inputValue).toBe('/');
+        panel.onInputKeydown(new KeyboardEvent('keydown', { key: 'Tab', cancelable: true }));
+        expect(panel.inputValue.startsWith('/layout')).toBe(true);
+    });
+
+    it('keeps the mode of a turn still running when a history arrives', () => {
+        const { panel } = makePanel();
+        panel.inputValue = 'list the clauses';
+        panel.sendMessage();
+        panel.switchMode('plan');
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 's1', mode: 'plan', messages: [] });
+        expect(panel.turnMode).toBe('build');
+        panel.handleIncomingMessage('chat.turnEnd', {});
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 's1', mode: 'plan', messages: [] });
+        expect(panel.turnMode).toBeUndefined();
+    });
 });

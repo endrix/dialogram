@@ -836,7 +836,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     if (data.mode === 'plan' || data.mode === 'build') {
       this.currentMode = data.mode;
     }
-    this.turnMode = undefined;
+    if (!this.isStreaming) this.turnMode = undefined;
     if (typeof data.model === 'string' && data.model) {
       this.currentModel = data.model;
     }
@@ -1298,7 +1298,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       this.update();
       return true;
     }
-    if (e.key === 'Enter' || e.key === 'Tab') {
+    if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
       e.preventDefault();
       this.applyMenuSelection(this.menuIndex);
       return true;
