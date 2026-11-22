@@ -183,7 +183,8 @@ describe('a product\'s chat functions, over activateDiagramProfile', () => {
             getCurrentSessionId: () => 's-slash',
             setCurrentSession: () => undefined,
             addMessageToSession: () => undefined,
-            loadSession: async () => undefined
+            loadSession: async () => undefined,
+            isGone: async () => false
         };
         runtime.acp.getSession = () => ({ id: 's-slash' });
         const sendPrompt = vi.fn(async () => { throw new Error('a prompt was sent to a model'); });

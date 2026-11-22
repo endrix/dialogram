@@ -74,4 +74,39 @@ describe('coming back to the chat window', () => {
         document.dispatchEvent(new Event('visibilitychange'));
         expect(asked()).toHaveLength(count + 1);
     });
+
+    it('leaves a caught-up transcript that comes once a turn has started, or for another session', () => {
+        const { panel } = makePanel();
+        panel.currentSessionId = 'ses_1';
+        panel.handleIncomingMessage('chat.sessionHistory', {
+            sessionId: 'ses_1',
+            messages: [{ role: 'user', content: 'first', timestamp: 1 }]
+        });
+        panel.isStreaming = true;
+        panel.handleIncomingMessage('chat.sessionHistory', {
+            sessionId: 'ses_1',
+            catchUp: true,
+            messages: [{ role: 'user', content: 'first', timestamp: 1 }, { role: 'user', content: 'other window', timestamp: 2 }]
+        });
+        expect(panel.timeline.map((t: any) => t.content)).toEqual(['first']);
+
+        panel.isStreaming = false;
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_2', catchUp: true, messages: [] });
+        expect(panel.timeline.map((t: any) => t.content)).toEqual(['first']);
+
+        panel.handleIncomingMessage('chat.sessionHistory', {
+            sessionId: 'ses_1',
+            catchUp: true,
+            messages: [{ role: 'user', content: 'first', timestamp: 1 }, { role: 'user', content: 'other window', timestamp: 2 }]
+        });
+        expect(panel.timeline.map((t: any) => t.content)).toEqual(['first', 'other window']);
+    });
+
+    it('says why a session went when another window deleted it', () => {
+        const { panel } = makePanel();
+        panel.currentSessionId = 'ses_1';
+        panel.handleIncomingMessage('chat.sessionDeleted', { sessionId: 'ses_1', reason: 'This chat was deleted in another window.' });
+        expect(panel.currentSessionId).toBeNull();
+        expect(panel.timeline.map((t: any) => t.content)).toEqual(['This chat was deleted in another window.']);
+    });
 });

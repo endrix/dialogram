@@ -1503,14 +1503,14 @@ platform that hands it one.
   held them all. They are now kept where the agent keeps its sessions, on the
   machine the extension host runs on: a file per session in
   `$XDG_DATA_HOME/dialogram/chat/<product>/` (`~/.local/share` by default;
-  `DIALOGRAM_DATA_DIR` overrides it), readable by the user alone. A window
-  lists them again whenever it shows the list, and loads a session's latest
-  transcript when it opens one, so a chat goes on in either. A message, a
-  rename or a mode is applied to the copy kept now, under a lock the other
-  window waits for, so two windows on the same chat keep each other's turns,
-  and a chat deleted in one is not written back by the other. A chat that
-  cannot be kept (a folder not writable) is said once and stays in the
-  window. What an older
+  `DIALOGRAM_DATA_DIR` overrides it), readable by the user alone. Each change
+  (a message, a rename, a mode) is a line appended to it, so two windows on
+  the same chat keep each other's turns, and a chat deleted in one is not
+  written back by the other, which says so if a message is sent to it. A
+  window reads the list again when it shows it, a session when it opens it,
+  and both when it is come back to (focus), so a chat made, continued or
+  deleted in one window shows in the other. A chat that cannot be kept (a
+  folder not writable) is said once and stays in the window. What an older
   Dialogram kept in `workspaceState` moves there on first use, from each
   client.
 - **The chat's Plan and Build are what the agent runs.** A session opened

@@ -45,8 +45,8 @@ function makeWindow(sessionId: string, kept?: SessionData[]) {
     acp.getSessionModel = () => 'model-a';
     acp.getMessagesWithIds = async () => [];
     acp.getRevertState = async () => false;
-    acp.sendPrompt = async () => undefined;
-    const settled = () => (runtime as any).sessions.store.idle() as Promise<void>;
+    acp.sendPrompt = vi.fn(async () => undefined);
+    const settled = () => (runtime as any).sessions.idle() as Promise<void>;
     const send = (type: string, data?: unknown) => runtime.handleMessage(URI, { type, data } as any);
     const last = (type: string) => posts.filter((p) => p.type === type).pop() as any;
     return { runtime, acp, state, posts, settled, send, last };
@@ -131,6 +131,7 @@ describe('a chat across windows on the same folder (local, Remote-SSH)', () => {
         await local.send('chat.getSessions', { shown: 'ses_1' });
         const history = local.posts.slice(before).find((p) => p.type === 'chat.sessionHistory') as any;
         expect(said(history)).toEqual(['user: first', 'assistant: one', 'user: second', 'assistant: two']);
+        expect(history.data.catchUp).toBe(true);
 
         // Nothing new: no transcript is sent again.
         const quiet = local.posts.length;
@@ -146,6 +147,47 @@ describe('a chat across windows on the same folder (local, Remote-SSH)', () => {
         }
         await ssh.send('chat.getSessions', { shown: 'ses_1' });
         expect(ssh.last('chat.sessionDeleted').data.sessionId).toBe('ses_1');
+        expect(ssh.last('chat.sessions').data.sessions).toEqual([]);
+    });
+
+    it('deleted in one window takes no message in the other: nothing sent or kept, the message goes back', async () => {
+        const local = makeWindow('ses_1');
+        await local.send('chat.createSession', { name: 'Review', mode: 'build' });
+        const ssh = makeWindow('ses_2');
+        await ssh.send('chat.getSessions');
+        await ssh.send('chat.loadSession', { sessionId: 'ses_1' });
+        const ask = vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue('Delete' as any);
+        try {
+            await local.send('chat.deleteSession', { sessionId: 'ses_1' });
+        } finally {
+            ask.mockRestore();
+        }
+
+        await ssh.send('chat.sendMessage', { sessionId: 'ses_1', text: 'still there?', mode: 'build' });
+        expect(ssh.acp.sendPrompt).not.toHaveBeenCalled();
+        expect(ssh.last('chat.messageNotSent').data).toMatchObject({ sessionId: 'ses_1', reason: 'this chat was deleted in another window' });
+        expect(ssh.last('chat.sessionDeleted').data.reason).toMatch(/deleted in another window/);
+        expect(ssh.last('chat.sessions').data.sessions).toEqual([]);
+        await ssh.settled();
+        const fresh = makeWindow('ses_x');
+        await fresh.send('chat.getSessions');
+        expect(fresh.last('chat.sessions').data.sessions).toEqual([]);
+    });
+
+    it('deleted in one window, opened from the other\'s old list, says so', async () => {
+        const local = makeWindow('ses_1');
+        await local.send('chat.createSession', { name: 'Review', mode: 'build' });
+        const ssh = makeWindow('ses_2');
+        await ssh.send('chat.getSessions');
+        const ask = vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue('Delete' as any);
+        try {
+            await local.send('chat.deleteSession', { sessionId: 'ses_1' });
+        } finally {
+            ask.mockRestore();
+        }
+        await ssh.send('chat.loadSession', { sessionId: 'ses_1' });
+        expect(ssh.last('chat.error')).toBeUndefined();
+        expect(ssh.last('chat.sessionDeleted').data).toMatchObject({ sessionId: 'ses_1' });
         expect(ssh.last('chat.sessions').data.sessions).toEqual([]);
     });
 

@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
-import { promises as fs } from 'node:fs';
+import { constants as fsConstants, promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { SessionData } from './session-manager.js';
+import type { MessageData, SessionData } from './session-manager.js';
 
 /**
  * The folder Dialogram keeps its own data in, on the machine its extension
@@ -34,49 +34,61 @@ export function chatSessionRoot(productKey: string, dataDir: string = dialogramD
   return path.join(dataDir, 'chat', fileSafe(productKey));
 }
 
-/**
- * A change to a stored session: given the copy kept now (undefined when none
- * is), the session to keep, or undefined to leave the store as it is.
- */
-export type SessionChange = (stored: SessionData | undefined) => SessionData | undefined;
+/** One change to a kept session. */
+export type SessionChange =
+  | { t: 'message'; message: MessageData }
+  | { t: 'name'; name: string }
+  | { t: 'mode'; mode: 'plan' | 'build' };
 
 /** Where a product's chat sessions are kept. */
 export interface SessionStore {
-  /** The sessions kept for one diagram file. */
+  /** The sessions kept for one diagram file; one that cannot be read is skipped. */
   list(workflowFile: string): Promise<SessionData[]>;
-  /** One session as kept now, or undefined when none is (deleted, or never kept). */
+  /** One session as kept now; undefined when none is. Throws when it cannot be read. */
   read(workflowFile: string, sessionId: string): Promise<SessionData | undefined>;
+  /** Whether a session is kept (deleted, or never kept, when not). */
+  has(workflowFile: string, sessionId: string): Promise<boolean>;
   /**
-   * Apply a change to the copy kept now, with no other change to it, from
-   * this window or another, in between. Resolves with what was kept.
+   * Keep a session whole. One already kept is kept as it is, with this
+   * copy's keyed messages it lacks added.
    */
-  update(workflowFile: string, sessionId: string, change: SessionChange): Promise<SessionData | undefined>;
+  create(session: SessionData): Promise<void>;
+  /** Add a change to a kept session; false when none is kept (deleted). */
+  append(workflowFile: string, sessionId: string, change: SessionChange): Promise<boolean>;
   remove(workflowFile: string, sessionId: string): Promise<void>;
-  /** Resolves once every change asked for so far has landed. */
-  idle(): Promise<void>;
 }
 
-/** How long a change waits for another window's lock on a session. */
-const LOCK_WAIT_MS = 3000;
-/** A lock this old was left by a window that died holding it. */
-const LOCK_STALE_MS = 10000;
+/** A line of a session's file. */
+type Line =
+  | ({ t: 'session' } & Omit<SessionData, 'messages' | 'updatedAt'> & { updatedAt?: number })
+  | { t: 'messages'; at: number; messages: MessageData[] }
+  | ({ at: number } & SessionChange);
+
+/** What has been read of a session's file, so a later read reads only what was added. */
+interface Read {
+  ino: number;
+  /** Bytes read, to the end of the last whole line. */
+  consumed: number;
+  session: SessionData;
+  keys: Set<string>;
+}
 
 /**
- * One JSON file per session, in a folder per diagram file:
- * `<root>/<file name>-<hash of its path>/<session id>-<hash of it>.json`.
+ * One file per session, in a folder per diagram file:
+ * `<root>/<file name>-<hash of its path>/<session id, lower case>-<hash of it>.jsonl`.
  *
- * Two windows on the same folder (a local one and an SSH one) run two
- * extension hosts on the same machine, both on these files. A change is a
- * read, an edit and a write of the copy kept now, under a lock (a folder made
- * beside the file) that the other window's changes wait for, so neither
- * overwrites what the other added. A file is written whole and renamed into
- * place, so a window that reads it never sees half of one. Folders are the
- * user's alone (0700), as chats can hold anything.
+ * The first line is the session; every change after it (a message, a
+ * rename, a mode) is one more line, added with an append. Two windows on the
+ * same folder (a local one and an SSH one) run two extension hosts on the
+ * same machine, both on these files: an append never rewrites what is there,
+ * and the system keeps two windows' appends whole and in turn, so neither
+ * loses what the other added. An append opens the file without creating it,
+ * so a session deleted in one window is not made again by the other. A line
+ * left half written is skipped. Folders and files are the user's alone, as
+ * chats can hold anything.
  */
 export class FileSessionStore implements SessionStore {
-  /** The last change of each file, so this window's land in the order made. */
-  private readonly tails = new Map<string, Promise<unknown>>();
-  private tmpCounter = 0;
+  private readonly reads = new Map<string, Read>();
 
   constructor(readonly root: string) {}
 
@@ -91,12 +103,12 @@ export class FileSessionStore implements SessionStore {
     }
     const sessions: SessionData[] = [];
     for (const name of names) {
-      if (!name.endsWith('.json')) continue;
+      if (!name.endsWith('.jsonl')) continue;
       try {
         const session = await this.readFile(path.join(dir, name), workflowFile);
         if (session) sessions.push(session);
       } catch (error) {
-        // One entry that cannot be read leaves the others listed.
+        // One that cannot be read leaves the others listed.
         console.warn(`Skipped the chat session file ${path.join(dir, name)}:`, error);
       }
     }
@@ -105,111 +117,135 @@ export class FileSessionStore implements SessionStore {
 
   async read(workflowFile: string, sessionId: string): Promise<SessionData | undefined> {
     const session = await this.readFile(this.fileFor(workflowFile, sessionId), workflowFile);
-    return session?.id === sessionId ? session : undefined;
+    if (session && session.id !== sessionId) {
+      throw new Error(`${this.fileFor(workflowFile, sessionId)} holds session ${session.id}, not ${sessionId}`);
+    }
+    return session;
   }
 
-  update(workflowFile: string, sessionId: string, change: SessionChange): Promise<SessionData | undefined> {
-    const file = this.fileFor(workflowFile, sessionId);
-    return this.enqueue(file, () =>
-      this.withLock(file, async () => {
-        const stored = await this.read(workflowFile, sessionId);
-        const next = change(stored);
-        if (next) await this.writeFile(file, next);
-        return next;
-      }),
-    );
+  async has(workflowFile: string, sessionId: string): Promise<boolean> {
+    try {
+      await fs.stat(this.fileFor(workflowFile, sessionId));
+      return true;
+    } catch (error) {
+      if (isNotFound(error)) return false;
+      throw error;
+    }
   }
 
-  /** Keep this session as it is now, whatever is kept. */
-  write(session: SessionData): Promise<SessionData | undefined> {
-    const copy = structuredClone(session);
-    return this.update(session.workflowFile, session.id, () => copy);
+  async create(session: SessionData): Promise<void> {
+    const file = this.fileFor(session.workflowFile, session.id);
+    await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+    const { messages, ...head } = session;
+    const lines: Line[] = [{ t: 'session', ...head }];
+    if (messages.length > 0) lines.push({ t: 'messages', at: session.updatedAt, messages });
+    let handle: fs.FileHandle;
+    try {
+      handle = await fs.open(file, 'wx', 0o600);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') throw error;
+      const kept = await this.read(session.workflowFile, session.id);
+      if (!kept) return;
+      const have = new Set(kept.messages.map((m) => m.key).filter(Boolean));
+      const lacking = messages.filter((m) => m.key && !have.has(m.key));
+      if (lacking.length > 0) await this.appendLine(file, { t: 'messages', at: Date.now(), messages: lacking });
+      return;
+    }
+    try {
+      await handle.writeFile(lines.map((line) => JSON.stringify(line)).join('\n') + '\n');
+    } finally {
+      await handle.close();
+    }
+  }
+
+  append(workflowFile: string, sessionId: string, change: SessionChange): Promise<boolean> {
+    return this.appendLine(this.fileFor(workflowFile, sessionId), { at: Date.now(), ...change });
   }
 
   async remove(workflowFile: string, sessionId: string): Promise<void> {
     const file = this.fileFor(workflowFile, sessionId);
-    await this.enqueue(file, () => this.withLock(file, () => fs.rm(file, { force: true })));
+    this.reads.delete(file);
+    await fs.rm(file, { force: true });
   }
 
-  async idle(): Promise<void> {
-    while (this.tails.size > 0) {
-      await Promise.allSettled([...this.tails.values()]);
-    }
-  }
-
-  private enqueue<T>(file: string, operation: () => Promise<T>): Promise<T> {
-    const previous = this.tails.get(file) ?? Promise.resolve();
-    const next = previous.catch(() => undefined).then(operation);
-    this.tails.set(file, next);
-    next
-      .catch(() => undefined)
-      .then(() => {
-        if (this.tails.get(file) === next) this.tails.delete(file);
-      });
-    return next;
-  }
-
-  /** Run an operation on a session file while no other window changes it. */
-  private async withLock<T>(file: string, operation: () => Promise<T>): Promise<T> {
-    await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-    const lock = `${file}.lock`;
-    const deadline = Date.now() + LOCK_WAIT_MS;
-    let held = false;
-    while (!held) {
-      try {
-        await fs.mkdir(lock);
-        held = true;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') throw error;
-        const age = await fs.stat(lock).then((s) => Date.now() - s.mtimeMs, () => 0);
-        if (age > LOCK_STALE_MS) {
-          await fs.rm(lock, { recursive: true, force: true });
-          continue;
-        }
-        // A lock held this long is a window stuck mid-write: go on without it.
-        if (Date.now() > deadline) break;
-        await new Promise((resolve) => setTimeout(resolve, 15));
-      }
+  /** Add a line to a session's file, which must be there; false when it is not. */
+  private async appendLine(file: string, line: Line): Promise<boolean> {
+    let handle: fs.FileHandle;
+    try {
+      // No O_CREAT: a file another window deleted stays deleted.
+      handle = await fs.open(file, fsConstants.O_WRONLY | fsConstants.O_APPEND);
+    } catch (error) {
+      if (isNotFound(error)) return false;
+      throw error;
     }
     try {
-      return await operation();
+      // One write: the system keeps it whole between two windows' appends.
+      await handle.writeFile(Buffer.from(JSON.stringify(line) + '\n'));
     } finally {
-      if (held) await fs.rm(lock, { recursive: true, force: true }).catch(() => undefined);
+      await handle.close();
     }
+    return true;
   }
 
-  private async writeFile(file: string, session: SessionData): Promise<void> {
-    const tmp = `${file}.${process.pid}.${++this.tmpCounter}.tmp`;
-    try {
-      await fs.writeFile(tmp, JSON.stringify(session), { mode: 0o600 });
-      await fs.rename(tmp, file);
-    } catch (error) {
-      await fs.rm(tmp, { force: true }).catch(() => undefined);
-      throw error;
-    }
-  }
-
+  /**
+   * A session's file folded into the session, reading only what was added
+   * since the last read. Undefined when there is no file, or its first line
+   * is still being written; throws when the first line is not a session.
+   */
   private async readFile(file: string, workflowFile: string): Promise<SessionData | undefined> {
-    let text: string;
+    let handle: fs.FileHandle;
     try {
-      text = await fs.readFile(file, 'utf8');
+      handle = await fs.open(file, 'r');
     } catch (error) {
-      if (isNotFound(error)) return undefined;
-      throw error;
-    }
-    try {
-      const session = JSON.parse(text) as SessionData;
-      // A file that isn't a session of this diagram is skipped, not shown.
-      if (
-        typeof session?.id !== 'string' ||
-        session.workflowFile !== workflowFile ||
-        !Array.isArray(session.messages)
-      ) {
+      if (isNotFound(error)) {
+        this.reads.delete(file);
         return undefined;
       }
-      return session;
-    } catch {
-      return undefined;
+      throw error;
+    }
+    try {
+      const { ino, size } = await handle.stat();
+      let known = this.reads.get(file);
+      if (known && (known.ino !== ino || size < known.consumed)) known = undefined;
+      const from = known?.consumed ?? 0;
+      if (known && size === from) return structuredClone(known.session);
+      const buffer = Buffer.alloc(size - from);
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, from);
+      const text = buffer.subarray(0, bytesRead).toString('utf8');
+      const end = text.lastIndexOf('\n');
+      if (end < 0 && !known) return undefined;
+      const lines = end < 0 ? [] : text.slice(0, end).split('\n');
+      let read = known;
+      for (const [index, raw] of lines.entries()) {
+        let line: Line;
+        try {
+          line = JSON.parse(raw) as Line;
+        } catch {
+          if (!read && index === 0) throw new Error(`${file} does not start with a chat session`);
+          console.warn(`Skipped a line of ${file} that is not whole`);
+          continue;
+        }
+        if (!read) {
+          if (line.t !== 'session' || typeof line.id !== 'string' || line.workflowFile !== workflowFile) {
+            throw new Error(`${file} does not start with a chat session of ${workflowFile}`);
+          }
+          const { t: _t, ...head } = line;
+          read = {
+            ino,
+            consumed: 0,
+            session: { ...head, updatedAt: head.updatedAt ?? head.createdAt, messages: [] },
+            keys: new Set(),
+          };
+          continue;
+        }
+        apply(read, line);
+      }
+      if (!read) return undefined;
+      read.consumed = from + Buffer.byteLength(text.slice(0, end + 1), 'utf8');
+      this.reads.set(file, read);
+      return structuredClone(read.session);
+    } finally {
+      await handle.close();
     }
   }
 
@@ -220,8 +256,37 @@ export class FileSessionStore implements SessionStore {
   /** The id's readable part, lower case, and its hash: ids that differ by case
    *  only stay two files where the file system ignores case (macOS, Windows). */
   private fileFor(workflowFile: string, sessionId: string): string {
-    return path.join(this.dirFor(workflowFile), `${fileSafe(sessionId.toLowerCase())}-${hash(sessionId, 12)}.json`);
+    return path.join(this.dirFor(workflowFile), `${fileSafe(sessionId.toLowerCase())}-${hash(sessionId, 12)}.jsonl`);
   }
+}
+
+/** Fold one change line into what has been read; a message is kept once. */
+function apply(read: Read, line: Line): void {
+  const session = read.session;
+  const add = (message: MessageData) => {
+    if (message.key) {
+      if (read.keys.has(message.key)) return;
+      read.keys.add(message.key);
+    }
+    session.messages.push(message);
+  };
+  switch (line.t) {
+    case 'message':
+      add(line.message);
+      break;
+    case 'messages':
+      for (const message of line.messages) add(message);
+      break;
+    case 'name':
+      session.name = line.name;
+      break;
+    case 'mode':
+      session.mode = line.mode;
+      break;
+    default:
+      return;
+  }
+  if (typeof line.at === 'number') session.updatedAt = Math.max(session.updatedAt, line.at);
 }
 
 function hash(text: string, length: number): string {

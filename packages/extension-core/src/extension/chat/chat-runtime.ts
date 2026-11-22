@@ -87,6 +87,9 @@ export function readSurfaceSelection(raw: unknown): SurfaceSelectionSummary | un
 /** workspaceState key of the last model the user explicitly chose. */
 const PREFERRED_MODEL_STATE_KEY = "dialogram.chat.preferredModel";
 
+/** What the panel says of a chat another window deleted. */
+const DELETED_ELSEWHERE = "This chat was deleted in another window. Create or select a session to continue.";
+
 /**
  * Everything project-specific the unified chat runtime needs. The diagram
  * profile's chat contribution is expressed as this data — the runtime carries
@@ -667,10 +670,11 @@ export class ChatRuntime {
         if (!this.sessions.getSession(shown)) {
           this.postToWebview(uri, {
             type: "chat.sessionDeleted",
-            data: { sessionId: shown },
+            data: { sessionId: shown, reason: DELETED_ELSEWHERE },
           });
         } else if (this.sessions.getSessionMessages(shown).length > before) {
-          await this.postHistory(uri, shown);
+          // A read keeps what this window holds, so more is another window's.
+          await this.postHistory(uri, shown, { catchUp: true });
         }
         return;
       }
@@ -738,6 +742,15 @@ export class ChatRuntime {
         if (!data?.sessionId) return;
         await this.ensureStarted(cwd);
         const loaded = await this.sessions.loadSession(data.sessionId);
+        if (!loaded && !this.sessions.getSession(data.sessionId)) {
+          // Deleted in another window since this one listed it.
+          this.postToWebview(uri, {
+            type: "chat.sessionDeleted",
+            data: { sessionId: data.sessionId, reason: DELETED_ELSEWHERE },
+          });
+          await this.sendSessions(uri, file);
+          return;
+        }
         if (!loaded) {
           this.postToWebview(uri, {
             type: "chat.error",
@@ -867,6 +880,19 @@ export class ChatRuntime {
             },
           });
           this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
+          return;
+        }
+        // A chat another window deleted takes no more messages: nothing is
+        // sent or stored, the panel is told, and the message goes back to
+        // the composer.
+        if (await this.sessions.isGone(sessionId)) {
+          this.postToWebview(uri, {
+            type: "chat.messageNotSent",
+            data: { sessionId, reason: "this chat was deleted in another window" },
+          });
+          this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
+          this.postToWebview(uri, { type: "chat.sessionDeleted", data: { sessionId, reason: DELETED_ELSEWHERE } });
+          await this.sendSessions(uri, file);
           return;
         }
         // A session restored from storage (after a reload) isn't attached in
@@ -1257,7 +1283,7 @@ export class ChatRuntime {
   private async postHistory(
     uri: string,
     sessionId: string,
-    extra?: { mode?: "plan" | "build"; model?: string },
+    extra?: { mode?: "plan" | "build"; model?: string; catchUp?: boolean },
   ): Promise<void> {
     const stored = this.sessions.getSessionMessages(sessionId);
     const ids = await this.alignUserMessageIds(
@@ -1284,6 +1310,9 @@ export class ChatRuntime {
         mode: extra?.mode ?? this.acp.getSessionMode(sessionId),
         model: extra?.model ?? this.acp.getSessionModel(sessionId),
         reverted,
+        // Brought up to date on coming back to the window: the panel leaves
+        // it if a turn has started since it asked.
+        ...(extra?.catchUp ? { catchUp: true } : {}),
       },
     });
   }

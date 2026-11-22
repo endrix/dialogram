@@ -621,6 +621,11 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         break;
 
       case 'chat.sessionHistory':
+        // Asked for on coming back to the window: a turn started since, or
+        // another session chosen, is not to be redrawn under it.
+        if (data?.catchUp && (this.isStreaming || this.isLoadingSession || data.sessionId !== this.currentSessionId)) {
+          break;
+        }
         this.renderSessionHistory(data);
         break;
 
@@ -633,7 +638,12 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         if (data?.nextSessionId) {
           this.loadSession(data.nextSessionId);
         } else {
-          this.pushMessage('system', 'Session deleted. Create or select a session to continue.');
+          this.pushMessage(
+            'system',
+            typeof data?.reason === 'string' && data.reason
+              ? data.reason
+              : 'Session deleted. Create or select a session to continue.'
+          );
         }
         break;
 

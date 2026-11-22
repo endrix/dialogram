@@ -1,5 +1,7 @@
+import { promises as fs } from 'node:fs';
+import * as path from 'node:path';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { SessionManager, type WorkspaceStorage } from '../src/extension/session-manager.js';
+import { SessionManager, type SessionData, type WorkspaceStorage } from '../src/extension/session-manager.js';
 import { FileSessionStore } from '../src/extension/session-store.js';
 import { ACPClientService } from '../src/extension/acp-client.js';
 
@@ -335,34 +337,23 @@ describe('SessionManager', () => {
     const message = (content: string) => ({ role: 'user' as const, content, timestamp: Date.now() });
 
     it("keeps each window's messages on a session both have open", async () => {
-      const localStore = new FileSessionStore(root());
-      const sshStore = new FileSessionStore(root());
-      const local = window(localStore);
-      const ssh = window(sshStore);
+      const local = window();
+      const ssh = window();
       await local.createSession(FILE, 'Review');
       await ssh.refresh(FILE);
       await ssh.loadSession('test-session-123');
 
       local.addMessageToSession('test-session-123', message('first'));
-      await localStore.idle();
-      // The SSH window's copy has not seen "first": its change still keeps it.
+      await local.idle();
+      // The SSH window's copy has not seen "first": its message is added, not written over it.
       ssh.addMessageToSession('test-session-123', message('second'));
-      await sshStore.idle();
+      await ssh.idle();
       local.addMessageToSession('test-session-123', message('third'));
-      await localStore.idle();
+      await local.idle();
 
       expect(await said()).toEqual(['first', 'second', 'third']);
       await ssh.loadSession('test-session-123');
       expect(ssh.getSessionMessages('test-session-123').map((m) => m.content)).toEqual(['first', 'second', 'third']);
-    });
-
-    it("names a new session past the ones another window made", async () => {
-      const desk = window();
-      await desk.createSession(FILE);
-      mockACPClient.createSession.mockResolvedValueOnce('ses-laptop');
-      const laptop = window();
-      const made = await laptop.createSession(FILE);
-      expect(made.name).toBe('Session 2');
     });
 
     it('keeps listed a session made while the list was being read', async () => {
@@ -384,16 +375,15 @@ describe('SessionManager', () => {
       expect(manager.getSessionsForWorkflow(FILE).map((s) => s.name)).toEqual(['Made meanwhile']);
     });
 
-    it('keeps a session it could not store, says so, and stores it with the next change', async () => {
+    it('keeps a session it could not store, says so, and stores it whole with the next change', async () => {
       let failing = true;
       class Failing extends FileSessionStore {
-        override update(...args: Parameters<FileSessionStore['update']>) {
-          return failing ? Promise.reject(new Error('EACCES: permission denied')) : super.update(...args);
+        override create(session: SessionData) {
+          return failing ? Promise.reject(new Error('EACCES: permission denied')) : super.create(session);
         }
       }
-      const store = new Failing(root());
       const onError = vi.fn();
-      const manager = window(store, undefined, onError);
+      const manager = window(new Failing(root()), undefined, onError);
       await manager.createSession(FILE, 'Unsaved');
       expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'EACCES: permission denied' }));
       await manager.refresh(FILE);
@@ -401,23 +391,103 @@ describe('SessionManager', () => {
 
       failing = false;
       manager.addMessageToSession('test-session-123', message('kept at last'));
-      await store.idle();
+      await manager.idle();
       expect(await said()).toEqual(['kept at last']);
     });
 
-    it('does not bring back a session another window deleted', async () => {
-      const localStore = new FileSessionStore(root());
-      const local = window(localStore);
+    it('keeps a message it could not store through a read, and stores it with the next', async () => {
+      let failing = false;
+      class Failing extends FileSessionStore {
+        override append(...args: Parameters<FileSessionStore['append']>) {
+          return failing ? Promise.reject(new Error('ENOSPC')) : super.append(...args);
+        }
+      }
+      const onError = vi.fn();
+      const manager = window(new Failing(root()), undefined, onError);
+      await manager.createSession(FILE, 'Review');
+      failing = true;
+      manager.addMessageToSession('test-session-123', message('one'));
+      await manager.idle();
+      expect(onError).toHaveBeenCalled();
+      await manager.refresh(FILE);
+      await manager.loadSession('test-session-123');
+      expect(manager.getSessionMessages('test-session-123').map((m) => m.content)).toEqual(['one']);
+
+      failing = false;
+      manager.addMessageToSession('test-session-123', message('two'));
+      await manager.idle();
+      expect(await said()).toEqual(['one', 'two']);
+    });
+
+    it('does not bring back a session another window deleted, and says it is gone', async () => {
+      const local = window();
       const ssh = window();
       await local.createSession(FILE, 'Review');
       await ssh.refresh(FILE);
       await ssh.deleteSession('test-session-123');
 
-      local.addMessageToSession('test-session-123', message('late'));
-      await localStore.idle();
-      expect(await said()).toBeUndefined();
+      expect(await local.isGone('test-session-123')).toBe(true);
       expect(local.getSession('test-session-123')).toBeNull();
       expect(local.getCurrentSessionId()).toBeNull();
+
+      const desk = window();
+      await desk.refresh(FILE);
+      expect(desk.getSessionsForWorkflow(FILE)).toHaveLength(0);
+    });
+
+    it('does not bring back a deleted session it writes to', async () => {
+      const local = window();
+      const ssh = window();
+      await local.createSession(FILE, 'Review');
+      await ssh.refresh(FILE);
+      await ssh.deleteSession('test-session-123');
+      local.addMessageToSession('test-session-123', message('late'));
+      await local.idle();
+      expect(await said()).toBeUndefined();
+      expect(local.getSession('test-session-123')).toBeNull();
+    });
+
+    it('takes a session whose file cannot be read as there, not deleted', async () => {
+      const onError = vi.fn();
+      const local = window(undefined, undefined, onError);
+      await local.createSession(FILE, 'Review');
+      const [dir] = await fs.readdir(root());
+      const [name] = await fs.readdir(path.join(root(), dir));
+      await fs.writeFile(path.join(root(), dir, name), 'damaged\n');
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        await local.refresh(FILE);
+      } finally {
+        warn.mockRestore();
+      }
+      expect(local.getSessionsForWorkflow(FILE)).toHaveLength(1);
+      expect(await local.isGone('test-session-123')).toBe(false);
+      expect(await local.loadSession('test-session-123')).not.toBeNull();
+      expect(onError).toHaveBeenCalled();
+    });
+
+    it('keeps a session whose file could not be removed, and says so', async () => {
+      class NoRemove extends FileSessionStore {
+        override remove() {
+          return Promise.reject(new Error('EPERM'));
+        }
+      }
+      const onError = vi.fn();
+      const manager = window(new NoRemove(root()), undefined, onError);
+      await manager.createSession(FILE, 'Review');
+      await manager.deleteSession('test-session-123');
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'EPERM' }));
+      await manager.refresh(FILE);
+      expect(manager.getSessionsForWorkflow(FILE)).toHaveLength(1);
+    });
+
+    it("names a new session past the ones another window made", async () => {
+      const desk = window();
+      await desk.createSession(FILE);
+      mockACPClient.createSession.mockResolvedValueOnce('ses-laptop');
+      const laptop = window();
+      const made = await laptop.createSession(FILE);
+      expect(made.name).toBe('Session 2');
     });
 
     it('shows old chats it could not move, and moves them on the next list', async () => {
@@ -425,8 +495,8 @@ describe('SessionManager', () => {
       storageData.set('dialogram.sessions', [kept('old-1'), kept('old-2')]);
       let failures = 1;
       class FailsOnce extends FileSessionStore {
-        override update(...args: Parameters<FileSessionStore['update']>) {
-          return failures-- > 0 ? Promise.reject(new Error('ENOSPC')) : super.update(...args);
+        override create(session: SessionData) {
+          return failures-- > 0 ? Promise.reject(new Error('ENOSPC')) : super.create(session);
         }
       }
       const onError = vi.fn();
@@ -440,6 +510,25 @@ describe('SessionManager', () => {
       expect(storageData.get('dialogram.sessions')).toBeUndefined();
       expect((await new FileSessionStore(root()).list(FILE)).map((s) => s.id).sort()).toEqual(['old-1', 'old-2']);
       expect(manager.getSessionsForWorkflow(FILE)).toHaveLength(2);
+    });
+
+    it('lists again after clearing workspaceState failed', async () => {
+      storageData.set('dialogram.sessions', [{ id: 'old-1', name: 'old', workflowFile: FILE, createdAt: 1, updatedAt: 1, mode: 'build', messages: [] }]);
+      let failures = 1;
+      const legacy: WorkspaceStorage = {
+        get: mockStorage.get,
+        update: async (key: string, value: any) => {
+          if (failures-- > 0) throw new Error('state not writable');
+          storageData.set(key, value);
+        },
+      };
+      const onError = vi.fn();
+      const manager = window(undefined, legacy, onError);
+      await manager.initialize();
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'state not writable' }));
+      await manager.refresh(FILE);
+      expect(storageData.get('dialogram.sessions')).toBeUndefined();
+      expect(manager.getSessionsForWorkflow(FILE).map((s) => s.id)).toEqual(['old-1']);
     });
   });
 });

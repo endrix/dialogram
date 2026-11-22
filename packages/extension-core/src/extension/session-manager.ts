@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import * as path from 'node:path';
 import type { ACPClientService, SessionInfo } from './acp-client.js';
-import type { SessionStore } from './session-store.js';
+import type { SessionChange, SessionStore } from './session-store.js';
 
 export interface SessionData {
   id: string;
@@ -53,16 +53,22 @@ export const LEGACY_SESSIONS_KEY = 'dialogram.sessions';
  * a local window and a Remote-SSH window on the same folder (or two people's
  * clients) each saw their own list, and none saw the chats the agent holds.
  *
- * Another window on the same folder changes the same files, so the store is
- * what a session is; the map is what this window knows of it. A change (a
- * message, a rename, a mode) is applied to the copy kept now, never by writing
- * this window's copy over it. {@link refresh} and {@link loadSession} read the
- * store again, so a session another window made, extended or deleted shows.
+ * Another window on the same folder changes the same sessions, so the store
+ * is what a session is and the map is what this window knows of it: each
+ * change (a message, a rename, a mode) is added to the kept session, never
+ * written over it, and {@link refresh} and {@link loadSession} read the store
+ * again, so a session another window made, extended or deleted shows. What
+ * this window holds that is not kept yet (a change on its way, or one that
+ * failed and goes again with the next) is never dropped by a read.
  */
 export class SessionManager {
   private sessions: Map<string, SessionData> = new Map();
   /** The sessions this window has seen kept: one missing later was deleted. */
   private stored = new Set<string>();
+  /** Changes that failed to land, sent again before a session's next one. */
+  private unsent = new Map<string, SessionChange[]>();
+  /** Each session's changes, one after the other, in the order made. */
+  private queues = new Map<string, Promise<void>>();
   private currentSessionId: string | null = null;
   private ready: Promise<void> | undefined;
 
@@ -82,34 +88,48 @@ export class SessionManager {
    */
   initialize(): Promise<void> {
     if (!this.ready) {
-      const moving = this.moveLegacySessions().then((allMoved) => {
-        if (!allMoved && this.ready === moving) this.ready = undefined;
-      });
+      const moving: Promise<void> = this.moveLegacySessions().then(
+        (allMoved) => {
+          if (!allMoved && this.ready === moving) this.ready = undefined;
+        },
+        (error) => {
+          this.onStoreError(error);
+          if (this.ready === moving) this.ready = undefined;
+        }
+      );
       this.ready = moving;
     }
     return this.ready;
   }
 
+  /** Resolves once every change asked for so far has landed or failed. */
+  async idle(): Promise<void> {
+    while (this.queues.size > 0) {
+      await Promise.allSettled([...this.queues.values()]);
+    }
+  }
+
   /**
    * Read the store's sessions of a diagram file into this window: those
-   * another window made appear, the kept copy replaces this one's, and those
-   * deleted elsewhere go. A session this window holds but has not seen kept
-   * (made while the list was read, or one whose write failed) stays.
+   * another window made appear, the kept copy is taken (with what this
+   * window has not kept yet), and those deleted elsewhere go. A session this
+   * window has not seen kept (made while the list was read, or one whose
+   * write failed) stays, and so does one that is there but cannot be read.
    */
   async refresh(workflowFile: string): Promise<void> {
     await this.initialize();
-    await this.store.idle();
     const seenKept = new Set(this.stored);
     const kept = await this.store.list(workflowFile);
     const keptIds = new Set(kept.map((session) => session.id));
-    for (const [id, session] of this.sessions) {
-      if (session.workflowFile === workflowFile && seenKept.has(id) && !keptIds.has(id)) {
-        this.forget(id);
-      }
+    const missing = [...this.sessions.values()].filter(
+      (session) => session.workflowFile === workflowFile && seenKept.has(session.id) && !keptIds.has(session.id)
+    );
+    for (const session of missing) {
+      const there = await this.store.has(workflowFile, session.id).catch(() => true);
+      if (!there) this.forget(session.id);
     }
     for (const session of kept) {
-      this.sessions.set(session.id, session);
-      this.stored.add(session.id);
+      this.take(session);
     }
   }
 
@@ -144,7 +164,7 @@ export class SessionManager {
     this.sessions.set(sessionId, sessionData);
     this.currentSessionId = sessionId;
 
-    await this.change(sessionData, () => undefined);
+    await this.keep(sessionData);
 
     return sessionData;
   }
@@ -181,23 +201,21 @@ export class SessionManager {
   }
 
   /**
-   * Load an existing session
+   * Load an existing session. Null when the agent cannot load it, or when
+   * another window deleted it (then it is no longer known here either).
    */
   async loadSession(sessionId: string): Promise<SessionData | null> {
-    let session = this.sessions.get(sessionId);
-    if (!session) {
+    if (!this.sessions.has(sessionId)) {
       return null;
     }
 
     // Another window may have gone on with it, or deleted it, since this one
-    // listed it: the kept copy is the session.
+    // listed it: take the kept copy.
+    const listed = this.sessions.get(sessionId)!;
     try {
-      await this.store.idle();
-      const kept = await this.store.read(session.workflowFile, sessionId);
+      const kept = await this.store.read(listed.workflowFile, sessionId);
       if (kept) {
-        this.sessions.set(sessionId, kept);
-        this.stored.add(sessionId);
-        session = kept;
+        this.take(kept);
       } else if (this.stored.has(sessionId)) {
         this.forget(sessionId);
         return null;
@@ -205,6 +223,7 @@ export class SessionManager {
     } catch (error) {
       this.onStoreError(error);
     }
+    const session = this.sessions.get(sessionId) ?? listed;
 
     try {
       // Pass the stored workflow file + its directory so the ACP client can
@@ -225,7 +244,22 @@ export class SessionManager {
   }
 
   /**
-   * Delete a session
+   * Whether a session is gone: deleted in another window since this one saw
+   * it kept (it is then forgotten here), or never known. One that cannot be
+   * checked is taken as there.
+   */
+  async isGone(sessionId: string): Promise<boolean> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return true;
+    if (!this.stored.has(sessionId)) return false;
+    const there = await this.store.has(session.workflowFile, sessionId).catch(() => true);
+    if (!there) this.forget(sessionId);
+    return !there;
+  }
+
+  /**
+   * Delete a session. It is forgotten once its file is gone; one whose file
+   * could not be removed stays, and the failure is told.
    */
   async deleteSession(sessionId: string): Promise<void> {
     try {
@@ -235,15 +269,17 @@ export class SessionManager {
     }
 
     const session = this.sessions.get(sessionId);
-    this.forget(sessionId);
-
-    if (session) {
+    if (!session) {
+      return;
+    }
+    await this.enqueue(sessionId, async () => {
       try {
         await this.store.remove(session.workflowFile, sessionId);
+        this.forget(sessionId);
       } catch (error) {
         this.onStoreError(error);
       }
-    }
+    });
   }
 
   /**
@@ -288,9 +324,7 @@ export class SessionManager {
     const added: MessageData = { ...message, key: message.key ?? newMessageKey() };
     session.messages.push(added);
     session.updatedAt = Date.now();
-    void this.change(session, (kept) => {
-      if (!kept.messages.some((m) => m.key === added.key)) kept.messages.push(added);
-    });
+    void this.keep(session, { t: 'message', message: added });
   }
 
   /**
@@ -312,9 +346,7 @@ export class SessionManager {
     if (session) {
       session.mode = mode;
       session.updatedAt = Date.now();
-      await this.change(session, (kept) => {
-        kept.mode = mode;
-      });
+      await this.keep(session, { t: 'mode', mode });
     }
   }
 
@@ -326,9 +358,7 @@ export class SessionManager {
     if (session) {
       session.name = newName;
       session.updatedAt = Date.now();
-      await this.change(session, (kept) => {
-        kept.name = newName;
-      });
+      await this.keep(session, { t: 'name', name: newName });
     }
   }
 
@@ -340,42 +370,89 @@ export class SessionManager {
   }
 
   /**
-   * Apply a change, already made to this window's copy, to the kept one.
+   * Keep a change, already made to this window's copy, in the store.
    *
-   * None kept: a session this window saw kept was deleted in another, and is
-   * not written again but forgotten here; one never kept (just made, or whose
-   * write failed) is written whole. A failure is reported and the session
-   * stays, so a later change can keep it.
+   * A session never kept (just made, or whose creation failed) is kept whole
+   * from this window's copy, which has every change. One kept gets the
+   * changes that failed before, then this one; if it is no longer kept, it was
+   * deleted in another window and is forgotten here, not made again. A
+   * failure is told, and the changes not kept go again with the next.
    */
-  private async change(session: SessionData, edit: (kept: SessionData) => void): Promise<void> {
-    let deletedElsewhere = false;
-    try {
-      await this.store.update(session.workflowFile, session.id, (kept) => {
-        if (!kept) {
-          if (this.stored.has(session.id)) {
-            deletedElsewhere = true;
-            return undefined;
+  private keep(session: SessionData, change?: SessionChange): Promise<void> {
+    const id = session.id;
+    if (change) this.unsentOf(id).push(change);
+    return this.enqueue(id, async () => {
+      try {
+        if (!this.stored.has(id)) {
+          const current = this.sessions.get(id);
+          if (!current) return;
+          // The copy has every change made so far: those are kept with it.
+          const included = this.unsent.get(id)?.length ?? 0;
+          await this.store.create(structuredClone(current));
+          this.stored.add(id);
+          this.unsent.get(id)?.splice(0, included);
+        } else {
+          const pending = this.unsent.get(id);
+          while (pending && pending.length > 0) {
+            if (!(await this.store.append(session.workflowFile, id, pending[0]))) {
+              this.forget(id);
+              return;
+            }
+            pending.shift();
           }
-          return structuredClone(session);
         }
-        edit(kept);
-        kept.updatedAt = Math.max(kept.updatedAt, session.updatedAt);
-        return kept;
-      });
-    } catch (error) {
-      this.onStoreError(error);
-      return;
+        if (this.unsent.get(id)?.length === 0) this.unsent.delete(id);
+      } catch (error) {
+        this.onStoreError(error);
+      }
+    });
+  }
+
+  /** The changes of a session still to be kept, in the order made. */
+  private unsentOf(sessionId: string): SessionChange[] {
+    let changes = this.unsent.get(sessionId);
+    if (!changes) {
+      changes = [];
+      this.unsent.set(sessionId, changes);
     }
-    if (deletedElsewhere) {
-      this.forget(session.id);
-    } else {
-      this.stored.add(session.id);
+    return changes;
+  }
+
+  private enqueue(sessionId: string, operation: () => Promise<void>): Promise<void> {
+    const previous = this.queues.get(sessionId) ?? Promise.resolve();
+    const next = previous.then(operation);
+    this.queues.set(sessionId, next);
+    void next.then(() => {
+      if (this.queues.get(sessionId) === next) this.queues.delete(sessionId);
+    });
+    return next;
+  }
+
+  /**
+   * Take the kept copy of a session, with what this window has not kept yet:
+   * its messages the copy lacks, and its name and mode if a change of them is
+   * still to go.
+   */
+  private take(kept: SessionData): void {
+    const mine = this.sessions.get(kept.id);
+    if (mine) {
+      const have = new Set(kept.messages.map((m) => m.key).filter(Boolean));
+      for (const message of mine.messages) {
+        if (message.key && !have.has(message.key)) kept.messages.push(message);
+      }
+      for (const change of this.unsent.get(kept.id) ?? []) {
+        if (change.t === 'name') kept.name = change.name;
+        if (change.t === 'mode') kept.mode = change.mode;
+      }
     }
+    this.sessions.set(kept.id, kept);
+    this.stored.add(kept.id);
   }
 
   private forget(sessionId: string): void {
     this.sessions.delete(sessionId);
     this.stored.delete(sessionId);
+    this.unsent.delete(sessionId);
     if (this.currentSessionId === sessionId) {
       this.currentSessionId = null;
     }
@@ -389,10 +466,10 @@ export class SessionManager {
   }
 
   /**
-   * Move the chats workspaceState holds into the store, keeping the newer copy
-   * of a session both have (another window may have kept it since), and clear
-   * them there once all are in. Each is in this window's map either way, so
-   * one that could not be moved still shows. Resolves whether all moved.
+   * Move the chats workspaceState holds into the store (one another window
+   * kept already stays as kept, with what this copy adds), and clear them
+   * there once all are in. Each is in this window's map either way, so one
+   * that could not be moved still shows. Resolves whether all moved.
    *
    * Deliberately no current session is chosen: the chat panel opens on an
    * explicit empty state, and a session becomes current only when the user
@@ -409,25 +486,21 @@ export class SessionManager {
       session.messages ??= [];
       if (!this.sessions.has(session.id)) this.sessions.set(session.id, session);
       try {
-        let newer: SessionData | undefined;
-        await this.store.update(session.workflowFile, session.id, (kept) => {
-          if (kept && kept.updatedAt >= session.updatedAt) {
-            newer = kept;
-            return undefined;
-          }
-          return session;
-        });
-        this.sessions.set(session.id, newer ?? session);
+        await this.store.create(session);
         this.stored.add(session.id);
       } catch (error) {
         allMoved = false;
         this.onStoreError(error);
       }
     }
-    if (allMoved) {
+    if (!allMoved) return false;
+    try {
       await this.legacyStorage?.update(LEGACY_SESSIONS_KEY, undefined);
+      return true;
+    } catch (error) {
+      this.onStoreError(error);
+      return false;
     }
-    return allMoved;
   }
 }
 
