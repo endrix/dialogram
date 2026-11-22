@@ -69,9 +69,6 @@ export class SessionManager {
   private unsent = new Map<string, SessionChange[]>();
   /** Each session's changes, one after the other, in the order made. */
   private queues = new Map<string, Promise<void>>();
-  /** Per session, keys of the messages this window made: its panel showed
-   *  them as they came. */
-  private local = new Map<string, Set<string>>();
   /** Per session, the time of the last message this window made: the next is
    *  later, so a turn's parts keep their order through a retried append. */
   private lastStamp = new Map<string, number>();
@@ -260,16 +257,6 @@ export class SessionManager {
     }
   }
 
-  /** Whether this window has made any message in the session. */
-  hasLocal(sessionId: string): boolean {
-    return (this.local.get(sessionId)?.size ?? 0) > 0;
-  }
-
-  /** Whether this window made the session's message with this key. */
-  isLocal(sessionId: string, key: string): boolean {
-    return this.local.get(sessionId)?.has(key) ?? false;
-  }
-
   /**
    * Whether a session is gone: deleted, here or in another window (its file
    * left the mark a delete leaves; it is then forgotten here). One that
@@ -366,20 +353,20 @@ export class SessionManager {
   /**
    * Append a message to a specific session and persist it.
    */
-  addMessageToSession(sessionId: string, message: MessageData): void {
+  /** Add a message this window made; its key, or nothing for a session it
+   *  does not hold. */
+  addMessageToSession(sessionId: string, message: MessageData): string | undefined {
     const session = this.sessions.get(sessionId);
     if (!session) {
-      return;
+      return undefined;
     }
     const timestamp = Math.max(message.timestamp ?? Date.now(), (this.lastStamp.get(sessionId) ?? 0) + 1);
     this.lastStamp.set(sessionId, timestamp);
     const added: MessageData = { ...message, timestamp, key: message.key ?? newMessageKey() };
-    let mine = this.local.get(sessionId);
-    if (!mine) this.local.set(sessionId, (mine = new Set()));
-    mine.add(added.key!);
     session.messages.push(added);
     session.updatedAt = Date.now();
     void this.keep(session, { t: 'message', message: added });
+    return added.key;
   }
 
   /**
@@ -533,7 +520,6 @@ export class SessionManager {
     this.sessions.delete(sessionId);
     this.stored.delete(sessionId);
     this.unsent.delete(sessionId);
-    this.local.delete(sessionId);
     this.lastStamp.delete(sessionId);
     if (this.currentSessionId === sessionId) {
       this.currentSessionId = null;

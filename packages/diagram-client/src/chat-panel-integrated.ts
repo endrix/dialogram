@@ -545,6 +545,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   private handleIncomingMessage(type: string, data: any): void {
     switch (type) {
       case 'chat.message':
+        // A note for another chat than the one shown (switched from since).
+        if (typeof data?.sessionId === 'string' && data.sessionId !== this.currentSessionId) break;
         this.finishStreamingMessage();
         if (data) {
           this.pushMessage(data.role ?? 'system', data.content ?? '', data.mode, data.timestamp);
@@ -1148,7 +1150,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       }
     }
     const reason = typeof data?.reason === 'string' && data.reason ? data.reason : 'the agent did not take it';
-    this.pushMessage('system', `Not sent: ${reason}. Remove the images and send again.`);
+    // The advice is for images the agent refused, not for a chat deleted.
+    this.pushMessage('system', data?.images === false ? `Not sent: ${reason}. Remove the images and send again.` : `Not sent: ${reason}.`);
   }
 
   /** Why `image` cannot go with the next message, or nothing when it can. */

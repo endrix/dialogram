@@ -1,4 +1,5 @@
 import { promises as fs } from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { SessionData } from '../src/extension/session-manager.js';
@@ -22,6 +23,10 @@ describe('the folder Dialogram keeps its data in', () => {
 
     it('leaves out a relative XDG_DATA_HOME, as the XDG spec says', () => {
         expect(dialogramDataDir({ XDG_DATA_HOME: '.local/share' }, 'linux', '/home/u')).toBe('/home/u/.local/share/dialogram');
+    });
+
+    it('leaves out a relative DIALOGRAM_DATA_DIR too', () => {
+        expect(dialogramDataDir({ DIALOGRAM_DATA_DIR: '.dialogram' }, 'linux', '/home/u')).toBe('/home/u/.local/share/dialogram');
     });
 
     it('is DIALOGRAM_DATA_DIR when set', () => {
@@ -307,6 +312,26 @@ describe('FileSessionStore', () => {
         await fs.rm(path.join(dir, names.find((n) => n.startsWith('ses_b-'))!));
         expect(await store.wasRemoved(FILE, 'ses_a')).toBe(true);
         expect(await store.wasRemoved(FILE, 'ses_b')).toBe(false);
+    });
+
+    it('reads again, a moment later, a session file another window is still writing', async () => {
+        const store = new FileSessionStore(root());
+        const otherRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'dialogram-elsewhere-'));
+        const elsewhere = new FileSessionStore(otherRoot);
+        await elsewhere.create(session('ses_a', FILE, { name: 'theirs' }));
+        const [otherDir] = await fs.readdir(otherRoot);
+        const [otherName] = await fs.readdir(path.join(otherRoot, otherDir));
+        const whole = await fs.readFile(path.join(otherRoot, otherDir, otherName));
+        await fs.rm(otherRoot, { recursive: true, force: true });
+        await store.create(session('ses_b'));
+        const { dir, names } = await sessionFiles();
+        const file = path.join(dir, names[0].replace(/^ses_b-[0-9a-f]+/, otherName.replace(/\.jsonl$/, '')));
+        // Made, not written yet (no hard links there); written 10 ms later.
+        await fs.writeFile(file, '');
+        setTimeout(() => void fs.writeFile(file, whole), 10);
+        expect(await store.create(session('ses_a', FILE, { messages: [message('mine')] }))).toBe(true);
+        expect(await store.read(FILE, 'ses_a')).toMatchObject({ name: 'theirs' });
+        expect((await store.read(FILE, 'ses_a'))?.messages.map((m) => m.content)).toEqual(['mine']);
     });
 
     it('skips a line that is JSON but no change, and reads the rest', async () => {

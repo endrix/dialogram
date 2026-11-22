@@ -227,6 +227,10 @@ export class ChatRuntime {
   /** Sessions deleted in this window: one that answers meanwhile is not
    *  said to be deleted in another. */
   private deletedHere = new Set<string>();
+  /** Per panel (its uri), the keys of the messages this window made that it
+   *  showed as they came, for the session it showed them in. A transcript
+   *  sent to it carries every key, and starts this again. */
+  private liveShown = new Map<string, { sessionId: string; keys: Set<string> }>();
   /** Tears down the ACP -> webview event forwarding registered in the ctor. */
   private readonly acpForwardingDisposer: () => void;
   /** Pending stuck-connection watchdog (armed on the panel handshake). */
@@ -696,7 +700,9 @@ export class ChatRuntime {
         // sent again next time; one it has already, it leaves.
         const keys: unknown[] = Array.isArray(data?.keys) ? data.keys : [];
         const shownKeys = new Set(keys.filter((k): k is string => typeof k === "string"));
-        const isShown = (m: MessageData) => !m.key || shownKeys.has(m.key) || this.sessions.isLocal(shown, m.key);
+        const live = this.liveShown.get(uri);
+        const liveKeys = live?.sessionId === shown ? live.keys : new Set<string>();
+        const isShown = (m: MessageData) => !m.key || shownKeys.has(m.key) || liveKeys.has(m.key);
         const all = this.sessions.getSessionMessages(shown);
         const lastShown = all.reduce((last, m, i) => (isShown(m) ? i : last), -1);
         const added = all.filter((m) => !isShown(m));
@@ -705,7 +711,7 @@ export class ChatRuntime {
         // came, before a restart of the host): it cannot tell which stored
         // ones they are, so the transcript is sent again, once.
         const unkeyed = typeof data?.unkeyed === "number" ? data.unkeyed : 0;
-        const unknownRows = unkeyed > 0 && !this.sessions.hasLocal(shown);
+        const unknownRows = unkeyed > 0 && liveKeys.size === 0;
         if (unknownRows || all.indexOf(added[0]) < lastShown) {
           // Some come before what it shows (both windows went on at once):
           // the transcript again, in order. The panel leaves it if a turn has
@@ -968,7 +974,7 @@ export class ChatRuntime {
             return;
           }
         }
-        this.sessions.addMessageToSession(sessionId, {
+        this.addShown(sessionId, {
           role: "user",
           content: data.text,
           timestamp: Date.now(),
@@ -1253,7 +1259,7 @@ export class ChatRuntime {
     const now = Date.now();
     const parts = turn.parts ?? [];
     if (parts.length === 0) {
-      this.sessions.addMessageToSession(sessionId, {
+      this.addShown(sessionId, {
         role: "assistant",
         content: turn.text ?? "",
         timestamp: now,
@@ -1265,7 +1271,7 @@ export class ChatRuntime {
     let thinkingAttached = false;
     for (const part of parts) {
       if (part.type === "tool") {
-        this.sessions.addMessageToSession(sessionId, {
+        this.addShown(sessionId, {
           role: "tool",
           content: "",
           timestamp: now,
@@ -1284,11 +1290,11 @@ export class ChatRuntime {
         message.thinking = turn.thinking;
         thinkingAttached = true;
       }
-      this.sessions.addMessageToSession(sessionId, message);
+      this.addShown(sessionId, message);
     }
     // Reasoning with no text part to host it (a tool-only turn) still persists.
     if (!thinkingAttached && turn.thinking) {
-      this.sessions.addMessageToSession(sessionId, {
+      this.addShown(sessionId, {
         role: "assistant",
         content: "",
         timestamp: now,
@@ -1354,6 +1360,7 @@ export class ChatRuntime {
     extra?: { mode?: "plan" | "build"; model?: string; catchUp?: boolean },
   ): Promise<void> {
     const { messages, reverted } = await this.historyOf(sessionId);
+    this.liveShown.delete(uri);
     this.postToWebview(uri, {
       type: "chat.sessionHistory",
       data: {
@@ -1381,12 +1388,26 @@ export class ChatRuntime {
     this.postToWebview(uri, {
       type: "chat.message",
       data: {
+        sessionId,
         role: "system",
         content: "This chat was deleted in another window while it answered: this answer was not kept.",
         timestamp: Date.now(),
       },
     });
     await this.sendSessions(uri, this.fileFor(uri));
+  }
+
+  /**
+   * Keep a message this window made, and note it shown in the panel the
+   * session's turns go to (it showed it as it came).
+   */
+  private addShown(sessionId: string, message: MessageData): void {
+    const key = this.sessions.addMessageToSession(sessionId, message);
+    const uri = this.sessionUri.get(sessionId);
+    if (!key || !uri) return;
+    let live = this.liveShown.get(uri);
+    if (live?.sessionId !== sessionId) this.liveShown.set(uri, (live = { sessionId, keys: new Set() }));
+    live.keys.add(key);
   }
 
   /** Why a chat went: deleted in this window (another panel), or another. */

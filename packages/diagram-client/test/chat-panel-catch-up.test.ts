@@ -168,6 +168,19 @@ describe('coming back to the chat window', () => {
         expect(asked().pop()?.data).toMatchObject({ shown: 'ses_1', keys: ['k1'], unkeyed: 1 });
     });
 
+    it('leaves a note for another chat, and words a refusal by its cause', () => {
+        const { panel } = makePanel();
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_2', messages: [] });
+        panel.handleIncomingMessage('chat.message', { sessionId: 'ses_1', role: 'system', content: 'not for this one' });
+        expect(panel.timeline).toEqual([]);
+        panel.handleIncomingMessage('chat.messageNotSent', { sessionId: 'ses_2', reason: 'this chat was deleted in another window' });
+        panel.handleIncomingMessage('chat.messageNotSent', { sessionId: 'ses_2', reason: 'the agent does not read images', images: false });
+        expect(panel.timeline.map((t: any) => t.content)).toEqual([
+            'Not sent: this chat was deleted in another window.',
+            'Not sent: the agent does not read images. Remove the images and send again.',
+        ]);
+    });
+
     it('goes on loading when another session is said to be deleted', () => {
         const { panel } = makePanel();
         panel.currentSessionId = 'ses_2';

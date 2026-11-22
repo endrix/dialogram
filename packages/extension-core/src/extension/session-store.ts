@@ -19,7 +19,8 @@ export function dialogramDataDir(
   platform: NodeJS.Platform = process.platform,
   home: string = os.homedir(),
 ): string {
-  if (env.DIALOGRAM_DATA_DIR) return env.DIALOGRAM_DATA_DIR;
+  // Absolute only: a relative one would follow each host's working folder.
+  if (env.DIALOGRAM_DATA_DIR && path.isAbsolute(env.DIALOGRAM_DATA_DIR)) return env.DIALOGRAM_DATA_DIR;
   if (platform === 'win32') {
     return path.join(env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'dialogram');
   }
@@ -170,8 +171,14 @@ export class FileSessionStore implements SessionStore {
       }
       return true;
     }
-    // Kept already: add this copy's keyed messages it lacks.
-    const kept = await this.read(session.workflowFile, session.id);
+    // Kept already: add this copy's keyed messages it lacks. One being
+    // written by another window (no link here: made, then written) is read
+    // again a moment later.
+    let kept = await this.read(session.workflowFile, session.id);
+    if (!kept) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      kept = await this.read(session.workflowFile, session.id);
+    }
     if (!kept) throw new Error(`${file} is there but holds no chat session`);
     const have = new Set(kept.messages.map((m) => m.key).filter(Boolean));
     const lacking = messages.filter((m) => m.key && !have.has(m.key));
