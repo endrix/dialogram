@@ -365,6 +365,34 @@ describe('a chat across windows on the same folder (local, Remote-SSH)', () => {
         expect(local.last('chat.sessionDeleted').data).toMatchObject({ sessionId: 'ses_4', nextSessionId: 'ses_1' });
     });
 
+    it('takes a message for a session the window has not listed yet (its panel kept it over a restart)', async () => {
+        const local = makeWindow('ses_1');
+        await local.send('chat.createSession', { name: 'Review', mode: 'build' });
+        await local.settled();
+        const restarted = makeWindow('ses_x');
+        await turn(restarted, 'ses_1', 'after the restart', 'still here');
+        expect(restarted.acp.sendPrompt).toHaveBeenCalled();
+        const reader = makeWindow('ses_y');
+        await reader.send('chat.getSessions');
+        await reader.send('chat.loadSession', { sessionId: 'ses_1' });
+        expect(said(reader.last('chat.sessionHistory'))).toEqual(['user: after the restart', 'assistant: still here']);
+    });
+
+    it('sends nothing on catching up when the panel names every stored message, tool calls too', async () => {
+        const local = makeWindow('ses_1');
+        await local.send('chat.createSession', { name: 'Review', mode: 'build' });
+        await local.send('chat.sendMessage', { sessionId: 'ses_1', text: 'look', mode: 'build' });
+        local.acp.emit('turnComplete', { sessionId: 'ses_1', text: '', model: 'model-a', parts: [{ type: 'text', text: 'looking' }, { type: 'tool', title: 'read', status: 'completed' }] });
+        await local.settled();
+        const ssh = makeWindow('ses_2');
+        await ssh.send('chat.getSessions');
+        await ssh.send('chat.loadSession', { sessionId: 'ses_1' });
+        const history = ssh.last('chat.sessionHistory') as any;
+        const before = ssh.posts.length;
+        await ssh.send('chat.getSessions', { shown: 'ses_1', keys: history.data.messages.map((m: any) => m.key) });
+        expect(ssh.posts.slice(before).map((p) => p.type)).toEqual(['chat.sessions']);
+    });
+
     it('deleted in one window leaves the other', async () => {
         const local = makeWindow('ses_1');
         await local.send('chat.createSession', { name: 'Review', mode: 'build' });

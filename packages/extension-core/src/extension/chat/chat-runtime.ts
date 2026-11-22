@@ -642,6 +642,13 @@ export class ChatRuntime {
     const { type, data } = payload;
     const file = this.fileFor(uri);
     const cwd = this.cwdFor(file);
+    // A session this window has not read yet (a panel that kept it across a
+    // restart of the extension host): the file's sessions are read first, so
+    // it is sent to, opened or deleted as kept.
+    const named = typeof data?.sessionId === "string" ? data.sessionId : undefined;
+    if (named && !this.sessions.getSession(named) && !(await this.sessions.isGone(named))) {
+      await this.sessions.refresh(file).catch((error) => this.reportStoreError(error, "read"));
+    }
 
     switch (type) {
       case "chat.ready": {
@@ -825,7 +832,7 @@ export class ChatRuntime {
           .filter((s) => s.id !== data.sessionId);
         const nextSessionId = siblings[0]?.id;
         this.deletedHere.add(data.sessionId);
-        if (!(await this.sessions.deleteSession(data.sessionId))) {
+        if (!(await this.sessions.deleteSession(data.sessionId, file))) {
           this.deletedHere.delete(data.sessionId);
           // Its file could not be removed: it stays, and the panel says so.
           this.postToWebview(uri, {

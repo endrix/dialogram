@@ -184,6 +184,7 @@ describe('a product\'s chat functions, over activateDiagramProfile', () => {
             setCurrentSession: () => undefined,
             addMessageToSession: () => undefined,
             loadSession: async () => undefined,
+            getSession: () => ({ id: 's-slash' }),
             isGone: async () => false
         };
         runtime.acp.getSession = () => ({ id: 's-slash' });

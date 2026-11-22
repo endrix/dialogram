@@ -277,8 +277,9 @@ export class SessionManager {
    * once its file is gone; one whose file could not be removed stays, whole
    * (the agent's too), the failure is told, and false says so.
    */
-  async deleteSession(sessionId: string): Promise<boolean> {
-    const session = this.sessions.get(sessionId);
+  async deleteSession(sessionId: string, workflowFile?: string): Promise<boolean> {
+    // One this window has not read: removed from the file it was shown for.
+    const session = this.sessions.get(sessionId) ?? (workflowFile ? { workflowFile } : undefined);
     if (session) {
       let removed = false;
       await this.enqueue(sessionId, async () => {

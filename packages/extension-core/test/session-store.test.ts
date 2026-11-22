@@ -255,17 +255,29 @@ describe('FileSessionStore', () => {
         expect(await store.has(FILE, 'ses_a')).toBe(false);
     });
 
-    it('removes a deletion mark a month old when it lists', async () => {
+    it('keeps a deletion mark however old: an old copy that comes late is not made again', async () => {
         const store = new FileSessionStore(root());
         await store.create(session('ses_a'));
-        await store.create(session('ses_b'));
         await store.remove(FILE, 'ses_a');
-        await store.remove(FILE, 'ses_b');
         const { dir, names } = await sessionFiles();
-        const old = path.join(dir, names.find((n) => n.startsWith('ses_a-'))!);
-        const longAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
-        await fs.utimes(old, longAgo, longAgo);
+        const longAgo = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000);
+        await fs.utimes(path.join(dir, names[0]), longAgo, longAgo);
         await store.list(FILE);
-        expect((await sessionFiles()).names.map((n) => n.slice(0, 5))).toEqual(['ses_b']);
+        expect(await store.create(session('ses_a'))).toBe(false);
     });
+
+    it('skips a line that is JSON but no change, and reads the rest', async () => {
+        const store = new FileSessionStore(root());
+        await store.create(session('ses_a'));
+        const { dir, names } = await sessionFiles();
+        await fs.appendFile(path.join(dir, names[0]), 'null\n{"t":"message"}\n{"t":"messages","messages":[null]}\n');
+        await store.append(FILE, 'ses_a', { t: 'message', message: message('after them') });
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        try {
+            expect((await new FileSessionStore(root()).read(FILE, 'ses_a'))?.messages.map((m) => m.content)).toEqual(['after them']);
+        } finally {
+            warn.mockRestore();
+        }
+    });
+
 });

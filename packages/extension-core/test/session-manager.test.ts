@@ -593,6 +593,13 @@ describe('SessionManager', () => {
       expect(await manager.isGone('test-session-123')).toBe(true);
     });
 
+    it('removes the file of a session it has not read, from the file the panel shows', async () => {
+      await window().createSession(FILE, 'Review');
+      const fresh = window();
+      expect(await fresh.deleteSession('test-session-123', FILE)).toBe(true);
+      expect(await new FileSessionStore(root()).has(FILE, 'test-session-123')).toBe(false);
+    });
+
     it('does not say a session it never had is gone', async () => {
       const manager = window();
       expect(await manager.isGone('ses_not_read_yet')).toBe(false);

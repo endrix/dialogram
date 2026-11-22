@@ -128,6 +128,8 @@ interface ToolItem {
   id: string;
   title: string;
   status?: string;
+  /** The stored message's key: one added on catching up is not shown twice. */
+  key?: string;
 }
 
 interface PermissionItem {
@@ -884,6 +886,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
           id: typeof m.toolId === 'string' ? m.toolId : `${toolIds}-${i}`,
           title: m.toolName ?? 'tool call',
           status: typeof m.toolStatus === 'string' ? m.toolStatus : undefined,
+          ...(typeof m.key === 'string' ? { key: m.key } : {}),
         });
         return;
       }

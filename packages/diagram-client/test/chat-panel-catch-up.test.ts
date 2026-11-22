@@ -135,6 +135,21 @@ describe('coming back to the chat window', () => {
         expect(panel.suppressReplayStream).toBe(false);
     });
 
+    it('names restored tool calls by key too, and shows one caught up twice once', () => {
+        const { panel, asked } = makePanel();
+        initialize(panel);
+        panel.handleIncomingMessage('chat.sessionHistory', {
+            sessionId: 'ses_1',
+            messages: [{ role: 'user', content: 'look', timestamp: 1, key: 'k1' }, { role: 'tool', content: '', toolName: 'read', timestamp: 2, key: 'k2' }]
+        });
+        window.dispatchEvent(new Event('focus'));
+        expect(asked().pop()?.data).toMatchObject({ shown: 'ses_1', keys: ['k1', 'k2'] });
+        const tool = { sessionId: 'ses_1', messages: [{ role: 'tool', content: '', toolName: 'write', timestamp: 3, key: 'k3' }] };
+        panel.handleIncomingMessage('chat.sessionAppend', tool);
+        panel.handleIncomingMessage('chat.sessionAppend', tool);
+        expect(panel.timeline.filter((t: any) => t.kind === 'tool').map((t: any) => t.title)).toEqual(['read', 'write']);
+    });
+
     it('goes on loading when another session is said to be deleted', () => {
         const { panel } = makePanel();
         panel.currentSessionId = 'ses_2';

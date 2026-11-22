@@ -108,10 +108,6 @@ export class FileSessionStore implements SessionStore {
     }
     const sessions: SessionData[] = [];
     for (const name of names) {
-      if (name.endsWith('.gone')) {
-        await pruneMark(path.join(dir, name));
-        continue;
-      }
       if (!name.endsWith('.jsonl')) continue;
       try {
         const session = await this.readFile(path.join(dir, name), workflowFile);
@@ -293,7 +289,7 @@ export class FileSessionStore implements SessionStore {
           continue;
         }
         if (!read) {
-          if (line.t !== 'session' || typeof line.id !== 'string' || line.workflowFile !== workflowFile) {
+          if (!line || typeof line !== 'object' || line.t !== 'session' || typeof line.id !== 'string' || line.workflowFile !== workflowFile) {
             throw new Error(`${file} does not start with a chat session of ${workflowFile}`);
           }
           const { t: _t, nonce: _nonce, ...head } = line;
@@ -304,6 +300,10 @@ export class FileSessionStore implements SessionStore {
             session: { ...head, updatedAt: head.updatedAt ?? head.createdAt, messages: [] },
             keys: new Set(),
           };
+          continue;
+        }
+        if (!isChange(line)) {
+          console.warn(`Skipped a line of ${file} that is no change`);
           continue;
         }
         apply(read, line);
@@ -326,6 +326,25 @@ export class FileSessionStore implements SessionStore {
    *  only stay two files where the file system ignores case (macOS, Windows). */
   private fileFor(workflowFile: string, sessionId: string): string {
     return path.join(this.dirFor(workflowFile), `${fileSafe(sessionId.toLowerCase())}-${hash(sessionId, 12)}.jsonl`);
+  }
+}
+
+/** Whether a parsed line is a change this store wrote (a message, messages, a name, a mode). */
+function isChange(line: unknown): line is Line {
+  if (!line || typeof line !== 'object') return false;
+  const l = line as Record<string, unknown>;
+  const isMessage = (m: unknown) => Boolean(m) && typeof m === 'object' && typeof (m as MessageData).role === 'string';
+  switch (l.t) {
+    case 'message':
+      return isMessage(l.message);
+    case 'messages':
+      return Array.isArray(l.messages) && l.messages.every(isMessage);
+    case 'name':
+      return typeof l.name === 'string';
+    case 'mode':
+      return l.mode === 'plan' || l.mode === 'build';
+    default:
+      return false;
   }
 }
 
@@ -388,20 +407,11 @@ function fileSafe(name: string): string {
   return name.replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '_').slice(0, 64) || '_';
 }
 
-/** How long a removed session's mark is kept: a copy of it kept elsewhere
- *  (an old workspaceState chat) is moved on first use, well within it. */
-const MARK_KEPT_MS = 30 * 24 * 60 * 60 * 1000;
-
-/** Remove a mark older than that, as best it can. */
-async function pruneMark(mark: string): Promise<void> {
-  try {
-    if (Date.now() - (await fs.stat(mark)).mtimeMs > MARK_KEPT_MS) await fs.rm(mark, { force: true });
-  } catch {
-    // Left for the next list.
-  }
-}
-
-/** The mark a removed session leaves beside where its file was. */
+/**
+ * The mark a removed session leaves beside where its file was, kept for good
+ * (an empty file): a copy kept elsewhere, an old workspaceState chat a client
+ * has not opened for months, is not made again whenever it comes.
+ */
 function gone(file: string): string {
   return file.replace(/\.jsonl$/, '.gone');
 }
