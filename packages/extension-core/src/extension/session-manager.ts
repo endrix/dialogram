@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import type { ACPClientService, SessionInfo } from './acp-client.js';
+import type { SessionStore } from './session-store.js';
 
 export interface SessionData {
   id: string;
@@ -37,25 +38,61 @@ export interface WorkspaceStorage {
   update(key: string, value: any): Thenable<void>;
 }
 
+/** The workspaceState key chats were kept under before the session store. */
+export const LEGACY_SESSIONS_KEY = 'dialogram.sessions';
+
 /**
- * Session Manager for per-workflow session persistence
- * Sessions are scoped to individual workflow files and cannot be shared
+ * Chat sessions of each diagram file.
+ *
+ * They are kept in a {@link SessionStore} on the machine the extension host
+ * runs on, beside the agent's own sessions, not in the window's
+ * workspaceState: VS Code keeps that on the client, under the window's URI, so
+ * a local window and a Remote-SSH window on the same folder (or two people's
+ * clients) each saw their own list, and none saw the chats the agent holds.
+ *
+ * The map is what this window knows; {@link refresh} and {@link loadSession}
+ * read the store again, so a session another window made or extended shows.
  */
 export class SessionManager {
   private sessions: Map<string, SessionData> = new Map();
   private currentSessionId: string | null = null;
-  private storageKey = 'dialogram.sessions';
+  private ready: Promise<void> | undefined;
 
   constructor(
     private acpClient: ACPClientService,
-    private workspaceStorage: WorkspaceStorage
+    private store: SessionStore,
+    /** Where chats were kept before; moved into the store once. */
+    private legacyStorage?: WorkspaceStorage
   ) {}
 
   /**
-   * Initialize session manager and restore sessions from storage
+   * Move chats kept in workspaceState into the store. Everything else waits
+   * for it, so a list is never read before they are in.
    */
-  async initialize(): Promise<void> {
-    await this.restoreSessions();
+  initialize(): Promise<void> {
+    this.ready ??= this.moveLegacySessions().catch((error) => {
+      console.error('Failed to move chat sessions into the session store:', error);
+    });
+    return this.ready;
+  }
+
+  /**
+   * Read the store's sessions of a diagram file into this window: those
+   * another window made appear, a newer copy replaces this one's, and those
+   * deleted elsewhere go.
+   */
+  async refresh(workflowFile: string): Promise<void> {
+    await this.initialize();
+    const stored = await this.store.list(workflowFile);
+    const storedIds = new Set(stored.map((session) => session.id));
+    for (const [id, session] of this.sessions) {
+      if (session.workflowFile === workflowFile && !storedIds.has(id)) {
+        this.sessions.delete(id);
+      }
+    }
+    for (const session of stored) {
+      this.adopt(session);
+    }
   }
 
   /**
@@ -87,7 +124,7 @@ export class SessionManager {
     this.sessions.set(sessionId, sessionData);
     this.currentSessionId = sessionId;
 
-    await this.saveSessions();
+    await this.save(sessionData);
 
     return sessionData;
   }
@@ -127,9 +164,20 @@ export class SessionManager {
    * Load an existing session
    */
   async loadSession(sessionId: string): Promise<SessionData | null> {
-    const session = this.sessions.get(sessionId);
+    let session = this.sessions.get(sessionId);
     if (!session) {
       return null;
+    }
+
+    // Another window may have gone on with it since this one listed it.
+    try {
+      const stored = await this.store.read(session.workflowFile, sessionId);
+      if (stored) {
+        this.adopt(stored);
+        session = this.sessions.get(sessionId) ?? session;
+      }
+    } catch (error) {
+      console.error('Failed to read the stored chat session:', error);
     }
 
     try {
@@ -160,13 +208,20 @@ export class SessionManager {
       console.error('Failed to delete ACP session:', error);
     }
 
+    const session = this.sessions.get(sessionId);
     this.sessions.delete(sessionId);
 
     if (this.currentSessionId === sessionId) {
       this.currentSessionId = null;
     }
 
-    await this.saveSessions();
+    if (session) {
+      try {
+        await this.store.remove(session.workflowFile, sessionId);
+      } catch (error) {
+        console.error('Failed to remove the stored chat session:', error);
+      }
+    }
   }
 
   /**
@@ -210,7 +265,7 @@ export class SessionManager {
     }
     session.messages.push(message);
     session.updatedAt = Date.now();
-    void this.saveSessions();
+    void this.save(session);
   }
 
   /**
@@ -232,7 +287,7 @@ export class SessionManager {
     if (session) {
       session.mode = mode;
       session.updatedAt = Date.now();
-      await this.saveSessions();
+      await this.save(session);
     }
   }
 
@@ -244,7 +299,7 @@ export class SessionManager {
     if (session) {
       session.name = newName;
       session.updatedAt = Date.now();
-      await this.saveSessions();
+      await this.save(session);
     }
   }
 
@@ -255,12 +310,21 @@ export class SessionManager {
     return this.sessions.get(sessionId) || null;
   }
 
-  /**
-   * Save sessions to workspace storage
-   */
-  private async saveSessions(): Promise<void> {
-    const data = Array.from(this.sessions.values());
-    await this.workspaceStorage.update(this.storageKey, data);
+  /** Keep a session in the store; a failure is logged, the chat goes on. */
+  private async save(session: SessionData): Promise<void> {
+    try {
+      await this.store.write(session);
+    } catch (error) {
+      console.error('Failed to store the chat session:', error);
+    }
+  }
+
+  /** Take the stored copy of a session unless this window's is as new. */
+  private adopt(stored: SessionData): void {
+    const known = this.sessions.get(stored.id);
+    if (!known || stored.updatedAt > known.updatedAt) {
+      this.sessions.set(stored.id, stored);
+    }
   }
 
   /**
@@ -271,20 +335,30 @@ export class SessionManager {
   }
 
   /**
-   * Restore sessions from workspace storage
+   * Move the chats workspaceState holds into the store, keeping the newer copy
+   * of a session both have, then clear them there. A session the store kept
+   * newer from another window wins. Nothing is cleared unless all are in.
+   *
+   * Deliberately no current session is chosen: the chat panel opens on an
+   * explicit empty state, and a session becomes current only when the user
+   * loads or creates one.
    */
-  private async restoreSessions(): Promise<void> {
-    const data = this.workspaceStorage.get<SessionData[]>(this.storageKey, []);
-
-    for (const session of data) {
-      this.sessions.set(session.id, session);
+  private async moveLegacySessions(): Promise<void> {
+    const legacy = this.legacyStorage?.get<SessionData[] | undefined>(LEGACY_SESSIONS_KEY, undefined);
+    if (!Array.isArray(legacy) || legacy.length === 0) {
+      return;
     }
-
-    // Deliberately do NOT auto-select a current session here. The chat panel
-    // opens on an explicit empty state ("select or create a session"); auto-
-    // selecting the most-recent one leaked a phantom current session into the
-    // panel and routed the first message to it. A session becomes current only
-    // when the user explicitly loads/creates one.
+    for (const session of legacy) {
+      if (typeof session?.id !== 'string' || typeof session.workflowFile !== 'string') continue;
+      session.messages ??= [];
+      const stored = await this.store.read(session.workflowFile, session.id);
+      if (!stored || stored.updatedAt < session.updatedAt) {
+        await this.store.write(session);
+        this.adopt(session);
+      } else {
+        this.adopt(stored);
+      }
+    }
+    await this.legacyStorage?.update(LEGACY_SESSIONS_KEY, undefined);
   }
-
 }

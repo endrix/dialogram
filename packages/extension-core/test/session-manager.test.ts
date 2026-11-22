@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { SessionManager, type WorkspaceStorage } from '../src/extension/session-manager.js';
+import { FileSessionStore } from '../src/extension/session-store.js';
 import { ACPClientService } from '../src/extension/acp-client.js';
 
 // Mock ACP Client
@@ -12,6 +13,7 @@ describe('SessionManager', () => {
   let mockACPClient: any;
   let mockStorage: WorkspaceStorage;
   let storageData: Map<string, any>;
+  let store: FileSessionStore;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -39,11 +41,13 @@ describe('SessionManager', () => {
       getSessionMode: vi.fn().mockReturnValue('build'),
     };
 
-    sessionManager = new SessionManager(mockACPClient as any, mockStorage);
+    // The setup file gives each test its own data folder.
+    store = new FileSessionStore(process.env.DIALOGRAM_DATA_DIR!);
+    sessionManager = new SessionManager(mockACPClient as any, store, mockStorage);
   });
 
   describe('initialize', () => {
-    it('should restore sessions from storage', async () => {
+    it('moves the chats workspaceState kept into the store, once', async () => {
       const savedSessions = [
         {
           id: 'session-1',
@@ -60,6 +64,9 @@ describe('SessionManager', () => {
       await sessionManager.initialize();
 
       expect(sessionManager.getSessionsForWorkflow('/test/workflow.py')).toHaveLength(1);
+      expect((await store.list('/test/workflow.py')).map((s) => s.id)).toEqual(['session-1']);
+      // Cleared where it was, so a session deleted later does not come back.
+      expect(storageData.get('dialogram.sessions')).toBeUndefined();
       // Restoring sessions must NOT auto-select one: the chat panel opens on an
       // explicit empty state, and the user picks or creates a session. Auto-
       // selecting here made a phantom "current" session leak into the panel.
@@ -95,7 +102,13 @@ describe('SessionManager', () => {
         mode: 'plan',
       });
       expect(sessionManager.getCurrentSessionId()).toBe('test-session-123');
-      expect(mockStorage.update).toHaveBeenCalled();
+      expect(await store.read('/test/workflow.py', 'test-session-123')).toMatchObject({
+        name: 'My Session',
+        mode: 'plan',
+        messages: [],
+      });
+      // Nothing goes to workspaceState any more.
+      expect(mockStorage.update).not.toHaveBeenCalled();
     });
 
     it('should auto-generate session name', async () => {
@@ -233,7 +246,7 @@ describe('SessionManager', () => {
       expect(mockACPClient.deleteSession).toHaveBeenCalledWith('test-session-123');
       expect(sessionManager.getSessionsForWorkflow('/test/workflow.py')).toHaveLength(0);
       expect(sessionManager.getCurrentSessionId()).toBeNull();
-      expect(mockStorage.update).toHaveBeenCalled();
+      expect(await store.list('/test/workflow.py')).toEqual([]);
     });
 
     it('should handle ACP delete failure gracefully', async () => {
@@ -301,7 +314,7 @@ describe('SessionManager', () => {
 
       const session = sessionManager.getSession('test-session-123');
       expect(session?.mode).toBe('plan');
-      expect(mockStorage.update).toHaveBeenCalled();
+      expect((await store.read('/test/workflow.py', 'test-session-123'))?.mode).toBe('plan');
     });
 
     it('should rename session', async () => {

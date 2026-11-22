@@ -18,6 +18,7 @@ import { CORE_CHAT_SECTION } from "./edit-capability";
 import { ACPClientService, type AcpAgentSpec, type TurnPart } from "../acp-client.js";
 import type { DiagramChatConfirm, DiagramChatConfirmAnswer, DiagramRunAnswer, DiagramRunQuestion } from "../../api";
 import { SessionManager } from "../session-manager.js";
+import { FileSessionStore, chatSessionRoot } from "../session-store.js";
 import type {
   ChatMessageSink,
   ChatPayload,
@@ -242,8 +243,14 @@ export class ChatRuntime {
   ) {
     this.context = context;
     this.registry = new SlashCommandRegistry(config.slashCommands ?? []);
-    this.sessions = new SessionManager(this.acp, context.workspaceState);
-    // Restore persisted sessions so the picker is populated across reloads.
+    // Chats are kept beside the agent, on the machine this extension host
+    // runs on, so a local window and a Remote-SSH one share them; those an
+    // older Dialogram kept in workspaceState move there once.
+    this.sessions = new SessionManager(
+      this.acp,
+      new FileSessionStore(chatSessionRoot(config.key)),
+      context.workspaceState,
+    );
     void this.sessions.initialize();
 
     if (config.skill) {
@@ -638,7 +645,7 @@ export class ChatRuntime {
           },
         });
         this.armConnectWatchdog();
-        this.sendSessions(uri, file);
+        await this.sendSessions(uri, file);
         // Eagerly connect on panel open so the panel shows Connected
         // without needing a first message.
         await this.connectAndSendModels(uri, cwd);
@@ -648,7 +655,7 @@ export class ChatRuntime {
         this.output.appendLine(`webview: ${String(data?.message ?? "")}`);
         return;
       case "chat.getSessions":
-        this.sendSessions(uri, file);
+        await this.sendSessions(uri, file);
         return;
       case "chat.getProviders":
         // Do NOT re-report connectionStatus here: the panel re-requests
@@ -705,7 +712,7 @@ export class ChatRuntime {
           type: "chat.sessionCreated",
           data: { session },
         });
-        this.sendSessions(uri, file);
+        await this.sendSessions(uri, file);
         return;
       }
       case "chat.loadSession": {
@@ -763,7 +770,7 @@ export class ChatRuntime {
           type: "chat.sessionDeleted",
           data: { sessionId: data.sessionId, nextSessionId },
         });
-        this.sendSessions(uri, file);
+        await this.sendSessions(uri, file);
         return;
       }
       case "chat.renameSession": {
@@ -784,7 +791,7 @@ export class ChatRuntime {
           type: "chat.sessionRenamed",
           data: { sessionId: data.sessionId, name },
         });
-        this.sendSessions(uri, file);
+        await this.sendSessions(uri, file);
         return;
       }
       case "chat.selection":
@@ -822,7 +829,7 @@ export class ChatRuntime {
             type: "chat.sessionCreated",
             data: { session },
           });
-          this.sendSessions(uri, file);
+          await this.sendSessions(uri, file);
         }
         this.sessionUri.set(sessionId, uri);
         this.sessions.setCurrentSession(sessionId);
@@ -1284,7 +1291,13 @@ export class ChatRuntime {
     });
   }
 
-  private sendSessions(uri: string, file: string): void {
+  /** The diagram's sessions, read again from the store: another window's show. */
+  private async sendSessions(uri: string, file: string): Promise<void> {
+    try {
+      await this.sessions.refresh(file);
+    } catch (error) {
+      this.output.appendLine(`Could not read the stored chat sessions: ${String(error)}`);
+    }
     const sessions = this.sessions
       .getSessionsForWorkflow(file)
       .map((s) => ({ id: s.id, name: s.name }));
