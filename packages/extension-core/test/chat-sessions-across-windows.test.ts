@@ -477,16 +477,26 @@ describe('a chat across windows on the same folder (local, Remote-SSH)', () => {
         expect(w.acp.sendPrompt.mock.calls.at(-1)?.[0]).toBe('ses_2');
     });
 
-    it('made for a message sent with no chat open: no name asked, the next default one', async () => {
+    it('made for a message sent with no chat open: no name asked, the next default one, its request named back', async () => {
         const w = makeWindow('ses_1');
         const ask = vi.spyOn(vscode.window, 'showInputBox');
         try {
-            await w.send('chat.createSession', { mode: 'build', ask: false });
+            await w.send('chat.createSession', { mode: 'build', ask: false, requestId: 'create-1' });
             expect(ask).not.toHaveBeenCalled();
         } finally {
             ask.mockRestore();
         }
-        expect(w.last('chat.sessionCreated').data.session).toMatchObject({ id: 'ses_1', name: 'Session 1' });
+        expect(w.last('chat.sessionCreated').data).toMatchObject({ session: { id: 'ses_1', name: 'Session 1' }, requestId: 'create-1' });
+    });
+
+    it('not made: the panel is told, for its request, and why', async () => {
+        const w = makeWindow('ses_1');
+        w.acp.createSession = async () => {
+            throw new Error('the agent went away');
+        };
+        await w.send('chat.createSession', { mode: 'build', ask: false, requestId: 'create-2' });
+        expect(w.last('chat.sessionCreateAborted').data).toEqual({ requestId: 'create-2' });
+        expect(w.last('chat.error').data.message).toMatch(/the agent went away/);
     });
 
     it('deleted in one window leaves the other', async () => {

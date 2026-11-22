@@ -748,50 +748,59 @@ export class ChatRuntime {
         return;
       }
       case "chat.createSession": {
-        await this.ensureStarted(cwd);
-        // Collect the name via a native input box (webview prompt() is
-        // blocked). Cancelling drops the panel's spinner.
-        let name: string | undefined = data?.name;
-        if (!name && data?.ask === false) {
-          // Made for a message sent with no chat open: no question asked; the
-          // default name, which must not be one another window has taken.
-          await this.sessions.refresh(file).catch(() => undefined);
-          name = this.sessions.nextDefaultSessionName(file);
-        }
-        if (!name) {
-          // The default offered must not be a name another window has taken.
-          await this.sessions.refresh(file).catch(() => undefined);
-          name = await vscode.window.showInputBox({
-            title: "New Chat Session",
-            prompt: "Name for the new chat session",
-            // Single source of truth: the same helper the session
-            // manager uses, so the pre-filled name can never collide
-            // with an existing "Session N".
-            value: this.sessions.nextDefaultSessionName(file),
-            ignoreFocusOut: true,
-            validateInput: (candidate) =>
-              this.sessions.sessionNameExists(file, candidate.trim())
-                ? `A session named "${candidate.trim()}" already exists`
-                : undefined,
-          });
-          if (!name) {
-            this.postToWebview(uri, { type: "chat.sessionCreateAborted" });
-            return;
+        // The panel's request, named in what is said back, so it can tell its
+        // own session from one it no longer waits for.
+        const requestId = typeof data?.requestId === "string" ? data.requestId : undefined;
+        try {
+          await this.ensureStarted(cwd);
+          // Collect the name via a native input box (webview prompt() is
+          // blocked). Cancelling drops the panel's spinner.
+          let name: string | undefined = data?.name;
+          if (!name && data?.ask === false) {
+            // Made for a message sent with no chat open: no question asked; the
+            // default name, which must not be one another window has taken.
+            await this.sessions.refresh(file).catch(() => undefined);
+            name = this.sessions.nextDefaultSessionName(file);
           }
+          if (!name) {
+            // The default offered must not be a name another window has taken.
+            await this.sessions.refresh(file).catch(() => undefined);
+            name = await vscode.window.showInputBox({
+              title: "New Chat Session",
+              prompt: "Name for the new chat session",
+              // Single source of truth: the same helper the session
+              // manager uses, so the pre-filled name can never collide
+              // with an existing "Session N".
+              value: this.sessions.nextDefaultSessionName(file),
+              ignoreFocusOut: true,
+              validateInput: (candidate) =>
+                this.sessions.sessionNameExists(file, candidate.trim())
+                  ? `A session named "${candidate.trim()}" already exists`
+                  : undefined,
+            });
+            if (!name) {
+              this.postToWebview(uri, { type: "chat.sessionCreateAborted", data: { requestId } });
+              return;
+            }
+          }
+          const session = await this.sessions.createSession(
+            file,
+            name,
+            data?.mode ?? this.pendingMode ?? "build",
+          );
+          this.sessionUri.set(session.id, uri);
+          this.sessions.setCurrentSession(session.id);
+          await this.applyPending(session.id);
+          this.postToWebview(uri, {
+            type: "chat.sessionCreated",
+            data: { session, requestId },
+          });
+          await this.sendSessions(uri, file);
+        } catch (error) {
+          // Not made: the panel stops waiting for it (and says why, below).
+          this.postToWebview(uri, { type: "chat.sessionCreateAborted", data: { requestId } });
+          throw error;
         }
-        const session = await this.sessions.createSession(
-          file,
-          name,
-          data?.mode ?? this.pendingMode ?? "build",
-        );
-        this.sessionUri.set(session.id, uri);
-        this.sessions.setCurrentSession(session.id);
-        await this.applyPending(session.id);
-        this.postToWebview(uri, {
-          type: "chat.sessionCreated",
-          data: { session },
-        });
-        await this.sendSessions(uri, file);
         return;
       }
       case "chat.loadSession": {

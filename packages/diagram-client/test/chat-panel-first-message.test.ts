@@ -2,10 +2,11 @@
 /**
  * A message sent with no chat open: the panel asks for a session first (no
  * name asked), shows "Creating session…", and sends the message once the
- * session exists, as a task's message is sent. Until then another message
- * waits in the composer; a chat picked meanwhile wins, and the waiting
- * message goes back to the composer, as it does when the session does not
- * come (name prompt cancelled, an error, the agent gone).
+ * session exists, as a task's message is sent. Each request carries an id
+ * the host says back, so the panel tells the session it waits for from one
+ * it left. Until it comes another message waits in the composer; a chat
+ * picked, or a task, meanwhile wins, and the waiting message goes back to
+ * the composer, as it does when the host says the session was not made.
  */
 import 'reflect-metadata';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -31,8 +32,11 @@ function type(panel: any, text: string): void {
     panel.sendMessage();
 }
 
-const created = (panel: any, id: string, name: string) =>
-    panel.handleIncomingMessage('chat.sessionCreated', { session: { id, name } });
+/** The host's answer to the request the panel waits for, unless another is named. */
+const created = (panel: any, id: string, name: string, requestId: string = panel.createRequest) =>
+    panel.handleIncomingMessage('chat.sessionCreated', { session: { id, name }, requestId });
+
+const asked = (of: (type: string) => any[]) => of('chat.createSession').map(({ requestId: _id, ...rest }) => rest);
 
 beforeEach(() => {
     (globalThis as any).requestAnimationFrame = () => 1;
@@ -45,7 +49,8 @@ describe('the first message, sent with no chat open', () => {
         panel.pushMessage('system', 'This chat was deleted in another window.');
         type(panel, 'Remember the word HERON.');
 
-        expect(of('chat.createSession')).toEqual([{ mode: 'build', ask: false }]);
+        expect(asked(of)).toEqual([{ mode: 'build', ask: false }]);
+        expect(of('chat.createSession')[0].requestId).toEqual(expect.any(String));
         expect(of('chat.sendMessage')).toEqual([]);
         expect(panel.inputValue).toBe('');
         expect(panel.isLoadingSession).toBe(true);
@@ -102,14 +107,42 @@ describe('while its session is being made', () => {
         expect(of('chat.sendMessage').map((d) => [d.text, d.sessionId])).toEqual([['hello', 'ses_A']]);
     });
 
-    it('a task asked for meanwhile takes that session; the typed message goes back', () => {
+    it('a task asked for meanwhile gets its own session, named and in its mode; the typed message goes back', () => {
         const { panel, of } = makePanel();
         type(panel, 'hello');
-        panel.handleIncomingMessage('chat.startTask', { prompt: 'fix the run', mode: 'build', name: 'Fix' });
+        const first = panel.createRequest;
+        panel.handleIncomingMessage('chat.startTask', { prompt: 'fix the run', mode: 'plan', name: 'Fix' });
         expect(panel.inputValue).toBe('hello');
-        expect(of('chat.createSession')).toHaveLength(1);
-        created(panel, 'ses_1', 'Session 1');
-        expect(of('chat.sendMessage').map((d) => [d.text, d.sessionId])).toEqual([['fix the run', 'ses_1']]);
+        expect(asked(of)).toEqual([{ mode: 'build', ask: false }, { mode: 'plan', name: 'Fix' }]);
+        // The first one, made after all: listed, not shown.
+        created(panel, 'ses_1', 'Session 1', first);
+        expect(panel.currentSessionId).toBeNull();
+        created(panel, 'ses_2', 'Fix');
+        expect(panel.currentSessionId).toBe('ses_2');
+        expect(of('chat.sendMessage').map((d) => [d.text, d.sessionId, d.mode])).toEqual([['fix the run', 'ses_2', 'plan']]);
+    });
+
+    it('a task asked for while "+" waits on its name: the task\'s own session; a cancelled name drops nothing', () => {
+        const { panel, of } = makePanel();
+        panel.currentSessionId = 'ses_0';
+        panel.createNewSession();
+        const plus = panel.createRequest;
+        panel.handleIncomingMessage('chat.startTask', { prompt: 'fix the run', mode: 'build', name: 'Fix' });
+        panel.handleIncomingMessage('chat.sessionCreateAborted', { requestId: plus });
+        expect(panel.isLoadingSession).toBe(true);
+        created(panel, 'ses_2', 'Fix');
+        expect(of('chat.sendMessage').map((d) => [d.text, d.sessionId])).toEqual([['fix the run', 'ses_2']]);
+    });
+
+    it('an error that is not the session\'s does not stop the wait: "+" still shows the session it made', () => {
+        const { panel } = makePanel();
+        panel.currentSessionId = 'ses_0';
+        panel.sendPrompt('in the old session', [], true);
+        panel.createNewSession();
+        panel.handleIncomingMessage('chat.error', { message: 'the turn failed' });
+        panel.handleIncomingMessage('chat.connectionStatus', { connected: false, reason: 'restarting' });
+        created(panel, 'ses_1', 'Session 2');
+        expect(panel.currentSessionId).toBe('ses_1');
     });
 
     it('a "+" meanwhile asks for no other session', () => {
@@ -120,10 +153,9 @@ describe('while its session is being made', () => {
     });
 
     it.each([
-        ['the name prompt is cancelled', (panel: any) => panel.handleIncomingMessage('chat.sessionCreateAborted', {})],
-        ['an error comes', (panel: any) => panel.handleIncomingMessage('chat.error', { message: 'agent failed to start' })],
-        ['the agent goes', (panel: any) => panel.handleIncomingMessage('chat.connectionStatus', { connected: false, reason: 'exited' })],
-    ])('the message goes back to the composer, and can be sent again, when %s', (_why, end) => {
+        ['says it was not made', (panel: any) => panel.handleIncomingMessage('chat.sessionCreateAborted', { requestId: panel.createRequest })],
+        ['names no request (an older host)', (panel: any) => panel.handleIncomingMessage('chat.sessionCreateAborted', {})],
+    ])('the message goes back to the composer, and can be sent again, when the host %s', (_why, end) => {
         const { panel, of } = makePanel();
         type(panel, 'hello');
         end(panel);
@@ -147,11 +179,28 @@ describe('a session made with "+"', () => {
 });
 
 describe('a refusal for a chat not shown', () => {
-    it('is not said in the one shown, but what it says of the agent is kept', () => {
+    it('is not said in the one shown; the message goes back to the composer, and what it says of the agent is kept', () => {
         const { panel } = makePanel();
         panel.currentSessionId = 'ses_A';
-        panel.handleIncomingMessage('chat.messageNotSent', { sessionId: 'ses_B', reason: 'the agent does not read images', images: false });
+        type(panel, 'look at this');
+        panel.handleIncomingMessage('chat.turnEnd', { sessionId: 'ses_A' });
+        panel.loadSession('ses_B');
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_B', messages: [] });
+        panel.handleIncomingMessage('chat.messageNotSent', { sessionId: 'ses_A', reason: 'the agent does not read images', images: false });
         expect(said(panel)).toEqual([]);
+        expect(panel.inputValue).toBe('look at this');
         expect(panel.agentTakesImages).toBe(false);
+    });
+});
+
+describe('a history for a chat left since', () => {
+    it('comes late, and is not drawn over the chat shown', () => {
+        const { panel } = makePanel();
+        panel.loadSession('ses_A');
+        panel.createNewSession();
+        created(panel, 'ses_new', 'Session 2');
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_A', messages: [{ role: 'user', content: 'old' }] });
+        expect(panel.currentSessionId).toBe('ses_new');
+        expect(said(panel)).toEqual(['system: Created session: Session 2']);
     });
 });
