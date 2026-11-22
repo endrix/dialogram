@@ -241,7 +241,12 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   /** Images to send with the next message: pasted, dropped, or a picture of the diagram. */
   private pendingImages: ChatImage[] = [];
   /** The message last sent, and its row, until the host answers: one it does not send is put back. */
-  private lastSent: { row: TimelineItem; text: string; images: ChatImage[]; fromComposer: boolean; sessionId: string | null } | undefined;
+  /** Per chat, the message last sent in it, kept until the host answers, so a
+   *  message it does not send goes back where it came from (one sent since in
+   *  another chat is not it). */
+  private sentIn = new Map<string, { row: TimelineItem; text: string; images: ChatImage[]; fromComposer: boolean }>();
+  /** The chat the last message went to: a refusal that names none is for it. */
+  private lastSentIn: string | undefined;
   /** Whether the agent reads images, as the host says; unknown until it says. */
   private agentTakesImages: boolean | undefined;
   /** True while a picture of the diagram is drawn for the next message. */
@@ -666,14 +671,9 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
           break;
         }
         // A history only follows a request (a load, a revert) for the chat
-        // shown: one for a chat left since comes late, and is not drawn.
-        if (this.currentSessionId && data?.sessionId !== this.currentSessionId) break;
-        // A chat drawn: a session asked for meanwhile is no longer waited for,
-        // and a message waiting for it goes back to the composer.
-        if (!data?.catchUp && data?.sessionId && this.createRequest) {
-          this.createRequest = undefined;
-          this.restorePending();
-        }
+        // shown: one for another comes late, for a chat left (or while a session
+        // is awaited and none is shown), and is not drawn.
+        if (data?.sessionId !== this.currentSessionId && (this.currentSessionId || this.createRequest)) break;
         this.renderSessionHistory(data);
         break;
 
@@ -1121,7 +1121,10 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     this.turnMode = this.currentMode;
     this.pushMessage('user', text, this.currentMode, undefined, undefined, images);
     const row = this.timeline.at(-1);
-    this.lastSent = row ? { row, text, images, fromComposer, sessionId: this.currentSessionId } : undefined;
+    const sentTo = this.currentSessionId ?? '';
+    this.lastSentIn = sentTo;
+    if (row) this.sentIn.set(sentTo, { row, text, images, fromComposer });
+    else this.sentIn.delete(sentTo);
 
     const ok = this.sendToHost('chat.sendMessage', {
       text,
@@ -1134,6 +1137,13 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     });
 
     if (!ok) {
+      // Not sent: its row goes, and it goes back where it came from.
+      this.sentIn.delete(sentTo);
+      if (row) {
+        const at = this.timeline.lastIndexOf(row);
+        if (at >= 0) this.timeline.splice(at, 1);
+      }
+      if (fromComposer) this.putBack(text, images);
       this.pushMessage('system', 'Error: VS Code API not available in webview');
       return;
     }
@@ -1222,12 +1232,12 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     // For a chat not shown (left while its message went): the message still
     // goes back to the composer, but no line is said in the chat shown.
     const elsewhere = typeof data?.sessionId === 'string' && !!this.currentSessionId && data.sessionId !== this.currentSessionId;
-    // The message last sent, if it is the one refused (not one sent since in
-    // another chat): its row goes, its text back to the composer.
-    const sent = this.lastSent;
-    const refused = sent && (typeof data?.sessionId !== 'string' || !sent.sessionId || sent.sessionId === data.sessionId);
-    if (sent && refused) {
-      this.lastSent = undefined;
+    // The message last sent in the chat refused (not one sent since in
+    // another): its row goes, its text back to the composer.
+    const refusedIn = typeof data?.sessionId === 'string' ? data.sessionId : this.lastSentIn;
+    const sent = refusedIn === undefined ? undefined : this.sentIn.get(refusedIn);
+    if (sent) {
+      this.sentIn.delete(refusedIn!);
       const at = this.timeline.lastIndexOf(sent.row);
       if (at >= 0) this.timeline.splice(at, 1);
       if (sent.fromComposer) this.putBack(sent.text, sent.images);
@@ -1340,9 +1350,12 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   private loadSession(sessionId: string): void {
     // Picked while a session was being made: that one is no longer awaited, and
-    // a message waiting for it goes back to the composer.
-    this.createRequest = undefined;
-    this.restorePending();
+    // a message waiting for it goes back to the composer. A task's is: the
+    // task still opens its own session, as it asked.
+    if (!this.pendingSend || this.pendingSend.fromComposer) {
+      this.createRequest = undefined;
+      this.restorePending();
+    }
     this.currentSessionId = sessionId;
     // Restoring a session fans out to several opencode round-trips and can take
     // a noticeable moment; show a loading row so the panel doesn't look frozen.

@@ -165,14 +165,32 @@ describe('while its session is being made', () => {
         expect(panel.inputValue).toBe('first\n\nsecond');
     });
 
-    it('a chat drawn meanwhile (no chat was open) leaves the session asked for', () => {
-        const { panel } = makePanel();
+    it('a history for another chat, while none is shown, is not drawn; the session still comes', () => {
+        const { panel, of } = makePanel();
         type(panel, 'hello');
-        const asked = panel.createRequest;
-        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_X', messages: [] });
-        expect(panel.inputValue).toBe('hello');
-        created(panel, 'ses_new', 'Session 1', asked);
-        expect(panel.currentSessionId).toBe('ses_X');
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_X', messages: [{ role: 'user', content: 'old' }] });
+        expect(panel.currentSessionId).toBeNull();
+        created(panel, 'ses_1', 'Session 1');
+        expect(of('chat.sendMessage').map((d) => [d.text, d.sessionId])).toEqual([['hello', 'ses_1']]);
+    });
+
+    it('the history of a chat picked before "+" does not undo "+"', () => {
+        const { panel } = makePanel();
+        panel.loadSession('ses_A');
+        panel.createNewSession();
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_A', messages: [] });
+        created(panel, 'ses_new', 'Named');
+        expect(panel.currentSessionId).toBe('ses_new');
+    });
+
+    it('a task still opens its own session, and is sent there, though a chat is picked meanwhile', () => {
+        const { panel, of } = makePanel();
+        panel.handleIncomingMessage('chat.startTask', { prompt: 'fix the run', mode: 'build', name: 'Fix' });
+        panel.loadSession('ses_A');
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_A', messages: [] });
+        created(panel, 'ses_task', 'Fix');
+        expect(panel.currentSessionId).toBe('ses_task');
+        expect(of('chat.sendMessage').map((d) => [d.text, d.sessionId])).toEqual([['fix the run', 'ses_task']]);
     });
 
     it('an error keeps "Creating session…" while the session is awaited, and the session still comes', () => {
@@ -228,6 +246,17 @@ describe('a session made with "+"', () => {
     });
 });
 
+describe('a message that cannot reach the host', () => {
+    it('leaves no row behind, and goes back to the composer', () => {
+        const { panel } = makePanel();
+        panel.currentSessionId = 'ses_A';
+        panel.channel = undefined;
+        type(panel, 'hello');
+        expect(said(panel)).toEqual(['system: Error: VS Code API not available in webview']);
+        expect(panel.inputValue).toBe('hello');
+    });
+});
+
 describe('from a host that names no request', () => {
     it('"+" is shown, though a chat was', () => {
         const { panel } = makePanel();
@@ -239,7 +268,7 @@ describe('from a host that names no request', () => {
 });
 
 describe('a refusal for a chat not shown', () => {
-    it('leaves the message sent since in the chat shown', () => {
+    it('leaves the message sent since in the chat shown, and gives the refused one back', () => {
         const { panel } = makePanel();
         panel.currentSessionId = 'ses_A';
         type(panel, 'in A');
@@ -249,7 +278,7 @@ describe('a refusal for a chat not shown', () => {
         type(panel, 'in B');
         panel.handleIncomingMessage('chat.messageNotSent', { sessionId: 'ses_A', reason: 'the agent does not read images', images: false });
         expect(said(panel)).toEqual(['user: in B']);
-        expect(panel.inputValue).toBe('');
+        expect(panel.inputValue).toBe('in A');
     });
 
     it('is not said in the one shown; the message goes back to the composer, and what it says of the agent is kept', () => {
