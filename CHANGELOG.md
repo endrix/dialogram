@@ -1494,6 +1494,30 @@ platform that hands it one.
 
 ### Fixed
 
+- **A chat is the machine's, not the window's: a local window and a
+  Remote-SSH window on the same folder see the same chats.** Sessions and
+  their transcripts were kept in the window's `workspaceState`, which VS Code
+  keeps on the client under the window's URI. A Remote-SSH window (another
+  client, another URI) found none of the chats made at the desk, and the desk
+  none of those made over SSH, though the agent, which runs beside the files,
+  held them all. They are now kept where the agent keeps its sessions, on the
+  machine the extension host runs on: a file per session in
+  `dialogram/chat/<product>/` under `$XDG_DATA_HOME` (`~/.local/share` by
+  default) on Linux, `~/Library/Application Support` on macOS and
+  `%LOCALAPPDATA%` on Windows (`DIALOGRAM_DATA_DIR` overrides it), readable
+  by the user alone. Each change
+  (a message, a rename, a mode) is a line appended to it, so two windows on
+  the same chat keep each other's turns. A chat deleted in one leaves a mark
+  and is never written back by the other, which says so if a message is sent
+  to it. A
+  window reads the list again when it shows it, a session when it opens it,
+  and both when it is come back to (focus), so a chat made, continued or
+  deleted in one window shows in the other. A chat that cannot be kept (a
+  folder not writable) is said once and stays in the window. What an older
+  Dialogram kept in `workspaceState` moves there on first use, from each
+  client. The folder follows the agent's: a Flatpak VS Code, which gives its
+  extension host (and the agent it starts) a data folder of its own, keeps
+  its chats apart from an SSH window's, as the agent keeps its sessions.
 - **The chat's Plan and Build are what the agent runs.** A session opened
   again after a reload showed Build whatever it was in: the client dropped
   the agent's answer to `session/load` and recorded a default. It now takes

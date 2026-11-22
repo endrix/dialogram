@@ -119,6 +119,8 @@ interface MessageItem {
   images?: ChatImage[];
   /** How many images a restored message carried: their bytes are not kept. */
   imageCount?: number;
+  /** The stored message's key: one added on catching up is not shown twice. */
+  key?: string;
 }
 
 interface ToolItem {
@@ -126,6 +128,8 @@ interface ToolItem {
   id: string;
   title: string;
   status?: string;
+  /** The stored message's key: one added on catching up is not shown twice. */
+  key?: string;
 }
 
 interface PermissionItem {
@@ -349,9 +353,41 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         const instance = (e as CustomEvent<{ instance?: string }>).detail?.instance;
         if (instance) this.showAgent(instance);
       });
+      // Another window on the same folder (a local one, a Remote-SSH one) may
+      // have made, extended or deleted a chat since: look again when this one
+      // is come back to.
+      window.addEventListener('focus', () => this.catchUp());
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') this.catchUp();
+        });
+      }
     }
     this.update();
     this.requestState();
+  }
+
+  /** When the sessions were last asked for on coming back to the window. */
+  private lastCatchUp = 0;
+
+  /**
+   * Ask for the sessions again, naming the one shown unless a turn is running
+   * or one is loading, so the host can bring its transcript up to date.
+   */
+  private catchUp(): void {
+    const now = Date.now();
+    if (now - this.lastCatchUp < 1000) return;
+    this.lastCatchUp = now;
+    const shown = this.currentSessionId && !this.isStreaming && !this.isLoadingSession
+      ? this.currentSessionId
+      : undefined;
+    // With the stored messages it shows, by key: the host sends the others.
+    const keys = this.timeline.map((t: any) => t.key).filter((k: unknown): k is string => typeof k === 'string');
+    // And how many rows of the transcript have none: shown as they came.
+    const unkeyed = this.timeline.filter(
+      (t: any) => !t.key && (t.kind === 'tool' || (t.kind === 'message' && (t.role === 'user' || t.role === 'assistant')))
+    ).length;
+    this.sendToHost('chat.getSessions', shown ? { shown, keys, unkeyed } : undefined);
   }
 
   // ── The view: the session, or one of the run's agents ─────────────────
@@ -509,6 +545,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   private handleIncomingMessage(type: string, data: any): void {
     switch (type) {
       case 'chat.message':
+        // A note for another chat than the one shown (switched from since).
+        if (typeof data?.sessionId === 'string' && data.sessionId !== this.currentSessionId) break;
         this.finishStreamingMessage();
         if (data) {
           this.pushMessage(data.role ?? 'system', data.content ?? '', data.mode, data.timestamp);
@@ -595,19 +633,36 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         break;
 
       case 'chat.sessionHistory':
+        // Sent on coming back to the window: a turn started since, or
+        // another session chosen, is not to be redrawn under it.
+        if (data?.catchUp && (this.isStreaming || this.isLoadingSession || data.sessionId !== this.currentSessionId)) {
+          break;
+        }
         this.renderSessionHistory(data);
         break;
 
+      case 'chat.sessionAppend':
+        this.appendSessionMessages(data);
+        break;
+
       case 'chat.sessionDeleted':
-        if (data?.sessionId === this.currentSessionId) {
-          this.currentSessionId = data?.nextSessionId ?? null;
-          this.clearTimeline();
-        }
         this.loadSessions();
+        // Another chat than the one shown (one switched from since asking):
+        // the list says it, not this one's transcript.
+        if (data?.sessionId !== this.currentSessionId) break;
+        // Opened from a list another window had made stale: no history comes.
+        this.isLoadingSession = false;
+        this.currentSessionId = data?.nextSessionId ?? null;
+        this.clearTimeline();
         if (data?.nextSessionId) {
           this.loadSession(data.nextSessionId);
         } else {
-          this.pushMessage('system', 'Session deleted. Create or select a session to continue.');
+          this.pushMessage(
+            'system',
+            typeof data?.reason === 'string' && data.reason
+              ? data.reason
+              : 'Session deleted. Create or select a session to continue.'
+          );
         }
         break;
 
@@ -807,32 +862,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     this.clearTimeline();
 
     const messages: any[] = Array.isArray(data.messages) ? data.messages : [];
-    // A stored reply has no mode of its own: it is the mode of the message it answers.
-    let askedIn: 'plan' | 'build' | undefined;
-    messages.forEach((m, i) => {
-      if (m.role === 'user') askedIn = m.mode === 'plan' || m.mode === 'build' ? m.mode : undefined;
-      // Persisted tool calls restore as tool timeline items — the same chip the
-      // live path renders — keeping the text parts on either side distinct.
-      if (m.role === 'tool') {
-        this.timeline.push({
-          kind: 'tool',
-          id: typeof m.toolId === 'string' ? m.toolId : `restored-tool-${i}`,
-          title: m.toolName ?? 'tool call',
-          status: typeof m.toolStatus === 'string' ? m.toolStatus : undefined,
-        });
-        return;
-      }
-      this.timeline.push({
-        kind: 'message',
-        role: m.role === 'assistant' || m.role === 'user' ? m.role : 'system',
-        content: m.content ?? '',
-        timestamp: m.timestamp ?? Date.now(),
-        mode: m.mode ?? (m.role === 'assistant' ? askedIn : undefined),
-        ...(typeof m.messageId === 'string' ? { messageId: m.messageId } : {}),
-        ...(typeof m.thinking === 'string' && m.thinking ? { thinking: m.thinking } : {}),
-        ...(typeof m.images === 'number' && m.images > 0 ? { imageCount: m.images } : {}),
-      });
-    });
+    this.timeline.push(...this.historyItems(messages, undefined, 'restored-tool'));
     if (data.mode === 'plan' || data.mode === 'build') {
       this.currentMode = data.mode;
     }
@@ -842,7 +872,61 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     }
     this.reverted = Boolean(data.reverted);
     // Ignore the session/load replay tail until the user drives a real turn.
-    this.suppressReplayStream = true;
+    // A catch-up loads nothing in the agent: no replay follows it.
+    if (!data.catchUp) this.suppressReplayStream = true;
+    this.update();
+  }
+
+  /**
+   * The timeline items of stored messages. A stored reply has no mode of its
+   * own: it is the mode of the message it answers (`askedIn` before the first).
+   */
+  private historyItems(messages: any[], askedIn: 'plan' | 'build' | undefined, toolIds: string): typeof this.timeline {
+    const items: typeof this.timeline = [];
+    messages.forEach((m, i) => {
+      if (m.role === 'user') askedIn = m.mode === 'plan' || m.mode === 'build' ? m.mode : undefined;
+      // Persisted tool calls restore as tool timeline items — the same chip the
+      // live path renders — keeping the text parts on either side distinct.
+      if (m.role === 'tool') {
+        items.push({
+          kind: 'tool',
+          id: typeof m.toolId === 'string' ? m.toolId : `${toolIds}-${i}`,
+          title: m.toolName ?? 'tool call',
+          status: typeof m.toolStatus === 'string' ? m.toolStatus : undefined,
+          ...(typeof m.key === 'string' ? { key: m.key } : {}),
+        });
+        return;
+      }
+      items.push({
+        kind: 'message',
+        role: m.role === 'assistant' || m.role === 'user' ? m.role : 'system',
+        content: m.content ?? '',
+        timestamp: m.timestamp ?? Date.now(),
+        mode: m.mode ?? (m.role === 'assistant' ? askedIn : undefined),
+        ...(typeof m.messageId === 'string' ? { messageId: m.messageId } : {}),
+        ...(typeof m.thinking === 'string' && m.thinking ? { thinking: m.thinking } : {}),
+        ...(typeof m.images === 'number' && m.images > 0 ? { imageCount: m.images } : {}),
+        ...(typeof m.key === 'string' ? { key: m.key } : {}),
+      });
+    });
+    return items;
+  }
+
+  /**
+   * Messages another window added to the session shown, sent on coming back
+   * to this window: added after what the panel shows, which stays (its own
+   * notes and errors too). Left if a turn has started since it asked, or
+   * another session is shown.
+   */
+  private appendSessionMessages(data: any): void {
+    if (!data?.sessionId || data.sessionId !== this.currentSessionId || this.isStreaming || this.isLoadingSession) return;
+    // One it shows already (two catch-ups crossing) is not shown twice.
+    const shown = new Set(this.timeline.map((t: any) => t.key).filter(Boolean));
+    const messages: any[] = (Array.isArray(data.messages) ? data.messages : []).filter((m: any) => !m.key || !shown.has(m.key));
+    if (messages.length === 0) return;
+    const lastAsked = [...this.timeline].reverse().find((t: any) => t.kind === 'message' && t.role === 'user') as any;
+    this.timeline.push(...this.historyItems(messages, lastAsked?.mode, `appended-tool-${this.timeline.length}`));
+    this.reverted = Boolean(data.reverted);
     this.update();
   }
 
@@ -1066,7 +1150,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       }
     }
     const reason = typeof data?.reason === 'string' && data.reason ? data.reason : 'the agent did not take it';
-    this.pushMessage('system', `Not sent: ${reason}. Remove the images and send again.`);
+    // The advice is for images the agent refused, not for a chat deleted.
+    this.pushMessage('system', data?.images === false ? `Not sent: ${reason}. Remove the images and send again.` : `Not sent: ${reason}.`);
   }
 
   /** Why `image` cannot go with the next message, or nothing when it can. */

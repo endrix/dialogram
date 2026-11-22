@@ -23,6 +23,8 @@ export default defineConfig({
     test: {
         environment: 'node',
         include: ['test/**/*.test.ts'],
+        // The session store's folder, per test (never the user's own).
+        setupFiles: ['test/setup-data-dir.ts'],
         coverage: {
             provider: 'v8',
             reporter: ['text', 'json', 'html'],

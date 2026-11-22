@@ -1,5 +1,8 @@
+import { promises as fs } from 'node:fs';
+import * as path from 'node:path';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { SessionManager, type WorkspaceStorage } from '../src/extension/session-manager.js';
+import { SessionManager, type SessionData, type WorkspaceStorage } from '../src/extension/session-manager.js';
+import { FileSessionStore, type SessionChange } from '../src/extension/session-store.js';
 import { ACPClientService } from '../src/extension/acp-client.js';
 
 // Mock ACP Client
@@ -12,6 +15,7 @@ describe('SessionManager', () => {
   let mockACPClient: any;
   let mockStorage: WorkspaceStorage;
   let storageData: Map<string, any>;
+  let store: FileSessionStore;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -39,11 +43,13 @@ describe('SessionManager', () => {
       getSessionMode: vi.fn().mockReturnValue('build'),
     };
 
-    sessionManager = new SessionManager(mockACPClient as any, mockStorage);
+    // The setup file gives each test its own data folder.
+    store = new FileSessionStore(process.env.DIALOGRAM_DATA_DIR!);
+    sessionManager = new SessionManager(mockACPClient as any, store, mockStorage);
   });
 
   describe('initialize', () => {
-    it('should restore sessions from storage', async () => {
+    it('moves the chats workspaceState kept into the store, once', async () => {
       const savedSessions = [
         {
           id: 'session-1',
@@ -60,6 +66,9 @@ describe('SessionManager', () => {
       await sessionManager.initialize();
 
       expect(sessionManager.getSessionsForWorkflow('/test/workflow.py')).toHaveLength(1);
+      expect((await store.list('/test/workflow.py')).map((s) => s.id)).toEqual(['session-1']);
+      // Cleared where it was, so a session deleted later does not come back.
+      expect(storageData.get('dialogram.sessions')).toBeUndefined();
       // Restoring sessions must NOT auto-select one: the chat panel opens on an
       // explicit empty state, and the user picks or creates a session. Auto-
       // selecting here made a phantom "current" session leak into the panel.
@@ -95,7 +104,13 @@ describe('SessionManager', () => {
         mode: 'plan',
       });
       expect(sessionManager.getCurrentSessionId()).toBe('test-session-123');
-      expect(mockStorage.update).toHaveBeenCalled();
+      expect(await store.read('/test/workflow.py', 'test-session-123')).toMatchObject({
+        name: 'My Session',
+        mode: 'plan',
+        messages: [],
+      });
+      // Nothing goes to workspaceState any more.
+      expect(mockStorage.update).not.toHaveBeenCalled();
     });
 
     it('should auto-generate session name', async () => {
@@ -233,7 +248,7 @@ describe('SessionManager', () => {
       expect(mockACPClient.deleteSession).toHaveBeenCalledWith('test-session-123');
       expect(sessionManager.getSessionsForWorkflow('/test/workflow.py')).toHaveLength(0);
       expect(sessionManager.getCurrentSessionId()).toBeNull();
-      expect(mockStorage.update).toHaveBeenCalled();
+      expect(await store.list('/test/workflow.py')).toEqual([]);
     });
 
     it('should handle ACP delete failure gracefully', async () => {
@@ -301,7 +316,7 @@ describe('SessionManager', () => {
 
       const session = sessionManager.getSession('test-session-123');
       expect(session?.mode).toBe('plan');
-      expect(mockStorage.update).toHaveBeenCalled();
+      expect((await store.read('/test/workflow.py', 'test-session-123'))?.mode).toBe('plan');
     });
 
     it('should rename session', async () => {
@@ -309,6 +324,391 @@ describe('SessionManager', () => {
 
       const session = sessionManager.getSession('test-session-123');
       expect(session?.name).toBe('New Name');
+    });
+  });
+
+  describe('two windows on one store (a local and a Remote-SSH window)', () => {
+    const FILE = '/test/workflow.py';
+    const root = () => process.env.DIALOGRAM_DATA_DIR!;
+    const window = (store = new FileSessionStore(root()), legacy?: WorkspaceStorage, onError?: (e: unknown) => void) =>
+      new SessionManager(mockACPClient as any, store, legacy, onError);
+    const said = async (id = 'test-session-123') =>
+      (await new FileSessionStore(root()).read(FILE, id))?.messages.map((m) => m.content);
+    const message = (content: string) => ({ role: 'user' as const, content, timestamp: Date.now() });
+
+    it("keeps each window's messages on a session both have open", async () => {
+      const local = window();
+      const ssh = window();
+      await local.createSession(FILE, 'Review');
+      await ssh.refresh(FILE);
+      await ssh.loadSession('test-session-123');
+
+      local.addMessageToSession('test-session-123', message('first'));
+      await local.idle();
+      // The SSH window's copy has not seen "first": its message is added, not written over it.
+      ssh.addMessageToSession('test-session-123', message('second'));
+      await ssh.idle();
+      local.addMessageToSession('test-session-123', message('third'));
+      await local.idle();
+
+      expect(await said()).toEqual(['first', 'second', 'third']);
+      await ssh.loadSession('test-session-123');
+      expect(ssh.getSessionMessages('test-session-123').map((m) => m.content)).toEqual(['first', 'second', 'third']);
+    });
+
+    it('keeps listed a session made while the list was being read', async () => {
+      let open!: () => void;
+      const gate = new Promise<void>((resolve) => { open = resolve; });
+      class SlowList extends FileSessionStore {
+        override async list(workflowFile: string) {
+          const listed = await super.list(workflowFile);
+          await gate;
+          return listed;
+        }
+      }
+      const manager = window(new SlowList(root()));
+      const refreshing = manager.refresh(FILE);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await manager.createSession(FILE, 'Made meanwhile');
+      open();
+      await refreshing;
+      expect(manager.getSessionsForWorkflow(FILE).map((s) => s.name)).toEqual(['Made meanwhile']);
+    });
+
+    it('keeps a session it could not store, says so, and stores it whole with the next change', async () => {
+      let failing = true;
+      class Failing extends FileSessionStore {
+        override create(session: SessionData) {
+          return failing ? Promise.reject(new Error('EACCES: permission denied')) : super.create(session);
+        }
+      }
+      const onError = vi.fn();
+      const manager = window(new Failing(root()), undefined, onError);
+      await manager.createSession(FILE, 'Unsaved');
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'EACCES: permission denied' }));
+      await manager.refresh(FILE);
+      expect(manager.getSessionsForWorkflow(FILE)).toHaveLength(1);
+
+      failing = false;
+      manager.addMessageToSession('test-session-123', message('kept at last'));
+      await manager.idle();
+      expect(await said()).toEqual(['kept at last']);
+    });
+
+    it('keeps a message it could not store through a read, and stores it with the next', async () => {
+      let failing = false;
+      class Failing extends FileSessionStore {
+        override append(...args: Parameters<FileSessionStore['append']>) {
+          return failing ? Promise.reject(new Error('ENOSPC')) : super.append(...args);
+        }
+      }
+      const onError = vi.fn();
+      const manager = window(new Failing(root()), undefined, onError);
+      await manager.createSession(FILE, 'Review');
+      failing = true;
+      manager.addMessageToSession('test-session-123', message('one'));
+      await manager.idle();
+      expect(onError).toHaveBeenCalled();
+      await manager.refresh(FILE);
+      await manager.loadSession('test-session-123');
+      expect(manager.getSessionMessages('test-session-123').map((m) => m.content)).toEqual(['one']);
+
+      failing = false;
+      manager.addMessageToSession('test-session-123', message('two'));
+      await manager.idle();
+      expect(await said()).toEqual(['one', 'two']);
+    });
+
+    it('does not bring back a session another window deleted, and says it is gone', async () => {
+      const local = window();
+      const ssh = window();
+      await local.createSession(FILE, 'Review');
+      await ssh.refresh(FILE);
+      await ssh.deleteSession('test-session-123');
+
+      expect(await local.isGone('test-session-123')).toBe(true);
+      expect(local.getSession('test-session-123')).toBeNull();
+      expect(local.getCurrentSessionId()).toBeNull();
+
+      const desk = window();
+      await desk.refresh(FILE);
+      expect(desk.getSessionsForWorkflow(FILE)).toHaveLength(0);
+    });
+
+    it('does not bring back a deleted session it writes to', async () => {
+      const local = window();
+      const ssh = window();
+      await local.createSession(FILE, 'Review');
+      await ssh.refresh(FILE);
+      await ssh.deleteSession('test-session-123');
+      local.addMessageToSession('test-session-123', message('late'));
+      await local.idle();
+      expect(await said()).toBeUndefined();
+      expect(local.getSession('test-session-123')).toBeNull();
+    });
+
+    it('takes a session whose file cannot be read as there, not deleted', async () => {
+      const onError = vi.fn();
+      const local = window(undefined, undefined, onError);
+      await local.createSession(FILE, 'Review');
+      const [dir] = await fs.readdir(root());
+      const [name] = await fs.readdir(path.join(root(), dir));
+      await fs.writeFile(path.join(root(), dir, name), 'damaged\n');
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        await local.refresh(FILE);
+      } finally {
+        warn.mockRestore();
+      }
+      expect(local.getSessionsForWorkflow(FILE)).toHaveLength(1);
+      expect(await local.isGone('test-session-123')).toBe(false);
+      expect(await local.loadSession('test-session-123')).not.toBeNull();
+      // Said as a read that failed, not as chats that cannot be saved.
+      expect(onError).toHaveBeenCalledWith(expect.anything(), 'read');
+    });
+
+    it('keeps a session whose file could not be removed, and says so', async () => {
+      class NoRemove extends FileSessionStore {
+        override remove() {
+          return Promise.reject(new Error('EPERM'));
+        }
+      }
+      const onError = vi.fn();
+      const manager = window(new NoRemove(root()), undefined, onError);
+      await manager.createSession(FILE, 'Review');
+      mockACPClient.deleteSession.mockClear();
+      expect(await manager.deleteSession('test-session-123')).toBe(false);
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'EPERM' }));
+      // The agent's session stays with it, so the chat goes on whole.
+      expect(mockACPClient.deleteSession).not.toHaveBeenCalled();
+      await manager.refresh(FILE);
+      expect(manager.getSessionsForWorkflow(FILE)).toHaveLength(1);
+    });
+
+    it('keeps a rename made before a create that found the session there', async () => {
+      let failures = 1;
+      class FailsAfterWriting extends FileSessionStore {
+        override async create(session: SessionData) {
+          const made = await super.create(session);
+          if (failures-- > 0) throw new Error('EIO');
+          return made;
+        }
+      }
+      const manager = window(new FailsAfterWriting(root()), undefined, vi.fn());
+      await manager.createSession(FILE, 'Review');
+      await manager.renameSession('test-session-123', 'Design');
+      await manager.updateSessionMode('plan');
+      await manager.idle();
+      expect(await new FileSessionStore(root()).read(FILE, 'test-session-123')).toMatchObject({ name: 'Design', mode: 'plan' });
+    });
+
+    it('shows two windows\' messages in the order they were made', async () => {
+      const local = window();
+      const ssh = window();
+      await local.createSession(FILE, 'Review');
+      await ssh.refresh(FILE);
+      await ssh.loadSession('test-session-123');
+      ssh.addMessageToSession('test-session-123', { role: 'user', content: 'later', timestamp: 20 });
+      await ssh.idle();
+      // Made first, kept second: the read puts it first all the same.
+      local.addMessageToSession('test-session-123', { role: 'user', content: 'earlier', timestamp: 10 });
+      await local.refresh(FILE);
+      expect(local.getSessionMessages('test-session-123').map((m) => m.content)).toEqual(['earlier', 'later']);
+      await local.idle();
+      await local.loadSession('test-session-123');
+      expect(local.getSessionMessages('test-session-123').map((m) => m.content)).toEqual(['earlier', 'later']);
+    });
+
+    it("names a new session past the ones another window made", async () => {
+      const desk = window();
+      await desk.createSession(FILE);
+      mockACPClient.createSession.mockResolvedValueOnce('ses-laptop');
+      const laptop = window();
+      const made = await laptop.createSession(FILE);
+      expect(made.name).toBe('Session 2');
+    });
+
+    it('shows old chats it could not move, and moves them on the next list', async () => {
+      const kept = (id: string) => ({ id, name: id, workflowFile: FILE, createdAt: 1, updatedAt: 1, mode: 'build', messages: [] });
+      storageData.set('dialogram.sessions', [kept('old-1'), kept('old-2')]);
+      let failures = 1;
+      class FailsOnce extends FileSessionStore {
+        override create(session: SessionData) {
+          return failures-- > 0 ? Promise.reject(new Error('ENOSPC')) : super.create(session);
+        }
+      }
+      const onError = vi.fn();
+      const manager = window(new FailsOnce(root()), mockStorage, onError);
+      await manager.initialize();
+      expect(manager.getSessionsForWorkflow(FILE).map((s) => s.id).sort()).toEqual(['old-1', 'old-2']);
+      expect(onError).toHaveBeenCalledTimes(1);
+      // The one moved is no longer there; the one not moved waits for the next try.
+      expect(storageData.get('dialogram.sessions')).toHaveLength(1);
+
+      await manager.refresh(FILE);
+      expect(storageData.get('dialogram.sessions')).toBeUndefined();
+      expect((await new FileSessionStore(root()).list(FILE)).map((s) => s.id).sort()).toEqual(['old-1', 'old-2']);
+      expect(manager.getSessionsForWorkflow(FILE)).toHaveLength(2);
+    });
+
+    it('does not move again an old chat it moved and was then deleted, while another fails', async () => {
+      const kept = (id: string) => ({ id, name: id, workflowFile: FILE, createdAt: 1, updatedAt: 1, mode: 'build', messages: [] });
+      storageData.set('dialogram.sessions', [kept('old-1'), kept('old-2')]);
+      class OldTwoFails extends FileSessionStore {
+        override create(session: SessionData) {
+          return session.id === 'old-2' ? Promise.reject(new Error('ENOSPC')) : super.create(session);
+        }
+      }
+      const manager = window(new OldTwoFails(root()), mockStorage, vi.fn());
+      await manager.initialize();
+      // Only the one not moved is left there.
+      expect(storageData.get('dialogram.sessions').map((s: SessionData) => s.id)).toEqual(['old-2']);
+      expect(await manager.deleteSession('old-1')).toBe(true);
+
+      await manager.refresh(FILE);
+      expect(manager.getSessionsForWorkflow(FILE).map((s) => s.id)).toEqual(['old-2']);
+      expect(await new FileSessionStore(root()).has(FILE, 'old-1')).toBe(false);
+    });
+
+    it('does not bring back a session deleted here while a list was being read', async () => {
+      let open!: () => void;
+      const gate = new Promise<void>((resolve) => { open = resolve; });
+      let slow = false;
+      class SlowList extends FileSessionStore {
+        override async list(workflowFile: string) {
+          const listed = await super.list(workflowFile);
+          if (slow) await gate;
+          return listed;
+        }
+      }
+      const manager = window(new SlowList(root()));
+      await manager.createSession(FILE, 'Review');
+      slow = true;
+      const refreshing = manager.refresh(FILE);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(await manager.deleteSession('test-session-123')).toBe(true);
+      open();
+      await refreshing;
+      expect(manager.getSessionsForWorkflow(FILE)).toHaveLength(0);
+      expect(await manager.isGone('test-session-123')).toBe(true);
+    });
+
+    it('removes the file of a session it has not read, from the file the panel shows', async () => {
+      await window().createSession(FILE, 'Review');
+      const fresh = window();
+      expect(await fresh.deleteSession('test-session-123', FILE)).toBe(true);
+      expect(await new FileSessionStore(root()).has(FILE, 'test-session-123')).toBe(false);
+    });
+
+    it('keeps a session whose file is there but holds none yet, and says it cannot be read', async () => {
+      const onError = vi.fn();
+      const manager = window(undefined, undefined, onError);
+      await manager.createSession(FILE, 'Review');
+      const [dir] = await fs.readdir(root());
+      const [name] = (await fs.readdir(path.join(root(), dir))).filter((n) => n.endsWith('.jsonl'));
+      await fs.writeFile(path.join(root(), dir, name), '');
+      expect(await manager.loadSession('test-session-123')).not.toBeNull();
+      expect(onError).toHaveBeenCalledWith(expect.anything(), 'read');
+      expect(await manager.isGone('test-session-123')).toBe(false);
+      expect(manager.getSession('test-session-123')).not.toBeNull();
+    });
+
+    it('keeps a session whose file is merely missing (no mark), and keeps it whole again with the next change', async () => {
+      const onError = vi.fn();
+      const manager = window(undefined, undefined, onError);
+      await manager.createSession(FILE, 'Review');
+      manager.addMessageToSession('test-session-123', message('one'));
+      await manager.idle();
+      // The folder moved away for a while: the file is gone, with no mark.
+      await fs.rm(root(), { recursive: true, force: true });
+      expect(await manager.isGone('test-session-123')).toBe(false);
+      await manager.refresh(FILE);
+      expect(manager.getSessionsForWorkflow(FILE)).toHaveLength(1);
+      manager.addMessageToSession('test-session-123', message('two'));
+      await manager.idle();
+      expect(onError).toHaveBeenCalled();
+      manager.addMessageToSession('test-session-123', message('three'));
+      await manager.idle();
+      expect(await said()).toEqual(['one', 'two', 'three']);
+    });
+
+    it('writes a mode to the session it is for, not the one now current', async () => {
+      const manager = window();
+      await manager.createSession(FILE, 'First');
+      mockACPClient.createSession.mockResolvedValueOnce('ses-second');
+      await manager.createSession(FILE, 'Second');
+      manager.setCurrentSession('ses-second');
+      await manager.updateSessionMode('plan', 'test-session-123');
+      await manager.idle();
+      expect((await new FileSessionStore(root()).read(FILE, 'test-session-123'))?.mode).toBe('plan');
+      expect((await new FileSessionStore(root()).read(FILE, 'ses-second'))?.mode).toBe('build');
+    });
+
+    it('does not say a session it never had is gone', async () => {
+      const manager = window();
+      expect(await manager.isGone('ses_not_read_yet')).toBe(false);
+    });
+
+    it('goes on keeping a session after a change failed in a way nothing caught', async () => {
+      let failures = 1;
+      class Failing extends FileSessionStore {
+        override append(...args: Parameters<FileSessionStore['append']>) {
+          return failures-- > 0 ? Promise.reject(new Error('EIO')) : super.append(...args);
+        }
+      }
+      // A report that throws: the failure leaves the change's own catch.
+      const manager = window(new Failing(root()), undefined, () => { throw new Error('report failed'); });
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        await manager.createSession(FILE, 'Review');
+        manager.addMessageToSession('test-session-123', message('one'));
+        await manager.idle();
+        manager.addMessageToSession('test-session-123', message('two'));
+        await manager.idle();
+      } finally {
+        error.mockRestore();
+      }
+      expect(await said()).toEqual(['one', 'two']);
+    });
+
+    it("gives a turn's parts times in the order made, so a read keeps it whatever order the lines landed in", async () => {
+      const manager = window();
+      await manager.createSession(FILE, 'Review');
+      const now = 5_000;
+      manager.addMessageToSession('test-session-123', { role: 'assistant', content: 'before the tool', timestamp: now });
+      manager.addMessageToSession('test-session-123', { role: 'tool', content: '', timestamp: now });
+      manager.addMessageToSession('test-session-123', { role: 'assistant', content: 'after the tool', timestamp: now });
+      await manager.idle();
+      const kept = (await new FileSessionStore(root()).read(FILE, 'test-session-123'))!.messages;
+      expect(kept.map((m) => m.timestamp)).toEqual([5_000, 5_001, 5_002]);
+
+      // Lines landed out of order (written by hand here): the read puts them back.
+      const [dir] = await fs.readdir(root());
+      const [name] = (await fs.readdir(path.join(root(), dir))).filter((n) => n.endsWith('.jsonl'));
+      const file = path.join(root(), dir, name);
+      const [head, ...lines] = (await fs.readFile(file, 'utf8')).trim().split('\n');
+      await fs.writeFile(file, [head, lines[0], lines[2], lines[1]].join('\n') + '\n');
+      expect((await new FileSessionStore(root()).read(FILE, 'test-session-123'))?.messages.map((m) => m.role + ':' + m.content))
+        .toEqual(['assistant:before the tool', 'tool:', 'assistant:after the tool']);
+    });
+
+    it('lists again after clearing workspaceState failed', async () => {
+      storageData.set('dialogram.sessions', [{ id: 'old-1', name: 'old', workflowFile: FILE, createdAt: 1, updatedAt: 1, mode: 'build', messages: [] }]);
+      let failures = 1;
+      const legacy: WorkspaceStorage = {
+        get: mockStorage.get,
+        update: async (key: string, value: any) => {
+          if (failures-- > 0) throw new Error('state not writable');
+          storageData.set(key, value);
+        },
+      };
+      const onError = vi.fn();
+      const manager = window(undefined, legacy, onError);
+      await manager.initialize();
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'state not writable' }));
+      await manager.refresh(FILE);
+      expect(storageData.get('dialogram.sessions')).toBeUndefined();
+      expect(manager.getSessionsForWorkflow(FILE).map((s) => s.id)).toEqual(['old-1']);
     });
   });
 });

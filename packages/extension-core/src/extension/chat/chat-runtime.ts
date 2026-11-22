@@ -17,7 +17,8 @@ import * as vscode from "vscode";
 import { CORE_CHAT_SECTION } from "./edit-capability";
 import { ACPClientService, type AcpAgentSpec, type TurnPart } from "../acp-client.js";
 import type { DiagramChatConfirm, DiagramChatConfirmAnswer, DiagramRunAnswer, DiagramRunQuestion } from "../../api";
-import { SessionManager } from "../session-manager.js";
+import { SessionManager, type MessageData } from "../session-manager.js";
+import { FileSessionStore, chatSessionRoot } from "../session-store.js";
 import type {
   ChatMessageSink,
   ChatPayload,
@@ -85,6 +86,10 @@ export function readSurfaceSelection(raw: unknown): SurfaceSelectionSummary | un
 /** Core chat settings section (shared by every profile, not namespaced). */
 /** workspaceState key of the last model the user explicitly chose. */
 const PREFERRED_MODEL_STATE_KEY = "dialogram.chat.preferredModel";
+
+/** What the panel says of a chat another window deleted. */
+const DELETED_ELSEWHERE = "This chat was deleted in another window. Create or select a session to continue.";
+const DELETED_HERE = "This chat was deleted. Create or select a session to continue.";
 
 /**
  * Everything project-specific the unified chat runtime needs. The diagram
@@ -216,6 +221,16 @@ export class ChatRuntime {
   /** The nested view on screen per file, when it is not the root (see `viewContextText`). */
   private readonly viewTrailByFile = new Map<string, ViewCrumb[]>();
   private readonly output: vscode.OutputChannel;
+  /** Whether a store failure has been put to the person yet. */
+  private storeErrorShown = false;
+  private readErrorShown = false;
+  /** Sessions deleted in this window: one that answers meanwhile is not
+   *  said to be deleted in another. */
+  private deletedHere = new Set<string>();
+  /** Per panel (its uri), the keys of the messages this window made that it
+   *  showed as they came, for the session it showed them in. A transcript
+   *  sent to it carries every key, and starts this again. */
+  private liveShown = new Map<string, { sessionId: string; keys: Set<string> }>();
   /** Tears down the ACP -> webview event forwarding registered in the ctor. */
   private readonly acpForwardingDisposer: () => void;
   /** Pending stuck-connection watchdog (armed on the panel handshake). */
@@ -242,8 +257,15 @@ export class ChatRuntime {
   ) {
     this.context = context;
     this.registry = new SlashCommandRegistry(config.slashCommands ?? []);
-    this.sessions = new SessionManager(this.acp, context.workspaceState);
-    // Restore persisted sessions so the picker is populated across reloads.
+    // Chats are kept beside the agent, on the machine this extension host
+    // runs on, so a local window and a Remote-SSH one share them; those an
+    // older Dialogram kept in workspaceState move there once.
+    this.sessions = new SessionManager(
+      this.acp,
+      new FileSessionStore(chatSessionRoot(config.key)),
+      context.workspaceState,
+      (error, failed) => this.reportStoreError(error, failed),
+    );
     void this.sessions.initialize();
 
     if (config.skill) {
@@ -325,6 +347,7 @@ export class ChatRuntime {
         // Resolve the just-sent user message's opencode id so its revert
         // affordance appears without rebuilding the timeline.
         void this.postLiveMessageIds(sessionId);
+        void this.sayIfDeletedWhileAnswering(sessionId);
       },
     });
     // A successful connection (from any path) stands down the watchdog.
@@ -624,6 +647,15 @@ export class ChatRuntime {
     const { type, data } = payload;
     const file = this.fileFor(uri);
     const cwd = this.cwdFor(file);
+    // A session this window has not read yet (a panel that kept it across a
+    // restart of the extension host): the file's sessions are read first, so
+    // it is sent to, opened or deleted as kept.
+    const named = typeof data?.sessionId === "string" ? data.sessionId : undefined;
+    if (named && !this.sessions.getSession(named) && !(await this.sessions.isGone(named))) {
+      await this.sessions.refresh(file).catch((error) => this.reportStoreError(error, "read"));
+      // Still not there: deleted, if it left the mark (then it is gone).
+      if (!this.sessions.getSession(named)) await this.sessions.isGone(named, file);
+    }
 
     switch (type) {
       case "chat.ready": {
@@ -638,7 +670,7 @@ export class ChatRuntime {
           },
         });
         this.armConnectWatchdog();
-        this.sendSessions(uri, file);
+        await this.sendSessions(uri, file);
         // Eagerly connect on panel open so the panel shows Connected
         // without needing a first message.
         await this.connectAndSendModels(uri, cwd);
@@ -647,9 +679,55 @@ export class ChatRuntime {
       case "chat.log":
         this.output.appendLine(`webview: ${String(data?.message ?? "")}`);
         return;
-      case "chat.getSessions":
-        this.sendSessions(uri, file);
+      case "chat.getSessions": {
+        // The panel names the session it shows when it comes back to its
+        // window: another window may have gone on with it, or deleted it.
+        const shown = typeof data?.shown === "string" ? data.shown : undefined;
+        await this.sendSessions(uri, file);
+        if (!shown) return;
+        // Deleted, not merely unread (a list that failed, a file that cannot
+        // be read): only then is the panel told so.
+        if (await this.sessions.isGone(shown)) {
+          this.postToWebview(uri, {
+            type: "chat.sessionDeleted",
+            data: { sessionId: shown, reason: this.deletedReason(shown) },
+          });
+          return;
+        }
+        // What the panel shows: the stored messages it names (by key), and
+        // those this window made (it showed them as they came). The others
+        // are another window's. A reply it leaves (a turn started since) is
+        // sent again next time; one it has already, it leaves.
+        const keys: unknown[] = Array.isArray(data?.keys) ? data.keys : [];
+        const shownKeys = new Set(keys.filter((k): k is string => typeof k === "string"));
+        const live = this.liveShown.get(uri);
+        const liveKeys = live?.sessionId === shown ? live.keys : new Set<string>();
+        const isShown = (m: MessageData) => !m.key || shownKeys.has(m.key) || liveKeys.has(m.key);
+        const all = this.sessions.getSessionMessages(shown);
+        const lastShown = all.reduce((last, m, i) => (isShown(m) ? i : last), -1);
+        const added = all.filter((m) => !isShown(m));
+        if (added.length === 0) return;
+        // Rows it shows that this host never sent nor made (shown as they
+        // came, before a restart of the host): it cannot tell which stored
+        // ones they are, so the transcript is sent again, once.
+        const unkeyed = typeof data?.unkeyed === "number" ? data.unkeyed : 0;
+        const unknownRows = unkeyed > 0 && liveKeys.size === 0;
+        if (unknownRows || all.indexOf(added[0]) < lastShown) {
+          // Some come before what it shows (both windows went on at once):
+          // the transcript again, in order. The panel leaves it if a turn has
+          // started since it asked.
+          await this.postHistory(uri, shown, { catchUp: true });
+          return;
+        }
+        // All after what it shows: only those, added after it.
+        const { messages, reverted } = await this.historyOf(shown);
+        const addedKeys = new Set(added.map((m) => m.key));
+        this.postToWebview(uri, {
+          type: "chat.sessionAppend",
+          data: { sessionId: shown, messages: messages.filter((m) => m.key && addedKeys.has(m.key)), reverted },
+        });
         return;
+      }
       case "chat.getProviders":
         // Do NOT re-report connectionStatus here: the panel re-requests
         // providers whenever it sees a connected status, so echoing one
@@ -675,6 +753,8 @@ export class ChatRuntime {
         // blocked). Cancelling drops the panel's spinner.
         let name: string | undefined = data?.name;
         if (!name) {
+          // The default offered must not be a name another window has taken.
+          await this.sessions.refresh(file).catch(() => undefined);
           name = await vscode.window.showInputBox({
             title: "New Chat Session",
             prompt: "Name for the new chat session",
@@ -705,13 +785,22 @@ export class ChatRuntime {
           type: "chat.sessionCreated",
           data: { session },
         });
-        this.sendSessions(uri, file);
+        await this.sendSessions(uri, file);
         return;
       }
       case "chat.loadSession": {
         if (!data?.sessionId) return;
         await this.ensureStarted(cwd);
         const loaded = await this.sessions.loadSession(data.sessionId);
+        if (!loaded && (await this.sessions.isGone(data.sessionId))) {
+          // Deleted in another window since this one listed it.
+          this.postToWebview(uri, {
+            type: "chat.sessionDeleted",
+            data: { sessionId: data.sessionId, reason: this.deletedReason(data.sessionId) },
+          });
+          await this.sendSessions(uri, file);
+          return;
+        }
         if (!loaded) {
           this.postToWebview(uri, {
             type: "chat.error",
@@ -751,19 +840,31 @@ export class ChatRuntime {
           "Delete",
         );
         if (choice !== "Delete") return;
-        // Pick the next session to fall back to (most-recent sibling).
+        // Pick the next session to fall back to (most-recent sibling), from
+        // the list as it is now: the question may have waited a long time.
+        await this.sessions.refresh(file).catch((error) => this.reportStoreError(error, "read"));
         const siblings = this.sessions
           .getSessionsForWorkflow(file)
           .filter((s) => s.id !== data.sessionId);
         const nextSessionId = siblings[0]?.id;
-        await this.sessions.deleteSession(data.sessionId);
+        this.deletedHere.add(data.sessionId);
+        if (!(await this.sessions.deleteSession(data.sessionId, file))) {
+          this.deletedHere.delete(data.sessionId);
+          // Its file could not be removed: it stays, and the panel says so.
+          this.postToWebview(uri, {
+            type: "chat.error",
+            data: { message: `Could not delete chat session "${label}": its file could not be removed (see the ${this.config.displayName} Chat output).` },
+          });
+          await this.sendSessions(uri, file);
+          return;
+        }
         this.sessionUri.delete(data.sessionId);
         if (nextSessionId) this.sessions.setCurrentSession(nextSessionId);
         this.postToWebview(uri, {
           type: "chat.sessionDeleted",
           data: { sessionId: data.sessionId, nextSessionId },
         });
-        this.sendSessions(uri, file);
+        await this.sendSessions(uri, file);
         return;
       }
       case "chat.renameSession": {
@@ -780,11 +881,12 @@ export class ChatRuntime {
           if (!name) return;
         }
         await this.sessions.renameSession(data.sessionId, name);
+        if (await this.saidDeleted(uri, file, data.sessionId)) return;
         this.postToWebview(uri, {
           type: "chat.sessionRenamed",
           data: { sessionId: data.sessionId, name },
         });
-        this.sendSessions(uri, file);
+        await this.sendSessions(uri, file);
         return;
       }
       case "chat.selection":
@@ -822,7 +924,7 @@ export class ChatRuntime {
             type: "chat.sessionCreated",
             data: { session },
           });
-          this.sendSessions(uri, file);
+          await this.sendSessions(uri, file);
         }
         this.sessionUri.set(sessionId, uri);
         this.sessions.setCurrentSession(sessionId);
@@ -843,13 +945,36 @@ export class ChatRuntime {
           this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
           return;
         }
+        // A chat another window deleted takes no more messages: nothing is
+        // sent or stored, the panel is told, and the message goes back to
+        // the composer.
+        const refuse = async () => {
+          this.postToWebview(uri, {
+            type: "chat.messageNotSent",
+            data: {
+              sessionId,
+              reason: this.deletedHere.has(sessionId) ? "this chat was deleted" : "this chat was deleted in another window",
+            },
+          });
+          this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
+          this.postToWebview(uri, { type: "chat.sessionDeleted", data: { sessionId, reason: this.deletedReason(sessionId) } });
+          await this.sendSessions(uri, file);
+        };
+        if (await this.sessions.isGone(sessionId)) {
+          await refuse();
+          return;
+        }
         // A session restored from storage (after a reload) isn't attached in
         // the freshly-started agent, so re-attach it before prompting — else
-        // the agent has no context (file) for it.
+        // the agent has no context (file) for it. Deleted in the meantime:
+        // refused all the same.
         if (!this.acp.getSession(sessionId)) {
-          await this.sessions.loadSession(sessionId);
+          if (!(await this.sessions.loadSession(sessionId)) && (await this.sessions.isGone(sessionId))) {
+            await refuse();
+            return;
+          }
         }
-        this.sessions.addMessageToSession(sessionId, {
+        this.addShown(sessionId, {
           role: "user",
           content: data.text,
           timestamp: Date.now(),
@@ -926,7 +1051,7 @@ export class ChatRuntime {
           const sentIn: "plan" | "build" = data.mode;
           await this.acp
             .setSessionMode(sessionId, sentIn)
-            .then(() => this.sessions.updateSessionMode(sentIn))
+            .then(() => this.sessions.updateSessionMode(sentIn, sessionId))
             .catch((error) => console.warn(`[chat] could not set mode '${sentIn}':`, error));
         }
         // Pass-through slash suggestions and natural language both go to the agent.
@@ -950,7 +1075,8 @@ export class ChatRuntime {
         }
         await this.acp.setSessionMode(data.sessionId, data.mode);
         this.sessions.setCurrentSession(data.sessionId);
-        await this.sessions.updateSessionMode(data.mode);
+        await this.sessions.updateSessionMode(data.mode, data.sessionId);
+        await this.saidDeleted(uri, file, data.sessionId);
         return;
       case "chat.setProvider": {
         const modelId = data.providerId;
@@ -1133,7 +1259,7 @@ export class ChatRuntime {
     const now = Date.now();
     const parts = turn.parts ?? [];
     if (parts.length === 0) {
-      this.sessions.addMessageToSession(sessionId, {
+      this.addShown(sessionId, {
         role: "assistant",
         content: turn.text ?? "",
         timestamp: now,
@@ -1145,7 +1271,7 @@ export class ChatRuntime {
     let thinkingAttached = false;
     for (const part of parts) {
       if (part.type === "tool") {
-        this.sessions.addMessageToSession(sessionId, {
+        this.addShown(sessionId, {
           role: "tool",
           content: "",
           timestamp: now,
@@ -1164,11 +1290,11 @@ export class ChatRuntime {
         message.thinking = turn.thinking;
         thinkingAttached = true;
       }
-      this.sessions.addMessageToSession(sessionId, message);
+      this.addShown(sessionId, message);
     }
     // Reasoning with no text part to host it (a tool-only turn) still persists.
     if (!thinkingAttached && turn.thinking) {
-      this.sessions.addMessageToSession(sessionId, {
+      this.addShown(sessionId, {
         role: "assistant",
         content: "",
         timestamp: now,
@@ -1231,8 +1357,81 @@ export class ChatRuntime {
   private async postHistory(
     uri: string,
     sessionId: string,
-    extra?: { mode?: "plan" | "build"; model?: string },
+    extra?: { mode?: "plan" | "build"; model?: string; catchUp?: boolean },
   ): Promise<void> {
+    const { messages, reverted } = await this.historyOf(sessionId);
+    this.liveShown.delete(uri);
+    this.postToWebview(uri, {
+      type: "chat.sessionHistory",
+      data: {
+        sessionId,
+        messages,
+        mode: extra?.mode ?? this.acp.getSessionMode(sessionId),
+        model: extra?.model ?? this.acp.getSessionModel(sessionId),
+        reverted,
+        // Sent on coming back to the window: the panel leaves it if a turn
+        // has started since it asked, or another session is shown.
+        ...(extra?.catchUp ? { catchUp: true } : {}),
+      },
+    });
+  }
+
+  /**
+   * A chat another window deleted while it answered: its answer stays on
+   * screen to be read, but was not kept, and the panel says so.
+   */
+  private async sayIfDeletedWhileAnswering(sessionId: string): Promise<void> {
+    const uri = this.sessionUri.get(sessionId);
+    if (!uri) return;
+    await this.sessions.idle(sessionId);
+    if (this.deletedHere.has(sessionId) || !(await this.sessions.isGone(sessionId))) return;
+    this.postToWebview(uri, {
+      type: "chat.message",
+      data: {
+        sessionId,
+        role: "system",
+        content: "This chat was deleted in another window while it answered: this answer was not kept.",
+        timestamp: Date.now(),
+      },
+    });
+    await this.sendSessions(uri, this.fileFor(uri));
+  }
+
+  /**
+   * Keep a message this window made, and note it shown in the panel the
+   * session's turns go to (it showed it as it came).
+   */
+  private addShown(sessionId: string, message: MessageData): void {
+    const key = this.sessions.addMessageToSession(sessionId, message);
+    const uri = this.sessionUri.get(sessionId);
+    if (!key || !uri) return;
+    let live = this.liveShown.get(uri);
+    if (live?.sessionId !== sessionId) this.liveShown.set(uri, (live = { sessionId, keys: new Set() }));
+    live.keys.add(key);
+  }
+
+  /** Why a chat went: deleted in this window (another panel), or another. */
+  private deletedReason(sessionId: string): string {
+    return this.deletedHere.has(sessionId) ? DELETED_HERE : DELETED_ELSEWHERE;
+  }
+
+  /**
+   * After a change to a chat (a rename, a mode): one deleted meanwhile took
+   * it not, and the panel is told so. True when it was.
+   */
+  private async saidDeleted(uri: string, file: string, sessionId: string): Promise<boolean> {
+    await this.sessions.idle(sessionId);
+    if (!(await this.sessions.isGone(sessionId))) return false;
+    this.postToWebview(uri, {
+      type: "chat.sessionDeleted",
+      data: { sessionId, reason: this.deletedReason(sessionId) },
+    });
+    await this.sendSessions(uri, file);
+    return true;
+  }
+
+  /** A session's stored messages, each user message with its opencode id. */
+  private async historyOf(sessionId: string): Promise<{ messages: MessageData[]; reverted: boolean }> {
     const stored = this.sessions.getSessionMessages(sessionId);
     const ids = await this.alignUserMessageIds(
       sessionId,
@@ -1250,16 +1449,7 @@ export class ChatRuntime {
       const messageId = ids[k++];
       return messageId ? { ...m, messageId } : m;
     });
-    this.postToWebview(uri, {
-      type: "chat.sessionHistory",
-      data: {
-        sessionId,
-        messages,
-        mode: extra?.mode ?? this.acp.getSessionMode(sessionId),
-        model: extra?.model ?? this.acp.getSessionModel(sessionId),
-        reverted,
-      },
-    });
+    return { messages, reverted };
   }
 
   /** After a turn, push resolved user-message ids (+ revert state) for the
@@ -1284,7 +1474,32 @@ export class ChatRuntime {
     });
   }
 
-  private sendSessions(uri: string, file: string): void {
+  /** A chat that cannot be kept is said, once, not hidden; the chat goes on. */
+  private reportStoreError(error: unknown, failed: "save" | "read" = "save"): void {
+    const message = error instanceof Error ? error.message : String(error);
+    this.output?.appendLine(`Chat session store (${failed}): ${message}`);
+    if (failed === "read") {
+      if (this.readErrorShown) return;
+      this.readErrorShown = true;
+      void vscode.window.showWarningMessage(
+        `${this.config.displayName}: a stored chat could not be read (${message}). It is shown as this window last had it.`,
+      );
+      return;
+    }
+    if (this.storeErrorShown) return;
+    this.storeErrorShown = true;
+    void vscode.window.showWarningMessage(
+      `${this.config.displayName}: chats cannot be saved (${message}). This chat goes on, but may not be there after a reload.`,
+    );
+  }
+
+  /** The diagram's sessions, read again from the store: another window's show. */
+  private async sendSessions(uri: string, file: string): Promise<void> {
+    try {
+      await this.sessions.refresh(file);
+    } catch (error) {
+      this.output.appendLine(`Could not read the stored chat sessions: ${String(error)}`);
+    }
     const sessions = this.sessions
       .getSessionsForWorkflow(file)
       .map((s) => ({ id: s.id, name: s.name }));
