@@ -217,6 +217,8 @@ export class ChatRuntime {
   /** The nested view on screen per file, when it is not the root (see `viewContextText`). */
   private readonly viewTrailByFile = new Map<string, ViewCrumb[]>();
   private readonly output: vscode.OutputChannel;
+  /** Whether a store failure has been put to the person yet. */
+  private storeErrorShown = false;
   /** Tears down the ACP -> webview event forwarding registered in the ctor. */
   private readonly acpForwardingDisposer: () => void;
   /** Pending stuck-connection watchdog (armed on the panel handshake). */
@@ -250,6 +252,7 @@ export class ChatRuntime {
       this.acp,
       new FileSessionStore(chatSessionRoot(config.key)),
       context.workspaceState,
+      (error) => this.reportStoreError(error),
     );
     void this.sessions.initialize();
 
@@ -654,9 +657,23 @@ export class ChatRuntime {
       case "chat.log":
         this.output.appendLine(`webview: ${String(data?.message ?? "")}`);
         return;
-      case "chat.getSessions":
+      case "chat.getSessions": {
+        // The panel names the session it shows when it comes back to its
+        // window: another window may have gone on with it, or deleted it.
+        const shown = typeof data?.shown === "string" ? data.shown : undefined;
+        const before = shown ? this.sessions.getSessionMessages(shown).length : 0;
         await this.sendSessions(uri, file);
+        if (!shown) return;
+        if (!this.sessions.getSession(shown)) {
+          this.postToWebview(uri, {
+            type: "chat.sessionDeleted",
+            data: { sessionId: shown },
+          });
+        } else if (this.sessions.getSessionMessages(shown).length > before) {
+          await this.postHistory(uri, shown);
+        }
         return;
+      }
       case "chat.getProviders":
         // Do NOT re-report connectionStatus here: the panel re-requests
         // providers whenever it sees a connected status, so echoing one
@@ -682,6 +699,8 @@ export class ChatRuntime {
         // blocked). Cancelling drops the panel's spinner.
         let name: string | undefined = data?.name;
         if (!name) {
+          // The default offered must not be a name another window has taken.
+          await this.sessions.refresh(file).catch(() => undefined);
           name = await vscode.window.showInputBox({
             title: "New Chat Session",
             prompt: "Name for the new chat session",
@@ -1289,6 +1308,17 @@ export class ChatRuntime {
       type: "chat.messageIds",
       data: { sessionId, ids, reverted },
     });
+  }
+
+  /** A chat that cannot be kept is said, once, not hidden; the chat goes on. */
+  private reportStoreError(error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    this.output?.appendLine(`Chat session store: ${message}`);
+    if (this.storeErrorShown) return;
+    this.storeErrorShown = true;
+    void vscode.window.showWarningMessage(
+      `${this.config.displayName}: chats cannot be saved (${message}). This chat goes on, but may not be there after a reload.`,
+    );
   }
 
   /** The diagram's sessions, read again from the store: another window's show. */

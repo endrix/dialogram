@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { SessionData } from '../src/extension/session-manager.js';
 import { FileSessionStore, chatSessionRoot, dialogramDataDir } from '../src/extension/session-store.js';
 
@@ -40,10 +40,13 @@ describe('FileSessionStore', () => {
         expect(await store.list('/w/none.py')).toEqual([]);
 
         const [dir] = (await fs.readdir(root())).filter((d) => d.startsWith('flow.py-'));
-        expect((await fs.readdir(path.join(root(), dir))).sort()).toEqual(['ses_a.json', 'ses_b.json']);
+        const files = (await fs.readdir(path.join(root(), dir))).sort();
+        expect(files).toHaveLength(2);
+        expect(files[0]).toMatch(/^ses_a-[0-9a-f]{12}\.json$/);
+        expect(files[1]).toMatch(/^ses_b-[0-9a-f]{12}\.json$/);
         if (process.platform !== 'win32') {
             expect((await fs.stat(path.join(root(), dir))).mode & 0o777).toBe(0o700);
-            expect((await fs.stat(path.join(root(), dir, 'ses_a.json'))).mode & 0o777).toBe(0o600);
+            expect((await fs.stat(path.join(root(), dir, files[0]))).mode & 0o777).toBe(0o600);
         }
     });
 
@@ -79,12 +82,62 @@ describe('FileSessionStore', () => {
         expect((await fs.readdir(path.join(root(), dir))).filter((n) => n.endsWith('.tmp'))).toEqual([]);
     });
 
-    it('names the file of an id that is no file name by its hash', async () => {
+    it('gives each id its own file: one that is no file name, and ids that differ by case only', async () => {
         const store = new FileSessionStore(root());
-        await store.write(session('../../escape'));
-        await store.write(session('a/b'));
-        expect((await store.list('/w/flow.py')).map((s) => s.id).sort()).toEqual(['../../escape', 'a/b']);
+        for (const id of ['../../escape', 'a/b', 'ses_Ab', 'ses_aB']) await store.write(session(id));
+        expect((await store.list('/w/flow.py')).map((s) => s.id).sort()).toEqual(['../../escape', 'a/b', 'ses_Ab', 'ses_aB']);
         expect(await fs.readdir(root())).toHaveLength(1);
-        expect(await store.read('/w/flow.py', '../../escape')).toMatchObject({ id: '../../escape' });
+        const [dir] = await fs.readdir(root());
+        const names = await fs.readdir(path.join(root(), dir));
+        // Distinct even where the file system ignores case (macOS, Windows).
+        expect(new Set(names.map((n) => n.toLowerCase())).size).toBe(4);
+        expect(await store.read('/w/flow.py', 'ses_Ab')).toMatchObject({ id: 'ses_Ab' });
+    });
+
+    it('applies a change to the copy kept now, and one from another window waits its turn', async () => {
+        const here = new FileSessionStore(root());
+        const there = new FileSessionStore(root());
+        await here.write(session('ses_a'));
+        const add = (store: FileSessionStore, n: number) =>
+            store.update('/w/flow.py', 'ses_a', (kept) => {
+                kept!.messages.push({ role: 'user', content: String(n), timestamp: n, key: String(n) });
+                return kept;
+            });
+        await Promise.all(Array.from({ length: 20 }, (_, n) => add(n % 2 ? there : here, n)));
+        const kept = await here.read('/w/flow.py', 'ses_a');
+        expect(kept?.messages.map((m) => Number(m.content)).sort((a, b) => a - b)).toEqual(Array.from({ length: 20 }, (_, n) => n));
+    });
+
+    it('waits for a lock another window holds, and keeps nothing when the change says so', async () => {
+        const store = new FileSessionStore(root());
+        await store.write(session('ses_a'));
+        const [dir] = await fs.readdir(root());
+        const [file] = (await fs.readdir(path.join(root(), dir))).filter((n) => n.endsWith('.json'));
+        const lock = path.join(root(), dir, `${file}.lock`);
+        await fs.mkdir(lock);
+        let landed = false;
+        const change = store.update('/w/flow.py', 'ses_a', (kept) => ({ ...kept!, name: 'renamed' })).then(() => { landed = true; });
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        expect(landed).toBe(false);
+        await fs.rm(lock, { recursive: true });
+        await change;
+        expect((await store.read('/w/flow.py', 'ses_a'))?.name).toBe('renamed');
+
+        expect(await store.update('/w/flow.py', 'ses_b', () => undefined)).toBeUndefined();
+        expect(await store.read('/w/flow.py', 'ses_b')).toBeUndefined();
+    });
+
+    it('lists the others when one entry cannot be read', async () => {
+        const store = new FileSessionStore(root());
+        await store.write(session('ses_a'));
+        const [dir] = await fs.readdir(root());
+        await fs.mkdir(path.join(root(), dir, 'odd.json'));
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        try {
+            expect((await store.list('/w/flow.py')).map((s) => s.id)).toEqual(['ses_a']);
+            expect(warn).toHaveBeenCalled();
+        } finally {
+            warn.mockRestore();
+        }
     });
 });

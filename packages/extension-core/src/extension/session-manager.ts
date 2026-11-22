@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import * as path from 'node:path';
 import type { ACPClientService, SessionInfo } from './acp-client.js';
 import type { SessionStore } from './session-store.js';
@@ -30,6 +31,8 @@ export interface MessageData {
   /** Tool-call status, stored verbatim as the agent reports it (e.g. 'pending',
    *  'in_progress', 'completed', 'failed') so the restored chip matches the live one. */
   toolStatus?: string;
+  /** Names the message in the store, so a change that lands twice adds it once. */
+  key?: string;
 }
 
 export interface WorkspaceStorage {
@@ -50,11 +53,16 @@ export const LEGACY_SESSIONS_KEY = 'dialogram.sessions';
  * a local window and a Remote-SSH window on the same folder (or two people's
  * clients) each saw their own list, and none saw the chats the agent holds.
  *
- * The map is what this window knows; {@link refresh} and {@link loadSession}
- * read the store again, so a session another window made or extended shows.
+ * Another window on the same folder changes the same files, so the store is
+ * what a session is; the map is what this window knows of it. A change (a
+ * message, a rename, a mode) is applied to the copy kept now, never by writing
+ * this window's copy over it. {@link refresh} and {@link loadSession} read the
+ * store again, so a session another window made, extended or deleted shows.
  */
 export class SessionManager {
   private sessions: Map<string, SessionData> = new Map();
+  /** The sessions this window has seen kept: one missing later was deleted. */
+  private stored = new Set<string>();
   private currentSessionId: string | null = null;
   private ready: Promise<void> | undefined;
 
@@ -62,36 +70,46 @@ export class SessionManager {
     private acpClient: ACPClientService,
     private store: SessionStore,
     /** Where chats were kept before; moved into the store once. */
-    private legacyStorage?: WorkspaceStorage
+    private legacyStorage?: WorkspaceStorage,
+    /** Told when a session cannot be kept or read; the chat goes on. */
+    private onStoreError: (error: unknown) => void = (error) => console.error('Chat session store:', error)
   ) {}
 
   /**
    * Move chats kept in workspaceState into the store. Everything else waits
-   * for it, so a list is never read before they are in.
+   * for it, so a list is never read before they are in; if some could not be
+   * moved, the next list tries again.
    */
   initialize(): Promise<void> {
-    this.ready ??= this.moveLegacySessions().catch((error) => {
-      console.error('Failed to move chat sessions into the session store:', error);
-    });
+    if (!this.ready) {
+      const moving = this.moveLegacySessions().then((allMoved) => {
+        if (!allMoved && this.ready === moving) this.ready = undefined;
+      });
+      this.ready = moving;
+    }
     return this.ready;
   }
 
   /**
    * Read the store's sessions of a diagram file into this window: those
-   * another window made appear, a newer copy replaces this one's, and those
-   * deleted elsewhere go.
+   * another window made appear, the kept copy replaces this one's, and those
+   * deleted elsewhere go. A session this window holds but has not seen kept
+   * (made while the list was read, or one whose write failed) stays.
    */
   async refresh(workflowFile: string): Promise<void> {
     await this.initialize();
-    const stored = await this.store.list(workflowFile);
-    const storedIds = new Set(stored.map((session) => session.id));
+    await this.store.idle();
+    const seenKept = new Set(this.stored);
+    const kept = await this.store.list(workflowFile);
+    const keptIds = new Set(kept.map((session) => session.id));
     for (const [id, session] of this.sessions) {
-      if (session.workflowFile === workflowFile && !storedIds.has(id)) {
-        this.sessions.delete(id);
+      if (session.workflowFile === workflowFile && seenKept.has(id) && !keptIds.has(id)) {
+        this.forget(id);
       }
     }
-    for (const session of stored) {
-      this.adopt(session);
+    for (const session of kept) {
+      this.sessions.set(session.id, session);
+      this.stored.add(session.id);
     }
   }
 
@@ -103,6 +121,8 @@ export class SessionManager {
     name?: string,
     mode: 'plan' | 'build' = 'build'
   ): Promise<SessionData> {
+    // Another window may have made a "Session N" since this one listed them.
+    if (!name) await this.refresh(workflowFile).catch((error) => this.onStoreError(error));
     // Resolve the default name BEFORE spawning the session so the same helper is
     // the single source of truth for every default name (agent-side SessionInfo
     // included) — no second count-based resolver may compute a name elsewhere.
@@ -124,7 +144,7 @@ export class SessionManager {
     this.sessions.set(sessionId, sessionData);
     this.currentSessionId = sessionId;
 
-    await this.save(sessionData);
+    await this.change(sessionData, () => undefined);
 
     return sessionData;
   }
@@ -169,15 +189,21 @@ export class SessionManager {
       return null;
     }
 
-    // Another window may have gone on with it since this one listed it.
+    // Another window may have gone on with it, or deleted it, since this one
+    // listed it: the kept copy is the session.
     try {
-      const stored = await this.store.read(session.workflowFile, sessionId);
-      if (stored) {
-        this.adopt(stored);
-        session = this.sessions.get(sessionId) ?? session;
+      await this.store.idle();
+      const kept = await this.store.read(session.workflowFile, sessionId);
+      if (kept) {
+        this.sessions.set(sessionId, kept);
+        this.stored.add(sessionId);
+        session = kept;
+      } else if (this.stored.has(sessionId)) {
+        this.forget(sessionId);
+        return null;
       }
     } catch (error) {
-      console.error('Failed to read the stored chat session:', error);
+      this.onStoreError(error);
     }
 
     try {
@@ -209,17 +235,13 @@ export class SessionManager {
     }
 
     const session = this.sessions.get(sessionId);
-    this.sessions.delete(sessionId);
-
-    if (this.currentSessionId === sessionId) {
-      this.currentSessionId = null;
-    }
+    this.forget(sessionId);
 
     if (session) {
       try {
         await this.store.remove(session.workflowFile, sessionId);
       } catch (error) {
-        console.error('Failed to remove the stored chat session:', error);
+        this.onStoreError(error);
       }
     }
   }
@@ -263,9 +285,12 @@ export class SessionManager {
     if (!session) {
       return;
     }
-    session.messages.push(message);
+    const added: MessageData = { ...message, key: message.key ?? newMessageKey() };
+    session.messages.push(added);
     session.updatedAt = Date.now();
-    void this.save(session);
+    void this.change(session, (kept) => {
+      if (!kept.messages.some((m) => m.key === added.key)) kept.messages.push(added);
+    });
   }
 
   /**
@@ -287,7 +312,9 @@ export class SessionManager {
     if (session) {
       session.mode = mode;
       session.updatedAt = Date.now();
-      await this.save(session);
+      await this.change(session, (kept) => {
+        kept.mode = mode;
+      });
     }
   }
 
@@ -299,7 +326,9 @@ export class SessionManager {
     if (session) {
       session.name = newName;
       session.updatedAt = Date.now();
-      await this.save(session);
+      await this.change(session, (kept) => {
+        kept.name = newName;
+      });
     }
   }
 
@@ -310,20 +339,45 @@ export class SessionManager {
     return this.sessions.get(sessionId) || null;
   }
 
-  /** Keep a session in the store; a failure is logged, the chat goes on. */
-  private async save(session: SessionData): Promise<void> {
+  /**
+   * Apply a change, already made to this window's copy, to the kept one.
+   *
+   * None kept: a session this window saw kept was deleted in another, and is
+   * not written again but forgotten here; one never kept (just made, or whose
+   * write failed) is written whole. A failure is reported and the session
+   * stays, so a later change can keep it.
+   */
+  private async change(session: SessionData, edit: (kept: SessionData) => void): Promise<void> {
+    let deletedElsewhere = false;
     try {
-      await this.store.write(session);
+      await this.store.update(session.workflowFile, session.id, (kept) => {
+        if (!kept) {
+          if (this.stored.has(session.id)) {
+            deletedElsewhere = true;
+            return undefined;
+          }
+          return structuredClone(session);
+        }
+        edit(kept);
+        kept.updatedAt = Math.max(kept.updatedAt, session.updatedAt);
+        return kept;
+      });
     } catch (error) {
-      console.error('Failed to store the chat session:', error);
+      this.onStoreError(error);
+      return;
+    }
+    if (deletedElsewhere) {
+      this.forget(session.id);
+    } else {
+      this.stored.add(session.id);
     }
   }
 
-  /** Take the stored copy of a session unless this window's is as new. */
-  private adopt(stored: SessionData): void {
-    const known = this.sessions.get(stored.id);
-    if (!known || stored.updatedAt > known.updatedAt) {
-      this.sessions.set(stored.id, stored);
+  private forget(sessionId: string): void {
+    this.sessions.delete(sessionId);
+    this.stored.delete(sessionId);
+    if (this.currentSessionId === sessionId) {
+      this.currentSessionId = null;
     }
   }
 
@@ -336,29 +390,48 @@ export class SessionManager {
 
   /**
    * Move the chats workspaceState holds into the store, keeping the newer copy
-   * of a session both have, then clear them there. A session the store kept
-   * newer from another window wins. Nothing is cleared unless all are in.
+   * of a session both have (another window may have kept it since), and clear
+   * them there once all are in. Each is in this window's map either way, so
+   * one that could not be moved still shows. Resolves whether all moved.
    *
    * Deliberately no current session is chosen: the chat panel opens on an
    * explicit empty state, and a session becomes current only when the user
    * loads or creates one.
    */
-  private async moveLegacySessions(): Promise<void> {
+  private async moveLegacySessions(): Promise<boolean> {
     const legacy = this.legacyStorage?.get<SessionData[] | undefined>(LEGACY_SESSIONS_KEY, undefined);
     if (!Array.isArray(legacy) || legacy.length === 0) {
-      return;
+      return true;
     }
+    let allMoved = true;
     for (const session of legacy) {
       if (typeof session?.id !== 'string' || typeof session.workflowFile !== 'string') continue;
       session.messages ??= [];
-      const stored = await this.store.read(session.workflowFile, session.id);
-      if (!stored || stored.updatedAt < session.updatedAt) {
-        await this.store.write(session);
-        this.adopt(session);
-      } else {
-        this.adopt(stored);
+      if (!this.sessions.has(session.id)) this.sessions.set(session.id, session);
+      try {
+        let newer: SessionData | undefined;
+        await this.store.update(session.workflowFile, session.id, (kept) => {
+          if (kept && kept.updatedAt >= session.updatedAt) {
+            newer = kept;
+            return undefined;
+          }
+          return session;
+        });
+        this.sessions.set(session.id, newer ?? session);
+        this.stored.add(session.id);
+      } catch (error) {
+        allMoved = false;
+        this.onStoreError(error);
       }
     }
-    await this.legacyStorage?.update(LEGACY_SESSIONS_KEY, undefined);
+    if (allMoved) {
+      await this.legacyStorage?.update(LEGACY_SESSIONS_KEY, undefined);
+    }
+    return allMoved;
   }
+}
+
+/** A key no other message of any window has. */
+function newMessageKey(): string {
+  return randomUUID();
 }

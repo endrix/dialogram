@@ -49,7 +49,7 @@ function makeWindow(sessionId: string, kept?: SessionData[]) {
     const settled = () => (runtime as any).sessions.store.idle() as Promise<void>;
     const send = (type: string, data?: unknown) => runtime.handleMessage(URI, { type, data } as any);
     const last = (type: string) => posts.filter((p) => p.type === type).pop() as any;
-    return { runtime, acp, state, settled, send, last };
+    return { runtime, acp, state, posts, settled, send, last };
 }
 
 async function turn(w: ReturnType<typeof makeWindow>, sessionId: string, asked: string, answer: string): Promise<void> {
@@ -91,6 +91,62 @@ describe('a chat across windows on the same folder (local, Remote-SSH)', () => {
         expect(said(local.last('chat.sessionHistory'))).toEqual([
             'user: first', 'assistant: one', 'user: second', 'assistant: two'
         ]);
+    });
+
+    it("keeps both windows' turns when each had it open all along", async () => {
+        const local = makeWindow('ses_1');
+        await local.send('chat.createSession', { name: 'Review', mode: 'build' });
+        await turn(local, 'ses_1', 'first', 'one');
+        const ssh = makeWindow('ses_other');
+        await ssh.send('chat.getSessions');
+        await ssh.send('chat.loadSession', { sessionId: 'ses_1' });
+        await turn(ssh, 'ses_1', 'second', 'two');
+        // The local window never loaded it again: the agent still has it attached.
+        await turn(local, 'ses_1', 'third', 'three');
+
+        const fresh = makeWindow('ses_x');
+        await fresh.send('chat.getSessions');
+        await fresh.send('chat.loadSession', { sessionId: 'ses_1' });
+        expect(said(fresh.last('chat.sessionHistory'))).toEqual([
+            'user: first', 'assistant: one', 'user: second', 'assistant: two', 'user: third', 'assistant: three'
+        ]);
+    });
+
+    it('catches up in a window whose panel stayed open, when it is come back to', async () => {
+        const local = makeWindow('ses_1');
+        const ssh = makeWindow('ses_2');
+        await local.send('chat.getSessions');
+        await ssh.send('chat.getSessions');
+        await local.send('chat.createSession', { name: 'Review', mode: 'build' });
+        await turn(local, 'ses_1', 'first', 'one');
+
+        // The SSH panel was open all along: coming back to it lists the new chat.
+        await ssh.send('chat.getSessions', {});
+        expect(ssh.last('chat.sessions').data.sessions).toEqual([{ id: 'ses_1', name: 'Review' }]);
+        await ssh.send('chat.loadSession', { sessionId: 'ses_1' });
+        await turn(ssh, 'ses_1', 'second', 'two');
+
+        // The desk window shows ses_1: coming back to it, the transcript catches up.
+        const before = local.posts.length;
+        await local.send('chat.getSessions', { shown: 'ses_1' });
+        const history = local.posts.slice(before).find((p) => p.type === 'chat.sessionHistory') as any;
+        expect(said(history)).toEqual(['user: first', 'assistant: one', 'user: second', 'assistant: two']);
+
+        // Nothing new: no transcript is sent again.
+        const quiet = local.posts.length;
+        await local.send('chat.getSessions', { shown: 'ses_1' });
+        expect(local.posts.slice(quiet).map((p) => p.type)).toEqual(['chat.sessions']);
+
+        // Deleted at the desk: the SSH window, coming back, is told.
+        const ask = vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue('Delete' as any);
+        try {
+            await local.send('chat.deleteSession', { sessionId: 'ses_1' });
+        } finally {
+            ask.mockRestore();
+        }
+        await ssh.send('chat.getSessions', { shown: 'ses_1' });
+        expect(ssh.last('chat.sessionDeleted').data.sessionId).toBe('ses_1');
+        expect(ssh.last('chat.sessions').data.sessions).toEqual([]);
     });
 
     it('deleted in one window leaves the other', async () => {

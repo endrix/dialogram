@@ -349,9 +349,35 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         const instance = (e as CustomEvent<{ instance?: string }>).detail?.instance;
         if (instance) this.showAgent(instance);
       });
+      // Another window on the same folder (a local one, a Remote-SSH one) may
+      // have made, extended or deleted a chat since: look again when this one
+      // is come back to.
+      window.addEventListener('focus', () => this.catchUp());
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') this.catchUp();
+        });
+      }
     }
     this.update();
     this.requestState();
+  }
+
+  /** When the sessions were last asked for on coming back to the window. */
+  private lastCatchUp = 0;
+
+  /**
+   * Ask for the sessions again, naming the one shown unless a turn is running
+   * or one is loading, so the host can bring its transcript up to date.
+   */
+  private catchUp(): void {
+    const now = Date.now();
+    if (now - this.lastCatchUp < 1000) return;
+    this.lastCatchUp = now;
+    const shown = this.currentSessionId && !this.isStreaming && !this.isLoadingSession
+      ? this.currentSessionId
+      : undefined;
+    this.sendToHost('chat.getSessions', shown ? { shown } : undefined);
   }
 
   // ── The view: the session, or one of the run's agents ─────────────────

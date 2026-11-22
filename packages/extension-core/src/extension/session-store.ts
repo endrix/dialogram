@@ -34,29 +34,48 @@ export function chatSessionRoot(productKey: string, dataDir: string = dialogramD
   return path.join(dataDir, 'chat', fileSafe(productKey));
 }
 
+/**
+ * A change to a stored session: given the copy kept now (undefined when none
+ * is), the session to keep, or undefined to leave the store as it is.
+ */
+export type SessionChange = (stored: SessionData | undefined) => SessionData | undefined;
+
 /** Where a product's chat sessions are kept. */
 export interface SessionStore {
   /** The sessions kept for one diagram file. */
   list(workflowFile: string): Promise<SessionData[]>;
   /** One session as kept now, or undefined when none is (deleted, or never kept). */
   read(workflowFile: string, sessionId: string): Promise<SessionData | undefined>;
-  write(session: SessionData): Promise<void>;
+  /**
+   * Apply a change to the copy kept now, with no other change to it, from
+   * this window or another, in between. Resolves with what was kept.
+   */
+  update(workflowFile: string, sessionId: string, change: SessionChange): Promise<SessionData | undefined>;
   remove(workflowFile: string, sessionId: string): Promise<void>;
+  /** Resolves once every change asked for so far has landed. */
+  idle(): Promise<void>;
 }
+
+/** How long a change waits for another window's lock on a session. */
+const LOCK_WAIT_MS = 3000;
+/** A lock this old was left by a window that died holding it. */
+const LOCK_STALE_MS = 10000;
 
 /**
  * One JSON file per session, in a folder per diagram file:
- * `<root>/<file name>-<hash of its path>/<session id>.json`.
+ * `<root>/<file name>-<hash of its path>/<session id>-<hash of it>.json`.
  *
- * A file per session lets two windows on the same folder (a local one and an
- * SSH one) each write the session they are in without overwriting the
- * other's. A file is written whole and renamed into place, so a window that
- * reads it never sees half of one. Folders are the user's alone (0700), as
- * chats can hold anything.
+ * Two windows on the same folder (a local one and an SSH one) run two
+ * extension hosts on the same machine, both on these files. A change is a
+ * read, an edit and a write of the copy kept now, under a lock (a folder made
+ * beside the file) that the other window's changes wait for, so neither
+ * overwrites what the other added. A file is written whole and renamed into
+ * place, so a window that reads it never sees half of one. Folders are the
+ * user's alone (0700), as chats can hold anything.
  */
 export class FileSessionStore implements SessionStore {
-  /** The last write or removal of each file, so they land in the order made. */
-  private readonly tails = new Map<string, Promise<void>>();
+  /** The last change of each file, so this window's land in the order made. */
+  private readonly tails = new Map<string, Promise<unknown>>();
   private tmpCounter = 0;
 
   constructor(readonly root: string) {}
@@ -73,8 +92,13 @@ export class FileSessionStore implements SessionStore {
     const sessions: SessionData[] = [];
     for (const name of names) {
       if (!name.endsWith('.json')) continue;
-      const session = await this.readFile(path.join(dir, name), workflowFile);
-      if (session) sessions.push(session);
+      try {
+        const session = await this.readFile(path.join(dir, name), workflowFile);
+        if (session) sessions.push(session);
+      } catch (error) {
+        // One entry that cannot be read leaves the others listed.
+        console.warn(`Skipped the chat session file ${path.join(dir, name)}:`, error);
+      }
     }
     return sessions;
   }
@@ -84,36 +108,36 @@ export class FileSessionStore implements SessionStore {
     return session?.id === sessionId ? session : undefined;
   }
 
-  write(session: SessionData): Promise<void> {
-    const file = this.fileFor(session.workflowFile, session.id);
-    // The content as it is now, not when the queue reaches it.
-    const body = JSON.stringify(session);
-    return this.enqueue(file, async () => {
-      await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-      const tmp = `${file}.${process.pid}.${++this.tmpCounter}.tmp`;
-      try {
-        await fs.writeFile(tmp, body, { mode: 0o600 });
-        await fs.rename(tmp, file);
-      } catch (error) {
-        await fs.rm(tmp, { force: true }).catch(() => undefined);
-        throw error;
-      }
-    });
-  }
-
-  remove(workflowFile: string, sessionId: string): Promise<void> {
+  update(workflowFile: string, sessionId: string, change: SessionChange): Promise<SessionData | undefined> {
     const file = this.fileFor(workflowFile, sessionId);
-    return this.enqueue(file, () => fs.rm(file, { force: true }));
+    return this.enqueue(file, () =>
+      this.withLock(file, async () => {
+        const stored = await this.read(workflowFile, sessionId);
+        const next = change(stored);
+        if (next) await this.writeFile(file, next);
+        return next;
+      }),
+    );
   }
 
-  /** Resolves once every write and removal asked for so far has landed. */
+  /** Keep this session as it is now, whatever is kept. */
+  write(session: SessionData): Promise<SessionData | undefined> {
+    const copy = structuredClone(session);
+    return this.update(session.workflowFile, session.id, () => copy);
+  }
+
+  async remove(workflowFile: string, sessionId: string): Promise<void> {
+    const file = this.fileFor(workflowFile, sessionId);
+    await this.enqueue(file, () => this.withLock(file, () => fs.rm(file, { force: true })));
+  }
+
   async idle(): Promise<void> {
     while (this.tails.size > 0) {
       await Promise.allSettled([...this.tails.values()]);
     }
   }
 
-  private enqueue(file: string, operation: () => Promise<void>): Promise<void> {
+  private enqueue<T>(file: string, operation: () => Promise<T>): Promise<T> {
     const previous = this.tails.get(file) ?? Promise.resolve();
     const next = previous.catch(() => undefined).then(operation);
     this.tails.set(file, next);
@@ -123,6 +147,46 @@ export class FileSessionStore implements SessionStore {
         if (this.tails.get(file) === next) this.tails.delete(file);
       });
     return next;
+  }
+
+  /** Run an operation on a session file while no other window changes it. */
+  private async withLock<T>(file: string, operation: () => Promise<T>): Promise<T> {
+    await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+    const lock = `${file}.lock`;
+    const deadline = Date.now() + LOCK_WAIT_MS;
+    let held = false;
+    while (!held) {
+      try {
+        await fs.mkdir(lock);
+        held = true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') throw error;
+        const age = await fs.stat(lock).then((s) => Date.now() - s.mtimeMs, () => 0);
+        if (age > LOCK_STALE_MS) {
+          await fs.rm(lock, { recursive: true, force: true });
+          continue;
+        }
+        // A lock held this long is a window stuck mid-write: go on without it.
+        if (Date.now() > deadline) break;
+        await new Promise((resolve) => setTimeout(resolve, 15));
+      }
+    }
+    try {
+      return await operation();
+    } finally {
+      if (held) await fs.rm(lock, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+
+  private async writeFile(file: string, session: SessionData): Promise<void> {
+    const tmp = `${file}.${process.pid}.${++this.tmpCounter}.tmp`;
+    try {
+      await fs.writeFile(tmp, JSON.stringify(session), { mode: 0o600 });
+      await fs.rename(tmp, file);
+    } catch (error) {
+      await fs.rm(tmp, { force: true }).catch(() => undefined);
+      throw error;
+    }
   }
 
   private async readFile(file: string, workflowFile: string): Promise<SessionData | undefined> {
@@ -150,16 +214,18 @@ export class FileSessionStore implements SessionStore {
   }
 
   private dirFor(workflowFile: string): string {
-    const hash = createHash('sha256').update(workflowFile).digest('hex').slice(0, 16);
-    return path.join(this.root, `${fileSafe(path.basename(workflowFile))}-${hash}`);
+    return path.join(this.root, `${fileSafe(path.basename(workflowFile))}-${hash(workflowFile, 16)}`);
   }
 
+  /** The id's readable part, lower case, and its hash: ids that differ by case
+   *  only stay two files where the file system ignores case (macOS, Windows). */
   private fileFor(workflowFile: string, sessionId: string): string {
-    const name = /^[A-Za-z0-9._-]{1,128}$/.test(sessionId) && !sessionId.startsWith('.')
-      ? sessionId
-      : createHash('sha256').update(sessionId).digest('hex');
-    return path.join(this.dirFor(workflowFile), `${name}.json`);
+    return path.join(this.dirFor(workflowFile), `${fileSafe(sessionId.toLowerCase())}-${hash(sessionId, 12)}.json`);
   }
+}
+
+function hash(text: string, length: number): string {
+  return createHash('sha256').update(text).digest('hex').slice(0, length);
 }
 
 function fileSafe(name: string): string {

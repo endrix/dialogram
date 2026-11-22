@@ -324,4 +324,122 @@ describe('SessionManager', () => {
       expect(session?.name).toBe('New Name');
     });
   });
+
+  describe('two windows on one store (a local and a Remote-SSH window)', () => {
+    const FILE = '/test/workflow.py';
+    const root = () => process.env.DIALOGRAM_DATA_DIR!;
+    const window = (store = new FileSessionStore(root()), legacy?: WorkspaceStorage, onError?: (e: unknown) => void) =>
+      new SessionManager(mockACPClient as any, store, legacy, onError);
+    const said = async (id = 'test-session-123') =>
+      (await new FileSessionStore(root()).read(FILE, id))?.messages.map((m) => m.content);
+    const message = (content: string) => ({ role: 'user' as const, content, timestamp: Date.now() });
+
+    it("keeps each window's messages on a session both have open", async () => {
+      const localStore = new FileSessionStore(root());
+      const sshStore = new FileSessionStore(root());
+      const local = window(localStore);
+      const ssh = window(sshStore);
+      await local.createSession(FILE, 'Review');
+      await ssh.refresh(FILE);
+      await ssh.loadSession('test-session-123');
+
+      local.addMessageToSession('test-session-123', message('first'));
+      await localStore.idle();
+      // The SSH window's copy has not seen "first": its change still keeps it.
+      ssh.addMessageToSession('test-session-123', message('second'));
+      await sshStore.idle();
+      local.addMessageToSession('test-session-123', message('third'));
+      await localStore.idle();
+
+      expect(await said()).toEqual(['first', 'second', 'third']);
+      await ssh.loadSession('test-session-123');
+      expect(ssh.getSessionMessages('test-session-123').map((m) => m.content)).toEqual(['first', 'second', 'third']);
+    });
+
+    it("names a new session past the ones another window made", async () => {
+      const desk = window();
+      await desk.createSession(FILE);
+      mockACPClient.createSession.mockResolvedValueOnce('ses-laptop');
+      const laptop = window();
+      const made = await laptop.createSession(FILE);
+      expect(made.name).toBe('Session 2');
+    });
+
+    it('keeps listed a session made while the list was being read', async () => {
+      let open!: () => void;
+      const gate = new Promise<void>((resolve) => { open = resolve; });
+      class SlowList extends FileSessionStore {
+        override async list(workflowFile: string) {
+          const listed = await super.list(workflowFile);
+          await gate;
+          return listed;
+        }
+      }
+      const manager = window(new SlowList(root()));
+      const refreshing = manager.refresh(FILE);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await manager.createSession(FILE, 'Made meanwhile');
+      open();
+      await refreshing;
+      expect(manager.getSessionsForWorkflow(FILE).map((s) => s.name)).toEqual(['Made meanwhile']);
+    });
+
+    it('keeps a session it could not store, says so, and stores it with the next change', async () => {
+      let failing = true;
+      class Failing extends FileSessionStore {
+        override update(...args: Parameters<FileSessionStore['update']>) {
+          return failing ? Promise.reject(new Error('EACCES: permission denied')) : super.update(...args);
+        }
+      }
+      const store = new Failing(root());
+      const onError = vi.fn();
+      const manager = window(store, undefined, onError);
+      await manager.createSession(FILE, 'Unsaved');
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'EACCES: permission denied' }));
+      await manager.refresh(FILE);
+      expect(manager.getSessionsForWorkflow(FILE)).toHaveLength(1);
+
+      failing = false;
+      manager.addMessageToSession('test-session-123', message('kept at last'));
+      await store.idle();
+      expect(await said()).toEqual(['kept at last']);
+    });
+
+    it('does not bring back a session another window deleted', async () => {
+      const localStore = new FileSessionStore(root());
+      const local = window(localStore);
+      const ssh = window();
+      await local.createSession(FILE, 'Review');
+      await ssh.refresh(FILE);
+      await ssh.deleteSession('test-session-123');
+
+      local.addMessageToSession('test-session-123', message('late'));
+      await localStore.idle();
+      expect(await said()).toBeUndefined();
+      expect(local.getSession('test-session-123')).toBeNull();
+      expect(local.getCurrentSessionId()).toBeNull();
+    });
+
+    it('shows old chats it could not move, and moves them on the next list', async () => {
+      const kept = (id: string) => ({ id, name: id, workflowFile: FILE, createdAt: 1, updatedAt: 1, mode: 'build', messages: [] });
+      storageData.set('dialogram.sessions', [kept('old-1'), kept('old-2')]);
+      let failures = 1;
+      class FailsOnce extends FileSessionStore {
+        override update(...args: Parameters<FileSessionStore['update']>) {
+          return failures-- > 0 ? Promise.reject(new Error('ENOSPC')) : super.update(...args);
+        }
+      }
+      const onError = vi.fn();
+      const manager = window(new FailsOnce(root()), mockStorage, onError);
+      await manager.initialize();
+      expect(manager.getSessionsForWorkflow(FILE).map((s) => s.id).sort()).toEqual(['old-1', 'old-2']);
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(storageData.get('dialogram.sessions')).toHaveLength(2);
+
+      await manager.refresh(FILE);
+      expect(storageData.get('dialogram.sessions')).toBeUndefined();
+      expect((await new FileSessionStore(root()).list(FILE)).map((s) => s.id).sort()).toEqual(['old-1', 'old-2']);
+      expect(manager.getSessionsForWorkflow(FILE)).toHaveLength(2);
+    });
+  });
 });
