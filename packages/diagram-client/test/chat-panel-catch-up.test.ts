@@ -126,6 +126,15 @@ describe('coming back to the chat window', () => {
         expect(panel.timeline.map((t: any) => t.content)).toEqual(['in order']);
     });
 
+    it('takes the next turn after a transcript sent again on catching up (no replay follows it)', () => {
+        const { panel } = makePanel();
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_1', messages: [] });
+        expect(panel.suppressReplayStream).toBe(true);
+        panel.suppressReplayStream = false;
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_1', catchUp: true, messages: [] });
+        expect(panel.suppressReplayStream).toBe(false);
+    });
+
     it('goes on loading when another session is said to be deleted', () => {
         const { panel } = makePanel();
         panel.currentSessionId = 'ses_2';

@@ -684,7 +684,7 @@ export class ChatRuntime {
         // sent again next time; one it has already, it leaves.
         const keys: unknown[] = Array.isArray(data?.keys) ? data.keys : [];
         const shownKeys = new Set(keys.filter((k): k is string => typeof k === "string"));
-        const isShown = (m: MessageData) => !m.key || shownKeys.has(m.key) || this.sessions.isLocal(m.key);
+        const isShown = (m: MessageData) => !m.key || shownKeys.has(m.key) || this.sessions.isLocal(shown, m.key);
         const all = this.sessions.getSessionMessages(shown);
         const lastShown = all.reduce((last, m, i) => (isShown(m) ? i : last), -1);
         const added = all.filter((m) => !isShown(m));
@@ -769,7 +769,7 @@ export class ChatRuntime {
         if (!data?.sessionId) return;
         await this.ensureStarted(cwd);
         const loaded = await this.sessions.loadSession(data.sessionId);
-        if (!loaded && !this.sessions.getSession(data.sessionId)) {
+        if (!loaded && (await this.sessions.isGone(data.sessionId))) {
           // Deleted in another window since this one listed it.
           this.postToWebview(uri, {
             type: "chat.sessionDeleted",

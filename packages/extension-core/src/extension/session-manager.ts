@@ -69,8 +69,15 @@ export class SessionManager {
   private unsent = new Map<string, SessionChange[]>();
   /** Each session's changes, one after the other, in the order made. */
   private queues = new Map<string, Promise<void>>();
-  /** Keys of the messages this window made: its panel showed them as they came. */
-  private local = new Set<string>();
+  /** Per session, keys of the messages this window made: its panel showed
+   *  them as they came. */
+  private local = new Map<string, Set<string>>();
+  /** Per session, the time of the last message this window made: the next is
+   *  later, so a turn's parts keep their order through a retried append. */
+  private lastStamp = new Map<string, number>();
+  /** Sessions forgotten as deleted (here or in another window): a read that
+   *  began before does not bring them back, and they are gone. */
+  private removed = new Set<string>();
   private currentSessionId: string | null = null;
   private ready: Promise<void> | undefined;
 
@@ -245,19 +252,20 @@ export class SessionManager {
     }
   }
 
-  /** Whether this window made the message with this key. */
-  isLocal(key: string): boolean {
-    return this.local.has(key);
+  /** Whether this window made the session's message with this key. */
+  isLocal(sessionId: string, key: string): boolean {
+    return this.local.get(sessionId)?.has(key) ?? false;
   }
 
   /**
-   * Whether a session is gone: deleted in another window since this one saw
-   * it kept (it is then forgotten here), or never known. One that cannot be
-   * checked is taken as there.
+   * Whether a session is gone: deleted, here or in another window, since this
+   * one saw it kept (it is then forgotten here). One that cannot be checked,
+   * or that this window never had, is taken as there.
    */
   async isGone(sessionId: string): Promise<boolean> {
     const session = this.sessions.get(sessionId);
-    if (!session) return true;
+    // One this window never had (not read yet) is not said to be deleted.
+    if (!session) return this.removed.has(sessionId);
     if (!this.stored.has(sessionId)) return false;
     const there = await this.store.has(session.workflowFile, sessionId).catch(() => true);
     if (!there) this.forget(sessionId);
@@ -332,8 +340,12 @@ export class SessionManager {
     if (!session) {
       return;
     }
-    const added: MessageData = { ...message, key: message.key ?? newMessageKey() };
-    this.local.add(added.key!);
+    const timestamp = Math.max(message.timestamp ?? Date.now(), (this.lastStamp.get(sessionId) ?? 0) + 1);
+    this.lastStamp.set(sessionId, timestamp);
+    const added: MessageData = { ...message, timestamp, key: message.key ?? newMessageKey() };
+    let mine = this.local.get(sessionId);
+    if (!mine) this.local.set(sessionId, (mine = new Set()));
+    mine.add(added.key!);
     session.messages.push(added);
     session.updatedAt = Date.now();
     void this.keep(session, { t: 'message', message: added });
@@ -439,9 +451,18 @@ export class SessionManager {
   private enqueue(sessionId: string, operation: () => Promise<void>): Promise<void> {
     const previous = this.queues.get(sessionId) ?? Promise.resolve();
     const next = previous.then(operation);
-    this.queues.set(sessionId, next);
-    void next.then(() => {
-      if (this.queues.get(sessionId) === next) this.queues.delete(sessionId);
+    // The queue holds one that never fails: a change that throws is told,
+    // and the next still runs (and idle() ends).
+    const settled = next.catch((error) => {
+      try {
+        this.onStoreError(error);
+      } catch {
+        console.error('Chat session store:', error);
+      }
+    });
+    this.queues.set(sessionId, settled);
+    void settled.then(() => {
+      if (this.queues.get(sessionId) === settled) this.queues.delete(sessionId);
     });
     return next;
   }
@@ -452,6 +473,8 @@ export class SessionManager {
    * still to go.
    */
   private take(kept: SessionData): void {
+    // Deleted while it was being read: it stays deleted.
+    if (this.removed.has(kept.id)) return;
     const mine = this.sessions.get(kept.id);
     if (mine) {
       const have = new Set(kept.messages.map((m) => m.key).filter(Boolean));
@@ -469,9 +492,12 @@ export class SessionManager {
   }
 
   private forget(sessionId: string): void {
+    this.removed.add(sessionId);
     this.sessions.delete(sessionId);
     this.stored.delete(sessionId);
     this.unsent.delete(sessionId);
+    this.local.delete(sessionId);
+    this.lastStamp.delete(sessionId);
     if (this.currentSessionId === sessionId) {
       this.currentSessionId = null;
     }

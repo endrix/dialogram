@@ -108,6 +108,10 @@ export class FileSessionStore implements SessionStore {
     }
     const sessions: SessionData[] = [];
     for (const name of names) {
+      if (name.endsWith('.gone')) {
+        await pruneMark(path.join(dir, name));
+        continue;
+      }
       if (!name.endsWith('.jsonl')) continue;
       try {
         const session = await this.readFile(path.join(dir, name), workflowFile);
@@ -382,6 +386,19 @@ function hash(text: string, length: number): string {
 
 function fileSafe(name: string): string {
   return name.replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '_').slice(0, 64) || '_';
+}
+
+/** How long a removed session's mark is kept: a copy of it kept elsewhere
+ *  (an old workspaceState chat) is moved on first use, well within it. */
+const MARK_KEPT_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Remove a mark older than that, as best it can. */
+async function pruneMark(mark: string): Promise<void> {
+  try {
+    if (Date.now() - (await fs.stat(mark)).mtimeMs > MARK_KEPT_MS) await fs.rm(mark, { force: true });
+  } catch {
+    // Left for the next list.
+  }
 }
 
 /** The mark a removed session leaves beside where its file was. */

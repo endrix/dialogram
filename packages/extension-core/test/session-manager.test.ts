@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { SessionManager, type SessionData, type WorkspaceStorage } from '../src/extension/session-manager.js';
-import { FileSessionStore } from '../src/extension/session-store.js';
+import { FileSessionStore, type SessionChange } from '../src/extension/session-store.js';
 import { ACPClientService } from '../src/extension/acp-client.js';
 
 // Mock ACP Client
@@ -568,6 +568,77 @@ describe('SessionManager', () => {
       await manager.refresh(FILE);
       expect(manager.getSessionsForWorkflow(FILE).map((s) => s.id)).toEqual(['old-2']);
       expect(await new FileSessionStore(root()).has(FILE, 'old-1')).toBe(false);
+    });
+
+    it('does not bring back a session deleted here while a list was being read', async () => {
+      let open!: () => void;
+      const gate = new Promise<void>((resolve) => { open = resolve; });
+      let slow = false;
+      class SlowList extends FileSessionStore {
+        override async list(workflowFile: string) {
+          const listed = await super.list(workflowFile);
+          if (slow) await gate;
+          return listed;
+        }
+      }
+      const manager = window(new SlowList(root()));
+      await manager.createSession(FILE, 'Review');
+      slow = true;
+      const refreshing = manager.refresh(FILE);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(await manager.deleteSession('test-session-123')).toBe(true);
+      open();
+      await refreshing;
+      expect(manager.getSessionsForWorkflow(FILE)).toHaveLength(0);
+      expect(await manager.isGone('test-session-123')).toBe(true);
+    });
+
+    it('does not say a session it never had is gone', async () => {
+      const manager = window();
+      expect(await manager.isGone('ses_not_read_yet')).toBe(false);
+    });
+
+    it('goes on keeping a session after a change failed in a way nothing caught', async () => {
+      let failures = 1;
+      class Failing extends FileSessionStore {
+        override append(...args: Parameters<FileSessionStore['append']>) {
+          return failures-- > 0 ? Promise.reject(new Error('EIO')) : super.append(...args);
+        }
+      }
+      // A report that throws: the failure leaves the change's own catch.
+      const manager = window(new Failing(root()), undefined, () => { throw new Error('report failed'); });
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        await manager.createSession(FILE, 'Review');
+        manager.addMessageToSession('test-session-123', message('one'));
+        await manager.idle();
+        manager.addMessageToSession('test-session-123', message('two'));
+        await manager.idle();
+      } finally {
+        error.mockRestore();
+      }
+      expect(await said()).toEqual(['one', 'two']);
+    });
+
+    it("gives a turn's parts times in the order made, so a read keeps it whatever order the lines landed in", async () => {
+      const manager = window();
+      await manager.createSession(FILE, 'Review');
+      const now = 5_000;
+      manager.addMessageToSession('test-session-123', { role: 'assistant', content: 'before the tool', timestamp: now });
+      manager.addMessageToSession('test-session-123', { role: 'tool', content: '', timestamp: now });
+      manager.addMessageToSession('test-session-123', { role: 'assistant', content: 'after the tool', timestamp: now });
+      await manager.idle();
+      const kept = (await new FileSessionStore(root()).read(FILE, 'test-session-123'))!.messages;
+      expect(kept.map((m) => m.timestamp)).toEqual([5_000, 5_001, 5_002]);
+
+      // Lines landed out of order (written by hand here): the read puts them back.
+      const [dir] = await fs.readdir(root());
+      const [name] = (await fs.readdir(path.join(root(), dir))).filter((n) => n.endsWith('.jsonl'));
+      const file = path.join(root(), dir, name);
+      const [head, ...lines] = (await fs.readFile(file, 'utf8')).trim().split('\n');
+      await fs.writeFile(file, [head, lines[0], lines[2], lines[1]].join('\n') + '\n');
+      expect((await new FileSessionStore(root()).read(FILE, 'test-session-123'))?.messages.map((m) => m.role + ':' + m.content))
+        .toEqual(['assistant:before the tool', 'tool:', 'assistant:after the tool']);
     });
 
     it('lists again after clearing workspaceState failed', async () => {

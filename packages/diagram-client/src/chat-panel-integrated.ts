@@ -863,7 +863,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     }
     this.reverted = Boolean(data.reverted);
     // Ignore the session/load replay tail until the user drives a real turn.
-    this.suppressReplayStream = true;
+    // A catch-up loads nothing in the agent: no replay follows it.
+    if (!data.catchUp) this.suppressReplayStream = true;
     this.update();
   }
 
