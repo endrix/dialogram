@@ -20,6 +20,10 @@ describe('the folder Dialogram keeps its data in', () => {
         expect(dialogramDataDir({ LOCALAPPDATA: 'C:\\L' }, 'win32', 'C:\\U')).toBe(path.join('C:\\L', 'dialogram'));
     });
 
+    it('leaves out a relative XDG_DATA_HOME, as the XDG spec says', () => {
+        expect(dialogramDataDir({ XDG_DATA_HOME: '.local/share' }, 'linux', '/home/u')).toBe('/home/u/.local/share/dialogram');
+    });
+
     it('is DIALOGRAM_DATA_DIR when set', () => {
         expect(dialogramDataDir({ DIALOGRAM_DATA_DIR: '/scratch', XDG_DATA_HOME: '/data' }, 'linux', '/home/u')).toBe('/scratch');
     });
@@ -278,6 +282,31 @@ describe('FileSessionStore', () => {
         } finally {
             warn.mockRestore();
         }
+    });
+
+    it('removes, when it lists, a create\'s file a kill left beside its place an hour ago', async () => {
+        const store = new FileSessionStore(root());
+        await store.create(session('ses_a'));
+        const { dir, names } = await sessionFiles();
+        const left = path.join(dir, `${names[0]}.4242.1.tmp`);
+        const fresh = path.join(dir, `${names[0]}.4242.2.tmp`);
+        await fs.writeFile(left, 'a transcript');
+        await fs.writeFile(fresh, 'being written');
+        const hourAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+        await fs.utimes(left, hourAgo, hourAgo);
+        expect((await store.list(FILE)).map((s) => s.id)).toEqual(['ses_a']);
+        expect((await sessionFiles()).names.filter((n) => n.endsWith('.tmp'))).toEqual([path.basename(fresh)]);
+    });
+
+    it('tells a removed session (it left its mark) from one merely missing', async () => {
+        const store = new FileSessionStore(root());
+        await store.create(session('ses_a'));
+        await store.create(session('ses_b'));
+        await store.remove(FILE, 'ses_a');
+        const { dir, names } = await sessionFiles();
+        await fs.rm(path.join(dir, names.find((n) => n.startsWith('ses_b-'))!));
+        expect(await store.wasRemoved(FILE, 'ses_a')).toBe(true);
+        expect(await store.wasRemoved(FILE, 'ses_b')).toBe(false);
     });
 
     it('skips a line that is JSON but no change, and reads the rest', async () => {

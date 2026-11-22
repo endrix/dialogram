@@ -613,6 +613,37 @@ describe('SessionManager', () => {
       expect(manager.getSession('test-session-123')).not.toBeNull();
     });
 
+    it('keeps a session whose file is merely missing (no mark), and keeps it whole again with the next change', async () => {
+      const onError = vi.fn();
+      const manager = window(undefined, undefined, onError);
+      await manager.createSession(FILE, 'Review');
+      manager.addMessageToSession('test-session-123', message('one'));
+      await manager.idle();
+      // The folder moved away for a while: the file is gone, with no mark.
+      await fs.rm(root(), { recursive: true, force: true });
+      expect(await manager.isGone('test-session-123')).toBe(false);
+      await manager.refresh(FILE);
+      expect(manager.getSessionsForWorkflow(FILE)).toHaveLength(1);
+      manager.addMessageToSession('test-session-123', message('two'));
+      await manager.idle();
+      expect(onError).toHaveBeenCalled();
+      manager.addMessageToSession('test-session-123', message('three'));
+      await manager.idle();
+      expect(await said()).toEqual(['one', 'two', 'three']);
+    });
+
+    it('writes a mode to the session it is for, not the one now current', async () => {
+      const manager = window();
+      await manager.createSession(FILE, 'First');
+      mockACPClient.createSession.mockResolvedValueOnce('ses-second');
+      await manager.createSession(FILE, 'Second');
+      manager.setCurrentSession('ses-second');
+      await manager.updateSessionMode('plan', 'test-session-123');
+      await manager.idle();
+      expect((await new FileSessionStore(root()).read(FILE, 'test-session-123'))?.mode).toBe('plan');
+      expect((await new FileSessionStore(root()).read(FILE, 'ses-second'))?.mode).toBe('build');
+    });
+
     it('does not say a session it never had is gone', async () => {
       const manager = window();
       expect(await manager.isGone('ses_not_read_yet')).toBe(false);

@@ -89,6 +89,7 @@ const PREFERRED_MODEL_STATE_KEY = "dialogram.chat.preferredModel";
 
 /** What the panel says of a chat another window deleted. */
 const DELETED_ELSEWHERE = "This chat was deleted in another window. Create or select a session to continue.";
+const DELETED_HERE = "This chat was deleted. Create or select a session to continue.";
 
 /**
  * Everything project-specific the unified chat runtime needs. The diagram
@@ -648,6 +649,8 @@ export class ChatRuntime {
     const named = typeof data?.sessionId === "string" ? data.sessionId : undefined;
     if (named && !this.sessions.getSession(named) && !(await this.sessions.isGone(named))) {
       await this.sessions.refresh(file).catch((error) => this.reportStoreError(error, "read"));
+      // Still not there: deleted, if it left the mark (then it is gone).
+      if (!this.sessions.getSession(named)) await this.sessions.isGone(named, file);
     }
 
     switch (type) {
@@ -683,7 +686,7 @@ export class ChatRuntime {
         if (await this.sessions.isGone(shown)) {
           this.postToWebview(uri, {
             type: "chat.sessionDeleted",
-            data: { sessionId: shown, reason: DELETED_ELSEWHERE },
+            data: { sessionId: shown, reason: this.deletedReason(shown) },
           });
           return;
         }
@@ -787,7 +790,7 @@ export class ChatRuntime {
           // Deleted in another window since this one listed it.
           this.postToWebview(uri, {
             type: "chat.sessionDeleted",
-            data: { sessionId: data.sessionId, reason: DELETED_ELSEWHERE },
+            data: { sessionId: data.sessionId, reason: this.deletedReason(data.sessionId) },
           });
           await this.sendSessions(uri, file);
           return;
@@ -872,6 +875,7 @@ export class ChatRuntime {
           if (!name) return;
         }
         await this.sessions.renameSession(data.sessionId, name);
+        if (await this.saidDeleted(uri, file, data.sessionId)) return;
         this.postToWebview(uri, {
           type: "chat.sessionRenamed",
           data: { sessionId: data.sessionId, name },
@@ -941,10 +945,13 @@ export class ChatRuntime {
         const refuse = async () => {
           this.postToWebview(uri, {
             type: "chat.messageNotSent",
-            data: { sessionId, reason: "this chat was deleted in another window" },
+            data: {
+              sessionId,
+              reason: this.deletedHere.has(sessionId) ? "this chat was deleted" : "this chat was deleted in another window",
+            },
           });
           this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
-          this.postToWebview(uri, { type: "chat.sessionDeleted", data: { sessionId, reason: DELETED_ELSEWHERE } });
+          this.postToWebview(uri, { type: "chat.sessionDeleted", data: { sessionId, reason: this.deletedReason(sessionId) } });
           await this.sendSessions(uri, file);
         };
         if (await this.sessions.isGone(sessionId)) {
@@ -1038,7 +1045,7 @@ export class ChatRuntime {
           const sentIn: "plan" | "build" = data.mode;
           await this.acp
             .setSessionMode(sessionId, sentIn)
-            .then(() => this.sessions.updateSessionMode(sentIn))
+            .then(() => this.sessions.updateSessionMode(sentIn, sessionId))
             .catch((error) => console.warn(`[chat] could not set mode '${sentIn}':`, error));
         }
         // Pass-through slash suggestions and natural language both go to the agent.
@@ -1062,7 +1069,8 @@ export class ChatRuntime {
         }
         await this.acp.setSessionMode(data.sessionId, data.mode);
         this.sessions.setCurrentSession(data.sessionId);
-        await this.sessions.updateSessionMode(data.mode);
+        await this.sessions.updateSessionMode(data.mode, data.sessionId);
+        await this.saidDeleted(uri, file, data.sessionId);
         return;
       case "chat.setProvider": {
         const modelId = data.providerId;
@@ -1379,6 +1387,26 @@ export class ChatRuntime {
       },
     });
     await this.sendSessions(uri, this.fileFor(uri));
+  }
+
+  /** Why a chat went: deleted in this window (another panel), or another. */
+  private deletedReason(sessionId: string): string {
+    return this.deletedHere.has(sessionId) ? DELETED_HERE : DELETED_ELSEWHERE;
+  }
+
+  /**
+   * After a change to a chat (a rename, a mode): one deleted meanwhile took
+   * it not, and the panel is told so. True when it was.
+   */
+  private async saidDeleted(uri: string, file: string, sessionId: string): Promise<boolean> {
+    await this.sessions.idle(sessionId);
+    if (!(await this.sessions.isGone(sessionId))) return false;
+    this.postToWebview(uri, {
+      type: "chat.sessionDeleted",
+      data: { sessionId, reason: this.deletedReason(sessionId) },
+    });
+    await this.sendSessions(uri, file);
+    return true;
   }
 
   /** A session's stored messages, each user message with its opencode id. */

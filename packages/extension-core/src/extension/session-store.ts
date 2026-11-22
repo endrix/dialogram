@@ -26,7 +26,10 @@ export function dialogramDataDir(
   if (platform === 'darwin') {
     return path.join(home, 'Library', 'Application Support', 'dialogram');
   }
-  return path.join(env.XDG_DATA_HOME || path.join(home, '.local', 'share'), 'dialogram');
+  // A relative XDG_DATA_HOME is to be ignored (the XDG spec): it would follow
+  // each extension host's working folder.
+  const xdg = env.XDG_DATA_HOME && path.isAbsolute(env.XDG_DATA_HOME) ? env.XDG_DATA_HOME : undefined;
+  return path.join(xdg || path.join(home, '.local', 'share'), 'dialogram');
 }
 
 /** The folder a product's chats are kept in. */
@@ -48,6 +51,9 @@ export interface SessionStore {
   read(workflowFile: string, sessionId: string): Promise<SessionData | undefined>;
   /** Whether a session is kept (deleted, or never kept, when not). */
   has(workflowFile: string, sessionId: string): Promise<boolean>;
+  /** Whether a session was removed (it left its mark): a file merely missing
+   *  (a folder away for a while, a hand) is not a delete. */
+  wasRemoved(workflowFile: string, sessionId: string): Promise<boolean>;
   /**
    * Keep a session whole. One already kept is kept as it is, with this
    * copy's keyed messages it lacks added. One deleted is not made again:
@@ -108,6 +114,10 @@ export class FileSessionStore implements SessionStore {
     }
     const sessions: SessionData[] = [];
     for (const name of names) {
+      if (name.endsWith('.tmp')) {
+        await pruneTemporary(path.join(dir, name));
+        continue;
+      }
       if (!name.endsWith('.jsonl')) continue;
       try {
         const session = await this.readFile(path.join(dir, name), workflowFile);
@@ -136,6 +146,10 @@ export class FileSessionStore implements SessionStore {
       if (isNotFound(error)) return false;
       throw error;
     }
+  }
+
+  wasRemoved(workflowFile: string, sessionId: string): Promise<boolean> {
+    return exists(gone(this.fileFor(workflowFile, sessionId)));
   }
 
   async create(session: SessionData): Promise<boolean> {
@@ -417,6 +431,16 @@ function hash(text: string, length: number): string {
 
 function fileSafe(name: string): string {
   return name.replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '_').slice(0, 64) || '_';
+}
+
+/** A create's file written beside its place, left by a kill before it was
+ *  linked in or removed: removed once an hour old, as best it can. */
+async function pruneTemporary(file: string): Promise<void> {
+  try {
+    if (Date.now() - (await fs.stat(file)).mtimeMs > 60 * 60 * 1000) await fs.rm(file, { force: true });
+  } catch {
+    // Left for the next list.
+  }
 }
 
 /**

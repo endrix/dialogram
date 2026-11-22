@@ -418,6 +418,51 @@ describe('a chat across windows on the same folder (local, Remote-SSH)', () => {
         expect(said(history)).toEqual(['user: before the restart', 'assistant: answered']);
     });
 
+    it('renamed after another window deleted it: the panel is told it was deleted, not renamed', async () => {
+        const local = makeWindow('ses_1');
+        await local.send('chat.createSession', { name: 'Review', mode: 'build' });
+        const ssh = makeWindow('ses_2');
+        await ssh.send('chat.getSessions');
+        const ask = vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue('Delete' as any);
+        try {
+            await ssh.send('chat.deleteSession', { sessionId: 'ses_1' });
+        } finally {
+            ask.mockRestore();
+        }
+        await local.send('chat.renameSession', { sessionId: 'ses_1', name: 'Design' });
+        expect(local.last('chat.sessionRenamed')).toBeUndefined();
+        expect(local.last('chat.sessionDeleted').data.reason).toMatch(/deleted in another window/);
+    });
+
+    it('a send, after a restart, to a chat deleted meanwhile is refused', async () => {
+        const local = makeWindow('ses_1');
+        await local.send('chat.createSession', { name: 'Review', mode: 'build' });
+        await local.settled();
+        const ask = vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue('Delete' as any);
+        try {
+            await local.send('chat.deleteSession', { sessionId: 'ses_1' });
+        } finally {
+            ask.mockRestore();
+        }
+        const restarted = makeWindow('ses_x');
+        await restarted.send('chat.sendMessage', { sessionId: 'ses_1', text: 'still there?', mode: 'build' });
+        expect(restarted.acp.sendPrompt).not.toHaveBeenCalled();
+        expect(restarted.last('chat.messageNotSent').data.sessionId).toBe('ses_1');
+    });
+
+    it('deleted from another panel of this window: not said to be another window', async () => {
+        const local = makeWindow('ses_1');
+        await local.send('chat.createSession', { name: 'Review', mode: 'build' });
+        const ask = vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue('Delete' as any);
+        try {
+            await local.send('chat.deleteSession', { sessionId: 'ses_1' });
+        } finally {
+            ask.mockRestore();
+        }
+        await local.send('chat.getSessions', { shown: 'ses_1', keys: [] });
+        expect(local.last('chat.sessionDeleted').data.reason).toBe('This chat was deleted. Create or select a session to continue.');
+    });
+
     it('deleted in one window leaves the other', async () => {
         const local = makeWindow('ses_1');
         await local.send('chat.createSession', { name: 'Review', mode: 'build' });

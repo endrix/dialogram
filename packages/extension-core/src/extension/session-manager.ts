@@ -138,8 +138,7 @@ export class SessionManager {
       (session) => session.workflowFile === workflowFile && seenKept.has(session.id) && !keptIds.has(session.id)
     );
     for (const session of missing) {
-      const there = await this.store.has(workflowFile, session.id).catch(() => true);
-      if (!there) this.forget(session.id);
+      if (await this.deleted(workflowFile, session.id)) this.forget(session.id);
     }
     for (const session of kept) {
       this.take(session);
@@ -232,11 +231,11 @@ export class SessionManager {
       } else if (this.stored.has(sessionId)) {
         // No session read: deleted, or a file there that holds none yet (one
         // cut short), which is not a delete.
-        if (!(await this.store.has(listed.workflowFile, sessionId))) {
+        if (await this.deleted(listed.workflowFile, sessionId)) {
           this.forget(sessionId);
           return null;
         }
-        throw new Error(`The file of chat session ${sessionId} is there but holds no session`);
+        throw new Error(`The file of chat session ${sessionId} is missing, or holds no session`);
       }
     } catch (error) {
       this.onStoreError(error, 'read');
@@ -272,18 +271,35 @@ export class SessionManager {
   }
 
   /**
-   * Whether a session is gone: deleted, here or in another window, since this
-   * one saw it kept (it is then forgotten here). One that cannot be checked,
-   * or that this window never had, is taken as there.
+   * Whether a session is gone: deleted, here or in another window (its file
+   * left the mark a delete leaves; it is then forgotten here). One that
+   * cannot be checked, or merely missing, is taken as there.
    */
-  async isGone(sessionId: string): Promise<boolean> {
+  async isGone(sessionId: string, workflowFile?: string): Promise<boolean> {
     const session = this.sessions.get(sessionId);
-    // One this window never had (not read yet) is not said to be deleted.
-    if (!session) return this.removed.has(sessionId);
+    if (!session) {
+      if (this.removed.has(sessionId)) return true;
+      // One this window has not read: deleted only if its file left the mark.
+      if (workflowFile && (await this.deleted(workflowFile, sessionId))) {
+        this.removed.add(sessionId);
+        return true;
+      }
+      return false;
+    }
     if (!this.stored.has(sessionId)) return false;
-    const there = await this.store.has(session.workflowFile, sessionId).catch(() => true);
-    if (!there) this.forget(sessionId);
-    return !there;
+    const gone = await this.deleted(session.workflowFile, sessionId);
+    if (gone) this.forget(sessionId);
+    return gone;
+  }
+
+  /** Whether a session was deleted: its file gone, and the mark a delete
+   *  leaves there. One that cannot be checked is taken as there. */
+  private async deleted(workflowFile: string, sessionId: string): Promise<boolean> {
+    try {
+      return !(await this.store.has(workflowFile, sessionId)) && (await this.store.wasRemoved(workflowFile, sessionId));
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -376,12 +392,12 @@ export class SessionManager {
   /**
    * Update session mode
    */
-  async updateSessionMode(mode: 'plan' | 'build'): Promise<void> {
-    if (!this.currentSessionId) {
+  async updateSessionMode(mode: 'plan' | 'build', sessionId: string | null = this.currentSessionId): Promise<void> {
+    if (!sessionId) {
       return;
     }
 
-    const session = this.sessions.get(this.currentSessionId);
+    const session = this.sessions.get(sessionId);
     if (session) {
       session.mode = mode;
       session.updatedAt = Date.now();
@@ -441,8 +457,14 @@ export class SessionManager {
         const pending = this.unsent.get(id);
         while (pending && pending.length > 0) {
           if (!(await this.store.append(session.workflowFile, id, pending[0]))) {
-            this.forget(id);
-            return;
+            if (await this.deleted(session.workflowFile, id)) {
+              this.forget(id);
+              return;
+            }
+            // Missing, not deleted (a folder away for a while): kept whole
+            // again with the next change.
+            this.stored.delete(id);
+            throw new Error(`The file of chat session ${id} is missing; it is kept again with the next change`);
           }
           pending.shift();
         }
