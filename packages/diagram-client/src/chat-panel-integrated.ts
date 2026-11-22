@@ -383,7 +383,11 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       : undefined;
     // With the stored messages it shows, by key: the host sends the others.
     const keys = this.timeline.map((t: any) => t.key).filter((k: unknown): k is string => typeof k === 'string');
-    this.sendToHost('chat.getSessions', shown ? { shown, keys } : undefined);
+    // And how many rows of the transcript have none: shown as they came.
+    const unkeyed = this.timeline.filter(
+      (t: any) => !t.key && (t.kind === 'tool' || (t.kind === 'message' && (t.role === 'user' || t.role === 'assistant')))
+    ).length;
+    this.sendToHost('chat.getSessions', shown ? { shown, keys, unkeyed } : undefined);
   }
 
   // ── The view: the session, or one of the run's agents ─────────────────
@@ -640,13 +644,14 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         break;
 
       case 'chat.sessionDeleted':
-        if (data?.sessionId === this.currentSessionId) {
-          // Opened from a list another window had made stale: no history comes.
-          this.isLoadingSession = false;
-          this.currentSessionId = data?.nextSessionId ?? null;
-          this.clearTimeline();
-        }
         this.loadSessions();
+        // Another chat than the one shown (one switched from since asking):
+        // the list says it, not this one's transcript.
+        if (data?.sessionId !== this.currentSessionId) break;
+        // Opened from a list another window had made stale: no history comes.
+        this.isLoadingSession = false;
+        this.currentSessionId = data?.nextSessionId ?? null;
+        this.clearTimeline();
         if (data?.nextSessionId) {
           this.loadSession(data.nextSessionId);
         } else {

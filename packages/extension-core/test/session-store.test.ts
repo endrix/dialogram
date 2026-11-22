@@ -266,6 +266,20 @@ describe('FileSessionStore', () => {
         expect(await store.create(session('ses_a'))).toBe(false);
     });
 
+    it('ends a line a cut-short write left, so the next append is not lost with it', async () => {
+        const store = new FileSessionStore(root());
+        await store.create(session('ses_a'));
+        const { dir, names } = await sessionFiles();
+        await fs.appendFile(path.join(dir, names[0]), '{"at":2,"t":"message","mess');
+        expect(await store.append(FILE, 'ses_a', { t: 'message', message: message('next') })).toBe(true);
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        try {
+            expect((await new FileSessionStore(root()).read(FILE, 'ses_a'))?.messages.map((m) => m.content)).toEqual(['next']);
+        } finally {
+            warn.mockRestore();
+        }
+    });
+
     it('skips a line that is JSON but no change, and reads the rest', async () => {
         const store = new FileSessionStore(root());
         await store.create(session('ses_a'));

@@ -112,7 +112,11 @@ export class SessionManager {
   }
 
   /** Resolves once every change asked for so far has landed or failed. */
-  async idle(): Promise<void> {
+  async idle(sessionId?: string): Promise<void> {
+    if (sessionId !== undefined) {
+      while (this.queues.has(sessionId)) await this.queues.get(sessionId);
+      return;
+    }
     while (this.queues.size > 0) {
       await Promise.allSettled([...this.queues.values()]);
     }
@@ -226,8 +230,13 @@ export class SessionManager {
       if (kept) {
         this.take(kept);
       } else if (this.stored.has(sessionId)) {
-        this.forget(sessionId);
-        return null;
+        // No session read: deleted, or a file there that holds none yet (one
+        // cut short), which is not a delete.
+        if (!(await this.store.has(listed.workflowFile, sessionId))) {
+          this.forget(sessionId);
+          return null;
+        }
+        throw new Error(`The file of chat session ${sessionId} is there but holds no session`);
       }
     } catch (error) {
       this.onStoreError(error, 'read');
@@ -250,6 +259,11 @@ export class SessionManager {
       console.error('Failed to load session:', error);
       return null;
     }
+  }
+
+  /** Whether this window has made any message in the session. */
+  hasLocal(sessionId: string): boolean {
+    return (this.local.get(sessionId)?.size ?? 0) > 0;
   }
 
   /** Whether this window made the session's message with this key. */

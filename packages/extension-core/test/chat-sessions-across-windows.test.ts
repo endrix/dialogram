@@ -393,6 +393,31 @@ describe('a chat across windows on the same folder (local, Remote-SSH)', () => {
         expect(ssh.posts.slice(before).map((p) => p.type)).toEqual(['chat.sessions']);
     });
 
+    it('does not say a chat was deleted when the list could not be read', async () => {
+        const local = makeWindow('ses_1');
+        await local.send('chat.createSession', { name: 'Review', mode: 'build' });
+        await local.settled();
+        const restarted = makeWindow('ses_x');
+        (restarted.runtime as any).sessions.store.list = async () => { throw new Error('EACCES: permission denied'); };
+        await restarted.send('chat.getSessions', { shown: 'ses_1', keys: [] });
+        expect(restarted.last('chat.sessionDeleted')).toBeUndefined();
+    });
+
+    it('sends the transcript again when the panel shows rows this host never sent nor made (a restart of the host)', async () => {
+        const local = makeWindow('ses_1');
+        await local.send('chat.createSession', { name: 'Review', mode: 'build' });
+        await turn(local, 'ses_1', 'before the restart', 'answered');
+        const restarted = makeWindow('ses_x');
+        await restarted.send('chat.getSessions');
+        const before = restarted.posts.length;
+        await restarted.send('chat.getSessions', { shown: 'ses_1', keys: [], unkeyed: 2 });
+        const posted = restarted.posts.slice(before);
+        expect(posted.some((p) => p.type === 'chat.sessionAppend')).toBe(false);
+        const history = posted.find((p) => p.type === 'chat.sessionHistory') as any;
+        expect(history.data.catchUp).toBe(true);
+        expect(said(history)).toEqual(['user: before the restart', 'assistant: answered']);
+    });
+
     it('deleted in one window leaves the other', async () => {
         const local = makeWindow('ses_1');
         await local.send('chat.createSession', { name: 'Review', mode: 'build' });

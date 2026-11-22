@@ -226,17 +226,27 @@ export class FileSessionStore implements SessionStore {
   private async appendLine(file: string, line: Line): Promise<boolean> {
     let handle: fs.FileHandle;
     try {
-      // No O_CREAT: a file another window deleted stays deleted.
-      handle = await fs.open(file, fsConstants.O_WRONLY | fsConstants.O_APPEND);
+      // No O_CREAT: a file another window deleted stays deleted. Read too:
+      // its last byte says whether the last line was ended.
+      handle = await fs.open(file, fsConstants.O_RDWR | fsConstants.O_APPEND);
     } catch (error) {
       if (isNotFound(error)) return false;
       throw error;
     }
     try {
+      // A line left unended (a write cut short by a full disk or a kill) is
+      // ended first: this one is not glued to it and lost with it.
+      const { size } = await handle.stat();
+      let prefix = '';
+      if (size > 0) {
+        const last = Buffer.alloc(1);
+        await handle.read(last, 0, 1, size - 1);
+        if (last[0] !== 0x0a) prefix = '\n';
+      }
       // One write() (writeFile would split one past 512 KiB): a local file
       // system keeps it whole between two windows' appends. A short write (a
       // signal, a full disk) goes on with the rest.
-      const buffer = Buffer.from(JSON.stringify(line) + '\n');
+      const buffer = Buffer.from(prefix + JSON.stringify(line) + '\n');
       for (let offset = 0; offset < buffer.length; ) {
         const { bytesWritten } = await handle.write(buffer, offset, buffer.length - offset, null);
         if (bytesWritten <= 0) throw new Error(`Nothing written to ${file}`);
@@ -280,6 +290,8 @@ export class FileSessionStore implements SessionStore {
       const lines = end < 0 ? [] : text.slice(0, end).split('\n');
       let read = known;
       for (const [index, raw] of lines.entries()) {
+        // The end given to a line left unended, before the next.
+        if (read && raw === '') continue;
         let line: Line;
         try {
           line = JSON.parse(raw) as Line;

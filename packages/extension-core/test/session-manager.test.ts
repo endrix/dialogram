@@ -600,6 +600,19 @@ describe('SessionManager', () => {
       expect(await new FileSessionStore(root()).has(FILE, 'test-session-123')).toBe(false);
     });
 
+    it('keeps a session whose file is there but holds none yet, and says it cannot be read', async () => {
+      const onError = vi.fn();
+      const manager = window(undefined, undefined, onError);
+      await manager.createSession(FILE, 'Review');
+      const [dir] = await fs.readdir(root());
+      const [name] = (await fs.readdir(path.join(root(), dir))).filter((n) => n.endsWith('.jsonl'));
+      await fs.writeFile(path.join(root(), dir, name), '');
+      expect(await manager.loadSession('test-session-123')).not.toBeNull();
+      expect(onError).toHaveBeenCalledWith(expect.anything(), 'read');
+      expect(await manager.isGone('test-session-123')).toBe(false);
+      expect(manager.getSession('test-session-123')).not.toBeNull();
+    });
+
     it('does not say a session it never had is gone', async () => {
       const manager = window();
       expect(await manager.isGone('ses_not_read_yet')).toBe(false);

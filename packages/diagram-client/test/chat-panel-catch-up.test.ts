@@ -150,6 +150,24 @@ describe('coming back to the chat window', () => {
         expect(panel.timeline.filter((t: any) => t.kind === 'tool').map((t: any) => t.title)).toEqual(['read', 'write']);
     });
 
+    it('leaves the transcript shown when another chat is said to be deleted', () => {
+        const { panel } = makePanel();
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_2', messages: [{ role: 'user', content: 'mine', timestamp: 1, key: 'k1' }] });
+        panel.handleIncomingMessage('chat.sessionDeleted', { sessionId: 'ses_1', reason: 'This chat was deleted in another window.' });
+        expect(panel.currentSessionId).toBe('ses_2');
+        expect(panel.timeline.map((t: any) => t.content)).toEqual(['mine']);
+    });
+
+    it('says how many rows it shows have no key when it asks to catch up', () => {
+        const { panel, asked } = makePanel();
+        initialize(panel);
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_1', messages: [{ role: 'user', content: 'kept', timestamp: 1, key: 'k1' }] });
+        panel.pushMessage('user', 'live');
+        panel.pushMessage('system', 'a note');
+        window.dispatchEvent(new Event('focus'));
+        expect(asked().pop()?.data).toMatchObject({ shown: 'ses_1', keys: ['k1'], unkeyed: 1 });
+    });
+
     it('goes on loading when another session is said to be deleted', () => {
         const { panel } = makePanel();
         panel.currentSessionId = 'ses_2';

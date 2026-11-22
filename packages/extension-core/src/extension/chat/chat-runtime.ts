@@ -678,7 +678,9 @@ export class ChatRuntime {
         const shown = typeof data?.shown === "string" ? data.shown : undefined;
         await this.sendSessions(uri, file);
         if (!shown) return;
-        if (!this.sessions.getSession(shown)) {
+        // Deleted, not merely unread (a list that failed, a file that cannot
+        // be read): only then is the panel told so.
+        if (await this.sessions.isGone(shown)) {
           this.postToWebview(uri, {
             type: "chat.sessionDeleted",
             data: { sessionId: shown, reason: DELETED_ELSEWHERE },
@@ -696,7 +698,12 @@ export class ChatRuntime {
         const lastShown = all.reduce((last, m, i) => (isShown(m) ? i : last), -1);
         const added = all.filter((m) => !isShown(m));
         if (added.length === 0) return;
-        if (all.indexOf(added[0]) < lastShown) {
+        // Rows it shows that this host never sent nor made (shown as they
+        // came, before a restart of the host): it cannot tell which stored
+        // ones they are, so the transcript is sent again, once.
+        const unkeyed = typeof data?.unkeyed === "number" ? data.unkeyed : 0;
+        const unknownRows = unkeyed > 0 && !this.sessions.hasLocal(shown);
+        if (unknownRows || all.indexOf(added[0]) < lastShown) {
           // Some come before what it shows (both windows went on at once):
           // the transcript again, in order. The panel leaves it if a turn has
           // started since it asked.
@@ -1361,7 +1368,7 @@ export class ChatRuntime {
   private async sayIfDeletedWhileAnswering(sessionId: string): Promise<void> {
     const uri = this.sessionUri.get(sessionId);
     if (!uri) return;
-    await this.sessions.idle();
+    await this.sessions.idle(sessionId);
     if (this.deletedHere.has(sessionId) || !(await this.sessions.isGone(sessionId))) return;
     this.postToWebview(uri, {
       type: "chat.message",
