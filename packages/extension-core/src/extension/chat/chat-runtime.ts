@@ -17,7 +17,7 @@ import * as vscode from "vscode";
 import { CORE_CHAT_SECTION } from "./edit-capability";
 import { ACPClientService, type AcpAgentSpec, type TurnPart } from "../acp-client.js";
 import type { DiagramChatConfirm, DiagramChatConfirmAnswer, DiagramRunAnswer, DiagramRunQuestion } from "../../api";
-import { SessionManager, type MessageData } from "../session-manager.js";
+import { SessionManager, type MessageData, type SessionData } from "../session-manager.js";
 import { FileSessionStore, chatSessionRoot } from "../session-store.js";
 import type {
   ChatMessageSink,
@@ -751,6 +751,8 @@ export class ChatRuntime {
         // The panel's request, named in what is said back, so it can tell its
         // own session from one it no longer waits for.
         const requestId = typeof data?.requestId === "string" ? data.requestId : undefined;
+        let made: SessionData | undefined;
+        let told = false;
         try {
           await this.ensureStarted(cwd);
           // Collect the name via a native input box (webview prompt() is
@@ -788,6 +790,7 @@ export class ChatRuntime {
             name,
             data?.mode ?? this.pendingMode ?? "build",
           );
+          made = session;
           this.sessionUri.set(session.id, uri);
           this.sessions.setCurrentSession(session.id);
           await this.applyPending(session.id);
@@ -795,10 +798,16 @@ export class ChatRuntime {
             type: "chat.sessionCreated",
             data: { session, requestId },
           });
+          told = true;
           await this.sendSessions(uri, file);
         } catch (error) {
-          // Not made: the panel stops waiting for it (and says why, below).
-          this.postToWebview(uri, { type: "chat.sessionCreateAborted", data: { requestId } });
+          // Not made: the panel stops waiting for it. Made, and something
+          // after failed: it is the panel's all the same. The error follows.
+          if (!made) {
+            this.postToWebview(uri, { type: "chat.sessionCreateAborted", data: { requestId } });
+          } else if (!told) {
+            this.postToWebview(uri, { type: "chat.sessionCreated", data: { session: made, requestId } });
+          }
           throw error;
         }
         return;

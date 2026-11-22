@@ -499,6 +499,17 @@ describe('a chat across windows on the same folder (local, Remote-SSH)', () => {
         expect(w.last('chat.error').data.message).toMatch(/the agent went away/);
     });
 
+    it('made, then something after fails: the panel is told it was made, and the error', async () => {
+        const w = makeWindow('ses_1');
+        (w.runtime as any).applyPending = async () => {
+            throw new Error('the mode could not be set');
+        };
+        await w.send('chat.createSession', { mode: 'build', ask: false, requestId: 'create-3' });
+        expect(w.last('chat.sessionCreateAborted')).toBeUndefined();
+        expect(w.last('chat.sessionCreated').data).toMatchObject({ session: { id: 'ses_1' }, requestId: 'create-3' });
+        expect(w.last('chat.error').data.message).toMatch(/the mode could not be set/);
+    });
+
     it('deleted in one window leaves the other', async () => {
         const local = makeWindow('ses_1');
         await local.send('chat.createSession', { name: 'Review', mode: 'build' });

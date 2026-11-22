@@ -145,11 +145,61 @@ describe('while its session is being made', () => {
         expect(panel.currentSessionId).toBe('ses_1');
     });
 
-    it('a "+" meanwhile asks for no other session', () => {
+    it('a "+" meanwhile asks for its own session, and the message goes there; the first one is only listed', () => {
         const { panel, of } = makePanel();
         type(panel, 'hello');
+        const first = panel.createRequest;
         panel.createNewSession();
-        expect(of('chat.createSession')).toHaveLength(1);
+        expect(of('chat.createSession')).toHaveLength(2);
+        created(panel, 'ses_1', 'Session 1', first);
+        expect(panel.currentSessionId).toBeNull();
+        created(panel, 'ses_2', 'Named');
+        expect(of('chat.sendMessage').map((d) => [d.text, d.sessionId])).toEqual([['hello', 'ses_2']]);
+    });
+
+    it('handed back, the message goes before what was written since, not instead of it', () => {
+        const { panel } = makePanel();
+        type(panel, 'first');
+        type(panel, 'second');
+        panel.handleIncomingMessage('chat.sessionCreateAborted', { requestId: panel.createRequest });
+        expect(panel.inputValue).toBe('first\n\nsecond');
+    });
+
+    it('a chat drawn meanwhile (no chat was open) leaves the session asked for', () => {
+        const { panel } = makePanel();
+        type(panel, 'hello');
+        const asked = panel.createRequest;
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_X', messages: [] });
+        expect(panel.inputValue).toBe('hello');
+        created(panel, 'ses_new', 'Session 1', asked);
+        expect(panel.currentSessionId).toBe('ses_X');
+    });
+
+    it('an error keeps "Creating session…" while the session is awaited, and the session still comes', () => {
+        const { panel, of } = makePanel();
+        type(panel, 'hello');
+        panel.handleIncomingMessage('chat.error', { message: 'something else failed' });
+        expect(panel.isLoadingSession).toBe(true);
+        created(panel, 'ses_1', 'Session 1');
+        expect(of('chat.sendMessage').map((d) => [d.text, d.sessionId])).toEqual([['hello', 'ses_1']]);
+    });
+
+    it('an answer that names no session hands the message back', () => {
+        const { panel } = makePanel();
+        type(panel, 'hello');
+        panel.handleIncomingMessage('chat.sessionCreated', { requestId: panel.createRequest, session: {} });
+        expect(panel.inputValue).toBe('hello');
+        expect(panel.pendingSend).toBeUndefined();
+    });
+
+    it('not asked (no way to the host): the message goes back, and says why', () => {
+        const { panel } = makePanel();
+        panel.channel = undefined;
+        type(panel, 'hello');
+        expect(panel.inputValue).toBe('hello');
+        expect(panel.isLoadingSession).toBe(false);
+        expect(panel.createRequest).toBeUndefined();
+        expect(said(panel)).toEqual(['system: Error: VS Code API not available in webview']);
     });
 
     it.each([
@@ -178,7 +228,30 @@ describe('a session made with "+"', () => {
     });
 });
 
+describe('from a host that names no request', () => {
+    it('"+" is shown, though a chat was', () => {
+        const { panel } = makePanel();
+        panel.currentSessionId = 'ses_0';
+        panel.createNewSession();
+        panel.handleIncomingMessage('chat.sessionCreated', { session: { id: 'ses_1', name: 'Session 2' } });
+        expect(panel.currentSessionId).toBe('ses_1');
+    });
+});
+
 describe('a refusal for a chat not shown', () => {
+    it('leaves the message sent since in the chat shown', () => {
+        const { panel } = makePanel();
+        panel.currentSessionId = 'ses_A';
+        type(panel, 'in A');
+        panel.handleIncomingMessage('chat.turnEnd', { sessionId: 'ses_A' });
+        panel.loadSession('ses_B');
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_B', messages: [] });
+        type(panel, 'in B');
+        panel.handleIncomingMessage('chat.messageNotSent', { sessionId: 'ses_A', reason: 'the agent does not read images', images: false });
+        expect(said(panel)).toEqual(['user: in B']);
+        expect(panel.inputValue).toBe('');
+    });
+
     it('is not said in the one shown; the message goes back to the composer, and what it says of the agent is kept', () => {
         const { panel } = makePanel();
         panel.currentSessionId = 'ses_A';
