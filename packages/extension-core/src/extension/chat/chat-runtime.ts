@@ -231,10 +231,6 @@ export class ChatRuntime {
    *  showed as they came, for the session it showed them in. A transcript
    *  sent to it carries every key, and starts this again. */
   private liveShown = new Map<string, { sessionId: string; keys: Set<string> }>();
-  /** Per panel (its uri), the message it sent with no chat open: while its
-   *  chat is made, a stop from the panel (which knows no id yet) keeps it
-   *  from going to the agent, or stops its turn once it went. */
-  private sentWithoutChat = new Map<string, { stopped: boolean; sessionId?: string; sent: boolean }>();
   /** Tears down the ACP -> webview event forwarding registered in the ctor. */
   private readonly acpForwardingDisposer: () => void;
   /** Pending stuck-connection watchdog (armed on the panel handshake). */
@@ -756,6 +752,12 @@ export class ChatRuntime {
         // Collect the name via a native input box (webview prompt() is
         // blocked). Cancelling drops the panel's spinner.
         let name: string | undefined = data?.name;
+        if (!name && data?.ask === false) {
+          // Made for a message sent with no chat open: no question asked; the
+          // default name, which must not be one another window has taken.
+          await this.sessions.refresh(file).catch(() => undefined);
+          name = this.sessions.nextDefaultSessionName(file);
+        }
         if (!name) {
           // The default offered must not be a name another window has taken.
           await this.sessions.refresh(file).catch(() => undefined);
@@ -918,23 +920,19 @@ export class ChatRuntime {
           data.sessionId === null
             ? undefined
             : data.sessionId || this.sessions.getCurrentSessionId() || undefined;
-        const making = { stopped: false, sessionId: undefined as string | undefined, sent: false };
         if (!sessionId) {
-          this.sentWithoutChat.set(uri, making);
           const session = await this.sessions.createSession(
             file,
             undefined,
             data.mode ?? this.pendingMode ?? "build",
           );
           sessionId = session.id;
-          making.sessionId = sessionId;
           this.sessionUri.set(sessionId, uri);
           this.sessions.setCurrentSession(sessionId);
           await this.applyPending(sessionId);
           this.postToWebview(uri, {
             type: "chat.sessionCreated",
-            // Made for the message being sent: the panel keeps it on screen.
-            data: { session, forMessage: true },
+            data: { session },
           });
           await this.sendSessions(uri, file);
         }
@@ -1066,19 +1064,8 @@ export class ChatRuntime {
             .then(() => this.sessions.updateSessionMode(sentIn, sessionId))
             .catch((error) => console.warn(`[chat] could not set mode '${sentIn}':`, error));
         }
-        // Stopped before its chat was made: kept, not sent; the turn is over.
-        if (making.stopped) {
-          this.sentWithoutChat.delete(uri);
-          this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
-          return;
-        }
-        making.sent = true;
         // Pass-through slash suggestions and natural language both go to the agent.
-        try {
-          await this.acp.sendPrompt(sessionId, data.text, images);
-        } finally {
-          if (this.sentWithoutChat.get(uri) === making) this.sentWithoutChat.delete(uri);
-        }
+        await this.acp.sendPrompt(sessionId, data.text, images);
         if (this.config.postTurnHook) {
           await this.config
             .postTurnHook(file, String(data.text ?? ""))
@@ -1086,19 +1073,10 @@ export class ChatRuntime {
         }
         return;
       }
-      case "chat.cancel": {
-        if (!data?.sessionId) {
-          // Stopped before the panel knew its chat: the message waiting for
-          // it is not sent, or its turn is stopped if it went.
-          const making = this.sentWithoutChat.get(uri);
-          if (!making) return;
-          making.stopped = true;
-          if (making.sent && making.sessionId) await this.acp.cancelPrompt(making.sessionId);
-          return;
-        }
+      case "chat.cancel":
+        if (!data?.sessionId) return;
         await this.acp.cancelPrompt(data.sessionId);
         return;
-      }
       case "chat.setMode":
         // Chosen before any session exists: remember and apply on create.
         if (!data?.sessionId) {

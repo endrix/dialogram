@@ -17,6 +17,9 @@ function makePanel() {
         sendToHost: (method: string, env: any) => sent.push({ method, env })
     };
     (globalThis as any).diagramIdentifier = { uri: 'file:///ws/wf.py' };
+    // A chat is open: a message sent with none waits for its session first
+    // (chat-panel-first-message.test.ts).
+    (panel as any).currentSessionId = 's1';
     return { panel, sent };
 }
 

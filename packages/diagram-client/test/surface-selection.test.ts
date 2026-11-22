@@ -109,6 +109,9 @@ function chatOn(host: DiagramSurfaceHost) {
     const chat = new ChatPanel();
     (chat as any).channel = { sendToHost: (method: string, env: any) => sent.push({ method, env }) };
     (chat as any).surfaceHost = host;
+    // A chat is open: a message sent with none waits for its session first
+    // (chat-panel-first-message.test.ts).
+    (chat as any).currentSessionId = 's1';
     (chat as any).listenToSurface();
     (globalThis as any).diagramIdentifier = { uri: 'file:///w/shapes.txt' };
     return { chat, sent };

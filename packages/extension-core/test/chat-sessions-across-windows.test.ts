@@ -473,38 +473,20 @@ describe('a chat across windows on the same folder (local, Remote-SSH)', () => {
         await w.send('chat.createSession', { name: 'Review', mode: 'build' });
         w.acp.createSession = async () => 'ses_2';
         await w.send('chat.sendMessage', { sessionId: null, text: 'a new question', mode: 'build' });
-        expect(w.last('chat.sessionCreated').data).toMatchObject({ session: { id: 'ses_2' }, forMessage: true });
+        expect(w.last('chat.sessionCreated').data).toMatchObject({ session: { id: 'ses_2' } });
         expect(w.acp.sendPrompt.mock.calls.at(-1)?.[0]).toBe('ses_2');
     });
 
-    it('stopped before its chat was made: the message is kept, not sent to the agent', async () => {
+    it('made for a message sent with no chat open: no name asked, the next default one', async () => {
         const w = makeWindow('ses_1');
-        w.acp.createSession = async () => {
-            // The panel stops it while the chat is being made: it knows no id yet.
-            await w.send('chat.cancel', { sessionId: null });
-            return 'ses_1';
-        };
-        await w.send('chat.sendMessage', { sessionId: null, text: 'never mind', mode: 'build' });
-        await w.settled();
-        expect(w.acp.sendPrompt).not.toHaveBeenCalled();
-        expect(w.last('chat.turnEnd').data.sessionId).toBe('ses_1');
-        const fresh = makeWindow('ses_x');
-        await fresh.send('chat.getSessions');
-        await fresh.send('chat.loadSession', { sessionId: 'ses_1' });
-        expect(said(fresh.last('chat.sessionHistory'))).toEqual(['user: never mind']);
-    });
-
-    it('stopped after it went, still before the panel knew its chat: the turn is stopped', async () => {
-        const w = makeWindow('ses_1');
-        w.acp.cancelPrompt = vi.fn(async () => undefined);
-        w.acp.sendPrompt = vi.fn(async () => {
-            await w.send('chat.cancel', { sessionId: null });
-        });
-        await w.send('chat.sendMessage', { sessionId: null, text: 'long one', mode: 'build' });
-        expect(w.acp.cancelPrompt).toHaveBeenCalledWith('ses_1');
-        // Once over, a stop with no id stops nothing.
-        await w.send('chat.cancel', { sessionId: null });
-        expect(w.acp.cancelPrompt).toHaveBeenCalledTimes(1);
+        const ask = vi.spyOn(vscode.window, 'showInputBox');
+        try {
+            await w.send('chat.createSession', { mode: 'build', ask: false });
+            expect(ask).not.toHaveBeenCalled();
+        } finally {
+            ask.mockRestore();
+        }
+        expect(w.last('chat.sessionCreated').data.session).toMatchObject({ id: 'ses_1', name: 'Session 1' });
     });
 
     it('deleted in one window leaves the other', async () => {

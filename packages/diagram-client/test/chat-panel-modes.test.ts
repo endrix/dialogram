@@ -18,6 +18,9 @@ function makePanel() {
     const panel = new ChatPanel();
     (panel as any).channel = { sendToHost: (method: string, env: any) => sent.push({ method, env }) };
     (panel as any).show = () => undefined;
+    // A chat is open: a message sent with none waits for its session first
+    // (chat-panel-first-message.test.ts).
+    (panel as any).currentSessionId = 's1';
     return { panel: panel as any, sent };
 }
 
