@@ -69,8 +69,8 @@ export class SessionManager {
   private unsent = new Map<string, SessionChange[]>();
   /** Each session's changes, one after the other, in the order made. */
   private queues = new Map<string, Promise<void>>();
-  /** Old workspaceState chats moved into the store: never moved twice. */
-  private moved = new Set<string>();
+  /** Keys of the messages this window made: its panel showed them as they came. */
+  private local = new Set<string>();
   private currentSessionId: string | null = null;
   private ready: Promise<void> | undefined;
 
@@ -250,6 +250,11 @@ export class SessionManager {
    * it kept (it is then forgotten here), or never known. One that cannot be
    * checked is taken as there.
    */
+  /** Whether this window made the message with this key. */
+  isLocal(key: string): boolean {
+    return this.local.has(key);
+  }
+
   async isGone(sessionId: string): Promise<boolean> {
     const session = this.sessions.get(sessionId);
     if (!session) return true;
@@ -328,6 +333,7 @@ export class SessionManager {
       return;
     }
     const added: MessageData = { ...message, key: message.key ?? newMessageKey() };
+    this.local.add(added.key!);
     session.messages.push(added);
     session.updatedAt = Date.now();
     void this.keep(session, { t: 'message', message: added });
@@ -397,7 +403,11 @@ export class SessionManager {
           // added after it as well, as a kept one keeps its own name and mode.
           const changes = this.unsent.get(id);
           const included = changes?.length ?? 0;
-          await this.store.create(structuredClone(current));
+          if (!(await this.store.create(structuredClone(current)))) {
+            // Deleted meanwhile, in another window: not made again.
+            this.forget(id);
+            return;
+          }
           this.stored.add(id);
           if (changes) changes.unshift(...changes.splice(0, included).filter((c) => c.t !== 'message'));
         }
@@ -492,15 +502,14 @@ export class SessionManager {
     const left: SessionData[] = [];
     for (const session of legacy) {
       if (typeof session?.id !== 'string' || typeof session.workflowFile !== 'string') continue;
-      // Moved by an earlier try whose clearing failed: since deleted, maybe.
-      if (this.moved.has(session.id)) continue;
       session.messages ??= [];
-      if (!this.sessions.has(session.id)) this.sessions.set(session.id, session);
       try {
-        await this.store.create(session);
+        // Moved before (clearing the key failed), then deleted: not again.
+        if (!(await this.store.create(session))) continue;
+        if (!this.sessions.has(session.id)) this.sessions.set(session.id, session);
         this.stored.add(session.id);
-        this.moved.add(session.id);
       } catch (error) {
+        if (!this.sessions.has(session.id)) this.sessions.set(session.id, session);
         left.push(session);
         this.onStoreError(error);
       }

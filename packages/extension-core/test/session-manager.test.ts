@@ -488,8 +488,9 @@ describe('SessionManager', () => {
       let failures = 1;
       class FailsAfterWriting extends FileSessionStore {
         override async create(session: SessionData) {
-          await super.create(session);
+          const made = await super.create(session);
           if (failures-- > 0) throw new Error('EIO');
+          return made;
         }
       }
       const manager = window(new FailsAfterWriting(root()), undefined, vi.fn());

@@ -50,9 +50,10 @@ export interface SessionStore {
   has(workflowFile: string, sessionId: string): Promise<boolean>;
   /**
    * Keep a session whole. One already kept is kept as it is, with this
-   * copy's keyed messages it lacks added.
+   * copy's keyed messages it lacks added. One deleted is not made again:
+   * false says so.
    */
-  create(session: SessionData): Promise<void>;
+  create(session: SessionData): Promise<boolean>;
   /** Add a change to a kept session; false when none is kept (deleted). */
   append(workflowFile: string, sessionId: string, change: SessionChange): Promise<boolean>;
   remove(workflowFile: string, sessionId: string): Promise<void>;
@@ -137,19 +138,23 @@ export class FileSessionStore implements SessionStore {
     }
   }
 
-  async create(session: SessionData): Promise<void> {
+  async create(session: SessionData): Promise<boolean> {
     const file = this.fileFor(session.workflowFile, session.id);
     await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+    // Deleted, in this window or another, maybe since this copy was made (an
+    // old workspaceState chat moved again): it stays deleted.
+    if (await exists(gone(file))) return false;
     const { messages, ...head } = session;
     const lines: Line[] = [{ t: 'session', ...head, nonce: randomUUID() }];
     if (messages.length > 0) lines.push({ t: 'messages', at: session.updatedAt, messages });
-    if (await this.place(file, lines.map((line) => JSON.stringify(line)).join('\n') + '\n')) return;
+    if (await this.place(file, lines.map((line) => JSON.stringify(line)).join('\n') + '\n')) return true;
     // Kept already: add this copy's keyed messages it lacks.
     const kept = await this.read(session.workflowFile, session.id);
     if (!kept) throw new Error(`${file} is there but holds no chat session`);
     const have = new Set(kept.messages.map((m) => m.key).filter(Boolean));
     const lacking = messages.filter((m) => m.key && !have.has(m.key));
     if (lacking.length > 0) await this.appendLine(file, { t: 'messages', at: Date.now(), messages: lacking });
+    return true;
   }
 
   /**
@@ -194,9 +199,12 @@ export class FileSessionStore implements SessionStore {
     return this.appendLine(this.fileFor(workflowFile, sessionId), { at: Date.now(), ...change });
   }
 
+  /** Remove a session, leaving a mark that it was: it is never made again. */
   async remove(workflowFile: string, sessionId: string): Promise<void> {
     const file = this.fileFor(workflowFile, sessionId);
     this.reads.delete(file);
+    await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+    await fs.writeFile(gone(file), '', { mode: 0o600 });
     await fs.rm(file, { force: true });
   }
 
@@ -211,8 +219,15 @@ export class FileSessionStore implements SessionStore {
       throw error;
     }
     try {
-      // One write: the system keeps it whole between two windows' appends.
-      await handle.writeFile(Buffer.from(JSON.stringify(line) + '\n'));
+      // One write() (writeFile would split one past 512 KiB): a local file
+      // system keeps it whole between two windows' appends. A short write (a
+      // signal, a full disk) goes on with the rest.
+      const buffer = Buffer.from(JSON.stringify(line) + '\n');
+      for (let offset = 0; offset < buffer.length; ) {
+        const { bytesWritten } = await handle.write(buffer, offset, buffer.length - offset, null);
+        if (bytesWritten <= 0) throw new Error(`Nothing written to ${file}`);
+        offset += bytesWritten;
+      }
     } finally {
       await handle.close();
     }
@@ -353,6 +368,21 @@ function hash(text: string, length: number): string {
 
 function fileSafe(name: string): string {
   return name.replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '_').slice(0, 64) || '_';
+}
+
+/** The mark a removed session leaves beside where its file was. */
+function gone(file: string): string {
+  return file.replace(/\.jsonl$/, '.gone');
+}
+
+async function exists(file: string): Promise<boolean> {
+  try {
+    await fs.stat(file);
+    return true;
+  } catch (error) {
+    if (isNotFound(error)) return false;
+    throw error;
+  }
 }
 
 function isNotFound(error: unknown): boolean {

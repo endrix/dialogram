@@ -222,6 +222,9 @@ export class ChatRuntime {
   private readonly output: vscode.OutputChannel;
   /** Whether a store failure has been put to the person yet. */
   private storeErrorShown = false;
+  /** Per panel (its uri), the session it shows and the keys of the stored
+   *  messages it was sent, so a catch-up sends only what it lacks, once. */
+  private panelShown = new Map<string, { sessionId: string; keys: Set<string> }>();
   /** Tears down the ACP -> webview event forwarding registered in the ctor. */
   private readonly acpForwardingDisposer: () => void;
   /** Pending stuck-connection watchdog (armed on the panel handshake). */
@@ -338,6 +341,7 @@ export class ChatRuntime {
         // Resolve the just-sent user message's opencode id so its revert
         // affordance appears without rebuilding the timeline.
         void this.postLiveMessageIds(sessionId);
+        void this.sayIfDeletedWhileAnswering(sessionId);
       },
     });
     // A successful connection (from any path) stands down the watchdog.
@@ -664,9 +668,6 @@ export class ChatRuntime {
         // The panel names the session it shows when it comes back to its
         // window: another window may have gone on with it, or deleted it.
         const shown = typeof data?.shown === "string" ? data.shown : undefined;
-        const before = new Set(
-          (shown ? this.sessions.getSessionMessages(shown) : []).map((m) => m.key).filter(Boolean),
-        );
         await this.sendSessions(uri, file);
         if (!shown) return;
         if (!this.sessions.getSession(shown)) {
@@ -674,18 +675,35 @@ export class ChatRuntime {
             type: "chat.sessionDeleted",
             data: { sessionId: shown, reason: DELETED_ELSEWHERE },
           });
-        } else {
-          // A read keeps what this window holds: a message it did not have
-          // is another window's. Only those go, after what the panel shows.
-          const { messages, reverted } = await this.historyOf(shown);
-          const added = messages.filter((m) => m.key && !before.has(m.key));
-          if (added.length > 0) {
-            this.postToWebview(uri, {
-              type: "chat.sessionAppend",
-              data: { sessionId: shown, messages: added, reverted },
-            });
-          }
+          return;
         }
+        // What the panel shows: the stored messages it was sent, and those
+        // this window made (it showed them as they came). The others are
+        // another window's. Taken here at once, so two catch-ups at the same
+        // time do not both send them.
+        const entry = this.panelShown.get(uri);
+        const sent = entry?.sessionId === shown ? entry.keys : new Set<string>();
+        const isShown = (m: MessageData) => !m.key || sent.has(m.key) || this.sessions.isLocal(m.key);
+        const all = this.sessions.getSessionMessages(shown);
+        const lastShown = all.reduce((last, m, i) => (isShown(m) ? i : last), -1);
+        const added = all.filter((m) => !isShown(m));
+        if (added.length === 0) return;
+        for (const m of added) sent.add(m.key!);
+        this.panelShown.set(uri, { sessionId: shown, keys: sent });
+        if (all.indexOf(added[0]) < lastShown) {
+          // Some come before what it shows (both windows went on at once):
+          // the transcript again, in order. The panel leaves it if a turn has
+          // started since it asked.
+          await this.postHistory(uri, shown, { catchUp: true });
+          return;
+        }
+        // All after what it shows: only those, added after it.
+        const { messages, reverted } = await this.historyOf(shown);
+        const keys = new Set(added.map((m) => m.key));
+        this.postToWebview(uri, {
+          type: "chat.sessionAppend",
+          data: { sessionId: shown, messages: messages.filter((m) => m.key && keys.has(m.key)), reverted },
+        });
         return;
       }
       case "chat.getProviders":
@@ -800,7 +818,9 @@ export class ChatRuntime {
           "Delete",
         );
         if (choice !== "Delete") return;
-        // Pick the next session to fall back to (most-recent sibling).
+        // Pick the next session to fall back to (most-recent sibling), from
+        // the list as it is now: the question may have waited a long time.
+        await this.sessions.refresh(file);
         const siblings = this.sessions
           .getSessionsForWorkflow(file)
           .filter((s) => s.id !== data.sessionId);
@@ -903,7 +923,7 @@ export class ChatRuntime {
         // A chat another window deleted takes no more messages: nothing is
         // sent or stored, the panel is told, and the message goes back to
         // the composer.
-        if (await this.sessions.isGone(sessionId)) {
+        const refuse = async () => {
           this.postToWebview(uri, {
             type: "chat.messageNotSent",
             data: { sessionId, reason: "this chat was deleted in another window" },
@@ -911,13 +931,20 @@ export class ChatRuntime {
           this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
           this.postToWebview(uri, { type: "chat.sessionDeleted", data: { sessionId, reason: DELETED_ELSEWHERE } });
           await this.sendSessions(uri, file);
+        };
+        if (await this.sessions.isGone(sessionId)) {
+          await refuse();
           return;
         }
         // A session restored from storage (after a reload) isn't attached in
         // the freshly-started agent, so re-attach it before prompting — else
-        // the agent has no context (file) for it.
+        // the agent has no context (file) for it. Deleted in the meantime:
+        // refused all the same.
         if (!this.acp.getSession(sessionId)) {
-          await this.sessions.loadSession(sessionId);
+          if (!(await this.sessions.loadSession(sessionId)) && (await this.sessions.isGone(sessionId))) {
+            await refuse();
+            return;
+          }
         }
         this.sessions.addMessageToSession(sessionId, {
           role: "user",
@@ -1301,9 +1328,13 @@ export class ChatRuntime {
   private async postHistory(
     uri: string,
     sessionId: string,
-    extra?: { mode?: "plan" | "build"; model?: string },
+    extra?: { mode?: "plan" | "build"; model?: string; catchUp?: boolean },
   ): Promise<void> {
     const { messages, reverted } = await this.historyOf(sessionId);
+    this.panelShown.set(uri, {
+      sessionId,
+      keys: new Set(messages.map((m) => m.key).filter((key): key is string => Boolean(key))),
+    });
     this.postToWebview(uri, {
       type: "chat.sessionHistory",
       data: {
@@ -1312,8 +1343,31 @@ export class ChatRuntime {
         mode: extra?.mode ?? this.acp.getSessionMode(sessionId),
         model: extra?.model ?? this.acp.getSessionModel(sessionId),
         reverted,
+        // Sent on coming back to the window: the panel leaves it if a turn
+        // has started since it asked, or another session is shown.
+        ...(extra?.catchUp ? { catchUp: true } : {}),
       },
     });
+  }
+
+  /**
+   * A chat another window deleted while it answered: its answer stays on
+   * screen to be read, but was not kept, and the panel says so.
+   */
+  private async sayIfDeletedWhileAnswering(sessionId: string): Promise<void> {
+    const uri = this.sessionUri.get(sessionId);
+    if (!uri) return;
+    await this.sessions.idle();
+    if (!(await this.sessions.isGone(sessionId))) return;
+    this.postToWebview(uri, {
+      type: "chat.message",
+      data: {
+        role: "system",
+        content: "This chat was deleted in another window while it answered: this answer was not kept.",
+        timestamp: Date.now(),
+      },
+    });
+    await this.sendSessions(uri, this.fileFor(uri));
   }
 
   /** A session's stored messages, each user message with its opencode id. */

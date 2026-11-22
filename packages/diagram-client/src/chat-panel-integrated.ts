@@ -119,6 +119,8 @@ interface MessageItem {
   images?: ChatImage[];
   /** How many images a restored message carried: their bytes are not kept. */
   imageCount?: number;
+  /** The stored message's key: one added on catching up is not shown twice. */
+  key?: string;
 }
 
 interface ToolItem {
@@ -621,6 +623,11 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         break;
 
       case 'chat.sessionHistory':
+        // Sent on coming back to the window: a turn started since, or
+        // another session chosen, is not to be redrawn under it.
+        if (data?.catchUp && (this.isStreaming || this.isLoadingSession || data.sessionId !== this.currentSessionId)) {
+          break;
+        }
         this.renderSessionHistory(data);
         break;
 
@@ -629,9 +636,9 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         break;
 
       case 'chat.sessionDeleted':
-        // Opened from a list another window had made stale: no history comes.
-        this.isLoadingSession = false;
         if (data?.sessionId === this.currentSessionId) {
+          // Opened from a list another window had made stale: no history comes.
+          this.isLoadingSession = false;
           this.currentSessionId = data?.nextSessionId ?? null;
           this.clearTimeline();
         }
@@ -886,6 +893,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         ...(typeof m.messageId === 'string' ? { messageId: m.messageId } : {}),
         ...(typeof m.thinking === 'string' && m.thinking ? { thinking: m.thinking } : {}),
         ...(typeof m.images === 'number' && m.images > 0 ? { imageCount: m.images } : {}),
+        ...(typeof m.key === 'string' ? { key: m.key } : {}),
       });
     });
     return items;
@@ -899,7 +907,9 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
    */
   private appendSessionMessages(data: any): void {
     if (!data?.sessionId || data.sessionId !== this.currentSessionId || this.isStreaming || this.isLoadingSession) return;
-    const messages: any[] = Array.isArray(data.messages) ? data.messages : [];
+    // One it shows already (two catch-ups crossing) is not shown twice.
+    const shown = new Set(this.timeline.map((t: any) => t.key).filter(Boolean));
+    const messages: any[] = (Array.isArray(data.messages) ? data.messages : []).filter((m: any) => !m.key || !shown.has(m.key));
     if (messages.length === 0) return;
     const lastAsked = [...this.timeline].reverse().find((t: any) => t.kind === 'message' && t.role === 'user') as any;
     this.timeline.push(...this.historyItems(messages, lastAsked?.mode, `appended-tool-${this.timeline.length}`));

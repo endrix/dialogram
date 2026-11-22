@@ -87,7 +87,7 @@ describe('FileSessionStore', () => {
         expect(kept?.messages.find((m) => m.key === '7')?.content).toBe(long);
     });
 
-    it('reads again only what was added, and sees a file made again after a delete', async () => {
+    it('reads again only what was added, and sees a delete', async () => {
         const store = new FileSessionStore(root());
         const other = new FileSessionStore(root());
         await store.create(session('ses_a'));
@@ -97,8 +97,29 @@ describe('FileSessionStore', () => {
 
         await other.remove(FILE, 'ses_a');
         expect(await store.read(FILE, 'ses_a')).toBeUndefined();
-        await other.create(session('ses_a', FILE, { name: 'again' }));
-        expect(await store.read(FILE, 'ses_a')).toMatchObject({ name: 'again', messages: [] });
+    });
+
+    it('does not make again a session deleted, by any create (an old copy moved again)', async () => {
+        const store = new FileSessionStore(root());
+        expect(await store.create(session('ses_a', FILE, { messages: [message('kept')] }))).toBe(true);
+        await new FileSessionStore(root()).remove(FILE, 'ses_a');
+        expect(await store.create(session('ses_a', FILE, { messages: [message('kept')] }))).toBe(false);
+        expect(await store.has(FILE, 'ses_a')).toBe(false);
+        expect(await store.list(FILE)).toEqual([]);
+    });
+
+    it("keeps a line of over 512 KiB whole beside another window's appends", async () => {
+        const here = new FileSessionStore(root());
+        const there = new FileSessionStore(root());
+        await here.create(session('ses_a'));
+        const huge = 'y'.repeat(1_500_000);
+        await Promise.all([
+            here.append(FILE, 'ses_a', { t: 'message', message: message(huge, 'huge') }),
+            ...Array.from({ length: 20 }, (_, n) => there.append(FILE, 'ses_a', { t: 'message', message: message(String(n)) })),
+        ]);
+        const kept = await new FileSessionStore(root()).read(FILE, 'ses_a');
+        expect(kept?.messages).toHaveLength(21);
+        expect(kept?.messages.find((m) => m.key === 'huge')?.content).toBe(huge);
     });
 
     it('does not make again a session deleted in another window', async () => {

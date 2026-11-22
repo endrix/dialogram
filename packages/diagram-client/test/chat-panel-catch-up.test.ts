@@ -105,4 +105,32 @@ describe('coming back to the chat window', () => {
         expect(panel.isLoadingSession).toBe(false);
         expect(panel.timeline.map((t: any) => t.content)).toEqual(['This chat was deleted in another window.']);
     });
+
+    it('shows a message caught up twice once', () => {
+        const { panel } = makePanel();
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_1', messages: [{ role: 'user', content: 'first', timestamp: 1, key: 'k1' }] });
+        const added = { sessionId: 'ses_1', messages: [{ role: 'assistant', content: 'other window', timestamp: 2, key: 'k2' }] };
+        panel.handleIncomingMessage('chat.sessionAppend', added);
+        panel.handleIncomingMessage('chat.sessionAppend', added);
+        expect(panel.timeline.map((t: any) => t.content)).toEqual(['first', 'other window']);
+    });
+
+    it('leaves a transcript sent again on catching up once a turn has started', () => {
+        const { panel } = makePanel();
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_1', messages: [{ role: 'user', content: 'first', timestamp: 1 }] });
+        panel.isStreaming = true;
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_1', catchUp: true, messages: [] });
+        expect(panel.timeline.map((t: any) => t.content)).toEqual(['first']);
+        panel.isStreaming = false;
+        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_1', catchUp: true, messages: [{ role: 'user', content: 'in order', timestamp: 1 }] });
+        expect(panel.timeline.map((t: any) => t.content)).toEqual(['in order']);
+    });
+
+    it('goes on loading when another session is said to be deleted', () => {
+        const { panel } = makePanel();
+        panel.currentSessionId = 'ses_2';
+        panel.isLoadingSession = true;
+        panel.handleIncomingMessage('chat.sessionDeleted', { sessionId: 'ses_1' });
+        expect(panel.isLoadingSession).toBe(true);
+    });
 });
