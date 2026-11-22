@@ -219,4 +219,39 @@ describe('FileSessionStore', () => {
         await store.append(FILE, 'ses_a', { t: 'message', message: { ...message('also at 20'), timestamp: 20 } });
         expect((await store.read(FILE, 'ses_a'))?.messages.map((m) => m.content)).toEqual(['first', 'second', 'also at 20']);
     });
+
+    it('takes its mark back when a session could not be removed, so it can be kept again', async () => {
+        const store = new FileSessionStore(root());
+        await store.create(session('ses_a'));
+        const rm = fs.rm;
+        const spy = vi.spyOn(fs, 'rm').mockImplementation(async (target: any, options?: any) => {
+            if (String(target).endsWith('.jsonl')) throw Object.assign(new Error('EBUSY: resource busy'), { code: 'EBUSY' });
+            return rm(target, options);
+        });
+        try {
+            await expect(store.remove(FILE, 'ses_a')).rejects.toThrow(/EBUSY/);
+        } finally {
+            spy.mockRestore();
+        }
+        const { names } = await sessionFiles();
+        expect(names.some((n) => n.endsWith('.gone'))).toBe(false);
+        expect(await store.create(session('ses_a', FILE, { messages: [message('still here')] }))).toBe(true);
+    });
+
+    it('does not keep a session deleted while it was being placed', async () => {
+        const store = new FileSessionStore(root());
+        const other = new FileSessionStore(root());
+        const link = fs.link;
+        const spy = vi.spyOn(fs, 'link').mockImplementation(async (from: any, to: any) => {
+            // Deleted in another window after the check, before the file is in place.
+            await other.remove(FILE, 'ses_a');
+            return link(from, to);
+        });
+        try {
+            expect(await store.create(session('ses_a'))).toBe(false);
+        } finally {
+            spy.mockRestore();
+        }
+        expect(await store.has(FILE, 'ses_a')).toBe(false);
+    });
 });

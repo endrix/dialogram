@@ -147,7 +147,15 @@ export class FileSessionStore implements SessionStore {
     const { messages, ...head } = session;
     const lines: Line[] = [{ t: 'session', ...head, nonce: randomUUID() }];
     if (messages.length > 0) lines.push({ t: 'messages', at: session.updatedAt, messages });
-    if (await this.place(file, lines.map((line) => JSON.stringify(line)).join('\n') + '\n')) return true;
+    if (await this.place(file, lines.map((line) => JSON.stringify(line)).join('\n') + '\n')) {
+      // Deleted while it was being placed: a remove marks it, then removes
+      // the file, so the mark is seen here or the file removed there.
+      if (await exists(gone(file))) {
+        await fs.rm(file, { force: true });
+        return false;
+      }
+      return true;
+    }
     // Kept already: add this copy's keyed messages it lacks.
     const kept = await this.read(session.workflowFile, session.id);
     if (!kept) throw new Error(`${file} is there but holds no chat session`);
@@ -205,7 +213,13 @@ export class FileSessionStore implements SessionStore {
     this.reads.delete(file);
     await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
     await fs.writeFile(gone(file), '', { mode: 0o600 });
-    await fs.rm(file, { force: true });
+    try {
+      await fs.rm(file, { force: true });
+    } catch (error) {
+      // Not removed: it stays, and may be made again.
+      await fs.rm(gone(file), { force: true }).catch(() => undefined);
+      throw error;
+    }
   }
 
   /** Add a line to a session's file, which must be there; false when it is not. */

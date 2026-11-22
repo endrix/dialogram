@@ -379,7 +379,9 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     const shown = this.currentSessionId && !this.isStreaming && !this.isLoadingSession
       ? this.currentSessionId
       : undefined;
-    this.sendToHost('chat.getSessions', shown ? { shown } : undefined);
+    // With the stored messages it shows, by key: the host sends the others.
+    const keys = this.timeline.map((t: any) => t.key).filter((k: unknown): k is string => typeof k === 'string');
+    this.sendToHost('chat.getSessions', shown ? { shown, keys } : undefined);
   }
 
   // ── The view: the session, or one of the run's agents ─────────────────

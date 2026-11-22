@@ -132,11 +132,12 @@ describe('a chat across windows on the same folder (local, Remote-SSH)', () => {
         await local.send('chat.getSessions', { shown: 'ses_1' });
         const posted = local.posts.slice(before);
         expect(posted.some((p) => p.type === 'chat.sessionHistory')).toBe(false);
-        expect(said(posted.find((p) => p.type === 'chat.sessionAppend'))).toEqual(['user: second', 'assistant: two']);
+        const append = posted.find((p) => p.type === 'chat.sessionAppend') as any;
+        expect(said(append)).toEqual(['user: second', 'assistant: two']);
 
-        // Nothing new: no transcript is sent again.
+        // Nothing new (the panel names what it shows): nothing is sent again.
         const quiet = local.posts.length;
-        await local.send('chat.getSessions', { shown: 'ses_1' });
+        await local.send('chat.getSessions', { shown: 'ses_1', keys: append.data.messages.map((m: any) => m.key) });
         expect(local.posts.slice(quiet).map((p) => p.type)).toEqual(['chat.sessions']);
 
         // Deleted at the desk: the SSH window, coming back, is told.
@@ -223,7 +224,7 @@ describe('a chat across windows on the same folder (local, Remote-SSH)', () => {
         expect(said(local.posts.slice(before).find((p) => p.type === 'chat.sessionAppend'))).toEqual(['user: second', 'assistant: two']);
     });
 
-    it('sends them once when two catch-ups cross', async () => {
+    it('sends again what the panel left (a turn started meanwhile), not what it names', async () => {
         const local = makeWindow('ses_1');
         await local.send('chat.createSession', { name: 'Review', mode: 'build' });
         const ssh = makeWindow('ses_2');
@@ -231,13 +232,16 @@ describe('a chat across windows on the same folder (local, Remote-SSH)', () => {
         await ssh.send('chat.loadSession', { sessionId: 'ses_1' });
         await turn(ssh, 'ses_1', 'second', 'two');
 
-        const before = local.posts.length;
-        await Promise.all([
-            local.send('chat.getSessions', { shown: 'ses_1' }),
-            local.send('chat.getSessions', { shown: 'ses_1' }),
-        ]);
-        const appends = local.posts.slice(before).filter((p) => p.type === 'chat.sessionAppend');
-        expect(appends.flatMap((p) => said(p))).toEqual(['user: second', 'assistant: two']);
+        const appended = async (keys: string[] = []) => {
+            const before = local.posts.length;
+            await local.send('chat.getSessions', { shown: 'ses_1', keys });
+            return local.posts.slice(before).find((p) => p.type === 'chat.sessionAppend') as any;
+        };
+        // Left by the panel: it names none of them, so they are sent again.
+        expect(said(await appended())).toEqual(['user: second', 'assistant: two']);
+        const again = await appended();
+        expect(said(again)).toEqual(['user: second', 'assistant: two']);
+        expect(await appended(again.data.messages.map((m: any) => m.key))).toBeUndefined();
     });
 
     it('sends the transcript again, in order, when the other window went on at the same time', async () => {
@@ -286,6 +290,27 @@ describe('a chat across windows on the same folder (local, Remote-SSH)', () => {
         await vi.waitFor(() =>
             expect(local.posts.some((p: any) => p.type === 'chat.message' && /deleted in another window while it answered/.test(p.data?.content))).toBe(true));
         expect(local.last('chat.sessions').data.sessions).toEqual([]);
+    });
+
+    it('deleted here while it answered: not said to be deleted in another window', async () => {
+        const local = makeWindow('ses_1');
+        await local.send('chat.createSession', { name: 'Review', mode: 'build' });
+        await local.send('chat.sendMessage', { sessionId: 'ses_1', text: 'long question', mode: 'build' });
+        await local.settled();
+        // The agent ends the turn as the session is deleted.
+        local.acp.deleteSession = async (id: string) => {
+            local.acp.emit('turnComplete', { sessionId: id, text: 'cut short', model: 'model-a', parts: [] });
+        };
+        const ask = vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue('Delete' as any);
+        try {
+            await local.send('chat.deleteSession', { sessionId: 'ses_1' });
+        } finally {
+            ask.mockRestore();
+        }
+        await local.settled();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(local.posts.some((p: any) => p.type === 'chat.message' && /another window/.test(p.data?.content ?? ''))).toBe(false);
+        expect(local.last('chat.sessionDeleted').data.sessionId).toBe('ses_1');
     });
 
     it('deleted between the check and the load of a send: refused all the same', async () => {

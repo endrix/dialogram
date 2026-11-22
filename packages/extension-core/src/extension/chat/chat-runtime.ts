@@ -222,9 +222,10 @@ export class ChatRuntime {
   private readonly output: vscode.OutputChannel;
   /** Whether a store failure has been put to the person yet. */
   private storeErrorShown = false;
-  /** Per panel (its uri), the session it shows and the keys of the stored
-   *  messages it was sent, so a catch-up sends only what it lacks, once. */
-  private panelShown = new Map<string, { sessionId: string; keys: Set<string> }>();
+  private readErrorShown = false;
+  /** Sessions deleted in this window: one that answers meanwhile is not
+   *  said to be deleted in another. */
+  private deletedHere = new Set<string>();
   /** Tears down the ACP -> webview event forwarding registered in the ctor. */
   private readonly acpForwardingDisposer: () => void;
   /** Pending stuck-connection watchdog (armed on the panel handshake). */
@@ -258,7 +259,7 @@ export class ChatRuntime {
       this.acp,
       new FileSessionStore(chatSessionRoot(config.key)),
       context.workspaceState,
-      (error) => this.reportStoreError(error),
+      (error, failed) => this.reportStoreError(error, failed),
     );
     void this.sessions.initialize();
 
@@ -677,19 +678,17 @@ export class ChatRuntime {
           });
           return;
         }
-        // What the panel shows: the stored messages it was sent, and those
-        // this window made (it showed them as they came). The others are
-        // another window's. Taken here at once, so two catch-ups at the same
-        // time do not both send them.
-        const entry = this.panelShown.get(uri);
-        const sent = entry?.sessionId === shown ? entry.keys : new Set<string>();
-        const isShown = (m: MessageData) => !m.key || sent.has(m.key) || this.sessions.isLocal(m.key);
+        // What the panel shows: the stored messages it names (by key), and
+        // those this window made (it showed them as they came). The others
+        // are another window's. A reply it leaves (a turn started since) is
+        // sent again next time; one it has already, it leaves.
+        const keys: unknown[] = Array.isArray(data?.keys) ? data.keys : [];
+        const shownKeys = new Set(keys.filter((k): k is string => typeof k === "string"));
+        const isShown = (m: MessageData) => !m.key || shownKeys.has(m.key) || this.sessions.isLocal(m.key);
         const all = this.sessions.getSessionMessages(shown);
         const lastShown = all.reduce((last, m, i) => (isShown(m) ? i : last), -1);
         const added = all.filter((m) => !isShown(m));
         if (added.length === 0) return;
-        for (const m of added) sent.add(m.key!);
-        this.panelShown.set(uri, { sessionId: shown, keys: sent });
         if (all.indexOf(added[0]) < lastShown) {
           // Some come before what it shows (both windows went on at once):
           // the transcript again, in order. The panel leaves it if a turn has
@@ -699,10 +698,10 @@ export class ChatRuntime {
         }
         // All after what it shows: only those, added after it.
         const { messages, reverted } = await this.historyOf(shown);
-        const keys = new Set(added.map((m) => m.key));
+        const addedKeys = new Set(added.map((m) => m.key));
         this.postToWebview(uri, {
           type: "chat.sessionAppend",
-          data: { sessionId: shown, messages: messages.filter((m) => m.key && keys.has(m.key)), reverted },
+          data: { sessionId: shown, messages: messages.filter((m) => m.key && addedKeys.has(m.key)), reverted },
         });
         return;
       }
@@ -820,12 +819,14 @@ export class ChatRuntime {
         if (choice !== "Delete") return;
         // Pick the next session to fall back to (most-recent sibling), from
         // the list as it is now: the question may have waited a long time.
-        await this.sessions.refresh(file);
+        await this.sessions.refresh(file).catch((error) => this.reportStoreError(error, "read"));
         const siblings = this.sessions
           .getSessionsForWorkflow(file)
           .filter((s) => s.id !== data.sessionId);
         const nextSessionId = siblings[0]?.id;
+        this.deletedHere.add(data.sessionId);
         if (!(await this.sessions.deleteSession(data.sessionId))) {
+          this.deletedHere.delete(data.sessionId);
           // Its file could not be removed: it stays, and the panel says so.
           this.postToWebview(uri, {
             type: "chat.error",
@@ -1331,10 +1332,6 @@ export class ChatRuntime {
     extra?: { mode?: "plan" | "build"; model?: string; catchUp?: boolean },
   ): Promise<void> {
     const { messages, reverted } = await this.historyOf(sessionId);
-    this.panelShown.set(uri, {
-      sessionId,
-      keys: new Set(messages.map((m) => m.key).filter((key): key is string => Boolean(key))),
-    });
     this.postToWebview(uri, {
       type: "chat.sessionHistory",
       data: {
@@ -1358,7 +1355,7 @@ export class ChatRuntime {
     const uri = this.sessionUri.get(sessionId);
     if (!uri) return;
     await this.sessions.idle();
-    if (!(await this.sessions.isGone(sessionId))) return;
+    if (this.deletedHere.has(sessionId) || !(await this.sessions.isGone(sessionId))) return;
     this.postToWebview(uri, {
       type: "chat.message",
       data: {
@@ -1415,9 +1412,17 @@ export class ChatRuntime {
   }
 
   /** A chat that cannot be kept is said, once, not hidden; the chat goes on. */
-  private reportStoreError(error: unknown): void {
+  private reportStoreError(error: unknown, failed: "save" | "read" = "save"): void {
     const message = error instanceof Error ? error.message : String(error);
-    this.output?.appendLine(`Chat session store: ${message}`);
+    this.output?.appendLine(`Chat session store (${failed}): ${message}`);
+    if (failed === "read") {
+      if (this.readErrorShown) return;
+      this.readErrorShown = true;
+      void vscode.window.showWarningMessage(
+        `${this.config.displayName}: a stored chat could not be read (${message}). It is shown as this window last had it.`,
+      );
+      return;
+    }
     if (this.storeErrorShown) return;
     this.storeErrorShown = true;
     void vscode.window.showWarningMessage(

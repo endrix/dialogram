@@ -463,7 +463,8 @@ describe('SessionManager', () => {
       expect(local.getSessionsForWorkflow(FILE)).toHaveLength(1);
       expect(await local.isGone('test-session-123')).toBe(false);
       expect(await local.loadSession('test-session-123')).not.toBeNull();
-      expect(onError).toHaveBeenCalled();
+      // Said as a read that failed, not as chats that cannot be saved.
+      expect(onError).toHaveBeenCalledWith(expect.anything(), 'read');
     });
 
     it('keeps a session whose file could not be removed, and says so', async () => {

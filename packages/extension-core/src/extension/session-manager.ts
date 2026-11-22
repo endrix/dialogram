@@ -80,7 +80,7 @@ export class SessionManager {
     /** Where chats were kept before; moved into the store once. */
     private legacyStorage?: WorkspaceStorage,
     /** Told when a session cannot be kept or read; the chat goes on. */
-    private onStoreError: (error: unknown) => void = (error) => console.error('Chat session store:', error)
+    private onStoreError: (error: unknown, failed?: 'save' | 'read') => void = (error) => console.error('Chat session store:', error)
   ) {}
 
   /**
@@ -144,7 +144,7 @@ export class SessionManager {
     mode: 'plan' | 'build' = 'build'
   ): Promise<SessionData> {
     // Another window may have made a "Session N" since this one listed them.
-    if (!name) await this.refresh(workflowFile).catch((error) => this.onStoreError(error));
+    if (!name) await this.refresh(workflowFile).catch((error) => this.onStoreError(error, 'read'));
     // Resolve the default name BEFORE spawning the session so the same helper is
     // the single source of truth for every default name (agent-side SessionInfo
     // included) — no second count-based resolver may compute a name elsewhere.
@@ -223,7 +223,7 @@ export class SessionManager {
         return null;
       }
     } catch (error) {
-      this.onStoreError(error);
+      this.onStoreError(error, 'read');
     }
     const session = this.sessions.get(sessionId) ?? listed;
 
@@ -245,16 +245,16 @@ export class SessionManager {
     }
   }
 
-  /**
-   * Whether a session is gone: deleted in another window since this one saw
-   * it kept (it is then forgotten here), or never known. One that cannot be
-   * checked is taken as there.
-   */
   /** Whether this window made the message with this key. */
   isLocal(key: string): boolean {
     return this.local.has(key);
   }
 
+  /**
+   * Whether a session is gone: deleted in another window since this one saw
+   * it kept (it is then forgotten here), or never known. One that cannot be
+   * checked is taken as there.
+   */
   async isGone(sessionId: string): Promise<boolean> {
     const session = this.sessions.get(sessionId);
     if (!session) return true;
