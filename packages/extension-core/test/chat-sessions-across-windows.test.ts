@@ -126,12 +126,13 @@ describe('a chat across windows on the same folder (local, Remote-SSH)', () => {
         await ssh.send('chat.loadSession', { sessionId: 'ses_1' });
         await turn(ssh, 'ses_1', 'second', 'two');
 
-        // The desk window shows ses_1: coming back to it, the transcript catches up.
+        // The desk window shows ses_1: coming back to it, the other window's
+        // turn is added after what its panel shows.
         const before = local.posts.length;
         await local.send('chat.getSessions', { shown: 'ses_1' });
-        const history = local.posts.slice(before).find((p) => p.type === 'chat.sessionHistory') as any;
-        expect(said(history)).toEqual(['user: first', 'assistant: one', 'user: second', 'assistant: two']);
-        expect(history.data.catchUp).toBe(true);
+        const posted = local.posts.slice(before);
+        expect(posted.some((p) => p.type === 'chat.sessionHistory')).toBe(false);
+        expect(said(posted.find((p) => p.type === 'chat.sessionAppend'))).toEqual(['user: second', 'assistant: two']);
 
         // Nothing new: no transcript is sent again.
         const quiet = local.posts.length;
@@ -189,6 +190,21 @@ describe('a chat across windows on the same folder (local, Remote-SSH)', () => {
         expect(ssh.last('chat.error')).toBeUndefined();
         expect(ssh.last('chat.sessionDeleted').data).toMatchObject({ sessionId: 'ses_1' });
         expect(ssh.last('chat.sessions').data.sessions).toEqual([]);
+    });
+
+    it('whose file cannot be removed stays, and the panel says so', async () => {
+        const local = makeWindow('ses_1');
+        await local.send('chat.createSession', { name: 'Review', mode: 'build' });
+        (local.runtime as any).sessions.store.remove = async () => { throw new Error('EPERM: operation not permitted'); };
+        const warn = vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue('Delete' as any);
+        try {
+            await local.send('chat.deleteSession', { sessionId: 'ses_1' });
+        } finally {
+            warn.mockRestore();
+        }
+        expect(local.last('chat.sessionDeleted')).toBeUndefined();
+        expect(local.last('chat.error').data.message).toMatch(/Could not delete chat session "Review"/);
+        expect(local.last('chat.sessions').data.sessions).toEqual([{ id: 'ses_1', name: 'Review' }]);
     });
 
     it('deleted in one window leaves the other', async () => {

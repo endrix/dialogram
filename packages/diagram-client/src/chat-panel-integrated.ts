@@ -621,15 +621,16 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         break;
 
       case 'chat.sessionHistory':
-        // Asked for on coming back to the window: a turn started since, or
-        // another session chosen, is not to be redrawn under it.
-        if (data?.catchUp && (this.isStreaming || this.isLoadingSession || data.sessionId !== this.currentSessionId)) {
-          break;
-        }
         this.renderSessionHistory(data);
         break;
 
+      case 'chat.sessionAppend':
+        this.appendSessionMessages(data);
+        break;
+
       case 'chat.sessionDeleted':
+        // Opened from a list another window had made stale: no history comes.
+        this.isLoadingSession = false;
         if (data?.sessionId === this.currentSessionId) {
           this.currentSessionId = data?.nextSessionId ?? null;
           this.clearTimeline();
@@ -843,32 +844,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     this.clearTimeline();
 
     const messages: any[] = Array.isArray(data.messages) ? data.messages : [];
-    // A stored reply has no mode of its own: it is the mode of the message it answers.
-    let askedIn: 'plan' | 'build' | undefined;
-    messages.forEach((m, i) => {
-      if (m.role === 'user') askedIn = m.mode === 'plan' || m.mode === 'build' ? m.mode : undefined;
-      // Persisted tool calls restore as tool timeline items — the same chip the
-      // live path renders — keeping the text parts on either side distinct.
-      if (m.role === 'tool') {
-        this.timeline.push({
-          kind: 'tool',
-          id: typeof m.toolId === 'string' ? m.toolId : `restored-tool-${i}`,
-          title: m.toolName ?? 'tool call',
-          status: typeof m.toolStatus === 'string' ? m.toolStatus : undefined,
-        });
-        return;
-      }
-      this.timeline.push({
-        kind: 'message',
-        role: m.role === 'assistant' || m.role === 'user' ? m.role : 'system',
-        content: m.content ?? '',
-        timestamp: m.timestamp ?? Date.now(),
-        mode: m.mode ?? (m.role === 'assistant' ? askedIn : undefined),
-        ...(typeof m.messageId === 'string' ? { messageId: m.messageId } : {}),
-        ...(typeof m.thinking === 'string' && m.thinking ? { thinking: m.thinking } : {}),
-        ...(typeof m.images === 'number' && m.images > 0 ? { imageCount: m.images } : {}),
-      });
-    });
+    this.timeline.push(...this.historyItems(messages, undefined, 'restored-tool'));
     if (data.mode === 'plan' || data.mode === 'build') {
       this.currentMode = data.mode;
     }
@@ -879,6 +855,55 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     this.reverted = Boolean(data.reverted);
     // Ignore the session/load replay tail until the user drives a real turn.
     this.suppressReplayStream = true;
+    this.update();
+  }
+
+  /**
+   * The timeline items of stored messages. A stored reply has no mode of its
+   * own: it is the mode of the message it answers (`askedIn` before the first).
+   */
+  private historyItems(messages: any[], askedIn: 'plan' | 'build' | undefined, toolIds: string): typeof this.timeline {
+    const items: typeof this.timeline = [];
+    messages.forEach((m, i) => {
+      if (m.role === 'user') askedIn = m.mode === 'plan' || m.mode === 'build' ? m.mode : undefined;
+      // Persisted tool calls restore as tool timeline items — the same chip the
+      // live path renders — keeping the text parts on either side distinct.
+      if (m.role === 'tool') {
+        items.push({
+          kind: 'tool',
+          id: typeof m.toolId === 'string' ? m.toolId : `${toolIds}-${i}`,
+          title: m.toolName ?? 'tool call',
+          status: typeof m.toolStatus === 'string' ? m.toolStatus : undefined,
+        });
+        return;
+      }
+      items.push({
+        kind: 'message',
+        role: m.role === 'assistant' || m.role === 'user' ? m.role : 'system',
+        content: m.content ?? '',
+        timestamp: m.timestamp ?? Date.now(),
+        mode: m.mode ?? (m.role === 'assistant' ? askedIn : undefined),
+        ...(typeof m.messageId === 'string' ? { messageId: m.messageId } : {}),
+        ...(typeof m.thinking === 'string' && m.thinking ? { thinking: m.thinking } : {}),
+        ...(typeof m.images === 'number' && m.images > 0 ? { imageCount: m.images } : {}),
+      });
+    });
+    return items;
+  }
+
+  /**
+   * Messages another window added to the session shown, sent on coming back
+   * to this window: added after what the panel shows, which stays (its own
+   * notes and errors too). Left if a turn has started since it asked, or
+   * another session is shown.
+   */
+  private appendSessionMessages(data: any): void {
+    if (!data?.sessionId || data.sessionId !== this.currentSessionId || this.isStreaming || this.isLoadingSession) return;
+    const messages: any[] = Array.isArray(data.messages) ? data.messages : [];
+    if (messages.length === 0) return;
+    const lastAsked = [...this.timeline].reverse().find((t: any) => t.kind === 'message' && t.role === 'user') as any;
+    this.timeline.push(...this.historyItems(messages, lastAsked?.mode, `appended-tool-${this.timeline.length}`));
+    this.reverted = Boolean(data.reverted);
     this.update();
   }
 

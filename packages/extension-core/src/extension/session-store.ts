@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { constants as fsConstants, promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -60,13 +60,16 @@ export interface SessionStore {
 
 /** A line of a session's file. */
 type Line =
-  | ({ t: 'session' } & Omit<SessionData, 'messages' | 'updatedAt'> & { updatedAt?: number })
+  | ({ t: 'session'; nonce?: string } & Omit<SessionData, 'messages' | 'updatedAt'> & { updatedAt?: number })
   | { t: 'messages'; at: number; messages: MessageData[] }
   | ({ at: number } & SessionChange);
 
 /** What has been read of a session's file, so a later read reads only what was added. */
 interface Read {
   ino: number;
+  /** The first line as read: a file made again in its place (the same inode,
+   *  reused) starts with another, as each create writes its own nonce. */
+  head: Buffer;
   /** Bytes read, to the end of the last whole line. */
   consumed: number;
   session: SessionData;
@@ -89,6 +92,7 @@ interface Read {
  */
 export class FileSessionStore implements SessionStore {
   private readonly reads = new Map<string, Read>();
+  private tmpCounter = 0;
 
   constructor(readonly root: string) {}
 
@@ -137,25 +141,53 @@ export class FileSessionStore implements SessionStore {
     const file = this.fileFor(session.workflowFile, session.id);
     await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
     const { messages, ...head } = session;
-    const lines: Line[] = [{ t: 'session', ...head }];
+    const lines: Line[] = [{ t: 'session', ...head, nonce: randomUUID() }];
     if (messages.length > 0) lines.push({ t: 'messages', at: session.updatedAt, messages });
+    if (await this.place(file, lines.map((line) => JSON.stringify(line)).join('\n') + '\n')) return;
+    // Kept already: add this copy's keyed messages it lacks.
+    const kept = await this.read(session.workflowFile, session.id);
+    if (!kept) throw new Error(`${file} is there but holds no chat session`);
+    const have = new Set(kept.messages.map((m) => m.key).filter(Boolean));
+    const lacking = messages.filter((m) => m.key && !have.has(m.key));
+    if (lacking.length > 0) await this.appendLine(file, { t: 'messages', at: Date.now(), messages: lacking });
+  }
+
+  /**
+   * Put a new file at its path, whole, never over one there: written beside
+   * it, then linked into place, so no half-written file is ever at the path
+   * (a full disk, a crash). False when one is there already.
+   */
+  private async place(file: string, content: string): Promise<boolean> {
+    const tmp = `${file}.${process.pid}.${++this.tmpCounter}.tmp`;
+    try {
+      await fs.writeFile(tmp, content, { mode: 0o600 });
+      await fs.link(tmp, file);
+      return true;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code ?? '';
+      if (code === 'EEXIST') return false;
+      if (!LINK_UNSUPPORTED.has(code)) throw error;
+    } finally {
+      await fs.rm(tmp, { force: true }).catch(() => undefined);
+    }
+    // A file system without hard links: made only if none is there, and
+    // removed again if it cannot be written whole.
     let handle: fs.FileHandle;
     try {
       handle = await fs.open(file, 'wx', 0o600);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') throw error;
-      const kept = await this.read(session.workflowFile, session.id);
-      if (!kept) return;
-      const have = new Set(kept.messages.map((m) => m.key).filter(Boolean));
-      const lacking = messages.filter((m) => m.key && !have.has(m.key));
-      if (lacking.length > 0) await this.appendLine(file, { t: 'messages', at: Date.now(), messages: lacking });
-      return;
+      if ((error as NodeJS.ErrnoException)?.code === 'EEXIST') return false;
+      throw error;
     }
     try {
-      await handle.writeFile(lines.map((line) => JSON.stringify(line)).join('\n') + '\n');
-    } finally {
-      await handle.close();
+      await handle.writeFile(content);
+    } catch (error) {
+      await handle.close().catch(() => undefined);
+      await fs.rm(file, { force: true });
+      throw error;
     }
+    await handle.close();
+    return true;
   }
 
   append(workflowFile: string, sessionId: string, change: SessionChange): Promise<boolean> {
@@ -206,7 +238,9 @@ export class FileSessionStore implements SessionStore {
     try {
       const { ino, size } = await handle.stat();
       let known = this.reads.get(file);
-      if (known && (known.ino !== ino || size < known.consumed)) known = undefined;
+      if (known && (known.ino !== ino || size < known.consumed || !(await startsWith(handle, known.head)))) {
+        known = undefined;
+      }
       const from = known?.consumed ?? 0;
       if (known && size === from) return structuredClone(known.session);
       const buffer = Buffer.alloc(size - from);
@@ -229,9 +263,10 @@ export class FileSessionStore implements SessionStore {
           if (line.t !== 'session' || typeof line.id !== 'string' || line.workflowFile !== workflowFile) {
             throw new Error(`${file} does not start with a chat session of ${workflowFile}`);
           }
-          const { t: _t, ...head } = line;
+          const { t: _t, nonce: _nonce, ...head } = line;
           read = {
             ino,
+            head: Buffer.from(raw + '\n', 'utf8'),
             consumed: 0,
             session: { ...head, updatedAt: head.updatedAt ?? head.createdAt, messages: [] },
             keys: new Set(),
@@ -241,6 +276,7 @@ export class FileSessionStore implements SessionStore {
         apply(read, line);
       }
       if (!read) return undefined;
+      read.session.messages = byTime(read.session.messages);
       read.consumed = from + Buffer.byteLength(text.slice(0, end + 1), 'utf8');
       this.reads.set(file, read);
       return structuredClone(read.session);
@@ -287,6 +323,28 @@ function apply(read: Read, line: Line): void {
       return;
   }
   if (typeof line.at === 'number') session.updatedAt = Math.max(session.updatedAt, line.at);
+}
+
+/** Codes of a file system that has no hard links. */
+const LINK_UNSUPPORTED = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EXDEV', 'EMLINK']);
+
+/** Whether the file still starts with what was read of it first. */
+async function startsWith(handle: fs.FileHandle, head: Buffer): Promise<boolean> {
+  const buffer = Buffer.alloc(head.length);
+  const { bytesRead } = await handle.read(buffer, 0, head.length, 0);
+  return bytesRead === head.length && buffer.equals(head);
+}
+
+/**
+ * Messages in the order they were made: two windows' appends to one chat can
+ * land out of it, and a window's copy has its own not kept yet at its end.
+ * Stable, so messages of the same time keep their order.
+ */
+export function byTime(messages: MessageData[]): MessageData[] {
+  return messages
+    .map((message, index) => ({ message, index }))
+    .sort((a, b) => (a.message.timestamp ?? 0) - (b.message.timestamp ?? 0) || a.index - b.index)
+    .map(({ message }) => message);
 }
 
 function hash(text: string, length: number): string {

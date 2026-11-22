@@ -1502,8 +1502,10 @@ platform that hands it one.
   none of those made over SSH, though the agent, which runs beside the files,
   held them all. They are now kept where the agent keeps its sessions, on the
   machine the extension host runs on: a file per session in
-  `$XDG_DATA_HOME/dialogram/chat/<product>/` (`~/.local/share` by default;
-  `DIALOGRAM_DATA_DIR` overrides it), readable by the user alone. Each change
+  `dialogram/chat/<product>/` under `$XDG_DATA_HOME` (`~/.local/share` by
+  default) on Linux, `~/Library/Application Support` on macOS and
+  `%LOCALAPPDATA%` on Windows (`DIALOGRAM_DATA_DIR` overrides it), readable
+  by the user alone. Each change
   (a message, a rename, a mode) is a line appended to it, so two windows on
   the same chat keep each other's turns, and a chat deleted in one is not
   written back by the other, which says so if a message is sent to it. A

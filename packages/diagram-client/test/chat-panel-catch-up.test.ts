@@ -75,38 +75,34 @@ describe('coming back to the chat window', () => {
         expect(asked()).toHaveLength(count + 1);
     });
 
-    it('leaves a caught-up transcript that comes once a turn has started, or for another session', () => {
+    it("adds another window's messages after what it shows, keeping its own rows", () => {
         const { panel } = makePanel();
-        panel.currentSessionId = 'ses_1';
         panel.handleIncomingMessage('chat.sessionHistory', {
             sessionId: 'ses_1',
-            messages: [{ role: 'user', content: 'first', timestamp: 1 }]
+            messages: [{ role: 'user', content: 'first', mode: 'plan', timestamp: 1 }]
         });
+        panel.pushMessage('system', 'a note of this window');
+        const added = { sessionId: 'ses_1', messages: [{ role: 'assistant', content: 'from the other window', timestamp: 2 }] };
+
         panel.isStreaming = true;
-        panel.handleIncomingMessage('chat.sessionHistory', {
-            sessionId: 'ses_1',
-            catchUp: true,
-            messages: [{ role: 'user', content: 'first', timestamp: 1 }, { role: 'user', content: 'other window', timestamp: 2 }]
-        });
-        expect(panel.timeline.map((t: any) => t.content)).toEqual(['first']);
-
+        panel.handleIncomingMessage('chat.sessionAppend', added);
         panel.isStreaming = false;
-        panel.handleIncomingMessage('chat.sessionHistory', { sessionId: 'ses_2', catchUp: true, messages: [] });
-        expect(panel.timeline.map((t: any) => t.content)).toEqual(['first']);
+        panel.handleIncomingMessage('chat.sessionAppend', { ...added, sessionId: 'ses_2' });
+        expect(panel.timeline.map((t: any) => t.content)).toEqual(['first', 'a note of this window']);
 
-        panel.handleIncomingMessage('chat.sessionHistory', {
-            sessionId: 'ses_1',
-            catchUp: true,
-            messages: [{ role: 'user', content: 'first', timestamp: 1 }, { role: 'user', content: 'other window', timestamp: 2 }]
-        });
-        expect(panel.timeline.map((t: any) => t.content)).toEqual(['first', 'other window']);
+        panel.handleIncomingMessage('chat.sessionAppend', added);
+        expect(panel.timeline.map((t: any) => t.content)).toEqual(['first', 'a note of this window', 'from the other window']);
+        // A reply takes the mode of the message it answers.
+        expect(panel.timeline[2].mode).toBe('plan');
     });
 
     it('says why a session went when another window deleted it', () => {
         const { panel } = makePanel();
         panel.currentSessionId = 'ses_1';
+        panel.isLoadingSession = true;
         panel.handleIncomingMessage('chat.sessionDeleted', { sessionId: 'ses_1', reason: 'This chat was deleted in another window.' });
         expect(panel.currentSessionId).toBeNull();
+        expect(panel.isLoadingSession).toBe(false);
         expect(panel.timeline.map((t: any) => t.content)).toEqual(['This chat was deleted in another window.']);
     });
 });

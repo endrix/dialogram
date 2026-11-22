@@ -147,4 +147,55 @@ describe('FileSessionStore', () => {
         expect(new Set(names.map((n) => n.toLowerCase())).size).toBe(4);
         expect(await store.read(FILE, 'ses_Ab')).toMatchObject({ id: 'ses_Ab' });
     });
+
+    it('leaves no file behind when a session cannot be written whole, and takes an empty one as no session', async () => {
+        const store = new FileSessionStore(root());
+        const write = vi.spyOn(fs, 'writeFile').mockRejectedValueOnce(Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }));
+        try {
+            await expect(store.create(session('ses_a'))).rejects.toThrow(/ENOSPC/);
+        } finally {
+            write.mockRestore();
+        }
+        expect(await store.has(FILE, 'ses_a')).toBe(false);
+        const { names } = await sessionFiles();
+        expect(names).toEqual([]);
+        await store.create(session('ses_a'));
+        expect(await store.read(FILE, 'ses_a')).toMatchObject({ id: 'ses_a' });
+
+        // One left empty by a crash: not taken as kept.
+        await store.create(session('ses_b'));
+        const files = await sessionFiles();
+        const b = files.names.find((n) => n.startsWith('ses_b-'))!;
+        await fs.writeFile(path.join(files.dir, b), '');
+        await expect(new FileSessionStore(root()).create(session('ses_b'))).rejects.toThrow(/holds no chat session/);
+    });
+
+    it('reads again from the start a file made again in place (its inode reused)', async () => {
+        const store = new FileSessionStore(root());
+        await store.create(session('ses_a', FILE, { messages: [message('old')] }));
+        expect((await store.read(FILE, 'ses_a'))?.messages.map((m) => m.content)).toEqual(['old']);
+        const { dir, names } = await sessionFiles();
+        const file = path.join(dir, names[0]);
+        const before = await fs.stat(file);
+        // Another create's file, written over this one's inode, longer than what was read.
+        const other = new FileSessionStore(path.join(root(), 'other'));
+        await other.create(session('ses_a', FILE, { name: 'again', messages: [message('new one, long enough to pass what was read')] }));
+        const [otherDir] = await fs.readdir(path.join(root(), 'other'));
+        const [otherName] = await fs.readdir(path.join(root(), 'other', otherDir));
+        await fs.writeFile(file, await fs.readFile(path.join(root(), 'other', otherDir, otherName)));
+        expect((await fs.stat(file)).ino).toBe(before.ino);
+
+        const kept = await store.read(FILE, 'ses_a');
+        expect(kept).toMatchObject({ name: 'again' });
+        expect(kept?.messages.map((m) => m.content)).toEqual(['new one, long enough to pass what was read']);
+    });
+
+    it('gives messages in the order they were made, not the order they were kept', async () => {
+        const store = new FileSessionStore(root());
+        await store.create(session('ses_a'));
+        await store.append(FILE, 'ses_a', { t: 'message', message: { ...message('second'), timestamp: 20 } });
+        await store.append(FILE, 'ses_a', { t: 'message', message: { ...message('first'), timestamp: 10 } });
+        await store.append(FILE, 'ses_a', { t: 'message', message: { ...message('also at 20'), timestamp: 20 } });
+        expect((await store.read(FILE, 'ses_a'))?.messages.map((m) => m.content)).toEqual(['first', 'second', 'also at 20']);
+    });
 });

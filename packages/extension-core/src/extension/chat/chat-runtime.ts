@@ -17,7 +17,7 @@ import * as vscode from "vscode";
 import { CORE_CHAT_SECTION } from "./edit-capability";
 import { ACPClientService, type AcpAgentSpec, type TurnPart } from "../acp-client.js";
 import type { DiagramChatConfirm, DiagramChatConfirmAnswer, DiagramRunAnswer, DiagramRunQuestion } from "../../api";
-import { SessionManager } from "../session-manager.js";
+import { SessionManager, type MessageData } from "../session-manager.js";
 import { FileSessionStore, chatSessionRoot } from "../session-store.js";
 import type {
   ChatMessageSink,
@@ -664,7 +664,9 @@ export class ChatRuntime {
         // The panel names the session it shows when it comes back to its
         // window: another window may have gone on with it, or deleted it.
         const shown = typeof data?.shown === "string" ? data.shown : undefined;
-        const before = shown ? this.sessions.getSessionMessages(shown).length : 0;
+        const before = new Set(
+          (shown ? this.sessions.getSessionMessages(shown) : []).map((m) => m.key).filter(Boolean),
+        );
         await this.sendSessions(uri, file);
         if (!shown) return;
         if (!this.sessions.getSession(shown)) {
@@ -672,9 +674,17 @@ export class ChatRuntime {
             type: "chat.sessionDeleted",
             data: { sessionId: shown, reason: DELETED_ELSEWHERE },
           });
-        } else if (this.sessions.getSessionMessages(shown).length > before) {
-          // A read keeps what this window holds, so more is another window's.
-          await this.postHistory(uri, shown, { catchUp: true });
+        } else {
+          // A read keeps what this window holds: a message it did not have
+          // is another window's. Only those go, after what the panel shows.
+          const { messages, reverted } = await this.historyOf(shown);
+          const added = messages.filter((m) => m.key && !before.has(m.key));
+          if (added.length > 0) {
+            this.postToWebview(uri, {
+              type: "chat.sessionAppend",
+              data: { sessionId: shown, messages: added, reverted },
+            });
+          }
         }
         return;
       }
@@ -795,7 +805,15 @@ export class ChatRuntime {
           .getSessionsForWorkflow(file)
           .filter((s) => s.id !== data.sessionId);
         const nextSessionId = siblings[0]?.id;
-        await this.sessions.deleteSession(data.sessionId);
+        if (!(await this.sessions.deleteSession(data.sessionId))) {
+          // Its file could not be removed: it stays, and the panel says so.
+          this.postToWebview(uri, {
+            type: "chat.error",
+            data: { message: `Could not delete chat session "${label}": its file could not be removed (see the ${this.config.displayName} Chat output).` },
+          });
+          await this.sendSessions(uri, file);
+          return;
+        }
         this.sessionUri.delete(data.sessionId);
         if (nextSessionId) this.sessions.setCurrentSession(nextSessionId);
         this.postToWebview(uri, {
@@ -1283,8 +1301,23 @@ export class ChatRuntime {
   private async postHistory(
     uri: string,
     sessionId: string,
-    extra?: { mode?: "plan" | "build"; model?: string; catchUp?: boolean },
+    extra?: { mode?: "plan" | "build"; model?: string },
   ): Promise<void> {
+    const { messages, reverted } = await this.historyOf(sessionId);
+    this.postToWebview(uri, {
+      type: "chat.sessionHistory",
+      data: {
+        sessionId,
+        messages,
+        mode: extra?.mode ?? this.acp.getSessionMode(sessionId),
+        model: extra?.model ?? this.acp.getSessionModel(sessionId),
+        reverted,
+      },
+    });
+  }
+
+  /** A session's stored messages, each user message with its opencode id. */
+  private async historyOf(sessionId: string): Promise<{ messages: MessageData[]; reverted: boolean }> {
     const stored = this.sessions.getSessionMessages(sessionId);
     const ids = await this.alignUserMessageIds(
       sessionId,
@@ -1302,19 +1335,7 @@ export class ChatRuntime {
       const messageId = ids[k++];
       return messageId ? { ...m, messageId } : m;
     });
-    this.postToWebview(uri, {
-      type: "chat.sessionHistory",
-      data: {
-        sessionId,
-        messages,
-        mode: extra?.mode ?? this.acp.getSessionMode(sessionId),
-        model: extra?.model ?? this.acp.getSessionModel(sessionId),
-        reverted,
-        // Brought up to date on coming back to the window: the panel leaves
-        // it if a turn has started since it asked.
-        ...(extra?.catchUp ? { catchUp: true } : {}),
-      },
-    });
+    return { messages, reverted };
   }
 
   /** After a turn, push resolved user-message ids (+ revert state) for the

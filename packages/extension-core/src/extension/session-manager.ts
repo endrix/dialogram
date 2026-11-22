@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import * as path from 'node:path';
 import type { ACPClientService, SessionInfo } from './acp-client.js';
-import type { SessionChange, SessionStore } from './session-store.js';
+import { byTime, type SessionChange, type SessionStore } from './session-store.js';
 
 export interface SessionData {
   id: string;
@@ -69,6 +69,8 @@ export class SessionManager {
   private unsent = new Map<string, SessionChange[]>();
   /** Each session's changes, one after the other, in the order made. */
   private queues = new Map<string, Promise<void>>();
+  /** Old workspaceState chats moved into the store: never moved twice. */
+  private moved = new Set<string>();
   private currentSessionId: string | null = null;
   private ready: Promise<void> | undefined;
 
@@ -258,28 +260,32 @@ export class SessionManager {
   }
 
   /**
-   * Delete a session. It is forgotten once its file is gone; one whose file
-   * could not be removed stays, and the failure is told.
+   * Delete a session: its file, then the agent's session. It is forgotten
+   * once its file is gone; one whose file could not be removed stays, whole
+   * (the agent's too), the failure is told, and false says so.
    */
-  async deleteSession(sessionId: string): Promise<void> {
+  async deleteSession(sessionId: string): Promise<boolean> {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      let removed = false;
+      await this.enqueue(sessionId, async () => {
+        try {
+          await this.store.remove(session.workflowFile, sessionId);
+          removed = true;
+        } catch (error) {
+          this.onStoreError(error);
+        }
+      });
+      if (!removed) return false;
+      this.forget(sessionId);
+    }
+
     try {
       await this.acpClient.deleteSession(sessionId);
     } catch (error) {
       console.error('Failed to delete ACP session:', error);
     }
-
-    const session = this.sessions.get(sessionId);
-    if (!session) {
-      return;
-    }
-    await this.enqueue(sessionId, async () => {
-      try {
-        await this.store.remove(session.workflowFile, sessionId);
-        this.forget(sessionId);
-      } catch (error) {
-        this.onStoreError(error);
-      }
-    });
+    return true;
   }
 
   /**
@@ -386,20 +392,22 @@ export class SessionManager {
         if (!this.stored.has(id)) {
           const current = this.sessions.get(id);
           if (!current) return;
-          // The copy has every change made so far: those are kept with it.
-          const included = this.unsent.get(id)?.length ?? 0;
+          // The copy has every change made so far. Its messages are kept with
+          // it (one kept already gets those it lacks); a rename or a mode is
+          // added after it as well, as a kept one keeps its own name and mode.
+          const changes = this.unsent.get(id);
+          const included = changes?.length ?? 0;
           await this.store.create(structuredClone(current));
           this.stored.add(id);
-          this.unsent.get(id)?.splice(0, included);
-        } else {
-          const pending = this.unsent.get(id);
-          while (pending && pending.length > 0) {
-            if (!(await this.store.append(session.workflowFile, id, pending[0]))) {
-              this.forget(id);
-              return;
-            }
-            pending.shift();
+          if (changes) changes.unshift(...changes.splice(0, included).filter((c) => c.t !== 'message'));
+        }
+        const pending = this.unsent.get(id);
+        while (pending && pending.length > 0) {
+          if (!(await this.store.append(session.workflowFile, id, pending[0]))) {
+            this.forget(id);
+            return;
           }
+          pending.shift();
         }
         if (this.unsent.get(id)?.length === 0) this.unsent.delete(id);
       } catch (error) {
@@ -444,6 +452,7 @@ export class SessionManager {
         if (change.t === 'name') kept.name = change.name;
         if (change.t === 'mode') kept.mode = change.mode;
       }
+      kept.messages = byTime(kept.messages);
     }
     this.sessions.set(kept.id, kept);
     this.stored.add(kept.id);
@@ -480,27 +489,30 @@ export class SessionManager {
     if (!Array.isArray(legacy) || legacy.length === 0) {
       return true;
     }
-    let allMoved = true;
+    const left: SessionData[] = [];
     for (const session of legacy) {
       if (typeof session?.id !== 'string' || typeof session.workflowFile !== 'string') continue;
+      // Moved by an earlier try whose clearing failed: since deleted, maybe.
+      if (this.moved.has(session.id)) continue;
       session.messages ??= [];
       if (!this.sessions.has(session.id)) this.sessions.set(session.id, session);
       try {
         await this.store.create(session);
         this.stored.add(session.id);
+        this.moved.add(session.id);
       } catch (error) {
-        allMoved = false;
+        left.push(session);
         this.onStoreError(error);
       }
     }
-    if (!allMoved) return false;
+    // Only those not moved stay there, for the next try.
     try {
-      await this.legacyStorage?.update(LEGACY_SESSIONS_KEY, undefined);
-      return true;
+      await this.legacyStorage?.update(LEGACY_SESSIONS_KEY, left.length > 0 ? left : undefined);
     } catch (error) {
       this.onStoreError(error);
       return false;
     }
+    return left.length === 0;
   }
 }
 
