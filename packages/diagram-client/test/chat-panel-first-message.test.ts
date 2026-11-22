@@ -3,8 +3,10 @@
  * A message sent with no session open: the host makes one for it and says so
  * (`chat.sessionCreated` with `forMessage`). The message stays on screen, as
  * the first turn of that session, after the line that says it was made; what
- * was on screen before it goes, as for any new session. A session made with
- * "+" still starts on an empty transcript.
+ * was on screen before it goes, as for any new session. Until the session is
+ * made, a second message waits in the composer, and a chat, a task or a "+"
+ * asked for meanwhile wins over it. A session made with "+" still starts on
+ * an empty transcript.
  */
 import 'reflect-metadata';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -61,33 +63,75 @@ describe('the first message, sent with no session open', () => {
 });
 
 describe('while the agent starts, after the first message was sent', () => {
-    it('a note the panel made after the message goes when the session is made', () => {
-        const { panel } = makePanel();
+    it('"Stopped", said after the message, stays when the session is made', () => {
+        const { panel, sent } = makePanel();
         panel.sendPrompt('hello', [], true);
-        panel.pushMessage('system', 'Stopped');
+        panel.cancelStreaming();
+        expect(sent.find((e) => e.type === 'chat.cancel')?.data).toMatchObject({ sessionId: null });
         panel.handleIncomingMessage('chat.sessionCreated', { session: { id: 'ses_1', name: 'Session 1' }, forMessage: true });
-        expect(said(panel)).toEqual(['system: Created session: Session 1', 'user: hello']);
+        expect(said(panel)).toEqual(['system: Created session: Session 1', 'user: hello', 'system: Stopped']);
     });
 
-    it('a chat picked meanwhile stays on screen; the new one is only listed', () => {
+    it('a second message waits in the composer, and goes to the same chat once it is made', () => {
+        const { panel, sent } = makePanel();
+        panel.inputValue = 'first';
+        panel.sendMessage();
+        panel.cancelStreaming();
+        panel.inputValue = 'second';
+        panel.sendMessage();
+        expect(panel.inputValue).toBe('second');
+        expect(sent.filter((e) => e.type === 'chat.sendMessage').map((e) => e.data.text)).toEqual(['first']);
+        panel.handleIncomingMessage('chat.sessionCreated', { session: { id: 'ses_1', name: 'Session 1' }, forMessage: true });
+        panel.sendMessage();
+        expect(sent.filter((e) => e.type === 'chat.sendMessage').map((e) => [e.data.text, e.data.sessionId])).toEqual([
+            ['first', null],
+            ['second', 'ses_1'],
+        ]);
+    });
+
+    it('a chat picked meanwhile stays on screen, not streaming; the new one is only listed', () => {
         const { panel, sent } = makePanel();
         panel.sendPrompt('hello', [], true);
         panel.loadSession('ses_A');
         panel.handleIncomingMessage('chat.sessionCreated', { session: { id: 'ses_new', name: 'Session 2' }, forMessage: true });
         expect(panel.currentSessionId).toBe('ses_A');
         expect(panel.isLoadingSession).toBe(true);
+        expect(panel.isStreaming).toBe(false);
         expect(sent.at(-1)?.type).toBe('chat.getSessions');
+        // A refusal for the message, made after, is not said in the chat shown.
+        const before = said(panel);
+        panel.handleIncomingMessage('chat.messageNotSent', { sessionId: 'ses_new', reason: 'the agent does not read images', images: false });
+        expect(panel.inputValue).toBe('');
+        expect(said(panel)).toEqual(before);
     });
 
-    it('a task asked for meanwhile waits for its own session', () => {
+    it('a task asked for meanwhile gets its own session, and the message\'s is only listed', () => {
         const { panel, sent } = makePanel();
         panel.sendPrompt('hello', [], true);
         panel.handleIncomingMessage('chat.startTask', { prompt: 'fix the run', mode: 'build', name: 'Fix' });
         panel.handleIncomingMessage('chat.sessionCreated', { session: { id: 'ses_1', name: 'Session 1' }, forMessage: true });
+        expect(panel.currentSessionId).toBeNull();
+        expect(panel.isLoadingSession).toBe(true);
         expect(sent.filter((e) => e.type === 'chat.sendMessage').map((e) => e.data.text)).toEqual(['hello']);
-        panel.handleIncomingMessage('chat.turnEnd', { sessionId: 'ses_1' });
         panel.handleIncomingMessage('chat.sessionCreated', { session: { id: 'ses_2', name: 'Fix' } });
-        expect(sent.filter((e) => e.type === 'chat.sendMessage').map((e) => e.data.text)).toEqual(['hello', 'fix the run']);
+        expect(panel.currentSessionId).toBe('ses_2');
+        expect(sent.filter((e) => e.type === 'chat.sendMessage').map((e) => [e.data.text, e.data.sessionId])).toEqual([
+            ['hello', null],
+            ['fix the run', 'ses_2'],
+        ]);
+    });
+
+    it('a "+" asked for meanwhile is the one shown, empty and not streaming', () => {
+        const { panel } = makePanel();
+        panel.sendPrompt('hello', [], true);
+        panel.createNewSession();
+        panel.handleIncomingMessage('chat.sessionCreated', { session: { id: 'ses_1', name: 'Session 1' }, forMessage: true });
+        expect(panel.isLoadingSession).toBe(true);
+        panel.handleIncomingMessage('chat.sessionCreated', { session: { id: 'ses_2', name: 'Session 2' } });
+        expect(panel.currentSessionId).toBe('ses_2');
+        expect(said(panel)).toEqual(['system: Created session: Session 2']);
+        expect(panel.isStreaming).toBe(false);
+        expect(panel.isLoadingSession).toBe(false);
     });
 });
 

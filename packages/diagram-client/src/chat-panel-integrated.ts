@@ -270,6 +270,11 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   private showTyping = false;
   /** True while a session load/create round-trip is in flight (shows a loading row). */
   private isLoadingSession = false;
+  /** A message sent with no chat open waits for the session the host makes
+   *  for it: another is held until then, so it goes to the same chat. */
+  private awaitingSession = false;
+  /** A "+" session asked for and not yet made. */
+  private creatingNew = false;
   /** Label shown in the loading row (load vs create). */
   private loadingLabel = 'Loading session…';
   /** Pending requestAnimationFrame id for a coalesced re-render (see scheduleUpdate). */
@@ -579,12 +584,20 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         break;
 
       case 'chat.sessionCreated':
-        // Made for a message sent with no chat open, while another chat has
-        // been picked since: that one stays on screen; the new one is listed.
-        if (data?.forMessage && this.currentSessionId && this.currentSessionId !== data.session?.id) {
+        if (data?.forMessage) this.awaitingSession = false;
+        // Made for a message sent with no chat open, after the user moved on
+        // (picked a chat, or asked for a new one or a task, meanwhile): it is
+        // listed, not shown, and its turn goes on there.
+        if (
+          data?.forMessage &&
+          ((this.currentSessionId && this.currentSessionId !== data.session?.id) || this.creatingNew || this.pendingTask)
+        ) {
+          this.lastSent = undefined;
+          this.setStreaming(false);
           this.loadSessions();
           break;
         }
+        if (!data?.forMessage) this.creatingNew = false;
         this.isLoadingSession = false;
         if (data?.session?.id) {
           this.currentSessionId = data.session.id;
@@ -593,14 +606,15 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
           const sent = data.forMessage ? this.lastSent?.row : undefined;
           const first = sent ? this.timeline.indexOf(sent) : -1;
           if (first >= 0) {
-            // The turn's rows come after this, so the message alone stays: what
-            // the panel said before it (a note, "Stopped") goes, and the turn
-            // (streaming, typing) goes on.
-            this.timeline = [sent!];
+            // What was on screen before it goes; what the panel said after it
+            // ("Stopped") stays, and the turn (streaming, typing) goes on.
+            this.timeline = this.timeline.slice(first);
           } else {
             // A fresh session starts with an empty transcript — clear whatever the
-            // previous session left on screen so its rows don't leak in.
+            // previous session left on screen so its rows don't leak in. No turn
+            // runs in it: one still running is another session's.
             this.clearTimeline();
+            if (!data.forMessage) this.setStreaming(false);
           }
           // A brand-new session has no history to replay: drop the replay guard.
           this.suppressReplayStream = false;
@@ -643,6 +657,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       case 'chat.sessionCreateAborted':
         // Name prompt cancelled — drop the "Creating session…" spinner.
         this.isLoadingSession = false;
+        this.creatingNew = false;
         this.pendingTask = undefined;
         this.update();
         break;
@@ -777,6 +792,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
       case 'chat.error':
         this.isLoadingSession = false;
+        this.awaitingSession = false;
         this.finishStreamingMessage();
         // The unified runtime eagerly connects on the chat.ready handshake, so
         // connection errors arrive without any user interaction — record them
@@ -1034,6 +1050,9 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     const text = this.inputValue.trim();
     const images = this.pendingImages;
     if (!text && images.length === 0) return;
+    // The first message's chat is being made: this one waits in the composer,
+    // to go to that chat, not to make another.
+    if (this.awaitingSession) return;
     if (images.length > 0 && this.agentTakesImages === false) {
       // Attached before the agent said so: the message stays as written.
       this.pushMessage('system', `Not sent: ${this.connectionAgent || 'the agent'} does not read images. Remove them and send again.`);
@@ -1062,6 +1081,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     const row = this.timeline.at(-1);
     this.lastSent = row ? { row, text, images, fromComposer } : undefined;
 
+    // With no chat open the host makes one for it, and says so.
+    if (!this.currentSessionId) this.awaitingSession = true;
     const ok = this.sendToHost('chat.sendMessage', {
       text,
       ...(images.length > 0 ? { images } : {}),
@@ -1073,6 +1094,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     });
 
     if (!ok) {
+      this.awaitingSession = false;
       this.pushMessage('system', 'Error: VS Code API not available in webview');
       return;
     }
@@ -1157,6 +1179,10 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
    * the composer, beside whatever was written since, to change and send again.
    */
   private messageNotSent(data: any): void {
+    this.awaitingSession = false;
+    // A refusal for a chat not shown (left while its message waited): not
+    // said here, and nothing goes back to the composer.
+    if (typeof data?.sessionId === 'string' && data.sessionId !== this.currentSessionId) return;
     if (data?.images === false) this.agentTakesImages = false;
     const sent = this.lastSent;
     this.lastSent = undefined;
@@ -1259,6 +1285,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   /** Name collection happens extension-side (webview prompt() is blocked). */
   private createNewSession(): void {
+    this.creatingNew = true;
     // Creating a session spawns the agent's MCP server (+ its language subprocess), a
     // noticeable moment; show the same spinner so the panel doesn't look frozen.
     this.isLoadingSession = true;
