@@ -86,7 +86,7 @@ describe('a contributed annotation editor', () => {
         expect(seen[0].dispatcher).toBe((panel as any).actionDispatcher);
     });
 
-    it('saves the text it formats, and merges its arguments without the GUI-only ones', async () => {
+    it('saves the text it formats, and merges only the arguments it changed, without the GUI-only ones', async () => {
         const panel = panelWith([probeEditor()]);
         panel.show(taskNode('probed', [PROBE]));
         const input = card('probe').querySelector('input.probe-level') as HTMLInputElement;
@@ -97,17 +97,90 @@ describe('a contributed annotation editor', () => {
         expect(panel.last(UPDATE)).toEqual({
             kind: UPDATE, isOperation: true, elementId: 'node:scope:root:probed', action: 'upsert',
             annotationName: 'probe', annotationText: '@probe(level=2, note="x")',
-            argUpdates: { level: '2', note: '"x"' }
+            argUpdates: { level: '2' }
         });
+    });
+
+    it('sends the arguments it cleared as removals, and an argument it added as an update', async () => {
+        const seen: AnnotationEditorContext[] = [];
+        const panel = panelWith([probeEditor(seen)]);
+        panel.show(taskNode('probed', [PROBE]));
+        seen[0].args.delete('note');
+        seen[0].args.set('level', '');
+        seen[0].args.set('extra', '3');
+        button(card('probe'), 'Save').click();
+        await tick();
+        expect(panel.last(UPDATE)).toMatchObject({ argUpdates: { extra: '3' }, argRemovals: ['level', 'note'] });
+    });
+
+    it('removes only what the source has and the card showed, not a default it filled in nor one it dropped while drawing', async () => {
+        const seen: AnnotationEditorContext[] = [];
+        const filling: AnnotationEditor = {
+            ...probeEditor(seen),
+            render(context) {
+                seen.push(context);
+                context.args.set('hooks', 'true');
+                context.args.delete('note');
+            }
+        };
+        const panel = panelWith([filling]);
+        panel.show(taskNode('probed', [PROBE]));
+        seen[0].args.delete('hooks');
+        seen[0].args.set('level', '5');
+        button(card('probe'), 'Save').click();
+        await tick();
+        const sent = panel.last(UPDATE);
+        expect(sent.argUpdates).toEqual({ level: '5' });
+        expect(sent.argRemovals).toBeUndefined();
+    });
+
+    it('compares a save the editor makes while drawing with what was loaded', async () => {
+        const saving: AnnotationEditor = {
+            ...probeEditor(),
+            render(context) {
+                context.args.set('level', '9');
+                context.save();
+            }
+        };
+        const panel = panelWith([saving]);
+        panel.show(taskNode('probed', [PROBE]));
+        await tick();
+        expect(panel.last(UPDATE)?.argUpdates).toEqual({ level: '9' });
+    });
+
+    it('sends nothing when nothing changed, the defaults it filled in at render included, and says so on the button', async () => {
+        const seen: AnnotationEditorContext[] = [];
+        const filling: AnnotationEditor = {
+            ...probeEditor(seen),
+            render(context) {
+                seen.push(context);
+                context.args.set('level', context.args.get('level') ?? '1');
+                context.args.set('shown', 'true');
+            }
+        };
+        const panel = panelWith([filling]);
+        panel.show(taskNode('probed', [PROBE]));
+        vi.useFakeTimers();
+        try {
+            const save = button(card('probe'), 'Save');
+            save.click();
+            expect(panel.last(UPDATE)).toBeUndefined();
+            expect(save.textContent).toBe('No changes');
+            vi.advanceTimersByTime(1500);
+            expect(save.textContent).toBe('Save');
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('clicks the card’s Save through its context', async () => {
         const seen: AnnotationEditorContext[] = [];
         const panel = panelWith([probeEditor(seen)]);
         panel.show(taskNode('probed', [PROBE]));
+        seen[0].args.set('level', '4');
         seen[0].save();
         await tick();
-        expect(panel.last(UPDATE)?.annotationText).toBe('@probe(level=1, note="x")');
+        expect(panel.last(UPDATE)?.annotationText).toBe('@probe(level=4, note="x")');
     });
 
     it('adds its annotation from the header, before the wizard', async () => {

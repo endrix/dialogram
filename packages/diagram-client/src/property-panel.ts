@@ -54,6 +54,38 @@ function definitionUriOf(node: any): string | undefined {
         : undefined;
 }
 
+/**
+ * What a merging annotation card changed: `argUpdates`, the arguments whose
+ * value differs from `shown` (the card as drawn) or that it did not show;
+ * `argRemovals`, the ones the source has (`loaded`, as the producer gave
+ * them) that the card showed with a value and no longer has. A default the
+ * card filled in is no removal when cleared: the source never had it. GUI-only
+ * keys are neither.
+ */
+export function changedArgs(
+    loaded: ReadonlyMap<string, string>,
+    shown: ReadonlyMap<string, string>,
+    pairs: ReadonlyArray<readonly [string, string]>,
+    guiOnlyKeys: ReadonlySet<string>
+): { argUpdates: Record<string, string>; argRemovals: string[] } {
+    const argUpdates: Record<string, string> = {};
+    const kept = new Set<string>();
+    for (const [key, value] of pairs) {
+        kept.add(key);
+        if (String(shown.get(key) ?? '').trim() !== value) {
+            argUpdates[key] = value;
+        }
+    }
+    const hasValue = (map: ReadonlyMap<string, string>, key: string) => String(map.get(key) ?? '').trim() !== '';
+    const argRemovals = [...loaded.keys()]
+        .map(key => String(key ?? '').trim())
+        .filter(key => key !== '' && !guiOnlyKeys.has(key) && !kept.has(key) && hasValue(loaded, key) && hasValue(shown, key));
+    return { argUpdates, argRemovals };
+}
+
+/** How long a Save that had nothing to send says so on its button. */
+const NOTHING_TO_SAVE_MS = 1500;
+
 @injectable()
 export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     
@@ -941,11 +973,18 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                         );
                     });
 
+                    // What the source has, as the producer gave it: only these can be removed.
+                    const loadedArgs = new Map(argsMap);
+                    // The card as drawn: Save sends what differs. Until the editor has drawn
+                    // it (a save it makes while drawing), that is what was loaded.
+                    let shownArgs = new Map(argsMap);
+
                     const saveBtn = document.createElement('button');
                     saveBtn.type = 'button';
                     saveBtn.className = 'mini-btn';
                     saveBtn.title = 'Save changes to the referenced definition';
                     saveBtn.textContent = 'Save';
+                    let saveLabelTimer: ReturnType<typeof setTimeout> | undefined;
                     saveBtn.addEventListener('click', () => {
                         // An editor's GUI-only arguments are its own state, not
                         // parameters: neither the text nor the updates carry them.
@@ -958,11 +997,20 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                             ? editor.formatAnnotation(argsMap, pairs)
                             : this.annotationTextOf(name, pairs);
 
-                        // An editor that merges sends its arguments beside the text, so the
-                        // server keeps the args the card doesn't manage (outputValidators,
-                        // mcpServers inline dicts, etc.) as the source has them.
+                        // An editor that merges sends what the card changed beside the text:
+                        // the arguments set or edited since it was drawn, and the ones it
+                        // cleared. The server keeps every other argument as the source has
+                        // it, so a value the card only showed (a default it was given) is
+                        // not written, and nothing changed is nothing sent.
                         if (editor?.mergeArgUpdates) {
-                            const mergeUpdates: Record<string, string> = Object.fromEntries(pairs);
+                            const { argUpdates, argRemovals } = changedArgs(loadedArgs, shownArgs, pairs, guiOnlyKeys);
+                            if (Object.keys(argUpdates).length === 0 && argRemovals.length === 0) {
+                                // Said where the click was, not silently dropped.
+                                saveBtn.textContent = 'No changes';
+                                clearTimeout(saveLabelTimer);
+                                saveLabelTimer = setTimeout(() => { saveBtn.textContent = 'Save'; }, NOTHING_TO_SAVE_MS);
+                                return;
+                            }
                             void this.actionDispatcher.dispatch(
                                 WorkflowUpdateDefinitionAnnotationOperation.create({
                                     isOperation: true,
@@ -970,7 +1018,10 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                                     action: 'upsert',
                                     annotationName: name,
                                     annotationText: text,
-                                    argUpdates: mergeUpdates
+                                    argUpdates,
+                                    // Only when there is one: a producer older than removals
+                                    // still takes every other Save.
+                                    ...(argRemovals.length > 0 ? { argRemovals } : {})
                                 })
                             );
                         } else {
@@ -1003,6 +1054,9 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                         requestDiscovery: requestAgentDiscovery,
                         save: () => saveBtn.click()
                     });
+                    // The card as drawn, the editor's own defaults in it. What it sets later is
+                    // the user's doing (a pick, an edit), and is sent.
+                    shownArgs = new Map(argsMap);
 
                     const reserved = new Set(editor?.reservedArgs ?? []);
                     // Remaining args = genuinely custom annotation args (no dedicated control

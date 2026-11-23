@@ -1,3 +1,4 @@
+import * as vscode from 'vscode';
 import { Action, Command, ModelState, OperationHandler } from '@eclipse-glsp/server';
 import { normalizeWorkflowReferenceName } from '../source-analysis';
 import { inject, injectable } from 'inversify';
@@ -19,6 +20,11 @@ export namespace UpdateDefinitionAnnotationOperation {
         annotationText?: string;
         /** When set, uses merge semantics: only listed args are updated; unlisted args are preserved. */
         argUpdates?: Record<string, string>;
+        /**
+         * Merge semantics too: args to take out of the annotation. Passed on
+         * only to a producer that declares `features.mergeArgRemovals`.
+         */
+        argRemovals?: string[];
     }
 
     export function is(action: unknown): action is Operation {
@@ -29,6 +35,9 @@ export namespace UpdateDefinitionAnnotationOperation {
         return { kind: KIND, ...opts };
     }
 }
+
+/** `mergeDefinitionAnnotationArgs` takes `argRemovals: [name]`, the args to take out. */
+export const MERGE_ARG_REMOVALS = 'mergeArgRemovals';
 
 @injectable()
 export class UpdateDefinitionAnnotationOperationHandler extends OperationHandler {
@@ -66,13 +75,15 @@ export class UpdateDefinitionAnnotationOperationHandler extends OperationHandler
         // module is declared there, not in the diagram's.
         const fileUri = entityFileOf(this.modelState, sourceUri, { entityType: defName, elementId: operation.elementId });
         const removing = operation.action === 'remove';
+        // Removals not sent, said once the rest is written.
+        let kept: string[] | undefined;
         return producerWriteCommand({
             label: (removing ? 'Remove Annotation' : 'Update Annotation') + this.sidecar.undoLabelSuffix(),
             sidecar: this.sidecar,
             failed: removing
                 ? `@${operation.annotationName} was not removed from '${defName}'.`
                 : `@${operation.annotationName} of '${defName}' was not changed.`,
-            request: () => {
+            request: async () => {
                 let sidecarOp: string;
                 let sidecarArgs: Record<string, unknown>;
                 if (removing) {
@@ -81,13 +92,34 @@ export class UpdateDefinitionAnnotationOperationHandler extends OperationHandler
                         entityType: defName,
                         annotationName: operation.annotationName,
                     };
-                } else if (operation.argUpdates) {
+                } else if (operation.argUpdates || operation.argRemovals?.length) {
                     // Merge mode: only update listed args, preserve everything else
                     sidecarOp = this.sidecar.sidecarOp('mergeDefinitionAnnotationArgs');
+                    // The values as the editor wrote them: the producer spells its
+                    // own literals, and only it knows its strings.
+                    const argUpdates = operation.argUpdates ?? {};
+                    let argRemovals = operation.argRemovals?.length ? operation.argRemovals : undefined;
+                    kept = undefined;
+                    // A producer that predates removals refuses an argument it does
+                    // not know, the updates with it: it is sent them only when it
+                    // says it takes them, and else the cleared ones stay.
+                    if (argRemovals && !(await this.sidecar.hasFeature(sourceUri, MERGE_ARG_REMOVALS))) {
+                        kept = argRemovals;
+                        argRemovals = undefined;
+                    }
+                    if (Object.keys(argUpdates).length === 0 && !argRemovals) {
+                        if (kept) {
+                            void vscode.window.showWarningMessage(
+                                `${kept.map(key => `'${key}'`).join(', ')} stay${kept.length === 1 ? 's' : ''} in @${operation.annotationName} of '${defName}': its producer has not said it takes arguments out.`
+                            );
+                        }
+                        return undefined;
+                    }
                     sidecarArgs = {
                         entityType: defName,
                         annotationName: operation.annotationName,
-                        argUpdates: operation.argUpdates,
+                        argUpdates,
+                        ...(argRemovals ? { argRemovals } : {}),
                     };
                 } else {
                     sidecarOp = this.sidecar.sidecarOp('updateDefinitionAnnotation');
@@ -98,6 +130,13 @@ export class UpdateDefinitionAnnotationOperationHandler extends OperationHandler
                     };
                 }
                 return { fileUri, payload: { op: sidecarOp, args: sidecarArgs } };
+            },
+            afterApply: phase => {
+                if (phase === 'execute' && kept) {
+                    void vscode.window.showWarningMessage(
+                        `${kept.map(key => `'${key}'`).join(', ')} stay${kept.length === 1 ? 's' : ''} in @${operation.annotationName} of '${defName}': its producer has not said it takes arguments out.`
+                    );
+                }
             }
         });
     }
