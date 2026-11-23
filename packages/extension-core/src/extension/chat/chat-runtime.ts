@@ -1461,16 +1461,15 @@ export class ChatRuntime {
   /** A session's stored messages, each user message with its opencode id. */
   private async historyOf(sessionId: string): Promise<{ messages: MessageData[]; reverted: boolean }> {
     const stored = this.sessions.getSessionMessages(sessionId);
-    const ids = await this.alignUserMessageIds(
-      sessionId,
-      stored.filter((m) => m.role === "user"),
-    );
-    let reverted = false;
-    try {
-      reverted = Boolean(await this.acp.getRevertState(sessionId));
-    } catch {
+    // Both ask opencode (opencode 2: a process each), so at once.
+    const [ids, reverted] = await Promise.all([
+      this.alignUserMessageIds(
+        sessionId,
+        stored.filter((m) => m.role === "user"),
+      ),
       // HTTP API unavailable — render history without revert ids.
-    }
+      this.acp.getRevertState(sessionId).then(Boolean, () => false),
+    ]);
     let k = 0;
     const messages = stored.map((m) => {
       if (m.role !== "user") return m;
@@ -1486,16 +1485,13 @@ export class ChatRuntime {
     const uri = this.sessionUri.get(sessionId);
     if (!uri) return;
     const stored = this.sessions.getSessionMessages(sessionId);
-    const ids = await this.alignUserMessageIds(
-      sessionId,
-      stored.filter((m) => m.role === "user"),
-    );
-    let reverted = false;
-    try {
-      reverted = Boolean(await this.acp.getRevertState(sessionId));
-    } catch {
-      // ignore
-    }
+    const [ids, reverted] = await Promise.all([
+      this.alignUserMessageIds(
+        sessionId,
+        stored.filter((m) => m.role === "user"),
+      ),
+      this.acp.getRevertState(sessionId).then(Boolean, () => false),
+    ]);
     this.postToWebview(uri, {
       type: "chat.messageIds",
       data: { sessionId, ids, reverted },

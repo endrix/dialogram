@@ -156,11 +156,12 @@ describe('ACPClientService', () => {
 
   describe('start', () => {
     it('should spawn opencode subprocess and initialize connection', async () => {
+      client = new ACPClientService(async () => 'own-port');
       await client.start('/test/workspace');
 
       // The command may resolve to a full path (e.g. ~/.opencode/bin/opencode)
       // and the env is PATH-augmented, so assert loosely.
-      // `opencode acp` is spawned with a pinned HTTP --port (for revert/unrevert).
+      // opencode 1.x's `opencode acp` is spawned with a pinned HTTP --port (for revert/unrevert).
       expect(spawn).toHaveBeenCalledWith(
         expect.stringContaining('opencode'),
         expect.arrayContaining(['acp', '--hostname', '127.0.0.1', '--port']),
@@ -185,6 +186,36 @@ describe('ACPClientService', () => {
         },
       });
       expect(client.isClientConnected()).toBe(true);
+    });
+
+    it('spawns opencode 2 without --port, its sessions reached through `opencode api`', async () => {
+      const probe = vi.fn(async () => 'service' as const);
+      client = new ACPClientService(probe);
+      await client.start('/test/workspace');
+
+      expect(probe).toHaveBeenCalledWith(expect.stringContaining('opencode'), ['acp'], expect.objectContaining({ PATH: expect.any(String) }));
+      expect(spawn).toHaveBeenCalledWith(
+        expect.stringContaining('opencode'),
+        ['acp'],
+        expect.objectContaining({ cwd: '/test/workspace' })
+      );
+      expect((client as any).http?.constructor?.name).toBe('OpencodeServiceClient');
+    });
+
+    it('starts an opencode it cannot tell without --port, and leaves undo off', async () => {
+      client = new ACPClientService(async () => 'none');
+      await client.start('/test/workspace');
+
+      expect(spawn).toHaveBeenCalledWith(expect.stringContaining('opencode'), ['acp'], expect.anything());
+      await expect(client.getMessagesWithIds('s1')).resolves.toEqual([]);
+      await expect(client.getRevertState('s1')).resolves.toBe(false);
+    });
+
+    it('asks no agent but opencode which flavour it is', async () => {
+      const probe = vi.fn(async () => 'own-port' as const);
+      client = new ACPClientService(probe);
+      await client.start('/test/workspace', { name: 'claude', argv: ['claude-agent-acp'], httpApi: false });
+      expect(probe).not.toHaveBeenCalled();
     });
 
     it('spawns the given agent as its own command, without the HTTP port', async () => {

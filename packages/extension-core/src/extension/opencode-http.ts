@@ -1,5 +1,5 @@
 /**
- * Thin client for opencode's HTTP API.
+ * Thin client for opencode 1.x's HTTP API (opencode 2: see opencode-service.ts).
  *
  * The chat talks to opencode over ACP (stdio), but a few capabilities — most
  * notably session revert / unrevert and listing messages with their stable
@@ -32,7 +32,18 @@ export interface OpencodeMessage {
   images?: number;
 }
 
-export class OpencodeHttpClient {
+/** What the chat asks of opencode beside ACP, on either version: opencode 1.x's
+ *  own HTTP server ({@link OpencodeHttpClient}) or opencode 2's service
+ *  (`OpencodeServiceClient`). */
+export interface OpencodeSessionApi {
+  listMessages(sessionId: string): Promise<OpencodeMessage[]>;
+  revert(sessionId: string, messageID: string): Promise<void>;
+  unrevert(sessionId: string): Promise<void>;
+  isReverted(sessionId: string): Promise<boolean>;
+}
+
+/** opencode 1.x: the HTTP API of the `opencode acp` process, on the port the chat gave it. */
+export class OpencodeHttpClient implements OpencodeSessionApi {
   constructor(private readonly baseUrl: string) {}
 
   /**
