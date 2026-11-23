@@ -117,7 +117,7 @@ describe('a folder-list setting', () => {
         )).toEqual([path.join(base, 'kept')]);
         // An unset variable is not the root folder it would leave, and a folder holding the separator would be read as two.
         expect(leftOut).toEqual([
-            ['~nobody/skills', expect.stringContaining("another user's home")],
+            ['~nobody/skills', expect.stringContaining("another user's home folder does")],
             ['${config:x.y}/skills', expect.stringContaining('not known here')],
             ['${workspaceFolder:nope}/skills', expect.stringContaining('not known here')],
             ['${env:NOT_SET_HERE}/skills', expect.stringContaining('not known here')],
@@ -136,6 +136,17 @@ describe('a folder-list setting', () => {
         expect(resolveFolderList(['skills', '${workspaceFolder}/team', '~/s'], context({ base: undefined }), entry => leftOut.push(entry)))
             .toEqual(['skills', path.join(HOME, 's')]);
         expect(leftOut).toEqual(['${workspaceFolder}/team']);
+    });
+
+    it('gives each folder of a variable that is a list, as the entry `${env:NAME}`; in a longer entry a list is left out', () => {
+        const team = [path.resolve('/opt/a'), 'rel', path.resolve('/opt/b')].join(path.delimiter);
+        const leftOut: string[] = [];
+        expect(resolveFolderList(
+            ['${env:TEAM}', '${env:TEAM}/skills', '${env:UNSET_HERE}', 'own'],
+            context({ env: { TEAM: team } }),
+            entry => leftOut.push(entry)
+        )).toEqual([path.resolve('/opt/a'), path.join(base, 'rel'), path.resolve('/opt/b'), path.join(base, 'own')]);
+        expect(leftOut).toEqual(['${env:TEAM}/skills', '${env:UNSET_HERE}']);
     });
 
     it('takes `~\\` for the home folder only where `\\` separates folders', () => {

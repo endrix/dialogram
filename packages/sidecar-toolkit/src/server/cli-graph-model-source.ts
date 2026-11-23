@@ -362,12 +362,13 @@ export class CliGraphModelSource implements DiagramModelSource {
      * root (`getCliVariables`); none outside a VS Code host (tests).
      */
     cliVariables(filePath: string, cwd: string): Record<string, string> {
+        let vscode: typeof import('vscode');
         try {
-            const vscode = require('vscode') as typeof import('vscode');
-            return getCliVariables(this.cfg, vscode, vscode.Uri.file(filePath), cwd);
+            vscode = require('vscode') as typeof import('vscode');
         } catch {
             return {};
         }
+        return getCliVariables(this.cfg, vscode, vscode.Uri.file(filePath), cwd);
     }
 
     /**

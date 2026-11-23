@@ -451,6 +451,8 @@ export interface FolderListContext {
  * folder or variable that is not known (no base, no open folder of that
  * name, a variable unset or empty), or a folder holding the path list
  * separator once resolved, is left out, and `leftOut` is given it and why.
+ * An entry that is a variable alone, `${env:NAME}`, gives each folder of
+ * its value, which may be a list (a search path the user already has).
  * A lone string is a list of one.
  */
 export function resolveFolderList(
@@ -465,11 +467,23 @@ export function resolveFolderList(
             continue;
         }
         let folder = entry.trim();
+        // A variable that is a list itself (a search path the user has): each of its folders.
+        const list = /^\$\{env:([^}]+)\}$/.exec(folder);
+        if (list) {
+            const parts = (context.env[list[1]] ?? '').split(path.delimiter).map(part => part.trim()).filter(part => part !== '');
+            if (parts.length === 0) {
+                leftOut?.(entry, 'it names a variable or a folder that is not known here');
+            }
+            for (const part of parts) {
+                pushFolder(part, entry);
+            }
+            continue;
+        }
         // `~\` is the home folder only where `\` separates folders.
         if (folder === '~' || folder.startsWith('~/') || (path.sep === '\\' && folder.startsWith('~\\'))) {
             folder = context.home + folder.slice(1);
         } else if (folder.startsWith('~')) {
-            leftOut?.(entry, "it names another user's home folder, which is not read here");
+            leftOut?.(entry, `it starts with '~' but not '~${path.sep}', as another user's home folder does, which is not read here`);
             continue;
         }
         let unknown = false;
@@ -489,16 +503,21 @@ export function resolveFolderList(
             leftOut?.(entry, 'it names a variable or a folder that is not known here');
             continue;
         }
-        const resolved = path.isAbsolute(folder) ? path.resolve(folder)
-            : context.base !== undefined ? path.resolve(context.base, folder) : folder;
+        pushFolder(folder, entry);
+    }
+    return folders;
+
+    /** `folder` resolved from the base (on Windows a folder rooted without a drive takes the base's), unless it would be read as two. */
+    function pushFolder(folder: string, entry: string): void {
+        const resolved = context.base !== undefined ? path.resolve(context.base, folder)
+            : path.isAbsolute(folder) ? path.resolve(folder) : folder;
         // A folder whose name holds the separator, its own or the run root's, would be read as two.
         if (resolved.includes(path.delimiter)) {
             leftOut?.(entry, `its folder, ${resolved}, holds '${path.delimiter}', which separates the folders of the variable`);
-            continue;
+            return;
         }
         folders.push(resolved);
     }
-    return folders;
 }
 
 /**

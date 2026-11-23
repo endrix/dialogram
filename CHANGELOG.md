@@ -87,7 +87,9 @@ platform that hands it one.
   relative folder from the folder the CLI starts in, the run root), and they
   are joined by the platform's path list separator. An entry naming another
   user's home or a variable not known here is left out, and a run's output
-  says so; so is one naming an unset variable or holding the separator. A
+  says so; so is one naming an unset variable or holding the separator. An
+  entry that is a variable alone (`${env:PYTHONPATH}`) gives each folder of
+  its value, so a search path the user has can be added to. A
   run (whose output says each variable given), `runCli` (whose result says
   which it gave), the plan and hierarchy exports (kept per variables: a plan
   made with others is not reused when the diagram next loads; an open
