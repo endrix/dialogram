@@ -1,8 +1,9 @@
 /**
- * The variables a product's settings give its CLI (`cliEnvironment`): a
- * setting that lists folders, read as VS Code reads a path, from the folder
- * the CLI starts in (the run root), joined into one variable, and given to
- * every start of the CLI (`sidecar-runtime-config.ts`).
+ * The variables a product's settings give its CLI: a setting that lists
+ * folders (`cliEnvironment`), read as VS Code reads a path, from the folder
+ * the CLI starts in (the run root), joined into one variable; and a setting
+ * that names variables with their values (`cliVariablesSettingKey`). Both
+ * are given to every start of the CLI (`sidecar-runtime-config.ts`).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type * as cp from 'node:child_process';
@@ -15,6 +16,7 @@ import {
     cliProcessEnv,
     getCliVariables,
     resolveFolderList,
+    resolveVariablesSetting,
     type FolderListContext
 } from '../src/server/sidecar-runtime-config';
 import { resolveCliInvocation, runCli } from '../src/cli-invocation';
@@ -161,6 +163,66 @@ describe('a folder-list setting', () => {
     });
 });
 
+describe('a variables setting', () => {
+    const base = path.resolve('/work/project');
+    const context: FolderListContext = {
+        base,
+        home: HOME,
+        folderNamed: name => (name === 'shared' ? path.resolve('/work/shared') : undefined),
+        env: { TOOLS: path.resolve('/opt/tools'), EMPTY: '' }
+    };
+
+    it('reads each value with VS Code’s variables of a setting, and keeps the rest as written: a value need not be a path', () => {
+        expect(resolveVariablesSetting({
+            TOOL_HOME: '${workspaceFolder}/external/tool',
+            TOOL_EXE: '${env:TOOLS}/bin/tool',
+            SHARED: '${workspaceFolder:shared}/lib',
+            CACHE: '~/cache',
+            HOME_TOO: '${userHome}',
+            VIEWER: 'viewer',
+            RELATIVE: 'external/env',
+            FLAGS: '-O2 -g',
+            BLANK: ''
+        }, context)).toEqual({
+            TOOL_HOME: `${base}/external/tool`,
+            TOOL_EXE: `${path.resolve('/opt/tools')}/bin/tool`,
+            SHARED: `${path.resolve('/work/shared')}/lib`,
+            CACHE: `${HOME}/cache`,
+            HOME_TOO: HOME,
+            VIEWER: 'viewer',
+            RELATIVE: 'external/env',
+            FLAGS: '-O2 -g',
+            BLANK: ''
+        });
+    });
+
+    it('leaves out, saying so, a name that is none, a value that is not text, and one it cannot read', () => {
+        const leftOut: string[] = [];
+        expect(resolveVariablesSetting({
+            '': 'x', 'A=B': 'x', NUMBER: 3, LIST: ['a'], NOTHING: null,
+            UNSET: '${env:NOPE}', EMPTY: '${env:EMPTY}', OTHER: '${config:x}', USER: '~someone/x', KEPT: 'k'
+        }, context, (name, why) => leftOut.push(`${name}: ${why}`))).toEqual({ KEPT: 'k' });
+        expect(leftOut).toEqual([
+            '"": it is not the name of a variable',
+            '"A=B": it is not the name of a variable',
+            'NUMBER: its value is not text',
+            'LIST: its value is not text',
+            'NOTHING: its value is not text',
+            'UNSET: it names a variable or a folder that is not known here',
+            'EMPTY: it names a variable or a folder that is not known here',
+            'OTHER: it names a variable or a folder that is not known here',
+            expect.stringMatching(/^USER: it starts with '~' but not '~.', as another user's home folder does/)
+        ]);
+    });
+
+    it('names none when the setting is not an object, and `${workspaceFolder}` none without a base', () => {
+        for (const value of [undefined, null, 'A=b', ['A=b'], 3]) {
+            expect(resolveVariablesSetting(value, context)).toEqual({});
+        }
+        expect(resolveVariablesSetting({ A: '${workspaceFolder}/a', B: 'b' }, { ...context, base: undefined })).toEqual({ B: 'b' });
+    });
+});
+
 describe('the variables a CLI start is given', () => {
     it('are none, and no setting is read, when the profile declares none', () => {
         const asked = settings({ roots: ['skills'] });
@@ -177,6 +239,25 @@ describe('the variables a CLI start is given', () => {
         // Read under the product's namespace, for the run root: its folder's own setting wins.
         expect(asked).toEqual([{ section: 'x', scope: Uri.file(path.resolve('/work')) }]);
         expect(leftOut).toEqual([expect.stringMatching(/^x\.roots: '\$\{nope\}' is left out: it names a variable or a folder that is not known here$/)]);
+    });
+
+    it('take the variables setting’s, read for the run root, with a folder list’s over them when it lists a folder', () => {
+        const both = { ...config, cliVariablesSettingKey: 'variables' };
+        const work = path.resolve('/work');
+        const asked = settings({ variables: { X_ROOTS: 'given', X_TOOL: '${workspaceFolder}/bin/tool' }, roots: ['skills'] });
+        expect(getCliVariables(both, vscode, Uri.file(path.resolve('/work/flows/main.py')) as any, work))
+            .toEqual({ X_ROOTS: path.join(work, 'skills'), X_TOOL: `${work}/bin/tool` });
+        expect(asked).toEqual([{ section: 'x', scope: Uri.file(work) }]);
+        // A folder list that lists nothing leaves the variables setting's value; one left out is named with its setting.
+        const leftOut: string[] = [];
+        settings({ variables: { X_ROOTS: 'given', X_BAD: 3 }, roots: [] });
+        expect(getCliVariables(both, vscode, Uri.file('/w/a.py') as any, '/w', message => leftOut.push(message)))
+            .toEqual({ X_ROOTS: 'given' });
+        expect(leftOut).toEqual(['x.variables: X_BAD is left out: its value is not text']);
+        // A profile with no folder list reads the variables setting alone.
+        settings({ variables: { X_TOOL: 'tool' } });
+        expect(getCliVariables({ settingsNamespace: 'x', cliVariablesSettingKey: 'variables' }, vscode, Uri.file('/w/a.py') as any, '/w'))
+            .toEqual({ X_TOOL: 'tool' });
     });
 
     it('leave out a variable whose setting lists nothing', () => {
@@ -240,6 +321,15 @@ describe('every start of the CLI', () => {
         const inherited = await runCli(config as any, file as any, ['-e', PRINT_ROOTS]);
         expect(inherited.stdout).toBe('inherited');
         expect(inherited.variables).toBeUndefined();
+    });
+
+    it('`runCli` starts the CLI with the variables setting’s too', async () => {
+        const folder = tempDir('cli-vars-setting-');
+        openWorkspaceFolders(folder);
+        const file = Uri.file(path.join(folder, 'main.py'));
+        settings({ cliCommand: process.execPath, variables: { X_ROOTS: '${workspaceFolder}/tools' }, roots: [] });
+        const given = await runCli({ ...config, cliVariablesSettingKey: 'variables' } as any, file as any, ['-e', PRINT_ROOTS]);
+        expect(given).toMatchObject({ exitCode: 0, stdout: `${folder}/tools`, variables: { X_ROOTS: `${folder}/tools` } });
     });
 
     it('a run is spawned with the environment it is handed', () => {

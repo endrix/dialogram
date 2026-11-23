@@ -69,7 +69,7 @@ export interface CliRunResult {
      */
     cwd?: string;
     /**
-     * The variables the product's settings gave the CLI (`cliEnvironment`),
+     * The variables the product's settings gave the CLI (`cliVariablesSettingKey`, `cliEnvironment`),
      * over this extension's environment, as a run of the file is given them.
      * Absent when none was, or no command was started.
      */

@@ -161,6 +161,8 @@ export interface CliRunDriverConfig {
     cliPythonModule?: string;
     /** Variables a run is given from the product's settings (`CliFolderListVariable`). */
     cliEnvironment?: readonly CliFolderListVariable[];
+    /** The setting naming more variables a run is given, each with its value (`resolveVariablesSetting`). */
+    cliVariablesSettingKey?: string;
     runOutputDirSettingKey: string;
     liveExecutionGlowSettingKey: string;
     agentToolsSettingKey: string;

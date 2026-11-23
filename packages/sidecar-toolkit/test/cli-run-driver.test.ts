@@ -246,6 +246,28 @@ describe('CliRunDriver: where a run starts', () => {
         await vscode.commands.executeCommand(RUN_CMD, { sourceUri: `file://${file}` });
         expect(spawnCalls[1].env).toBeUndefined();
     });
+
+    it('is given the variables the product’s variables setting names, and says so', async () => {
+        const folder = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cli-run-driver-setting-')));
+        temps.push(folder);
+        const file = path.join(folder, 'pipeline.py');
+        fs.writeFileSync(file, '# fixture\n', 'utf8');
+        openWorkspaceFolders(folder);
+        const variables = { X_TOOL: '${workspaceFolder}/bin/tool', X_BAD: '${nope}' };
+        Object.assign(vscode.workspace, {
+            getConfiguration: () => ({ get: <T>(key: string, fallback?: T) => (key === 'variables' ? variables as T : fallback) })
+        });
+        const host = makeHost();
+        const driver = new CliRunDriver({ ...makeConfig(makeOverrideState()), cliVariablesSettingKey: 'variables' }, host as any);
+        driver.registerCommands(makeContext());
+
+        await vscode.commands.executeCommand(RUN_CMD, { sourceUri: `file://${file}` });
+        expect(spawnCalls[0].env?.X_TOOL).toBe(`${folder}/bin/tool`);
+        expect(spawnCalls[0].env?.PATH).toBe(process.env.PATH);
+        expect(spawnCalls[0].env).not.toHaveProperty('X_BAD');
+        expect(host.appended).toContain(`[wf-lang] X_TOOL=${folder}/bin/tool`);
+        expect(host.appended).toContain('[wf-lang] wfLang.variables: X_BAD is left out: it names a variable or a folder that is not known here');
+    });
 });
 
 // The driver now owns the `run.wf-viewer.live.json` file knowledge (name, schema,

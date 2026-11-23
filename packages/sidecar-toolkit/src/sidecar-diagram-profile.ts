@@ -178,6 +178,16 @@ export interface SidecarProfileInput {
      * `restrictedConfigurations`, so that only the user's value is read there.
      */
     cliEnvironment?: CliFolderListVariable[];
+    /**
+     * The setting, under `settingsNamespace`, that names variables every
+     * start of the CLI is given, each with its value: an object whose keys
+     * are the names (`resolveVariablesSetting`). The `cliEnvironment`
+     * variables go over them, and the sidecar is started without them, as
+     * without those. A workspace's own settings reach the CLI's environment
+     * through it too: an extension that runs in an untrusted workspace lists
+     * it in its `restrictedConfigurations`. Absent: no such setting.
+     */
+    cliVariablesSettingKey?: string;
     /** Default `[sidecarOperationPrefix]`. */
     acceptedOperationPrefixes?: string[];
     graphAcquisition: 'sidecar-export' | 'cli-plan';
@@ -519,6 +529,7 @@ function sidecarRuntimeConfig(input: ResolvedSidecarProfileInput): SidecarRuntim
         cliCommandDefault: input.cliCommandDefault,
         cliPythonModule: input.cliPythonModule,
         cliEnvironment: input.cliEnvironment,
+        cliVariablesSettingKey: input.cliVariablesSettingKey,
         operationKinds: {
             createEntityPort: input.operationKinds.createEntityPort,
             deleteEntityPort: input.operationKinds.deleteEntityPort
@@ -733,6 +744,7 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
             cliCommandDefault: input.cliCommandDefault,
             cliPythonModule: input.cliPythonModule,
             cliEnvironment: input.cliEnvironment,
+            cliVariablesSettingKey: input.cliVariablesSettingKey,
             runOutputDirSettingKey: input.runOutputDirSettingKey,
             liveExecutionGlowSettingKey: input.liveExecutionGlowSettingKey,
             agentToolsSettingKey: input.agentToolsSettingKey,
