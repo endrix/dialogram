@@ -12,34 +12,52 @@
  * Routes (opencode 2.4, from the service's /openapi.json):
  *   GET    /api/session/{id}/message?order=asc&type=user  -> { data: [...], cursor: { next } }
  *   GET    /api/session/{id}                              -> { data: { ..., revert?: { messageID } } }
- *   POST   /api/session/{id}/revert/stage  { messageID }  (undoes files; a new prompt commits it)
+ *   POST   /api/session/{id}/revert/stage  { messageID, files: true }  (undoes the files too; a
+ *                                          new prompt over ACP commits it, as on 1.x)
  *   DELETE /api/session/{id}/revert                       (restores what the stage undid)
  */
 
 import { execFile } from 'node:child_process';
 import type { OpencodeMessage, OpencodeSessionApi } from './opencode-http.js';
 
-/** How an `opencode acp` serves its HTTP API: on a port it is given (1.x), or through the user's service (2). */
-export type OpencodeHttpFlavour = 'own-port' | 'service';
+/** How an `opencode acp` serves its HTTP API: on a port it is given (1.x), through the user's
+ *  service (2), or not that the chat can tell ('none': it starts with no flags, undo off). */
+export type OpencodeHttpFlavour = 'own-port' | 'service' | 'none';
 
 /** Reads an `opencode acp` command line's flavour. */
 export type OpencodeFlavourProbe = (command: string, args: string[], env: NodeJS.ProcessEnv) => Promise<OpencodeHttpFlavour>;
 
-/**
- * Whether this `opencode acp` takes `--port` (1.x) or not (2), from its
- * `--help`. A help that cannot be read counts as 2: the chat then starts
- * without the flags on either version, and only undo may be missing.
- */
-export const probeOpencodeFlavour: OpencodeFlavourProbe = (command, args, env) =>
-  new Promise((resolve) => {
+/** The output of `command args`, or undefined when it cannot be run or prints nothing. */
+function readOutput(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<string | undefined> {
+  return new Promise((resolve) => {
     try {
-      execFile(command, [...args, '--help'], { env, timeout: 15_000, maxBuffer: 1 << 20 }, (_error, stdout, stderr) => {
-        resolve(/--port\b/.test(`${stdout ?? ''}\n${stderr ?? ''}`) ? 'own-port' : 'service');
+      const child = execFile(command, args, { env, timeout: 15_000, maxBuffer: 1 << 20 }, (_error, stdout, stderr) => {
+        const text = `${stdout ?? ''}\n${stderr ?? ''}`.trim();
+        resolve(text ? text : undefined);
       });
+      child.stdin?.end();
     } catch {
-      resolve('service');
+      resolve(undefined);
     }
   });
+}
+
+/**
+ * Whether this `opencode acp` takes `--port` (1.x: an option line in its
+ * `--help`) or not (2). A help that cannot be read falls back on
+ * `opencode --version`; when neither tells, 'none': the chat starts without
+ * the flags, which both versions accept, and leaves undo off rather than
+ * running an `opencode api` that 1.x does not have.
+ */
+export const probeOpencodeFlavour: OpencodeFlavourProbe = async (command, args, env) => {
+  const help = await readOutput(command, [...args, '--help'], env);
+  if (help !== undefined && /\bacp\b|Agent Client Protocol/i.test(help)) {
+    return /^\s*--port\b/m.test(help) ? 'own-port' : 'service';
+  }
+  const version = /(\d+)\.\d+\.\d+/.exec((await readOutput(command, ['--version'], env)) ?? '');
+  if (!version) return 'none';
+  return Number(version[1]) >= 2 ? 'service' : 'own-port';
+};
 
 export interface ApiResult {
   code: number;
@@ -50,15 +68,19 @@ export interface ApiResult {
 /** Runs `opencode api <args...>`. */
 export type OpencodeApiRunner = (args: string[]) => Promise<ApiResult>;
 
+const API_TIMEOUT_MS = 10_000;
+
 /** The runner for an opencode binary: `<command> api ...`, in the chat's environment. */
 export function opencodeApiRunner(command: string, env: NodeJS.ProcessEnv, cwd?: string): OpencodeApiRunner {
   return (args) =>
     new Promise((resolve) => {
       try {
-        execFile(command, ['api', ...args], { env, cwd, timeout: 30_000, maxBuffer: 64 << 20 }, (error, stdout, stderr) => {
-          const code = error ? (typeof (error as NodeJS.ErrnoException & { code?: unknown }).code === 'number' ? Number((error as any).code) : 1) : 0;
-          resolve({ code, stdout: String(stdout ?? ''), stderr: String(stderr ?? error?.message ?? '') });
+        // A short bound: the chat waits on these to show a session's history.
+        const child = execFile(command, ['api', ...args], { env, cwd, timeout: API_TIMEOUT_MS, maxBuffer: 64 << 20 }, (error, stdout, stderr) => {
+          const code = error ? (typeof (error as { code?: unknown }).code === 'number' ? Number((error as { code?: unknown }).code) : 1) : 0;
+          resolve({ code, stdout: String(stdout ?? ''), stderr: String(stderr || error?.message || '') });
         });
+        child.stdin?.end();
       } catch (error) {
         resolve({ code: 1, stdout: '', stderr: error instanceof Error ? error.message : String(error) });
       }
@@ -106,7 +128,8 @@ export class OpencodeServiceClient implements OpencodeSessionApi {
 
   /** Revert the session to before `messageID`: that message, the later ones, and their file changes. */
   async revert(sessionId: string, messageID: string): Promise<void> {
-    await this.request('POST', `/api/session/${encodeURIComponent(sessionId)}/revert/stage`, { messageID });
+    // `files: true`: undo the file changes too (the route only optionally does).
+    await this.request('POST', `/api/session/${encodeURIComponent(sessionId)}/revert/stage`, { messageID, files: true });
   }
 
   /** Restore what the revert undid. */

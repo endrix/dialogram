@@ -81,7 +81,7 @@ describe('OpencodeServiceClient (opencode 2)', () => {
     await client.unrevert('ses_1');
 
     expect(calls).toEqual([
-      ['POST', '/api/session/ses_1/revert/stage', '--data', JSON.stringify({ messageID: 'msg_2' })],
+      ['POST', '/api/session/ses_1/revert/stage', '--data', JSON.stringify({ messageID: 'msg_2', files: true })],
       ['DELETE', '/api/session/ses_1/revert'],
     ]);
   });
@@ -125,17 +125,30 @@ describe('the opencode flavour and api runner, with a stand-in binary', () => {
     }
   }
 
-  it('an acp whose help offers --port is 1.x; one whose help does not is 2', async () => {
-    await withBinary('echo "  --port      port to listen on"', async (bin) => {
+  it('an acp whose help offers a --port option is 1.x; one whose help does not is 2', async () => {
+    await withBinary('echo "opencode acp"; echo "start ACP (Agent Client Protocol) server"; echo "      --port      port to listen on  [number]"', async (bin) => {
       await expect(probeOpencodeFlavour(bin, ['acp'], process.env)).resolves.toBe('own-port');
     });
-    await withBinary('echo "  --login    Run auth login instead of starting the server"', async (bin) => {
+    await withBinary('echo "  Start an Agent Client Protocol server"; echo "  --login    Run auth login instead of starting the server"', async (bin) => {
+      await expect(probeOpencodeFlavour(bin, ['acp'], process.env)).resolves.toBe('service');
+    });
+    await withBinary('echo "  Start an Agent Client Protocol server (it replaces the old --port server)"', async (bin) => {
       await expect(probeOpencodeFlavour(bin, ['acp'], process.env)).resolves.toBe('service');
     });
   });
 
-  it('a help that cannot be read counts as 2, so the chat starts without the flags', async () => {
-    await expect(probeOpencodeFlavour('/nonexistent/opencode', ['acp'], process.env)).resolves.toBe('service');
+  it('a help that says nothing about acp falls back on the version', async () => {
+    const script = (version: string) => `if [ "$1" = "--version" ]; then echo "${version}"; else exit 1; fi`;
+    await withBinary(script('1.17.3'), async (bin) => {
+      await expect(probeOpencodeFlavour(bin, ['acp'], process.env)).resolves.toBe('own-port');
+    });
+    await withBinary(script('opencode v2.4.0'), async (bin) => {
+      await expect(probeOpencodeFlavour(bin, ['acp'], process.env)).resolves.toBe('service');
+    });
+  });
+
+  it('when neither tells, undo is off and the chat starts without the flags', async () => {
+    await expect(probeOpencodeFlavour('/nonexistent/opencode', ['acp'], process.env)).resolves.toBe('none');
   });
 
   it('runs `opencode api` with its arguments and reports a failure with its stderr', async () => {
@@ -148,5 +161,11 @@ describe('the opencode flavour and api runner, with a stand-in binary', () => {
       expect(refused.code).not.toBe(0);
       expect(refused.stderr.trim()).toBe('HTTP 409 Conflict');
     });
+  });
+
+  it('a binary that cannot be started says why', async () => {
+    const result = await opencodeApiRunner('/nonexistent/opencode', process.env)(['GET', '/api/session/x']);
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain('ENOENT');
   });
 });

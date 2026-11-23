@@ -1531,13 +1531,16 @@ platform that hands it one.
   API, which the chat uses for a turn's message id, undo (revert) and redo
   (unrevert). opencode 2 takes neither flag ("Unrecognized flag: --port"),
   so the agent exited and the chat had nothing to talk to. The chat now
-  reads `opencode acp --help`: a help that offers `--port` is opencode 1.x,
-  run as before. Otherwise `opencode acp` runs with no flags, and the
+  reads `opencode acp --help`: a help that offers a `--port` option is
+  opencode 1.x, run as before; one that cannot be read falls back on
+  `opencode --version`, and when neither tells, the chat starts without the
+  flags and leaves undo off. Otherwise `opencode acp` runs with no flags, and the
   HTTP-only calls go through `opencode api` to the user's opencode service,
   which shares the sessions' storage and asks for its password; `opencode
   api` signs in by itself. The routes are opencode 2's: the user messages
   (`/api/session/{id}/message?type=user`, followed page by page), a staged
-  revert (`revert/stage`; the next prompt commits it, as before) and its
+  revert with its files (`revert/stage`, `files: true`; the next prompt
+  commits it, as before) and its
   clearing for redo (`DELETE …/revert`). opencode 2 undoes only the files
   under the session's folder (the diagram document's); a file the agent
   wrote outside it stays as it is after an undo.

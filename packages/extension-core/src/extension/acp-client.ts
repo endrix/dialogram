@@ -409,14 +409,18 @@ export class ACPClientService extends EventEmitter {
       // opencode 2 takes no --port and keeps its sessions in the user's
       // background service, reached through `opencode api`. Without one
       // they stay off.
-      if (spec.httpApi && (await this.probeOpencode(command, args, env)) === "own-port") {
+      const flavour = spec.httpApi ? await this.probeOpencode(command, args, env) : "none";
+      if (flavour === "own-port") {
         const httpPort = await this.findFreePort();
         this.http = new OpencodeHttpClient(`http://127.0.0.1:${httpPort}`);
         args.push("--hostname", "127.0.0.1", "--port", String(httpPort));
-      } else if (spec.httpApi) {
+      } else if (flavour === "service") {
         this.http = new OpencodeServiceClient(opencodeApiRunner(command, env, cwd));
       } else {
         this.http = null;
+      }
+      if (spec.httpApi) {
+        console.info(`[acp] ${command}: HTTP API ${flavour === "own-port" ? "on its own port (opencode 1.x)" : flavour === "service" ? "through `opencode api` (opencode 2)" : "unknown, undo off"}`);
       }
 
       // Spawn the agent subprocess

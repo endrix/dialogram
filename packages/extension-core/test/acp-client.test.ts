@@ -202,6 +202,15 @@ describe('ACPClientService', () => {
       expect((client as any).http?.constructor?.name).toBe('OpencodeServiceClient');
     });
 
+    it('starts an opencode it cannot tell without --port, and leaves undo off', async () => {
+      client = new ACPClientService(async () => 'none');
+      await client.start('/test/workspace');
+
+      expect(spawn).toHaveBeenCalledWith(expect.stringContaining('opencode'), ['acp'], expect.anything());
+      await expect(client.getMessagesWithIds('s1')).resolves.toEqual([]);
+      await expect(client.getRevertState('s1')).resolves.toBe(false);
+    });
+
     it('asks no agent but opencode which flavour it is', async () => {
       const probe = vi.fn(async () => 'own-port' as const);
       client = new ACPClientService(probe);
