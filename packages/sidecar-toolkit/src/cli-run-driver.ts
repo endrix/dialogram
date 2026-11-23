@@ -1139,7 +1139,8 @@ export class CliRunDriver {
 
         const isPython = sourceUri.fsPath.endsWith('.py');
         // The run root and the CLI by the rules `runCli` starts a product's CLI by too (`cli-invocation.ts`).
-        const cli = await resolveCliInvocation(this.config, sourceUri, isPython);
+        const leftOut: string[] = [];
+        const cli = await resolveCliInvocation(this.config, sourceUri, isPython, message => leftOut.push(message));
         if (!cli) {
             const message = noCliCommandMessage(this.config);
             vscode.window.showErrorMessage(message);
@@ -1396,6 +1397,9 @@ export class CliRunDriver {
                 output.appendLine(`[wf-lang] cwd=${cli.cwd}`);
                 for (const [name, value] of Object.entries(cli.variables ?? {})) {
                     output.appendLine(`[wf-lang] ${name}=${value}`);
+                }
+                for (const message of leftOut) {
+                    output.appendLine(`[wf-lang] ${message}`);
                 }
                 output.appendLine(`[wf-lang] ${cli.cmd} ${cliArgs.map(a => JSON.stringify(a)).join(' ')}`);
                 output.appendLine('');

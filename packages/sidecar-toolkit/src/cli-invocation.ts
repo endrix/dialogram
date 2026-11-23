@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import {
     cliProcessEnv,
     getCliInvocation,
+    getCliVariables,
     getGraphLoadTimeoutMs,
     type CliCommandConfig,
     type SidecarRuntimeConfig
@@ -21,19 +22,23 @@ import { describeChildFailure, runChildProcess } from './run-child-process.js';
  * the file, its default when blank, `-m <module>` when the command is a
  * Python interpreter), the module form for a Python source only, from the
  * run root (`resolveRunRoot`), with the variables the product's settings give
- * it (`cliEnvironment`, present when one does). Undefined when the setting and
- * the profile's default are both blank, found before the run root is looked for.
+ * it there (`getCliVariables`, present when one does; `leftOut` is told of an
+ * entry left out). Undefined when the setting and the profile's default are
+ * both blank, found before the run root is looked for.
  */
 export async function resolveCliInvocation(
     config: CliCommandConfig,
     forUri: vscode.Uri,
-    isPython: boolean = forUri.fsPath.endsWith('.py')
+    isPython: boolean = forUri.fsPath.endsWith('.py'),
+    leftOut?: (message: string) => void
 ): Promise<{ cmd: string; argsPrefix: string[]; cwd: string; variables?: Record<string, string> } | undefined> {
-    const { cmd, argsPrefix, variables } = getCliInvocation(config, vscode, forUri);
+    const { cmd, argsPrefix } = getCliInvocation(config, vscode, forUri);
     if (cmd.trim() === '') {
         return undefined;
     }
-    return { cmd, argsPrefix: isPython ? argsPrefix : [], cwd: await resolveRunRoot(forUri), ...(variables ? { variables } : {}) };
+    const cwd = await resolveRunRoot(forUri);
+    const variables = getCliVariables(config, vscode, forUri, cwd, leftOut);
+    return { cmd, argsPrefix: isPython ? argsPrefix : [], cwd, ...(Object.keys(variables).length > 0 ? { variables } : {}) };
 }
 
 /** What a run says when it has no command to start. */

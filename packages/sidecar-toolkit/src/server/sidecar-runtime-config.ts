@@ -262,11 +262,18 @@ export const SIDECAR_RUNTIME_CONFIG = Symbol('SidecarRuntimeConfig');
  * An environment variable the product's CLI is started with, from a setting
  * under the profile's namespace that lists folders: a runtime's search path,
  * for instance. Each folder is read as VS Code reads a path in its settings:
- * `~` and `${userHome}` are the home folder; `${workspaceFolder}`, and a
- * relative folder, start at the file's workspace folder, or at the file's own
- * folder when it is in none. The folders, joined by the platform's path list
- * separator (`:`, `;` on Windows), replace the variable's value in this
- * extension's environment; an empty list leaves that value as it is.
+ * `~` and `${userHome}` are the home folder, `${workspaceFolder:name}` the
+ * open folder of that name, `${env:NAME}` a variable of this extension's
+ * environment; `${workspaceFolder}`, and a relative folder, start at the
+ * folder every start of the CLI is in, the run root (`resolveRunRoot`: the
+ * file's workspace folder, or its own folder when it is in none). The
+ * folders, joined by the platform's path list separator (`:`, `;` on
+ * Windows), replace the variable's value in this extension's environment; an
+ * empty list leaves that value as it is.
+ *
+ * A workspace's own settings then reach the CLI's environment: a product
+ * whose extension runs in an untrusted workspace lists the setting in its
+ * `restrictedConfigurations`, so that only the user's value is read there.
  */
 export interface CliFolderListVariable {
     /** The variable's name. */
@@ -358,10 +365,10 @@ export function getGraphLoadTimeoutMs(
         : DEFAULT_GRAPH_LOAD_TIMEOUT_MS;
 }
 
-/** Resolve the CLI command from VS Code settings (falling back to the default). */
 /** The fields the CLI's start is resolved from; a run-driver config has them too. */
 export type CliCommandConfig = Pick<SidecarRuntimeConfig, 'settingsNamespace' | 'cliCommandSettingKey' | 'cliCommandDefault' | 'cliPythonModule' | 'cliEnvironment'>;
 
+/** Resolve the CLI command from VS Code settings (falling back to the default). */
 export function getCliCommand(
     cfg: CliCommandConfig,
     vscodeModule: typeof import('vscode'),
@@ -372,51 +379,47 @@ export function getCliCommand(
     return toNonEmptyString(configured, cfg.cliCommandDefault);
 }
 
-/**
- * The CLI as it is started for `scopeUri`: the command, the arguments before
- * the caller's (`-m <module>` when the command is a Python interpreter), and
- * the variables the product's settings give it (`cliEnvironment`), present
- * only when a setting lists a folder. Start it with {@link cliProcessEnv} of
- * those variables.
- */
+/** Resolve the CLI command + args-prefix (e.g. `python -m <module>` vs a bare binary). */
 export function getCliInvocation(
     cfg: CliCommandConfig,
     vscodeModule: typeof import('vscode'),
     scopeUri?: import('vscode').Uri
-): CliInvocation {
+): { cmd: string; argsPrefix: string[] } {
     const cmd = getCliCommand(cfg, vscodeModule, scopeUri);
-    const argsPrefix = cfg.cliPythonModule && isPythonInterpreterCommand(cmd) ? ['-m', cfg.cliPythonModule] : [];
-    const variables = getCliVariables(cfg, vscodeModule, scopeUri);
-    return Object.keys(variables).length > 0 ? { cmd, argsPrefix, variables } : { cmd, argsPrefix };
-}
-
-/** See {@link getCliInvocation}. */
-export interface CliInvocation {
-    cmd: string;
-    argsPrefix: string[];
-    /** The variables the product's settings give the CLI; absent when none does. */
-    variables?: Record<string, string>;
+    if (cfg.cliPythonModule && isPythonInterpreterCommand(cmd)) {
+        return { cmd, argsPrefix: ['-m', cfg.cliPythonModule] };
+    }
+    return { cmd, argsPrefix: [] };
 }
 
 /**
  * The variables the product's settings give the CLI started for `scopeUri`
- * (`cliEnvironment`): one per setting that lists at least one folder.
+ * in `runRoot` (`cliEnvironment`): one per setting that lists at least one
+ * folder. `runRoot` is the folder the start's working directory is
+ * (`resolveRunRoot`), so a relative folder is the one the CLI itself would
+ * read. An entry that cannot be read is left out, and `leftOut` is told why.
  */
 export function getCliVariables(
     cfg: Pick<CliCommandConfig, 'settingsNamespace' | 'cliEnvironment'>,
     vscodeModule: typeof import('vscode'),
-    scopeUri?: import('vscode').Uri
+    scopeUri: import('vscode').Uri | undefined,
+    runRoot: string | undefined,
+    leftOut?: (message: string) => void
 ): Record<string, string> {
     const variables: Record<string, string> = {};
     if (!cfg.cliEnvironment || cfg.cliEnvironment.length === 0) {
         return variables;
     }
     const config = vscodeModule.workspace.getConfiguration(cfg.settingsNamespace, scopeUri);
-    const base = scopeUri
-        ? vscodeModule.workspace.getWorkspaceFolder(scopeUri)?.uri.fsPath ?? path.dirname(scopeUri.fsPath)
-        : undefined;
+    const context: FolderListContext = {
+        base: runRoot,
+        home: os.homedir(),
+        folderNamed: name => vscodeModule.workspace.workspaceFolders?.find(folder => folder.name === name)?.uri.fsPath,
+        env: process.env
+    };
     for (const { variable, folderListSettingKey } of cfg.cliEnvironment) {
-        const folders = resolveFolderList(config.get<unknown>(folderListSettingKey), base, os.homedir());
+        const folders = resolveFolderList(config.get<unknown>(folderListSettingKey), context, entry =>
+            leftOut?.(`${cfg.settingsNamespace}.${folderListSettingKey}: '${entry}' is left out: it names a variable, a folder or another user's home that is not known here`));
         if (folders.length > 0) {
             variables[variable] = folders.join(path.delimiter);
         }
@@ -424,44 +427,90 @@ export function getCliVariables(
     return variables;
 }
 
+/** What a folder-list entry is read against ({@link resolveFolderList}). */
+export interface FolderListContext {
+    /** Where a relative folder and `${workspaceFolder}` start: the run root. None: kept as written, and `${workspaceFolder}` unknown. */
+    base: string | undefined;
+    /** `~` and `${userHome}`. */
+    home: string;
+    /** `${workspaceFolder:name}`: the open workspace folder of that name. */
+    folderNamed(name: string): string | undefined;
+    /** `${env:NAME}`; an unset one is empty, as VS Code reads it. */
+    env: NodeJS.ProcessEnv;
+}
+
 /**
  * The folders a folder-list setting names, read as {@link CliFolderListVariable}
- * says, from `base` (the workspace folder, or the file's folder). Blank and
- * non-text entries are skipped, and so is an entry naming `${workspaceFolder}`
- * when there is no `base`; another relative one is then kept as written, for
- * the CLI to read from the folder it starts in. A lone string is a list of one.
+ * says. Blank and non-text entries are skipped; an entry naming another
+ * user's home (`~name`), a variable other than `${userHome}`,
+ * `${workspaceFolder}`, `${workspaceFolder:name}` and `${env:NAME}`, or a
+ * folder that is not known (no base, no open folder of that name), is left
+ * out, and `leftOut` is given it. A lone string is a list of one.
  */
-export function resolveFolderList(value: unknown, base: string | undefined, home: string): string[] {
+export function resolveFolderList(value: unknown, context: FolderListContext, leftOut?: (entry: string) => void): string[] {
     const entries: unknown[] = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
     const folders: string[] = [];
     for (const entry of entries) {
-        if (typeof entry !== 'string') {
+        if (typeof entry !== 'string' || entry.trim() === '') {
             continue;
         }
-        let folder = entry.trim().replace(/\$\{userHome\}/g, () => home);
+        let folder = entry.trim();
         if (folder === '~' || folder.startsWith('~/') || folder.startsWith('~\\')) {
-            folder = home + folder.slice(1);
+            folder = context.home + folder.slice(1);
+        } else if (folder.startsWith('~')) {
+            leftOut?.(entry);
+            continue;
         }
-        if (folder.includes('${workspaceFolder}')) {
-            if (base === undefined) {
-                continue;
+        let unknown = false;
+        folder = folder.replace(/\$\{([^}]*)\}/g, (whole, name: string) => {
+            const value = name === 'userHome' ? context.home
+                : name === 'workspaceFolder' ? context.base
+                : name.startsWith('workspaceFolder:') ? context.folderNamed(name.slice('workspaceFolder:'.length))
+                : name.startsWith('env:') ? context.env[name.slice('env:'.length)] ?? ''
+                : undefined;
+            if (value === undefined) {
+                unknown = true;
+                return whole;
             }
-            folder = folder.replace(/\$\{workspaceFolder\}/g, () => base);
+            return value;
+        });
+        if (unknown) {
+            leftOut?.(entry);
+            continue;
         }
         if (folder === '') {
             continue;
         }
-        folders.push(path.isAbsolute(folder) ? path.resolve(folder) : base !== undefined ? path.resolve(base, folder) : folder);
+        folders.push(path.isAbsolute(folder) ? path.resolve(folder)
+            : context.base !== undefined ? path.resolve(context.base, folder) : folder);
     }
     return folders;
 }
 
 /**
- * This extension's environment with `variables` over it, for a CLI start;
- * undefined, so the environment is inherited as it is, when there are none.
+ * `environment` (this extension's) with `variables` over it, for a CLI
+ * start; undefined, so the environment is inherited as it is, when there are
+ * none. On Windows, where a variable's name is read whatever its case, a
+ * variable replaces the one of any case it had.
  */
-export function cliProcessEnv(variables: Readonly<Record<string, string>> | undefined): NodeJS.ProcessEnv | undefined {
-    return variables && Object.keys(variables).length > 0 ? { ...process.env, ...variables } : undefined;
+export function cliProcessEnv(
+    variables: Readonly<Record<string, string>> | undefined,
+    environment: NodeJS.ProcessEnv = process.env,
+    platform: NodeJS.Platform = process.platform
+): NodeJS.ProcessEnv | undefined {
+    if (!variables || Object.keys(variables).length === 0) {
+        return undefined;
+    }
+    const env: NodeJS.ProcessEnv = { ...environment };
+    if (platform === 'win32') {
+        const names = new Set(Object.keys(variables).map(name => name.toLowerCase()));
+        for (const key of Object.keys(env)) {
+            if (names.has(key.toLowerCase())) {
+                delete env[key];
+            }
+        }
+    }
+    return Object.assign(env, variables);
 }
 
 /**
@@ -529,7 +578,7 @@ export class SidecarRuntimeService {
     getCliInvocation(
         vscodeModule: typeof import('vscode'),
         scopeUri?: import('vscode').Uri
-    ): CliInvocation {
+    ): { cmd: string; argsPrefix: string[] } {
         return getCliInvocation(this.cfg, vscodeModule, scopeUri);
     }
 }

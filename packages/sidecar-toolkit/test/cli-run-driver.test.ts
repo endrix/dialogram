@@ -222,7 +222,7 @@ describe('CliRunDriver: where a run starts', () => {
         const file = path.join(folder, 'pipeline.py');
         fs.writeFileSync(file, '# fixture\n', 'utf8');
         openWorkspaceFolders(folder);
-        let roots: string[] = ['skills', path.resolve('/opt/skills')];
+        let roots: string[] = ['skills', path.resolve('/opt/skills'), '${nope}/skills'];
         Object.assign(vscode.workspace, {
             getConfiguration: () => ({ get: <T>(key: string, fallback?: T) => (key === 'roots' ? roots as T : fallback) })
         });
@@ -238,6 +238,8 @@ describe('CliRunDriver: where a run starts', () => {
         expect(spawnCalls[0].env?.X_ROOTS).toBe(value);
         expect(spawnCalls[0].env?.PATH).toBe(process.env.PATH);
         expect(host.appended).toContain(`[wf-lang] X_ROOTS=${value}`);
+        // An entry it cannot read is left out of the variable, and the run says so.
+        expect(host.appended).toContainEqual(expect.stringMatching(/^\[wf-lang\] wfLang\.roots: '\$\{nope\}\/skills' is left out/));
 
         // Nothing listed: the run inherits the extension's environment as it is.
         roots = [];

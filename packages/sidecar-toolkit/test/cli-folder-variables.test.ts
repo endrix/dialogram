@@ -1,7 +1,8 @@
 /**
  * The variables a product's settings give its CLI (`cliEnvironment`): a
- * setting that lists folders, read as VS Code reads a path, joined into one
- * variable, and given to every start of the CLI (`sidecar-runtime-config.ts`).
+ * setting that lists folders, read as VS Code reads a path, from the folder
+ * the CLI starts in (the run root), joined into one variable, and given to
+ * every start of the CLI (`sidecar-runtime-config.ts`).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type * as cp from 'node:child_process';
@@ -12,11 +13,11 @@ import { URI } from 'vscode-uri';
 import { Uri, openWorkspaceFolders, resetWorkspace, workspace } from './vscode-mock';
 import {
     cliProcessEnv,
-    getCliInvocation,
     getCliVariables,
-    resolveFolderList
+    resolveFolderList,
+    type FolderListContext
 } from '../src/server/sidecar-runtime-config';
-import { runCli } from '../src/cli-invocation';
+import { resolveCliInvocation, runCli } from '../src/cli-invocation';
 import { runCliJson } from '../src/cli-status-source';
 import { exportGraphFromCli } from '../src/cli-graph-export';
 import { spawnWorkflowProcess } from '../src/process-control';
@@ -41,7 +42,7 @@ function tempDir(prefix: string): string {
     return dir;
 }
 
-/** Settings where `key` of the namespace `x` is `value`, and each other key its default; what was asked, kept. */
+/** Settings where each key of `values` is that value, and each other key its default; what was asked, kept. */
 function settings(values: Record<string, unknown>): Array<{ section?: string; scope?: unknown }> {
     const asked: Array<{ section?: string; scope?: unknown }> = [];
     Object.assign(workspace, {
@@ -64,20 +65,32 @@ const config = {
 };
 
 describe('a folder-list setting', () => {
-    it('reads each folder as a VS Code setting path, from the base', () => {
-        const base = path.resolve('/work/project');
+    const base = path.resolve('/work/project');
+    const context = (more: Partial<FolderListContext> = {}): FolderListContext => ({
+        base,
+        home: HOME,
+        folderNamed: name => (name === 'shared' ? path.resolve('/work/shared') : undefined),
+        env: { SKILLS_HOME: path.resolve('/opt/team') },
+        ...more
+    });
+
+    it('reads each folder as a VS Code setting path, a relative one from the base', () => {
         expect(resolveFolderList([
             'skills',
             './shared/../shared/skills/',
             '${workspaceFolder}/team',
+            '${workspaceFolder:shared}/skills',
+            '${env:SKILLS_HOME}/skills',
             '~',
             '~/my-skills',
             '${userHome}/more',
             path.resolve('/opt/skills/./x/..')
-        ], base, HOME)).toEqual([
+        ], context())).toEqual([
             path.join(base, 'skills'),
             path.join(base, 'shared', 'skills'),
             path.join(base, 'team'),
+            path.resolve('/work/shared/skills'),
+            path.resolve('/opt/team/skills'),
             HOME,
             path.join(HOME, 'my-skills'),
             path.join(HOME, 'more'),
@@ -86,62 +99,87 @@ describe('a folder-list setting', () => {
     });
 
     it('skips blank and non-text entries, and takes a lone string as a list of one', () => {
-        const base = path.resolve('/work');
-        expect(resolveFolderList(['', '   ', 3, null, ' a '], base, HOME)).toEqual([path.join(base, 'a')]);
-        expect(resolveFolderList('a', base, HOME)).toEqual([path.join(base, 'a')]);
-        expect(resolveFolderList(undefined, base, HOME)).toEqual([]);
-        expect(resolveFolderList({ a: 1 }, base, HOME)).toEqual([]);
+        expect(resolveFolderList(['', '   ', 3, null, ' a '], context())).toEqual([path.join(base, 'a')]);
+        expect(resolveFolderList('a', context())).toEqual([path.join(base, 'a')]);
+        expect(resolveFolderList(undefined, context())).toEqual([]);
+        expect(resolveFolderList({ a: 1 }, context())).toEqual([]);
+        // An unset variable is empty, as VS Code reads it: nothing is left to name.
+        expect(resolveFolderList(['${env:NOT_SET_HERE}'], context())).toEqual([]);
     });
 
-    it('with no base, leaves a relative folder for the CLI and drops one naming the workspace folder', () => {
-        expect(resolveFolderList(['skills', '${workspaceFolder}/team', '~/s'], undefined, HOME))
+    it('leaves out, saying so, what it cannot read: another user’s home, an unknown variable or folder', () => {
+        const leftOut: string[] = [];
+        expect(resolveFolderList(
+            ['~nobody/skills', '${config:x.y}/skills', '${workspaceFolder:nope}/skills', 'kept'],
+            context(),
+            entry => leftOut.push(entry)
+        )).toEqual([path.join(base, 'kept')]);
+        expect(leftOut).toEqual(['~nobody/skills', '${config:x.y}/skills', '${workspaceFolder:nope}/skills']);
+    });
+
+    it('with no base, keeps a relative folder for the CLI and leaves out one naming the workspace folder', () => {
+        const leftOut: string[] = [];
+        expect(resolveFolderList(['skills', '${workspaceFolder}/team', '~/s'], context({ base: undefined }), entry => leftOut.push(entry)))
             .toEqual(['skills', path.join(HOME, 's')]);
+        expect(leftOut).toEqual(['${workspaceFolder}/team']);
     });
 });
 
 describe('the variables a CLI start is given', () => {
     it('are none, and no setting is read, when the profile declares none', () => {
         const asked = settings({ roots: ['skills'] });
-        expect(getCliVariables({ settingsNamespace: 'x' }, vscode, Uri.file('/w/a.py') as any)).toEqual({});
+        expect(getCliVariables({ settingsNamespace: 'x' }, vscode, Uri.file('/w/a.py') as any, '/w')).toEqual({});
         expect(asked).toEqual([]);
     });
 
-    it('join the folders of the file’s folder setting, from its workspace folder, or its own folder outside every folder', () => {
-        const folder = path.resolve('/work/project');
-        openWorkspaceFolders(folder);
-        const asked = settings({ roots: ['skills', path.resolve('/opt/skills')] });
-        const inFolder = Uri.file(path.join(folder, 'flows', 'main.py'));
-        expect(getCliVariables(config, vscode, inFolder as any))
-            .toEqual({ X_ROOTS: [path.join(folder, 'skills'), path.resolve('/opt/skills')].join(path.delimiter) });
+    it('join the folders of the file’s setting, a relative one from the run root, naming the setting of one left out', () => {
+        const asked = settings({ roots: ['skills', path.resolve('/opt/skills'), '${nope}'] });
+        const file = Uri.file(path.resolve('/work/flows/main.py'));
+        const leftOut: string[] = [];
+        expect(getCliVariables(config, vscode, file as any, path.resolve('/work'), message => leftOut.push(message)))
+            .toEqual({ X_ROOTS: [path.resolve('/work/skills'), path.resolve('/opt/skills')].join(path.delimiter) });
         // Read under the product's namespace, scoped to the file: a folder's own setting wins.
-        expect(asked.at(-1)).toEqual({ section: 'x', scope: inFolder });
-        expect(getCliVariables(config, vscode, Uri.file(path.resolve('/loose/main.py')) as any))
-            .toEqual({ X_ROOTS: [path.resolve('/loose/skills'), path.resolve('/opt/skills')].join(path.delimiter) });
+        expect(asked).toEqual([{ section: 'x', scope: file }]);
+        expect(leftOut).toEqual([expect.stringMatching(/^x\.roots: '\$\{nope\}' is left out/)]);
     });
 
     it('leave out a variable whose setting lists nothing', () => {
         settings({ roots: [] });
-        expect(getCliVariables(config, vscode, Uri.file('/w/a.py') as any)).toEqual({});
+        expect(getCliVariables(config, vscode, Uri.file('/w/a.py') as any, '/w')).toEqual({});
         settings({});
-        expect(getCliVariables(config, vscode, Uri.file('/w/a.py') as any)).toEqual({});
+        expect(getCliVariables(config, vscode, Uri.file('/w/a.py') as any, '/w')).toEqual({});
     });
 
-    it('come with the invocation only when a setting gives one', () => {
-        settings({});
-        expect(getCliInvocation(config, vscode, Uri.file('/w/a.py') as any)).toEqual({ cmd: 'x-cli', argsPrefix: [] });
-        settings({ roots: [path.resolve('/opt/skills')] });
-        expect(getCliInvocation(config, vscode, Uri.file('/w/a.py') as any))
-            .toEqual({ cmd: 'x-cli', argsPrefix: [], variables: { X_ROOTS: path.resolve('/opt/skills') } });
+    it('are read from the folder the CLI starts in, also for a file named through a link to the workspace folder', async () => {
+        const root = tempDir('cli-vars-link-');
+        const work = path.join(root, 'work');
+        fs.mkdirSync(path.join(work, 'flows'), { recursive: true });
+        fs.writeFileSync(path.join(work, 'flows', 'main.py'), '');
+        try {
+            fs.symlinkSync(work, path.join(root, 'link-to-work'), 'dir');
+        } catch {
+            return; // no symlink privilege (Windows)
+        }
+        openWorkspaceFolders(work);
+        settings({ roots: ['skills'] });
+        // VS Code says the file is in no folder; the run root follows the link.
+        const cli = await resolveCliInvocation(config, Uri.file(path.join(root, 'link-to-work', 'flows', 'main.py')) as any);
+        expect(cli).toMatchObject({ cwd: work, variables: { X_ROOTS: path.join(work, 'skills') } });
     });
 
     it('go over this extension’s environment, replacing the variable it had; none leaves the environment inherited', () => {
-        process.env.X_ROOTS = 'inherited';
         expect(cliProcessEnv(undefined)).toBeUndefined();
         expect(cliProcessEnv({})).toBeUndefined();
-        const env = cliProcessEnv({ X_ROOTS: '/a' });
-        expect(env?.X_ROOTS).toBe('/a');
-        expect(env?.PATH).toBe(process.env.PATH);
-        expect(process.env.X_ROOTS).toBe('inherited');
+        const inherited = { PATH: '/bin', X_ROOTS: 'inherited' };
+        expect(cliProcessEnv({ X_ROOTS: '/a' }, inherited, 'linux')).toEqual({ PATH: '/bin', X_ROOTS: '/a' });
+        expect(inherited.X_ROOTS).toBe('inherited');
+    });
+
+    it('on Windows replace the variable of any case, which Windows reads as the same', () => {
+        const inherited = { Path: 'C:\\bin', x_roots: 'C:\\old' };
+        expect(cliProcessEnv({ X_ROOTS: 'C:\\new' }, inherited, 'win32')).toEqual({ Path: 'C:\\bin', X_ROOTS: 'C:\\new' });
+        // Elsewhere the two names are two variables.
+        expect(cliProcessEnv({ X_ROOTS: '/new' }, { x_roots: '/old' }, 'linux')).toEqual({ x_roots: '/old', X_ROOTS: '/new' });
     });
 });
 
@@ -184,7 +222,7 @@ describe('every start of the CLI', () => {
         expect(exported).toMatchObject({ ok: true, response: { diagnostic: { graph: { id: '/a' } } } });
     });
 
-    it('the diagram’s plan and the hierarchy export are started with them', async () => {
+    it('the diagram’s plan is started with them, from its run root, and planned again when they change; so is the hierarchy export', async () => {
         const dir = tempDir('cli-vars-plan-');
         const top = path.join(dir, 'top.py');
         fs.writeFileSync(top, '@workflow\ndef top():\n    pass\n');
@@ -196,10 +234,20 @@ describe('every start of the CLI', () => {
             cliGraphArgs: () => [],
             cliHierarchyArgs: () => []
         } as any, fallback);
-        src.getCliInvocation = () => ({ cmd: process.execPath, argsPrefix: [plan], variables: { X_ROOTS: 'given' } });
+        src.getCliInvocation = () => ({ cmd: process.execPath, argsPrefix: [plan] });
+        let roots = 'first';
+        const asked: Array<{ file: string; cwd: string }> = [];
+        src.cliVariables = (file: string, cwd: string) => {
+            asked.push({ file, cwd });
+            return { X_ROOTS: roots };
+        };
+        const load = async () => (await src.getGraph(URI.file(top).toString(), { requestOptions: { networkName: 'top' } })).graph.id;
 
-        const doc = await src.getGraph(URI.file(top).toString(), { requestOptions: { networkName: 'top' } });
-        expect(doc.graph.id).toBe('wf:given');
-        expect(JSON.parse(await src.exportHierarchy(top, 'top', dir)).graph.id).toBe('wf:given');
+        expect(await load()).toBe('wf:first');
+        expect(asked[0]).toEqual({ file: top, cwd: dir });
+        roots = 'second';
+        // A plan kept from other variables is not this one.
+        expect(await load()).toBe('wf:second');
+        expect(JSON.parse(await src.exportHierarchy(top, 'top', dir, { X_ROOTS: 'given' })).graph.id).toBe('wf:given');
     });
 });

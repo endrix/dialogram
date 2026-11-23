@@ -19,7 +19,7 @@ export interface CliGraphExportOptions {
     /** The CLI command and the arguments that precede the plan's own (`-m <module>`, say). */
     cmd: string;
     argsPrefix: string[];
-    /** The variables the product's settings give the CLI (`getCliInvocation`). */
+    /** The variables the product's settings give the CLI in `cwd` (`getCliVariables`). */
     variables?: Record<string, string>;
     /** The plan argv for a file, as the profile declares it (`cliGraphArgs`). */
     cliGraphArgs: (file: string, requestedWorkflow?: string) => string[];

@@ -18,6 +18,7 @@ import { createSourceReferenceContext } from './chat-source-reference.js';
 import { createRegistryChatTools, type RegistryChatTool } from './registry-tools.js';
 import { RESUME_TOOL, RUN_TOOL } from './run-failure.js';
 import { getCliInvocation,
+    getCliVariables,
     getGraphLoadTimeoutMs,
     getSidecarCommand,
     type SidecarRuntimeConfig,
@@ -649,12 +650,14 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
         ? async (file: string, args: Record<string, unknown>) => {
             const scopeUri = vscode.Uri.file(file);
             const scoped = args[input.scopeArgKey];
+            const cwd = await resolveRunRoot(scopeUri);
             return exportGraphFromCli(file, {
                 ...getCliInvocation(runtimeConfig, vscode, scopeUri),
+                variables: getCliVariables(runtimeConfig, vscode, scopeUri, cwd),
                 cliGraphArgs,
                 networkName: typeof scoped === 'string' ? scoped : undefined,
                 timeoutMs: getGraphLoadTimeoutMs(runtimeConfig, vscode, scopeUri),
-                cwd: await resolveRunRoot(scopeUri)
+                cwd
             });
         }
         : undefined;
