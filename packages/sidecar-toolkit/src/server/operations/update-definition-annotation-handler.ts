@@ -75,6 +75,8 @@ export class UpdateDefinitionAnnotationOperationHandler extends OperationHandler
         // module is declared there, not in the diagram's.
         const fileUri = entityFileOf(this.modelState, sourceUri, { entityType: defName, elementId: operation.elementId });
         const removing = operation.action === 'remove';
+        // Removals not sent, said once the rest is written.
+        let kept: string[] | undefined;
         return producerWriteCommand({
             label: (removing ? 'Remove Annotation' : 'Update Annotation') + this.sidecar.undoLabelSuffix(),
             sidecar: this.sidecar,
@@ -93,19 +95,24 @@ export class UpdateDefinitionAnnotationOperationHandler extends OperationHandler
                 } else if (operation.argUpdates || operation.argRemovals?.length) {
                     // Merge mode: only update listed args, preserve everything else
                     sidecarOp = this.sidecar.sidecarOp('mergeDefinitionAnnotationArgs');
-                    const argUpdates = Object.fromEntries(Object.entries(operation.argUpdates ?? {})
-                        .map(([key, value]) => [key, normalizePythonLiteralNames(value)]));
+                    // The values as the editor wrote them: the producer spells its
+                    // own literals, and only it knows its strings.
+                    const argUpdates = operation.argUpdates ?? {};
                     let argRemovals = operation.argRemovals?.length ? operation.argRemovals : undefined;
+                    kept = undefined;
                     // A producer that predates removals refuses an argument it does
                     // not know, the updates with it: it is sent them only when it
                     // says it takes them, and else the cleared ones stay.
                     if (argRemovals && !(await this.sidecar.hasFeature(sourceUri, MERGE_ARG_REMOVALS))) {
-                        void vscode.window.showWarningMessage(
-                            `${argRemovals.map(key => `'${key}'`).join(', ')} stay${argRemovals.length === 1 ? 's' : ''} in @${operation.annotationName} of '${defName}': its producer does not take arguments out.`
-                        );
+                        kept = argRemovals;
                         argRemovals = undefined;
                     }
                     if (Object.keys(argUpdates).length === 0 && !argRemovals) {
+                        if (kept) {
+                            void vscode.window.showWarningMessage(
+                                `${kept.map(key => `'${key}'`).join(', ')} stay${kept.length === 1 ? 's' : ''} in @${operation.annotationName} of '${defName}': its producer has not said it takes arguments out.`
+                            );
+                        }
                         return undefined;
                     }
                     sidecarArgs = {
@@ -123,6 +130,13 @@ export class UpdateDefinitionAnnotationOperationHandler extends OperationHandler
                     };
                 }
                 return { fileUri, payload: { op: sidecarOp, args: sidecarArgs } };
+            },
+            afterApply: phase => {
+                if (phase === 'execute' && kept) {
+                    void vscode.window.showWarningMessage(
+                        `${kept.map(key => `'${key}'`).join(', ')} stay${kept.length === 1 ? 's' : ''} in @${operation.annotationName} of '${defName}': its producer has not said it takes arguments out.`
+                    );
+                }
             }
         });
     }

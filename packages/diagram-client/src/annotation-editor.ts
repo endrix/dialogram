@@ -48,9 +48,12 @@ export interface AnnotationEditor {
      *   fills in while drawing are not written unless changed; a value it
      *   sets later (after a pick, an answer, a timer) counts as changed.
      * - `argRemovals`: the arguments the producer gave that the card still
-     *   showed with a value after drawing, and no longer has. Sent only when
-     *   there is one, and passed on only to a producer that declares
-     *   `features.mergeArgRemovals`; another keeps them, and says so.
+     *   showed with a value after drawing, and no longer has. An argument the
+     *   editor takes out of the map while drawing is one it does not manage:
+     *   Save never removes it, so an editor keeps in the map every argument
+     *   it shows. Sent only when there is one, and passed on only to a
+     *   producer that declares `features.mergeArgRemovals`; another keeps
+     *   them, and says so.
      *
      * A Save that changed nothing sends nothing, and its button says so. A
      * save the editor makes while drawing compares with what was loaded.

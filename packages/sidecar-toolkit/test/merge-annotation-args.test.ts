@@ -17,7 +17,8 @@ import {
  */
 async function mergeSave(
     extra: Partial<UpdateDefinitionAnnotationOperation.Operation>,
-    takesRemovals = true
+    takesRemovals = true,
+    writes = true
 ): Promise<{ payload: any; warnings: string[] }> {
     const handler = new UpdateDefinitionAnnotationOperationHandler();
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'dialogram-merge-args-'));
@@ -34,7 +35,7 @@ async function mergeSave(
     const warnings: string[] = [];
     windowAny.showWarningMessage = async (message: string) => { warnings.push(message); };
     workspaceAny.openTextDocument = async () => ({ uri: { fsPath: file, toString: () => sourceUri }, getText: () => text });
-    workspaceAny.applyEdit = async () => false;
+    workspaceAny.applyEdit = async () => true;
     try {
         (handler as any).modelState = {
             sourceUri,
@@ -46,6 +47,9 @@ async function mergeSave(
             hasFeature: async (_uri: string, feature: string) => takesRemovals && feature === MERGE_ARG_REMOVALS,
             sendSidecarOpDetailed: async (_uri: string, payload: any) => {
                 calls.push(payload);
+                if (!writes) {
+                    return { ok: false };
+                }
                 text = '@agent(prompt="y")\nclass A:\n    pass\n';
                 await fs.writeFile(file, text);
                 return { ok: true };
@@ -84,10 +88,15 @@ describe('a merging annotation Save', () => {
         }
     });
 
-    it('keeps the removals from a producer that does not take them, sends the updates, and says so', async () => {
+    it('keeps the removals from a producer that has not said it takes them, sends the updates, and says so once written', async () => {
         const { payload, warnings } = await mergeSave({ argRemovals: ['mode'] }, false);
         expect(payload.args).toEqual({ entityType: 'A', annotationName: 'agent', argUpdates: { prompt: '"y"' } });
-        expect(warnings).toEqual([`'mode' stays in @agent of 'A': its producer does not take arguments out.`]);
+        expect(warnings).toEqual([`'mode' stays in @agent of 'A': its producer has not said it takes arguments out.`]);
+    });
+
+    it('says nothing of the removals when the producer refuses the rest', async () => {
+        const { warnings } = await mergeSave({ argRemovals: ['mode'] }, false, false);
+        expect(warnings).not.toContainEqual(expect.stringContaining('stays in'));
     });
 
     it('merges removals alone, and asks nothing of a producer that cannot take them', async () => {
@@ -95,11 +104,13 @@ describe('a merging annotation Save', () => {
             op: 'wfpy.mergeDefinitionAnnotationArgs',
             args: { entityType: 'A', annotationName: 'agent', argUpdates: {}, argRemovals: ['mode'] }
         });
-        expect((await mergeSave({ argUpdates: undefined, argRemovals: ['mode'] }, false)).payload).toBeUndefined();
+        const refused = await mergeSave({ argUpdates: undefined, argRemovals: ['mode'] }, false);
+        expect(refused.payload).toBeUndefined();
+        expect(refused.warnings).toEqual([`'mode' stays in @agent of 'A': its producer has not said it takes arguments out.`]);
     });
 
-    it('writes the literal names as the language spells them, outside strings', async () => {
-        const { payload } = await mergeSave({ argUpdates: { useSkill: 'false', note: '"true"' } });
-        expect(payload.args.argUpdates).toEqual({ useSkill: 'False', note: '"true"' });
+    it('sends the values as the editor wrote them: the producer spells its own literals', async () => {
+        const values = { useSkill: 'false', prompt: '"""Reply "true" when done"""' };
+        expect((await mergeSave({ argUpdates: values })).payload.args.argUpdates).toEqual(values);
     });
 });

@@ -1051,9 +1051,7 @@ platform that hands it one.
   button says "No changes". The server passes `argRemovals` on to the
   producer's `mergeDefinitionAnnotationArgs` only when the producer
   declares `features.mergeArgRemovals` (wfpy from huawei-csl/wfpy#79);
-  another gets the updates, and a warning says which arguments stay. The
-  values of a merge are written with the language's literal names
-  (`True`), as the text of a replace already was.
+  another gets the updates, and a warning says which arguments stay.
 
 - **A long name breaks onto lines in its header.** Past 200 px a node's name
   breaks between words onto up to three balanced lines, and the header grows
