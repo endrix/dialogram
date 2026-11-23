@@ -21,6 +21,8 @@ export interface RunStreamSource {
 export interface RunStreamForwarderOptions {
     /** Absolute path to the run's `run.wf-stream.live.json`. */
     discoveryFilePath: string;
+    /** The run to read, when it is known (see {@link RunEventStreamClientOptions.runId}). */
+    runId?: string;
     /** Hands a batch of events to the diagram. */
     emit: (events: RunStreamEvent[]) => void;
     /** Sees every event as it arrives, before batching (breadcrumbs). */
@@ -55,6 +57,7 @@ export class RunStreamForwarder {
         }
         const options: RunEventStreamClientOptions = {
             discoveryFilePath: this.opts.discoveryFilePath,
+            runId: this.opts.runId,
             onEvent: (event) => this.accept(event),
             onLog: this.opts.onLog,
             onDisconnect: this.opts.onDisconnect,
@@ -116,17 +119,24 @@ export class RunStreamForwarder {
     }
 }
 
-/** Whether something listens on `host:port`: a run's stream that is still there. */
-export function streamListening(host: string, port: number, timeoutMs = 1000): Promise<boolean> {
+/**
+ * Whether a run's stream still listens on `host:port`: `open`; `refused` (the
+ * port is closed: on this host that is final, the run is gone); `unknown` (no
+ * answer in time, or another error: a busy host says nothing about the run).
+ */
+export type StreamState = 'open' | 'refused' | 'unknown';
+
+export function probeStream(host: string, port: number, timeoutMs = 1000): Promise<StreamState> {
     return new Promise((resolve) => {
         const socket = net.connect({ host, port });
-        const done = (open: boolean): void => {
+        const done = (state: StreamState): void => {
             socket.removeAllListeners();
+            socket.on('error', () => { /* destroyed: nobody listens any more */ });
             socket.destroy();
-            resolve(open);
+            resolve(state);
         };
-        socket.setTimeout(timeoutMs, () => done(false));
-        socket.once('connect', () => done(true));
-        socket.once('error', () => done(false));
+        socket.setTimeout(timeoutMs, () => done('unknown'));
+        socket.once('connect', () => done('open'));
+        socket.once('error', (error: NodeJS.ErrnoException) => done(error.code === 'ECONNREFUSED' ? 'refused' : 'unknown'));
     });
 }

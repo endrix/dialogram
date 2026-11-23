@@ -3,7 +3,7 @@
  * The Running agents bar and the outlines (the hierarchy, a product's node
  * list) open in the same corner, beside the button lane: the outlines on top.
  * The bar moves left of the open outlines when there is room, and back when
- * they close; where there is none it stays, and the panel in use is on top.
+ * they close; where there is none it stays, under them.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EXECUTION_OVERLAY_ACTION_KIND } from '@dialogram/shared';

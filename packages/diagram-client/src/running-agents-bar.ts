@@ -13,7 +13,7 @@ import { IDiagramStartup } from '@eclipse-glsp/client';
 import { injectable } from 'inversify';
 import { html, render, nothing, type TemplateResult } from 'lit';
 import { RunAgentStreamActionHandler, type LiveAgentState } from './editing-action-handlers';
-import { FLOATING_PANELS_MOVED, stackAsFloatingPanel } from './floating-panels';
+import { FLOATING_PANELS_MOVED } from './floating-panels';
 
 /** The bar's width when nothing is in its way (the stylesheet's). */
 const BAR_WIDTH_PX = 340;
@@ -26,7 +26,8 @@ const BAR_GAP_PX = 12;
  * (the outlines beside the button lane, bottom right): left of the leftmost,
  * as wide as the room there allows. `undefined` keeps the stylesheet's place,
  * beside the button lane: no panel is open, or the room left of them is too
- * narrow, and then the panel in use is on top.
+ * narrow, and then the outlines cover it until they close (the bar stays under
+ * the floating panels, tooltips and the canvas's issue overlay).
  */
 export function agentsBarPlacement(
     openPanels: ReadonlyArray<{ left: number; width: number }>,
@@ -77,8 +78,6 @@ export class RunningAgentsBar implements IDiagramStartup {
             document.body.appendChild(el);
         }
         this.host = el;
-        // Where there is no room beside the outlines, the one in use is on top.
-        stackAsFloatingPanel(el);
     }
 
     private scheduleRender(): void {

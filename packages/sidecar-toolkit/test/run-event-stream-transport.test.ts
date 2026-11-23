@@ -163,3 +163,51 @@ describe('RunEventStreamClient stopping', () => {
         await vi.waitFor(() => expect(disconnects).toHaveBeenCalled());
     });
 });
+
+describe('RunEventStreamClient keeping to its run', () => {
+    async function discovery(fields: Record<string, unknown>): Promise<string> {
+        const outDir = await fs.mkdtemp(path.join(os.tmpdir(), 'wf-transport-'));
+        const file = path.join(outDir, 'run.wf-stream.live.json');
+        await fs.writeFile(file, JSON.stringify(fields), 'utf-8');
+        return file;
+    }
+
+    it('keeps to the run it heard from: a new run in the file is not read as it', async () => {
+        const first = await startChunkedSse();
+        cleanups.push(() => first.close());
+        const file = await discovery({ runId: 'r1', host: HOST, port: first.port });
+        const events: RunStreamEvent[] = [];
+        const client = new RunEventStreamClient({ discoveryFilePath: file, onEvent: e => events.push(e), transport: 'http', discoveryPollMs: 25 });
+        cleanups.push(() => client.stop());
+        client.start();
+        first.emitAll();
+        await vi.waitFor(() => expect(events.length).toBeGreaterThan(0));
+
+        const second = await startChunkedSse();
+        cleanups.push(() => second.close());
+        await fs.writeFile(file, JSON.stringify({ runId: 'r2', host: HOST, port: second.port }), 'utf-8');
+        first.close();
+        const before = events.length;
+        second.emitAll();
+        await new Promise(r => setTimeout(r, 400));
+        expect(events.length).toBe(before);
+    });
+
+    it('is not held by the file a dead run left: it reads the run that comes after', async () => {
+        const dead = await startChunkedSse();
+        const deadPort = dead.port;
+        dead.close();
+        const file = await discovery({ runId: 'r0', host: HOST, port: deadPort });
+        const events: RunStreamEvent[] = [];
+        const client = new RunEventStreamClient({ discoveryFilePath: file, onEvent: e => events.push(e), transport: 'http', discoveryPollMs: 25 });
+        cleanups.push(() => client.stop());
+        client.start();
+        await new Promise(r => setTimeout(r, 150));
+
+        const live = await startChunkedSse();
+        cleanups.push(() => live.close());
+        await fs.writeFile(file, JSON.stringify({ runId: 'r1', host: HOST, port: live.port }), 'utf-8');
+        live.emitAll();
+        await vi.waitFor(() => expect(events.length).toBe(13), { timeout: 5000 });
+    });
+});

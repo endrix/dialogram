@@ -31,7 +31,7 @@ import { noCliCommandMessage, resolveCliInvocation } from './cli-invocation.js';
 import { cliProcessEnv, type CliFolderListVariable } from './server/sidecar-runtime-config.js';
 import { fileExists } from './server/source-files';
 import * as cp from 'node:child_process';
-import { realpathSync, unlinkSync } from 'node:fs';
+import { unlinkSync } from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as readline from 'node:readline';
@@ -41,7 +41,7 @@ import type { ExecutionOverlaySink } from '@dialogram/shared';
 import { resumeStepFor } from './resume-at-step.js';
 import { appendTail, failureHeadline, failureWhere, fixTask, type FixTask, type RunFailure } from './run-failure.js';
 import { requestWorkflowStop, spawnWorkflowProcess, type WorkflowCliInvocation } from './process-control.js';
-import { RunStreamForwarder, streamListening } from './run-stream-forwarder.js';
+import { probeStream, RunStreamForwarder } from './run-stream-forwarder.js';
 
 type RunWorkflowArgs = {
     sourceUri?: string;
@@ -280,18 +280,32 @@ async function readStreamDiscovery(filePath: string): Promise<StreamDiscovery | 
 }
 
 /** Whether a run's `sourcePath` is this file (a symlinked folder included). */
-function sameFile(sourcePath: string | undefined, fsPath: string): boolean {
+async function sameFile(sourcePath: string | undefined, fsPath: string): Promise<boolean> {
     if (!sourcePath) {
         return false;
     }
-    const real = (p: string): string => {
+    if (path.resolve(sourcePath) === path.resolve(fsPath)) {
+        return true;
+    }
+    const real = async (p: string): Promise<string> => {
         try {
-            return realpathSync.native(p);
+            return await fs.realpath(p);
         } catch {
             return path.resolve(p);
         }
     };
-    return path.resolve(sourcePath) === path.resolve(fsPath) || real(sourcePath) === real(fsPath);
+    const [a, b] = await Promise.all([real(sourcePath), real(fsPath)]);
+    return a === b;
+}
+
+/** A run of a watched diagram's file that the IDE did not start, followed. */
+interface FollowedRun {
+    runId: string;
+    forwarder: RunStreamForwarder;
+    /** A dropped connection is being looked into. */
+    checking: boolean;
+    /** When its discovery file went or came to name another run: the run is ending. */
+    leavingSince?: number;
 }
 
 export class CliRunDriver {
@@ -320,14 +334,23 @@ export class CliRunDriver {
      *  out-dir) still refresh the glow — as the provider's old passive poll did. */
     private readonly liveOverlayListeners = new Set<(sourceUri: string, signature: string | undefined) => void>();
     private readonly watchedLiveOverlayUris = new Map<string, vscode.Uri>();
+    /** How many watches each source URI has (two editors of one file are two). */
+    private readonly liveOverlayWatchCounts = new Map<string, number>();
     private liveOverlayWatchTimer: ReturnType<typeof setInterval> | undefined;
     private liveOverlayPollInFlight = false;
     /** The agent stream of a run of a watched diagram's file that the IDE did not
      *  start (a run of the CLI in a terminal writing to the same out dir), forwarded to
      *  the diagram as the IDE's own run's is: keyed by the diagram's source URI. */
-    private readonly followedRuns = new Map<string, { runId: string; forwarder: RunStreamForwarder; checking: boolean }>();
-    /** Runs whose stream is gone: a killed run leaves its discovery file behind. */
-    private readonly goneRunIds = new Set<string>();
+    private readonly followedRuns = new Map<string, FollowedRun>();
+    /** Per watched diagram, the run whose stream was refused: a killed run leaves
+     *  its discovery file behind, and it is not tried again until the file goes. */
+    private readonly goneRuns = new Map<string, string>();
+    /** The diagrams whose run the IDE started, from the start of its stream to the
+     *  run's end (`activeRun` is set only once the process is spawned). */
+    private readonly ideRunKeys = new Set<string>();
+    /** How long a run whose discovery file went is still read: its last events
+     *  (its `run.finished`) may come after the file is gone. */
+    private static readonly FOLLOW_LEAVE_GRACE_MS = 2000;
 
     /** Passive live-overlay poll cadence. Preserves the editor provider's old
      *  `PASSIVE_LIVE_REFRESH_POLL_MS` (distinct from the 400ms run poll). */
@@ -427,7 +450,7 @@ export class CliRunDriver {
         // and the runs it was following.
         this.stopLiveOverlayWatchTimer();
         for (const key of [...this.followedRuns.keys()]) {
-            this.stopFollowedRun(key);
+            this.stopFollowedRun(key, 'the IDE stopped following the run');
         }
     }
 
@@ -463,10 +486,24 @@ export class CliRunDriver {
         }
         const key = sourceUri.toString();
         this.watchedLiveOverlayUris.set(key, sourceUri);
+        this.liveOverlayWatchCounts.set(key, (this.liveOverlayWatchCounts.get(key) ?? 0) + 1);
         this.ensureLiveOverlayWatchTimer();
+        let disposed = false;
         return {
             dispose: () => {
+                if (disposed) {
+                    return;
+                }
+                disposed = true;
+                // Another editor of the file still shows it: keep watching for that one.
+                const left = (this.liveOverlayWatchCounts.get(key) ?? 1) - 1;
+                if (left > 0) {
+                    this.liveOverlayWatchCounts.set(key, left);
+                    return;
+                }
+                this.liveOverlayWatchCounts.delete(key);
                 this.watchedLiveOverlayUris.delete(key);
+                this.goneRuns.delete(key);
                 this.stopFollowedRun(key, 'the diagram closed');
                 if (this.watchedLiveOverlayUris.size === 0) {
                     this.stopLiveOverlayWatchTimer();
@@ -517,9 +554,10 @@ export class CliRunDriver {
      * start: a run of the CLI in a terminal writes the same `run.wf-stream.live.json`
      * in the out dir, naming its file (`sourcePath`), its run id and where its
      * stream listens, and removes it when the run ends. The diagram then shows the
-     * run's agents as it does the IDE's own run's. Following stops when the file
-     * goes or names another run, when the stream is gone, when the diagram closes,
-     * and when the IDE starts a run of its own.
+     * run's agents as it does the IDE's own run's. Following stops when the run says
+     * it finished, or a little after its file goes or names another run; when its
+     * stream is refused; when the diagram closes; and when the IDE starts a run of
+     * its own.
      */
     private async followExternalRun(key: string, uri: vscode.Uri): Promise<void> {
         const outDir = this.resolveLiveOverlayOutDir(uri);
@@ -528,20 +566,42 @@ export class CliRunDriver {
         }
         const discoveryFilePath = path.join(outDir, 'run.wf-stream.live.json');
         const discovery = await readStreamDiscovery(discoveryFilePath);
-        const ideRun = (): boolean => this.activeRun !== undefined && this.activeRun.sourceUri.toString() === key;
-        const runId = discovery?.runId;
-        const followable = discovery !== undefined && runId !== undefined && !ideRun()
-            && sameFile(discovery.sourcePath, uri.fsPath) && !this.goneRunIds.has(runId);
-        const followed = this.followedRuns.get(key);
-        if (followed && (!followable || followed.runId !== runId)) {
-            this.stopFollowedRun(key);
+        if (!discovery) {
+            this.goneRuns.delete(key); // the file a killed run left is gone: nothing left to skip
         }
-        if (!followable || this.followedRuns.has(key)) {
+        const runId = discovery?.runId;
+        const ideRun = (): boolean => this.ideRunKeys.has(key)
+            || (this.activeRun !== undefined && this.activeRun.sourceUri.toString() === key);
+        const ofThisFile = discovery !== undefined && runId !== undefined && await sameFile(discovery.sourcePath, uri.fsPath);
+
+        const followed = this.followedRuns.get(key);
+        if (followed) {
+            if (ideRun()) {
+                this.stopFollowedRun(key, 'a run started from the IDE');
+            } else if (ofThisFile && followed.runId === runId) {
+                followed.leavingSince = undefined;
+            } else {
+                // The run is ending: let what it still sends arrive, then let go. The
+                // next run of the file is followed on a later poll.
+                const now = Date.now();
+                followed.leavingSince ??= now;
+                if (followed.forwarder.runEnded || now - followed.leavingSince >= CliRunDriver.FOLLOW_LEAVE_GRACE_MS) {
+                    this.stopFollowedRun(key);
+                }
+            }
+            return;
+        }
+        if (!ofThisFile || runId === undefined || ideRun() || this.goneRuns.get(key) === runId) {
             return;
         }
         const host = discovery.host ?? '127.0.0.1';
-        if (!(await streamListening(host, discovery.port))) {
-            this.goneRunIds.add(runId);
+        const state = await probeStream(host, discovery.port);
+        if (state === 'refused') {
+            this.goneRuns.set(key, runId);
+            return;
+        }
+        // No answer in time says nothing about the run (a busy host): ask again next poll.
+        if (state !== 'open') {
             return;
         }
         // Things may have moved while the stream was asked.
@@ -550,6 +610,7 @@ export class CliRunDriver {
         }
         const forwarder = new RunStreamForwarder({
             discoveryFilePath,
+            runId,
             emit: (events) => this.host.overlay.emitEvents(key, events),
             onDisconnect: () => void this.checkFollowedRun(key, runId, host, discovery.port),
         });
@@ -562,7 +623,7 @@ export class CliRunDriver {
         forwarder.start();
     }
 
-    /** A followed run's connection dropped: stop following when its stream is gone. */
+    /** A followed run's connection dropped: stop following when its stream is refused. */
     private async checkFollowedRun(key: string, runId: string, host: string, port: number): Promise<void> {
         const followed = this.followedRuns.get(key);
         if (!followed || followed.runId !== runId || followed.checking) {
@@ -570,8 +631,8 @@ export class CliRunDriver {
         }
         followed.checking = true;
         try {
-            if (!(await streamListening(host, port))) {
-                this.goneRunIds.add(runId);
+            if (await probeStream(host, port) === 'refused') {
+                this.goneRuns.set(key, runId);
                 if (this.followedRuns.get(key) === followed) {
                     this.stopFollowedRun(key);
                 }
@@ -1469,7 +1530,9 @@ export class CliRunDriver {
             console.log(`[wf-lang overlay] host: ${message}`);
         };
         const startStream = (): void => {
-            // A run of this diagram's that the IDE was following from a terminal gives way.
+            // A run of this diagram's that the IDE was following from a terminal gives
+            // way, and is not followed again while this one runs.
+            this.ideRunKeys.add(sourceUri.toString());
             this.stopFollowedRun(sourceUri.toString(), 'a run started from the IDE');
             const discoveryFilePath = path.join(runOutDir, 'run.wf-stream.live.json');
             hostLog(`constructing RunEventStreamClient discovery=${discoveryFilePath}`);
@@ -1491,6 +1554,7 @@ export class CliRunDriver {
             streamForwarder.start();
         };
         const stopStream = (): void => {
+            this.ideRunKeys.delete(sourceUri.toString());
             streamForwarder?.stop();
             streamForwarder = undefined;
             this.stopElicitSocket();
@@ -1498,49 +1562,60 @@ export class CliRunDriver {
 
         // The end of what the run wrote to stderr -- its traceback, when it fails.
         let stderrTail = '';
-        const exitCode = await vscode.window.withProgress(
-            {
-                location: vscode.ProgressLocation.Notification,
-                title,
-                cancellable: false
-            },
-            async () => {
-                output.appendLine(`[wf-lang] cwd=${cli.cwd}`);
-                for (const [name, value] of Object.entries(cli.variables ?? {})) {
-                    output.appendLine(`[wf-lang] ${name}=${value}`);
-                }
-                for (const message of leftOut) {
-                    output.appendLine(`[wf-lang] ${message}`);
-                }
-                output.appendLine(`[wf-lang] ${cli.cmd} ${cliArgs.map(a => JSON.stringify(a)).join(' ')}`);
-                output.appendLine('');
-                if (liveGlowEnabled) {
-                    refreshTimer = setInterval(() => void refreshDiagram(), 400);
-                }
-                startStream();
-                return await this.spawnRun(
-                    { cmd: cli.cmd, args: cliArgs, cwd: cli.cwd, env: cliProcessEnv(cli.variables) },
-                    output,
-                    (child) => {
-                        this.activeRun = {
-                            sourceUri,
-                            workflowName,
-                            startedAtMs: runStartedAtMs,
-                            child,
-                            output,
-                            stopRequested: false
-                        };
-                        for (const listener of [...this.runStartListeners]) {
-                            listener();
-                        }
-                    },
-                    () => this.activeRun?.stopRequested === true,
-                    (text) => {
-                        stderrTail = appendTail(stderrTail, text);
+        let exitCode: number;
+        try {
+            exitCode = await vscode.window.withProgress(
+                {
+                    location: vscode.ProgressLocation.Notification,
+                    title,
+                    cancellable: false
+                },
+                async () => {
+                    output.appendLine(`[wf-lang] cwd=${cli.cwd}`);
+                    for (const [name, value] of Object.entries(cli.variables ?? {})) {
+                        output.appendLine(`[wf-lang] ${name}=${value}`);
                     }
-                );
+                    for (const message of leftOut) {
+                        output.appendLine(`[wf-lang] ${message}`);
+                    }
+                    output.appendLine(`[wf-lang] ${cli.cmd} ${cliArgs.map(a => JSON.stringify(a)).join(' ')}`);
+                    output.appendLine('');
+                    if (liveGlowEnabled) {
+                        refreshTimer = setInterval(() => void refreshDiagram(), 400);
+                    }
+                    startStream();
+                    return await this.spawnRun(
+                        { cmd: cli.cmd, args: cliArgs, cwd: cli.cwd, env: cliProcessEnv(cli.variables) },
+                        output,
+                        (child) => {
+                            this.activeRun = {
+                                sourceUri,
+                                workflowName,
+                                startedAtMs: runStartedAtMs,
+                                child,
+                                output,
+                                stopRequested: false
+                            };
+                            for (const listener of [...this.runStartListeners]) {
+                                listener();
+                            }
+                        },
+                        () => this.activeRun?.stopRequested === true,
+                        (text) => {
+                            stderrTail = appendTail(stderrTail, text);
+                        }
+                    );
+                }
+            );
+        } catch (error) {
+            // The run could not start (a spawn that throws): let go of what it held.
+            this.activeRun = undefined;
+            if (refreshTimer) {
+                clearInterval(refreshTimer);
             }
-        );
+            stopStream();
+            throw error;
+        }
 
         const stopRequested = this.activeRun?.stopRequested === true;
         this.activeRun = undefined;

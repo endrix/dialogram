@@ -11,7 +11,7 @@ import * as path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
 import { CliRunDriver, type CliRunDriverConfig } from '../src/cli-run-driver';
-import { RunStreamForwarder, streamListening, type RunStreamSource } from '../src/run-stream-forwarder';
+import { probeStream, RunStreamForwarder, type RunStreamSource } from '../src/run-stream-forwarder';
 import type { RunEventStreamClientOptions, RunStreamEvent } from '../src/run-event-stream-client';
 
 // ── the forwarder ────────────────────────────────────────────────────────────
@@ -57,13 +57,15 @@ describe('RunStreamForwarder', () => {
         }
     });
 
-    it('tells a listening port from a closed one', async () => {
+    it('tells a listening port from a refused one, and both from no answer', async () => {
         const server = net.createServer().listen(0, '127.0.0.1');
         await new Promise((r) => server.once('listening', r));
         const port = (server.address() as net.AddressInfo).port;
-        await expect(streamListening('127.0.0.1', port)).resolves.toBe(true);
+        await expect(probeStream('127.0.0.1', port)).resolves.toBe('open');
         await new Promise((r) => server.close(r));
-        await expect(streamListening('127.0.0.1', port)).resolves.toBe(false);
+        await expect(probeStream('127.0.0.1', port)).resolves.toBe('refused');
+        // An error that is not a refusal says nothing about the run.
+        await expect(probeStream('no-such-host.invalid', port)).resolves.toBe('unknown');
     });
 });
 
@@ -196,15 +198,22 @@ describe('CliRunDriver following a run started outside the IDE', () => {
         expect(run.connections).toBe(0);
     });
 
-    it("leaves a run the IDE started to the IDE's own stream", async () => {
+    it("leaves a run the IDE started to the IDE's own stream, from before its process is spawned", async () => {
         const t = await setUp();
         const run = await fakeRunStream('tok');
         cleanups.push(() => run.close());
-        (t.driver as any).activeRun = { sourceUri: t.uri, workflowName: 'flow' };
         t.announce({ runId: 'r3', sourcePath: t.file, port: run.port, token: 'tok' });
+        // The IDE's run has started its stream, and its process is not spawned yet.
+        (t.driver as any).ideRunKeys.add(t.uri.toString());
+        await t.poll();
+        expect((t.driver as any).followedRuns.size).toBe(0);
+        (t.driver as any).ideRunKeys.clear();
+        // ... and once it is.
+        (t.driver as any).activeRun = { sourceUri: t.uri, workflowName: 'flow' };
         await t.poll();
         expect((t.driver as any).followedRuns.size).toBe(0);
         (t.driver as any).activeRun = undefined;
+        expect(run.connections).toBe(0);
     });
 
     it('does not follow the file a killed run left behind, nor try it again', async () => {
@@ -216,8 +225,12 @@ describe('CliRunDriver following a run started outside the IDE', () => {
         await t.poll();
         await t.poll();
         expect((t.driver as any).followedRuns.size).toBe(0);
-        expect((t.driver as any).goneRunIds.has('r4')).toBe(true);
+        expect((t.driver as any).goneRuns.get(t.uri.toString())).toBe('r4');
         expect(t.events()).toEqual([]);
+        // The file goes: nothing is left to skip.
+        fs.rmSync(t.discoveryPath);
+        await t.poll();
+        expect((t.driver as any).goneRuns.size).toBe(0);
     });
 
     it('closes the run for the diagram when its stream goes without a word', async () => {
@@ -234,22 +247,87 @@ describe('CliRunDriver following a run started outside the IDE', () => {
         expect((t.driver as any).followedRuns.size).toBe(0);
     });
 
-    it('stops following when the diagram closes, and follows a new run of the file', async () => {
+    it("follows a new run of the file once the old one is let go, and never reads the new run's stream as the old's", async () => {
         const t = await setUp();
         const first = await fakeRunStream('a');
         cleanups.push(() => first.close());
+        first.publish({ type: 'run.started', runId: 'r6' });
         t.announce({ runId: 'r6', sourcePath: t.file, port: first.port, token: 'a' });
         await t.poll();
-        expect((t.driver as any).followedRuns.get(t.uri.toString())?.runId).toBe('r6');
+        await vi.waitFor(() => expect(first.connections).toBe(1));
+        const followed = () => (t.driver as any).followedRuns.get(t.uri.toString())?.runId;
+        expect(followed()).toBe('r6');
 
+        // A new run takes the out dir, and the old run's connection drops: the old
+        // run's client reads the new file, and does not connect to the new run.
         const second = await fakeRunStream('b');
         cleanups.push(() => second.close());
+        second.publish({ type: 'run.started', runId: 'r7' });
         t.announce({ runId: 'r7', sourcePath: t.file, port: second.port, token: 'b' });
+        first.drop();
         await t.poll();
-        expect((t.driver as any).followedRuns.get(t.uri.toString())?.runId).toBe('r7');
+        expect(followed()).toBe('r6'); // leaving: what it still sends may come
+        await new Promise((r) => setTimeout(r, 1000));
+        expect(second.connections).toBe(0);
+
+        // The grace is over: the old run is let go, and the new one followed.
+        const now = Date.now();
+        vi.spyOn(Date, 'now').mockReturnValue(now + 5000);
+        await t.poll();
+        vi.mocked(Date.now).mockRestore();
+        expect(followed()).toBeUndefined();
+        expect(t.events().at(-1)).toEqual({ type: 'run.stream.closing', reason: 'the run ended without closing its stream' });
+        await t.poll();
+        expect(followed()).toBe('r7');
         await vi.waitFor(() => expect(second.connections).toBe(1));
+    });
+
+    it('waits for the end a run sends after removing its file', async () => {
+        const t = await setUp();
+        const run = await fakeRunStream('tok');
+        cleanups.push(() => run.close());
+        run.publish({ type: 'run.started', runId: 'r8' });
+        t.announce({ runId: 'r8', sourcePath: t.file, port: run.port, token: 'tok' });
+        await t.poll();
+        await vi.waitFor(() => expect(run.connections).toBe(1));
+
+        fs.rmSync(t.discoveryPath); // the file first ...
+        await t.poll();
+        expect((t.driver as any).followedRuns.size).toBe(1);
+        run.publish({ type: 'run.finished' }); // ... then the end
+        await vi.waitFor(() => expect(t.events().at(-1)?.type).toBe('run.finished'));
+        await t.poll();
+        expect((t.driver as any).followedRuns.size).toBe(0);
+        expect(t.events().filter((e) => e.type === 'run.stream.closing')).toHaveLength(0);
+    });
+
+    it('keeps following while another editor of the file is open', async () => {
+        const t = await setUp();
+        const run = await fakeRunStream('tok');
+        cleanups.push(() => run.close());
+        const second = t.driver.watchLiveOverlay(t.uri);
+        t.announce({ runId: 'r9', sourcePath: t.file, port: run.port, token: 'tok' });
+        await t.poll();
+        expect((t.driver as any).followedRuns.size).toBe(1);
 
         t.watch.dispose();
+        t.watch.dispose(); // twice is once
+        expect((t.driver as any).followedRuns.size).toBe(1);
+        await t.poll();
+        expect((t.driver as any).followedRuns.size).toBe(1);
+
+        second.dispose();
         expect((t.driver as any).followedRuns.size).toBe(0);
+        expect(t.events().at(-1)).toEqual({ type: 'run.stream.closing', reason: 'the diagram closed' });
+    });
+
+    it('says why when the IDE stops following', async () => {
+        const t = await setUp();
+        const run = await fakeRunStream('tok');
+        cleanups.push(() => run.close());
+        t.announce({ runId: 'r10', sourcePath: t.file, port: run.port, token: 'tok' });
+        await t.poll();
+        t.driver.dispose();
+        expect(t.events().at(-1)).toEqual({ type: 'run.stream.closing', reason: 'the IDE stopped following the run' });
     });
 });

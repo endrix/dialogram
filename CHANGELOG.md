@@ -83,10 +83,13 @@ platform that hands it one.
   agents in the Running agents bar as a run started from the IDE does: the
   run publishes its stream in `run.wf-stream.live.json` with its file
   (`sourcePath`), and the platform follows it for an open diagram of that
-  file until the run ends, the diagram closes or the IDE starts a run of its
-  own. A run a kill left behind (its file there, its stream gone) is not
-  followed. A question the run's agents ask still goes to its terminal.
-  Events a reconnect replays are forwarded once, for the IDE's own runs too.
+  file until the run ends (it says so, or a little after its file goes), the
+  last editor of the file closes, or the IDE starts a run of its own. A run a
+  kill left behind (its file there, its stream's port refused) is not
+  followed until the file goes. A question the run's agents ask still goes
+  to its terminal. Events a reconnect replays are forwarded once, and a
+  run's stream is read only as that run's (a new run taking the out dir is
+  not read as the old one), for the IDE's own runs too.
 
 - **A CLI variable from a folder-list setting.** A profile's
   `cliEnvironment` names variables the product's CLI is started with, each
@@ -1542,8 +1545,11 @@ platform that hands it one.
   bar. The bar now moves left of the open outlines when the canvas has room
   for it (narrowing to no less than 240 px), and back when they close; the
   outlines say when they open, close or move (`dialogram.floatingPanels.moved`).
-  Where there is no room it stays, and the panel in use is on top: the bar
-  takes part in the floating panels' order.
+  Where there is no room it stays where it was, under the outlines.
+
+- **Two editors of one workflow file both keep their live run.** The live
+  overlay was watched once per file, and closing one of two editors of the
+  file stopped the watch for the other: its nodes stopped following the run.
 
 - **Stopping a run's stream throws nothing.** Stopping the client of a run's
   event stream while its request waited for a response destroyed the
