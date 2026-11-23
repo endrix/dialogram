@@ -29,7 +29,13 @@ import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Readable, Writable } from "node:stream";
-import { OpencodeHttpClient, type OpencodeMessage } from "./opencode-http.js";
+import { OpencodeHttpClient, type OpencodeMessage, type OpencodeSessionApi } from "./opencode-http.js";
+import {
+  OpencodeServiceClient,
+  opencodeApiRunner,
+  probeOpencodeFlavour,
+  type OpencodeFlavourProbe,
+} from "./opencode-service.js";
 import type { ChatImage } from "@dialogram/shared";
 
 interface TerminalState {
@@ -181,6 +187,14 @@ const OPENCODE_AGENT: AcpAgentSpec = {
  * Uses TypeScript SDK exclusively (no external-process fallback or CLI mode).
  */
 export class ACPClientService extends EventEmitter {
+  /**
+   * @param probeOpencode reads whether an `opencode acp` takes `--port`
+   *   (1.x) or keeps its sessions in the user's service (2); tests stub it.
+   */
+  constructor(private readonly probeOpencode: OpencodeFlavourProbe = probeOpencodeFlavour) {
+    super();
+  }
+
   private process: ChildProcess | null = null;
   /** The agent's name, for messages: what the chat is (or is not) talking to. */
   private agentName: string = OPENCODE_AGENT.name;
@@ -201,11 +215,13 @@ export class ACPClientService extends EventEmitter {
   private promptImages: boolean | undefined;
 
   /**
-   * opencode's HTTP API, served by the same `opencode acp` process on a port we
-   * pin at spawn time. Used for capabilities ACP doesn't expose (revert /
-   * unrevert / message-id listing). Null until the process is spawned.
+   * opencode's HTTP API, for what ACP doesn't expose (revert / unrevert /
+   * message-id listing): opencode 1.x serves it from the `opencode acp`
+   * process on a port we pin at spawn time, opencode 2 from the user's
+   * background service, through `opencode api`. Null until the process is
+   * spawned, and for an agent without it.
    */
-  private http: OpencodeHttpClient | null = null;
+  private http: OpencodeSessionApi | null = null;
 
   /**
    * Catalog of selectable models, captured from the most recent session's
@@ -387,13 +403,18 @@ export class ACPClientService extends EventEmitter {
       const env = { ...resolved.env, ...(spec.env ?? {}) };
       const args = spec.argv.slice(1);
 
-      // An agent with opencode's HTTP API gets it pinned to a free port, so
-      // the HTTP-only capabilities (revert/unrevert/message ids) drive the
-      // same process the ACP session uses. Without one they stay off.
-      if (spec.httpApi) {
+      // An agent with opencode's HTTP API serves the HTTP-only capabilities
+      // (revert/unrevert/message ids) over the sessions ACP uses. opencode
+      // 1.x serves it from this very process, on a free port pinned here;
+      // opencode 2 takes no --port and keeps its sessions in the user's
+      // background service, reached through `opencode api`. Without one
+      // they stay off.
+      if (spec.httpApi && (await this.probeOpencode(command, args, env)) === "own-port") {
         const httpPort = await this.findFreePort();
         this.http = new OpencodeHttpClient(`http://127.0.0.1:${httpPort}`);
         args.push("--hostname", "127.0.0.1", "--port", String(httpPort));
+      } else if (spec.httpApi) {
+        this.http = new OpencodeServiceClient(opencodeApiRunner(command, env, cwd));
       } else {
         this.http = null;
       }

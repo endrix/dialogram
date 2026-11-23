@@ -1526,6 +1526,21 @@ platform that hands it one.
 
 ### Fixed
 
+- **The chat starts on opencode 2.** The chat ran `opencode acp --hostname
+  127.0.0.1 --port N` so that the process would also serve opencode's HTTP
+  API, which the chat uses for a turn's message id, undo (revert) and redo
+  (unrevert). opencode 2 takes neither flag ("Unrecognized flag: --port"),
+  so the agent exited and the chat had nothing to talk to. The chat now
+  reads `opencode acp --help`: a help that offers `--port` is opencode 1.x,
+  run as before. Otherwise `opencode acp` runs with no flags, and the
+  HTTP-only calls go through `opencode api` to the user's opencode service,
+  which shares the sessions' storage and asks for its password; `opencode
+  api` signs in by itself. The routes are opencode 2's: the user messages
+  (`/api/session/{id}/message?type=user`, followed page by page), a staged
+  revert (`revert/stage`; the next prompt commits it, as before) and its
+  clearing for redo (`DELETE …/revert`). opencode 2 undoes only the files
+  under the session's folder (the diagram document's); a file the agent
+  wrote outside it stays as it is after an undo.
 - **A first message sent with no chat open stays on screen.** The panel
   sent it, the host made a session for it on the way, and the panel cleared
   its transcript for that session, taking the message away while its answer
