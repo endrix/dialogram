@@ -422,8 +422,8 @@ export function getCliVariables(
         env: process.env
     };
     for (const { variable, folderListSettingKey } of cfg.cliEnvironment) {
-        const folders = resolveFolderList(config.get<unknown>(folderListSettingKey), context, entry =>
-            leftOut?.(`${cfg.settingsNamespace}.${folderListSettingKey}: '${entry}' is left out: it names a variable, a folder or another user's home that is not known here`));
+        const folders = resolveFolderList(config.get<unknown>(folderListSettingKey), context, (entry, why) =>
+            leftOut?.(`${cfg.settingsNamespace}.${folderListSettingKey}: '${entry}' is left out: ${why}`));
         if (folders.length > 0) {
             variables[variable] = folders.join(path.delimiter);
         }
@@ -450,10 +450,14 @@ export interface FolderListContext {
  * `${workspaceFolder}`, `${workspaceFolder:name}` and `${env:NAME}`, a
  * folder or variable that is not known (no base, no open folder of that
  * name, a variable unset or empty), or a folder holding the path list
- * separator, is left out, and `leftOut` is given it. A lone string is a
- * list of one.
+ * separator once resolved, is left out, and `leftOut` is given it and why.
+ * A lone string is a list of one.
  */
-export function resolveFolderList(value: unknown, context: FolderListContext, leftOut?: (entry: string) => void): string[] {
+export function resolveFolderList(
+    value: unknown,
+    context: FolderListContext,
+    leftOut?: (entry: string, why: string) => void
+): string[] {
     const entries: unknown[] = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
     const folders: string[] = [];
     for (const entry of entries) {
@@ -461,10 +465,11 @@ export function resolveFolderList(value: unknown, context: FolderListContext, le
             continue;
         }
         let folder = entry.trim();
-        if (folder === '~' || folder.startsWith('~/') || folder.startsWith('~\\')) {
+        // `~\` is the home folder only where `\` separates folders.
+        if (folder === '~' || folder.startsWith('~/') || (path.sep === '\\' && folder.startsWith('~\\'))) {
             folder = context.home + folder.slice(1);
         } else if (folder.startsWith('~')) {
-            leftOut?.(entry);
+            leftOut?.(entry, "it names another user's home folder, which is not read here");
             continue;
         }
         let unknown = false;
@@ -480,13 +485,18 @@ export function resolveFolderList(value: unknown, context: FolderListContext, le
             }
             return value;
         });
-        // A folder named with the separator would be read as two.
-        if (unknown || folder.includes(path.delimiter)) {
-            leftOut?.(entry);
+        if (unknown) {
+            leftOut?.(entry, 'it names a variable or a folder that is not known here');
             continue;
         }
-        folders.push(path.isAbsolute(folder) ? path.resolve(folder)
-            : context.base !== undefined ? path.resolve(context.base, folder) : folder);
+        const resolved = path.isAbsolute(folder) ? path.resolve(folder)
+            : context.base !== undefined ? path.resolve(context.base, folder) : folder;
+        // A folder whose name holds the separator, its own or the run root's, would be read as two.
+        if (resolved.includes(path.delimiter)) {
+            leftOut?.(entry, `its folder, ${resolved}, holds '${path.delimiter}', which separates the folders of the variable`);
+            continue;
+        }
+        folders.push(resolved);
     }
     return folders;
 }

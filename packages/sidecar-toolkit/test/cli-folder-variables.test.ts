@@ -83,6 +83,7 @@ describe('a folder-list setting', () => {
             '${env:SKILLS_HOME}/skills',
             '~',
             '~/my-skills',
+            ...(path.sep === '\\' ? ['~\\win-skills'] : []),
             '${userHome}/more',
             path.resolve('/opt/skills/./x/..')
         ], context())).toEqual([
@@ -93,6 +94,7 @@ describe('a folder-list setting', () => {
             path.resolve('/opt/team/skills'),
             HOME,
             path.join(HOME, 'my-skills'),
+            ...(path.sep === '\\' ? [path.join(HOME, 'win-skills')] : []),
             path.join(HOME, 'more'),
             path.resolve('/opt/skills')
         ]);
@@ -106,16 +108,27 @@ describe('a folder-list setting', () => {
     });
 
     it('leaves out, saying so, what it cannot read: another user’s home, an unknown variable or folder, an unset variable', () => {
-        const leftOut: string[] = [];
+        const leftOut: Array<[string, string]> = [];
         const separated = path.resolve(`/data/a${path.delimiter}b`);
         expect(resolveFolderList(
             ['~nobody/skills', '${config:x.y}/skills', '${workspaceFolder:nope}/skills', '${env:NOT_SET_HERE}/skills', separated, 'kept'],
             context({ env: { SKILLS_HOME: path.resolve('/opt/team'), EMPTY: '' } }),
-            entry => leftOut.push(entry)
+            (entry, why) => leftOut.push([entry, why])
         )).toEqual([path.join(base, 'kept')]);
         // An unset variable is not the root folder it would leave, and a folder holding the separator would be read as two.
-        expect(leftOut).toEqual(['~nobody/skills', '${config:x.y}/skills', '${workspaceFolder:nope}/skills', '${env:NOT_SET_HERE}/skills', separated]);
+        expect(leftOut).toEqual([
+            ['~nobody/skills', expect.stringContaining("another user's home")],
+            ['${config:x.y}/skills', expect.stringContaining('not known here')],
+            ['${workspaceFolder:nope}/skills', expect.stringContaining('not known here')],
+            ['${env:NOT_SET_HERE}/skills', expect.stringContaining('not known here')],
+            [separated, expect.stringContaining(`holds '${path.delimiter}'`)]
+        ]);
         expect(resolveFolderList(['${env:EMPTY}/skills'], context({ env: { EMPTY: '' } }))).toEqual([]);
+        // The run root's own name holding the separator splits a relative folder as much.
+        const split: string[] = [];
+        expect(resolveFolderList(['skills', '/opt/s'], context({ base: path.resolve(`/work/proj${path.delimiter}v2`) }), entry => split.push(entry)))
+            .toEqual([path.resolve('/opt/s')]);
+        expect(split).toEqual(['skills']);
     });
 
     it('with no base, keeps a relative folder for the CLI and leaves out one naming the workspace folder', () => {
@@ -123,6 +136,17 @@ describe('a folder-list setting', () => {
         expect(resolveFolderList(['skills', '${workspaceFolder}/team', '~/s'], context({ base: undefined }), entry => leftOut.push(entry)))
             .toEqual(['skills', path.join(HOME, 's')]);
         expect(leftOut).toEqual(['${workspaceFolder}/team']);
+    });
+
+    it('takes `~\\` for the home folder only where `\\` separates folders', () => {
+        const leftOut: string[] = [];
+        const folders = resolveFolderList(['~\\skills'], context(), entry => leftOut.push(entry));
+        if (path.sep === '\\') {
+            expect(folders).toEqual([path.join(HOME, 'skills')]);
+        } else {
+            expect(folders).toEqual([]);
+            expect(leftOut).toEqual(['~\\skills']);
+        }
     });
 });
 
@@ -141,7 +165,7 @@ describe('the variables a CLI start is given', () => {
             .toEqual({ X_ROOTS: [path.resolve('/work/skills'), path.resolve('/opt/skills')].join(path.delimiter) });
         // Read under the product's namespace, for the run root: its folder's own setting wins.
         expect(asked).toEqual([{ section: 'x', scope: Uri.file(path.resolve('/work')) }]);
-        expect(leftOut).toEqual([expect.stringMatching(/^x\.roots: '\$\{nope\}' is left out/)]);
+        expect(leftOut).toEqual([expect.stringMatching(/^x\.roots: '\$\{nope\}' is left out: it names a variable or a folder that is not known here$/)]);
     });
 
     it('leave out a variable whose setting lists nothing', () => {
