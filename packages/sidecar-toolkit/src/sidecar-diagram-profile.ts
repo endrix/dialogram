@@ -172,7 +172,10 @@ export interface SidecarProfileInput {
      * Environment variables every start of the CLI is given (a run, `runCli`,
      * the plan and hierarchy exports, the chat's graph, a status source), each
      * from a setting that lists folders: see {@link CliFolderListVariable}.
-     * The sidecar is started without them.
+     * The sidecar is started without them. A workspace's own settings reach
+     * the CLI's environment through them: an extension that runs in an
+     * untrusted workspace must list these settings in its
+     * `restrictedConfigurations`, so that only the user's value is read there.
      */
     cliEnvironment?: CliFolderListVariable[];
     /** Default `[sidecarOperationPrefix]`. */

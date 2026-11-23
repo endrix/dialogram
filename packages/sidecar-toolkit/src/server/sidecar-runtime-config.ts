@@ -397,7 +397,10 @@ export function getCliInvocation(
  * in `runRoot` (`cliEnvironment`): one per setting that lists at least one
  * folder. `runRoot` is the folder the start's working directory is
  * (`resolveRunRoot`), so a relative folder is the one the CLI itself would
- * read. An entry that cannot be read is left out, and `leftOut` is told why.
+ * read, and the settings are read for it: for a file named through a link
+ * to a workspace folder, VS Code puts the file in no folder, and the run
+ * root is that folder. An entry that cannot be read is left out, and
+ * `leftOut` is told why.
  */
 export function getCliVariables(
     cfg: Pick<CliCommandConfig, 'settingsNamespace' | 'cliEnvironment'>,
@@ -410,7 +413,8 @@ export function getCliVariables(
     if (!cfg.cliEnvironment || cfg.cliEnvironment.length === 0) {
         return variables;
     }
-    const config = vscodeModule.workspace.getConfiguration(cfg.settingsNamespace, scopeUri);
+    const config = vscodeModule.workspace.getConfiguration(
+        cfg.settingsNamespace, runRoot !== undefined ? vscodeModule.Uri.file(runRoot) : scopeUri);
     const context: FolderListContext = {
         base: runRoot,
         home: os.homedir(),
@@ -435,7 +439,7 @@ export interface FolderListContext {
     home: string;
     /** `${workspaceFolder:name}`: the open workspace folder of that name. */
     folderNamed(name: string): string | undefined;
-    /** `${env:NAME}`; an unset one is empty, as VS Code reads it. */
+    /** `${env:NAME}`; an entry naming one unset or empty is left out, as it would name another folder. */
     env: NodeJS.ProcessEnv;
 }
 
@@ -443,9 +447,11 @@ export interface FolderListContext {
  * The folders a folder-list setting names, read as {@link CliFolderListVariable}
  * says. Blank and non-text entries are skipped; an entry naming another
  * user's home (`~name`), a variable other than `${userHome}`,
- * `${workspaceFolder}`, `${workspaceFolder:name}` and `${env:NAME}`, or a
- * folder that is not known (no base, no open folder of that name), is left
- * out, and `leftOut` is given it. A lone string is a list of one.
+ * `${workspaceFolder}`, `${workspaceFolder:name}` and `${env:NAME}`, a
+ * folder or variable that is not known (no base, no open folder of that
+ * name, a variable unset or empty), or a folder holding the path list
+ * separator, is left out, and `leftOut` is given it. A lone string is a
+ * list of one.
  */
 export function resolveFolderList(value: unknown, context: FolderListContext, leftOut?: (entry: string) => void): string[] {
     const entries: unknown[] = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
@@ -466,7 +472,7 @@ export function resolveFolderList(value: unknown, context: FolderListContext, le
             const value = name === 'userHome' ? context.home
                 : name === 'workspaceFolder' ? context.base
                 : name.startsWith('workspaceFolder:') ? context.folderNamed(name.slice('workspaceFolder:'.length))
-                : name.startsWith('env:') ? context.env[name.slice('env:'.length)] ?? ''
+                : name.startsWith('env:') ? context.env[name.slice('env:'.length)] || undefined
                 : undefined;
             if (value === undefined) {
                 unknown = true;
@@ -474,11 +480,9 @@ export function resolveFolderList(value: unknown, context: FolderListContext, le
             }
             return value;
         });
-        if (unknown) {
+        // A folder named with the separator would be read as two.
+        if (unknown || folder.includes(path.delimiter)) {
             leftOut?.(entry);
-            continue;
-        }
-        if (folder === '') {
             continue;
         }
         folders.push(path.isAbsolute(folder) ? path.resolve(folder)

@@ -87,9 +87,11 @@ platform that hands it one.
   relative folder from the folder the CLI starts in, the run root), and they
   are joined by the platform's path list separator. An entry naming another
   user's home or a variable not known here is left out, and a run's output
-  says so. A run (whose output says each variable given), `runCli` (whose
-  result says which it gave), the plan and hierarchy exports (kept per
-  variables, so a changed setting is planned again), the chat's graph and a
+  says so; so is one naming an unset variable or holding the separator. A
+  run (whose output says each variable given), `runCli` (whose result says
+  which it gave), the plan and hierarchy exports (kept per variables: a plan
+  made with others is not reused when the diagram next loads; an open
+  diagram is not redrawn when the setting changes), the chat's graph and a
   status source all get them; the sidecar does not. A setting that lists
   nothing leaves the variable as VS Code was started with it; on Windows a
   variable replaces the one of any case.

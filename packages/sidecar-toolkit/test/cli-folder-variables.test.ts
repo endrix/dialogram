@@ -103,18 +103,19 @@ describe('a folder-list setting', () => {
         expect(resolveFolderList('a', context())).toEqual([path.join(base, 'a')]);
         expect(resolveFolderList(undefined, context())).toEqual([]);
         expect(resolveFolderList({ a: 1 }, context())).toEqual([]);
-        // An unset variable is empty, as VS Code reads it: nothing is left to name.
-        expect(resolveFolderList(['${env:NOT_SET_HERE}'], context())).toEqual([]);
     });
 
-    it('leaves out, saying so, what it cannot read: another user’s home, an unknown variable or folder', () => {
+    it('leaves out, saying so, what it cannot read: another user’s home, an unknown variable or folder, an unset variable', () => {
         const leftOut: string[] = [];
+        const separated = path.resolve(`/data/a${path.delimiter}b`);
         expect(resolveFolderList(
-            ['~nobody/skills', '${config:x.y}/skills', '${workspaceFolder:nope}/skills', 'kept'],
-            context(),
+            ['~nobody/skills', '${config:x.y}/skills', '${workspaceFolder:nope}/skills', '${env:NOT_SET_HERE}/skills', separated, 'kept'],
+            context({ env: { SKILLS_HOME: path.resolve('/opt/team'), EMPTY: '' } }),
             entry => leftOut.push(entry)
         )).toEqual([path.join(base, 'kept')]);
-        expect(leftOut).toEqual(['~nobody/skills', '${config:x.y}/skills', '${workspaceFolder:nope}/skills']);
+        // An unset variable is not the root folder it would leave, and a folder holding the separator would be read as two.
+        expect(leftOut).toEqual(['~nobody/skills', '${config:x.y}/skills', '${workspaceFolder:nope}/skills', '${env:NOT_SET_HERE}/skills', separated]);
+        expect(resolveFolderList(['${env:EMPTY}/skills'], context({ env: { EMPTY: '' } }))).toEqual([]);
     });
 
     it('with no base, keeps a relative folder for the CLI and leaves out one naming the workspace folder', () => {
@@ -138,8 +139,8 @@ describe('the variables a CLI start is given', () => {
         const leftOut: string[] = [];
         expect(getCliVariables(config, vscode, file as any, path.resolve('/work'), message => leftOut.push(message)))
             .toEqual({ X_ROOTS: [path.resolve('/work/skills'), path.resolve('/opt/skills')].join(path.delimiter) });
-        // Read under the product's namespace, scoped to the file: a folder's own setting wins.
-        expect(asked).toEqual([{ section: 'x', scope: file }]);
+        // Read under the product's namespace, for the run root: its folder's own setting wins.
+        expect(asked).toEqual([{ section: 'x', scope: Uri.file(path.resolve('/work')) }]);
         expect(leftOut).toEqual([expect.stringMatching(/^x\.roots: '\$\{nope\}' is left out/)]);
     });
 
@@ -161,8 +162,15 @@ describe('the variables a CLI start is given', () => {
             return; // no symlink privilege (Windows)
         }
         openWorkspaceFolders(work);
-        settings({ roots: ['skills'] });
-        // VS Code says the file is in no folder; the run root follows the link.
+        // The folder's own setting, as VS Code reads one: for a resource in the folder only.
+        Object.assign(workspace, {
+            getConfiguration: (_section?: string, scope?: { fsPath?: string }) => ({
+                get: <T>(key: string, fallback?: T) =>
+                    (key === 'roots' && scope?.fsPath !== undefined && (scope.fsPath === work || scope.fsPath.startsWith(work + path.sep))
+                        ? ['skills'] as T : fallback)
+            })
+        });
+        // VS Code says the file is in no folder; the run root follows the link, and its setting is read.
         const cli = await resolveCliInvocation(config, Uri.file(path.join(root, 'link-to-work', 'flows', 'main.py')) as any);
         expect(cli).toMatchObject({ cwd: work, variables: { X_ROOTS: path.join(work, 'skills') } });
     });
