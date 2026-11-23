@@ -271,6 +271,9 @@ export const SIDECAR_RUNTIME_CONFIG = Symbol('SidecarRuntimeConfig');
  * Windows), replace the variable's value in this extension's environment; an
  * empty list leaves that value as it is.
  *
+ * The setting is read for the run root, so a file opened through a link
+ * takes the folder's value; the CLI command is read for the file itself.
+ *
  * A workspace's own settings then reach the CLI's environment: a product
  * whose extension runs in an untrusted workspace lists the setting in its
  * `restrictedConfigurations`, so that only the user's value is read there.
@@ -452,8 +455,10 @@ export interface FolderListContext {
  * name, a variable unset or empty), or a folder holding the path list
  * separator once resolved, is left out, and `leftOut` is given it and why.
  * An entry that is a variable alone, `${env:NAME}`, gives each folder of
- * its value, which may be a list (a search path the user already has).
- * A lone string is a list of one.
+ * its value, which may be a list (a search path the user already has): the
+ * value is always read as a list, so a folder whose own name holds the
+ * separator is two, and an empty part (the current folder, to some
+ * runtimes) is dropped. A lone string is a list of one.
  */
 export function resolveFolderList(
     value: unknown,
