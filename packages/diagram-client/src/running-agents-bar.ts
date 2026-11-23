@@ -13,6 +13,38 @@ import { IDiagramStartup } from '@eclipse-glsp/client';
 import { injectable } from 'inversify';
 import { html, render, nothing, type TemplateResult } from 'lit';
 import { RunAgentStreamActionHandler, type LiveAgentState } from './editing-action-handlers';
+import { FLOATING_PANELS_MOVED, stackAsFloatingPanel } from './floating-panels';
+
+/** The bar's width when nothing is in its way (the stylesheet's). */
+const BAR_WIDTH_PX = 340;
+/** Narrower than this, the bar does not move aside: it would show too little. */
+const BAR_MIN_WIDTH_PX = 240;
+const BAR_GAP_PX = 12;
+
+/**
+ * Where the bar goes, given the open panels that float in the same corner
+ * (the outlines beside the button lane, bottom right): left of the leftmost,
+ * as wide as the room there allows. `undefined` keeps the stylesheet's place,
+ * beside the button lane: no panel is open, or the room left of them is too
+ * narrow, and then the panel in use is on top.
+ */
+export function agentsBarPlacement(
+    openPanels: ReadonlyArray<{ left: number; width: number }>,
+    viewportWidth: number,
+    canvasLeft = 0
+): { right: number; width: number } | undefined {
+    const shown = openPanels.filter(panel => panel.width > 0);
+    if (shown.length === 0) {
+        return undefined;
+    }
+    const leftmost = Math.min(...shown.map(panel => panel.left));
+    const right = Math.round(viewportWidth - leftmost + BAR_GAP_PX);
+    const room = Math.floor(leftmost - BAR_GAP_PX - canvasLeft - BAR_GAP_PX);
+    if (room < BAR_MIN_WIDTH_PX) {
+        return undefined;
+    }
+    return { right, width: Math.min(BAR_WIDTH_PX, room) };
+}
 
 @injectable()
 export class RunningAgentsBar implements IDiagramStartup {
@@ -28,6 +60,9 @@ export class RunningAgentsBar implements IDiagramStartup {
             this.behindChat = Boolean((e as CustomEvent<{ visible?: boolean }>).detail?.visible);
             this.scheduleRender();
         });
+        // The outlines open in the same corner: keep clear of them.
+        window.addEventListener(FLOATING_PANELS_MOVED, () => this.placeBesidePanels());
+        window.addEventListener('resize', () => this.placeBesidePanels());
         this.scheduleRender();
         // eslint-disable-next-line no-console
         console.log('[wf-lang overlay] RunningAgentsBar mounted; listening for dialogram.runAgents.updated');
@@ -42,6 +77,8 @@ export class RunningAgentsBar implements IDiagramStartup {
             document.body.appendChild(el);
         }
         this.host = el;
+        // Where there is no room beside the outlines, the one in use is on top.
+        stackAsFloatingPanel(el);
     }
 
     private scheduleRender(): void {
@@ -70,10 +107,27 @@ export class RunningAgentsBar implements IDiagramStartup {
             return;
         }
         render(this.template(agents, active), this.host);
+        this.placeBesidePanels();
         // Keep each streaming card pinned to the latest text.
         for (const box of Array.from(this.host.querySelectorAll<HTMLElement>('.wf-rab-text.stream'))) {
             box.scrollTop = box.scrollHeight;
         }
+    }
+
+    /** Beside the open outlines, not under them. */
+    private placeBesidePanels(): void {
+        const host = this.host;
+        if (!host || host.classList.contains('hidden')) {
+            return;
+        }
+        const open = Array.from(document.querySelectorAll<HTMLElement>('.workflow-hierarchy-outline'))
+            .filter(panel => !panel.hidden)
+            .map(panel => panel.getBoundingClientRect());
+        // The canvas, not the window: a docked property panel takes part of the window.
+        const canvas = document.querySelector<HTMLElement>('.sprotty-container')?.getBoundingClientRect();
+        const place = agentsBarPlacement(open, window.innerWidth, canvas && canvas.width > 0 ? canvas.left : 0);
+        host.style.right = place ? `${place.right}px` : '';
+        host.style.width = place ? `${place.width}px` : '';
     }
 
     private template(agents: LiveAgentState[], active: boolean): TemplateResult {

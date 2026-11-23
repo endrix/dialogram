@@ -32,3 +32,10 @@ export function raiseFloatingPanel(panel: HTMLElement): void {
         each.style.zIndex = each === panel ? RAISED_Z : LOWERED_Z;
     }
 }
+
+/** Sent on `window` when a floating panel opened, closed or moved: what keeps clear of them places itself again. */
+export const FLOATING_PANELS_MOVED = 'dialogram.floatingPanels.moved';
+
+export function announceFloatingPanelsMoved(): void {
+    window.dispatchEvent(new CustomEvent(FLOATING_PANELS_MOVED));
+}

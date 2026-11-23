@@ -1536,6 +1536,15 @@ platform that hands it one.
 
 ### Fixed
 
+- **The Running agents bar beside the outlines.** The bar and the outlines
+  (the hierarchy, a product's node list such as Viewers) open in the same
+  corner beside the button lane, and an open outline covered most of the
+  bar. The bar now moves left of the open outlines when the canvas has room
+  for it (narrowing to no less than 240 px), and back when they close; the
+  outlines say when they open, close or move (`dialogram.floatingPanels.moved`).
+  Where there is no room it stays, and the panel in use is on top: the bar
+  takes part in the floating panels' order.
+
 - **Stopping a run's stream throws nothing.** Stopping the client of a run's
   event stream while its request waited for a response destroyed the
   request after its listeners were gone, and the "socket hang up" it emitted
