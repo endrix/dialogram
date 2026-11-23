@@ -130,6 +130,25 @@ describe('the cache', () => {
         expect(folders).toEqual(['/w/flows', '/w']);
     });
 
+    it('exports it again with other variables, and runs each export with the ones it is asked for', async () => {
+        const given: Array<Record<string, string>> = [];
+        const cache = new HierarchyCache(
+            async (_file, _workflow, _cwd, variables) => {
+                given.push(variables);
+                return JSON.stringify({ ...graph('top-view'), hierarchy: tree('/w/top.py', '/w/block.py') });
+            },
+            async () => 'a'
+        );
+
+        await cache.get('/w/top.py', 'top', '/w', { X_ROOTS: '/a' });
+        await cache.get('/w/top.py', 'top', '/w', { X_ROOTS: '/a' });
+        // The folder setting changed: another export, not the one kept.
+        await cache.get('/w/top.py', 'top', '/w', { X_ROOTS: '/b' });
+        await cache.get('/w/top.py', 'top', '/w');
+
+        expect(given).toEqual([{ X_ROOTS: '/a' }, { X_ROOTS: '/b' }, {}]);
+    });
+
     it('returns nothing for an export that failed or is not one', async () => {
         expect(await new HierarchyCache(async () => undefined).get('/w/top.py', 'top', '/w')).toBeUndefined();
         expect(await new HierarchyCache(async () => '{"graph": {}}').get('/w/top.py', 'top', '/w')).toBeUndefined();

@@ -18,12 +18,14 @@ import { createSourceReferenceContext } from './chat-source-reference.js';
 import { createRegistryChatTools, type RegistryChatTool } from './registry-tools.js';
 import { RESUME_TOOL, RUN_TOOL } from './run-failure.js';
 import { getCliInvocation,
+    getCliVariables,
     getGraphLoadTimeoutMs,
     getSidecarCommand,
     type SidecarRuntimeConfig,
     type CreateNodeStrings,
     type CreateNodeVariant,
-    type CreateNodeBehavior
+    type CreateNodeBehavior,
+    type CliFolderListVariable
 } from './server/sidecar-runtime-config.js';
 import { createSidecarModelSource } from './server/cli-graph-model-source.js';
 import { createSidecarServerModule } from './server/sidecar-server-module.js';
@@ -166,6 +168,16 @@ export interface SidecarProfileInput {
     cliCommandSettingKey?: string;
     cliCommandDefault: string;
     cliPythonModule?: string;
+    /**
+     * Environment variables every start of the CLI is given (a run, `runCli`,
+     * the plan and hierarchy exports, the chat's graph, a status source), each
+     * from a setting that lists folders: see {@link CliFolderListVariable}.
+     * The sidecar is started without them. A workspace's own settings reach
+     * the CLI's environment through them: an extension that runs in an
+     * untrusted workspace must list these settings in its
+     * `restrictedConfigurations`, so that only the user's value is read there.
+     */
+    cliEnvironment?: CliFolderListVariable[];
     /** Default `[sidecarOperationPrefix]`. */
     acceptedOperationPrefixes?: string[];
     graphAcquisition: 'sidecar-export' | 'cli-plan';
@@ -506,6 +518,7 @@ function sidecarRuntimeConfig(input: ResolvedSidecarProfileInput): SidecarRuntim
         cliCommandSettingKey: input.cliCommandSettingKey,
         cliCommandDefault: input.cliCommandDefault,
         cliPythonModule: input.cliPythonModule,
+        cliEnvironment: input.cliEnvironment,
         operationKinds: {
             createEntityPort: input.operationKinds.createEntityPort,
             deleteEntityPort: input.operationKinds.deleteEntityPort
@@ -640,12 +653,14 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
         ? async (file: string, args: Record<string, unknown>) => {
             const scopeUri = vscode.Uri.file(file);
             const scoped = args[input.scopeArgKey];
+            const cwd = await resolveRunRoot(scopeUri);
             return exportGraphFromCli(file, {
                 ...getCliInvocation(runtimeConfig, vscode, scopeUri),
+                variables: getCliVariables(runtimeConfig, vscode, scopeUri, cwd),
                 cliGraphArgs,
                 networkName: typeof scoped === 'string' ? scoped : undefined,
                 timeoutMs: getGraphLoadTimeoutMs(runtimeConfig, vscode, scopeUri),
-                cwd: await resolveRunRoot(scopeUri)
+                cwd
             });
         }
         : undefined;
@@ -717,6 +732,7 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
             cliCommandSettingKey: input.cliCommandSettingKey,
             cliCommandDefault: input.cliCommandDefault,
             cliPythonModule: input.cliPythonModule,
+            cliEnvironment: input.cliEnvironment,
             runOutputDirSettingKey: input.runOutputDirSettingKey,
             liveExecutionGlowSettingKey: input.liveExecutionGlowSettingKey,
             agentToolsSettingKey: input.agentToolsSettingKey,

@@ -17,7 +17,13 @@ import * as vscode from 'vscode';
 import type { ExecutionNodeState } from '@dialogram/shared';
 import { describeChildFailure, runChildProcess } from './run-child-process.js';
 import { resolveRunRoot } from './run-root.js';
-import { getCliInvocation, getGraphLoadTimeoutMs, type SidecarRuntimeConfig } from './server/sidecar-runtime-config.js';
+import {
+    cliProcessEnv,
+    getCliInvocation,
+    getCliVariables,
+    getGraphLoadTimeoutMs,
+    type SidecarRuntimeConfig
+} from './server/sidecar-runtime-config.js';
 
 /**
  * Runs the product's CLI with `args` (after any `-m <module>` prefix the
@@ -48,6 +54,8 @@ export interface SidecarStatusSourceInput {
 export interface CliJsonOptions {
     cmd: string;
     argsPrefix: string[];
+    /** The variables the product's settings give the CLI in `cwd` (`getCliVariables`). */
+    variables?: Record<string, string>;
     cwd?: string;
     timeoutMs?: number;
     /** Each command line, before it runs. */
@@ -62,7 +70,11 @@ export interface CliJsonOptions {
 export async function runCliJson(args: string[], options: CliJsonOptions): Promise<unknown> {
     const argv = [...options.argsPrefix, ...args];
     options.log?.(`$ ${[options.cmd, ...argv].join(' ')}`);
-    const result = await runChildProcess(options.cmd, argv, { cwd: options.cwd, timeoutMs: options.timeoutMs });
+    const result = await runChildProcess(options.cmd, argv, {
+        cwd: options.cwd,
+        timeoutMs: options.timeoutMs,
+        env: cliProcessEnv(options.variables)
+    });
     if (result.spawnError || result.timedOut) {
         throw new Error(describeChildFailure(options.cmd, result));
     }
@@ -87,9 +99,11 @@ export function createCliStatusSource(input: SidecarStatusSourceInput, runtimeCo
         clearCommand: input.clearCommand,
         collect: async (file: string, context: { output: { appendLine(line: string): void } }): Promise<ExecutionNodeState[]> => {
             const scopeUri = vscode.Uri.file(file);
+            const cwd = await resolveRunRoot(scopeUri);
             const options: CliJsonOptions = {
                 ...getCliInvocation(runtimeConfig, vscode, scopeUri),
-                cwd: await resolveRunRoot(scopeUri),
+                variables: getCliVariables(runtimeConfig, vscode, scopeUri, cwd),
+                cwd,
                 timeoutMs: getGraphLoadTimeoutMs(runtimeConfig, vscode, scopeUri),
                 log: line => context.output.appendLine(line)
             };

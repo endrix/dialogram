@@ -15,9 +15,9 @@ import { openWorkspaceFolders, resetRegisteredCommands, resetWorkspace } from '.
 // Fake the CLI spawn so the run command completes deterministically without a
 // real child process, capturing the invocation so we can assert the args that
 // the agent-tool overrides produced.
-const spawnCalls: Array<{ cmd: string; args: string[]; cwd: string }> = [];
+const spawnCalls: Array<{ cmd: string; args: string[]; cwd: string; env?: NodeJS.ProcessEnv }> = [];
 vi.mock('../src/process-control.js', () => ({
-    spawnWorkflowProcess: (invocation: { cmd: string; args: string[]; cwd: string }) => {
+    spawnWorkflowProcess: (invocation: { cmd: string; args: string[]; cwd: string; env?: NodeJS.ProcessEnv }) => {
         spawnCalls.push(invocation);
         const child: any = new EventEmitter();
         child.stdout = new EventEmitter();
@@ -214,6 +214,37 @@ describe('CliRunDriver: where a run starts', () => {
         await vscode.commands.executeCommand(RUN_CMD, { sourceUri: `file://${loose}` });
 
         expect(spawnCalls.map(call => call.cwd)).toEqual([folder, path.join(home, 'loose')]);
+    });
+
+    it('is given the variables the product’s folder-list settings name, and says so', async () => {
+        const folder = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cli-run-driver-vars-')));
+        temps.push(folder);
+        const file = path.join(folder, 'pipeline.py');
+        fs.writeFileSync(file, '# fixture\n', 'utf8');
+        openWorkspaceFolders(folder);
+        let roots: string[] = ['skills', path.resolve('/opt/skills'), '${nope}/skills'];
+        Object.assign(vscode.workspace, {
+            getConfiguration: () => ({ get: <T>(key: string, fallback?: T) => (key === 'roots' ? roots as T : fallback) })
+        });
+        const host = makeHost();
+        const driver = new CliRunDriver(
+            { ...makeConfig(makeOverrideState()), cliEnvironment: [{ variable: 'X_ROOTS', folderListSettingKey: 'roots' }] },
+            host as any
+        );
+        driver.registerCommands(makeContext());
+
+        await vscode.commands.executeCommand(RUN_CMD, { sourceUri: `file://${file}` });
+        const value = [path.join(folder, 'skills'), path.resolve('/opt/skills')].join(path.delimiter);
+        expect(spawnCalls[0].env?.X_ROOTS).toBe(value);
+        expect(spawnCalls[0].env?.PATH).toBe(process.env.PATH);
+        expect(host.appended).toContain(`[wf-lang] X_ROOTS=${value}`);
+        // An entry it cannot read is left out of the variable, and the run says so.
+        expect(host.appended).toContainEqual(expect.stringMatching(/^\[wf-lang\] wfLang\.roots: '\$\{nope\}\/skills' is left out/));
+
+        // Nothing listed: the run inherits the extension's environment as it is.
+        roots = [];
+        await vscode.commands.executeCommand(RUN_CMD, { sourceUri: `file://${file}` });
+        expect(spawnCalls[1].env).toBeUndefined();
     });
 });
 

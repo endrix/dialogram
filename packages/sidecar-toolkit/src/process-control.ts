@@ -6,6 +6,8 @@ export type WorkflowCliInvocation = {
     cmd: string;
     args: string[];
     cwd: string;
+    /** The environment to start it with; this process's when absent. */
+    env?: NodeJS.ProcessEnv;
 };
 
 export interface WorkflowProcessLike {
@@ -60,7 +62,7 @@ export function spawnWorkflowProcess(
 ): cp.ChildProcessWithoutNullStreams {
     return spawnProcess(invocation.cmd, invocation.args, {
         cwd: invocation.cwd,
-        env: process.env,
+        env: invocation.env ?? process.env,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: platform !== 'win32'
     }) as cp.ChildProcessWithoutNullStreams;

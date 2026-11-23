@@ -13,11 +13,14 @@
 
 import type { SidecarOpResult } from './sidecar-graph-export.js';
 import { describeChildFailure, runChildProcess } from './run-child-process.js';
+import { cliProcessEnv } from './server/sidecar-runtime-config.js';
 
 export interface CliGraphExportOptions {
     /** The CLI command and the arguments that precede the plan's own (`-m <module>`, say). */
     cmd: string;
     argsPrefix: string[];
+    /** The variables the product's settings give the CLI in `cwd` (`getCliVariables`). */
+    variables?: Record<string, string>;
     /** The plan argv for a file, as the profile declares it (`cliGraphArgs`). */
     cliGraphArgs: (file: string, requestedWorkflow?: string) => string[];
     /** The unit within the file to export; the plan's default when absent. */
@@ -40,7 +43,11 @@ export async function exportGraphFromCli(filePath: string, options: CliGraphExpo
         args.push('--workflow', networkName);
     }
     try {
-        const result = await runChildProcess(options.cmd, args, { cwd: options.cwd, timeoutMs: options.timeoutMs });
+        const result = await runChildProcess(options.cmd, args, {
+            cwd: options.cwd,
+            timeoutMs: options.timeoutMs,
+            env: cliProcessEnv(options.variables)
+        });
         const failure = describeChildFailure(options.cmd, result);
         if (failure) {
             return {

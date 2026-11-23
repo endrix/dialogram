@@ -28,6 +28,7 @@
  */
 import * as vscode from 'vscode';
 import { noCliCommandMessage, resolveCliInvocation } from './cli-invocation.js';
+import { cliProcessEnv, type CliFolderListVariable } from './server/sidecar-runtime-config.js';
 import { fileExists } from './server/source-files';
 import * as cp from 'node:child_process';
 import { unlinkSync } from 'node:fs';
@@ -39,7 +40,7 @@ import * as path from 'node:path';
 import type { ExecutionOverlaySink } from '@dialogram/shared';
 import { resumeStepFor } from './resume-at-step.js';
 import { appendTail, failureHeadline, failureWhere, fixTask, type FixTask, type RunFailure } from './run-failure.js';
-import { requestWorkflowStop, spawnWorkflowProcess } from './process-control.js';
+import { requestWorkflowStop, spawnWorkflowProcess, type WorkflowCliInvocation } from './process-control.js';
 import { RunEventStreamClient, type RunStreamEvent } from './run-event-stream-client.js';
 
 type RunWorkflowArgs = {
@@ -158,6 +159,8 @@ export interface CliRunDriverConfig {
     cliCommandSettingKey: string;
     cliCommandDefault: string;
     cliPythonModule?: string;
+    /** Variables a run is given from the product's settings (`CliFolderListVariable`). */
+    cliEnvironment?: readonly CliFolderListVariable[];
     runOutputDirSettingKey: string;
     liveExecutionGlowSettingKey: string;
     agentToolsSettingKey: string;
@@ -726,7 +729,7 @@ export class CliRunDriver {
     }
 
     private async spawnRun(
-        inv: { cmd: string; args: string[]; cwd: string },
+        inv: WorkflowCliInvocation,
         output: vscode.OutputChannel,
         onSpawn?: (child: cp.ChildProcessWithoutNullStreams) => void,
         wasStopRequested?: () => boolean,
@@ -1136,7 +1139,8 @@ export class CliRunDriver {
 
         const isPython = sourceUri.fsPath.endsWith('.py');
         // The run root and the CLI by the rules `runCli` starts a product's CLI by too (`cli-invocation.ts`).
-        const cli = await resolveCliInvocation(this.config, sourceUri, isPython);
+        const leftOut: string[] = [];
+        const cli = await resolveCliInvocation(this.config, sourceUri, isPython, message => leftOut.push(message));
         if (!cli) {
             const message = noCliCommandMessage(this.config);
             vscode.window.showErrorMessage(message);
@@ -1391,6 +1395,12 @@ export class CliRunDriver {
             },
             async () => {
                 output.appendLine(`[wf-lang] cwd=${cli.cwd}`);
+                for (const [name, value] of Object.entries(cli.variables ?? {})) {
+                    output.appendLine(`[wf-lang] ${name}=${value}`);
+                }
+                for (const message of leftOut) {
+                    output.appendLine(`[wf-lang] ${message}`);
+                }
                 output.appendLine(`[wf-lang] ${cli.cmd} ${cliArgs.map(a => JSON.stringify(a)).join(' ')}`);
                 output.appendLine('');
                 if (liveGlowEnabled) {
@@ -1398,7 +1408,7 @@ export class CliRunDriver {
                 }
                 startStream();
                 return await this.spawnRun(
-                    { cmd: cli.cmd, args: cliArgs, cwd: cli.cwd },
+                    { cmd: cli.cmd, args: cliArgs, cwd: cli.cwd, env: cliProcessEnv(cli.variables) },
                     output,
                     (child) => {
                         this.activeRun = {

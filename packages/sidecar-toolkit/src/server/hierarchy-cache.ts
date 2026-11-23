@@ -159,17 +159,18 @@ export class HierarchyCache {
     private static readonly MAX = 8;
 
     constructor(
-        /** Runs the runtime's hierarchy export from `cwd`; its stdout, or undefined on failure. */
-        private readonly run: (rootFile: string, rootWorkflow: string, cwd: string) => Promise<string | undefined>,
+        /** Runs the runtime's hierarchy export from `cwd`, with `variables`; its stdout, or undefined on failure. */
+        private readonly run: (rootFile: string, rootWorkflow: string, cwd: string, variables: Record<string, string>) => Promise<string | undefined>,
         private readonly hash: (filePath: string) => Promise<string | undefined> = fileHash
     ) {}
 
     /**
      * The hierarchy rooted at `rootWorkflow` in `rootFile`, exported from `cwd` (the root file's
-     * run root), anew if any of its files changed. One exported from another folder is not this one.
+     * run root) with the variables the product's settings give the CLI, anew if any of its files
+     * changed. One exported from another folder, or with other variables, is not this one.
      */
-    async get(rootFile: string, rootWorkflow: string, cwd: string): Promise<HierarchyExport | undefined> {
-        const key = `${rootFile}::${rootWorkflow}::${cwd}`;
+    async get(rootFile: string, rootWorkflow: string, cwd: string, variables: Record<string, string> = {}): Promise<HierarchyExport | undefined> {
+        const key = `${rootFile}::${rootWorkflow}::${cwd}::${JSON.stringify(variables)}`;
         const cached = this.entries.get(key);
         if (cached && (await this.unchanged(cached))) {
             this.entries.delete(key);
@@ -177,7 +178,7 @@ export class HierarchyCache {
             return cached.exported;
         }
 
-        const stdout = await this.run(rootFile, rootWorkflow, cwd);
+        const stdout = await this.run(rootFile, rootWorkflow, cwd, variables);
         if (stdout === undefined) {
             this.entries.delete(key);
             return undefined;
