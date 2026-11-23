@@ -42,11 +42,19 @@ export interface AnnotationEditor {
     /**
      * Save sends what the card changed beside the text, so the server merges
      * it into the source annotation and keeps every other argument as the
-     * source has it: `argUpdates`, the arguments set or edited since the card
-     * was drawn (after `render`, so the defaults an editor fills in are not
-     * written unless changed), and `argRemovals`, the ones the card showed and
-     * cleared (sent only when there is one). A Save that changed nothing sends
-     * nothing. Without it, Save replaces the annotation with the text.
+     * source has it:
+     * - `argUpdates`: the arguments set or edited since the card was drawn.
+     *   The map is taken when `render` returns, so the defaults an editor
+     *   fills in while drawing are not written unless changed; a value it
+     *   sets later (after a pick, an answer, a timer) counts as changed.
+     * - `argRemovals`: the arguments the producer gave that the card still
+     *   showed with a value after drawing, and no longer has. Sent only when
+     *   there is one, and passed on only to a producer that declares
+     *   `features.mergeArgRemovals`; another keeps them, and says so.
+     *
+     * A Save that changed nothing sends nothing, and its button says so. A
+     * save the editor makes while drawing compares with what was loaded.
+     * Without it, Save replaces the annotation with the text.
      */
     readonly mergeArgUpdates?: boolean;
 

@@ -113,7 +113,42 @@ describe('a contributed annotation editor', () => {
         expect(panel.last(UPDATE)).toMatchObject({ argUpdates: { extra: '3' }, argRemovals: ['level', 'note'] });
     });
 
-    it('sends nothing when nothing changed, the defaults it filled in at render included', async () => {
+    it('removes only what the source has and the card showed, not a default it filled in nor one it dropped while drawing', async () => {
+        const seen: AnnotationEditorContext[] = [];
+        const filling: AnnotationEditor = {
+            ...probeEditor(seen),
+            render(context) {
+                seen.push(context);
+                context.args.set('hooks', 'true');
+                context.args.delete('note');
+            }
+        };
+        const panel = panelWith([filling]);
+        panel.show(taskNode('probed', [PROBE]));
+        seen[0].args.delete('hooks');
+        seen[0].args.set('level', '5');
+        button(card('probe'), 'Save').click();
+        await tick();
+        const sent = panel.last(UPDATE);
+        expect(sent.argUpdates).toEqual({ level: '5' });
+        expect(sent.argRemovals).toBeUndefined();
+    });
+
+    it('compares a save the editor makes while drawing with what was loaded', async () => {
+        const saving: AnnotationEditor = {
+            ...probeEditor(),
+            render(context) {
+                context.args.set('level', '9');
+                context.save();
+            }
+        };
+        const panel = panelWith([saving]);
+        panel.show(taskNode('probed', [PROBE]));
+        await tick();
+        expect(panel.last(UPDATE)?.argUpdates).toEqual({ level: '9' });
+    });
+
+    it('sends nothing when nothing changed, the defaults it filled in at render included, and says so on the button', async () => {
         const seen: AnnotationEditorContext[] = [];
         const filling: AnnotationEditor = {
             ...probeEditor(seen),
@@ -125,9 +160,17 @@ describe('a contributed annotation editor', () => {
         };
         const panel = panelWith([filling]);
         panel.show(taskNode('probed', [PROBE]));
-        button(card('probe'), 'Save').click();
-        await tick();
-        expect(panel.last(UPDATE)).toBeUndefined();
+        vi.useFakeTimers();
+        try {
+            const save = button(card('probe'), 'Save');
+            save.click();
+            expect(panel.last(UPDATE)).toBeUndefined();
+            expect(save.textContent).toBe('No changes');
+            vi.advanceTimersByTime(1500);
+            expect(save.textContent).toBe('Save');
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('clicks the card’s Save through its context', async () => {

@@ -1,3 +1,4 @@
+import * as vscode from 'vscode';
 import { Action, Command, ModelState, OperationHandler } from '@eclipse-glsp/server';
 import { normalizeWorkflowReferenceName } from '../source-analysis';
 import { inject, injectable } from 'inversify';
@@ -19,7 +20,10 @@ export namespace UpdateDefinitionAnnotationOperation {
         annotationText?: string;
         /** When set, uses merge semantics: only listed args are updated; unlisted args are preserved. */
         argUpdates?: Record<string, string>;
-        /** With `argUpdates`: args to take out of the annotation. */
+        /**
+         * Merge semantics too: args to take out of the annotation. Passed on
+         * only to a producer that declares `features.mergeArgRemovals`.
+         */
         argRemovals?: string[];
     }
 
@@ -31,6 +35,9 @@ export namespace UpdateDefinitionAnnotationOperation {
         return { kind: KIND, ...opts };
     }
 }
+
+/** `mergeDefinitionAnnotationArgs` takes `argRemovals: [name]`, the args to take out. */
+export const MERGE_ARG_REMOVALS = 'mergeArgRemovals';
 
 @injectable()
 export class UpdateDefinitionAnnotationOperationHandler extends OperationHandler {
@@ -74,7 +81,7 @@ export class UpdateDefinitionAnnotationOperationHandler extends OperationHandler
             failed: removing
                 ? `@${operation.annotationName} was not removed from '${defName}'.`
                 : `@${operation.annotationName} of '${defName}' was not changed.`,
-            request: () => {
+            request: async () => {
                 let sidecarOp: string;
                 let sidecarArgs: Record<string, unknown>;
                 if (removing) {
@@ -83,16 +90,29 @@ export class UpdateDefinitionAnnotationOperationHandler extends OperationHandler
                         entityType: defName,
                         annotationName: operation.annotationName,
                     };
-                } else if (operation.argUpdates) {
+                } else if (operation.argUpdates || operation.argRemovals?.length) {
                     // Merge mode: only update listed args, preserve everything else
                     sidecarOp = this.sidecar.sidecarOp('mergeDefinitionAnnotationArgs');
+                    const argUpdates = Object.fromEntries(Object.entries(operation.argUpdates ?? {})
+                        .map(([key, value]) => [key, normalizePythonLiteralNames(value)]));
+                    let argRemovals = operation.argRemovals?.length ? operation.argRemovals : undefined;
+                    // A producer that predates removals refuses an argument it does
+                    // not know, the updates with it: it is sent them only when it
+                    // says it takes them, and else the cleared ones stay.
+                    if (argRemovals && !(await this.sidecar.hasFeature(sourceUri, MERGE_ARG_REMOVALS))) {
+                        void vscode.window.showWarningMessage(
+                            `${argRemovals.map(key => `'${key}'`).join(', ')} stay${argRemovals.length === 1 ? 's' : ''} in @${operation.annotationName} of '${defName}': its producer does not take arguments out.`
+                        );
+                        argRemovals = undefined;
+                    }
+                    if (Object.keys(argUpdates).length === 0 && !argRemovals) {
+                        return undefined;
+                    }
                     sidecarArgs = {
                         entityType: defName,
                         annotationName: operation.annotationName,
-                        argUpdates: operation.argUpdates,
-                        // Only when there is one: a producer that predates removals
-                        // refuses an argument it does not know.
-                        ...(operation.argRemovals?.length ? { argRemovals: operation.argRemovals } : {}),
+                        argUpdates,
+                        ...(argRemovals ? { argRemovals } : {}),
                     };
                 } else {
                     sidecarOp = this.sidecar.sidecarOp('updateDefinitionAnnotation');

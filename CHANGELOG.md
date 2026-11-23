@@ -1046,11 +1046,14 @@ platform that hands it one.
   defaults it was given and filled in included, so a Save wrote them all
   into the file, and a field cleared in the card stayed in the source.
   Save now sends `argUpdates`, the arguments set or edited since the card
-  was drawn, and `argRemovals`, the ones it showed and cleared; a Save that
-  changed nothing sends nothing. The server passes `argRemovals` to the
-  producer's `mergeDefinitionAnnotationArgs` only when there is one, so a
-  producer that predates it takes every other Save (wfpy takes it from
-  huawei-csl/wfpy#79).
+  was drawn, and `argRemovals`, the ones the source has that the card
+  showed and cleared; a Save that changed nothing sends nothing, and its
+  button says "No changes". The server passes `argRemovals` on to the
+  producer's `mergeDefinitionAnnotationArgs` only when the producer
+  declares `features.mergeArgRemovals` (wfpy from huawei-csl/wfpy#79);
+  another gets the updates, and a warning says which arguments stay. The
+  values of a merge are written with the language's literal names
+  (`True`), as the text of a replace already was.
 
 - **A long name breaks onto lines in its header.** Past 200 px a node's name
   breaks between words onto up to three balanced lines, and the header grows

@@ -55,11 +55,15 @@ function definitionUriOf(node: any): string | undefined {
 }
 
 /**
- * What a merging annotation card changed: the arguments whose value differs
- * from `shown` (the card as drawn) or that it did not show, and the ones it
- * showed with a value and no longer has. GUI-only keys are neither.
+ * What a merging annotation card changed: `argUpdates`, the arguments whose
+ * value differs from `shown` (the card as drawn) or that it did not show;
+ * `argRemovals`, the ones the source has (`loaded`, as the producer gave
+ * them) that the card showed with a value and no longer has. A default the
+ * card filled in is no removal when cleared: the source never had it. GUI-only
+ * keys are neither.
  */
 export function changedArgs(
+    loaded: ReadonlyMap<string, string>,
     shown: ReadonlyMap<string, string>,
     pairs: ReadonlyArray<readonly [string, string]>,
     guiOnlyKeys: ReadonlySet<string>
@@ -72,12 +76,15 @@ export function changedArgs(
             argUpdates[key] = value;
         }
     }
-    const argRemovals = [...shown.entries()]
-        .map(([key, value]) => [String(key ?? '').trim(), String(value ?? '').trim()] as const)
-        .filter(([key, value]) => key !== '' && value !== '' && !guiOnlyKeys.has(key) && !kept.has(key))
-        .map(([key]) => key);
+    const hasValue = (map: ReadonlyMap<string, string>, key: string) => String(map.get(key) ?? '').trim() !== '';
+    const argRemovals = [...loaded.keys()]
+        .map(key => String(key ?? '').trim())
+        .filter(key => key !== '' && !guiOnlyKeys.has(key) && !kept.has(key) && hasValue(loaded, key) && hasValue(shown, key));
     return { argUpdates, argRemovals };
 }
+
+/** How long a Save that had nothing to send says so on its button. */
+const NOTHING_TO_SAVE_MS = 1500;
 
 @injectable()
 export class PropertyPanel implements ISelectionListener, IGModelRootListener {
@@ -966,11 +973,18 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                         );
                     });
 
+                    // What the source has, as the producer gave it: only these can be removed.
+                    const loadedArgs = new Map(argsMap);
+                    // The card as drawn: Save sends what differs. Until the editor has drawn
+                    // it (a save it makes while drawing), that is what was loaded.
+                    let shownArgs = new Map(argsMap);
+
                     const saveBtn = document.createElement('button');
                     saveBtn.type = 'button';
                     saveBtn.className = 'mini-btn';
                     saveBtn.title = 'Save changes to the referenced definition';
                     saveBtn.textContent = 'Save';
+                    let saveLabelTimer: ReturnType<typeof setTimeout> | undefined;
                     saveBtn.addEventListener('click', () => {
                         // An editor's GUI-only arguments are its own state, not
                         // parameters: neither the text nor the updates carry them.
@@ -989,8 +1003,12 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                         // it, so a value the card only showed (a default it was given) is
                         // not written, and nothing changed is nothing sent.
                         if (editor?.mergeArgUpdates) {
-                            const { argUpdates, argRemovals } = changedArgs(shownArgs, pairs, guiOnlyKeys);
+                            const { argUpdates, argRemovals } = changedArgs(loadedArgs, shownArgs, pairs, guiOnlyKeys);
                             if (Object.keys(argUpdates).length === 0 && argRemovals.length === 0) {
+                                // Said where the click was, not silently dropped.
+                                saveBtn.textContent = 'No changes';
+                                clearTimeout(saveLabelTimer);
+                                saveLabelTimer = setTimeout(() => { saveBtn.textContent = 'Save'; }, NOTHING_TO_SAVE_MS);
                                 return;
                             }
                             void this.actionDispatcher.dispatch(
@@ -1036,8 +1054,9 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                         requestDiscovery: requestAgentDiscovery,
                         save: () => saveBtn.click()
                     });
-                    // The card as drawn, the editor's own defaults in it: Save sends what differs.
-                    const shownArgs = new Map(argsMap);
+                    // The card as drawn, the editor's own defaults in it. What it sets later is
+                    // the user's doing (a pick, an edit), and is sent.
+                    shownArgs = new Map(argsMap);
 
                     const reserved = new Set(editor?.reservedArgs ?? []);
                     // Remaining args = genuinely custom annotation args (no dedicated control

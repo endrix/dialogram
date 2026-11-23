@@ -176,7 +176,10 @@ export namespace WorkflowUpdateDefinitionAnnotationOperation {
         annotationText?: string;
         /** When set, uses merge semantics: only listed args are updated; unlisted args are preserved. */
         argUpdates?: Record<string, string>;
-        /** With `argUpdates`: args to take out of the annotation. */
+        /**
+         * Merge semantics too: args to take out of the annotation. Passed on
+         * only to a producer that declares `features.mergeArgRemovals`.
+         */
         argRemovals?: string[];
     }
 
