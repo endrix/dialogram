@@ -31,7 +31,7 @@ import { noCliCommandMessage, resolveCliInvocation } from './cli-invocation.js';
 import { cliProcessEnv, type CliFolderListVariable } from './server/sidecar-runtime-config.js';
 import { fileExists } from './server/source-files';
 import * as cp from 'node:child_process';
-import { unlinkSync } from 'node:fs';
+import { realpathSync, unlinkSync } from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as readline from 'node:readline';
@@ -41,7 +41,7 @@ import type { ExecutionOverlaySink } from '@dialogram/shared';
 import { resumeStepFor } from './resume-at-step.js';
 import { appendTail, failureHeadline, failureWhere, fixTask, type FixTask, type RunFailure } from './run-failure.js';
 import { requestWorkflowStop, spawnWorkflowProcess, type WorkflowCliInvocation } from './process-control.js';
-import { RunEventStreamClient, type RunStreamEvent } from './run-event-stream-client.js';
+import { RunStreamForwarder, streamListening } from './run-stream-forwarder.js';
 
 type RunWorkflowArgs = {
     sourceUri?: string;
@@ -254,6 +254,46 @@ export interface LiveOverlaySubscription {
     dispose(): void;
 }
 
+/** What a run's `run.wf-stream.live.json` says about its stream. */
+interface StreamDiscovery {
+    runId?: string;
+    sourcePath?: string;
+    host?: string;
+    port: number;
+}
+
+async function readStreamDiscovery(filePath: string): Promise<StreamDiscovery | undefined> {
+    try {
+        const parsed = JSON.parse(await fs.readFile(filePath, 'utf-8')) as Partial<StreamDiscovery>;
+        if (!parsed || typeof parsed !== 'object' || typeof parsed.port !== 'number') {
+            return undefined;
+        }
+        return {
+            runId: typeof parsed.runId === 'string' && parsed.runId ? parsed.runId : undefined,
+            sourcePath: typeof parsed.sourcePath === 'string' ? parsed.sourcePath : undefined,
+            host: typeof parsed.host === 'string' && parsed.host ? parsed.host : undefined,
+            port: parsed.port,
+        };
+    } catch {
+        return undefined; // not written yet, removed at the run's end, or half-written
+    }
+}
+
+/** Whether a run's `sourcePath` is this file (a symlinked folder included). */
+function sameFile(sourcePath: string | undefined, fsPath: string): boolean {
+    if (!sourcePath) {
+        return false;
+    }
+    const real = (p: string): string => {
+        try {
+            return realpathSync.native(p);
+        } catch {
+            return path.resolve(p);
+        }
+    };
+    return path.resolve(sourcePath) === path.resolve(fsPath) || real(sourcePath) === real(fsPath);
+}
+
 export class CliRunDriver {
     private activeRun: ActiveWorkflowRun | undefined;
     /** The last failed run of each workflow file (by fsPath), until it runs clean. */
@@ -282,6 +322,12 @@ export class CliRunDriver {
     private readonly watchedLiveOverlayUris = new Map<string, vscode.Uri>();
     private liveOverlayWatchTimer: ReturnType<typeof setInterval> | undefined;
     private liveOverlayPollInFlight = false;
+    /** The agent stream of a run of a watched diagram's file that the IDE did not
+     *  start (a run of the CLI in a terminal writing to the same out dir), forwarded to
+     *  the diagram as the IDE's own run's is: keyed by the diagram's source URI. */
+    private readonly followedRuns = new Map<string, { runId: string; forwarder: RunStreamForwarder; checking: boolean }>();
+    /** Runs whose stream is gone: a killed run leaves its discovery file behind. */
+    private readonly goneRunIds = new Set<string>();
 
     /** Passive live-overlay poll cadence. Preserves the editor provider's old
      *  `PASSIVE_LIVE_REFRESH_POLL_MS` (distinct from the 400ms run poll). */
@@ -377,8 +423,12 @@ export class CliRunDriver {
 
     dispose(): void {
         // Command subscriptions are owned by the extension context; the run
-        // output channel is owned by core. Release only the always-on watch timer.
+        // output channel is owned by core. Release only the always-on watch timer,
+        // and the runs it was following.
         this.stopLiveOverlayWatchTimer();
+        for (const key of [...this.followedRuns.keys()]) {
+            this.stopFollowedRun(key);
+        }
     }
 
     /**
@@ -417,6 +467,7 @@ export class CliRunDriver {
         return {
             dispose: () => {
                 this.watchedLiveOverlayUris.delete(key);
+                this.stopFollowedRun(key, 'the diagram closed');
                 if (this.watchedLiveOverlayUris.size === 0) {
                     this.stopLiveOverlayWatchTimer();
                 }
@@ -449,10 +500,94 @@ export class CliRunDriver {
             for (const [key, uri] of this.watchedLiveOverlayUris) {
                 const signature = await this.computeLiveOverlaySignature(uri);
                 this.emitLiveOverlaySignature(key, signature);
+                try {
+                    await this.followExternalRun(key, uri);
+                } catch (error) {
+                    // eslint-disable-next-line no-console
+                    console.log(`[wf-lang overlay] host: following ${uri.fsPath} failed: ${error instanceof Error ? error.message : String(error)}`);
+                }
             }
         } finally {
             this.liveOverlayPollInFlight = false;
         }
+    }
+
+    /**
+     * Follow the agent stream of a run of this diagram's file that the IDE did not
+     * start: a run of the CLI in a terminal writes the same `run.wf-stream.live.json`
+     * in the out dir, naming its file (`sourcePath`), its run id and where its
+     * stream listens, and removes it when the run ends. The diagram then shows the
+     * run's agents as it does the IDE's own run's. Following stops when the file
+     * goes or names another run, when the stream is gone, when the diagram closes,
+     * and when the IDE starts a run of its own.
+     */
+    private async followExternalRun(key: string, uri: vscode.Uri): Promise<void> {
+        const outDir = this.resolveLiveOverlayOutDir(uri);
+        if (!outDir) {
+            return;
+        }
+        const discoveryFilePath = path.join(outDir, 'run.wf-stream.live.json');
+        const discovery = await readStreamDiscovery(discoveryFilePath);
+        const ideRun = (): boolean => this.activeRun !== undefined && this.activeRun.sourceUri.toString() === key;
+        const runId = discovery?.runId;
+        const followable = discovery !== undefined && runId !== undefined && !ideRun()
+            && sameFile(discovery.sourcePath, uri.fsPath) && !this.goneRunIds.has(runId);
+        const followed = this.followedRuns.get(key);
+        if (followed && (!followable || followed.runId !== runId)) {
+            this.stopFollowedRun(key);
+        }
+        if (!followable || this.followedRuns.has(key)) {
+            return;
+        }
+        const host = discovery.host ?? '127.0.0.1';
+        if (!(await streamListening(host, discovery.port))) {
+            this.goneRunIds.add(runId);
+            return;
+        }
+        // Things may have moved while the stream was asked.
+        if (!this.watchedLiveOverlayUris.has(key) || this.followedRuns.has(key) || ideRun()) {
+            return;
+        }
+        const forwarder = new RunStreamForwarder({
+            discoveryFilePath,
+            emit: (events) => this.host.overlay.emitEvents(key, events),
+            onDisconnect: () => void this.checkFollowedRun(key, runId, host, discovery.port),
+        });
+        this.followedRuns.set(key, { runId, forwarder, checking: false });
+        // eslint-disable-next-line no-console
+        console.log(`[wf-lang overlay] host: following run ${runId} of ${uri.fsPath}, started outside the IDE`);
+        // The diagram keeps the last run's agents until a run starts, and the stream
+        // replays only its recent history, which a long run's start is not in.
+        this.host.overlay.emitEvents(key, [{ type: 'run.started', runId }]);
+        forwarder.start();
+    }
+
+    /** A followed run's connection dropped: stop following when its stream is gone. */
+    private async checkFollowedRun(key: string, runId: string, host: string, port: number): Promise<void> {
+        const followed = this.followedRuns.get(key);
+        if (!followed || followed.runId !== runId || followed.checking) {
+            return;
+        }
+        followed.checking = true;
+        try {
+            if (!(await streamListening(host, port))) {
+                this.goneRunIds.add(runId);
+                if (this.followedRuns.get(key) === followed) {
+                    this.stopFollowedRun(key);
+                }
+            }
+        } finally {
+            followed.checking = false;
+        }
+    }
+
+    private stopFollowedRun(key: string, reason?: string): void {
+        const followed = this.followedRuns.get(key);
+        if (!followed) {
+            return;
+        }
+        this.followedRuns.delete(key);
+        followed.forwarder.stop(reason);
     }
 
     private emitLiveOverlaySignature(sourceUri: string, signature: string | undefined): void {
@@ -1320,15 +1455,11 @@ export class CliRunDriver {
         // Live agent message stream: connect (read-only) to the run's SSE endpoint
         // (advertised in run.wf-stream.live.json) and forward batched events to the
         // diagram client, which renders them in the read-only "Running agents" bar.
-        // Best-effort; the file-polling overlay above remains the fallback.
-        let streamClient: RunEventStreamClient | undefined;
-        let streamBatch: RunStreamEvent[] = [];
-        let streamFlushTimer: ReturnType<typeof setInterval> | undefined;
+        // Best-effort; the file-polling overlay above remains the fallback. A stopped
+        // (killed) or crashed run never closes its own stream, and the diagram's chat
+        // would show its agents streaming for good: the forwarder closes it for them.
+        let streamForwarder: RunStreamForwarder | undefined;
         let streamEventCount = 0;
-        // Whether the runtime closed its own stream. A stopped (killed) or
-        // crashed run never does, and the diagram's chat would show its agents
-        // streaming for good: the driver closes it for them.
-        let streamClosed = false;
         // Permanent, ungated host breadcrumbs (console.log so a webview/console
         // paste captures them — the extension host relays console.log). Every hop
         // of the run-stream pipeline logs, mirroring the client-side `[wf-lang
@@ -1337,51 +1468,31 @@ export class CliRunDriver {
             // eslint-disable-next-line no-console
             console.log(`[wf-lang overlay] host: ${message}`);
         };
-        const flushStreamEvents = (): void => {
-            if (streamBatch.length === 0) {
-                return;
-            }
-            const events = streamBatch;
-            streamBatch = [];
-            hostLog(`flush ${events.length} events -> emitEvents(${sourceUri.toString()})`);
-            // Route through the neutral execution-overlay seam; the core host bridge
-            // resolves the target clientId and dispatches (dropping if the diagram is
-            // closed — history is replayed on connect, see the file header).
-            this.host.overlay.emitEvents(sourceUri.toString(), events);
-        };
         const startStream = (): void => {
+            // A run of this diagram's that the IDE was following from a terminal gives way.
+            this.stopFollowedRun(sourceUri.toString(), 'a run started from the IDE');
             const discoveryFilePath = path.join(runOutDir, 'run.wf-stream.live.json');
             hostLog(`constructing RunEventStreamClient discovery=${discoveryFilePath}`);
-            streamClient = new RunEventStreamClient({
+            streamForwarder = new RunStreamForwarder({
                 discoveryFilePath,
-                onEvent: (event) => {
-                    if (event.type === 'run.finished' || event.type === 'run.stream.closing') {
-                        streamClosed = true;
-                    }
-                    streamBatch.push(event);
-                    hostLog(`SSE event #${++streamEventCount} type=${String(event.type)}`);
+                // Route through the neutral execution-overlay seam; the core host bridge
+                // resolves the target clientId and dispatches (dropping if the diagram is
+                // closed — history is replayed on connect, see the file header).
+                emit: (events) => {
+                    hostLog(`flush ${events.length} events -> emitEvents(${sourceUri.toString()})`);
+                    this.host.overlay.emitEvents(sourceUri.toString(), events);
                 },
+                onEvent: (event) => hostLog(`SSE event #${++streamEventCount} type=${String(event.type)}`),
                 onLog: (m) => {
                     hostLog(m);
                     output.appendLine(`[wf-lang ${m}`);
                 },
             });
-            streamClient.start();
-            streamFlushTimer = setInterval(flushStreamEvents, 120);
+            streamForwarder.start();
         };
         const stopStream = (): void => {
-            if (streamFlushTimer) {
-                clearInterval(streamFlushTimer);
-                streamFlushTimer = undefined;
-            }
-            flushStreamEvents();
-            const started = streamClient !== undefined;
-            streamClient?.stop();
-            streamClient = undefined;
-            if (started && !streamClosed) {
-                streamClosed = true;
-                this.host.overlay.emitEvents(sourceUri.toString(), [{ type: 'run.stream.closing', reason: 'the run ended without closing its stream' }]);
-            }
+            streamForwarder?.stop();
+            streamForwarder = undefined;
             this.stopElicitSocket();
         };
 

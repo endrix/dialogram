@@ -56,7 +56,13 @@ export interface RunEventStreamClientOptions {
     transport?: RunEventStreamTransport;
     /** Zero-bytes stall window before the auto fallback fires. Default 2000ms. */
     stallFallbackMs?: number;
+    /** Called when a connection fails or ends, before the client tries again: the
+     *  caller can tell a run that went away from a hiccup. May fire more than once
+     *  for one loss (a response's `end` and `close`). */
+    onDisconnect?: () => void;
 }
+
+function ignoreError(): void { /* torn down: nobody is listening any more */ }
 
 export class RunEventStreamClient {
     private stopped = false;
@@ -336,11 +342,17 @@ export class RunEventStreamClient {
     private teardownHttp(): void {
         if (this.response) {
             this.response.removeAllListeners();
+            // Destroying it can still emit 'error' (a request without its response
+            // yet: "socket hang up"); unheard, that is an uncaught exception.
+            this.response.on('error', ignoreError);
             try { this.response.destroy(); } catch { /* best-effort */ }
             this.response = undefined;
         }
         if (this.request) {
             this.request.removeAllListeners();
+            // Destroying it can still emit 'error' (a request without its response
+            // yet: "socket hang up"); unheard, that is an uncaught exception.
+            this.request.on('error', ignoreError);
             try { this.request.destroy(); } catch { /* best-effort */ }
             this.request = undefined;
         }
@@ -349,6 +361,9 @@ export class RunEventStreamClient {
     private teardownSocket(): void {
         if (this.socket) {
             this.socket.removeAllListeners();
+            // Destroying it can still emit 'error' (a request without its response
+            // yet: "socket hang up"); unheard, that is an uncaught exception.
+            this.socket.on('error', ignoreError);
             try { this.socket.destroy(); } catch { /* best-effort */ }
             this.socket = undefined;
         }
@@ -356,6 +371,9 @@ export class RunEventStreamClient {
 
     /** Drop the current connection so the discovery poll re-connects (run may still be live). */
     private resetForRetry(): void {
+        if (!this.stopped) {
+            this.opts.onDisconnect?.();
+        }
         this.clearStallTimer();
         this.sseBuffer = '';
         this.socketBodyBuf = Buffer.alloc(0);

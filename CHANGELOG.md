@@ -78,6 +78,16 @@ platform that hands it one.
 
 ### Added
 
+- **The agents of a run started outside the IDE.** A run of a diagram's file
+  started in a terminal, with the out dir the diagram watches, shows its
+  agents in the Running agents bar as a run started from the IDE does: the
+  run publishes its stream in `run.wf-stream.live.json` with its file
+  (`sourcePath`), and the platform follows it for an open diagram of that
+  file until the run ends, the diagram closes or the IDE starts a run of its
+  own. A run a kill left behind (its file there, its stream gone) is not
+  followed. A question the run's agents ask still goes to its terminal.
+  Events a reconnect replays are forwarded once, for the IDE's own runs too.
+
 - **A CLI variable from a folder-list setting.** A profile's
   `cliEnvironment` names variables the product's CLI is started with, each
   from a setting under the profile's namespace that lists folders
@@ -1525,6 +1535,11 @@ platform that hands it one.
   is built for it); without it layouts stay on elkjs, as before.
 
 ### Fixed
+
+- **Stopping a run's stream throws nothing.** Stopping the client of a run's
+  event stream while its request waited for a response destroyed the
+  request after its listeners were gone, and the "socket hang up" it emitted
+  was an uncaught exception in the extension host.
 
 - **The chat starts on opencode 2.** The chat ran `opencode acp --hostname
   127.0.0.1 --port N` so that the process would also serve opencode's HTTP

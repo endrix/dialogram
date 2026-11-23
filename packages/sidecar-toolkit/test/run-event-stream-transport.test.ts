@@ -6,7 +6,7 @@
  * transports must deliver every event; the socket path must correctly de-chunk
  * an HTTP/1.1 `transfer-encoding: chunked` SSE body.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as http from 'node:http';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
@@ -123,5 +123,43 @@ describe('RunEventStreamClient transports', () => {
         expect(events[0]).toMatchObject({ type: 'run.started' });
         expect(events.at(-1)).toMatchObject({ type: 'run.finished' });
         expect(events.filter(e => e.type === 'agent.message.start').map(e => e.instance)).toEqual(['n1', 'n2']);
+    });
+});
+
+describe('RunEventStreamClient stopping', () => {
+    it('stops a request still waiting for its response without an uncaught error', async () => {
+        // A server that takes the request and never answers: the client is
+        // stopped mid-request, and destroying the request emits 'error'.
+        const requests: http.IncomingMessage[] = [];
+        const server = http.createServer((req) => void requests.push(req));
+        await new Promise<void>((r) => server.listen(0, HOST, () => r()));
+        const port = (server.address() as { port: number }).port;
+        cleanups.push(() => { server.closeAllConnections(); server.close(); });
+        const outDir = await fs.mkdtemp(path.join(os.tmpdir(), 'wf-transport-'));
+        const discoveryFilePath = path.join(outDir, 'run.wf-stream.live.json');
+        await fs.writeFile(discoveryFilePath, JSON.stringify({ host: HOST, port }), 'utf-8');
+        const disconnects = vi.fn();
+        const client = new RunEventStreamClient({ discoveryFilePath, onEvent: () => {}, transport: 'http', onDisconnect: disconnects });
+        client.start();
+        await vi.waitFor(() => expect(requests).toHaveLength(1));
+        client.stop();
+        // Vitest fails the run on an uncaught exception; give one the time to land.
+        await new Promise((r) => setTimeout(r, 50));
+        expect(disconnects).not.toHaveBeenCalled();
+    });
+
+    it('reports a dropped connection before trying again', async () => {
+        const sse = await startChunkedSse();
+        cleanups.push(() => sse.close());
+        const outDir = await fs.mkdtemp(path.join(os.tmpdir(), 'wf-transport-'));
+        const discoveryFilePath = path.join(outDir, 'run.wf-stream.live.json');
+        await fs.writeFile(discoveryFilePath, JSON.stringify({ host: HOST, port: sse.port }), 'utf-8');
+        const disconnects = vi.fn();
+        const client = new RunEventStreamClient({ discoveryFilePath, onEvent: () => {}, transport: 'http', discoveryPollMs: 25, onDisconnect: disconnects });
+        cleanups.push(() => client.stop());
+        client.start();
+        await new Promise((r) => setTimeout(r, 100));
+        sse.close();
+        await vi.waitFor(() => expect(disconnects).toHaveBeenCalled());
     });
 });
