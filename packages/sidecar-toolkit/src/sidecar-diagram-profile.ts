@@ -23,7 +23,8 @@ import { getCliInvocation,
     type SidecarRuntimeConfig,
     type CreateNodeStrings,
     type CreateNodeVariant,
-    type CreateNodeBehavior
+    type CreateNodeBehavior,
+    type CliFolderListVariable
 } from './server/sidecar-runtime-config.js';
 import { createSidecarModelSource } from './server/cli-graph-model-source.js';
 import { createSidecarServerModule } from './server/sidecar-server-module.js';
@@ -166,6 +167,13 @@ export interface SidecarProfileInput {
     cliCommandSettingKey?: string;
     cliCommandDefault: string;
     cliPythonModule?: string;
+    /**
+     * Environment variables every start of the CLI is given (a run, `runCli`,
+     * the plan and hierarchy exports, the chat's graph, a status source), each
+     * from a setting that lists folders: see {@link CliFolderListVariable}.
+     * The sidecar is started without them.
+     */
+    cliEnvironment?: CliFolderListVariable[];
     /** Default `[sidecarOperationPrefix]`. */
     acceptedOperationPrefixes?: string[];
     graphAcquisition: 'sidecar-export' | 'cli-plan';
@@ -506,6 +514,7 @@ function sidecarRuntimeConfig(input: ResolvedSidecarProfileInput): SidecarRuntim
         cliCommandSettingKey: input.cliCommandSettingKey,
         cliCommandDefault: input.cliCommandDefault,
         cliPythonModule: input.cliPythonModule,
+        cliEnvironment: input.cliEnvironment,
         operationKinds: {
             createEntityPort: input.operationKinds.createEntityPort,
             deleteEntityPort: input.operationKinds.deleteEntityPort
@@ -717,6 +726,7 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
             cliCommandSettingKey: input.cliCommandSettingKey,
             cliCommandDefault: input.cliCommandDefault,
             cliPythonModule: input.cliPythonModule,
+            cliEnvironment: input.cliEnvironment,
             runOutputDirSettingKey: input.runOutputDirSettingKey,
             liveExecutionGlowSettingKey: input.liveExecutionGlowSettingKey,
             agentToolsSettingKey: input.agentToolsSettingKey,

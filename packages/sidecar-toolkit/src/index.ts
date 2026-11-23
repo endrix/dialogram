@@ -28,7 +28,8 @@ export {
     type CreateNodeVariantPick,
     type CreateNodeVariantInput,
     type CreateNodeVariantTarget,
-    type CreateNodeTypeKind
+    type CreateNodeTypeKind,
+    type CliFolderListVariable
 } from './server/sidecar-runtime-config.js';
 
 export { type RunQuestion, type RunAnswer } from './cli-run-driver.js';

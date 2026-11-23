@@ -32,8 +32,10 @@ import { FileMemo } from '@dialogram/diagram-server/services/file-memo';
 import { extractWorkflowDefinitionNames } from './source-analysis';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
 import {
+    type CliInvocation,
     type SidecarRuntimeConfig,
     DEFAULT_GRAPH_LOAD_TIMEOUT_MS,
+    cliProcessEnv,
     getCliInvocation,
     getGraphLoadTimeoutMs,
     graphLoadTimeoutHint
@@ -159,7 +161,8 @@ export class CliGraphModelSource implements DiagramModelSource {
         // the other way this used to never settle. Both end up as `failure` below.
         const result = await runChildProcess(cliInvocation.cmd, args, {
             cwd,
-            timeoutMs: this.graphLoadTimeoutMs(workflowFilePath)
+            timeoutMs: this.graphLoadTimeoutMs(workflowFilePath),
+            env: cliProcessEnv(cliInvocation.variables)
         });
         const { stdout } = result;
 
@@ -244,7 +247,8 @@ export class CliGraphModelSource implements DiagramModelSource {
         // here degrades the result rather than failing the load — but it must still END.
         const result = await runChildProcess(cliInvocation.cmd, args, {
             cwd: await resolveRunRoot(filePath),
-            timeoutMs: this.graphLoadTimeoutMs(filePath)
+            timeoutMs: this.graphLoadTimeoutMs(filePath),
+            env: cliProcessEnv(cliInvocation.variables)
         });
         if (result.code !== 0 || result.stdout.trim() === '') {
             const reason = describeChildFailure(cliInvocation.cmd, result) ?? 'no output';
@@ -317,7 +321,7 @@ export class CliGraphModelSource implements DiagramModelSource {
         const result = await runChildProcess(
             cliInvocation.cmd,
             [...cliInvocation.argsPrefix, ...this.cfg.cliHierarchyArgs(rootFile, rootWorkflow)],
-            { cwd, timeoutMs: this.graphLoadTimeoutMs(rootFile) }
+            { cwd, timeoutMs: this.graphLoadTimeoutMs(rootFile), env: cliProcessEnv(cliInvocation.variables) }
         );
         const failure = describeChildFailure(cliInvocation.cmd, result);
         if (failure || result.stdout.trim() === '') {
@@ -338,7 +342,7 @@ export class CliGraphModelSource implements DiagramModelSource {
      * chat's graph and a status source read it). Falls back to the configured default command
      * outside a VS Code host (tests).
      */
-    getCliInvocation(filePath?: string): { cmd: string; argsPrefix: string[] } {
+    getCliInvocation(filePath?: string): CliInvocation {
         try {
             const vscode = require('vscode') as typeof import('vscode');
             return getCliInvocation(this.cfg, vscode, filePath !== undefined ? vscode.Uri.file(filePath) : undefined);

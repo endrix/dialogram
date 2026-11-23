@@ -6,6 +6,7 @@
  */
 import * as vscode from 'vscode';
 import {
+    cliProcessEnv,
     getCliInvocation,
     getGraphLoadTimeoutMs,
     type CliCommandConfig,
@@ -19,19 +20,20 @@ import { describeChildFailure, runChildProcess } from './run-child-process.js';
  * (`getCliInvocation`: the setting under the product's namespace scoped to
  * the file, its default when blank, `-m <module>` when the command is a
  * Python interpreter), the module form for a Python source only, from the
- * run root (`resolveRunRoot`). Undefined when the setting and the profile's
- * default are both blank, found before the run root is looked for.
+ * run root (`resolveRunRoot`), with the variables the product's settings give
+ * it (`cliEnvironment`, present when one does). Undefined when the setting and
+ * the profile's default are both blank, found before the run root is looked for.
  */
 export async function resolveCliInvocation(
     config: CliCommandConfig,
     forUri: vscode.Uri,
     isPython: boolean = forUri.fsPath.endsWith('.py')
-): Promise<{ cmd: string; argsPrefix: string[]; cwd: string } | undefined> {
-    const { cmd, argsPrefix } = getCliInvocation(config, vscode, forUri);
+): Promise<{ cmd: string; argsPrefix: string[]; cwd: string; variables?: Record<string, string> } | undefined> {
+    const { cmd, argsPrefix, variables } = getCliInvocation(config, vscode, forUri);
     if (cmd.trim() === '') {
         return undefined;
     }
-    return { cmd, argsPrefix: isPython ? argsPrefix : [], cwd: await resolveRunRoot(forUri) };
+    return { cmd, argsPrefix: isPython ? argsPrefix : [], cwd: await resolveRunRoot(forUri), ...(variables ? { variables } : {}) };
 }
 
 /** What a run says when it has no command to start. */
@@ -61,13 +63,20 @@ export interface CliRunResult {
      * was started.
      */
     cwd?: string;
+    /**
+     * The variables the product's settings gave the CLI (`cliEnvironment`),
+     * over this extension's environment, as a run of the file is given them.
+     * Absent when none was, or no command was started.
+     */
+    variables?: Record<string, string>;
 }
 
 /**
  * Run the profile's CLI for `file` with `args`, started exactly as a run of
  * the file starts it (`resolveCliInvocation`: the command, the module form
  * for an interpreter, the run root as the working directory, this
- * extension's environment), with stdin closed, its output read as UTF-8.
+ * extension's environment with the variables the product's settings give
+ * the CLI), with stdin closed, its output read as UTF-8.
  * The deadline is `options.timeoutMs` when that is a positive number, else
  * the profile's graph-load deadline for the file, and at most
  * `MAX_CHILD_TIMEOUT_MS` (about 24.8 days). At the deadline the CLI is
@@ -92,14 +101,19 @@ export async function runCli(
         const timeoutMs = typeof given === 'number' && Number.isFinite(given) && given > 0
             ? given
             : getGraphLoadTimeoutMs(config, vscode, file);
-        const result = await runChildProcess(cli.cmd, [...cli.argsPrefix, ...args], { cwd: cli.cwd, timeoutMs });
+        const result = await runChildProcess(cli.cmd, [...cli.argsPrefix, ...args], {
+            cwd: cli.cwd,
+            timeoutMs,
+            env: cliProcessEnv(cli.variables)
+        });
         const failure = result.spawnError ? 'start' : result.timedOut ? 'timeout' : undefined;
         return {
             exitCode: result.code,
             stdout: result.stdout,
             stderr: result.stderr,
             ...(failure ? { failure, message: describeChildFailure(cli.cmd, result) } : {}),
-            cwd: cli.cwd
+            cwd: cli.cwd,
+            ...(cli.variables ? { variables: cli.variables } : {})
         };
     } catch (error) {
         // `runChildProcess` never rejects: this is the toolkit's own failure

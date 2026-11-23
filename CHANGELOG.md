@@ -78,6 +78,19 @@ platform that hands it one.
 
 ### Added
 
+- **A CLI variable from a folder-list setting.** A profile's
+  `cliEnvironment` names variables the product's CLI is started with, each
+  from a setting under the profile's namespace that lists folders
+  (`CliFolderListVariable`): a runtime's search path, for instance. Each
+  folder is read as VS Code reads a path in its settings (`~`,
+  `${userHome}`, `${workspaceFolder}`, and a relative folder from the file's
+  workspace folder, or its own folder outside every folder), and they are
+  joined by the platform's path list separator. A run (whose output says
+  each variable given), `runCli` (whose result says which it gave), the plan
+  and hierarchy exports, the chat's graph and a status source all get them;
+  the sidecar does not. A setting that lists nothing leaves the variable as
+  VS Code was started with it.
+
 - **Images in the chat, and a picture of the diagram for any agent.** An
   image pasted into the chat's composer (or dropped on it) waits above the
   text, small, with a button to take it off; the camera button beside Send
