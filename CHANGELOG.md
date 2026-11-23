@@ -1041,6 +1041,17 @@ platform that hands it one.
 
 ### Changed
 
+- **An annotation card's Save sends what changed.** An editor that merges
+  (`mergeArgUpdates`) used to send every argument the card held, the
+  defaults it was given and filled in included, so a Save wrote them all
+  into the file, and a field cleared in the card stayed in the source.
+  Save now sends `argUpdates`, the arguments set or edited since the card
+  was drawn, and `argRemovals`, the ones it showed and cleared; a Save that
+  changed nothing sends nothing. The server passes `argRemovals` to the
+  producer's `mergeDefinitionAnnotationArgs` only when there is one, so a
+  producer that predates it takes every other Save (wfpy takes it from
+  huawei-csl/wfpy#79).
+
 - **A long name breaks onto lines in its header.** Past 200 px a node's name
   breaks between words onto up to three balanced lines, and the header grows
   taller instead of the node wider (`header-lines.ts`, `wf:headerLines` on the

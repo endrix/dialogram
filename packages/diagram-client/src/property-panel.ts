@@ -54,6 +54,31 @@ function definitionUriOf(node: any): string | undefined {
         : undefined;
 }
 
+/**
+ * What a merging annotation card changed: the arguments whose value differs
+ * from `shown` (the card as drawn) or that it did not show, and the ones it
+ * showed with a value and no longer has. GUI-only keys are neither.
+ */
+export function changedArgs(
+    shown: ReadonlyMap<string, string>,
+    pairs: ReadonlyArray<readonly [string, string]>,
+    guiOnlyKeys: ReadonlySet<string>
+): { argUpdates: Record<string, string>; argRemovals: string[] } {
+    const argUpdates: Record<string, string> = {};
+    const kept = new Set<string>();
+    for (const [key, value] of pairs) {
+        kept.add(key);
+        if (String(shown.get(key) ?? '').trim() !== value) {
+            argUpdates[key] = value;
+        }
+    }
+    const argRemovals = [...shown.entries()]
+        .map(([key, value]) => [String(key ?? '').trim(), String(value ?? '').trim()] as const)
+        .filter(([key, value]) => key !== '' && value !== '' && !guiOnlyKeys.has(key) && !kept.has(key))
+        .map(([key]) => key);
+    return { argUpdates, argRemovals };
+}
+
 @injectable()
 export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     
@@ -958,11 +983,16 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                             ? editor.formatAnnotation(argsMap, pairs)
                             : this.annotationTextOf(name, pairs);
 
-                        // An editor that merges sends its arguments beside the text, so the
-                        // server keeps the args the card doesn't manage (outputValidators,
-                        // mcpServers inline dicts, etc.) as the source has them.
+                        // An editor that merges sends what the card changed beside the text:
+                        // the arguments set or edited since it was drawn, and the ones it
+                        // cleared. The server keeps every other argument as the source has
+                        // it, so a value the card only showed (a default it was given) is
+                        // not written, and nothing changed is nothing sent.
                         if (editor?.mergeArgUpdates) {
-                            const mergeUpdates: Record<string, string> = Object.fromEntries(pairs);
+                            const { argUpdates, argRemovals } = changedArgs(shownArgs, pairs, guiOnlyKeys);
+                            if (Object.keys(argUpdates).length === 0 && argRemovals.length === 0) {
+                                return;
+                            }
                             void this.actionDispatcher.dispatch(
                                 WorkflowUpdateDefinitionAnnotationOperation.create({
                                     isOperation: true,
@@ -970,7 +1000,10 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                                     action: 'upsert',
                                     annotationName: name,
                                     annotationText: text,
-                                    argUpdates: mergeUpdates
+                                    argUpdates,
+                                    // Only when there is one: a producer older than removals
+                                    // still takes every other Save.
+                                    ...(argRemovals.length > 0 ? { argRemovals } : {})
                                 })
                             );
                         } else {
@@ -1003,6 +1036,8 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                         requestDiscovery: requestAgentDiscovery,
                         save: () => saveBtn.click()
                     });
+                    // The card as drawn, the editor's own defaults in it: Save sends what differs.
+                    const shownArgs = new Map(argsMap);
 
                     const reserved = new Set(editor?.reservedArgs ?? []);
                     // Remaining args = genuinely custom annotation args (no dedicated control

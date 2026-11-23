@@ -19,6 +19,8 @@ export namespace UpdateDefinitionAnnotationOperation {
         annotationText?: string;
         /** When set, uses merge semantics: only listed args are updated; unlisted args are preserved. */
         argUpdates?: Record<string, string>;
+        /** With `argUpdates`: args to take out of the annotation. */
+        argRemovals?: string[];
     }
 
     export function is(action: unknown): action is Operation {
@@ -88,6 +90,9 @@ export class UpdateDefinitionAnnotationOperationHandler extends OperationHandler
                         entityType: defName,
                         annotationName: operation.annotationName,
                         argUpdates: operation.argUpdates,
+                        // Only when there is one: a producer that predates removals
+                        // refuses an argument it does not know.
+                        ...(operation.argRemovals?.length ? { argRemovals: operation.argRemovals } : {}),
                     };
                 } else {
                     sidecarOp = this.sidecar.sidecarOp('updateDefinitionAnnotation');

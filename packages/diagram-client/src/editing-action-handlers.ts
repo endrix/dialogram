@@ -176,6 +176,8 @@ export namespace WorkflowUpdateDefinitionAnnotationOperation {
         annotationText?: string;
         /** When set, uses merge semantics: only listed args are updated; unlisted args are preserved. */
         argUpdates?: Record<string, string>;
+        /** With `argUpdates`: args to take out of the annotation. */
+        argRemovals?: string[];
     }
 
     export function create(options: Omit<Operation, 'kind'>): Operation {

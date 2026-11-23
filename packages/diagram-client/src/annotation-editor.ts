@@ -40,10 +40,13 @@ export interface AnnotationEditor {
     readonly guiOnlyArgs?: readonly string[];
 
     /**
-     * Save sends the edited arguments as `argUpdates` beside the text, so the
-     * server merges them into the source annotation and keeps the arguments
-     * the editor does not manage. Without it, Save replaces the annotation
-     * with the text.
+     * Save sends what the card changed beside the text, so the server merges
+     * it into the source annotation and keeps every other argument as the
+     * source has it: `argUpdates`, the arguments set or edited since the card
+     * was drawn (after `render`, so the defaults an editor fills in are not
+     * written unless changed), and `argRemovals`, the ones the card showed and
+     * cleared (sent only when there is one). A Save that changed nothing sends
+     * nothing. Without it, Save replaces the annotation with the text.
      */
     readonly mergeArgUpdates?: boolean;
 
