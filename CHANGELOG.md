@@ -78,6 +78,19 @@ platform that hands it one.
 
 ### Added
 
+- **The agents of a run started outside the IDE.** A run of a diagram's file
+  started in a terminal, with the out dir the diagram watches, shows its
+  agents in the Running agents bar as a run started from the IDE does: the
+  run publishes its stream in `run.wf-stream.live.json` with its file
+  (`sourcePath`), and the platform follows it for an open diagram of that
+  file until the run ends (it says so, or a little after its file goes), the
+  last editor of the file closes, or the IDE starts a run of its own. A run a
+  kill left behind (its file there, its stream's port refused) is not
+  followed until the file goes. A question the run's agents ask still goes
+  to its terminal. Events a reconnect replays are forwarded once, and a
+  run's stream is read only as that run's (a new run taking the out dir is
+  not read as the old one), for the IDE's own runs too.
+
 - **A CLI variable from a folder-list setting.** A profile's
   `cliEnvironment` names variables the product's CLI is started with, each
   from a setting under the profile's namespace that lists folders
@@ -1525,6 +1538,23 @@ platform that hands it one.
   is built for it); without it layouts stay on elkjs, as before.
 
 ### Fixed
+
+- **The Running agents bar beside the outlines.** The bar and the outlines
+  (the hierarchy, a product's node list such as Viewers) open in the same
+  corner beside the button lane, and an open outline covered most of the
+  bar. The bar now moves left of the open outlines when the canvas has room
+  for it (narrowing to no less than 240 px), and back when they close; the
+  outlines say when they open, close or move (`dialogram.floatingPanels.moved`).
+  Where there is no room it stays where it was, under the outlines.
+
+- **Two editors of one workflow file both keep their live run.** The live
+  overlay was watched once per file, and closing one of two editors of the
+  file stopped the watch for the other: its nodes stopped following the run.
+
+- **Stopping a run's stream throws nothing.** Stopping the client of a run's
+  event stream while its request waited for a response destroyed the
+  request after its listeners were gone, and the "socket hang up" it emitted
+  was an uncaught exception in the extension host.
 
 - **The chat starts on opencode 2.** The chat ran `opencode acp --hostname
   127.0.0.1 --port N` so that the process would also serve opencode's HTTP

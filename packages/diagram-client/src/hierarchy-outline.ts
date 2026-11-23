@@ -38,7 +38,7 @@
  * button directly under the chat's, above the hierarchy's.
  */
 import { inject, injectable, multiInject, optional } from 'inversify';
-import { raiseFloatingPanel, stackAsFloatingPanel } from './floating-panels';
+import { announceFloatingPanelsMoved, raiseFloatingPanel, stackAsFloatingPanel } from './floating-panels';
 import { findNodeIdByGraphId } from './producer-ids';
 import { EditorContextService, TYPES, type IActionDispatcher, type MouseListener } from '@eclipse-glsp/client';
 import { RequestModelAction } from '@eclipse-glsp/sprotty';
@@ -486,6 +486,7 @@ export class HierarchyOutlinePanel {
         }
         if (panel) {
             panel.hidden = !available || !this.open;
+            announceFloatingPanelsMoved();
         }
         // The button may have moved (the stack grows and shrinks): follow it.
         requestAnimationFrame(() => this.placeNearButton());
@@ -505,6 +506,8 @@ export class HierarchyOutlinePanel {
             }
             this.placeNearButton();
             this.render();
+        } else {
+            announceFloatingPanelsMoved();
         }
     }
 
@@ -532,6 +535,7 @@ export class HierarchyOutlinePanel {
         if (place.width !== undefined) {
             panel.style.width = `${place.width}px`;
         }
+        announceFloatingPanelsMoved();
     }
 
     // ── Rows ────────────────────────────────────────────────────────────

@@ -56,7 +56,17 @@ export interface RunEventStreamClientOptions {
     transport?: RunEventStreamTransport;
     /** Zero-bytes stall window before the auto fallback fires. Default 2000ms. */
     stallFallbackMs?: number;
+    /** The run to read: a discovery file naming another is not connected to. Without
+     *  it the client keeps to the run it first hears from (a file a dead run left
+     *  behind may come first, so not the first one it reads). */
+    runId?: string;
+    /** Called when a connection fails or ends, before the client tries again: the
+     *  caller can tell a run that went away from a hiccup. May fire more than once
+     *  for one loss (a response's `end` and `close`). */
+    onDisconnect?: () => void;
 }
+
+function ignoreError(): void { /* torn down: nobody is listening any more */ }
 
 export class RunEventStreamClient {
     private stopped = false;
@@ -76,8 +86,15 @@ export class RunEventStreamClient {
 
     private bytesReceived = 0;
     private usedSocketFallback = false;
+    /** The run this client keeps to (see `runId`). */
+    private pinnedRunId: string | undefined;
+    /** The run named by the discovery file of the connection in hand. */
+    private connectingRunId: string | undefined;
+    private otherRunReported: string | undefined;
 
-    constructor(private readonly opts: RunEventStreamClientOptions) {}
+    constructor(private readonly opts: RunEventStreamClientOptions) {
+        this.pinnedRunId = opts.runId;
+    }
 
     private log(message: string): void {
         this.opts.onLog?.(message);
@@ -99,6 +116,15 @@ export class RunEventStreamClient {
                 }
                 return;
             }
+            // The file names another run (a new run took the out dir): its stream is not this one's.
+            if (this.pinnedRunId && discovery.runId && discovery.runId !== this.pinnedRunId) {
+                if (this.otherRunReported !== discovery.runId) {
+                    this.otherRunReported = discovery.runId;
+                    this.log(`[run-stream] discovery names run ${discovery.runId}, not ${this.pinnedRunId}; not connecting`);
+                }
+                return;
+            }
+            this.connectingRunId = discovery.runId;
             let url = discovery.eventsUrl
                 ?? (discovery.port ? `http://${discovery.host ?? '127.0.0.1'}:${discovery.port}/events` : undefined);
             this.log(`[run-stream] discovery found: url=${url ?? '<none>'} token=${discovery.token ? 'yes' : 'no'}`);
@@ -319,6 +345,7 @@ export class RunEventStreamClient {
         try {
             const event = JSON.parse(dataLines.join('\n')) as RunStreamEvent;
             if (event && typeof event === 'object') {
+                this.pinnedRunId ??= this.connectingRunId;
                 this.opts.onEvent(event);
             }
         } catch {
@@ -336,11 +363,17 @@ export class RunEventStreamClient {
     private teardownHttp(): void {
         if (this.response) {
             this.response.removeAllListeners();
+            // Destroying it can still emit 'error' (a request without its response
+            // yet: "socket hang up"); unheard, that is an uncaught exception.
+            this.response.on('error', ignoreError);
             try { this.response.destroy(); } catch { /* best-effort */ }
             this.response = undefined;
         }
         if (this.request) {
             this.request.removeAllListeners();
+            // Destroying it can still emit 'error' (a request without its response
+            // yet: "socket hang up"); unheard, that is an uncaught exception.
+            this.request.on('error', ignoreError);
             try { this.request.destroy(); } catch { /* best-effort */ }
             this.request = undefined;
         }
@@ -349,6 +382,9 @@ export class RunEventStreamClient {
     private teardownSocket(): void {
         if (this.socket) {
             this.socket.removeAllListeners();
+            // Destroying it can still emit 'error' (a request without its response
+            // yet: "socket hang up"); unheard, that is an uncaught exception.
+            this.socket.on('error', ignoreError);
             try { this.socket.destroy(); } catch { /* best-effort */ }
             this.socket = undefined;
         }
@@ -356,6 +392,9 @@ export class RunEventStreamClient {
 
     /** Drop the current connection so the discovery poll re-connects (run may still be live). */
     private resetForRetry(): void {
+        if (!this.stopped) {
+            this.opts.onDisconnect?.();
+        }
         this.clearStallTimer();
         this.sseBuffer = '';
         this.socketBodyBuf = Buffer.alloc(0);
