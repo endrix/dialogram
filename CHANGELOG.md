@@ -1539,6 +1539,14 @@ platform that hands it one.
 
 ### Fixed
 
+- **A run's glow is on the instance that runs, in a view of a nested
+  workflow.** An instance at the top, or in a sibling workflow, running
+  under a name an instance of the view also has, lit that one: an agent
+  that had received nothing glowed. A running instance with a path from the
+  run's root is now placed as a failure is (`nodeInView`, which
+  `errorInView` reads too): on the node of the view it is in, itself or the
+  nested workflow holding it, and on none when it is not under the view. One
+  the run gives no path is matched by name, as before.
 - **A nested workflow's inputs and outputs are not taken for instances in
   it.** When a run's active instance is not drawn in the view, the nested
   workflow that holds it lights up, found by the names of its nodes. Those

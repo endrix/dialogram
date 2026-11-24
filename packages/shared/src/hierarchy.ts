@@ -90,8 +90,19 @@ export function errorInView(
     errorPath: string[],
     viewPath: string[]
 ): { nodeName: string; within: string[] } | undefined {
-    if (errorPath.length <= viewPath.length || !viewPath.every((part, i) => part === errorPath[i])) {
+    const nodeName = nodeInView(errorPath, viewPath);
+    return nodeName === undefined ? undefined : { nodeName, within: errorPath.slice(viewPath.length + 1) };
+}
+
+/**
+ * The node of a view at `viewPath` that the instance at `path` is in (both
+ * instance paths from the root): the instance itself, or the nested workflow
+ * holding it. Nothing when the instance is not under this view: a node of the
+ * view named like it is another instance.
+ */
+export function nodeInView(path: readonly string[], viewPath: readonly string[]): string | undefined {
+    if (path.length <= viewPath.length || !viewPath.every((part, i) => part === path[i])) {
         return undefined;
     }
-    return { nodeName: errorPath[viewPath.length], within: errorPath.slice(viewPath.length + 1) };
+    return path[viewPath.length];
 }

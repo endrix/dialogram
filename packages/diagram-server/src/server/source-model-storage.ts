@@ -19,7 +19,7 @@ import { RequestModelAction, SaveModelAction } from '@eclipse-glsp/protocol';
 import { inject, injectable, optional } from 'inversify';
 import { URI } from 'vscode-uri';
 import { instanceLayoutFor, type LayoutTarget, viewKey } from './layout-target';
-import { errorInView, normalizeLoadProgress, parseNodeActions, trailInstancePath, type LoadProgress } from '@dialogram/shared';
+import { errorInView, nodeInView, normalizeLoadProgress, parseNodeActions, trailInstancePath, type LoadProgress } from '@dialogram/shared';
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import {
@@ -1527,14 +1527,22 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             const viewInstancePath = fromRunRoot(trailInstancePath(navigationTrail), runRootAt) ?? trailInstancePath(navigationTrail);
             const tokensOfEdge = tokensIn(viewInstancePath);
 
-            const activeNames = overlay.active && Array.isArray(overlay.active)
-                ? overlay.active
-                    .map(entry => analysis?.resolveOverlayActiveEntityName(entry, workflowName, navigationTrail))
-                    .filter((name): name is string => typeof name === 'string')
-                : (() => {
-                    const single = analysis?.resolveOverlayActiveEntityName(overlay.active, workflowName, navigationTrail);
-                    return single ? [single] : [];
-                })();
+            // What runs, in this view: an instance with a path from the run's root is
+            // placed as a failure is, on the node of the view it is in (itself, or the
+            // nested workflow holding it), and on none when it is not under the view: a
+            // node there named like it is another instance, waiting. One with no path
+            // is matched by name, as the product reads it.
+            const activeEntries = Array.isArray(overlay.active) ? overlay.active : overlay.active ? [overlay.active] : [];
+            const activeNames = activeEntries
+                .map(entry => {
+                    const activePath = Array.isArray(entry?.entityInstancePath)
+                        ? entry.entityInstancePath.map(part => typeof part === 'string' ? part.trim() : '').filter(part => part !== '')
+                        : [];
+                    return activePath.length > 0
+                        ? nodeInView(activePath, viewInstancePath)
+                        : analysis?.resolveOverlayActiveEntityName(entry, workflowName, navigationTrail);
+                })
+                .filter((name): name is string => typeof name === 'string');
             const activeNameSet = new Set(activeNames);
             const matchedActiveNames = new Set<string>();
 
