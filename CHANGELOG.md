@@ -1084,9 +1084,13 @@ platform that hands it one.
   set on the chat's own process only (and the `opencode serve` that one
   starts), and added to a value the user already has; a value that says
   `permission.execute` stands, and one that does not parse as JSON (opencode
-  also reads JSONC) is left as it is, with a line in the log. opencode 1.x,
-  which has no Code Mode, and the other agents are not touched. The setting
-  `dialogram.chat.opencodeCodeMode` (default off) leaves Code Mode on. A
+  also reads JSONC) is left as it is, with a line in the log. The layer is
+  read after the opencode.json files, so a `permission.execute` set there
+  gives way to the chat's. opencode 1.x, which has no Code Mode, an opencode
+  whose version cannot be told, and the other agents are not touched; an
+  opencode connector without the HTTP API is asked its version too. The
+  setting `dialogram.chat.opencodeCodeMode` (default off) leaves Code Mode
+  on. A
   per-server `codemode: false` is not open to the chat: opencode's ACP
   adapter keeps only a server's url and headers.
 - **Free Ports gives the instances of a definition one port order.** The

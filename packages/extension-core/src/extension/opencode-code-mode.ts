@@ -16,6 +16,12 @@
  * so on the `opencode serve` that one starts), never on the user's own
  * opencode.
  *
+ * The layer is read after the user's opencode.json files, so a
+ * `permission.execute` they set there gives way to it in the chat; the chat's
+ * setting is what keeps Code Mode on. A permission an agent declares for
+ * itself (`agent.<name>.permission`) is read after it, so an agent's own
+ * wildcard "allow" lets `execute` back in for that agent.
+ *
  * opencode 1.x has no Code Mode and may refuse a permission it does not know:
  * the caller applies this to opencode 2 only.
  */
@@ -88,12 +94,13 @@ export function withOpencodeCodeModeOff(env: NodeJS.ProcessEnv): CodeModeOffResu
         };
     }
     // Added last: opencode reads a permission's rules in order, the last that
-    // matches deciding, so a wildcard the user gave does not cover it.
+    // matches deciding, so a wildcard in this same `permission` does not
+    // cover it (one in an agent's own permission does: see above).
     const next = { ...config, permission: { ...permission, execute: 'deny' } };
     return {
         env: { ...env, [OPENCODE_CONFIG_CONTENT]: JSON.stringify(next) },
         outcome: 'off',
-        note: 'Code Mode off (permission.execute denied), so MCP tool results reach the model whole',
+        note: `${OPENCODE_CONFIG_CONTENT} denies permission.execute: Code Mode off, so MCP tool results reach the model whole (unless an agent's own permission allows execute)`,
     };
 }
 

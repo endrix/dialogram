@@ -280,6 +280,30 @@ describe('ACPClientService', () => {
         expect(spawnEnv()[KEY]).toBe(own);
       });
 
+      it('is off for an opencode 2 whose connector has no HTTP API, which stays off', async () => {
+        const probe = vi.fn(async () => 'service' as const);
+        client = new ACPClientService(probe);
+        await client.start('/test/workspace', { name: 'oc', argv: ['/opt/oc/bin/opencode', 'acp'], httpApi: false });
+        expect(probe).toHaveBeenCalledTimes(1);
+        expect(JSON.parse(spawnEnv()[KEY]!)).toEqual({ permission: { execute: 'deny' } });
+        expect((client as any).http).toBeNull();
+        client.stop();
+
+        // An opencode 1.x without the HTTP API gets no port either.
+        client = new ACPClientService(async () => 'own-port');
+        await client.start('/test/workspace', { name: 'oc', argv: ['opencode', 'acp'], httpApi: false });
+        expect(vi.mocked(spawn).mock.calls.at(-1)![1]).toEqual(['acp']);
+        expect(spawnEnv()).not.toHaveProperty(KEY);
+        expect((client as any).http).toBeNull();
+      });
+
+      it('says so in the log when it cannot tell which opencode it is', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        client = new ACPClientService(async () => 'none');
+        await client.start('/test/workspace');
+        expect(warn.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('Code Mode'))).toHaveLength(1);
+      });
+
       it('is not touched for any other agent', async () => {
         const probe = vi.fn(async () => 'service' as const);
         for (const argv of [['claude-agent-acp'], ['codex-acp'], ['gemini', '--experimental-acp']]) {
