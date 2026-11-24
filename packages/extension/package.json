@@ -26,6 +26,11 @@
                     "type": "boolean",
                     "description": "Automatically re-run layout after the chat agent edits the diagram.",
                     "default": false
+                },
+                "dialogram.chat.opencodeCodeMode": {
+                    "type": "boolean",
+                    "markdownDescription": "Leave opencode 2's Code Mode on in the chat. Code Mode hides the MCP tools behind opencode's `execute` tool, and a tool result's picture never reaches the model. Off (the default), the chat starts opencode 2 with `permission.execute` denied in `OPENCODE_CONFIG_CONTENT`, for its own process only, so the diagram tools' results reach the model whole. A `permission.execute` in your own `OPENCODE_CONFIG_CONTENT` stands either way; one in your opencode.json gives way to the chat's, so turn this on to keep Code Mode. opencode 1.x and other agents are not touched. Takes effect when the chat next starts its agent (Developer: Reload Window).",
+                    "default": false
                 }
             }
         }

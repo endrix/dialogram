@@ -411,7 +411,7 @@ export class ChatRuntime {
     if (this.started) return;
     if (!this.startPromise) {
       this.startPromise = Promise.resolve(this.config.acpAgent?.(cwd))
-        .then((agent) => this.acp.start(cwd, agent))
+        .then((agent) => this.acp.start(cwd, agent, { opencodeCodeMode: this.opencodeCodeMode() }))
         .then(async () => {
           // Stand up the HTTP tool server before any session is created,
           // so mcpServersProvider can attach it synchronously.
@@ -424,6 +424,15 @@ export class ChatRuntime {
         });
     }
     await this.startPromise;
+  }
+
+  /**
+   * `dialogram.chat.opencodeCodeMode` (default off): leave opencode 2's Code
+   * Mode on, its MCP tools behind its `execute` tool. A core chat setting,
+   * read when the chat starts its agent.
+   */
+  private opencodeCodeMode(): boolean {
+    return vscode.workspace.getConfiguration(CORE_CHAT_SECTION).get<boolean>("opencodeCodeMode", false);
   }
 
   private mcpEnabled(): boolean {
