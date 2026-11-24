@@ -243,9 +243,9 @@ describe('the untangle tools', () => {
         await vi.waitFor(() => expect(cards).toHaveLength(1));
         expect(cards[0].text).toBe([
             '0 edge crossings, against 0 with Layout Diagram.',
-            'Apply saves this layout, keeping with it the port order of 2 definitions:',
-            '  Split: left X, Y → Y, X',
-            '  Split: left X, Y, Z → Y, X, Z',
+            'Apply saves this layout and keeps with it the port order of 2 definitions:',
+            '  Split (p1): left X, Y → Y, X',
+            '  Split (p2): left X, Y, Z → Y, X, Z',
             'It writes the port order of 1 definition in 1 file:',
             'stages.py',
             '  Stage: left A, B → B, A',

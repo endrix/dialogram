@@ -10,7 +10,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { pathToFileURL } from 'node:url';
 import { GGraph, GNode, GPort, type Action, type GModelElement } from '@eclipse-glsp/server';
 import { WORKFLOW_NETWORK_MODEL_KEY, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
-import { definitionKeyOf } from '../src/model/definition-port-order';
+import { definitionKeyOf, drawInSourceOrder } from '../src/model/definition-port-order';
+import { ReadOnlySourceModelStorage } from '../src/server/read-only-source-model-storage';
 import { WorkflowCommandStack } from '../src/server/command-stack';
 import type { DiagramChatCard } from '../src/server/diagram-chat-host';
 import { layoutGeometryOf, type LayoutGeometry } from '../src/server/layout-snapshot';
@@ -83,8 +84,11 @@ function writer(canWrite: boolean, asked: string[]): SourcePortOrderWriter {
     };
 }
 
-/** The tools on `modelState`, the person applying what is put to them; the card asked and the chat told. */
-function tools(modelState: any, bound?: SourcePortOrderWriter) {
+/**
+ * The tools on `modelState`, the person applying what is put to them; the card asked and the chat told.
+ * A try `untangled` draws every port as its source declares it, as the layout does.
+ */
+function tools(modelState: any, bound?: SourcePortOrderWriter, storage?: unknown) {
     const cards: DiagramChatCard[] = [];
     const posted: string[] = [];
     const dispatched: Action[] = [];
@@ -101,7 +105,11 @@ function tools(modelState: any, bound?: SourcePortOrderWriter) {
     };
     const preview = {
         geometry: () => layoutGeometryOf(modelState.root),
-        run: async () => undefined,
+        run: async (layout: string) => {
+            if (layout === 'untangled') {
+                drawInSourceOrder(modelState.root);
+            }
+        },
         show: async (_geometry?: LayoutGeometry) => undefined
     };
     const [start, attempt, propose] = [new UntangleStartMcpToolHandler(), new UntangleTryMcpToolHandler(), new UntangleProposeMcpToolHandler()].map(tool => {
@@ -109,6 +117,7 @@ function tools(modelState: any, bound?: SourcePortOrderWriter) {
         handler.modelState = modelState;
         handler.preview = preview;
         handler.writer = bound;
+        handler.storage = storage;
         handler.chat = chat;
         handler.logger = { warn: () => undefined, error: () => undefined, info: () => undefined, debug: () => undefined };
         handler.requestAction = async () => ({ encoding: 'base64', data: 'PIC' });
@@ -157,6 +166,37 @@ describe('an untangle whose port orders stay with the layout', () => {
             );
         });
     }
+});
+
+describe('the card of an untangle', () => {
+    it('promises no undo in a read-only diagram, whose host binds none', async () => {
+        const { modelState } = diagram();
+        const readOnly = Object.create(ReadOnlySourceModelStorage.prototype);
+        const { start, attempt, propose, cards } = tools(modelState, undefined, readOnly);
+        await start.handle({ sessionId: 's' } as any);
+        await attempt.handle({ sessionId: 's', layout: 'free-ports' } as any);
+        await propose.handle({ sessionId: 's', try: 1 } as any);
+        await vi.waitFor(() => expect(cards).toHaveLength(1));
+        expect(cards[0].text).toBe(KEPT_CARD.text.split('\n').slice(0, -1).join('\n'));
+    });
+
+    it('says which kept orders a try lets go, drawing them as declared again', async () => {
+        // The diagram draws Stage B over A, as its layout keeps it; the try draws A over B.
+        const { modelState } = diagram();
+        const { start, attempt, propose, cards, posted } = tools(modelState);
+        await start.handle({ sessionId: 's' } as any);
+        await attempt.handle({ sessionId: 's', layout: 'untangled' } as any);
+        await propose.handle({ sessionId: 's', try: 1 } as any);
+        await vi.waitFor(() => expect(posted).toHaveLength(1));
+        expect(cards[0].text).toBe([
+            '0 edge crossings, against 0 with Layout Diagram.',
+            'Apply saves this layout and draws Stage in the declared order again; no file changes.',
+            'Undo puts the layout back.'
+        ].join('\n'));
+        expect(posted[0]).toBe(
+            'Untangle applied: try 1, 0 edge crossings against 0 with Layout Diagram. The layout is saved, 1 definition drawn in the declared order again; no file changed.'
+        );
+    });
 });
 
 describe('applying an untangle with no writer', () => {

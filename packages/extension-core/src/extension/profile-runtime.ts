@@ -57,23 +57,27 @@ export async function activateProfileRuntime(
       getConnector: () => glsp.connector,
       log: (m) => log(m),
     });
+    // The diagram's tools, which the slash commands call: one client for
+    // them all, only where the profile turns the tools on, as for the agent.
+    const diagramTools = profile.mcp?.enabled === true && glsp.mcpServerUrl
+      ? new GlspMcpClient(glsp.mcpServerUrl)
+      : undefined;
     if (profile.editBackend) {
       capability = createEditChatCapability({
         profile,
         editBackend: profile.editBackend,
         getEditorProvider: () => glsp.editorProvider,
         log: (m) => log(m),
-        // The slash commands edit through the diagram's tools: only where the
-        // profile turns them on, as for the agent.
-        mcpServerUrl: profile.mcp?.enabled === true ? glsp.mcpServerUrl : undefined,
+        mcpServerUrl: diagramTools ? glsp.mcpServerUrl : undefined,
+        mcpClient: diagramTools,
       });
     }
     // The platform's own commands, in every product whose diagram tools are
     // on: `/untangle` lays any diagram out (its port orders kept with the
     // layout, or written where the product's source takes them).
-    const platformCommands: ChatCommandContribution[] = profile.mcp?.enabled === true && glsp.mcpServerUrl
+    const platformCommands: ChatCommandContribution[] = diagramTools
       ? [createUntangleCommand({
-          tools: new GlspMcpClient(glsp.mcpServerUrl),
+          tools: diagramTools,
           getEditorProvider: () => glsp.editorProvider,
         })]
       : [];

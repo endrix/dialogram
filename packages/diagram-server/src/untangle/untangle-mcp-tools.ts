@@ -22,19 +22,21 @@ import {
     OperationMcpDiagramToolHandler,
     type McpToolResult
 } from '@eclipse-glsp/server-mcp';
-import { GNode, RequestExportAction } from '@eclipse-glsp/server';
+import { GNode, RequestExportAction, SourceModelStorage } from '@eclipse-glsp/server';
 import { inject, injectable, optional } from 'inversify';
 import * as vscode from 'vscode';
 import * as z from 'zod/v4';
 import { edgeCrossings } from '../model/edge-crossings';
-import { forgetProbe, type SideOrder } from '../model/definition-port-order';
+import { definitionKeyOf, forgetProbe, type SideOrder } from '../model/definition-port-order';
 import { LayoutPreview, type PreviewLayout } from '../operations/layout-preview';
 import { DIAGRAM_CHAT_HOST, type DiagramChatFigure, type DiagramChatHost } from '../server/diagram-chat-host';
 import { applyLayoutGeometry } from '../server/layout-snapshot';
+import { ReadOnlySourceModelStorage } from '../server/read-only-source-model-storage';
 import {
     APPLY_PORT_ORDERS_OPERATION_KIND,
     type ApplyPortOrdersOperation,
-    type PortOrderWrite
+    type PortOrderWrite,
+    withOrdersInSource
 } from './apply-port-orders-handler';
 import { SOURCE_PORT_ORDER_WRITER, type SourcePortOrderWriter } from './source-port-order-writer';
 import {
@@ -62,6 +64,8 @@ interface UntangleCard {
     files: string[];
     /** How many definitions' port orders Apply keeps with the layout. */
     kept: number;
+    /** How many it draws in the declared order again, the layout letting their kept order go. */
+    back: number;
 }
 
 /** How long a picture of the diagram may take: the webview may be in the background. */
@@ -114,6 +118,11 @@ abstract class UntangleToolHandler<T extends z.infer<typeof McpDiagramScopedInpu
     @inject(DIAGRAM_CHAT_HOST)
     @optional()
     protected chat?: DiagramChatHost;
+
+    /** The session's storage: a read-only one for a diagram that may not edit, whose host binds no undo. */
+    @inject(SourceModelStorage)
+    @optional()
+    protected storage?: SourceModelStorage;
 
     /** The diagram as drawn now, as a PNG (base64); nothing when it cannot be taken. */
     protected async picture(): Promise<string | undefined> {
@@ -398,29 +407,58 @@ export class UntangleProposeMcpToolHandler extends UntangleToolHandler<UntangleP
                 usedElsewhere.add(use);
             }
         }
-        // What is not written is kept with the layout: each definition drawn
-        // in another order than its source's, its instances in one.
-        const written = new Set(writes.map(each => each.elementId));
-        const kept = chosen.definitions.filter(each => reordered(each) && !each.disagree && !written.has(each.elementId));
+        // What the layout keeps is what Apply saves: the try's port orders,
+        // less those written into the source (apply-port-orders-handler.ts).
+        const keyOf = (elementId: string): string | undefined => {
+            const node = this.modelState.index.find(elementId);
+            return node instanceof GNode ? definitionKeyOf(node) : undefined;
+        };
+        const writtenKeys = new Set(writes.flatMap(each => keyOf(each.elementId) ?? []));
+        const saved = withOrdersInSource(chosen.geometry, writtenKeys).saved.portOrders;
+        const keptBefore = state.original.saved.portOrders.set;
+        const kept = chosen.definitions.filter(each => { const key = keyOf(each.elementId); return key !== undefined && key in saved.set; });
+        // A definition the diagram drew in a kept order when the untangle
+        // began, and the try draws as its source declares: the layout lets it go.
+        const back = chosen.definitions.filter(each => {
+            const key = keyOf(each.elementId);
+            return key !== undefined && key in keptBefore && saved.remove.includes(key) && !writtenKeys.has(key);
+        });
+        const label = (definition: DrawnDefinition): string =>
+            [...kept, ...back].filter(each => each.name === definition.name).length > 1
+                ? `${definition.name} (${definition.instances.join(', ')})`
+                : definition.name;
         const files = [...byFile.keys()];
         const lines = [`${plural(chosen.crossings, 'edge crossing')}, against ${state.baseline.crossings} with Layout Diagram.`];
-        if (writes.length === 0 && kept.length === 0) {
+        if (writes.length === 0 && kept.length === 0 && back.length === 0) {
             lines.push('Apply saves this layout; no port order changes.');
         } else {
+            let first = true;
+            const opening = (alone: string, after: string): string => {
+                const text = first ? alone : after;
+                first = false;
+                return text;
+            };
+            const noFile = writes.length === 0 ? '; no file changes' : '';
             if (kept.length > 0) {
                 lines.push(
-                    `Apply saves this layout${writes.length === 0 ? ' and keeps with it' : ', keeping with it'} the port order of ${plural(kept.length, 'definition')}${writes.length === 0 ? '; no file changes' : ''}:`,
-                    ...kept.map(each => `  ${each.name}: ${changeOf(each)}`)
+                    `${opening('Apply saves this layout and keeps with it', 'It keeps with the layout')} the port order of ${plural(kept.length, 'definition')}${noFile}:`,
+                    ...kept.map(each => `  ${label(each)}: ${changeOf(each)}`)
                 );
+            }
+            if (back.length > 0) {
+                lines.push(`${opening('Apply saves this layout and draws', 'It draws')} ${back.map(label).join(', ')} in the declared order again${kept.length === 0 ? noFile : ''}.`);
             }
             if (writes.length > 0) {
                 lines.push(
-                    `${kept.length > 0 ? 'It writes' : 'Apply saves this layout and writes'} the port order of ${plural(writes.length, 'definition')} in ${plural(files.length, 'file')}:`,
+                    `${opening('Apply saves this layout and writes', 'It writes')} the port order of ${plural(writes.length, 'definition')} in ${plural(files.length, 'file')}:`,
                     ...files.flatMap(file => [fileName(file), ...byFile.get(file)!]),
                     ...(usedElsewhere.size > 0 ? [`Also drawn in the new order: ${[...usedElsewhere].join(', ')}.`] : [])
                 );
             }
-            lines.push(files.length > 0 ? 'Undo puts the files and the layout back.' : 'Undo puts the layout back.');
+            // A read-only diagram has no undo key bound: the card promises none.
+            if (!(this.storage instanceof ReadOnlySourceModelStorage)) {
+                lines.push(files.length > 0 ? 'Undo puts the files and the layout back.' : 'Undo puts the layout back.');
+            }
         }
         const apply = files.length === 0 ? 'Apply' : `Apply to ${plural(files.length, 'file')}`;
         return {
@@ -430,7 +468,8 @@ export class UntangleProposeMcpToolHandler extends UntangleToolHandler<UntangleP
             figures: chosen.picture ? [{ data: chosen.picture, caption: `Try ${chosen.n}: ${plural(chosen.crossings, 'crossing')}` }] : [],
             apply,
             files,
-            kept: kept.length
+            kept: kept.length,
+            back: back.length
         };
     }
 
@@ -471,12 +510,16 @@ export class UntangleProposeMcpToolHandler extends UntangleToolHandler<UntangleP
                 return;
             }
             const written = applied.files.map(fileName);
-            const keptText = card.kept > 0 ? `, with the port order of ${plural(card.kept, 'definition')}` : '';
+            const layoutText = [
+                ...(card.kept > 0 ? [`with the port order of ${plural(card.kept, 'definition')}`] : []),
+                ...(card.back > 0 ? [`${plural(card.back, 'definition')} drawn in the declared order again`] : [])
+            ].join(', ');
+            const saved = `the layout is saved${layoutText ? `, ${layoutText}` : ''}`;
             await chat.post(sourceUri, {
                 text: `Untangle applied: try ${chosen.n}, ${plural(chosen.crossings, 'edge crossing')} against ${state.baseline.crossings} with Layout Diagram. `
                     + (written.length > 0
-                        ? `Port orders written in ${written.join(', ')}; the layout is saved${keptText}.`
-                        : card.kept > 0 ? `The layout is saved${keptText}; no file changed.` : 'The layout is saved; no port order changed.'),
+                        ? `Port orders written in ${written.join(', ')}; ${saved}.`
+                        : layoutText ? `${saved[0].toUpperCase()}${saved.slice(1)}; no file changed.` : 'The layout is saved; no port order changed.'),
                 figures: [
                     ...(state.baseline.picture ? [{ data: state.baseline.picture, caption: `Layout Diagram: ${plural(state.baseline.crossings, 'crossing')}` }] : []),
                     ...(chosen.picture ? [{ data: chosen.picture, caption: `Untangled (try ${chosen.n}): ${plural(chosen.crossings, 'crossing')}` }] : [])
