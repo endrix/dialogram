@@ -1539,6 +1539,22 @@ platform that hands it one.
 
 ### Fixed
 
+- **A run's glow is on the instance that runs, in a view of a nested
+  workflow.** An instance at the top, or in a sibling workflow, running
+  under a name an instance of the view also has, lit that one: an agent
+  that had received nothing glowed. A running instance with a path from the
+  run's root is now placed as a failure is (`nodeInView`, which
+  `errorInView` reads too): on the node of the view it is in, itself or the
+  nested workflow holding it, and on none when it is not under the view. One
+  the run gives no path is matched by name, as before.
+- **A nested workflow's inputs and outputs are not taken for instances in
+  it.** When a run's active instance is not drawn in the view, the nested
+  workflow that holds it lights up, found by the names of its nodes. Those
+  names included its input and output nodes: a child with an input named
+  like an instance running in another child matched too, and then neither
+  lit up, or it lit up for an instance it does not hold. The search reads
+  instances only (`isBoundaryNodeKind`, beside `isBoundaryNodeType` in
+  `@dialogram/shared`).
 - **The Running agents bar beside the outlines.** The bar and the outlines
   (the hierarchy, a product's node list such as Viewers) open in the same
   corner beside the button lane, and an open outline covered most of the

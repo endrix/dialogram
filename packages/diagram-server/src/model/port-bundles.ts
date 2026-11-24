@@ -18,7 +18,7 @@
  * like any other from there on, and an edge between two of them an edge, so
  * the layout, the routers and the views need nothing of their own for it.
  */
-import { normalizePortSide, SymbolGeometry, type PortSide } from '@dialogram/shared';
+import { isBoundaryNodeKind, normalizePortSide, SymbolGeometry, type PortSide } from '@dialogram/shared';
 import type { PyGraphDocument, PyGraphEdge, PyGraphNode, PyGraphPort } from './graph-gmodel-source';
 import { stableNodeId, stableNodeIds, type StableNodeIds } from './stable-ids';
 
@@ -58,7 +58,7 @@ export function portSideOf(port: PyGraphPort): PortSide {
  * is drawn as one node (`bundleBoundaries`), never as a bus port on one.
  */
 function isBoundaryNode(node: PyGraphNode): boolean {
-    return node.kind === 'wf-input' || node.kind === 'wf-output';
+    return isBoundaryNodeKind(node.kind);
 }
 
 interface MemberInfo {
