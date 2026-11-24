@@ -11,6 +11,25 @@ export interface HierarchyCrumb {
 }
 
 /**
+ * The crumb a view's hierarchy is rooted at: the deepest one answered by a
+ * past run (`recordedRun`), else the trail's first.
+ *
+ * A nested unit answered by a past run runs nothing with its parent, so the
+ * export of its parent's hierarchy has nothing under it. Its insides are what
+ * that run elaborated: its workflow, as a root of its own. A view at or under
+ * it is read from the hierarchy rooted at it, by the instance names below it
+ * (`trailInstancePath` of the trail from that crumb).
+ */
+export function hierarchyRootAt(trail: readonly { recordedRun?: string }[]): number {
+    for (let at = trail.length - 1; at >= 1; at--) {
+        if (trail[at].recordedRun?.trim()) {
+            return at;
+        }
+    }
+    return 0;
+}
+
+/**
  * The instance a navigation trail leads to, by instance names from the trail's
  * root: one name per crumb after the root, its instance's, or its workflow's
  * when the crumb names no instance. The view a trail opens and the run

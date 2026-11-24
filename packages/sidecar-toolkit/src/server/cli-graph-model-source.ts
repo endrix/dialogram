@@ -19,7 +19,7 @@ import type {
     GraphSourceAnalysis,
     ModelSourceOptions
 } from '@dialogram/shared';
-import { trailInstancePath } from '@dialogram/shared';
+import { hierarchyRootAt, trailInstancePath } from '@dialogram/shared';
 import {
     GRAPH_SOURCE_URI_ARG,
     NAV_TRAIL_ARG,
@@ -27,7 +27,7 @@ import {
     parseNavigationTrailArg,
     parseViewArg
 } from '@dialogram/diagram-server/server/graph-load-request-options';
-import { HierarchyCache, definitionFiles, fileHash, findInstance, graphsOf, outlineOf } from './hierarchy-cache';
+import { HierarchyCache, definitionFiles, fileHash, findInstance, graphsOf, outlineOf, type HierarchyExport } from './hierarchy-cache';
 import { FileMemo } from '@dialogram/diagram-server/services/file-memo';
 import { extractWorkflowDefinitionNames } from './source-analysis';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
@@ -267,9 +267,11 @@ export class CliGraphModelSource implements DiagramModelSource {
      * The view, read from its hierarchy's export, with the outline attached.
      *
      * The root is the trail's first crumb, or the view itself without a trail;
-     * the view is the instance at the trail's instance path. Anything that does
-     * not line up -- no export, an instance that did not elaborate, unsaved
-     * text being previewed -- leaves the view to a plan of its own.
+     * the view is the instance at the trail's instance path. Under a unit
+     * answered by a past run, the root is that unit's crumb and the path the
+     * names below it (`hierarchyRootAt`). Anything that does not line up -- no
+     * export, an instance that did not elaborate, unsaved text being previewed
+     * -- leaves the view to a plan of its own.
      */
     private async viewFromHierarchy(
         sourceUri: string,
@@ -283,27 +285,40 @@ export class CliGraphModelSource implements DiagramModelSource {
             return undefined;
         }
         const trail = parseNavigationTrailArg(opts[NAV_TRAIL_ARG]);
+        // Exported from the root file's run root, as a run of the root starts, and kept per folder
+        // as the plan is.
+        const exportOf = async (crumb: { file: string; workflow: string }): Promise<HierarchyExport | undefined> => {
+            const rootCwd = crumb.file === workflowFilePath ? cwd : await resolveRunRoot(crumb.file);
+            return this.hierarchyCache.get(crumb.file, crumb.workflow, rootCwd, this.cliVariables(crumb.file, rootCwd));
+        };
+        const crumbAt = (at: number) => ({ file: URI.parse(trail[at].sourceUri).fsPath, workflow: trail[at].workflowName });
+        // Under a unit answered by a past run, the hierarchy is that unit's
+        // (`hierarchyRootAt`): its parent's export has nothing under it.
+        const at = hierarchyRootAt(trail);
         const root = trail.length > 0
-            ? { file: URI.parse(trail[0].sourceUri).fsPath, workflow: trail[0].workflowName }
+            ? crumbAt(at)
             : workflowName ? { file: workflowFilePath, workflow: workflowName } : undefined;
         if (!root) {
             return undefined;
         }
-        // Exported from the root file's run root, as a run of the root starts, and kept per folder
-        // as the plan is.
-        const rootCwd = root.file === workflowFilePath ? cwd : await resolveRunRoot(root.file);
-        const exported = await this.hierarchyCache.get(root.file, root.workflow, rootCwd, this.cliVariables(root.file, rootCwd));
+        const exported = await exportOf(root);
         if (!exported) {
             return undefined;
         }
-        const path = trailInstancePath(trail);
-        const outline = outlineOf(exported.hierarchy);
+        // The outline, and the graphs a list of nodes is read from, are the
+        // trail root's: their paths are the trail's, from its first crumb, and
+        // its outline is the one the reader navigates by. A unit answered by a
+        // past run is not in it, and a view under one is marked in it as any
+        // view it does not list is.
+        const navigated = at === 0 ? exported : await exportOf(crumbAt(0));
+        const around = navigated ? { hierarchy: outlineOf(navigated.hierarchy), hierarchyGraphs: graphsOf(navigated) } : {};
+        const path = trailInstancePath(trail.slice(at));
         if (path.length === 0) {
             if (workflowFilePath !== root.file || (workflowName && workflowName !== root.workflow)) {
                 return undefined;
             }
             const { hierarchy: _tree, ...rootDoc } = exported;
-            return { ...(rootDoc as unknown as GraphDocument), hierarchy: outline, hierarchyGraphs: graphsOf(exported) };
+            return { ...(rootDoc as unknown as GraphDocument), ...around };
         }
         const instance = findInstance(exported.hierarchy, path);
         if (
@@ -313,7 +328,7 @@ export class CliGraphModelSource implements DiagramModelSource {
         ) {
             return undefined;
         }
-        return { ...(instance.graph as GraphDocument), hierarchy: outline, hierarchyGraphs: graphsOf(exported) };
+        return { ...(instance.graph as GraphDocument), ...around };
     }
 
     /** Runs the runtime's hierarchy export from `cwd`, the root file's run root, with `variables`; its stdout, or undefined when it fails. */
