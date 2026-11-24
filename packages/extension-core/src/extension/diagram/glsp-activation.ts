@@ -127,6 +127,8 @@ type NavigationTrailEntry = {
     view?: string;
     viewLabel?: string;
     viewOf?: 'instance';
+    /** An instance answered by a past run: kept, so the views in it are still drawn from it. */
+    recordedRun?: string;
 };
 
 
@@ -155,11 +157,13 @@ function parseNavigationTrail(raw: unknown): NavigationTrailEntry[] {
                 : undefined;
             const view = typeof (entry as NavigationTrailEntry).view === 'string' ? (entry as NavigationTrailEntry).view : undefined;
             const viewLabel = typeof (entry as NavigationTrailEntry).viewLabel === 'string' ? (entry as NavigationTrailEntry).viewLabel : undefined;
+            const recordedRun = typeof (entry as NavigationTrailEntry).recordedRun === 'string' ? (entry as NavigationTrailEntry).recordedRun : undefined;
             if (sourceUri || workflowName) {
                 out.push({
                     sourceUri,
                     workflowName,
                     ...(workflowInstanceName ? { workflowInstanceName } : {}),
+                    ...(recordedRun ? { recordedRun } : {}),
                     ...(view
                         ? {
                             view,

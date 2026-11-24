@@ -26,6 +26,8 @@ type NavigationCrumb = {
     viewLabel?: string;
     /** The view is of the instance the crumb was reached through, not of the definition its file holds. */
     viewOf?: 'instance';
+    /** The instance is answered by a past run, this one (`RECORDED_RUN`): the views in it are drawn from it. */
+    recordedRun?: string;
 };
 
 /** What a crumb says: the instance or workflow, then the view when it is one. */
@@ -285,7 +287,8 @@ export class WorkflowNavigationUi {
         currentSourceUri: string | undefined,
         targetSourceUri: string,
         targetWorkflowName: string,
-        targetWorkflowInstanceName?: string
+        targetWorkflowInstanceName?: string,
+        targetRecordedRun?: string
     ): NavigationCrumb[] {
         const currentSourceKey = currentSourceUri ? normalizeSourceUriKey(currentSourceUri) : undefined;
         const targetSourceKey = normalizeSourceUriKey(targetSourceUri);
@@ -306,6 +309,9 @@ export class WorkflowNavigationUi {
             workflowName: targetWorkflowName,
             ...(typeof targetWorkflowInstanceName === 'string' && targetWorkflowInstanceName.trim() !== ''
                 ? { workflowInstanceName: targetWorkflowInstanceName.trim() }
+                : {}),
+            ...(typeof targetRecordedRun === 'string' && targetRecordedRun.trim() !== ''
+                ? { recordedRun: targetRecordedRun.trim() }
                 : {})
         }];
         return this.normalizeTrail(next);
@@ -1185,12 +1191,14 @@ export class WorkflowNavigationUi {
             const view = typeof (item as any)?.view === 'string' ? (item as any).view.trim() : '';
             const viewLabel = typeof (item as any)?.viewLabel === 'string' ? (item as any).viewLabel.trim() : '';
             const viewOf = (item as any)?.viewOf === 'instance' ? { viewOf: 'instance' as const } : {};
+            const recordedRun = typeof (item as any)?.recordedRun === 'string' ? (item as any).recordedRun.trim() : '';
             if (sourceUri !== '' && workflowName !== '') {
                 out.push({
                     sourceUri,
                     workflowName,
                     ...(workflowInstanceName !== '' ? { workflowInstanceName } : {}),
-                    ...(view !== '' ? { view, ...(viewLabel !== '' ? { viewLabel } : {}), ...viewOf } : {})
+                    ...(view !== '' ? { view, ...(viewLabel !== '' ? { viewLabel } : {}), ...viewOf } : {}),
+                    ...(recordedRun !== '' ? { recordedRun } : {})
                 });
             }
         }
@@ -1227,6 +1235,9 @@ export class WorkflowNavigationUi {
                         ...(entry.viewLabel?.trim() ? { viewLabel: entry.viewLabel.trim() } : {}),
                         ...(entry.viewOf === 'instance' ? { viewOf: 'instance' as const } : {})
                     }
+                    : {}),
+                ...(typeof entry.recordedRun === 'string' && entry.recordedRun.trim() !== ''
+                    ? { recordedRun: entry.recordedRun.trim() }
                     : {})
             };
             const prev = normalized[normalized.length - 1];

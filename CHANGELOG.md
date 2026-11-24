@@ -1633,6 +1633,18 @@ platform that hands it one.
 
 ### Fixed
 
+- **The edges inside a workflow instance are drawn from the run it nests.**
+  A nested workflow answered by a past run (wfpy's
+  `child(instance="wf-out/<run>")`) runs nothing when its parent runs, so
+  the parent's runs record nothing inside it. Stepped into from the parent,
+  the view took the latest run of any workflow on the trail, the parent's
+  once it had run, and none of its edges showed a token. The producer's
+  `meta.workflowInstance.run` is now carried on the node
+  (`WorkflowDiagramMetadata.RECORDED_RUN`) and on the crumb a drill-down
+  adds (`recordedRun`). A view at or below that crumb is drawn from that run,
+  with its instance paths measured from the crumb (`recorded-run.ts`). That
+  covers the tokens on its edges, its agents, and the run picker, which
+  lists that run alone, whatever run is the latest or chosen for the parent.
 - **`/untangle` in a view navigated into another file's workflow.** In
   place, the editor of `jpeg_flow.py` drew `place.py`'s workflow, and its
   session drew `place.py`: the untangle tools asked for a chat open on

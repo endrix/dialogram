@@ -222,11 +222,16 @@ export class WorkflowNetworkNavigationMouseListener extends MouseListener implem
         }
 
         const targetSourceUri = referencedUri;
+        // An instance answered by a past run: the views in it are drawn from that run.
+        const recordedRun = typeof args[WorkflowDiagramMetadata.RECORDED_RUN] === 'string'
+            ? String(args[WorkflowDiagramMetadata.RECORDED_RUN]).trim() || undefined
+            : undefined;
         const navTrail = this.workflowNavUi.buildNavigationTrail(
             currentSourceUri,
             targetSourceUri,
             targetNetworkName,
-            targetWorkflowInstanceName
+            targetWorkflowInstanceName,
+            recordedRun
         );
         const serializedTrail = JSON.stringify(navTrail);
         const instancePath = useGraphSourceNavigation ? instancePathFromTrail(navTrail) : [];

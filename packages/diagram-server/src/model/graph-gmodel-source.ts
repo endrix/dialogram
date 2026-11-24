@@ -777,6 +777,11 @@ export class GraphGModelSource {
                     ...(gnode.args ?? {}),
                     [WorkflowDiagramMetadata.IS_NETWORK_INSTANCE]: true
                 };
+                // Answered by a past run: a view inside it is drawn from that run.
+                const recordedRun = (node.meta?.['workflowInstance'] as { run?: unknown } | undefined)?.run;
+                if (typeof recordedRun === 'string' && recordedRun.trim() !== '') {
+                    gnode.args[WorkflowDiagramMetadata.RECORDED_RUN] = recordedRun.trim();
+                }
             }
             gnode.args = { ...(gnode.args ?? {}), [WorkflowDiagramMetadata.GRAPH_NODE_ID]: node.id };
             if (openable) {
