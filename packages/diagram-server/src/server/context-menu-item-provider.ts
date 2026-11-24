@@ -439,7 +439,11 @@ export class WorkflowContextMenuItemProvider extends ContextMenuItemProvider {
                         uri: referencedUri,
                         workflowName: displayNameFromQualifiedName(referencedName.trim()),
                         ...(typeof instanceName === 'string' && instanceName.trim() !== '' ? { workflowInstanceName: instanceName.trim() } : {}),
-                        ...(view.of === 'instance' ? { viewOf: 'instance' } : {})
+                        ...(view.of === 'instance' ? { viewOf: 'instance' } : {}),
+                        // An instance answered by a past run: the view is drawn from that run.
+                        ...(typeof elementArgs?.[WorkflowDiagramMetadata.RECORDED_RUN] === 'string'
+                            ? { recordedRun: elementArgs[WorkflowDiagramMetadata.RECORDED_RUN] }
+                            : {})
                     } as any]
                 }));
             }

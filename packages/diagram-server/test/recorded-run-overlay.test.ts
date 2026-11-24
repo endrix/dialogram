@@ -164,6 +164,65 @@ describe('a view inside a workflow instance answered by a past run', () => {
     });
 });
 
+describe('the run of an instance, as the review found it', () => {
+    it('is read where it was found, though it wrote another folder, and runs nothing', async () => {
+        const { dir, parentFile, childFile } = await project();
+        const moved = path.join(dir, 'kept', 'child-run');
+        await fs.mkdir(path.dirname(moved), { recursive: true });
+        await fs.rename(path.join(dir, 'wf-out', 'child-run'), moved);
+        const overlayPath = path.join(moved, 'run.wf-viewer.json');
+        const written = JSON.parse(await fs.readFile(overlayPath, 'utf-8'));
+        await fs.writeFile(overlayPath, JSON.stringify({ ...written, running: true, active: [{ entityInstanceName: 'd' }] }));
+        const trail = [
+            { sourceUri: `file://${parentFile}`, workflowName: 'parent' },
+            { sourceUri: `file://${childFile}`, workflowName: 'counted', workflowInstanceName: 'c', recordedRun: 'kept/child-run' }
+        ];
+        const overlay = await storage().tryLoadLatestViewerOverlay(
+            childFile, 'counted', [parentFile, childFile], ['parent', 'counted'], undefined, recordedRunOfTrail(trail, uri => new URL(uri).pathname));
+        expect(overlay.outDir).toBe(moved);
+        expect(overlay.running).toBe(false);
+        expect(overlay.active).toBeUndefined();
+    });
+
+    it('is taken whatever spacing its record gives its workflow\'s name', async () => {
+        const { dir, childFile, parentFile } = await project();
+        const overlayPath = path.join(dir, 'wf-out', 'child-run', 'run.wf-viewer.json');
+        const written = JSON.parse(await fs.readFile(overlayPath, 'utf-8'));
+        await fs.writeFile(overlayPath, JSON.stringify({ ...written, workflowName: 'counted ' }));
+        const trail = [
+            { sourceUri: `file://${parentFile}`, workflowName: 'parent' },
+            { sourceUri: `file://${childFile}`, workflowName: 'counted', workflowInstanceName: 'c', recordedRun: 'wf-out/child-run' }
+        ];
+        const overlay = await storage().tryLoadLatestViewerOverlay(
+            childFile, 'counted', [parentFile, childFile], ['parent', 'counted'], undefined, recordedRunOfTrail(trail, uri => new URL(uri).pathname));
+        expect(overlay?.runId).toBe('child-run');
+    });
+
+    it('is listed in the run picker though it cannot be read', async () => {
+        const { parentFile, childFile } = await project();
+        const trail = [
+            { sourceUri: `file://${parentFile}`, workflowName: 'parent' },
+            { sourceUri: `file://${childFile}`, workflowName: 'counted', workflowInstanceName: 'c', recordedRun: 'wf-out/gone-run' }
+        ];
+        const root = new GModelRoot();
+        root.id = 'root';
+        root.args = {};
+        await storage().attachWorkflowRunHistory(root, childFile, 'counted', ['parent', 'counted'], [parentFile, childFile], undefined,
+            recordedRunOfTrail(trail, uri => new URL(uri).pathname));
+        expect((root.args as any)['wf:selectedRunId']).toBe('gone-run');
+        expect(JSON.parse((root.args as any)['wf:availableRuns']).map((run: any) => run.runId)).toEqual(['gone-run']);
+    });
+
+    it('is not chosen back at the parent: the parent draws its own latest run', async () => {
+        const { parentFile } = await project();
+        const s = storage();
+        // Back at the parent, the client carries the run the instance's view showed.
+        expect(await s.runChosenFor('child-run', undefined, parentFile, 'parent', ['parent'], [parentFile])).toBeUndefined();
+        expect(await s.runChosenFor('parent-run', undefined, parentFile, 'parent', ['parent'], [parentFile])).toBe('parent-run');
+        expect(await s.runChosenFor(undefined, undefined, parentFile, 'parent', ['parent'], [parentFile])).toBeUndefined();
+    });
+});
+
 describe('the run of the view at a trail\'s end', () => {
     const fsPath = (uri: string) => new URL(uri).pathname;
 
@@ -185,6 +244,8 @@ describe('the run of the view at a trail\'s end', () => {
         expect(at('~/runs/r1')).toBe('/home/me/runs/r1');
         expect(at('/abs/r2')).toBe('/abs/r2');
         expect(at('wf-out/r3/run.wf-run.json')).toBe('/w/wf-out/r3');
+        // Written on Windows: `~` and a backslash.
+        expect(at('~\\r4')).toBe(path.join('/home/me', 'r4'));
     });
 
     it('is none when no crumb is answered by a past run, the root\'s included', () => {

@@ -736,12 +736,13 @@ export class WorkflowNavigationUi {
         workflowInstanceName: string | undefined,
         view: string,
         viewLabel: string | undefined,
-        viewOf?: 'instance'
+        viewOf?: 'instance',
+        recordedRun?: string
     ): RequestModelAction {
         const currentSourceUri = this.editorContext.sourceUri;
         // The crumb keeps what the view is of, so that coming back to it by
         // the trail asks for the same thing the node did.
-        const trail = this.buildNavigationTrail(currentSourceUri, targetSourceUri, workflowName, workflowInstanceName)
+        const trail = this.buildNavigationTrail(currentSourceUri, targetSourceUri, workflowName, workflowInstanceName, recordedRun)
             .map((crumb, index, all) => (index === all.length - 1
                 ? { ...crumb, view, ...(viewLabel ? { viewLabel } : {}), ...(viewOf ? { viewOf } : {}) }
                 : crumb));

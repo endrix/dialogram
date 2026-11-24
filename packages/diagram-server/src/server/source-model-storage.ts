@@ -882,12 +882,14 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         const navigationTrail = this.parseNavigationTrailArg(opts[NAV_TRAIL_ARG]);
         const sourcePathHints = this.collectSourcePathHints(workflowFilePath, opts);
         const workflowNameHints = this.collectWorkflowNameHints(workflowName || 'workflow', opts);
-        const requestedRunId = typeof opts[RUN_ID_ARG] === 'string' && String(opts[RUN_ID_ARG]).trim() !== ''
-            ? String(opts[RUN_ID_ARG]).trim()
-            : undefined;
         // A view inside an instance answered by a past run is drawn from that
         // run, not from the latest or chosen run of its parent (recorded-run.ts).
         const recordedRun = recordedRunOfTrail(navigationTrail, uri => this.fsPathOfCrumb(uri));
+        const askedRunId = typeof opts[RUN_ID_ARG] === 'string' && String(opts[RUN_ID_ARG]).trim() !== ''
+            ? String(opts[RUN_ID_ARG]).trim()
+            : undefined;
+        const requestedRunId = await this.runChosenFor(
+            askedRunId, recordedRun, workflowFilePath, workflowName || 'workflow', workflowNameHints, sourcePathHints);
         (gmodelRoot as any).args = (gmodelRoot as any).args || {};
         (gmodelRoot as any).args['wf:workflowName'] = workflowName || undefined;
         (gmodelRoot as any).args['wf:selectedWorkflow'] = workflowName || undefined;
@@ -1329,6 +1331,28 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
      */
     private parseNavigationTrailArg(raw: unknown): Array<{ sourceUri: string; workflowName: string; workflowInstanceName?: string; recordedRun?: string }> {
         return sharedParseNavigationTrailArg(raw);
+    }
+
+    /**
+     * The run a view was asked for, when it is one of the view's. The client
+     * carries the run it was showing on every navigation: one shown in another
+     * view that is none of this view's runs (the past run of an instance, back
+     * at its parent) is not chosen here, and the latest of its own is drawn.
+     * Inside such an instance the run is the instance's whatever is asked.
+     */
+    private async runChosenFor(
+        askedRunId: string | undefined,
+        recordedRun: RecordedRunOfView | undefined,
+        workflowFilePath: string,
+        workflowName: string,
+        workflowNameHints: string[],
+        sourcePathHints: string[]
+    ): Promise<string | undefined> {
+        if (!askedRunId || recordedRun) {
+            return askedRunId;
+        }
+        const runs = await this.discoverWorkflowRunHistory(workflowFilePath, workflowName, workflowNameHints, sourcePathHints);
+        return runs.some(run => run.runId === askedRunId) ? askedRunId : undefined;
     }
 
     /** A crumb's file, by its source URI. */
@@ -2060,7 +2084,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         if (recordedRun) {
             try {
                 const parsed = JSON.parse(await fsModule.readFile(pathModule.join(recordedRun.runDir, 'run.wf-agent-context.json'), 'utf-8'));
-                return parsed?.version === 1 && Array.isArray(parsed.agents) && parsed.workflowName === recordedRun.workflowName
+                return parsed?.version === 1 && Array.isArray(parsed.agents)
+                    && typeof parsed.workflowName === 'string' && parsed.workflowName.trim() === recordedRun.workflowName.trim()
                     ? { agents: parsed.agents }
                     : undefined;
             } catch {
@@ -2121,8 +2146,9 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         let runs = await this.discoverWorkflowRunHistory(workflowFilePath, workflowName, workflowNameHints, sourcePathHints);
         const rootArgs = ((root as any).args ?? {}) as Record<string, unknown>;
         // Inside an instance answered by a past run, that run is the one there is.
-        const recordedRunId = recordedRun && typeof rootArgs['wf:viewerOverlayRunId'] === 'string'
-            ? String(rootArgs['wf:viewerOverlayRunId']).trim()
+        const recordedRunId = recordedRun
+            ? (typeof rootArgs['wf:viewerOverlayRunId'] === 'string' ? String(rootArgs['wf:viewerOverlayRunId']).trim() : '')
+                || path.basename(recordedRun.runDir)
             : undefined;
         if (recordedRun) {
             const known = runs.filter(run => run.runId === recordedRunId);
@@ -2437,7 +2463,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 return undefined;
             }
             if (ofRecorded !== undefined) {
-                if (overlay.workflowName !== ofRecorded) {
+                if (typeof overlay.workflowName !== 'string' || overlay.workflowName.trim() !== ofRecorded.trim()) {
                     console.log(`[WorkflowSourceModelStorage] recorded run rejected: wfName=${overlay.workflowName} (want=${ofRecorded}) at ${overlayPath}`);
                     return undefined;
                 }
@@ -2503,10 +2529,17 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         const readOverlayFromPath = async (overlayPath: string, requireRunning = false): Promise<ViewerOverlay | undefined> =>
             acceptOverlay(await this.readJsonFileMemo(overlayPath), overlayPath, requireRunning);
 
-        // Inside an instance answered by a past run: that run, and no other.
+        // Inside an instance answered by a past run: that run, and no other. Its folder is where it
+        // was found (the run may have been moved since it wrote `outDir`), and nothing runs in it:
+        // the instance runs nothing, whatever its file said when it was written.
         if (recordedRun) {
             const overlayPath = path.join(recordedRun.runDir, 'run.wf-viewer.json');
-            return acceptOverlay(await this.readJsonFileMemo(overlayPath), overlayPath, false, recordedRun.workflowName);
+            const recorded = acceptOverlay(await this.readJsonFileMemo(overlayPath), overlayPath, false, recordedRun.workflowName);
+            if (!recorded) {
+                console.log(`[WorkflowSourceModelStorage] recorded run not found: ${overlayPath} (instance of ${recordedRun.workflowName})`);
+                return undefined;
+            }
+            return { ...recorded, outDir: recordedRun.runDir, running: false, active: undefined };
         }
 
         const readOverlay = async (entry: { workflowName?: string; sourcePath?: string; outDir?: string; runId?: string }): Promise<ViewerOverlay | undefined> => {

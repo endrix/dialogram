@@ -60,6 +60,14 @@ describe('stepping into a workflow instance answered by a past run', () => {
         expect(below[2]).toEqual({ sourceUri: CHILD, workflowName: 'deeper', workflowInstanceName: 'inner' });
     });
 
+    it('puts it on the crumb of a view of the instance opened from the parent', () => {
+        (globalThis as any).__calDiagramContext = { workflowName: 'parent' };
+        const navUi = new WorkflowNavigationUi({ dispatch: vi.fn() } as any, { sourceUri: PARENT, diagramType: 'cal-network-diagram' } as any);
+        const request: any = navUi.requestView(CHILD, 'counted', 'c', 'synth', 'Synthesis', 'instance', 'wf-out/r1');
+        const trail = JSON.parse(request.options['wf:navTrail']);
+        expect(trail[trail.length - 1]).toMatchObject({ workflowInstanceName: 'c', view: 'synth', recordedRun: 'wf-out/r1' });
+    });
+
     it('adds nothing for a workflow that runs with its parent', () => {
         const { trail } = stepInto(instanceNode({}));
         expect(trail[1]).not.toHaveProperty('recordedRun');

@@ -50,7 +50,7 @@ export function recordedRunOfTrail(
         }
         const expanded = written === '~'
             ? home
-            : written.startsWith('~/') ? path.join(home, written.slice(2)) : written;
+            : /^~[\\/]/.test(written) ? path.join(home, written.slice(2)) : written;
         const resolved = path.resolve(path.dirname(fsPathOf(trail[at - 1].sourceUri)), expanded);
         return {
             runDir: path.extname(resolved).toLowerCase() === '.json' ? path.dirname(resolved) : resolved,

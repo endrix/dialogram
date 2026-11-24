@@ -93,6 +93,8 @@ export namespace WorkflowOpenViewAction {
         workflowInstanceName?: string;
         /** `'instance'`: the view is of that instance, not of the definition the file holds (`wf:views`' `of`). */
         viewOf?: 'instance';
+        /** The instance is answered by a past run (`RECORDED_RUN`): the view is drawn from it. */
+        recordedRun?: string;
     }
 
     export function is(action: unknown): action is Action {
@@ -956,7 +958,8 @@ export class WorkflowOpenViewActionHandler implements IActionHandler {
         void this.actionDispatcher.dispatch(
             this.navigationUi.requestView(
                 action.uri, action.workflowName, action.workflowInstanceName, action.view, action.label,
-                action.viewOf === 'instance' ? 'instance' : undefined
+                action.viewOf === 'instance' ? 'instance' : undefined,
+                typeof action.recordedRun === 'string' ? action.recordedRun : undefined
             ) as never
         );
     }
