@@ -198,7 +198,7 @@ describe('createSidecarOperationModules — the MCP tool of its own operation', 
         const added: unknown[] = [];
         module.configureMcpTools?.({ add: (ctor: unknown) => added.push(ctor) } as any);
         expect(added.map(ctor => (new (ctor as new () => { name?: string })()).name)).toEqual([
-            'create-task-type', 'set-node-parameters', 'untangle-start', 'untangle-try', 'untangle-propose'
+            'create-task-type', 'set-node-parameters', 'untangle-start', 'untangle-try', 'untangle-propose', 'untangle-end'
         ]);
     });
 });

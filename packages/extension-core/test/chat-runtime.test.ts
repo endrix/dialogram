@@ -163,6 +163,19 @@ describe('unified runtime absorbed features', () => {
         expect(posts.filter(p => p.payload.type === 'chat.message' && p.payload.data.role === 'system')).toEqual([]);
     });
 
+    it('runs what a prompt command leaves for after its turn, however the turn ends', async () => {
+        const afterTurn = vi.fn(async () => undefined);
+        const { runtime, acp } = makeRuntime({
+            slashCommands: [{ command: 'untangle', description: 't', modes: ['build'], handler: async () => ({ success: true, prompt: 'Go.', afterTurn }) }]
+        });
+        acp.sendPrompt = vi.fn(async () => undefined);
+        await runtime.handleMessage('file:///ws/wf.py', { type: 'chat.sendMessage', data: { text: '/untangle', mode: 'build' } });
+        expect(afterTurn).toHaveBeenCalledTimes(1);
+        acp.sendPrompt = vi.fn(async () => { throw new Error('stopped'); });
+        await runtime.handleMessage('file:///ws/wf.py', { type: 'chat.sendMessage', data: { text: '/untangle', mode: 'build' } }).catch(() => undefined);
+        expect(afterTurn).toHaveBeenCalledTimes(2);
+    });
+
     it('a message of the platform\'s own reaches the open chat with its pictures, and says when none is open', () => {
         const { runtime, posts } = makeRuntime({});
         expect(runtime.postInChat('file:///ws/wf.py', { text: 'Untangle applied.', figures: [{ data: 'PIC', caption: 'Try 1' }] })).toBe(true);

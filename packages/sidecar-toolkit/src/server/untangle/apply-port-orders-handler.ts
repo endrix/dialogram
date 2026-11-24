@@ -5,23 +5,26 @@
  *
  * The layout is saved first and the sources written after: each write makes
  * the host reload the diagram, which then reads the saved layout, with the
- * ports declared in the order the routes were drawn for. A write refused puts
- * back every file written before it and the layout as it was: nothing is left
- * half done.
+ * ports declared in the order the routes were drawn for. A write refused (or
+ * failing) puts back every file written before it and the layout as it was:
+ * nothing is left half done.
  *
  * The layout file is not one of the files the undo puts back: it changes with
  * every node moved, and the undo would then refuse. Undo saves the drawing the
  * diagram had before the untangle instead, and redo the try's, each before
- * the reload that follows it.
+ * the files are put back, which reloads the diagram. A try that changes no
+ * port order is still an entry to undo: its layout.
  */
 import { promises as fs } from 'node:fs';
 import { Operation } from '@eclipse-glsp/protocol';
 import { ModelState, OperationHandler, type Command, type MaybePromise } from '@eclipse-glsp/server';
+import type { CommandThatMayChangeNothing, CommandThatMayRefuse } from '@dialogram/diagram-server/server/command-stack';
+import type { CommandThatWritesOutOfBand, OutOfBandWrite } from '@dialogram/diagram-server/server/out-of-band-writes';
 import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
 import { ReversibleMultiWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-multi-workspace-edit-command';
 import { LayoutPersistenceService } from '@dialogram/diagram-server/services/layout-persistence-service';
-import { layoutGeometryOf, saveLayoutGeometry, type LayoutGeometry } from '@dialogram/diagram-server/server/layout-snapshot';
+import { applyLayoutGeometry, layoutGeometryOf, saveLayoutGeometry, type LayoutGeometry } from '@dialogram/diagram-server/server/layout-snapshot';
 import { readAuthoritativeSourceText } from '../operations/authoritative-source-text';
 import { entityFileOf } from '../operations/entity-port-write';
 import { SidecarInvoker } from '../operations/sidecar-invoker';
@@ -46,12 +49,80 @@ export interface ApplyPortOrdersOperation extends Operation {
 }
 
 type Snapshot = { uri: vscode.Uri; beforeText: string; afterText: string };
+type Outcome = { ok: boolean; snapshots: Snapshot[]; message?: string };
 
 async function textOf(uri: vscode.Uri): Promise<string | undefined> {
     try {
         return await readAuthoritativeSourceText(uri);
     } catch {
         return undefined;
+    }
+}
+
+function messageOf(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The untangle applied: the try's drawing, saved and drawn, and the files
+ * the producer wrote (`files`, which puts them back). Kept on the stack when
+ * it applied, files or not; undone, the drawing before is saved and drawn
+ * first, then the files are put back; a file changed outside the diagram
+ * since refuses the whole, the drawing saved again as it was.
+ */
+class ApplyUntangleCommand implements CommandThatMayChangeNothing, CommandThatMayRefuse, CommandThatWritesOutOfBand {
+    private refusedLast = false;
+
+    constructor(
+        private readonly files: ReversibleMultiWorkspaceEditCommand,
+        private readonly drawing: (geometry: LayoutGeometry) => Promise<void>,
+        private readonly before: LayoutGeometry,
+        private readonly after: LayoutGeometry,
+        private readonly outcome: () => Outcome | undefined
+    ) {}
+
+    async execute(): Promise<void> {
+        await this.files.execute();
+    }
+
+    changedNothing(): boolean {
+        return !this.outcome()?.ok;
+    }
+
+    canUndo(): boolean {
+        return this.outcome()?.ok === true;
+    }
+
+    refused(): boolean {
+        return this.refusedLast;
+    }
+
+    async undo(): Promise<void> {
+        await this.putBack(this.before, this.after, () => this.files.undo());
+    }
+
+    async redo(): Promise<void> {
+        await this.putBack(this.after, this.before, () => this.files.redo());
+    }
+
+    private async putBack(to: LayoutGeometry, from: LayoutGeometry, files: () => Promise<void>): Promise<void> {
+        this.refusedLast = false;
+        await this.drawing(to);
+        if (this.files.canUndo()) {
+            await files();
+            if (this.files.refused()) {
+                this.refusedLast = true;
+                await this.drawing(from);
+            }
+        }
+    }
+
+    outOfBandWrites(): readonly OutOfBandWrite[] {
+        return this.files.outOfBandWrites();
+    }
+
+    writtenInTheEditor(): readonly string[] {
+        return this.files.writtenInTheEditor();
     }
 }
 
@@ -74,82 +145,100 @@ export class ApplyPortOrdersOperationHandler extends OperationHandler {
             return undefined;
         }
         const state = untangleOf(this.modelState);
-        const after = layoutGeometryOf(this.modelState.root);
+        // The try put to the person, as it was drawn: what was proposed is
+        // what is saved, whatever the diagram was made to show meanwhile.
+        const proposed = state?.proposed !== undefined ? state.tries[state.proposed - 1] : undefined;
+        const after = proposed?.geometry ?? layoutGeometryOf(this.modelState.root);
         const before = state?.original ?? after;
-        let snapshots: Snapshot[] = [];
-        return new ReversibleMultiWorkspaceEditCommand({
+        const drawing = async (geometry: LayoutGeometry): Promise<void> => {
+            applyLayoutGeometry(this.modelState.root, geometry);
+            await saveLayoutGeometry(this.modelState, this.layoutPersistence, geometry);
+        };
+        let outcome: Outcome | undefined;
+        const files = new ReversibleMultiWorkspaceEditCommand({
             label: 'Untangle',
-            outOfBandSnapshots: () => snapshots,
-            afterApply: async phase => {
-                if (phase === 'undo' || phase === 'redo') {
-                    await saveLayoutGeometry(this.modelState, this.layoutPersistence, phase === 'undo' ? before : after);
-                }
-            },
+            outOfBandSnapshots: () => outcome?.snapshots ?? [],
             computeEdits: async () => {
-                const outcome = await this.write(sourceUri, operation.writes ?? [], before, after);
+                outcome = await this.write(sourceUri, operation.writes ?? [], drawing, before, after);
                 if (state) {
-                    state.applied = { ok: outcome.ok, files: outcome.snapshots.map(each => each.uri.fsPath), ...(outcome.message ? { message: outcome.message } : {}) };
+                    state.applied = {
+                        ok: outcome.ok,
+                        files: outcome.snapshots.map(each => each.uri.fsPath),
+                        ...(outcome.message ? { message: outcome.message } : {})
+                    };
                 }
-                snapshots = outcome.snapshots;
-                return snapshots.length > 0
-                    ? snapshots.map(each => ({ uri: each.uri, edits: [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')] }))
+                return outcome.snapshots.length > 0
+                    ? outcome.snapshots.map(each => ({ uri: each.uri, edits: [new vscode.TextEdit(new vscode.Range(0, 0, 0, 0), '')] }))
                     : undefined;
             }
         });
+        return new ApplyUntangleCommand(files, drawing, before, after, () => outcome);
     }
 
     /**
-     * Save `after` as the layout, then write each order; refused, put back the
-     * files written and save `before`. The files that changed, each as it was
-     * and as it is.
+     * Draw and save `after`, then write each order; refused, or failing, put
+     * back the files written and draw and save `before`. The files that
+     * changed, each as it was and as it is.
      */
     private async write(
         sourceUri: string,
         writes: readonly PortOrderWrite[],
+        drawing: (geometry: LayoutGeometry) => Promise<void>,
         before: LayoutGeometry,
         after: LayoutGeometry
-    ): Promise<{ ok: boolean; snapshots: Snapshot[]; message?: string }> {
-        const targets = writes.map(each => ({
-            ...each,
-            uri: vscode.Uri.parse(entityFileOf(this.modelState, sourceUri, { entityType: each.entity, elementId: each.elementId }))
-        }));
-        const files = [...new Map(targets.map(each => [each.uri.toString(), each.uri] as const)).values()];
+    ): Promise<Outcome> {
         const was = new Map<string, string>();
-        for (const uri of files) {
-            const text = await textOf(uri);
-            if (text === undefined) {
-                return { ok: false, snapshots: [], message: `${uri.fsPath} cannot be read: nothing was changed.` };
+        let files: vscode.Uri[] = [];
+        let saved = false;
+        const undone = async (message: string): Promise<Outcome> => {
+            const putBack = await this.putBack(files, was);
+            if (saved) {
+                await drawing(before).catch(() => undefined);
             }
-            was.set(uri.toString(), text);
-        }
-        await saveLayoutGeometry(this.modelState, this.layoutPersistence, after);
-        for (const target of targets) {
-            const result = await this.sidecar.sendSidecarOpDetailed(target.uri.toString(), {
-                op: this.sidecar.sidecarOp(REORDER_ENTITY_PORTS_OP),
-                args: { entity: target.entity, order: target.order }
-            });
-            if (!result.ok) {
-                const putBack = await this.putBack(files, was);
-                await saveLayoutGeometry(this.modelState, this.layoutPersistence, before);
-                const name = target.uri.fsPath.split(/[\\/]/).pop() ?? target.uri.fsPath;
-                const reason = (result.message ?? 'refused').trim().replace(/[.!?]?$/, '.');
-                return {
-                    ok: false,
-                    snapshots: [],
-                    message: `The port order of '${target.entity}' in ${name} was not written: ${reason}`
-                        + (putBack ? ' Nothing was changed.' : ' The files written before it could not all be put back.')
-                };
+            return {
+                ok: false,
+                snapshots: [],
+                message: message + (putBack ? ' Nothing was changed.' : ' The files written before it could not all be put back.')
+            };
+        };
+        try {
+            const targets = writes.map(each => ({
+                ...each,
+                uri: vscode.Uri.parse(entityFileOf(this.modelState, sourceUri, { entityType: each.entity, elementId: each.elementId }))
+            }));
+            files = [...new Map(targets.map(each => [each.uri.toString(), each.uri] as const)).values()];
+            for (const uri of files) {
+                const text = await textOf(uri);
+                if (text === undefined) {
+                    return { ok: false, snapshots: [], message: `${uri.fsPath} cannot be read: nothing was changed.` };
+                }
+                was.set(uri.toString(), text);
             }
-        }
-        const snapshots: Snapshot[] = [];
-        for (const uri of files) {
-            const text = await textOf(uri);
-            const beforeText = was.get(uri.toString())!;
-            if (text !== undefined && text !== beforeText) {
-                snapshots.push({ uri, beforeText, afterText: text });
+            saved = true;
+            await drawing(after);
+            for (const target of targets) {
+                const result = await this.sidecar.sendSidecarOpDetailed(target.uri.toString(), {
+                    op: this.sidecar.sidecarOp(REORDER_ENTITY_PORTS_OP),
+                    args: { entity: target.entity, order: target.order }
+                });
+                if (!result.ok) {
+                    const name = target.uri.fsPath.split(/[\\/]/).pop() ?? target.uri.fsPath;
+                    const reason = (result.message ?? 'refused').trim().replace(/[.!?]?$/, '.');
+                    return await undone(`The port order of '${target.entity}' in ${name} was not written: ${reason}`);
+                }
             }
+            const snapshots: Snapshot[] = [];
+            for (const uri of files) {
+                const text = await textOf(uri);
+                const beforeText = was.get(uri.toString())!;
+                if (text !== undefined && text !== beforeText) {
+                    snapshots.push({ uri, beforeText, afterText: text });
+                }
+            }
+            return { ok: true, snapshots };
+        } catch (error) {
+            return await undone(`The untangle could not be applied: ${messageOf(error).trim().replace(/[.!?]?$/, '.')}`);
         }
-        return { ok: true, snapshots };
     }
 
     /** Every file of `files` as `was` has it; false when one could not be written. */

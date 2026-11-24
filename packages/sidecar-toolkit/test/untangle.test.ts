@@ -16,7 +16,7 @@ import { WORKFLOW_NETWORK_MODEL_KEY, WorkflowDiagramMetadata, WorkflowDiagramTyp
 import { DECLARED_ROW_ARG, recordProbe } from '@dialogram/diagram-server/model/definition-port-order';
 import { layoutGeometryOf } from '@dialogram/diagram-server/server/layout-snapshot';
 import { ApplyPortOrdersOperationHandler, APPLY_PORT_ORDERS_OPERATION_KIND } from '../src/server/untangle/apply-port-orders-handler.js';
-import { beginUntangle, drawnDefinitions, orderToWrite, untangleOf } from '../src/server/untangle/untangle-session.js';
+import { beginUntangle, drawnDefinitions, orderToWrite, untangleOf, writable } from '../src/server/untangle/untangle-session.js';
 import { commandStack, onDiskEveryFile as onDisk, saying } from './edits-on-disk';
 
 function el<T extends GModelElement>(cls: new () => T, props: Record<string, unknown>, children: GModelElement[] = []): T {
@@ -96,6 +96,20 @@ describe('what a try says of each definition', () => {
     });
 });
 
+describe('a definition drawn with different ports in different places', () => {
+    it('is said to be split, and its order is not one to write', () => {
+        // One Stage of stages.py drawn with ports A, B; another with A, B and C (a bus open).
+        const file = '/work/stages.py';
+        const a = instance('a', 'Stage', [port('a', 'A', 'input', 10), port('a', 'B', 'input', 30)], file);
+        const b = instance('b', 'Stage', [port('b', 'A', 'input', 10), port('b', 'B', 'input', 30), port('b', 'C', 'input', 50)], file);
+        const elsewhere = instance('c', 'Stage', [port('c', 'X', 'input', 10), port('c', 'Y', 'input', 30)], '/work/other.py');
+        const definitions = drawnDefinitions(el(GGraph, { id: 'g' }, [a, b, elsewhere]));
+        expect(definitions.map(each => [each.instances.join(), !!each.split, writable(each)])).toEqual([
+            ['a', true, false], ['b', true, false], ['c', false, true]
+        ]);
+    });
+});
+
 /** A diagram `net` with two instances of `Stage` (stages.py) and one of `Merge` (merges.py), as a try drew them. */
 function design() {
     const dir = mkdtempSync(path.join(tmpdir(), 'untangle-'));
@@ -124,12 +138,15 @@ function design() {
 type Sent = { file: string; args: Record<string, unknown> };
 
 /** The producer: each order written as a line of the file it is sent for; refused for `refuse`'s entity. */
-function producer(sent: Sent[], refuse?: string) {
+function producer(sent: Sent[], refuse?: string, fail?: string) {
     return {
         sidecarOp: (op: string) => `wfpy.${op}`,
         sendSidecarOpDetailed: async (uri: string, payload: { op: string; args: Record<string, unknown> }) => {
             const file = vscode.Uri.parse(uri).fsPath;
             sent.push({ file: path.basename(file), args: payload.args });
+            if (payload.args['entity'] === fail) {
+                throw new Error('the sidecar went away');
+            }
             if (payload.args['entity'] === refuse) {
                 return { ok: false, failure: 'rejected', message: 'the port order of it leaves out a port' };
             }
@@ -148,19 +165,17 @@ function layouts(saved: number[]) {
     };
 }
 
-function applyCommand(state: any, sidecar: any, layoutPersistence: any) {
+const BOTH = [
+    { entity: 'Stage', elementId: 's1', order: ['B', 'A'] },
+    { entity: 'Merge', elementId: 'm', order: ['Q', 'P'] }
+];
+
+function applyCommand(state: any, sidecar: any, layoutPersistence: any, writes = BOTH) {
     const handler = new ApplyPortOrdersOperationHandler() as any;
     handler.modelState = state;
     handler.sidecar = sidecar;
     handler.layoutPersistence = layoutPersistence;
-    return handler.createCommand({
-        kind: APPLY_PORT_ORDERS_OPERATION_KIND,
-        isOperation: true,
-        writes: [
-            { entity: 'Stage', elementId: 's1', order: ['B', 'A'] },
-            { entity: 'Merge', elementId: 'm', order: ['Q', 'P'] }
-        ]
-    });
+    return handler.createCommand({ kind: APPLY_PORT_ORDERS_OPERATION_KIND, isOperation: true, writes });
 }
 
 describe('applying an untangle', () => {
@@ -208,5 +223,53 @@ describe('applying an untangle', () => {
         expect(applied?.ok).toBe(false);
         expect(applied?.message).toBe("The port order of 'Merge' in merges.py was not written: the port order of it leaves out a port. Nothing was changed.");
         expect(stack.canUndo()).toBe(false);
+    });
+
+    it('failing for one definition, puts back what it wrote and says so', async () => {
+        const { files, modelState, root, s1 } = design();
+        beginUntangle(modelState, { root, original: layoutGeometryOf(root), baseline: { crossings: 3, definitions: [] }, tries: [] });
+        s1.position = { x: 200, y: 0 };
+        const saved: number[] = [];
+        const stack = commandStack();
+        await onDisk(() => stack.execute(applyCommand(modelState, producer([], undefined, 'Merge'), layouts(saved))));
+        expect(readFileSync(files.stages, 'utf8')).toBe('# stages.py\n');
+        expect(saved).toEqual([200, 0]);
+        expect(untangleOf(modelState)?.applied).toEqual({
+            ok: false, files: [], message: 'The untangle could not be applied: the sidecar went away. Nothing was changed.'
+        });
+        expect(stack.canUndo()).toBe(false);
+    });
+
+    it('saves the try put to the person, whatever is drawn when it is applied', async () => {
+        const { modelState, root, s1 } = design();
+        const original = layoutGeometryOf(root);
+        s1.position = { x: 300, y: 0 };
+        const proposed = layoutGeometryOf(root);
+        s1.position = { x: 200, y: 0 }; // moved since the card was shown
+        beginUntangle(modelState, {
+            root, original, baseline: { crossings: 3, definitions: [] }, proposed: 1,
+            tries: [{ n: 1, layout: 'free-ports', given: {}, crossings: 1, geometry: proposed, definitions: [] }]
+        });
+        const saved: number[] = [];
+        await onDisk(() => commandStack().execute(applyCommand(modelState, producer([]), layouts(saved))));
+        expect(saved).toEqual([300]);
+        expect(s1.position).toEqual({ x: 300, y: 0 });
+    });
+
+    it('with no port order to write, saves the layout as an edit to undo', async () => {
+        const { modelState, root, s1, files } = design();
+        beginUntangle(modelState, { root, original: layoutGeometryOf(root), baseline: { crossings: 3, definitions: [] }, tries: [] });
+        s1.position = { x: 200, y: 0 };
+        const sent: Sent[] = [];
+        const saved: number[] = [];
+        const stack = commandStack();
+        await onDisk(() => stack.execute(applyCommand(modelState, producer(sent), layouts(saved), [])));
+        expect(sent).toEqual([]);
+        expect(saved).toEqual([200]);
+        expect(stack.canUndo()).toBe(true);
+        await onDisk(() => stack.undo());
+        expect(saved).toEqual([200, 0]);
+        expect(s1.position).toEqual({ x: 0, y: 0 });
+        expect(readFileSync(files.stages, 'utf8')).toBe('# stages.py\n');
     });
 });

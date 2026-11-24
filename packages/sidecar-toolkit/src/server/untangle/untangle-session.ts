@@ -31,6 +31,11 @@ export interface DrawnDefinition {
     alone?: Record<string, Required<SideOrder>>;
     /** Its instances are not all drawn in one order (a port name repeats on a side). */
     disagree?: true;
+    /**
+     * Its name and file are another group's too, drawn with other ports (a
+     * bus open on one instance): one port order cannot be written for both.
+     */
+    split?: true;
 }
 
 export interface UntangleTry {
@@ -92,8 +97,17 @@ function instanceName(node: GNode): string {
  */
 export function drawnDefinitions(root: GModelElement): DrawnDefinition[] {
     const probe = lastProbe(root);
+    const groups = [...definitionsUnder(root).values()];
+    const sourceOf = (node: GNode): string => {
+        const args = node.args as Record<string, unknown> | undefined;
+        return `${definitionNameOf(node) ?? node.id}\u0000${String(args?.[WorkflowDiagramMetadata.REFERENCED_URI] ?? '')}`;
+    };
+    const groupsOfSource = new Map<string, number>();
+    for (const nodes of groups) {
+        groupsOfSource.set(sourceOf(nodes[0]), (groupsOfSource.get(sourceOf(nodes[0])) ?? 0) + 1);
+    }
     const result: DrawnDefinition[] = [];
-    for (const nodes of definitionsUnder(root).values()) {
+    for (const nodes of groups) {
         const first = nodes[0];
         const drawn = sidesOf(first, 'drawn');
         const alone = probe && nodes.length > 1
@@ -106,10 +120,16 @@ export function drawnDefinitions(root: GModelElement): DrawnDefinition[] {
             drawn,
             declared: sidesOf(first, 'declared'),
             ...(alone && Object.keys(alone).length > 0 ? { alone } : {}),
-            ...(nodes.some(node => !sameSides(sidesOf(node, 'drawn'), drawn)) ? { disagree: true as const } : {})
+            ...(nodes.some(node => !sameSides(sidesOf(node, 'drawn'), drawn)) ? { disagree: true as const } : {}),
+            ...((groupsOfSource.get(sourceOf(first)) ?? 0) > 1 ? { split: true as const } : {})
         });
     }
     return result.sort((a, b) => b.instances.length - a.instances.length || a.name.localeCompare(b.name));
+}
+
+/** Whether the order `definition` is drawn in can be written: one order, for it alone. */
+export function writable(definition: DrawnDefinition): boolean {
+    return !definition.disagree && !definition.split;
 }
 
 /** Whether `definition` is drawn in another order than its source declares. */

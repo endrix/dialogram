@@ -275,7 +275,8 @@ export async function persistLayout(
  */
 export interface LayoutGeometry {
     nodes: Map<string, { position?: Point; size?: { width: number; height: number } }>;
-    ports: Map<string, Point | undefined>;
+    /** Every other element with a place or a size: ports, labels, compartments. */
+    parts: Map<string, { position?: Point; size?: { width: number; height: number } }>;
     edges: Map<string, Point[] | undefined>;
     /** As `persistLayout` would save it. */
     saved: { positions: Map<string, Point>; routes: Map<string, Point[]> };
@@ -284,23 +285,26 @@ export interface LayoutGeometry {
 /** The diagram as it is drawn now (see {@link LayoutGeometry}). */
 export function layoutGeometryOf(root: GModelRoot): LayoutGeometry {
     const nodes: LayoutGeometry['nodes'] = new Map();
-    const ports: LayoutGeometry['ports'] = new Map();
+    const parts: LayoutGeometry['parts'] = new Map();
     walk(root, element => {
+        if (element === root || element instanceof GEdge) {
+            return;
+        }
+        const position = (element as any).position as Point | undefined;
+        const size = (element as any).size as { width: number; height: number } | undefined;
+        const bounds = {
+            ...(position ? { position: { x: position.x, y: position.y } } : {}),
+            ...(size ? { size: { width: size.width, height: size.height } } : {})
+        };
         if (isMovableNode(element)) {
-            const position = element.position as Point | undefined;
-            const size = element.size as { width: number; height: number } | undefined;
-            nodes.set(String(element.id), {
-                ...(position ? { position: { x: position.x, y: position.y } } : {}),
-                ...(size ? { size: { width: size.width, height: size.height } } : {})
-            });
-        } else if (element instanceof GPort) {
-            const position = (element as any).position as Point | undefined;
-            ports.set(String(element.id), position ? { x: position.x, y: position.y } : undefined);
+            nodes.set(String(element.id), bounds);
+        } else if (position || size || element instanceof GPort) {
+            parts.set(String(element.id), bounds);
         }
     });
     return {
         nodes,
-        ports,
+        parts,
         edges: snapshotEdgeRoutesById(root),
         saved: { positions: collectNodePositions(root), routes: collectEdgeRoutes(root) }
     };
@@ -310,15 +314,12 @@ export function layoutGeometryOf(root: GModelRoot): LayoutGeometry {
 export function applyLayoutGeometry(root: GModelRoot, geometry: LayoutGeometry): void {
     walk(root, element => {
         const id = String(element.id);
-        if (isMovableNode(element) && geometry.nodes.has(id)) {
-            const node = geometry.nodes.get(id)!;
-            element.position = node.position ? { ...node.position } : undefined;
-            if (node.size) {
-                element.size = { ...node.size };
+        const bounds = isMovableNode(element) ? geometry.nodes.get(id) : geometry.parts.get(id);
+        if (bounds) {
+            (element as any).position = bounds.position ? { ...bounds.position } : undefined;
+            if (bounds.size) {
+                (element as any).size = { ...bounds.size };
             }
-        } else if (element instanceof GPort && geometry.ports.has(id)) {
-            const position = geometry.ports.get(id);
-            (element as any).position = position ? { ...position } : undefined;
         } else if (element instanceof GEdge && geometry.edges.has(id)) {
             const route = geometry.edges.get(id);
             (element as any).routingPoints = route ? route.map(p => ({ x: p.x, y: p.y })) : undefined;

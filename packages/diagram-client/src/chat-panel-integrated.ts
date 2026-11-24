@@ -791,13 +791,14 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
       case 'chat.confirm':
         if (data && typeof data.id === 'string' && typeof data.text === 'string' && Array.isArray(data.choices)) {
+          const figures = figuresOf(data.figures);
           this.timeline.push({
             kind: 'confirm',
             id: data.id,
             title: typeof data.title === 'string' ? data.title : 'Confirm',
             text: data.text,
             choices: data.choices.map(String),
-            ...(figuresOf(data.figures).length > 0 ? { figures: figuresOf(data.figures) } : {}),
+            ...(figures.length > 0 ? { figures } : {}),
           });
           // It is the session's agent that proposed it: show the session.
           if (this.view.kind !== 'session') this.showSession();

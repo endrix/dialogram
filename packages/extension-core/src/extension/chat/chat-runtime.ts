@@ -1042,7 +1042,7 @@ export class ChatRuntime {
               : {}),
             mode,
           };
-          let result: { success: boolean; error?: string; info?: string; prompt?: string };
+          let result: { success: boolean; error?: string; info?: string; prompt?: string; afterTurn?: () => Promise<void> };
           try {
             result = await resolved.contribution.handler(resolved.args, ctx);
           } catch (err) {
@@ -1055,8 +1055,12 @@ export class ChatRuntime {
             // The agent carries the command out: its prompt is the turn's
             // message. The post-turn hook reads what the person typed for view
             // operations, and is not run: the prompt speaks of layouts.
-            await this.sendInMode(sessionId, data.mode);
-            await this.acp.sendPrompt(sessionId, result.prompt, images);
+            try {
+              await this.sendInMode(sessionId, data.mode);
+              await this.acp.sendPrompt(sessionId, result.prompt, images);
+            } finally {
+              await result.afterTurn?.().catch((error) => this.logLine(`/${resolved.contribution.command}: after its turn: ${error instanceof Error ? error.message : String(error)}`));
+            }
             return;
           }
           this.postToWebview(uri, {

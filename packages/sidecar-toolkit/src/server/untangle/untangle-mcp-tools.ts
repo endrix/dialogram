@@ -45,6 +45,7 @@ import {
     orderToWrite,
     reordered,
     sidesText,
+    writable,
     untangleOf,
     type DrawnDefinition,
     type UntangleState,
@@ -71,7 +72,8 @@ function definitionsText(definitions: readonly DrawnDefinition[], withAlone: boo
         for (const each of shared) {
             lines.push(`- ${each.name} (${each.instances.join(', ')}): ${sidesText(each.drawn)}`
                 + (reordered(each) ? ` (declared: ${sidesText(each.declared)})` : '')
-                + (each.disagree ? ' — its instances could not all take one order' : ''));
+                + (each.disagree ? ' — its instances could not all take one order' : '')
+                + (each.split ? ' — drawn with other ports elsewhere: its order is not written' : ''));
             if (withAlone && each.alone) {
                 const alone = Object.entries(each.alone).map(([instance, sides]) => `${instance} ${sidesText(sides)}`);
                 lines.push(`  each on its own would take: ${alone.join(' | ')}`);
@@ -148,8 +150,9 @@ export class UntangleStartMcpToolHandler extends UntangleToolHandler<UntangleSta
     readonly description =
         'Begin untangling the diagram: lays it out with Layout Diagram, the drawing to beat, and answers its ' +
         'edge crossings, its picture and the definitions that have several instances. Then try layouts with ' +
-        `untangle-try (at most ${MAX_TRIES}) and put the best to the person with untangle-propose. Nothing is ` +
-        'saved until the person applies a try. Calling it again starts over from the drawing the diagram had.';
+        `untangle-try (at most ${MAX_TRIES} in all) and put the best to the person with untangle-propose. ` +
+        'Nothing is saved until the person applies a try. Calling it again starts over from the drawing the ' +
+        'diagram had, the tries made counting, and withdraws a try put to the person that they did not answer.';
     readonly inputSchema = UntangleStartInputSchema;
 
     protected async createResult(_params: UntangleStartInput): Promise<McpToolResult> {
@@ -160,10 +163,11 @@ export class UntangleStartMcpToolHandler extends UntangleToolHandler<UntangleSta
         if (!(await this.sidecar.supportsOp(sourceUri, REORDER_ENTITY_PORTS_OP))) {
             return this.error("This diagram's source cannot be given a port order: untangling is not available here.");
         }
+        // A try put to the person and not answered (its card lost with the
+        // panel closed) is withdrawn: answered later, it finds this untangle
+        // gone and does nothing. The tries made count, so starting over gives
+        // no more than ${MAX_TRIES} in all.
         const going = untangleOf(this.modelState);
-        if (going?.proposed !== undefined) {
-            return this.error(`Try ${going.proposed} is put to the person; wait for their answer.`);
-        }
         const root = this.modelState.root;
         const original = going?.original ?? this.preview.geometry();
         if (going) {
@@ -175,12 +179,18 @@ export class UntangleStartMcpToolHandler extends UntangleToolHandler<UntangleSta
         const crossings = edgeCrossings(root);
         const picture = await this.picture();
         const definitions = drawnDefinitions(root);
-        beginUntangle(this.modelState, { root, original, baseline: { crossings, picture, definitions }, tries: [] });
+        const tries = going?.tries ?? [];
+        beginUntangle(this.modelState, { root, original, baseline: { crossings, picture, definitions }, tries });
+        const left = MAX_TRIES - tries.length;
         return this.result([
             `Layout Diagram: ${plural(crossings, 'edge crossing')} (the picture). Nothing is saved.`,
             ...definitionsText(definitions, false),
             '',
-            `Next: untangle-try with layout "free-ports". You have ${MAX_TRIES} tries.`
+            left === MAX_TRIES
+                ? `Next: untangle-try with layout "free-ports". You have ${MAX_TRIES} tries.`
+                : left > 0
+                    ? `Started over; ${plural(tries.length, 'try', 'tries')} made, ${plural(left, 'try', 'tries')} left (untangle-try), or untangle-propose with one made.`
+                    : `Started over; all ${MAX_TRIES} tries are made: untangle-propose with the best of them.`
         ], picture);
     }
 }
@@ -229,9 +239,13 @@ export class UntangleTryMcpToolHandler extends UntangleToolHandler<UntangleTryIn
         }
         const given: Record<string, SideOrder> = {};
         for (const [name, sides] of named) {
-            const definition = state.baseline.definitions.find(each => each.name === name);
+            const matching = state.baseline.definitions.filter(each => each.name === name);
+            const definition = matching[0];
             if (!definition) {
                 return this.error(`No definition '${name}' here to give a port order: ${state.baseline.definitions.map(each => each.name).join(', ') || 'none'}.`);
+            }
+            if (matching.length > 1) {
+                return this.error(`'${name}' names ${matching.length} definitions here, drawn with different ports: one order cannot be given to it by name.`);
             }
             for (const [side, names] of [['left', sides.left], ['right', sides.right]] as const) {
                 const ports = side === 'left' ? definition.declared.west : definition.declared.east;
@@ -316,7 +330,7 @@ export class UntangleProposeMcpToolHandler extends UntangleToolHandler<UntangleP
     private writesOf(chosen: UntangleTry): PortOrderWrite[] {
         const writes: PortOrderWrite[] = [];
         for (const definition of chosen.definitions) {
-            if (!reordered(definition) || definition.disagree) {
+            if (!reordered(definition) || !writable(definition)) {
                 continue;
             }
             const node = this.modelState.index.find(definition.elementId);
@@ -384,7 +398,14 @@ export class UntangleProposeMcpToolHandler extends UntangleToolHandler<UntangleP
         try {
             const answer = await chat.confirm(sourceUri, { title: card.title, text: card.text, choices: card.choices, figures: card.figures });
             if (untangleOf(this.modelState) !== state) {
-                return; // the diagram was reloaded meanwhile: nothing of the untangle is left to apply
+                // The diagram was reloaded meanwhile, or the untangle started
+                // over: this try is nothing to apply any more.
+                if (answer?.choice === card.apply) {
+                    await chat.post(sourceUri, {
+                        text: `Untangle try ${chosen.n} not applied: the diagram was reloaded, or the untangle started over, while it waited. Nothing was written.`
+                    });
+                }
+                return;
             }
             if (answer?.choice !== card.apply) {
                 endUntangle(this.modelState);
@@ -415,5 +436,38 @@ export class UntangleProposeMcpToolHandler extends UntangleToolHandler<UntangleP
             endUntangle(this.modelState);
             await chat.post(sourceUri, { text: `Untangle failed: ${error instanceof Error ? error.message : String(error)}` }).catch(() => false);
         }
+    }
+}
+
+export const UntangleEndInputSchema = McpDiagramScopedInputSchema;
+export type UntangleEndInput = z.infer<typeof UntangleEndInputSchema>;
+
+/**
+ * The untangle's end when no try was put to the person: the diagram drawn as
+ * it was. The chat calls it when the turn of `/untangle` ends, whatever ended
+ * it (the agent stopping short, the person stopping it, an error): a try left
+ * drawn would otherwise be saved with the next node moved.
+ */
+@injectable()
+export class UntangleEndMcpToolHandler extends UntangleToolHandler<UntangleEndInput> {
+    static readonly NAME = 'untangle-end';
+    readonly name = UntangleEndMcpToolHandler.NAME;
+    override readonly title = 'Untangle: End';
+    readonly description =
+        'End an untangle no try of which was put to the person: the diagram is drawn as it was before, and ' +
+        'nothing is saved. Called by the chat when the turn ends; a try put to the person stays theirs to answer.';
+    readonly inputSchema = UntangleEndInputSchema;
+
+    protected async createResult(_params: UntangleEndInput): Promise<McpToolResult> {
+        const state = untangleOf(this.modelState);
+        if (!state) {
+            return this.success('No untangle is going on in this diagram.');
+        }
+        if (state.proposed !== undefined) {
+            return this.success(`Try ${state.proposed} is put to the person, who applies or discards it in the chat.`);
+        }
+        endUntangle(this.modelState);
+        await this.preview.show(state.original);
+        return this.success('The untangle ended with no try put to the person: the diagram is drawn as it was, and nothing was saved.');
     }
 }

@@ -317,11 +317,26 @@ export function createEditChatCapability(deps: EditChatCapabilityDeps): EditChat
         description: 'Try layouts against edge crossings, then propose the best: its port orders written into the source',
         modes: ['build'],
         handler: async (_args, ctx) => {
+            if (!tools || !vscode.workspace.getConfiguration(CORE_CHAT_SECTION).get<boolean>('useGlspMcp', true)) {
+                return { success: false, error: "The agent untangles with the diagram's tools, which are turned off here." };
+            }
             const caps = await editBackend.listCapabilities(ctx.uri).catch(() => undefined);
             if (!caps?.ops?.includes(UNTANGLE_WRITE_OP)) {
                 return { success: false, error: "This diagram's source cannot be given a port order, so it cannot be untangled here." };
             }
-            return { success: true, prompt: UNTANGLE_PROMPT };
+            return {
+                success: true,
+                prompt: UNTANGLE_PROMPT,
+                // A try the agent left drawn, not put to the person (it stopped
+                // short, or was stopped), is drawn back as the diagram was:
+                // the next node moved would save it otherwise.
+                afterTurn: async () => {
+                    const { sessionId } = await sessionFor(ctx);
+                    if (sessionId) {
+                        await tools.callTool('untangle-end', { sessionId });
+                    }
+                }
+            };
         }
     });
 

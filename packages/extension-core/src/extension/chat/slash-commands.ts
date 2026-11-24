@@ -41,6 +41,12 @@ export interface ChatCommandResult {
      * confirmation is posted, and the turn is the agent's, as for a message.
      */
     prompt?: string;
+    /**
+     * With `prompt`: run when the agent's turn ends, however it ends
+     * (answered, stopped, failed). What the command leaves for the agent
+     * to finish is put right here when the agent did not.
+     */
+    afterTurn?: () => Promise<void>;
 }
 
 export interface ChatCommandContribution {

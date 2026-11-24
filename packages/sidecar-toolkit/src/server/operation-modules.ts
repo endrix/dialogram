@@ -18,7 +18,7 @@ import type { DiagramOperationModule, McpToolBinding } from '@dialogram/diagram-
 import { CreateTaskTypeMcpToolHandler } from './operations/create-task-type-mcp-tool-handler';
 import { SetNodeParametersMcpToolHandler } from './operations/set-node-parameters-mcp-tool-handler';
 import { ApplyPortOrdersOperationHandler } from './untangle/apply-port-orders-handler';
-import { UntangleProposeMcpToolHandler, UntangleStartMcpToolHandler, UntangleTryMcpToolHandler } from './untangle/untangle-mcp-tools';
+import { UntangleEndMcpToolHandler, UntangleProposeMcpToolHandler, UntangleStartMcpToolHandler, UntangleTryMcpToolHandler } from './untangle/untangle-mcp-tools';
 import type { SidecarRuntimeConfig } from './sidecar-runtime-config.js';
 import { CreateNodeOperationHandler } from './operations/create-node-handler.js';
 import { CreateEdgeOperationHandler } from './operations/create-edge-handler.js';
@@ -106,6 +106,7 @@ export function createSidecarOperationModules(cfg: SidecarRuntimeConfig): Diagra
             binding.add(UntangleStartMcpToolHandler);
             binding.add(UntangleTryMcpToolHandler);
             binding.add(UntangleProposeMcpToolHandler);
+            binding.add(UntangleEndMcpToolHandler);
         }
     };
     return [module];

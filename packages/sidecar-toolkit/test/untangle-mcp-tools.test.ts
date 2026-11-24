@@ -16,6 +16,7 @@ import type { DiagramChatCard } from '@dialogram/diagram-server/server/diagram-c
 import { APPLY_PORT_ORDERS_OPERATION_KIND } from '../src/server/untangle/apply-port-orders-handler';
 import { MAX_TRIES, untangleOf } from '../src/server/untangle/untangle-session';
 import {
+    UntangleEndMcpToolHandler,
     UntangleProposeMcpToolHandler,
     UntangleStartMcpToolHandler,
     UntangleTryMcpToolHandler
@@ -87,7 +88,7 @@ function diagram(chat?: Chat) {
         }
     };
     const dispatched: Action[] = [];
-    const tools = [new UntangleStartMcpToolHandler(), new UntangleTryMcpToolHandler(), new UntangleProposeMcpToolHandler()].map(tool => {
+    const tools = [new UntangleStartMcpToolHandler(), new UntangleTryMcpToolHandler(), new UntangleProposeMcpToolHandler(), new UntangleEndMcpToolHandler()].map(tool => {
         const handler = tool as any;
         handler.modelState = modelState;
         handler.preview = preview;
@@ -106,8 +107,8 @@ function diagram(chat?: Chat) {
         };
         return tool;
     });
-    const [start, attempt, propose] = tools as [UntangleStartMcpToolHandler, UntangleTryMcpToolHandler, UntangleProposeMcpToolHandler];
-    return { modelState, runs, shown, dispatched, start, attempt, propose };
+    const [start, attempt, propose, end] = tools as [UntangleStartMcpToolHandler, UntangleTryMcpToolHandler, UntangleProposeMcpToolHandler, UntangleEndMcpToolHandler];
+    return { modelState, runs, shown, dispatched, start, attempt, propose, end };
 }
 
 const text = (result: { content: Array<{ type: string; text?: string }> }) => result.content.map(each => each.text ?? `[${each.type}]`).join('\n');
@@ -225,5 +226,60 @@ describe('the untangle tools', () => {
         expect(put.isError).toBe(true);
         expect(untangleOf(modelState)?.proposed).toBeUndefined();
         expect((await propose.handle({ sessionId: 's', try: 2 } as any)).isError).toBe(true);
+    });
+
+    it('start over from a try the person never answered, the tries made counting, and the late answer applying nothing', async () => {
+        let answer: (choice: { choice?: string }) => void = () => undefined;
+        const cards: DiagramChatCard[] = [];
+        const posted: string[] = [];
+        const chat: Chat = {
+            canAsk: () => true,
+            confirm: (_uri, card) => {
+                cards.push(card);
+                return new Promise(resolve => { answer = resolve; });
+            },
+            post: async (_uri, message) => {
+                posted.push(message.text);
+                return true;
+            }
+        };
+        const { modelState, dispatched, start, attempt, propose } = diagram(chat);
+        await start.handle({ sessionId: 's' } as any);
+        for (let n = 1; n <= 4; n++) {
+            await attempt.handle({ sessionId: 's', layout: 'free-ports' } as any);
+        }
+        await propose.handle({ sessionId: 's', try: 4 } as any);
+        // The panel was closed: the card is never answered. A new /untangle starts over.
+        const again = await start.handle({ sessionId: 's' } as any);
+        expect(again.isError).toBeFalsy();
+        expect(text(again)).toContain('4 tries made, 6 tries left');
+        expect(untangleOf(modelState)?.proposed).toBeUndefined();
+        const fifth = await attempt.handle({ sessionId: 's', layout: 'free-ports' } as any);
+        expect(text(fifth)).toContain(`Try 5 of ${MAX_TRIES}`);
+
+        answer({ choice: cards[0].choices[0] });
+        await vi.waitFor(() => expect(posted).toHaveLength(1));
+        expect(posted[0]).toBe('Untangle try 4 not applied: the diagram was reloaded, or the untangle started over, while it waited. Nothing was written.');
+        expect(dispatched).toEqual([]);
+        expect(untangleOf(modelState)?.tries).toHaveLength(5);
+    });
+
+    it('end, the turn over, with the diagram drawn as it was when no try was put to the person', async () => {
+        const { modelState, shown, start, attempt, propose, end } = diagram({ canAsk: () => true, confirm: () => new Promise(() => undefined), post: async () => true });
+        await start.handle({ sessionId: 's' } as any);
+        const original = untangleOf(modelState)!.original;
+        await attempt.handle({ sessionId: 's', layout: 'free-ports' } as any);
+        await end.handle({ sessionId: 's' } as any);
+        expect(untangleOf(modelState)).toBeUndefined();
+        expect(shown.at(-1)).toBe(original);
+
+        // A try put to the person stays theirs to answer.
+        await start.handle({ sessionId: 's' } as any);
+        await attempt.handle({ sessionId: 's', layout: 'free-ports' } as any);
+        await propose.handle({ sessionId: 's', try: 1 } as any);
+        const shownBefore = shown.length;
+        await end.handle({ sessionId: 's' } as any);
+        expect(untangleOf(modelState)?.proposed).toBe(1);
+        expect(shown).toHaveLength(shownBefore);
     });
 });
