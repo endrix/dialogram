@@ -1,11 +1,13 @@
 /**
- * `/untangle`, in every diagram chat whose diagram tools are on: the agent
- * lays the diagram out a few ways with the untangle tools of the diagram's
- * MCP server, and puts the best try to the person. Applied, its port orders
- * are kept with the diagram's layout, or written into the source where the
- * product's producer takes them (the diagram server decides which).
+ * `/untangle`, in every diagram chat whose diagram tools are on and whose
+ * diagrams the platform's own diagram module serves: the agent lays the
+ * diagram out a few ways with the untangle tools of the diagram's MCP server,
+ * and puts the best try to the person. Applied, its port orders are kept with
+ * the diagram's layout, or written into the source where the product's
+ * producer takes them (the diagram server decides which).
  */
 import * as vscode from 'vscode';
+import type { DiagramProfile } from '../../api';
 import type { WorkflowEditorProvider } from '../diagram/diagram-editor-provider';
 import { diagramToolSession } from './diagram-tool-session';
 import { CORE_CHAT_SECTION } from './edit-capability';
@@ -33,6 +35,20 @@ export interface UntangleCommandDeps {
     /** The diagram's GLSP-MCP tools, which the agent untangles with. */
     tools: Pick<GlspMcpClient, 'callTool'>;
     getEditorProvider(): WorkflowEditorProvider | undefined;
+}
+
+/**
+ * The platform's own chat commands for `profile`: `/untangle` where the
+ * diagram's tools are on, unless the product serves its diagrams with a
+ * diagram module of its own, which binds no untangle tools (no untangle
+ * Apply, no Free Ports, no layout file to keep a try in).
+ */
+export function platformChatCommands(
+    profile: Pick<DiagramProfile, 'serverDiagramModule'>,
+    tools: UntangleCommandDeps['tools'] | undefined,
+    getEditorProvider: UntangleCommandDeps['getEditorProvider']
+): ChatCommandContribution[] {
+    return tools && !profile.serverDiagramModule ? [createUntangleCommand({ tools, getEditorProvider })] : [];
 }
 
 export function createUntangleCommand(deps: UntangleCommandDeps): ChatCommandContribution {

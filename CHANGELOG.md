@@ -1075,9 +1075,9 @@ platform that hands it one.
 ### Changed
 
 - **`/untangle` in every product's chat.** It no longer needs a producer
-  that can write a port order: wherever the diagram's tools are on (wfpy,
-  CalPy, SV, VHDL, pyCircuit, NDF, mlir-viewer), the agent untangles
-  and the person applies or discards. Applied, a definition's port order is
+  that can write a port order: wherever the diagram's tools are on and the
+  platform's diagram module serves the diagram (wfpy, CalPy, SV, VHDL,
+  pyCircuit, NDF), the agent untangles and the person applies or discards. Applied, a definition's port order is
   written into its source where the producer takes it (a sidecar with
   `reorderEntityPorts`, wfpy), and kept with this diagram's layout
   otherwise, no file changed. The card says which: the orders kept with the
@@ -1091,6 +1091,11 @@ platform that hands it one.
   - `/untangle` is the platform's chat command, no longer the edit
     capability's: a profile without an edit backend has it too
     (`assembleChatRuntimeConfig`'s `platformCommands`).
+  - A product serving its diagrams with a diagram module of its own
+    (`serverDiagramModule`, mlir-viewer) gets neither the command nor the
+    tools: its module registers no untangle Apply, lays out without Free
+    Ports and keeps no layout file (`DiagramMcpModuleOptions.untangle`,
+    `platformChatCommands`).
 - **A port order the diagram draws is kept with its layout.** The order a
   Free Ports layout, or an untangle applied, gives a definition's ports is
   saved in the diagram's layout file (`portOrders`, one record for the file,

@@ -18,6 +18,7 @@ import { GLSPClientProxy, GLSPServer } from '@eclipse-glsp/server';
 import { initializeContainer } from '@eclipse-glsp/protocol/lib/di/container-configuration';
 import { createWorkflowServerModules } from '../src/server/server-module';
 import { WorkflowDiagramModule } from '../src/server/diagram-module';
+import { DiagramMcpModule } from '../src/server/mcp-diagram-module';
 import { DIAGRAM_MODEL_SOURCE } from '../src/server/model-source-token';
 import type { DiagramModelSource } from '@dialogram/shared';
 
@@ -91,6 +92,16 @@ describe('createWorkflowServerModules — custom diagramModuleFactory', () => {
         const serverModules = createWorkflowServerModules({ edits: 'read-only' });
         const serverModule = serverModules[1] as unknown as { diagramModules: Map<string, unknown[]> };
         expect([...serverModule.diagramModules.keys()]).toEqual(['cal-network-diagram']);
+    });
+
+    it('offers the chat\'s untangle tools only beside the stock module, which registers their Apply', () => {
+        const untangleOf = (options: Parameters<typeof createWorkflowServerModules>[0]): boolean | undefined => {
+            const serverModule = createWorkflowServerModules(options)[1] as unknown as { diagramModules: Map<string, unknown[]> };
+            const mcp = [...serverModule.diagramModules.values()][0].find((m) => m instanceof DiagramMcpModule);
+            return (mcp as unknown as { untangle?: boolean } | undefined)?.untangle;
+        };
+        expect(untangleOf({ edits: 'read-only', mcp: { enabled: true } })).toBe(true);
+        expect(untangleOf({ diagramModuleFactory: () => new CustomDiagramModule(), edits: 'read-only', mcp: { enabled: true } })).toBe(false);
     });
 });
 

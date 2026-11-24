@@ -339,7 +339,12 @@ export function createWorkflowServerModules(
     // present. When the flag is off nothing is added — the legacy session array is untouched.
     const mcpEnabled = options?.mcp?.enabled === true;
     if (mcpEnabled) {
-        additionalModules.push(new DiagramMcpModule({ tools: options?.mcp?.tools ?? [], edits: options?.edits }));
+        additionalModules.push(new DiagramMcpModule({
+            tools: options?.mcp?.tools ?? [],
+            edits: options?.edits,
+            // A diagram module of the product's own has no untangle Apply to put a try through.
+            untangle: !options?.diagramModuleFactory
+        }));
     }
 
     // Configure the diagram module with the additional modules. A consumer-supplied

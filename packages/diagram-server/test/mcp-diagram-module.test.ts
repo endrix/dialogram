@@ -189,6 +189,10 @@ describe('DiagramMcpModule: the chat\'s untangle in every diagram', () => {
         expect(readOnly).toEqual(expect.arrayContaining(untangle));
         expect(readOnly).not.toContain('create-nodes');
         expect(namesOf(new DiagramMcpModule({ edits: { operationModules: [] } }))).toEqual(expect.arrayContaining(untangle));
+        // A product's own diagram module has no untangle Apply: no tool is offered that could only fail.
+        const own = namesOf(new DiagramMcpModule({ edits: 'read-only', untangle: false }));
+        expect(own.filter((name) => untangle.includes(name))).toEqual([]);
+        expect(own).toContain('validate-diagram');
     });
 });
 

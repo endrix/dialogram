@@ -21,7 +21,7 @@ import { createAcpAgentResolver, createConnectorResumeResolver } from "./chat/ac
 import { createViewerEditorsTool } from "./chat/viewer-editors-tool";
 import { GlspMcpClient } from "./chat/glsp-mcp-client";
 import type { ChatCommandContribution } from "./chat/slash-commands";
-import { createUntangleCommand } from "./chat/untangle-command";
+import { platformChatCommands } from "./chat/untangle-command";
 import {
   createEditChatCapability,
   type EditChatCapability,
@@ -73,14 +73,14 @@ export async function activateProfileRuntime(
       });
     }
     // The platform's own commands, in every product whose diagram tools are
-    // on: `/untangle` lays any diagram out (its port orders kept with the
-    // layout, or written where the product's source takes them).
-    const platformCommands: ChatCommandContribution[] = diagramTools
-      ? [createUntangleCommand({
-          tools: diagramTools,
-          getEditorProvider: () => glsp.editorProvider,
-        })]
-      : [];
+    // on and whose diagrams the platform's module serves: `/untangle` lays
+    // the diagram out (its port orders kept with the layout, or written
+    // where the product's source takes them).
+    const platformCommands = platformChatCommands(
+      profile,
+      diagramTools,
+      () => glsp.editorProvider,
+    );
     const config = assembleChatRuntimeConfig(
       profile,
       capability,

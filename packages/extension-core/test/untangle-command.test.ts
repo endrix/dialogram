@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
-import { createUntangleCommand } from '../src/extension/chat/untangle-command';
+import { createUntangleCommand, platformChatCommands } from '../src/extension/chat/untangle-command';
 
 const CTX = { file: '/ws/wf.py', uri: 'file:///ws/wf.py', sessionId: 's1', selectedNodeIds: [] as string[] };
 
@@ -37,6 +37,15 @@ describe('/untangle', () => {
         // Its turn over, a try the agent left drawn and did not propose is drawn back.
         await result.afterTurn();
         expect(tools.calls.at(-1)).toEqual({ tool: 'untangle-end', args: { sessionId: 'glsp_1' } });
+    });
+
+    it('is offered where the platform\'s diagram module serves the diagram, with its tools on', () => {
+        const provider = () => undefined;
+        expect(platformChatCommands({}, makeTools(), provider).map((c) => c.command)).toEqual(['untangle']);
+        // No diagram tools: nothing for the agent to untangle with.
+        expect(platformChatCommands({}, undefined, provider)).toEqual([]);
+        // A product's own diagram module binds no untangle tools (no Apply, no Free Ports, no layout file).
+        expect(platformChatCommands({ serverDiagramModule: () => ({}) }, makeTools(), provider)).toEqual([]);
     });
 
     it('is refused where the diagram\'s tools are turned off', async () => {
