@@ -6,11 +6,13 @@
  * - `untangle-try` lays it out with Free Ports (port orders the agent gives
  *   for some definitions, the probe's for the rest) or Untangled, at most
  *   {@link MAX_TRIES} times, each with its crossings and its picture;
- * - `untangle-propose` puts one try to the person, in a card with its picture
- *   and the files it would change. The person's answer is the platform's to
- *   carry out, not the agent's: Apply writes the port orders and saves the
- *   layout (apply-port-orders-handler.ts), Discard draws the diagram as it
- *   was; either way the chat is told, with the two drawings to compare.
+ * - `untangle-propose` puts one try to the person, in a card with its picture,
+ *   the port orders it keeps with the layout and the files it would change.
+ *   The person's answer is the platform's to carry out, not the agent's:
+ *   Apply saves the layout with its port orders and writes those the source
+ *   takes (apply-port-orders-handler.ts, source-port-order-writer.ts),
+ *   Discard draws the diagram as it was; either way the chat is told, with
+ *   the two drawings to compare.
  *
  * A try is drawn on the person's diagram (fitted to the view, which is what
  * the picture shows) and saved nowhere.
@@ -24,19 +26,17 @@ import { GNode, RequestExportAction } from '@eclipse-glsp/server';
 import { inject, injectable, optional } from 'inversify';
 import * as vscode from 'vscode';
 import * as z from 'zod/v4';
-import { edgeCrossings } from '@dialogram/diagram-server/model/edge-crossings';
-import { forgetProbe, type SideOrder } from '@dialogram/diagram-server/model/definition-port-order';
-import { LayoutPreview, type PreviewLayout } from '@dialogram/diagram-server/operations/layout-preview';
-import { DIAGRAM_CHAT_HOST, type DiagramChatFigure, type DiagramChatHost } from '@dialogram/diagram-server/server/diagram-chat-host';
-import { applyLayoutGeometry } from '@dialogram/diagram-server/server/layout-snapshot';
-import { entityFileOf, PORT_USES_QUERY, usesAcrossProject } from '../operations/entity-port-write';
-import { SidecarInvoker } from '../operations/sidecar-invoker';
+import { edgeCrossings } from '../model/edge-crossings';
+import { forgetProbe, type SideOrder } from '../model/definition-port-order';
+import { LayoutPreview, type PreviewLayout } from '../operations/layout-preview';
+import { DIAGRAM_CHAT_HOST, type DiagramChatFigure, type DiagramChatHost } from '../server/diagram-chat-host';
+import { applyLayoutGeometry } from '../server/layout-snapshot';
 import {
     APPLY_PORT_ORDERS_OPERATION_KIND,
-    REORDER_ENTITY_PORTS_OP,
     type ApplyPortOrdersOperation,
     type PortOrderWrite
 } from './apply-port-orders-handler';
+import { SOURCE_PORT_ORDER_WRITER, type SourcePortOrderWriter } from './source-port-order-writer';
 import {
     beginUntangle,
     drawnDefinitions,
@@ -51,6 +51,18 @@ import {
     type UntangleState,
     type UntangleTry
 } from './untangle-session';
+
+/** What the person is asked: the try's picture, what Apply keeps and writes, and the button that applies it. */
+interface UntangleCard {
+    title: string;
+    text: string;
+    choices: string[];
+    figures: DiagramChatFigure[];
+    apply: string;
+    files: string[];
+    /** How many definitions' port orders Apply keeps with the layout. */
+    kept: number;
+}
 
 /** How long a picture of the diagram may take: the webview may be in the background. */
 const PICTURE_TIMEOUT_MS = 20000;
@@ -73,7 +85,7 @@ function definitionsText(definitions: readonly DrawnDefinition[], withAlone: boo
             lines.push(`- ${each.name} (${each.instances.join(', ')}): ${sidesText(each.drawn)}`
                 + (reordered(each) ? ` (declared: ${sidesText(each.declared)})` : '')
                 + (each.disagree ? ' — its instances could not all take one order' : '')
-                + (each.split ? ' — drawn with other ports elsewhere: its order is not written' : ''));
+                + (each.split ? ' — drawn with other ports elsewhere: its order is not written into the source' : ''));
             if (withAlone && each.alone) {
                 const alone = Object.entries(each.alone).map(([instance, sides]) => `${instance} ${sidesText(sides)}`);
                 lines.push(`  each on its own would take: ${alone.join(' | ')}`);
@@ -95,8 +107,9 @@ abstract class UntangleToolHandler<T extends z.infer<typeof McpDiagramScopedInpu
     @inject(LayoutPreview)
     protected preview!: LayoutPreview;
 
-    @inject(SidecarInvoker)
-    protected sidecar!: SidecarInvoker;
+    @inject(SOURCE_PORT_ORDER_WRITER)
+    @optional()
+    protected writer?: SourcePortOrderWriter;
 
     @inject(DIAGRAM_CHAT_HOST)
     @optional()
@@ -159,9 +172,6 @@ export class UntangleStartMcpToolHandler extends UntangleToolHandler<UntangleSta
         const sourceUri = this.modelState.sourceUri;
         if (!sourceUri) {
             return this.error('This diagram has no source file.');
-        }
-        if (!(await this.sidecar.supportsOp(sourceUri, REORDER_ENTITY_PORTS_OP))) {
-            return this.error("This diagram's source cannot be given a port order: untangling is not available here.");
         }
         // A try put to the person and not answered (its card lost with the
         // panel closed) is withdrawn: answered later, it finds this untangle
@@ -305,8 +315,8 @@ export class UntangleProposeMcpToolHandler extends UntangleToolHandler<UntangleP
     readonly name = UntangleProposeMcpToolHandler.NAME;
     override readonly title = 'Untangle: Propose a Try';
     readonly description =
-        'Put one try to the person, in the chat: its picture, its crossings and the source files whose port ' +
-        'order it changes, with Apply and Discard. The person decides and the platform carries it out: after ' +
+        'Put one try to the person, in the chat: its picture, its crossings, the port orders it keeps with the ' +
+        'layout and the source files whose port order it changes, with Apply and Discard. The person decides and the platform carries it out: after ' +
         'this call, say in one line which try you proposed and why, and stop.';
     readonly inputSchema = UntangleProposeInputSchema;
 
@@ -325,19 +335,35 @@ export class UntangleProposeMcpToolHandler extends UntangleToolHandler<UntangleP
             return this.error('No chat panel is open on this diagram to put the try to the person.');
         }
         await this.preview.show(chosen.geometry);
-        const writes = this.writesOf(chosen);
-        const card = await this.card(state, chosen, writes, sourceUri);
+        const writer = await this.sourceWriter(sourceUri);
+        const writes = this.writesOf(chosen, writer);
+        const card = await this.card(state, chosen, writes, writer, sourceUri);
         state.proposed = n;
         void this.ask(state, chosen, writes, card, sourceUri);
         return this.success(
-            `Try ${n} (${plural(chosen.crossings, 'crossing')}) is put to the person with its picture and the files it changes. `
+            `Try ${n} (${plural(chosen.crossings, 'crossing')}) is put to the person with its picture and what Apply keeps and writes. `
             + 'They apply or discard it in the chat; the platform carries it out. Say in one line which try you proposed and why, and stop.'
         );
     }
 
-    /** The port orders `chosen` draws that its sources do not declare. */
-    private writesOf(chosen: UntangleTry): PortOrderWrite[] {
+    /** The writer of this diagram's source, where there is one and the source takes port orders. */
+    private async sourceWriter(sourceUri: string): Promise<SourcePortOrderWriter | undefined> {
+        if (!this.writer) {
+            return undefined;
+        }
+        try {
+            return (await this.writer.canWrite(sourceUri)) ? this.writer : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    /** The port orders `chosen` draws that its sources do not declare, and that `writer` writes into them. */
+    private writesOf(chosen: UntangleTry, writer: SourcePortOrderWriter | undefined): PortOrderWrite[] {
         const writes: PortOrderWrite[] = [];
+        if (!writer) {
+            return writes;
+        }
         for (const definition of chosen.definitions) {
             if (!reordered(definition) || !writable(definition)) {
                 continue;
@@ -350,48 +376,61 @@ export class UntangleProposeMcpToolHandler extends UntangleToolHandler<UntangleP
         return writes;
     }
 
-    private async card(state: UntangleState, chosen: UntangleTry, writes: readonly PortOrderWrite[], sourceUri: string): Promise<{
-        title: string; text: string; choices: string[]; figures: DiagramChatFigure[]; apply: string; files: string[];
-    }> {
+    private async card(
+        state: UntangleState,
+        chosen: UntangleTry,
+        writes: readonly PortOrderWrite[],
+        writer: SourcePortOrderWriter | undefined,
+        sourceUri: string
+    ): Promise<UntangleCard> {
+        const changeOf = (definition: DrawnDefinition): string => (['west', 'east'] as const)
+            .filter(side => definition.drawn[side].join() !== definition.declared[side].join())
+            .map(side => `${side === 'west' ? 'left' : 'right'} ${definition.declared[side].join(', ')} → ${definition.drawn[side].join(', ')}`)
+            .join('; ');
         const byFile = new Map<string, string[]>();
         const usedElsewhere = new Set<string>();
-        const followsUses = await this.sidecar.hasFeature(sourceUri, PORT_USES_QUERY);
         for (const write of writes) {
-            const fileUri = entityFileOf(this.modelState, sourceUri, { entityType: write.entity, elementId: write.elementId });
+            const fileUri = writer!.fileOf(this.modelState, sourceUri, write);
             const definition = chosen.definitions.find(each => each.elementId === write.elementId)!;
-            const changes = (['west', 'east'] as const)
-                .filter(side => definition.drawn[side].join() !== definition.declared[side].join())
-                .map(side => `${side === 'west' ? 'left' : 'right'} ${definition.declared[side].join(', ')} → ${definition.drawn[side].join(', ')}`);
             const file = vscode.Uri.parse(fileUri).fsPath;
-            byFile.set(file, [...(byFile.get(file) ?? []), `  ${write.entity}: ${changes.join('; ')}`]);
-            if (followsUses) {
-                const uses = await usesAcrossProject(this.sidecar, sourceUri, fileUri, write.entity);
-                for (const use of uses?.usedIn ?? []) {
-                    if (vscode.Uri.file(use.file).toString() !== vscode.Uri.parse(sourceUri).toString()) {
-                        usedElsewhere.add(`${use.workflow} (${fileName(use.file)})`);
-                    }
-                }
+            byFile.set(file, [...(byFile.get(file) ?? []), `  ${write.entity}: ${changeOf(definition)}`]);
+            for (const use of (await writer!.usedElsewhere?.(sourceUri, fileUri, write.entity).catch(() => [])) ?? []) {
+                usedElsewhere.add(use);
             }
         }
+        // What is not written is kept with the layout: each definition drawn
+        // in another order than its source's, its instances in one.
+        const written = new Set(writes.map(each => each.elementId));
+        const kept = chosen.definitions.filter(each => reordered(each) && !each.disagree && !written.has(each.elementId));
         const files = [...byFile.keys()];
-        const head = `${plural(chosen.crossings, 'edge crossing')}, against ${state.baseline.crossings} with Layout Diagram.`;
-        const text = writes.length === 0
-            ? `${head}\nApply saves this layout; no port order changes.`
-            : [
-                head,
-                `Apply saves this layout and writes the port order of ${plural(writes.length, 'definition')} in ${plural(files.length, 'file')}:`,
-                ...files.flatMap(file => [fileName(file), ...byFile.get(file)!]),
-                ...(usedElsewhere.size > 0 ? [`Also drawn in the new order: ${[...usedElsewhere].join(', ')}.`] : []),
-                'Undo puts the files and the layout back.'
-            ].join('\n');
-        const apply = writes.length === 0 ? 'Apply' : `Apply to ${plural(files.length, 'file')}`;
+        const lines = [`${plural(chosen.crossings, 'edge crossing')}, against ${state.baseline.crossings} with Layout Diagram.`];
+        if (writes.length === 0 && kept.length === 0) {
+            lines.push('Apply saves this layout; no port order changes.');
+        } else {
+            if (kept.length > 0) {
+                lines.push(
+                    `Apply saves this layout${writes.length === 0 ? ' and keeps with it' : ', keeping with it'} the port order of ${plural(kept.length, 'definition')}${writes.length === 0 ? '; no file changes' : ''}:`,
+                    ...kept.map(each => `  ${each.name}: ${changeOf(each)}`)
+                );
+            }
+            if (writes.length > 0) {
+                lines.push(
+                    `${kept.length > 0 ? 'It writes' : 'Apply saves this layout and writes'} the port order of ${plural(writes.length, 'definition')} in ${plural(files.length, 'file')}:`,
+                    ...files.flatMap(file => [fileName(file), ...byFile.get(file)!]),
+                    ...(usedElsewhere.size > 0 ? [`Also drawn in the new order: ${[...usedElsewhere].join(', ')}.`] : [])
+                );
+            }
+            lines.push(files.length > 0 ? 'Undo puts the files and the layout back.' : 'Undo puts the layout back.');
+        }
+        const apply = files.length === 0 ? 'Apply' : `Apply to ${plural(files.length, 'file')}`;
         return {
             title: `Untangle: try ${chosen.n}`,
-            text,
+            text: lines.join('\n'),
             choices: [apply, 'Discard'],
             figures: chosen.picture ? [{ data: chosen.picture, caption: `Try ${chosen.n}: ${plural(chosen.crossings, 'crossing')}` }] : [],
             apply,
-            files
+            files,
+            kept: kept.length
         };
     }
 
@@ -400,7 +439,7 @@ export class UntangleProposeMcpToolHandler extends UntangleToolHandler<UntangleP
         state: UntangleState,
         chosen: UntangleTry,
         writes: PortOrderWrite[],
-        card: { title: string; text: string; choices: string[]; figures: DiagramChatFigure[]; apply: string },
+        card: UntangleCard,
         sourceUri: string
     ): Promise<void> {
         const chat = this.chat!;
@@ -432,9 +471,12 @@ export class UntangleProposeMcpToolHandler extends UntangleToolHandler<UntangleP
                 return;
             }
             const written = applied.files.map(fileName);
+            const keptText = card.kept > 0 ? `, with the port order of ${plural(card.kept, 'definition')}` : '';
             await chat.post(sourceUri, {
                 text: `Untangle applied: try ${chosen.n}, ${plural(chosen.crossings, 'edge crossing')} against ${state.baseline.crossings} with Layout Diagram. `
-                    + (written.length > 0 ? `Port orders written in ${written.join(', ')}; the layout is saved.` : 'The layout is saved; no port order changed.'),
+                    + (written.length > 0
+                        ? `Port orders written in ${written.join(', ')}; the layout is saved${keptText}.`
+                        : card.kept > 0 ? `The layout is saved${keptText}; no file changed.` : 'The layout is saved; no port order changed.'),
                 figures: [
                     ...(state.baseline.picture ? [{ data: state.baseline.picture, caption: `Layout Diagram: ${plural(state.baseline.crossings, 'crossing')}` }] : []),
                     ...(chosen.picture ? [{ data: chosen.picture, caption: `Untangled (try ${chosen.n}): ${plural(chosen.crossings, 'crossing')}` }] : [])

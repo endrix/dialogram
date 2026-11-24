@@ -22,6 +22,8 @@ import { WorkflowDiagramModule } from '@dialogram/diagram-server/server/diagram-
 import { LayoutPersistenceService } from '@dialogram/diagram-server/services/layout-persistence-service';
 import { createSidecarOperationModules } from '../src/server/operation-modules.js';
 import { createSidecarServerModule } from '../src/server/sidecar-server-module.js';
+import { SidecarPortOrderWriter } from '../src/server/operations/sidecar-port-order-writer';
+import { SOURCE_PORT_ORDER_WRITER } from '@dialogram/diagram-server/untangle/source-port-order-writer';
 import { SidecarInvoker } from '../src/server/operations/sidecar-invoker.js';
 import type { SidecarRuntimeConfig } from '../src/server/sidecar-runtime-config.js';
 import { NEUTRAL_CREATE_NODE_CONFIG } from './fixtures/create-node-config.js';
@@ -70,8 +72,7 @@ const EXPECTED_SIDECAR_HANDLER_NAMES = [
     'EntityPortCrudHandler',
     'DeleteEntityPortCrudHandler',
     'PasteOperationHandler',
-    'DuplicateOperationHandler',
-    'ApplyPortOrdersOperationHandler'
+    'DuplicateOperationHandler'
 ];
 
 /** Run `configureOperationHandlers` with a recording binding, returning the registered constructors. */
@@ -130,6 +131,9 @@ describe('createSidecarOperationModules — module-injection parity', () => {
         for (const name of EXPECTED_SIDECAR_HANDLER_NAMES) {
             expect(readOnly, `${name} must not reach a read-only session`).not.toContain(name);
         }
+        // An untangle applied saves a layout, which a read-only diagram may:
+        // its port orders are kept there, no source being written.
+        expect(readOnly).toContain('ApplyPortOrdersOperationHandler');
     });
 
     it('the injected module set is identical for a calpy-shaped config (same set, same order)', () => {
@@ -193,12 +197,20 @@ describe('createSidecarOperationModules — entity-port CRUD-collapse routing', 
 });
 
 describe('createSidecarOperationModules — the MCP tool of its own operation', () => {
-    it('brings the tools of the operations it serves: create-task-type, set-node-parameters and the untangle', () => {
+    it('brings the tools of the operations it serves: create-task-type and set-node-parameters', () => {
         const [module] = createSidecarOperationModules(WFPY_CFG);
         const added: unknown[] = [];
         module.configureMcpTools?.({ add: (ctor: unknown) => added.push(ctor) } as any);
         expect(added.map(ctor => (new (ctor as new () => { name?: string })()).name)).toEqual([
-            'create-task-type', 'set-node-parameters', 'untangle-start', 'untangle-try', 'untangle-propose', 'untangle-end'
+            'create-task-type', 'set-node-parameters'
         ]);
+    });
+});
+
+describe('createSidecarServerModule — where an untangle\'s port orders go', () => {
+    it('binds the sidecar\'s writer of port orders where there is a sidecar, and none for a read-only profile', () => {
+        const writer = buildSidecarContainer(WFPY_CFG).get<unknown>(SOURCE_PORT_ORDER_WRITER);
+        expect(writer).toBeInstanceOf(SidecarPortOrderWriter);
+        expect(buildSidecarContainer({ ...WFPY_CFG, readOnly: true }).isBound(SOURCE_PORT_ORDER_WRITER)).toBe(false);
     });
 });

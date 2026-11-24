@@ -19,6 +19,9 @@ import { activateGlspIntegration } from "./diagram/glsp-activation";
 import { ChatRuntime, type ChatRuntimeConfig } from "./chat/chat-runtime";
 import { createAcpAgentResolver, createConnectorResumeResolver } from "./chat/acp-connectors";
 import { createViewerEditorsTool } from "./chat/viewer-editors-tool";
+import { GlspMcpClient } from "./chat/glsp-mcp-client";
+import type { ChatCommandContribution } from "./chat/slash-commands";
+import { createUntangleCommand } from "./chat/untangle-command";
 import {
   createEditChatCapability,
   type EditChatCapability,
@@ -65,10 +68,20 @@ export async function activateProfileRuntime(
         mcpServerUrl: profile.mcp?.enabled === true ? glsp.mcpServerUrl : undefined,
       });
     }
+    // The platform's own commands, in every product whose diagram tools are
+    // on: `/untangle` lays any diagram out (its port orders kept with the
+    // layout, or written where the product's source takes them).
+    const platformCommands: ChatCommandContribution[] = profile.mcp?.enabled === true && glsp.mcpServerUrl
+      ? [createUntangleCommand({
+          tools: new GlspMcpClient(glsp.mcpServerUrl),
+          getEditorProvider: () => glsp.editorProvider,
+        })]
+      : [];
     const config = assembleChatRuntimeConfig(
       profile,
       capability,
       glsp.mcpServerUrl,
+      platformCommands,
     );
     chatRuntime = new ChatRuntime(context, config, transport.sink, transport.canReach);
     transport.connect(chatRuntime);
@@ -131,14 +144,16 @@ function uriString(uri: string | vscode.Uri): string {
 /**
  * Build the ChatRuntime config for a diagram profile. Pure assembly — the
  * testable seam for the capability/profile merge rules:
- * capability graph provider wins; slash commands are capability-first with
- * profile contributions appended (profile overrides by name via registry
- * map semantics); tools/turn/selection come only from the profile.
+ * capability graph provider wins; slash commands are capability-first, then
+ * the platform's own (`/untangle`), with profile contributions appended
+ * (profile overrides by name via registry map semantics); tools/turn/selection
+ * come only from the profile.
  */
 export function assembleChatRuntimeConfig(
   profile: DiagramProfile,
   capability: EditChatCapability | undefined,
   mcpServerUrl?: string,
+  platformCommands: ChatCommandContribution[] = [],
 ): ChatRuntimeConfig {
   const chat = profile.chat!;
   return {
@@ -171,6 +186,7 @@ export function assembleChatRuntimeConfig(
     mcpServerUrl,
     slashCommands: [
       ...(capability?.slashCommands ?? []),
+      ...platformCommands,
       ...(chat.slashCommands ?? []),
     ],
     postTurnHook: capability

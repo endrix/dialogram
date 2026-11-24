@@ -15,8 +15,9 @@ import { GGraph, GNode, GPort, type GModelElement } from '@eclipse-glsp/server';
 import { WORKFLOW_NETWORK_MODEL_KEY, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { definitionKeyOf, recordProbe } from '@dialogram/diagram-server/model/definition-port-order';
 import { layoutGeometryOf } from '@dialogram/diagram-server/server/layout-snapshot';
-import { ApplyPortOrdersOperationHandler, APPLY_PORT_ORDERS_OPERATION_KIND } from '../src/server/untangle/apply-port-orders-handler.js';
-import { beginUntangle, drawnDefinitions, orderToWrite, untangleOf, writable } from '../src/server/untangle/untangle-session.js';
+import { ApplyPortOrdersOperationHandler, APPLY_PORT_ORDERS_OPERATION_KIND } from '@dialogram/diagram-server/untangle/apply-port-orders-handler';
+import { beginUntangle, drawnDefinitions, orderToWrite, untangleOf, writable } from '@dialogram/diagram-server/untangle/untangle-session';
+import { SidecarPortOrderWriter } from '../src/server/operations/sidecar-port-order-writer';
 import { commandStack, onDiskEveryFile as onDisk, saying } from './edits-on-disk';
 
 function el<T extends GModelElement>(cls: new () => T, props: Record<string, unknown>, children: GModelElement[] = []): T {
@@ -173,7 +174,10 @@ const BOTH = [
 function applyCommand(state: any, sidecar: any, layoutPersistence: any, writes = BOTH) {
     const handler = new ApplyPortOrdersOperationHandler() as any;
     handler.modelState = state;
-    handler.sidecar = sidecar;
+    // The sidecar's writer, as the toolkit binds it for the untangle in core.
+    const writer = new SidecarPortOrderWriter() as any;
+    writer.sidecar = sidecar;
+    handler.writer = writer;
     handler.layoutPersistence = layoutPersistence;
     return handler.createCommand({ kind: APPLY_PORT_ORDERS_OPERATION_KIND, isOperation: true, writes });
 }

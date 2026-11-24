@@ -35,6 +35,7 @@ import type { EditStrategy } from '@dialogram/shared';
 import { makePlatformToolHandlerClass, type PlatformMcpTool } from './mcp-platform-tool-adapter';
 import { DrawnDiagramPngMcpResourceHandler } from './diagram-picture-mcp-resource-handler';
 import { isDiagramOperationModule, type McpToolBinding } from './operation-modules';
+import { UntangleEndMcpToolHandler, UntangleProposeMcpToolHandler, UntangleStartMcpToolHandler, UntangleTryMcpToolHandler } from '../untangle/untangle-mcp-tools';
 import { AgentDispatchCreateNodesMcpToolHandler } from './create-nodes-mcp-tool-handler';
 import { AgentDispatchCreateEdgesMcpToolHandler } from './create-edges-mcp-tool-handler';
 import {
@@ -138,6 +139,13 @@ export class DiagramMcpModule extends DefaultMcpDiagramModule {
         // Agents are told (session context hint) that edits are user-undoable via the editor.
         binding.remove(UndoMcpToolHandler);
         binding.remove(RedoMcpToolHandler);
+        // The chat's untangle, in every diagram: tries drawn and not saved,
+        // then one put to the person, whose Apply saves a layout (and writes a
+        // source only where the product can, apply-port-orders-handler.ts).
+        binding.add(UntangleStartMcpToolHandler);
+        binding.add(UntangleTryMcpToolHandler);
+        binding.add(UntangleProposeMcpToolHandler);
+        binding.add(UntangleEndMcpToolHandler);
         if (this.edits === 'read-only') {
             // A projection with nothing to edit registers no writing operation handler, so
             // a mutating tool could only fail: the agent is not offered one.

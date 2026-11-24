@@ -171,8 +171,9 @@ describe('createSidecarDiagramProfile — production-path DI resolution (no .sid
         const input = profileInput('wfpy', 'wfLang');
         const { container, handlers } = containerAndHandlersFromProfile(input);
 
-        // All 22 sidecar handlers are present on the assembled profile.
-        expect(handlers).toHaveLength(22);
+        // All 21 sidecar handlers are present on the assembled profile (an
+        // untangle's Apply is the platform's, registered in core).
+        expect(handlers).toHaveLength(21);
 
         for (const ctor of handlers) {
             const instance = container.resolve(ctor as any);

@@ -1074,6 +1074,23 @@ platform that hands it one.
 
 ### Changed
 
+- **`/untangle` in every product's chat.** It no longer needs a producer
+  that can write a port order: wherever the diagram's tools are on (wfpy,
+  CalPy, SV, VHDL, pyCircuit, NDF, mlir-viewer), the agent untangles
+  and the person applies or discards. Applied, a definition's port order is
+  written into its source where the producer takes it (a sidecar with
+  `reorderEntityPorts`, wfpy), and kept with this diagram's layout
+  otherwise, no file changed. The card says which: the orders kept with the
+  layout, by definition, then the files written, each with its
+  definitions; its button reads **Apply** when no file changes.
+  - The untangle tools and its Apply are the platform's
+    (`@dialogram/diagram-server/untangle/*`), in read-only diagrams too. A
+    product writes an order into its source by binding a
+    `SourcePortOrderWriter` (`SOURCE_PORT_ORDER_WRITER`); the sidecar
+    toolkit binds one where its profile has a sidecar.
+  - `/untangle` is the platform's chat command, no longer the edit
+    capability's: a profile without an edit backend has it too
+    (`assembleChatRuntimeConfig`'s `platformCommands`).
 - **A port order the diagram draws is kept with its layout.** The order a
   Free Ports layout, or an untangle applied, gives a definition's ports is
   saved in the diagram's layout file (`portOrders`, one record for the file,

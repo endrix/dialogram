@@ -2,7 +2,8 @@
  * The chat's untangle: the agent lays the diagram out a few ways (Free Ports
  * first, the instances of a definition sharing one port order), keeps what
  * cuts the crossings, and proposes one try to the person, who applies it (the
- * port orders written into the source, the layout saved) or discards it.
+ * layout saved with its port orders, those the source takes written into it
+ * instead) or discards it.
  *
  * What a session of it holds, one per diagram: the drawing the diagram had
  * when it began (put back on Discard and on undo), Layout Diagram's drawing to
@@ -11,9 +12,9 @@
  */
 import { GNode, GPort, type GModelElement, type ModelState } from '@eclipse-glsp/server';
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
-import { definitionNameOf, definitionsUnder, gportSide, lastProbe, portNameOf, sidesOf, type SideOrder } from '@dialogram/diagram-server/model/definition-port-order';
-import type { PreviewLayout } from '@dialogram/diagram-server/operations/layout-preview';
-import type { LayoutGeometry } from '@dialogram/diagram-server/server/layout-snapshot';
+import { definitionNameOf, definitionsUnder, gportSide, lastProbe, portNameOf, sidesOf, type SideOrder } from '../model/definition-port-order';
+import type { PreviewLayout } from '../operations/layout-preview';
+import type { LayoutGeometry } from '../server/layout-snapshot';
 
 /** At most this many tries per untangle. */
 export const MAX_TRIES = 10;

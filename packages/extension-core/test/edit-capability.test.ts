@@ -261,26 +261,6 @@ describe('slash contributions', () => {
         expect(result.error).toContain("diagram's tools");
     });
 
-    it('/untangle hands the agent the untangle, where the source can be given a port order', async () => {
-        const writes = makeCapability(makeBackend({ listCapabilities: vi.fn(async () => ({ ops: ['renameEntity', 'reorderEntityPorts'] })) }));
-        const untangle = findCmd(writes.capability, 'untangle');
-        expect(untangle.modes).toEqual(['build']);
-        const result = await untangle.handler({}, CTX);
-        expect(result.success).toBe(true);
-        expect(result.prompt).toContain('untangle-start');
-        expect(result.prompt).toContain('at most 10 tries');
-        expect(result.prompt).toContain('untangle-propose');
-        // A second /untangle in one chat starts over, the diagram maybe changed by the first.
-        expect(result.prompt).toContain('This is a new untangle, whatever this chat did before');
-        // Its turn over, a try the agent left drawn and did not propose is drawn back.
-        await result.afterTurn();
-        expect(writes.tools.calls.at(-1)).toEqual({ tool: 'untangle-end', args: { sessionId: 'glsp_1' } });
-
-        const cannot = makeCapability(makeBackend({ listCapabilities: vi.fn(async () => ({ ops: ['renameEntity'] })) }));
-        const refused = await findCmd(cannot.capability, 'untangle').handler({}, CTX);
-        expect(refused).toEqual({ success: false, error: "This diagram's source cannot be given a port order, so it cannot be untangled here." });
-    });
-
     it('/layout runs the profile layout command', async () => {
         const { capability } = makeCapability();
         const layout = findCmd(capability, 'layout');
