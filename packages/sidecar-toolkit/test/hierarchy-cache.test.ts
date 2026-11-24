@@ -9,9 +9,10 @@
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { URI } from 'vscode-uri';
 import { HierarchyCache, fileHash, findInstance, graphsOf, outlineOf, type HierarchyEntry } from '../src/server/hierarchy-cache';
+import { hierarchyRootAt } from '@dialogram/shared';
 import { CliGraphModelSource } from '../src/server/cli-graph-model-source';
 
 const graph = (label: string) => ({ version: '1', graph: { id: `wf:${label}`, nodes: [{ id: label, label }], edges: [] } });
@@ -271,5 +272,105 @@ describe('a view read from the hierarchy', () => {
         const { src, top } = await source();
         const doc = await src.viewFromHierarchy(URI.file(top).toString(), top, 'top', { content: 'unsaved' }, path.dirname(top));
         expect(doc).toBeUndefined();
+    });
+});
+
+/**
+ * A unit answered by a past run (`c = inst(instance="wf-out/r1")`) runs
+ * nothing with its parent, so the parent's export has nothing under it. A
+ * workflow made by a factory inside it (`f = flow(design="d")()`) planned on
+ * its own has no `design`; elaborated as the run did, from `inst` as a root,
+ * it has.
+ */
+describe('a view under a unit answered by a past run', () => {
+    const dirs: string[] = [];
+    afterEach(async () => {
+        await Promise.all(dirs.splice(0).map(dir => fs.rm(dir, { recursive: true, force: true })));
+    });
+
+    async function source() {
+        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'recorded-hierarchy-'));
+        dirs.push(dir);
+        const files = { top: path.join(dir, 'top.py'), inst: path.join(dir, 'inst.py'), flow: path.join(dir, 'flow.py') };
+        for (const [name, file] of Object.entries(files)) {
+            await fs.writeFile(file, `@workflow\ndef ${name}():\n    pass\n`);
+        }
+        const exported: Record<string, HierarchyEntry> = {
+            top: { path: [], workflowName: 'top', sourcePath: files.top, children: [] },
+            inst: {
+                path: [], workflowName: 'inst', sourcePath: files.inst,
+                children: [{ path: ['f'], workflowName: 'flow', sourcePath: files.flow, graph: graph('f-view'), children: [] }]
+            }
+        };
+        const asked: string[] = [];
+        const fallback: any = { analysis: { pickDefaultWorkflowName: () => 'top' }, attachDiagnostics: (doc: unknown) => doc };
+        const cfg: any = {
+            cliCommandDefault: 'runtime',
+            cliGraphArgs: () => ['plan'],
+            cliHierarchyArgs: (file: string, wf: string) => ['plan', file, '--workflow', wf, '--hierarchy']
+        };
+        const src: any = new CliGraphModelSource(cfg, fallback);
+        src.exportHierarchy = async (_file: string, workflow: string) => {
+            asked.push(workflow);
+            return exported[workflow] ? JSON.stringify({ ...graph(`${workflow}-view`), hierarchy: exported[workflow] }) : undefined;
+        };
+        const uri = (file: string) => URI.file(file).toString();
+        const toInst = [
+            { sourceUri: uri(files.top), workflowName: 'top' },
+            { sourceUri: uri(files.inst), workflowName: 'inst', workflowInstanceName: 'c', recordedRun: 'wf-out/r1' }
+        ];
+        const toFlow = [...toInst, { sourceUri: uri(files.flow), workflowName: 'flow', workflowInstanceName: 'f' }];
+        return { src, files, uri, toInst, toFlow, asked };
+    }
+
+    it('reads the unit and the views under it from the hierarchy rooted at the unit', async () => {
+        const { src, files, uri, toInst, toFlow, asked } = await source();
+
+        const instDoc = await src.getGraph(uri(files.inst), { requestOptions: { networkName: 'inst', 'wf:navTrail': JSON.stringify(toInst) } });
+        const flowDoc = await src.getGraph(uri(files.flow), { requestOptions: { networkName: 'flow', 'wf:navTrail': JSON.stringify(toFlow) } });
+
+        expect(instDoc.graph.id).toBe('wf:inst-view');
+        expect(flowDoc.graph.id).toBe('wf:f-view');
+        expect([...asked].sort()).toEqual(['inst', 'top']);
+    });
+
+    it('keeps the outline of the trail root, whose paths the trail has, and gives no list of its nodes', async () => {
+        const { src, files, uri, toFlow } = await source();
+
+        const flowDoc = await src.getGraph(uri(files.flow), { requestOptions: { networkName: 'flow', 'wf:navTrail': JSON.stringify(toFlow) } });
+
+        expect(flowDoc.hierarchy.workflowName).toBe('top');
+        // The trail root's nodes are not the past run's, which the view's runs are.
+        expect(flowDoc.hierarchyGraphs).toBeUndefined();
+    });
+
+    it('draws the view without an outline when the trail root does not export', async () => {
+        const { src, files, uri, toFlow } = await source();
+        const exportHierarchy = src.exportHierarchy;
+        src.exportHierarchy = async (file: string, workflow: string) => (workflow === 'top' ? undefined : exportHierarchy(file, workflow));
+
+        const flowDoc = await src.getGraph(uri(files.flow), { requestOptions: { networkName: 'flow', 'wf:navTrail': JSON.stringify(toFlow) } });
+
+        expect(flowDoc.graph.id).toBe('wf:f-view');
+        expect(flowDoc.hierarchy).toBeUndefined();
+    });
+
+    it('reads a view through a unit with no past run from the trail root, as before', async () => {
+        const { src, files, uri, toFlow, asked } = await source();
+        const { recordedRun: _run, ...live } = toFlow[1] as { recordedRun?: string };
+
+        const flowDoc = await src.viewFromHierarchy(uri(files.flow), files.flow, 'flow', {
+            'wf:navTrail': JSON.stringify([toFlow[0], live, toFlow[2]])
+        }, path.dirname(files.flow));
+
+        // The trail root's export has nothing under `c`: a plan of its own.
+        expect(flowDoc).toBeUndefined();
+        expect(asked).toEqual(['top']);
+    });
+
+    it('takes the deepest unit answered by a past run, and none on the root crumb', () => {
+        expect(hierarchyRootAt([{}, { recordedRun: 'a' }, {}, { recordedRun: ' b ' }, {}])).toBe(3);
+        expect(hierarchyRootAt([{ recordedRun: 'a' }, {}, { recordedRun: '  ' }])).toBe(0);
+        expect(hierarchyRootAt([])).toBe(0);
     });
 });

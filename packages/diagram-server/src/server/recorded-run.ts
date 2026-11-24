@@ -17,6 +17,7 @@
  */
 import * as os from 'os';
 import * as path from 'path';
+import { hierarchyRootAt } from '@dialogram/shared';
 
 export interface RecordedRunCrumb {
     sourceUri: string;
@@ -43,20 +44,19 @@ export function recordedRunOfTrail(
     fsPathOf: (sourceUri: string) => string,
     home: string = os.homedir()
 ): RecordedRunOfView | undefined {
-    for (let at = trail.length - 1; at >= 1; at--) {
-        const written = trail[at].recordedRun?.trim();
-        if (!written) {
-            continue;
-        }
-        const expanded = written === '~'
-            ? home
-            : /^~[\\/]/.test(written) ? path.join(home, written.slice(2)) : written;
-        const resolved = path.resolve(path.dirname(fsPathOf(trail[at - 1].sourceUri)), expanded);
-        return {
-            runDir: path.extname(resolved).toLowerCase() === '.json' ? path.dirname(resolved) : resolved,
-            at,
-            workflowName: trail[at].workflowName
-        };
+    // The same crumb the view's hierarchy is rooted at.
+    const at = hierarchyRootAt(trail);
+    const written = trail[at]?.recordedRun?.trim();
+    if (at === 0 || !written) {
+        return undefined;
     }
-    return undefined;
+    const expanded = written === '~'
+        ? home
+        : /^~[\\/]/.test(written) ? path.join(home, written.slice(2)) : written;
+    const resolved = path.resolve(path.dirname(fsPathOf(trail[at - 1].sourceUri)), expanded);
+    return {
+        runDir: path.extname(resolved).toLowerCase() === '.json' ? path.dirname(resolved) : resolved,
+        at,
+        workflowName: trail[at].workflowName
+    };
 }
