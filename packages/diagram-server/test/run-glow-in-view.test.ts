@@ -40,7 +40,8 @@ async function glowAt(
     trail: object[],
     names: string[],
     active: Array<{ entityInstanceName?: string; entityInstancePath?: string[] }>,
-    byName: (entry: { entityInstanceName?: string }) => string | undefined = () => undefined
+    byName: (entry: { entityInstanceName?: string }) => string | undefined = () => undefined,
+    nested: Record<string, { workflow: string; holds: string[] }> = {}
 ) {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'run-glow-'));
     tempDirs.push(dir);
@@ -55,7 +56,14 @@ async function glowAt(
             buildOverlayAstPathCandidates: () => [],
             buildOverlaySignatureCandidates: () => [],
             buildOverlayNodeIdentityCandidates: (args: any) => (args?.name ? [args.name] : []),
-            resolveOverlayActiveEntityName: (entry: any) => byName(entry)
+            resolveOverlayActiveEntityName: (entry: any) => byName(entry),
+            normalizeWorkflowReferenceName: (value: string | undefined) => value
+        },
+        // The instances of each nested workflow, by its workflow's name.
+        getNodeIdentities: async (_uri: string, options: any) => {
+            const workflow = options?.requestOptions?.networkName;
+            const of = Object.values(nested).find(n => n.workflow === workflow);
+            return of?.holds.map(instanceName => ({ instanceName }));
         }
     });
     const root = new GModelRoot();
@@ -64,7 +72,14 @@ async function glowAt(
     root.children = names.map(name => {
         const node = new GNode();
         node.id = name;
-        node.args = { name };
+        node.args = nested[name]
+            ? {
+                name,
+                [WorkflowDiagramMetadata.IS_NETWORK_INSTANCE]: true,
+                [WorkflowDiagramMetadata.REFERENCED_URI]: `file:///w/${nested[name].workflow}.py`,
+                [WorkflowDiagramMetadata.REFERENCED_ENTITY_NAME]: nested[name].workflow
+            }
+            : { name };
         return node;
     });
     await storage.applyViewerOverlayToEdges(root, '/w/top.py', 'top', trail, ['top'], undefined, false, ['/w/top.py']);
@@ -97,6 +112,16 @@ describe('the running glow', () => {
             { entityInstanceName: 'join', entityInstancePath: ['sibling', 'join'] }
         ]);
         expect(glowing).toEqual([]);
+    });
+
+    it('is not on a nested workflow holding an instance named like one placed by its path', async () => {
+        // `child` is not drawn here; `other` holds an instance also named `child`.
+        const nested = { other: { workflow: 'other', holds: ['child'] } };
+        const placed = await glowAt(AT_TOP, ['other'], [{ entityInstanceName: 'slow', entityInstancePath: ['child', 'slow'] }], undefined, nested);
+        expect(placed).toEqual([]);
+        // A name with no path is still looked for in the nested workflows.
+        const named = await glowAt(AT_TOP, ['other'], [{ entityInstanceName: 'child' }], entry => entry.entityInstanceName, nested);
+        expect(named).toEqual(['other']);
     });
 
     it('is matched by name for an instance the run gives no path', async () => {

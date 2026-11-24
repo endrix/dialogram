@@ -64,6 +64,11 @@ export interface GraphSourceAnalysis {
         inPort?: unknown;
     }): string[];
     buildOverlayNodeIdentityCandidates(args: Record<string, unknown> | undefined): string[];
+    /**
+     * The node of the view a run's active instance is named by. Asked only of an
+     * entry with no `entityInstancePath`: the platform places one with a path
+     * itself, by that path from the run's root, as it places a failure.
+     */
     resolveOverlayActiveEntityName(
         active:
             | Array<{ entityInstanceName?: string; entityInstancePath?: string[] }>

@@ -1531,18 +1531,24 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             // placed as a failure is, on the node of the view it is in (itself, or the
             // nested workflow holding it), and on none when it is not under the view: a
             // node there named like it is another instance, waiting. One with no path
-            // is matched by name, as the product reads it.
+            // is matched by name, as the product reads it; only such a name is looked
+            // for in the nested workflows when no node of the view has it.
             const activeEntries = Array.isArray(overlay.active) ? overlay.active : overlay.active ? [overlay.active] : [];
-            const activeNames = activeEntries
-                .map(entry => {
-                    const activePath = Array.isArray(entry?.entityInstancePath)
-                        ? entry.entityInstancePath.map(part => typeof part === 'string' ? part.trim() : '').filter(part => part !== '')
-                        : [];
-                    return activePath.length > 0
-                        ? nodeInView(activePath, viewInstancePath)
-                        : analysis?.resolveOverlayActiveEntityName(entry, workflowName, navigationTrail);
-                })
-                .filter((name): name is string => typeof name === 'string');
+            const placedNames: string[] = [];
+            const namedOnly: string[] = [];
+            for (const entry of activeEntries) {
+                // Read as the error's path is below, so both meet the view's path alike.
+                const activePath = Array.isArray(entry?.entityInstancePath)
+                    ? entry.entityInstancePath.filter((part): part is string => typeof part === 'string' && part.trim() !== '')
+                    : [];
+                const name = activePath.length > 0
+                    ? nodeInView(activePath, viewInstancePath)
+                    : analysis?.resolveOverlayActiveEntityName(entry, workflowName, navigationTrail);
+                if (typeof name === 'string') {
+                    (activePath.length > 0 ? placedNames : namedOnly).push(name);
+                }
+            }
+            const activeNames = [...placedNames, ...namedOnly];
             const activeNameSet = new Set(activeNames);
             const matchedActiveNames = new Set<string>();
 
@@ -1664,8 +1670,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 console.log(`[perf]   viewer: load=${Math.round(_perfTLoad - _perfT0)} prep=${Math.round(_perfTPrep - _perfTLoad)} visit=${Math.round(_perfTVisit - _perfTPrep)} (overlayEdges=${Object.keys(overlay.edges).length})`);
             }
 
-            if (activeNames.length > 0 && activeGlowClass && activeMetadataKey) {
-                for (const name of activeNames) {
+            if (namedOnly.length > 0 && activeGlowClass && activeMetadataKey) {
+                for (const name of namedOnly) {
                     if (matchedActiveNames.has(name)) {
                         continue;
                     }
