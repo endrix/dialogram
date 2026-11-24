@@ -270,6 +270,8 @@ describe('slash contributions', () => {
         expect(result.prompt).toContain('untangle-start');
         expect(result.prompt).toContain('at most 10 tries');
         expect(result.prompt).toContain('untangle-propose');
+        // A second /untangle in one chat starts over, the diagram maybe changed by the first.
+        expect(result.prompt).toContain('This is a new untangle, whatever this chat did before');
         // Its turn over, a try the agent left drawn and did not propose is drawn back.
         await result.afterTurn();
         expect(writes.tools.calls.at(-1)).toEqual({ tool: 'untangle-end', args: { sessionId: 'glsp_1' } });

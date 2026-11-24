@@ -31,6 +31,7 @@ const UNTANGLE_WRITE_OP = 'reorderEntityPorts';
  */
 export const UNTANGLE_PROMPT = [
     'Untangle the layout of this diagram, with the untangle tools of the diagram\'s MCP server. Look at the picture each tool answers with.',
+    'This is a new untangle, whatever this chat did before: the diagram may have changed since (an Apply, an Undo, an edit). Go through every step below, and answer from what the tools say now, never from an earlier untangle.',
     '1. Call untangle-start. It lays the diagram out with Layout Diagram, the drawing to beat, and lists the definitions that have several instances.',
     '2. Call untangle-try with layout "free-ports". Free Ports orders each node\'s ports against crossings, one order for all the instances of a definition.',
     '3. Then improve on the best try, one definition at a time: where the try says what order each instance would take on its own, give the definition one of those orders (`orders`), or swap two neighbouring ports of one side. Keep a change only when the crossings drop or, within a few crossings, when the picture reads better: shorter edges, a left-to-right flow, no edge running under a node.',
