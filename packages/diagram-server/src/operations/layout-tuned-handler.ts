@@ -14,7 +14,7 @@ import { WORKFLOW_LAYOUT_BOUNDARY_FLOW_OPERATION_KIND, WorkflowLayoutBoundaryFlo
  *   declares them in. 253 crossings become 236 (model/edge-crossings.ts).
  * - Free Ports: the same, and each node's ports in the order a probe layout
  *   found best against crossings (see WorkflowElkLayoutEngine), one order for
- *   all the instances of a definition (model/definition-port-order.ts). 172
+ *   all the instances of a definition (model/definition-port-order.ts). 173
  *   crossings, at the price of the declared order.
  *
  * Both run the boundary-flow layout with the graph's options set for the run

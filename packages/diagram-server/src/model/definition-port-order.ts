@@ -14,21 +14,34 @@
  * On the speculation flow of chips/workflow (four instances of each of five
  * definitions), the most connected instance's order alone gave 198 crossings,
  * the consensus 189, and the consensus with the other nodes ordered again
- * around it (the engine's second probe) 172, against 150 with each node in an
+ * around it (the engine's second probe) 173, against 150 with each node in an
  * order of its own and 236 in the declared order.
  *
- * An order is a list of port names, read side by side: the ports of each
- * side take the order their names have in it.
+ * An order is said side by side, a list of port names for each: a task may
+ * have an input and an output of one name.
  */
 import { GNode, GPort } from '@eclipse-glsp/server';
 import { WorkflowDiagramMetadata, portSide, type PortSide } from '@dialogram/shared';
 
 /**
  * Graph layout option: the port order given for a definition, as JSON
- * `{ [definitionKey]: portName[] }` (keys from `definitionKeyOf`). A list
- * that does not name each port of an instance exactly once is not used for it.
+ * `{ [definition]: { west?: portName[], east?: portName[] } }`, the names of
+ * each side top to bottom. A definition is named by its key
+ * (`definitionKeyOf`) or by its name alone (`definitionNameOf`), which then
+ * says it for every definition of that name. A side not listed keeps the
+ * order it would have had; a listed side that does not name each of its
+ * ports exactly once is not used.
  */
 export const PORT_ORDERS_OPTION = 'dialogram.portOrders';
+
+/** Port names, top to bottom, by side. */
+export interface SideOrder {
+    west?: string[];
+    east?: string[];
+}
+
+const SIDES = ['west', 'east'] as const;
+type Side = typeof SIDES[number];
 
 /** A node's ports, top to bottom, as the probe layout placed them. */
 export interface ProbedOrder {
@@ -58,6 +71,11 @@ export function gportSide(port: GPort): PortSide {
     });
 }
 
+function sideOf(port: GPort): Side | undefined {
+    const side = gportSide(port);
+    return side === 'WEST' ? 'west' : side === 'EAST' ? 'east' : undefined;
+}
+
 /** A port's name: as the producer names it, else its id under its node's. */
 export function portNameOf(node: GNode, port: GPort): string {
     const name = textOf((port.args as Record<string, unknown> | undefined)?.[WorkflowDiagramMetadata.PORT_NAME]);
@@ -67,18 +85,27 @@ export function portNameOf(node: GNode, port: GPort): string {
     return port.id.startsWith(node.id) ? port.id.slice(node.id.length) : port.id;
 }
 
+/** The name of what a node is an instance of: the definition it names, else its type. */
+export function definitionNameOf(node: GNode): string | undefined {
+    const args = (node.args ?? {}) as Record<string, unknown>;
+    return textOf(args[WorkflowDiagramMetadata.REFERENCED_ENTITY_NAME]) ?? textOf(args[WorkflowDiagramMetadata.ENTITY_TYPE]);
+}
+
 /**
  * What a node is an instance of, as a key: the definition's name, the file
  * that defines it when the producer says so, and its ports by side and name.
  * Two nodes of one definition whose ports differ (a bus drawn open on one)
- * are kept apart. `undefined` for a node that names no definition.
+ * are kept apart. Without the file, two definitions of one name and the same
+ * ports in two modules are taken for one: a diagram showing both is rare,
+ * and drawing them alike does no harm. `undefined` for a node that names no
+ * definition.
  */
 export function definitionKeyOf(node: GNode): string | undefined {
-    const args = (node.args ?? {}) as Record<string, unknown>;
-    const name = textOf(args[WorkflowDiagramMetadata.REFERENCED_ENTITY_NAME]) ?? textOf(args[WorkflowDiagramMetadata.ENTITY_TYPE]);
+    const name = definitionNameOf(node);
     if (!name) {
         return undefined;
     }
+    const args = (node.args ?? {}) as Record<string, unknown>;
     const file = args[WorkflowDiagramMetadata.REFERENCED_IS_DEFINITION] === true
         ? textOf(args[WorkflowDiagramMetadata.REFERENCED_URI]) ?? ''
         : '';
@@ -86,71 +113,129 @@ export function definitionKeyOf(node: GNode): string | undefined {
     return JSON.stringify([name, file, ports]);
 }
 
+function namesOrUndefined(value: unknown): string[] | undefined {
+    return Array.isArray(value) && value.every(name => typeof name === 'string') ? value as string[] : undefined;
+}
+
 /** The given orders out of the graph's options: `PORT_ORDERS_OPTION`, when it is valid JSON. */
-export function givenPortOrders(options: Record<string, unknown> | undefined): Record<string, string[]> {
+export function givenPortOrders(options: Record<string, unknown> | undefined): Record<string, SideOrder> {
     const raw = options?.[PORT_ORDERS_OPTION];
     if (typeof raw !== 'string' || raw.trim() === '') {
         return {};
     }
+    let parsed: unknown;
     try {
-        const parsed = JSON.parse(raw) as unknown;
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-            return {};
-        }
-        const orders: Record<string, string[]> = {};
-        for (const [key, names] of Object.entries(parsed as Record<string, unknown>)) {
-            if (Array.isArray(names) && names.every(name => typeof name === 'string')) {
-                orders[key] = names as string[];
-            }
-        }
-        return orders;
+        parsed = JSON.parse(raw);
     } catch {
         return {};
     }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return {};
+    }
+    const orders: Record<string, SideOrder> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            continue;
+        }
+        const order: SideOrder = {};
+        for (const side of SIDES) {
+            const names = namesOrUndefined((value as Record<string, unknown>)[side]);
+            if (names) {
+                order[side] = names;
+            }
+        }
+        if (order.west || order.east) {
+            orders[key] = order;
+        }
+    }
+    return orders;
 }
 
 /**
- * The ids of `node`'s ports in the order of `names`, side by side; `undefined`
- * when the names are not exactly its ports' (one missing, one too many, or
- * two ports of a side named alike).
+ * The ids of `node`'s ports, top to bottom: each side listed in `order` as
+ * its names say, each other side as in `fallback` (port ids). `undefined`
+ * when a listed side does not name each of its ports exactly once, or two
+ * ports of that side share a name.
  */
-export function orderByNames(node: GNode, names: readonly string[]): string[] | undefined {
+export function orderBySides(node: GNode, order: SideOrder, fallback: readonly string[] = []): string[] | undefined {
     const ports = portsOf(node);
-    const rank = new Map<string, number>();
-    names.forEach((name, k) => {
-        if (!rank.has(name)) {
-            rank.set(name, k);
+    const rank = new Map(fallback.map((id, k) => [id, k] as const));
+    const ids: string[] = [];
+    for (const side of SIDES) {
+        const own = ports.filter(port => sideOf(port) === side);
+        const names = order[side];
+        if (!names) {
+            ids.push(...own.sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity)).map(port => port.id));
+            continue;
         }
-    });
-    if (rank.size !== names.length || names.length !== ports.length) {
-        return undefined;
-    }
-    const seen = new Set<string>();
-    for (const port of ports) {
-        const named = `${gportSide(port)}:${portNameOf(node, port)}`;
-        if (!rank.has(portNameOf(node, port)) || seen.has(named)) {
+        const byName = new Map(own.map(port => [portNameOf(node, port), port] as const));
+        if (byName.size !== own.length || names.length !== own.length || new Set(names).size !== names.length) {
             return undefined;
         }
-        seen.add(named);
+        for (const name of names) {
+            const port = byName.get(name);
+            if (!port) {
+                return undefined;
+            }
+            ids.push(port.id);
+        }
     }
-    return [...ports]
-        .sort((a, b) => rank.get(portNameOf(node, a))! - rank.get(portNameOf(node, b))!)
-        .map(port => port.id);
+    // A port on neither side (north, south) stays where its fallback has it.
+    ids.push(...ports.filter(port => sideOf(port) === undefined).map(port => port.id));
+    return ids;
+}
+
+/** A probed node's port names, top to bottom, side by side. */
+export function probedSides(entry: ProbedOrder): Required<SideOrder> {
+    const ports = portsOf(entry.node);
+    const rank = new Map(entry.order.map((id, k) => [id, k] as const));
+    const sides = { west: [] as string[], east: [] as string[] };
+    for (const side of SIDES) {
+        sides[side] = ports
+            .filter(port => sideOf(port) === side)
+            .sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity))
+            .map(port => portNameOf(entry.node, port));
+    }
+    return sides;
+}
+
+/**
+ * Each port at its mean place among the instances, side by side, weighted
+ * by their edges; ties as the first of the most connected has them.
+ */
+function consensusSides(group: readonly ProbedOrder[]): Required<SideOrder> {
+    const leader = probedSides(group.reduce((best, entry) => (entry.edges > best.edges ? entry : best)));
+    const result = { west: [] as string[], east: [] as string[] };
+    for (const side of SIDES) {
+        const sum = new Map<string, number>();
+        let weight = 0;
+        for (const entry of group) {
+            const w = Math.max(1, entry.edges);
+            weight += w;
+            probedSides(entry)[side].forEach((name, k) => sum.set(name, (sum.get(name) ?? 0) + w * k));
+        }
+        const place = (name: string): number => (sum.get(name) ?? 0) / weight;
+        const order = leader[side];
+        result[side] = [...order].sort((a, b) => place(a) - place(b) || order.indexOf(a) - order.indexOf(b));
+    }
+    return result;
 }
 
 /**
  * The order each probed node's ports take, top to bottom: one per definition
  * (see the file's comment), the probe's own for a node alone of its kind.
+ * `shared` holds the nodes given a definition's order; `unmatched` the given
+ * definitions no probed node is an instance of.
  */
 export function onePortOrderPerDefinition(
     probed: readonly ProbedOrder[],
-    given: Readonly<Record<string, string[]>> = {}
-): { orders: Map<GNode, string[]>; shared: Set<GNode> } {
-    const result = new Map<GNode, string[]>();
+    given: Readonly<Record<string, SideOrder>> = {}
+): { orders: Map<GNode, string[]>; shared: Set<GNode>; unmatched: string[] } {
+    const orders = new Map<GNode, string[]>();
     const shared = new Set<GNode>();
     const groups = new Map<string, ProbedOrder[]>();
     for (const entry of probed) {
-        result.set(entry.node, entry.order);
+        orders.set(entry.node, entry.order);
         const key = definitionKeyOf(entry.node);
         if (key !== undefined) {
             const group = groups.get(key);
@@ -161,48 +246,24 @@ export function onePortOrderPerDefinition(
             }
         }
     }
+    const used = new Set<string>();
     for (const [key, group] of groups) {
-        let names: readonly string[] | undefined = given[key];
-        if (!names && group.length > 1) {
-            names = consensusNames(group);
+        const name = definitionNameOf(group[0].node)!;
+        const said = given[key] ?? given[name];
+        if (said) {
+            used.add(given[key] ? key : name);
         }
-        if (!names) {
+        const base = group.length > 1 ? consensusSides(group) : undefined;
+        if (!said && !base) {
             continue;
         }
         for (const entry of group) {
-            const order = orderByNames(entry.node, names);
+            const order = orderBySides(entry.node, { ...base, ...said }, entry.order);
             if (order) {
-                result.set(entry.node, order);
+                orders.set(entry.node, order);
                 shared.add(entry.node);
             }
         }
     }
-    return { orders: result, shared };
-}
-
-/** A node's port names in the order the probe found, then any port it did not place, as declared. */
-function namesOf(entry: ProbedOrder): string[] {
-    const byId = new Map(portsOf(entry.node).map(port => [port.id, portNameOf(entry.node, port)] as const));
-    const names = entry.order.filter(id => byId.has(id)).map(id => byId.get(id)!);
-    const placed = new Set(entry.order);
-    return [...names, ...portsOf(entry.node).filter(port => !placed.has(port.id)).map(port => portNameOf(entry.node, port))];
-}
-
-/** The order of the first of the most connected instances, so equal counts keep the document's order. */
-function leaderNames(group: readonly ProbedOrder[]): string[] {
-    return namesOf(group.reduce((best, entry) => (entry.edges > best.edges ? entry : best)));
-}
-
-/** Each port at its mean place among the instances, weighted by their edges; ties as the most connected has them. */
-function consensusNames(group: readonly ProbedOrder[]): string[] {
-    const leader = leaderNames(group);
-    const sum = new Map<string, number>();
-    let weight = 0;
-    for (const entry of group) {
-        const w = Math.max(1, entry.edges);
-        weight += w;
-        namesOf(entry).forEach((name, k) => sum.set(name, (sum.get(name) ?? 0) + w * k));
-    }
-    const place = (name: string): number => (sum.get(name) ?? 0) / weight;
-    return [...leader].sort((a, b) => place(a) - place(b) || leader.indexOf(a) - leader.indexOf(b));
+    return { orders, shared, unmatched: Object.keys(given).filter(key => !used.has(key)) };
 }

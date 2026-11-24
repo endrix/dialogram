@@ -215,7 +215,7 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
             // back on their grid in that order, and the real layout runs as before.
             if (this.portOrderingEnabled(root)) {
                 try {
-                    await this.orderPortsAgainstCrossings(root);
+                    await this.orderPortsAgainstCrossings(root, tier);
                 } catch (e) {
                     console.warn('[cal-elk] port ordering skipped:', e);
                 }
@@ -410,20 +410,24 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
      * server's rows: one order for all the instances of a definition, as the
      * source declares their ports once (definition-port-order.ts).
      */
-    private async orderPortsAgainstCrossings(root: GGraph): Promise<void> {
+    private async orderPortsAgainstCrossings(root: GGraph, tier: LayoutTier): Promise<void> {
         const edges = this.edgeCountByNode(root);
         const given = givenPortOrders((root as any).layoutOptions as Record<string, unknown> | undefined);
         const first = await this.probePortOrders(root, edges, new Set());
-        const { orders, shared } = onePortOrderPerDefinition(first, given);
+        const { orders, shared, unmatched } = onePortOrderPerDefinition(first, given);
+        if (unmatched.length > 0) {
+            console.warn(`[cal-elk] port orders given for no definition of this diagram: ${unmatched.join(', ')}`);
+        }
         for (const [node, order] of orders) {
             this.regridPorts(node, order);
         }
-        if (shared.size === 0) {
-            return;
-        }
         // The first probe ordered every node's ports against the others' orders
         // as it found them; a definition's instances now share one, so the other
-        // nodes' ports are ordered again, around those.
+        // nodes' ports are ordered again, around those. Not on the largest
+        // diagrams (the fast tier), where each ELK run is what takes the time.
+        if (shared.size === 0 || tier === 'fast') {
+            return;
+        }
         const pinned = new Set([...shared].map(node => node.id));
         for (const entry of await this.probePortOrders(root, edges, pinned)) {
             if (!pinned.has(entry.node.id)) {

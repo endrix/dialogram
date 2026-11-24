@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ELK from 'elkjs/lib/elk.bundled.js';
-import { GEdge, GGraph, GModelElement, GNode, GPort } from '@eclipse-glsp/server';
+import { GEdge, GGraph, GNode, GPort } from '@eclipse-glsp/server';
 import { DefaultElementFilter } from '@eclipse-glsp/layout-elk';
 import { WorkflowDiagramTypes } from '@dialogram/shared';
 import { PORT_ORDER_FREE, PORT_ORDER_OPTION, WorkflowElkLayoutEngine } from '../src/server/elk-layout-engine';
@@ -159,12 +159,11 @@ describe('WorkflowElkLayoutEngine port order', () => {
         const root = loadFixture();
         const [key, nodes] = [...instancesByDefinition(root)].find(([, group]) => group[0].args?.['cal:entityType'] === 'ProgramRound')!;
         expect(nodes.length).toBe(4);
-        const reversed = [...drawnOrder(nodes[0]).west, ...drawnOrder(nodes[0]).east].reverse();
+        const declared = drawnOrder(nodes[0]);
+        const reversed = { west: [...declared.west].reverse(), east: [...declared.east].reverse() };
         await layoutFixture({ [PORT_ORDER_OPTION]: PORT_ORDER_FREE, [PORT_ORDERS_OPTION]: JSON.stringify({ [key]: reversed }) }, root);
         for (const node of nodes) {
-            const order = drawnOrder(node);
-            expect(order.west).toEqual(reversed.filter(name => order.west.includes(name)));
-            expect(order.east).toEqual(reversed.filter(name => order.east.includes(name)));
+            expect(drawnOrder(node)).toEqual(reversed);
         }
     });
 
