@@ -13,6 +13,7 @@ import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { buildEdgeSignatureCounts, edgeRouteKeyFor, type Point } from '../routing/persisted-edge-routes';
 import type { LayoutPersistenceService } from '../services/layout-persistence-service';
 import { layoutTargetOf } from './layout-target';
+import { keptPortOrderChanges, type PortOrderChanges } from '../model/definition-port-order';
 
 export type { Point };
 
@@ -251,7 +252,9 @@ export async function persistLayout(
     const persisted = options.keepPersistedPositions ? await layoutPersistence.loadLayout(workflowFilePath, networkId) : undefined;
     const positions = persisted ?? collectNodePositions(modelState.root);
     const routes = collectEdgeRoutes(modelState.root);
-    await layoutPersistence.saveLayoutImmediate(workflowFilePath, networkId, positions, routes);
+    // The routes end on the ports' rows: the order the definitions are drawn
+    // in is saved with them (definition-port-order.ts).
+    await layoutPersistence.saveLayoutImmediate(workflowFilePath, networkId, positions, routes, keptPortOrderChanges(modelState.root));
 
     if (options.noteInMeta === false) {
         return;
@@ -279,7 +282,7 @@ export interface LayoutGeometry {
     parts: Map<string, { position?: Point; size?: { width: number; height: number } }>;
     edges: Map<string, Point[] | undefined>;
     /** As `persistLayout` would save it. */
-    saved: { positions: Map<string, Point>; routes: Map<string, Point[]> };
+    saved: { positions: Map<string, Point>; routes: Map<string, Point[]>; portOrders: PortOrderChanges };
 }
 
 /** The diagram as it is drawn now (see {@link LayoutGeometry}). */
@@ -306,7 +309,7 @@ export function layoutGeometryOf(root: GModelRoot): LayoutGeometry {
         nodes,
         parts,
         edges: snapshotEdgeRoutesById(root),
-        saved: { positions: collectNodePositions(root), routes: collectEdgeRoutes(root) }
+        saved: { positions: collectNodePositions(root), routes: collectEdgeRoutes(root), portOrders: keptPortOrderChanges(root) }
     };
 }
 
@@ -338,5 +341,5 @@ export async function saveLayoutGeometry(
         return;
     }
     const { filePath: workflowFilePath, networkId } = layoutTargetOf(diagramModel as any);
-    await layoutPersistence.saveLayoutImmediate(workflowFilePath, networkId, geometry.saved.positions, geometry.saved.routes);
+    await layoutPersistence.saveLayoutImmediate(workflowFilePath, networkId, geometry.saved.positions, geometry.saved.routes, geometry.saved.portOrders);
 }

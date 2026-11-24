@@ -18,16 +18,17 @@
  * order of its own and 236 in the declared order.
  *
  * An order is said side by side, a list of port names for each: a task may
- * have an input and an output of one name.
+ * have an input and an output of one name. A bus is one name in it, open or
+ * closed: an open bus's members are drawn under it and move with it.
+ *
+ * An order a definition is drawn in, when it is not the source's, is kept
+ * with the diagram's layout (`portOrders` in the layout file): the model is
+ * built in it ({@link applyKeptPortOrders}), and every save of the layout says
+ * it again from the drawing ({@link keptPortOrderChanges}). A node's ports
+ * stay its children in the source's order whatever rows they are drawn on.
  */
 import { GNode, GPort, type GModelElement } from '@eclipse-glsp/server';
-import { WorkflowDiagramMetadata, WorkflowDiagramTypes, isBoundaryNodeType, portSide, type PortSide } from '@dialogram/shared';
-
-/**
- * Port arg: the row a port was declared on, kept when Free Ports moves it
- * to another, so that the other layouts put it back (WorkflowElkLayoutEngine).
- */
-export const DECLARED_ROW_ARG = 'wf:declaredRowY';
+import { WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, isBoundaryNodeType, portRowOffset, portSide, type PortSide } from '@dialogram/shared';
 
 /**
  * Graph layout option: the port order given for a definition, as JSON
@@ -66,6 +67,20 @@ function portsOf(node: GNode): GPort[] {
     return (node.children ?? []).filter((child): child is GPort => child instanceof GPort);
 }
 
+/** The bundle an open bus's member is drawn under, by the bus's name. */
+function busMemberOf(port: GPort): string | undefined {
+    return textOf((port.args as Record<string, unknown> | undefined)?.[WorkflowDiagramMetadata.PORT_BUS_MEMBER_OF]);
+}
+
+/**
+ * The ports that take a place of their own in an order: every port but an
+ * open bus's members, which go where their bus goes. A bus is named and
+ * keyed alike open or closed.
+ */
+function placedPortsOf(node: GNode): GPort[] {
+    return portsOf(node).filter(port => busMemberOf(port) === undefined);
+}
+
 /** Which side of its node a GPort sits on: the producer's placement, else its direction or type. */
 export function gportSide(port: GPort): PortSide {
     const args = (port.args ?? {}) as Record<string, unknown>;
@@ -99,9 +114,9 @@ export function definitionNameOf(node: GNode): string | undefined {
 
 /**
  * What a node is an instance of, as a key: the definition's name, the file
- * that defines it when the producer says so, and its ports by side and name.
- * Two nodes of one definition whose ports differ (a bus drawn open on one)
- * are kept apart. Without the file, two definitions of one name and the same
+ * that defines it when the producer says so, and its ports by side and name,
+ * a bus by its own (open or closed, it is one). Two nodes of one definition
+ * whose ports differ are kept apart. Without the file, two definitions of one name and the same
  * ports in two modules are taken for one: a diagram showing both is rare,
  * and drawing them alike does no harm. `undefined` for a node that names no
  * definition.
@@ -115,7 +130,7 @@ export function definitionKeyOf(node: GNode): string | undefined {
     const file = args[WorkflowDiagramMetadata.REFERENCED_IS_DEFINITION] === true
         ? textOf(args[WorkflowDiagramMetadata.REFERENCED_URI]) ?? ''
         : '';
-    const ports = portsOf(node).map(port => `${gportSide(port)}:${portNameOf(node, port)}`).sort();
+    const ports = placedPortsOf(node).map(port => `${gportSide(port)}:${portNameOf(node, port)}`).sort();
     return JSON.stringify([name, file, ports]);
 }
 
@@ -129,42 +144,21 @@ export function givenPortOrders(options: Record<string, unknown> | undefined): R
     if (typeof raw !== 'string' || raw.trim() === '') {
         return {};
     }
-    let parsed: unknown;
     try {
-        parsed = JSON.parse(raw);
+        return keptPortOrdersOf(JSON.parse(raw)) ?? {};
     } catch {
         return {};
     }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        return {};
-    }
-    const orders: Record<string, SideOrder> = {};
-    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-        if (!value || typeof value !== 'object' || Array.isArray(value)) {
-            continue;
-        }
-        const order: SideOrder = {};
-        for (const side of SIDES) {
-            const names = namesOrUndefined((value as Record<string, unknown>)[side]);
-            if (names) {
-                order[side] = names;
-            }
-        }
-        if (order.west || order.east) {
-            orders[key] = order;
-        }
-    }
-    return orders;
 }
 
 /**
- * The ids of `node`'s ports, top to bottom: each side listed in `order` as
- * its names say, each other side as in `fallback` (port ids). `undefined`
- * when a listed side does not name each of its ports exactly once, or two
- * ports of that side share a name.
+ * The ids of `node`'s placed ports (an open bus's members go with it), top
+ * to bottom: each side listed in `order` as its names say, each other side
+ * as in `fallback` (port ids). `undefined` when a listed side does not name
+ * each of its ports exactly once, or two ports of that side share a name.
  */
 export function orderBySides(node: GNode, order: SideOrder, fallback: readonly string[] = []): string[] | undefined {
-    const ports = portsOf(node);
+    const ports = placedPortsOf(node);
     const rank = new Map(fallback.map((id, k) => [id, k] as const));
     const ids: string[] = [];
     for (const side of SIDES) {
@@ -193,7 +187,7 @@ export function orderBySides(node: GNode, order: SideOrder, fallback: readonly s
 
 /** A probed node's port names, top to bottom, side by side. */
 export function probedSides(entry: ProbedOrder): Required<SideOrder> {
-    const ports = portsOf(entry.node);
+    const ports = placedPortsOf(entry.node);
     const rank = new Map(entry.order.map((id, k) => [id, k] as const));
     const sides = { west: [] as string[], east: [] as string[] };
     for (const side of SIDES) {
@@ -274,33 +268,184 @@ export function onePortOrderPerDefinition(
     return { orders, shared, unmatched: Object.keys(given).filter(key => !used.has(key)) };
 }
 
-/** Whether Free Ports may put `node`'s ports in another order: an ordinary node, not an if, a loop, a group or a view's own port. */
+/**
+ * Whether Free Ports may put `node`'s ports in another order: an ordinary
+ * node, not an if, a loop, a group, a view's own port, or a cell drawn as
+ * its symbol, whose pins are where the symbol has them (a mux's select, a
+ * register's clock at its wedge).
+ */
 export function portsMayReorder(node: GNode): boolean {
     return node.type !== WorkflowDiagramTypes.NODE_STRUCTURE_IF
         && node.type !== WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH
         && node.type !== WorkflowDiagramTypes.NODE_GROUP
-        && !isBoundaryNodeType(node.type);
+        && !isBoundaryNodeType(node.type)
+        && (node.args as Record<string, unknown> | undefined)?.[WorkflowDiagramMetadata.SYMBOL] === undefined;
 }
 
 /**
- * `node`'s port names by side, top to bottom: as they are drawn now, or as
- * they are declared, each on the row its source gave it (`DECLARED_ROW_ARG`
- * where Free Ports moved it).
+ * `node`'s port names by side, top to bottom, an open bus's members left out
+ * (they go with it): as they are drawn now, or in the order the source
+ * declares them, which is the order of the node's children (a reorder moves
+ * a port to another row, never among them).
  */
-export function sidesOf(node: GNode, as: 'drawn' | 'declared'): Required<SideOrder> {
-    const rowOf = (port: GPort): number => {
-        const declared = (port.args as Record<string, unknown> | undefined)?.[DECLARED_ROW_ARG];
-        return as === 'declared' && typeof declared === 'number' ? declared : port.position?.y ?? 0;
-    };
-    const ports = portsOf(node);
+export function sidesOf(node: GNode, as: 'drawn' | 'source'): Required<SideOrder> {
+    const ports = placedPortsOf(node);
     const sides = { west: [] as string[], east: [] as string[] };
     for (const side of SIDES) {
-        sides[side] = ports
-            .filter(port => sideOf(port) === side)
-            .sort((a, b) => rowOf(a) - rowOf(b))
-            .map(port => portNameOf(node, port));
+        const own = ports.filter(port => sideOf(port) === side);
+        if (as === 'drawn') {
+            // A stable sort: two ports on one row keep the source's order.
+            own.sort((a, b) => (a.position?.y ?? 0) - (b.position?.y ?? 0));
+        }
+        sides[side] = own.map(port => portNameOf(node, port));
     }
     return sides;
+}
+
+/** Whether two orders list the same names on each side, in the same order. */
+export function sameSides(a: SideOrder, b: SideOrder): boolean {
+    return SIDES.every(side => (a[side] ?? []).join('\u0000') === (b[side] ?? []).join('\u0000'));
+}
+
+/**
+ * The node's ports of each side take the rows that side already occupies, in
+ * the order given (port ids, top to bottom); a side not all of whose placed
+ * ports the order names keeps its rows. An open bus takes its members with
+ * it, in their order, on the rows after its own; where the order names a
+ * member is not read. A port's box sits on its row, or above it when taller
+ * (a bus's dot, centred on the row): the rows are read without that offset
+ * and each port keeps its own. The labels are the ports' children and move
+ * with them; nothing else about the node changes.
+ */
+export function regridPortRows(node: GNode, orderedIds: readonly string[]): void {
+    const offsetOf = (port: GPort): number =>
+        portRowOffset(port.size?.height ?? WorkflowDiagramConstants.PORT_HEIGHT_PX);
+    const rowOf = (port: GPort): number => (port.position?.y ?? 0) - offsetOf(port);
+    const rank = new Map(orderedIds.map((id, k) => [id, k] as const));
+    for (const side of ['WEST', 'EAST'] as const) {
+        const ports = portsOf(node).filter(port => gportSide(port) === side);
+        const placed = ports.filter(port => busMemberOf(port) === undefined);
+        if (placed.length < 2 || !placed.every(port => rank.has(port.id))) {
+            continue;
+        }
+        const membersOf = (port: GPort): GPort[] => {
+            const group = textOf((port.args as Record<string, unknown> | undefined)?.[WorkflowDiagramMetadata.PORT_BUS_GROUP]);
+            return group === undefined ? [] : ports.filter(member => busMemberOf(member) === group).sort((a, b) => rowOf(a) - rowOf(b));
+        };
+        const rows = ports.map(rowOf).sort((a, b) => a - b);
+        const order = [...placed].sort((a, b) => rank.get(a.id)! - rank.get(b.id)!).flatMap(port => [port, ...membersOf(port)]);
+        if (order.length !== ports.length) {
+            // A member whose bus is not on this side: the rows are left as they are.
+            continue;
+        }
+        order.forEach((port, k) => {
+            port.position = { x: port.position?.x ?? 0, y: rows[k] + offsetOf(port) };
+        });
+    }
+}
+
+/** The ids of `node`'s ports in the source's order. */
+function sourceIds(node: GNode): string[] {
+    return portsOf(node).map(port => port.id);
+}
+
+/**
+ * Draw each definition `kept` names in its kept order, every instance of it
+ * under `root`: the model as just built from the source, its ports on the
+ * source's rows. An order that no longer fits the definition's ports (one
+ * added, renamed or removed since) changes the key, and the source's order
+ * stands. How many nodes were reordered.
+ */
+export function applyKeptPortOrders(root: GModelElement, kept: Readonly<Record<string, SideOrder>> | undefined): number {
+    if (!kept || Object.keys(kept).length === 0) {
+        return 0;
+    }
+    let reordered = 0;
+    for (const [key, nodes] of definitionsUnder(root)) {
+        const order = kept[key];
+        if (!order) {
+            continue;
+        }
+        for (const node of nodes) {
+            const ids = orderBySides(node, order, sourceIds(node));
+            if (ids) {
+                regridPortRows(node, ids);
+                reordered++;
+            }
+        }
+    }
+    return reordered;
+}
+
+/** What a save of the layout changes in the kept orders (see {@link keptPortOrderChanges}). */
+export interface PortOrderChanges {
+    /** The definitions now drawn in an order that is not the source's, and that order. */
+    set: Record<string, Required<SideOrder>>;
+    /** The definitions drawn in the source's order again. */
+    remove: string[];
+}
+
+/**
+ * The kept orders as the drawing under `root` says them: each definition
+ * whose instances are all drawn in one order is kept in it when that is not
+ * the source's order, and kept no more when it is. A definition whose
+ * instances are drawn in different orders, and every definition not drawn
+ * here, is left as the layout file has it.
+ */
+export function keptPortOrderChanges(root: GModelElement): PortOrderChanges {
+    const changes: PortOrderChanges = { set: {}, remove: [] };
+    for (const [key, nodes] of definitionsUnder(root)) {
+        const drawn = sidesOf(nodes[0], 'drawn');
+        if (nodes.some(node => !sameSides(sidesOf(node, 'drawn'), drawn))) {
+            continue;
+        }
+        if (sameSides(drawn, sidesOf(nodes[0], 'source'))) {
+            changes.remove.push(key);
+        } else {
+            changes.set[key] = drawn;
+        }
+    }
+    return changes;
+}
+
+/** `kept` with `changes` made: what the layout file holds after the save. */
+export function withPortOrderChanges(
+    kept: Readonly<Record<string, SideOrder>> | undefined,
+    changes: PortOrderChanges | undefined
+): Record<string, SideOrder> {
+    const next: Record<string, SideOrder> = { ...(kept ?? {}) };
+    if (!changes) {
+        return next;
+    }
+    for (const key of changes.remove) {
+        delete next[key];
+    }
+    Object.assign(next, changes.set);
+    return next;
+}
+
+/** The kept orders out of what a layout file holds: each entry with at least one side listed by name. */
+export function keptPortOrdersOf(raw: unknown): Record<string, SideOrder> | undefined {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return undefined;
+    }
+    const orders: Record<string, SideOrder> = {};
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            continue;
+        }
+        const order: SideOrder = {};
+        for (const side of SIDES) {
+            const names = namesOrUndefined((value as Record<string, unknown>)[side]);
+            if (names) {
+                order[side] = names;
+            }
+        }
+        if (order.west || order.east) {
+            orders[key] = order;
+        }
+    }
+    return Object.keys(orders).length > 0 ? orders : undefined;
 }
 
 /** The instances of each definition under `root` whose ports Free Ports may reorder, by key (`definitionKeyOf`). */
@@ -309,7 +454,7 @@ export function definitionsUnder(root: GModelElement): Map<string, GNode[]> {
     const visit = (element: GModelElement): void => {
         if (element instanceof GNode && portsMayReorder(element)) {
             const key = definitionKeyOf(element);
-            if (key !== undefined && portsOf(element).length > 1) {
+            if (key !== undefined && placedPortsOf(element).length > 1) {
                 groups.set(key, [...(groups.get(key) ?? []), element]);
             }
         }

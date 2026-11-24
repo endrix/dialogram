@@ -42,6 +42,7 @@ import { edgeTokensOf } from './edge-tokens';
 import { edgesOfInstance, fromRunRoot, instancePathOf, recordsOfInstance, runRootPrefix, saysInstances } from './overlay-scope';
 import { FileMemo } from '../services/file-memo';
 import { portBusStateOf } from '../model/port-bundles';
+import { applyKeptPortOrders, keptPortOrderChanges, withPortOrderChanges } from '../model/definition-port-order';
 import { allowsStateEdits, placeHeldStates, withUnwrittenStates } from '../model/unwritten-states';
 import { tunedLayoutOptions } from '../operations/layout-tuned-handler';
 import { LayoutPersistenceService } from '../services/layout-persistence-service';
@@ -732,6 +733,16 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         const graphTransform = new GraphGModelSource(this.storageOptions);
         const diagramModel = graphTransform.transform(withUnwrittenStates(doc, heldStates), { portBuses: portBusStateOf(portBuses) });
         perf?.mark('transform');
+        // The port orders the file keeps for its definitions (a Free Ports
+        // layout, an untangle applied), drawn once the model is built (below):
+        // the routes saved with them end on those rows. A view drawn from its
+        // fallback's layout takes the fallback's; a rebuild keeps the order
+        // drawn now, as it keeps the positions (an undo is not saved).
+        let portOrders = await this.layoutPersistence.loadPortOrders(
+            layoutIsFallbacks && fallbackLayout ? fallbackLayout.filePath : workflowFilePath);
+        if (fromCurrent && this.modelState?.root) {
+            portOrders = withPortOrderChanges(portOrders, keptPortOrderChanges(this.modelState.root));
+        }
         if (loadedLayoutPositions) {
             placeHeldStates((diagramModel as any).graph, heldStates, loadedLayoutPositions);
         }
@@ -856,6 +867,8 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
 
         const gmodelRoot = convertToGModelRoot(diagramModel as any);
         perf?.mark('convert');
+        // A port's row is its node's, whatever the node's place.
+        applyKeptPortOrders(gmodelRoot, portOrders);
         // The product's default layout, as graph options: the first layout on
         // open and Layout Diagram both run with the graph's options.
         const defaultLayout = this.storageOptions?.defaultLayout;

@@ -151,7 +151,8 @@ function makeWfpyStorageWithFallback(): any {
     storage.layoutPersistence = {
         loadLayout: async () => undefined,
         loadEdgeRoutes: async () => undefined,
-        loadPortBuses: async () => undefined
+        loadPortBuses: async () => undefined,
+        loadPortOrders: async () => undefined
     };
     stubOverlaySideChannels(storage);
     return storage;

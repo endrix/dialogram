@@ -10,7 +10,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { pathToFileURL } from 'node:url';
 import { GGraph, GNode, GPort, type Action, type GModelElement } from '@eclipse-glsp/server';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
-import { DECLARED_ROW_ARG } from '@dialogram/diagram-server/model/definition-port-order';
 import { layoutGeometryOf, type LayoutGeometry } from '@dialogram/diagram-server/server/layout-snapshot';
 import type { DiagramChatCard } from '@dialogram/diagram-server/server/diagram-chat-host';
 import { APPLY_PORT_ORDERS_OPERATION_KIND } from '../src/server/untangle/apply-port-orders-handler';
@@ -34,12 +33,12 @@ function el<T extends GModelElement>(cls: new () => T, props: Record<string, unk
 
 /** An instance of `Stage` (stages.py) with the inputs A over B as declared, drawn B over A. */
 function stage(name: string): GNode {
-    const input = (port: string, y: number, declared: number) => el(GPort, {
+    const input = (port: string, y: number) => el(GPort, {
         id: `${name}.${port}`,
         type: WorkflowDiagramTypes.PORT_INPUT,
         position: { x: 0, y },
         size: { width: 10, height: 10 },
-        args: { [WorkflowDiagramMetadata.PORT_NAME]: port, [WorkflowDiagramMetadata.PORT_DIRECTION]: 'input', [DECLARED_ROW_ARG]: declared }
+        args: { [WorkflowDiagramMetadata.PORT_NAME]: port, [WorkflowDiagramMetadata.PORT_DIRECTION]: 'input' }
     });
     return el(GNode, {
         id: name,
@@ -52,7 +51,7 @@ function stage(name: string): GNode {
             [WorkflowDiagramMetadata.REFERENCED_URI]: pathToFileURL(STAGES).href,
             [WorkflowDiagramMetadata.REFERENCED_IS_DEFINITION]: true
         }
-    }, [input('A', 30, 10), input('B', 10, 30)]);
+    }, [input('A', 30), input('B', 10)]);
 }
 
 type Chat = {
@@ -262,6 +261,26 @@ describe('the untangle tools', () => {
         expect(posted[0]).toBe('Untangle try 4 not applied: the diagram was reloaded, or the untangle started over, while it waited. Nothing was written.');
         expect(dispatched).toEqual([]);
         expect(untangleOf(modelState)?.tries).toHaveLength(5);
+    });
+
+    it('start each try from the drawing the untangle began on', async () => {
+        const { modelState, start, attempt } = diagram();
+        await start.handle({ sessionId: 's' } as any);
+        const s1 = modelState.root.children[0];
+        const rows = (): number[] => s1.children.map((port: GPort) => port.position!.y);
+        const seen: number[][] = [];
+        // A Free Ports try moves s1's ports to each other's row.
+        (attempt as any).preview.run = async (layout: string) => {
+            seen.push(rows());
+            if (layout === 'free-ports') {
+                const [a, b] = s1.children as GPort[];
+                [a.position, b.position] = [b.position, a.position];
+            }
+        };
+        await attempt.handle({ sessionId: 's', layout: 'free-ports' } as any);
+        expect(rows()).toEqual([10, 30]);
+        await attempt.handle({ sessionId: 's', layout: 'untangled' } as any);
+        expect(seen).toEqual([[30, 10], [30, 10]]);
     });
 
     it('end, the turn over, with the diagram drawn as it was when no try was put to the person', async () => {

@@ -86,7 +86,8 @@ function makeStorage(cfg: SidecarRuntimeConfig): any {
     storage.layoutPersistence = {
         loadLayout: async () => undefined,
         loadEdgeRoutes: async () => undefined,
-        loadPortBuses: async () => undefined
+        loadPortBuses: async () => undefined,
+        loadPortOrders: async () => undefined
     };
     storage.applyViewerOverlayToEdges = async () => undefined;
     storage.applyAgentContextToNodes = async () => undefined;

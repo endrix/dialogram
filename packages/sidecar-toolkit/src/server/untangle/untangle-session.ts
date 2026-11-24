@@ -118,7 +118,7 @@ export function drawnDefinitions(root: GModelElement): DrawnDefinition[] {
             instances: nodes.map(instanceName),
             elementId: first.id,
             drawn,
-            declared: sidesOf(first, 'declared'),
+            declared: sidesOf(first, 'source'),
             ...(alone && Object.keys(alone).length > 0 ? { alone } : {}),
             ...(nodes.some(node => !sameSides(sidesOf(node, 'drawn'), drawn)) ? { disagree: true as const } : {}),
             ...((groupsOfSource.get(sourceOf(first)) ?? 0) > 1 ? { split: true as const } : {})
