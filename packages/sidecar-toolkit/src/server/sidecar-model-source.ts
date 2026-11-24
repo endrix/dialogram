@@ -19,6 +19,7 @@ import type {
     GraphSourceAnalysis,
     ModelSourceOptions
 } from '@dialogram/shared';
+import { isBoundaryNodeKind } from '@dialogram/shared';
 import {
     GRAPH_SOURCE_URI_ARG,
     INSTANCE_PATH_ARG,
@@ -64,7 +65,12 @@ export interface SidecarModelSourceResult extends GraphDocument {
     resolvedOptions: Record<string, unknown>;
 }
 
-/** Turn a graph-doc's node list into neutral {@link GraphNodeIdentity}s (label→instance, type→definition). */
+/**
+ * Turn a graph-doc's node list into neutral {@link GraphNodeIdentity}s (label→instance,
+ * type→definition). A unit's own ports are left out: their label is a port's name, not an
+ * instance's, and a nested workflow whose input shares a running instance's name would be
+ * taken to hold that instance.
+ */
 export function nodeIdentitiesFromDoc(doc: any): GraphNodeIdentity[] | undefined {
     const nodes = Array.isArray(doc?.graph?.nodes) ? doc.graph.nodes : undefined;
     if (!nodes) {
@@ -72,7 +78,7 @@ export function nodeIdentitiesFromDoc(doc: any): GraphNodeIdentity[] | undefined
     }
     const identities: GraphNodeIdentity[] = [];
     for (const node of nodes) {
-        if (!node || typeof node !== 'object') {
+        if (!node || typeof node !== 'object' || isBoundaryNodeKind(node.kind)) {
             continue;
         }
         const instanceName = typeof node.label === 'string' ? node.label.trim() : '';

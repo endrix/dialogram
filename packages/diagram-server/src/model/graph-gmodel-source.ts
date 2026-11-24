@@ -3,6 +3,7 @@ import { parseBadgesMeta, parseFactsMeta, parseLinesMeta, parseViewsMeta, type U
 import { BoundaryPortGeometry, estimatePinLabelSize, estimateTextSize, headerHeight, headerLines, headerTextWidth, isBoundaryNodeType, summaryHeight, summaryLines, summaryWidth, portLabelSlot, SymbolGeometry, textColumns, WorkflowDiagramCss, WorkflowDiagramConstants, WorkflowDiagramMetadata, WorkflowDiagramTypes, normalizePortSide, portSide, portLabelX, portLabelY, portRowOffset, stateSize, ToggleNodeOpenOperation, transitionLabelWidth, transitionLabelsOf, viewCreatesOf, viewEditsOf, type PortSide, type StateStep, type SelectionLink, type SymbolKind } from '@dialogram/shared';
 import { normalizeViewOptionGroups, VIEW_OPTIONS_ARG } from '@dialogram/shared';
 import { nodeFamilyName, resolveNodeFamily } from '@dialogram/shared';
+import { isBoundaryNodeKind } from '@dialogram/shared';
 import * as path from 'node:path';
 import { findLoopEdges } from './feedback-edges';
 import { arrangeGroupRows, framePin, groupLayoutOptions, isGroupRow, rootRankOptions, settleFrames, splitEdgesAtGroups } from './group-edges';
@@ -2471,9 +2472,6 @@ interface PortOwner {
     name: string;
 }
 
-/** The kinds of node that stand for a port of the drawn unit itself. */
-const BOUNDARY_NODE_KINDS = new Set(['wf-input', 'wf-output']);
-
 /** Each port of `nodes`, by its id, with the node it is a port of. */
 function portOwnersOf(nodes: readonly PyGraphNode[]): Map<string, PortOwner> {
     const owners = new Map<string, PortOwner>();
@@ -2497,7 +2495,7 @@ function portOwnersOf(nodes: readonly PyGraphNode[]): Map<string, PortOwner> {
  * duplicate, paste) left it out.
  */
 function ownedEnd(raw: string, owners: ReadonlyMap<string, PortOwner>, nodes: readonly PyGraphNode[]): { entity?: string; port?: string } | undefined {
-    const end = (node: PyGraphNode, port: string) => (BOUNDARY_NODE_KINDS.has(node.kind) ? { port } : { entity: node.label, port });
+    const end = (node: PyGraphNode, port: string) => (isBoundaryNodeKind(node.kind) ? { port } : { entity: node.label, port });
     const owned = owners.get(raw);
     if (owned) {
         return end(owned.node, owned.name);

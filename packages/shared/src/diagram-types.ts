@@ -112,6 +112,17 @@ export function isBoundaryNodeType(type: unknown): boolean {
 }
 
 /**
+ * The `kind`s a graph document gives a unit's own ports, before they are drawn as the
+ * boundary node types above. The one list a check of a document's node reads.
+ */
+export const BOUNDARY_NODE_KINDS: ReadonlySet<string> = new Set(['wf-input', 'wf-output']);
+
+/** Whether a graph document's node of this `kind` is one of the unit's own ports. */
+export function isBoundaryNodeKind(kind: unknown): boolean {
+    return typeof kind === 'string' && BOUNDARY_NODE_KINDS.has(kind);
+}
+
+/**
  * CSS class names for Workflow diagram styling
  */
 export namespace WorkflowDiagramCss {
