@@ -1074,6 +1074,21 @@ platform that hands it one.
 
 ### Changed
 
+- **The chat starts opencode 2 with its Code Mode off.** opencode 2 puts a
+  session's MCP tools behind one `execute` tool: the model writes a script
+  that calls them and reads only what it prints, so a picture a tool
+  answers with (`diagram-png`, `untangle-start`, `untangle-try`) never
+  reached the model. The `opencode acp` the chat spawns now carries
+  `permission.execute: "deny"` in `OPENCODE_CONFIG_CONTENT`, so the tools
+  are offered as themselves and their results reach the model whole. It is
+  set on the chat's own process only (and the `opencode serve` that one
+  starts), and added to a value the user already has; a value that says
+  `permission.execute` stands, and one that does not parse as JSON (opencode
+  also reads JSONC) is left as it is, with a line in the log. opencode 1.x,
+  which has no Code Mode, and the other agents are not touched. The setting
+  `dialogram.chat.opencodeCodeMode` (default off) leaves Code Mode on. A
+  per-server `codemode: false` is not open to the chat: opencode's ACP
+  adapter keeps only a server's url and headers.
 - **Free Ports gives the instances of a definition one port order.** The
   layout chose each node's port order on its own, so two instances of one
   task or workflow could show the ports the source declares once in two

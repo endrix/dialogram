@@ -202,6 +202,96 @@ describe('ACPClientService', () => {
       expect((client as any).http?.constructor?.name).toBe('OpencodeServiceClient');
     });
 
+    describe("opencode 2's Code Mode", () => {
+      const KEY = 'OPENCODE_CONFIG_CONTENT';
+      let saved: string | undefined;
+      beforeEach(() => {
+        saved = process.env[KEY];
+        delete process.env[KEY];
+      });
+      afterEach(() => {
+        if (saved === undefined) delete process.env[KEY];
+        else process.env[KEY] = saved;
+        vi.restoreAllMocks();
+      });
+      const spawnEnv = (): NodeJS.ProcessEnv => (vi.mocked(spawn).mock.calls.at(-1)![2] as { env: NodeJS.ProcessEnv }).env;
+
+      it('is off for opencode 2: its acp starts with execute denied', async () => {
+        const probe = vi.fn(async () => 'service' as const);
+        client = new ACPClientService(probe);
+        await client.start('/test/workspace');
+        expect(JSON.parse(spawnEnv()[KEY]!)).toEqual({ permission: { execute: 'deny' } });
+        expect(spawnEnv().PATH).toEqual(expect.any(String));
+        // The flavour is read from the environment as it was.
+        expect((probe.mock.calls[0] as unknown[])[2]).not.toHaveProperty(KEY);
+      });
+
+      it("adds to the user's own config, from the process or the connector", async () => {
+        process.env[KEY] = JSON.stringify({ model: 'a/b' });
+        client = new ACPClientService(async () => 'service');
+        await client.start('/test/workspace');
+        expect(JSON.parse(spawnEnv()[KEY]!)).toEqual({ model: 'a/b', permission: { execute: 'deny' } });
+        client.stop();
+
+        // The connector's env table overrides the process's, as for any variable.
+        client = new ACPClientService(async () => 'service');
+        await client.start('/test/workspace', {
+          name: 'opencode', argv: ['opencode', 'acp'], httpApi: true,
+          env: { [KEY]: JSON.stringify({ permission: { bash: 'ask' } }) },
+        });
+        expect(JSON.parse(spawnEnv()[KEY]!)).toEqual({ permission: { bash: 'ask', execute: 'deny' } });
+      });
+
+      it("keeps the user's own permission.execute, and a config it cannot read, with one line", async () => {
+        const own = JSON.stringify({ permission: { execute: 'allow' } });
+        process.env[KEY] = own;
+        client = new ACPClientService(async () => 'service');
+        await client.start('/test/workspace');
+        expect(spawnEnv()[KEY]).toBe(own);
+        client.stop();
+
+        const jsonc = '{ // mine\n}';
+        process.env[KEY] = jsonc;
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        client = new ACPClientService(async () => 'service');
+        await client.start('/test/workspace');
+        expect(spawnEnv()[KEY]).toBe(jsonc);
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(String(warn.mock.calls[0][0])).toContain(KEY);
+      });
+
+      it('stays on when the setting says so', async () => {
+        client = new ACPClientService(async () => 'service');
+        await client.start('/test/workspace', undefined, { opencodeCodeMode: true });
+        expect(spawnEnv()).not.toHaveProperty(KEY);
+      });
+
+      it('is not touched on opencode 1.x, nor on an opencode the chat cannot tell', async () => {
+        for (const flavour of ['own-port', 'none'] as const) {
+          client = new ACPClientService(async () => flavour);
+          await client.start('/test/workspace');
+          expect(spawnEnv()).not.toHaveProperty(KEY);
+          client.stop();
+        }
+        const own = JSON.stringify({ model: 'a/b' });
+        process.env[KEY] = own;
+        client = new ACPClientService(async () => 'own-port');
+        await client.start('/test/workspace');
+        expect(spawnEnv()[KEY]).toBe(own);
+      });
+
+      it('is not touched for any other agent', async () => {
+        const probe = vi.fn(async () => 'service' as const);
+        for (const argv of [['claude-agent-acp'], ['codex-acp'], ['gemini', '--experimental-acp']]) {
+          client = new ACPClientService(probe);
+          await client.start('/test/workspace', { name: argv[0], argv, httpApi: false });
+          expect(spawnEnv()).not.toHaveProperty(KEY);
+          client.stop();
+        }
+        expect(probe).not.toHaveBeenCalled();
+      });
+    });
+
     it('starts an opencode it cannot tell without --port, and leaves undo off', async () => {
       client = new ACPClientService(async () => 'none');
       await client.start('/test/workspace');

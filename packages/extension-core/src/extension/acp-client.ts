@@ -36,6 +36,7 @@ import {
   probeOpencodeFlavour,
   type OpencodeFlavourProbe,
 } from "./opencode-service.js";
+import { withOpencodeCodeModeOff } from "./opencode-code-mode.js";
 import type { ChatImage } from "@dialogram/shared";
 
 interface TerminalState {
@@ -172,6 +173,18 @@ export function agentInstallDirs(): string[] {
     path.join(home, ".local", "bin"),
     path.join(home, "bin"),
   ];
+}
+
+/** How the chat starts its agent, beside the connector itself. */
+export interface AcpStartOptions {
+  /**
+   * Leave opencode 2's Code Mode on: its MCP tools behind its `execute`
+   * tool, their pictures never reaching the model. Off by default, the
+   * `opencode acp` of an opencode 2 starts with `permission.execute` denied
+   * ({@link withOpencodeCodeModeOff}). No other agent, nor opencode 1.x, is
+   * touched either way.
+   */
+  opencodeCodeMode?: boolean;
 }
 
 const OPENCODE_AGENT: AcpAgentSpec = {
@@ -383,7 +396,7 @@ export class ACPClientService extends EventEmitter {
    * Spawn the agent and connect. `agent` names any ACP connector; without it
    * the chat talks to opencode, resolved as before.
    */
-  async start(cwd: string, agent?: AcpAgentSpec): Promise<void> {
+  async start(cwd: string, agent?: AcpAgentSpec, options: AcpStartOptions = {}): Promise<void> {
     if (this.isConnected) {
       throw new Error("ACP client is already connected");
     }
@@ -423,11 +436,21 @@ export class ACPClientService extends EventEmitter {
         console.info(`[acp] ${command}: HTTP API ${flavour === "own-port" ? "on its own port (opencode 1.x)" : flavour === "service" ? "through `opencode api` (opencode 2)" : "unknown, undo off"}`);
       }
 
+      // opencode 2's Code Mode hides the MCP tools behind its `execute`
+      // tool, and a tool result's picture never reaches the model: the chat
+      // starts it off, for this process only. opencode 1.x has no Code Mode.
+      let spawnEnv: NodeJS.ProcessEnv = env;
+      if (flavour === "service" && !options.opencodeCodeMode) {
+        const codeMode = withOpencodeCodeModeOff(env);
+        spawnEnv = codeMode.env;
+        (codeMode.outcome === "left-as-is" ? console.warn : console.info)(`[acp] ${command}: ${codeMode.note}`);
+      }
+
       // Spawn the agent subprocess
       this.process = spawn(command, args, {
         cwd,
         stdio: ["pipe", "pipe", "pipe"],
-        env,
+        env: spawnEnv,
       });
 
       // Handle process errors
