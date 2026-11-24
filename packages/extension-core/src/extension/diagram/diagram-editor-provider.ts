@@ -1651,6 +1651,15 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
     }
 
     /**
+     * The file a client's chat panel speaks for: its editor's document as VS
+     * Code spells it, which the webview is handed (`diagramIdentifier.uri`).
+     * A view navigated into another file's workflow keeps it.
+     */
+    getChatUriForClientId(clientId: string): string | undefined {
+        return this.editors.get(clientId)?.documentUri;
+    }
+
+    /**
      * "The" diagram of a file, for what goes to one editor (a command on the
      * active diagram, an open, an export): of two editors on the file, the
      * active one, or else the one used last.

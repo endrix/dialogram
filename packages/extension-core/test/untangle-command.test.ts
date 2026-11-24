@@ -4,15 +4,17 @@ import { createUntangleCommand, platformChatCommands } from '../src/extension/ch
 
 const CTX = { file: '/ws/wf.py', uri: 'file:///ws/wf.py', sessionId: 's1', selectedNodeIds: [] as string[] };
 
-/** The diagram's GLSP-MCP tools: `session-info` lists one session of the chat's file; every other call succeeds. */
-function makeTools() {
+type Row = { sessionId: string; sourceUri: string; readOnly: boolean };
+
+/** The diagram's GLSP-MCP tools: `session-info` lists `sessions` (one of the chat's file by default); every other call succeeds. */
+function makeTools(sessions: Row[] = [{ sessionId: 'glsp_1', sourceUri: 'file:///ws/wf.py', readOnly: false }]) {
     const calls: Array<{ tool: string; args: any }> = [];
     return {
         calls,
         callTool: vi.fn(async (tool: string, args: Record<string, unknown>) => {
             calls.push({ tool, args });
             if (tool === 'session-info') {
-                return { ok: true, text: '', structured: { sessions: [{ sessionId: 'glsp_1', sourceUri: 'file:///ws/wf.py', readOnly: false }] } };
+                return { ok: true, text: '', structured: { sessions } };
             }
             return { ok: true, text: '' };
         })
@@ -32,11 +34,34 @@ describe('/untangle', () => {
         expect(result.prompt).toContain('untangle-propose');
         // A second /untangle in one chat starts over, the diagram maybe changed by the first.
         expect(result.prompt).toContain('This is a new untangle, whatever this chat did before');
-        // Nothing is asked of the diagram before the agent's turn: no source capability gates it.
-        expect(tools.calls).toEqual([]);
+        // The agent is told the diagram's session: its first call needs it.
+        expect(result.prompt).toContain('This diagram\'s session is "glsp_1": pass it as sessionId to every untangle tool.');
+        // Only the session is asked for before the agent's turn: no source capability gates it.
+        expect(tools.calls).toEqual([{ tool: 'session-info', args: {} }]);
         // Its turn over, a try the agent left drawn and did not propose is drawn back.
         await result.afterTurn();
         expect(tools.calls.at(-1)).toEqual({ tool: 'untangle-end', args: { sessionId: 'glsp_1' } });
+    });
+
+    it('untangles the view the editor shows, navigated into a workflow of another file', async () => {
+        // The editor of wf.py shows a nested workflow defined in place.py: its session draws place.py.
+        const tools = makeTools([
+            { sessionId: 'other', sourceUri: 'file:///ws/wf.py', readOnly: true },
+            { sessionId: 'glsp_7', sourceUri: 'file:///ws/workflows/place.py', readOnly: false }
+        ]);
+        const provider = { getClientIdForDocumentUri: () => 'glsp_7' } as any;
+        const result: any = await createUntangleCommand({ tools, getEditorProvider: () => provider }).handler!({}, CTX);
+        expect(result.prompt).toContain('This diagram\'s session is "glsp_7"');
+        await result.afterTurn();
+        expect(tools.calls.at(-1)).toEqual({ tool: 'untangle-end', args: { sessionId: 'glsp_7' } });
+    });
+
+    it('is refused where no diagram of the chat\'s file is open, or the tools do not answer', async () => {
+        const none = await createUntangleCommand({ tools: makeTools([]), getEditorProvider: () => undefined }).handler!({}, CTX);
+        expect(none).toEqual({ success: false, error: "The diagram's tools know no open diagram of this file to untangle." });
+        const silent = { callTool: vi.fn(async () => ({ ok: false, text: 'connection refused' })) };
+        const refused = await createUntangleCommand({ tools: silent, getEditorProvider: () => undefined }).handler!({}, CTX);
+        expect(refused).toEqual({ success: false, error: 'connection refused' });
     });
 
     it('is offered where the platform\'s diagram module serves the diagram, with its tools on', () => {

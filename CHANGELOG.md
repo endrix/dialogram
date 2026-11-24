@@ -1633,6 +1633,19 @@ platform that hands it one.
 
 ### Fixed
 
+- **`/untangle` in a view navigated into another file's workflow.** In
+  place, the editor of `jpeg_flow.py` drew `place.py`'s workflow, and its
+  session drew `place.py`: the untangle tools asked for a chat open on
+  `place.py`, found none, and `untangle-propose` failed ("No chat panel is
+  open on this diagram"); the try was never put to the person, and
+  `untangle-end` found no session after the turn. A session now names
+  itself to the chat by its GLSP client id, and the host puts the card in
+  the panel of the editor showing it (`DiagramChatTarget`,
+  `diagram-chat-routing.ts`); `/untangle` acts on the session that editor
+  shows, whatever file its view draws.
+  - `/untangle` names the session in its prompt: an agent whose tool
+    schemas load on first use (Claude over ACP) called `untangle-start`
+    with no `sessionId` first, and failed.
 - **A run's glow is on the instance that runs, in a view of a nested
   workflow.** An instance at the top, or in a sibling workflow, running
   under a name an instance of the view also has, lit that one: an agent

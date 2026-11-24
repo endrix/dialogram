@@ -29,7 +29,7 @@ import * as z from 'zod/v4';
 import { edgeCrossings } from '../model/edge-crossings';
 import { definitionKeyOf, forgetProbe, type SideOrder } from '../model/definition-port-order';
 import { LayoutPreview, type PreviewLayout } from '../operations/layout-preview';
-import { DIAGRAM_CHAT_HOST, type DiagramChatFigure, type DiagramChatHost } from '../server/diagram-chat-host';
+import { DIAGRAM_CHAT_HOST, type DiagramChatFigure, type DiagramChatHost, type DiagramChatTarget } from '../server/diagram-chat-host';
 import { applyLayoutGeometry } from '../server/layout-snapshot';
 import { ReadOnlySourceModelStorage } from '../server/read-only-source-model-storage';
 import {
@@ -340,7 +340,11 @@ export class UntangleProposeMcpToolHandler extends UntangleToolHandler<UntangleP
             return this.error(`There is no try ${n}: ${state.tries.length === 0 ? 'none was made yet' : `tries 1 to ${state.tries.length} were made`}.`);
         }
         const sourceUri = this.modelState.sourceUri!;
-        if (!this.chat?.canAsk(sourceUri)) {
+        // The chat of the editor showing this session (`clientId`, the
+        // base's): in a view navigated into another file's workflow, the
+        // editor's file, not the view's.
+        const diagram: DiagramChatTarget = { clientId: this.clientId, sourceUri };
+        if (!this.chat?.canAsk(diagram)) {
             return this.error('No chat panel is open on this diagram to put the try to the person.');
         }
         await this.preview.show(chosen.geometry);
@@ -348,7 +352,7 @@ export class UntangleProposeMcpToolHandler extends UntangleToolHandler<UntangleP
         const writes = this.writesOf(chosen, writer);
         const card = await this.card(state, chosen, writes, writer, sourceUri);
         state.proposed = n;
-        void this.ask(state, chosen, writes, card, sourceUri);
+        void this.ask(state, chosen, writes, card, diagram);
         return this.success(
             `Try ${n} (${plural(chosen.crossings, 'crossing')}) is put to the person with its picture and what Apply keeps and writes. `
             + 'They apply or discard it in the chat; the platform carries it out. Say in one line which try you proposed and why, and stop.'
@@ -479,16 +483,16 @@ export class UntangleProposeMcpToolHandler extends UntangleToolHandler<UntangleP
         chosen: UntangleTry,
         writes: PortOrderWrite[],
         card: UntangleCard,
-        sourceUri: string
+        diagram: DiagramChatTarget
     ): Promise<void> {
         const chat = this.chat!;
         try {
-            const answer = await chat.confirm(sourceUri, { title: card.title, text: card.text, choices: card.choices, figures: card.figures });
+            const answer = await chat.confirm(diagram, { title: card.title, text: card.text, choices: card.choices, figures: card.figures });
             if (untangleOf(this.modelState) !== state) {
                 // The diagram was reloaded meanwhile, or the untangle started
                 // over: this try is nothing to apply any more.
                 if (answer?.choice === card.apply) {
-                    await chat.post(sourceUri, {
+                    await chat.post(diagram, {
                         text: `Untangle try ${chosen.n} not applied: the diagram was reloaded, or the untangle started over, while it waited. Nothing was written.`
                     });
                 }
@@ -497,7 +501,7 @@ export class UntangleProposeMcpToolHandler extends UntangleToolHandler<UntangleP
             if (answer?.choice !== card.apply) {
                 endUntangle(this.modelState);
                 await this.preview.show(state.original);
-                await chat.post(sourceUri, { text: `Untangle discarded: the diagram is drawn as it was, and nothing was written.` });
+                await chat.post(diagram, { text: `Untangle discarded: the diagram is drawn as it was, and nothing was written.` });
                 return;
             }
             const operation: ApplyPortOrdersOperation = { kind: APPLY_PORT_ORDERS_OPERATION_KIND, isOperation: true, writes };
@@ -506,7 +510,7 @@ export class UntangleProposeMcpToolHandler extends UntangleToolHandler<UntangleP
             endUntangle(this.modelState);
             if (!applied?.ok) {
                 await this.preview.show(state.original);
-                await chat.post(sourceUri, { text: `Untangle not applied: ${applied?.message ?? 'nothing was written.'}` });
+                await chat.post(diagram, { text: `Untangle not applied: ${applied?.message ?? 'nothing was written.'}` });
                 return;
             }
             const written = applied.files.map(fileName);
@@ -515,7 +519,7 @@ export class UntangleProposeMcpToolHandler extends UntangleToolHandler<UntangleP
                 ...(card.back > 0 ? [`${plural(card.back, 'definition')} drawn in the declared order again`] : [])
             ].join(', ');
             const saved = `the layout is saved${layoutText ? `, ${layoutText}` : ''}`;
-            await chat.post(sourceUri, {
+            await chat.post(diagram, {
                 text: `Untangle applied: try ${chosen.n}, ${plural(chosen.crossings, 'edge crossing')} against ${state.baseline.crossings} with Layout Diagram. `
                     + (written.length > 0
                         ? `Port orders written in ${written.join(', ')}; ${saved}.`
@@ -528,7 +532,7 @@ export class UntangleProposeMcpToolHandler extends UntangleToolHandler<UntangleP
         } catch (error) {
             this.logger.error(`untangle: the answer could not be carried out (${error instanceof Error ? error.message : String(error)})`);
             endUntangle(this.modelState);
-            await chat.post(sourceUri, { text: `Untangle failed: ${error instanceof Error ? error.message : String(error)}` }).catch(() => false);
+            await chat.post(diagram, { text: `Untangle failed: ${error instanceof Error ? error.message : String(error)}` }).catch(() => false);
         }
     }
 }

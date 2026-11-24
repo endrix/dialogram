@@ -1,6 +1,7 @@
 /**
- * Which GLSP-MCP session a chat command acts on: the diagram of the chat's
- * file, the one shown in this editor first, then any that may edit, then any.
+ * Which GLSP-MCP session a chat command acts on: the one shown in this
+ * editor, whatever file its view draws (a workflow of another file, navigated
+ * into in place); else a diagram of the chat's file, one that may edit first.
  */
 import * as vscode from 'vscode';
 import type { GlspMcpClient } from './glsp-mcp-client';
@@ -17,6 +18,10 @@ export async function diagramToolSession(
         return { error: listed.text || "The diagram's tools did not answer." };
     }
     const rows = (listed.structured?.sessions as Array<{ sessionId?: string; sourceUri?: string; readOnly?: boolean }> | undefined) ?? [];
+    const here = shownHere !== undefined ? rows.find(row => row.sessionId === shownHere) : undefined;
+    if (here?.sessionId) {
+        return { sessionId: here.sessionId };
+    }
     const shown = rows.filter(row => {
         try {
             return !!row.sourceUri && vscode.Uri.parse(row.sourceUri).fsPath === vscode.Uri.file(file).fsPath;
@@ -24,5 +29,5 @@ export async function diagramToolSession(
             return false;
         }
     });
-    return { sessionId: (shown.find(row => row.sessionId === shownHere) ?? shown.find(row => !row.readOnly) ?? shown[0])?.sessionId };
+    return { sessionId: (shown.find(row => !row.readOnly) ?? shown[0])?.sessionId };
 }
