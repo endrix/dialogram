@@ -10,6 +10,8 @@ import { UNTANGLED_ELK_OPTIONS } from '../src/operations/layout-tuned-handler';
 import { WorkflowLayoutConfigurator } from '../src/server/layout-configurator';
 import { GraphGModelSource, type PyGraphDocument } from '../src/model/graph-gmodel-source';
 import { convertToGModelRoot } from '../src/server/gmodel-convert';
+import { edgeCrossings as crossings } from '../src/model/edge-crossings';
+import { PORT_ORDERS_OPTION, definitionKeyOf, portNameOf } from '../src/model/definition-port-order';
 
 /**
  * Ports sit on a grid in the order the source declares them and ELK may not
@@ -17,7 +19,8 @@ import { convertToGModelRoot } from '../src/server/gmodel-convert';
  * default layout keeps it. The Untangled layout keeps it too and tunes ELK's
  * crossing minimisation; the Free Ports layout asks the engine to choose the
  * order first, by a probe layout with FIXED_SIDE, and puts the ports back on
- * their rows in that order. These tests run the real ELK on the real
+ * their rows in that order, one order for all the instances of a definition
+ * (the flow has four of each of five). These tests run the real ELK on the real
  * speculation flow of chips/workflow (40 nodes, 106 edges), exported by
  * `wfpy plan --format graph`, and count the crossings of the routed edges.
  */
@@ -49,18 +52,24 @@ function collect<T>(element: any, cls: any, out: T[] = []): T[] {
     return out;
 }
 
-function absolute(element: GModelElement | undefined): Point {
-    let x = 0;
-    let y = 0;
-    let current: any = element;
-    while (current) {
-        if (current.position) {
-            x += current.position.x ?? 0;
-            y += current.position.y ?? 0;
+/** The nodes of `root` by what they are an instance of. */
+function instancesByDefinition(root: GGraph): Map<string, GNode[]> {
+    const groups = new Map<string, GNode[]>();
+    for (const node of collect<GNode>(root, GNode)) {
+        const key = definitionKeyOf(node);
+        if (key !== undefined) {
+            groups.set(key, [...(groups.get(key) ?? []), node]);
         }
-        current = current.parent;
     }
-    return { x, y };
+    return groups;
+}
+
+/** A node's port names, top to bottom, on each side. */
+function drawnOrder(node: GNode): { west: string[]; east: string[] } {
+    const ports = collect<GPort>(node, GPort).filter(p => p.parent === node).sort((a, b) => a.position!.y - b.position!.y);
+    const names = (input: boolean): string[] =>
+        ports.filter(p => (p.type === WorkflowDiagramTypes.PORT_INPUT) === input).map(p => portNameOf(node, p));
+    return { west: names(true), east: names(false) };
 }
 
 function loadFixture(): GGraph {
@@ -91,37 +100,6 @@ async function layoutFixture(options: Record<string, string> = {}, root: GGraph 
     );
     await engine.layout();
     return { root, declared };
-}
-
-/** Proper crossings between the segments of distinct routed edges. */
-function crossings(root: GGraph): number {
-    const polylines = collect<GEdge>(root, GEdge)
-        .map(edge => {
-            const pts = ((edge as any).routingPoints ?? []) as Point[];
-            const src = absolute(find(root, edge.sourceId));
-            const tgt = absolute(find(root, edge.targetId));
-            return [src, ...pts, tgt];
-        })
-        .filter(pts => pts.length >= 2);
-    const orient = (a: Point, b: Point, c: Point): number => Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
-    const cross = (a: Point, b: Point, c: Point, d: Point): boolean => {
-        const o1 = orient(a, b, c), o2 = orient(a, b, d), o3 = orient(c, d, a), o4 = orient(c, d, b);
-        return o1 !== 0 && o2 !== 0 && o3 !== 0 && o4 !== 0 && o1 !== o2 && o3 !== o4;
-    };
-    let n = 0;
-    for (let i = 0; i < polylines.length; i++) {
-        for (let j = i + 1; j < polylines.length; j++) {
-            const p = polylines[i], q = polylines[j];
-            for (let a = 0; a + 1 < p.length; a++) {
-                for (let b = 0; b + 1 < q.length; b++) {
-                    if (cross(p[a], p[a + 1], q[b], q[b + 1])) {
-                        n++;
-                    }
-                }
-            }
-        }
-    }
-    return n;
 }
 
 describe('WorkflowElkLayoutEngine port order', () => {
@@ -162,6 +140,31 @@ describe('WorkflowElkLayoutEngine port order', () => {
         }
         for (const edge of collect<GEdge>(root, GEdge)) {
             expect(((edge as any).routingPoints as Point[]).length).toBeGreaterThanOrEqual(2);
+        }
+    });
+
+    it('gives all the instances of a definition one port order under Free Ports', async () => {
+        const { root } = await layoutFixture({ ...UNTANGLED_ELK_OPTIONS, [PORT_ORDER_OPTION]: PORT_ORDER_FREE });
+        const groups = instancesByDefinition(root);
+        expect([...groups.values()].filter(nodes => nodes.length > 1).length).toBeGreaterThanOrEqual(4);
+        for (const nodes of groups.values()) {
+            const orders = nodes.map(drawnOrder);
+            for (const order of orders) {
+                expect(order).toEqual(orders[0]);
+            }
+        }
+    });
+
+    it('puts the order given for a definition on each of its instances', async () => {
+        const root = loadFixture();
+        const [key, nodes] = [...instancesByDefinition(root)].find(([, group]) => group[0].args?.['cal:entityType'] === 'ProgramRound')!;
+        expect(nodes.length).toBe(4);
+        const reversed = [...drawnOrder(nodes[0]).west, ...drawnOrder(nodes[0]).east].reverse();
+        await layoutFixture({ [PORT_ORDER_OPTION]: PORT_ORDER_FREE, [PORT_ORDERS_OPTION]: JSON.stringify({ [key]: reversed }) }, root);
+        for (const node of nodes) {
+            const order = drawnOrder(node);
+            expect(order.west).toEqual(reversed.filter(name => order.west.includes(name)));
+            expect(order.east).toEqual(reversed.filter(name => order.east.includes(name)));
         }
     });
 

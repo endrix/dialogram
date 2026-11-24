@@ -14,6 +14,9 @@ node scripts/render-svg/render.mjs doc.json --out pipeline.svg --all-layouts   #
 node scripts/render-svg/render.mjs - --elk elk.direction=DOWN < doc.json        # an ELK option on top
 ```
 
+Each layout's line ends with how many times its edges cross
+(`model/edge-crossings.ts`), the number to compare layouts by.
+
 | Option | What it does |
 | --- | --- |
 | `--out <path.svg>` | Where to write (default `./diagram.svg`) |
