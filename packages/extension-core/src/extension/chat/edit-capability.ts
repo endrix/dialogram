@@ -21,6 +21,25 @@ import { GlspMcpClient } from './glsp-mcp-client';
  */
 export const CORE_CHAT_SECTION = 'dialogram.chat';
 
+/** The backend op an untangle's Apply writes port orders with: `/untangle` is offered where the backend has it. */
+const UNTANGLE_WRITE_OP = 'reorderEntityPorts';
+
+/**
+ * What `/untangle` asks of the agent: the diagram's untangle MCP tools
+ * (`untangle-start`, `untangle-try`, `untangle-propose`), Free Ports first, at most ten
+ * tries, each kept only when it helps, and the best put to the person.
+ */
+export const UNTANGLE_PROMPT = [
+    'Untangle the layout of this diagram, with the untangle tools of the diagram\'s MCP server. Look at the picture each tool answers with.',
+    '1. Call untangle-start. It lays the diagram out with Layout Diagram, the drawing to beat, and lists the definitions that have several instances.',
+    '2. Call untangle-try with layout "free-ports". Free Ports orders each node\'s ports against crossings, one order for all the instances of a definition.',
+    '3. Then improve on the best try, one definition at a time: where the try says what order each instance would take on its own, give the definition one of those orders (`orders`), or swap two neighbouring ports of one side. Keep a change only when the crossings drop or, within a few crossings, when the picture reads better: shorter edges, a left-to-right flow, no edge running under a node.',
+    '4. You may try layout "untangled" once: it keeps every port where it is declared.',
+    '5. Make at most 10 tries in all, fewer when no change helps.',
+    '6. Call untangle-propose with the best try. The person applies or discards it in the chat. Then say in one line which try you proposed and why, and stop.',
+    'Do not edit any file yourself and do not run any other layout.'
+].join('\n');
+
 export interface EditChatCapabilityDeps {
     profile: DiagramProfile;
     editBackend: DiagramEditBackend;
@@ -290,6 +309,19 @@ export function createEditChatCapability(deps: EditChatCapabilityDeps): EditChat
                 return { success: false, error: 'Please name the node and a parameter. Usage: /update <name> param=value' };
             }
             return callTool(ctx, 'set-node-parameters', { node: name, parameters });
+        }
+    });
+
+    slashCommands.push({
+        command: 'untangle',
+        description: 'Try layouts against edge crossings, then propose the best: its port orders written into the source',
+        modes: ['build'],
+        handler: async (_args, ctx) => {
+            const caps = await editBackend.listCapabilities(ctx.uri).catch(() => undefined);
+            if (!caps?.ops?.includes(UNTANGLE_WRITE_OP)) {
+                return { success: false, error: "This diagram's source cannot be given a port order, so it cannot be untangled here." };
+            }
+            return { success: true, prompt: UNTANGLE_PROMPT };
         }
     });
 

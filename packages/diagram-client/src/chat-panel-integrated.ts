@@ -119,8 +119,25 @@ interface MessageItem {
   images?: ChatImage[];
   /** How many images a restored message carried: their bytes are not kept. */
   imageCount?: number;
+  /** Pictures a message of the platform's own shows (the untangle's two drawings). */
+  figures?: ChatFigure[];
   /** The stored message's key: one added on catching up is not shown twice. */
   key?: string;
+}
+
+/** A picture the platform shows in the chat: a PNG, base64, and what it shows. */
+interface ChatFigure {
+  data: string;
+  caption?: string;
+}
+
+/** The pictures in `value`, as the host sent them; none that is not one. */
+function figuresOf(value: unknown): ChatFigure[] {
+  return Array.isArray(value)
+    ? value
+        .filter((each): each is ChatFigure => typeof each?.data === 'string' && each.data !== '')
+        .map((each) => ({ data: each.data, ...(typeof each.caption === 'string' ? { caption: each.caption } : {}) }))
+    : [];
 }
 
 interface ToolItem {
@@ -147,6 +164,8 @@ interface ConfirmItem {
   title: string;
   text: string;
   choices: string[];
+  /** Pictures of what is to be confirmed. */
+  figures?: ChatFigure[];
   /** The button pressed, or `null` once declined. */
   resolved?: string | null;
 }
@@ -226,6 +245,8 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   /** The message sent once that session exists: a task's, or one sent with no
    *  chat open. Until then another waits in the composer. */
   private pendingSend: { text: string; images: ChatImage[]; fromComposer: boolean } | undefined;
+  /** A picture opened at full size over the panel (`figuresTemplate`). */
+  private openFigure: ChatFigure | undefined;
   private currentSessionId: string | null = null;
   private timeline: TimelineItem[] = [];
   private sessions: SessionEntry[] = [];
@@ -561,6 +582,12 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         this.finishStreamingMessage();
         if (data) {
           this.pushMessage(data.role ?? 'system', data.content ?? '', data.mode, data.timestamp);
+          const figures = figuresOf(data.figures);
+          const row = this.timeline[this.timeline.length - 1];
+          if (figures.length > 0 && row?.kind === 'message') {
+            row.figures = figures;
+            this.update();
+          }
         }
         break;
 
@@ -770,6 +797,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
             title: typeof data.title === 'string' ? data.title : 'Confirm',
             text: data.text,
             choices: data.choices.map(String),
+            ...(figuresOf(data.figures).length > 0 ? { figures: figuresOf(data.figures) } : {}),
           });
           // It is the session's agent that proposed it: show the session.
           if (this.view.kind !== 'session') this.showSession();
@@ -1296,6 +1324,41 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     }
   }
 
+  /** Pictures the platform shows, side by side where the panel is wide enough; one clicked opens at full size. */
+  private figuresTemplate(figures: ChatFigure[] | undefined): TemplateResult | typeof nothing {
+    if (!figures || figures.length === 0) return nothing;
+    return html`<div class="chat-figures">
+      ${figures.map(
+        (figure) => html`<figure class="chat-figure">
+          <img
+            src="data:image/png;base64,${figure.data}"
+            alt=${figure.caption ?? 'The diagram'}
+            title="Open at full size"
+            @click=${() => {
+              this.openFigure = figure;
+              this.update();
+            }}
+          />
+          ${figure.caption ? html`<figcaption>${figure.caption}</figcaption>` : nothing}
+        </figure>`
+      )}
+    </div>`;
+  }
+
+  /** The picture opened at full size, over the panel; a click closes it. */
+  private openFigureTemplate(): TemplateResult | typeof nothing {
+    const figure = this.openFigure;
+    if (!figure) return nothing;
+    const close = (): void => {
+      this.openFigure = undefined;
+      this.update();
+    };
+    return html`<div class="chat-figure-open" title="Close" @click=${close}>
+      <img src="data:image/png;base64,${figure.data}" alt=${figure.caption ?? 'The diagram'} />
+      ${figure.caption ? html`<div class="chat-figure-open-caption">${figure.caption}</div>` : nothing}
+    </div>`;
+  }
+
   /** The images a message carries, small, under its text; a restored one says how many it had. */
   private messageImagesTemplate(item: MessageItem): TemplateResult | typeof nothing {
     if (item.images && item.images.length > 0) {
@@ -1698,6 +1761,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
             ${this.runBannerTemplate()}
             ${this.composerTemplate()}
           `}
+      ${this.openFigureTemplate()}
     `;
   }
 
@@ -2017,6 +2081,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
             <span>${item.title}</span>
           </div>
           <div class="chat-question-text">${item.text}</div>
+          ${this.figuresTemplate(item.figures)}
           ${item.resolved === undefined
             ? html`<div class="chat-permission-actions">
                 ${item.choices.map(
@@ -2076,7 +2141,9 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       return html`
         <div class="chat-row chat-row-system">
           <span class="codicon codicon-info"></span>
-          <span>${item.content}</span>
+          ${item.figures && item.figures.length > 0
+            ? html`<div class="chat-row-system-body"><span>${item.content}</span>${this.figuresTemplate(item.figures)}</div>`
+            : html`<span>${item.content}</span>`}
         </div>
       `;
     }

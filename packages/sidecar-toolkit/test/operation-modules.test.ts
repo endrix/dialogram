@@ -70,7 +70,8 @@ const EXPECTED_SIDECAR_HANDLER_NAMES = [
     'EntityPortCrudHandler',
     'DeleteEntityPortCrudHandler',
     'PasteOperationHandler',
-    'DuplicateOperationHandler'
+    'DuplicateOperationHandler',
+    'ApplyPortOrdersOperationHandler'
 ];
 
 /** Run `configureOperationHandlers` with a recording binding, returning the registered constructors. */
@@ -192,10 +193,12 @@ describe('createSidecarOperationModules — entity-port CRUD-collapse routing', 
 });
 
 describe('createSidecarOperationModules — the MCP tool of its own operation', () => {
-    it('brings the tools of the operations it serves: create-task-type and set-node-parameters', () => {
+    it('brings the tools of the operations it serves: create-task-type, set-node-parameters and the untangle', () => {
         const [module] = createSidecarOperationModules(WFPY_CFG);
         const added: unknown[] = [];
         module.configureMcpTools?.({ add: (ctor: unknown) => added.push(ctor) } as any);
-        expect(added.map(ctor => (new (ctor as new () => { name?: string })()).name)).toEqual(['create-task-type', 'set-node-parameters']);
+        expect(added.map(ctor => (new (ctor as new () => { name?: string })()).name)).toEqual([
+            'create-task-type', 'set-node-parameters', 'untangle-start', 'untangle-try', 'untangle-propose'
+        ]);
     });
 });

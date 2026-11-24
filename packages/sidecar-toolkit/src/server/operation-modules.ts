@@ -17,6 +17,8 @@ import type { InstanceMultiBinding, OperationHandlerConstructor } from '@eclipse
 import type { DiagramOperationModule, McpToolBinding } from '@dialogram/diagram-server/server/operation-modules';
 import { CreateTaskTypeMcpToolHandler } from './operations/create-task-type-mcp-tool-handler';
 import { SetNodeParametersMcpToolHandler } from './operations/set-node-parameters-mcp-tool-handler';
+import { ApplyPortOrdersOperationHandler } from './untangle/apply-port-orders-handler';
+import { UntangleProposeMcpToolHandler, UntangleStartMcpToolHandler, UntangleTryMcpToolHandler } from './untangle/untangle-mcp-tools';
 import type { SidecarRuntimeConfig } from './sidecar-runtime-config.js';
 import { CreateNodeOperationHandler } from './operations/create-node-handler.js';
 import { CreateEdgeOperationHandler } from './operations/create-edge-handler.js';
@@ -72,7 +74,9 @@ function sidecarOperationHandlers(cfg: SidecarRuntimeConfig): OperationHandlerCo
         UpdateEntityPortOperationHandler,
         ...createEntityPortCrudHandlers(cfg.operationKinds),
         PasteOperationHandler,
-        DuplicateOperationHandler
+        DuplicateOperationHandler,
+        // The chat's untangle: the port orders of the try the person kept, and its layout.
+        ApplyPortOrdersOperationHandler
     ];
 }
 
@@ -97,6 +101,11 @@ export function createSidecarOperationModules(cfg: SidecarRuntimeConfig): Diagra
             binding.add(CreateTaskTypeMcpToolHandler);
             // Parameter edits are this module's operation too (`UpdateEntityParameterOperationHandler`).
             binding.add(SetNodeParametersMcpToolHandler);
+            // The chat's untangle: tries drawn and not saved, then one put to the person,
+            // whose Apply is this module's operation (`ApplyPortOrdersOperationHandler`).
+            binding.add(UntangleStartMcpToolHandler);
+            binding.add(UntangleTryMcpToolHandler);
+            binding.add(UntangleProposeMcpToolHandler);
         }
     };
     return [module];

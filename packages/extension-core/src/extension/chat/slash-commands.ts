@@ -35,6 +35,12 @@ export interface ChatCommandResult {
     error?: string;
     /** Optional system-message text posted instead of the generic confirmation. */
     info?: string;
+    /**
+     * A command the agent carries out: this is sent to it as the turn's
+     * message, the command as typed staying what the transcript shows. No
+     * confirmation is posted, and the turn is the agent's, as for a message.
+     */
+    prompt?: string;
 }
 
 export interface ChatCommandContribution {

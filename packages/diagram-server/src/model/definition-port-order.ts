@@ -20,8 +20,14 @@
  * An order is said side by side, a list of port names for each: a task may
  * have an input and an output of one name.
  */
-import { GNode, GPort } from '@eclipse-glsp/server';
-import { WorkflowDiagramMetadata, portSide, type PortSide } from '@dialogram/shared';
+import { GNode, GPort, type GModelElement } from '@eclipse-glsp/server';
+import { WorkflowDiagramMetadata, WorkflowDiagramTypes, isBoundaryNodeType, portSide, type PortSide } from '@dialogram/shared';
+
+/**
+ * Port arg: the row a port was declared on, kept when Free Ports moves it
+ * to another, so that the other layouts put it back (WorkflowElkLayoutEngine).
+ */
+export const DECLARED_ROW_ARG = 'wf:declaredRowY';
 
 /**
  * Graph layout option: the port order given for a definition, as JSON
@@ -266,4 +272,72 @@ export function onePortOrderPerDefinition(
         }
     }
     return { orders, shared, unmatched: Object.keys(given).filter(key => !used.has(key)) };
+}
+
+/** Whether Free Ports may put `node`'s ports in another order: an ordinary node, not an if, a loop, a group or a view's own port. */
+export function portsMayReorder(node: GNode): boolean {
+    return node.type !== WorkflowDiagramTypes.NODE_STRUCTURE_IF
+        && node.type !== WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH
+        && node.type !== WorkflowDiagramTypes.NODE_GROUP
+        && !isBoundaryNodeType(node.type);
+}
+
+/**
+ * `node`'s port names by side, top to bottom: as they are drawn now, or as
+ * they are declared, each on the row its source gave it (`DECLARED_ROW_ARG`
+ * where Free Ports moved it).
+ */
+export function sidesOf(node: GNode, as: 'drawn' | 'declared'): Required<SideOrder> {
+    const rowOf = (port: GPort): number => {
+        const declared = (port.args as Record<string, unknown> | undefined)?.[DECLARED_ROW_ARG];
+        return as === 'declared' && typeof declared === 'number' ? declared : port.position?.y ?? 0;
+    };
+    const ports = portsOf(node);
+    const sides = { west: [] as string[], east: [] as string[] };
+    for (const side of SIDES) {
+        sides[side] = ports
+            .filter(port => sideOf(port) === side)
+            .sort((a, b) => rowOf(a) - rowOf(b))
+            .map(port => portNameOf(node, port));
+    }
+    return sides;
+}
+
+/** The instances of each definition under `root` whose ports Free Ports may reorder, by key (`definitionKeyOf`). */
+export function definitionsUnder(root: GModelElement): Map<string, GNode[]> {
+    const groups = new Map<string, GNode[]>();
+    const visit = (element: GModelElement): void => {
+        if (element instanceof GNode && portsMayReorder(element)) {
+            const key = definitionKeyOf(element);
+            if (key !== undefined && portsOf(element).length > 1) {
+                groups.set(key, [...(groups.get(key) ?? []), element]);
+            }
+        }
+        for (const child of element.children ?? []) {
+            visit(child);
+        }
+    };
+    visit(root);
+    return groups;
+}
+
+/** The order the last Free Ports probe found for each node on its own, by node id, per laid-out graph. */
+const probes = new WeakMap<object, Map<string, Required<SideOrder>>>();
+
+/** Keep what the probe found for `root`'s nodes, each on its own (see {@link lastProbe}). */
+export function recordProbe(root: object, probed: readonly ProbedOrder[]): void {
+    probes.set(root, new Map(probed.map(entry => [entry.node.id, probedSides(entry)] as const)));
+}
+
+/**
+ * The order the last Free Ports layout of `root` found for each node on its
+ * own, before the instances of a definition were given one: by node id;
+ * nothing when `root` has not been laid out with Free Ports since {@link forgetProbe}.
+ */
+export function lastProbe(root: object): ReadonlyMap<string, Required<SideOrder>> | undefined {
+    return probes.get(root);
+}
+
+export function forgetProbe(root: object): void {
+    probes.delete(root);
 }

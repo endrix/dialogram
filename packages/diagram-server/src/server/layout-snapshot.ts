@@ -7,7 +7,7 @@
  * also keep the unselected part of the diagram where it was. These are those
  * steps, written once.
  */
-import { GEdge, GModelIndex, GModelRoot, ModelState } from '@eclipse-glsp/server';
+import { GEdge, GModelIndex, GModelRoot, GPort, ModelState } from '@eclipse-glsp/server';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes, WORKFLOW_LAYOUT_PERSISTENCE_KEY, WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import type { WorkflowDiagramModel } from '@dialogram/shared';
 import { buildEdgeSignatureCounts, edgeRouteKeyFor, type Point } from '../routing/persisted-edge-routes';
@@ -264,4 +264,78 @@ export async function persistLayout(
         layoutMeta.hasPersistedEdgeRoutes = routes.size > 0;
         modelState.set(WORKFLOW_LAYOUT_PERSISTENCE_KEY, layoutMeta);
     }
+}
+
+/**
+ * A drawing of the diagram, kept to be shown again or saved: where each node
+ * and port is (relative to what holds it), each node's size, each edge's
+ * route; and the same as the layout file keys it. A layout tried and not kept
+ * (the chat's untangle tries) is drawn without being saved, and the drawing
+ * the diagram had before is kept beside it, so either can come back.
+ */
+export interface LayoutGeometry {
+    nodes: Map<string, { position?: Point; size?: { width: number; height: number } }>;
+    ports: Map<string, Point | undefined>;
+    edges: Map<string, Point[] | undefined>;
+    /** As `persistLayout` would save it. */
+    saved: { positions: Map<string, Point>; routes: Map<string, Point[]> };
+}
+
+/** The diagram as it is drawn now (see {@link LayoutGeometry}). */
+export function layoutGeometryOf(root: GModelRoot): LayoutGeometry {
+    const nodes: LayoutGeometry['nodes'] = new Map();
+    const ports: LayoutGeometry['ports'] = new Map();
+    walk(root, element => {
+        if (isMovableNode(element)) {
+            const position = element.position as Point | undefined;
+            const size = element.size as { width: number; height: number } | undefined;
+            nodes.set(String(element.id), {
+                ...(position ? { position: { x: position.x, y: position.y } } : {}),
+                ...(size ? { size: { width: size.width, height: size.height } } : {})
+            });
+        } else if (element instanceof GPort) {
+            const position = (element as any).position as Point | undefined;
+            ports.set(String(element.id), position ? { x: position.x, y: position.y } : undefined);
+        }
+    });
+    return {
+        nodes,
+        ports,
+        edges: snapshotEdgeRoutesById(root),
+        saved: { positions: collectNodePositions(root), routes: collectEdgeRoutes(root) }
+    };
+}
+
+/** Draw `geometry` again on `root`: what it holds by id; an element it does not know is left as it is. */
+export function applyLayoutGeometry(root: GModelRoot, geometry: LayoutGeometry): void {
+    walk(root, element => {
+        const id = String(element.id);
+        if (isMovableNode(element) && geometry.nodes.has(id)) {
+            const node = geometry.nodes.get(id)!;
+            element.position = node.position ? { ...node.position } : undefined;
+            if (node.size) {
+                element.size = { ...node.size };
+            }
+        } else if (element instanceof GPort && geometry.ports.has(id)) {
+            const position = geometry.ports.get(id);
+            (element as any).position = position ? { ...position } : undefined;
+        } else if (element instanceof GEdge && geometry.edges.has(id)) {
+            const route = geometry.edges.get(id);
+            (element as any).routingPoints = route ? route.map(p => ({ x: p.x, y: p.y })) : undefined;
+        }
+    });
+}
+
+/** Save `geometry` as the diagram's layout, whatever is drawn now. */
+export async function saveLayoutGeometry(
+    modelState: ModelState,
+    layoutPersistence: LayoutPersistenceService,
+    geometry: LayoutGeometry
+): Promise<void> {
+    const diagramModel = modelState.get(WORKFLOW_NETWORK_MODEL_KEY) as WorkflowDiagramModel | undefined;
+    if (!diagramModel) {
+        return;
+    }
+    const { filePath: workflowFilePath, networkId } = layoutTargetOf(diagramModel as any);
+    await layoutPersistence.saveLayoutImmediate(workflowFilePath, networkId, geometry.saved.positions, geometry.saved.routes);
 }

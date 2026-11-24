@@ -106,6 +106,14 @@ export class SidecarInvoker {
     }
 
     /**
+     * Whether the sidecar lists `op` (its bare name) among the ops it does;
+     * false when it lists none, or cannot be asked.
+     */
+    async supportsOp(sourceUri: string, op: string): Promise<boolean> {
+        return (await this.capabilities(sourceUri))?.supportedOps.has(op) === true;
+    }
+
+    /**
      * What the sidecar says it can do: asked once per sidecar command for the
      * session, not on every edit. Each ask is a process of its own, and what
      * a sidecar offers does not change while it is running. A failed ask is

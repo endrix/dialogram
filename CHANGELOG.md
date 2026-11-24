@@ -78,6 +78,26 @@ platform that hands it one.
 
 ### Added
 
+- **`/untangle` in the chat.** In Build mode, on a diagram whose producer
+  can write a definition's port order (`reorderEntityPorts`, wfpy), the
+  agent lays the diagram out with Layout Diagram, the drawing to beat, then
+  makes at most ten tries: Free Ports first, then an order it gives a
+  definition, or Untangled. Each try is drawn on the diagram, fitted to the
+  view, and saved nowhere; the agent reads its edge crossings and looks at
+  its picture. The best is put to the person in a card with its picture,
+  its crossings against Layout Diagram, and per source file each
+  definition's port order old and new, with **Apply to N files** and
+  **Discard**. Apply writes the orders, as one undo with the layout, and
+  saves the try's drawing; the chat then shows the two drawings side by
+  side. Discard draws the diagram as it was and writes nothing. The agent's
+  tools are `untangle-start`, `untangle-try` and `untangle-propose`; the
+  person's answer is carried out by the platform, not by the agent.
+  - A chat command may answer with a prompt (`ChatCommandResult.prompt`):
+    the agent carries it out as the turn, with no post-turn hook.
+  - A diagram's session can put a card or a message with pictures to the
+    person (`DiagramChatHost`; `DiagramChatConfirm.figures`); a picture
+    clicked opens at full size over the panel.
+
 - **The agents of a run started outside the IDE.** A run of a diagram's file
   started in a terminal, with the out dir the diagram watches, shows its
   agents in the Running agents bar as a run started from the IDE does: the

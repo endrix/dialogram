@@ -18,7 +18,7 @@ import { UpdateEntityPortOperationHandler } from '../src/server/operations/updat
 import { createEntityPortCrudHandlers } from '../src/server/operations/entity-port-crud-handler.js';
 import { RenameEntityOperationHandler } from '../src/server/operations/rename-entity-handler.js';
 import { CreateEdgeOperationHandler } from '../src/server/operations/create-edge-handler.js';
-import { commandStack, saying } from './edits-on-disk';
+import { commandStack, onDiskEveryFile as onDisk, saying } from './edits-on-disk';
 
 const NET = 'net = ...\n';
 const ACTORS = 'class Pass: ...\n';
@@ -80,35 +80,6 @@ function producer(net: string, sent: Sent[], follows: boolean, refuse?: string) 
             return { ok: true };
         }
     };
-}
-
-/** Run `body` with each file's document what is on disk, and the edits applied to them written there. */
-async function onDisk<T>(body: () => Promise<T>): Promise<T> {
-    const workspace = vscode.workspace as any;
-    const proto = (vscode.WorkspaceEdit as any).prototype;
-    const saved = { open: workspace.openTextDocument, apply: workspace.applyEdit, set: proto.set };
-    const pending: Array<{ file: string; text: string }> = [];
-    proto.set = function (uri: vscode.Uri, edits: Array<{ newText: string }>) {
-        pending.push(...edits.map(edit => ({ file: uri.fsPath, text: edit.newText })));
-    };
-    workspace.openTextDocument = async (uri: vscode.Uri) => ({
-        getText: () => readFileSync(uri.fsPath, 'utf8'), isDirty: false, lineCount: 1, lineAt: () => ({ text: '' }), save: async () => true
-    });
-    workspace.applyEdit = async () => {
-        for (const { file, text } of pending.splice(0)) {
-            if (text) {
-                writeFileSync(file, text);
-            }
-        }
-        return true;
-    };
-    try {
-        return await body();
-    } finally {
-        proto.set = saved.set;
-        workspace.openTextDocument = saved.open;
-        workspace.applyEdit = saved.apply;
-    }
 }
 
 function updatePort(state: any, sidecar: any, field: 'name' | 'type', newValue: string) {

@@ -874,6 +874,59 @@
   background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.15));
 }
 
+/* Pictures the platform shows (the untangle's drawings): side by side where
+   the panel is wide enough, each with what it shows under it. */
+.chat-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 6px 0;
+}
+.chat-figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.chat-figure img {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--chat-border);
+  border-radius: var(--chat-radius);
+  background: var(--vscode-editor-background, #1e1e1e);
+  cursor: zoom-in;
+}
+.chat-figure figcaption {
+  font-size: 11px;
+  color: var(--chat-muted);
+}
+.chat-row-system-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+/* One picture at full size, over the panel */
+.chat-figure-open {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  overflow: auto;
+  padding: 8px;
+  background: var(--vscode-editor-background, #1e1e1e);
+  cursor: zoom-out;
+}
+.chat-figure-open img {
+  display: block;
+  max-width: none;
+}
+.chat-figure-open-caption {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--chat-muted);
+}
+
 /* The images a sent message carried, under its text */
 .chat-row-images {
   display: flex;

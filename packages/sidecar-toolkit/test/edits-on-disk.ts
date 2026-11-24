@@ -39,6 +39,35 @@ export async function onDisk<T>(file: string, body: () => Promise<T>): Promise<T
     }
 }
 
+/** Run `body` with each file's document what is on disk, and the edits applied to them written there. */
+export async function onDiskEveryFile<T>(body: () => Promise<T>): Promise<T> {
+    const workspace = vscode.workspace as any;
+    const proto = (vscode.WorkspaceEdit as any).prototype;
+    const saved = { open: workspace.openTextDocument, apply: workspace.applyEdit, set: proto.set };
+    const pending: Array<{ file: string; text: string }> = [];
+    proto.set = function (uri: vscode.Uri, edits: Array<{ newText: string }>) {
+        pending.push(...edits.map(edit => ({ file: uri.fsPath, text: edit.newText })));
+    };
+    workspace.openTextDocument = async (uri: vscode.Uri) => ({
+        getText: () => readFileSync(uri.fsPath, 'utf8'), isDirty: false, lineCount: 1, lineAt: () => ({ text: '' }), save: async () => true
+    });
+    workspace.applyEdit = async () => {
+        for (const { file, text } of pending.splice(0)) {
+            if (text) {
+                writeFileSync(file, text);
+            }
+        }
+        return true;
+    };
+    try {
+        return await body();
+    } finally {
+        proto.set = saved.set;
+        workspace.openTextDocument = saved.open;
+        workspace.applyEdit = saved.apply;
+    }
+}
+
 /** Run `body` with what the window says kept (`said`), its information and its warnings. */
 export async function saying<T>(body: (said: string[]) => Promise<T>): Promise<T> {
     const window = vscode.window as any;

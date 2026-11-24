@@ -1042,7 +1042,7 @@ export class ChatRuntime {
               : {}),
             mode,
           };
-          let result: { success: boolean; error?: string; info?: string };
+          let result: { success: boolean; error?: string; info?: string; prompt?: string };
           try {
             result = await resolved.contribution.handler(resolved.args, ctx);
           } catch (err) {
@@ -1050,6 +1050,14 @@ export class ChatRuntime {
               success: false,
               error: err instanceof Error ? err.message : String(err),
             };
+          }
+          if (result.success && typeof result.prompt === "string" && result.prompt.trim() !== "") {
+            // The agent carries the command out: its prompt is the turn's
+            // message. The post-turn hook reads what the person typed for view
+            // operations, and is not run: the prompt speaks of layouts.
+            await this.sendInMode(sessionId, data.mode);
+            await this.acp.sendPrompt(sessionId, result.prompt, images);
+            return;
           }
           this.postToWebview(uri, {
             type: "chat.message",
@@ -1069,19 +1077,7 @@ export class ChatRuntime {
           this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
           return;
         }
-        // A message runs in the mode it was sent in (its row says so): an agent
-        // holding another -- a session re-attached above takes the agent's -- is
-        // told first.
-        if (
-          (data.mode === "plan" || data.mode === "build") &&
-          this.acp.getSessionMode(sessionId) !== data.mode
-        ) {
-          const sentIn: "plan" | "build" = data.mode;
-          await this.acp
-            .setSessionMode(sessionId, sentIn)
-            .then(() => this.sessions.updateSessionMode(sentIn, sessionId))
-            .catch((error) => console.warn(`[chat] could not set mode '${sentIn}':`, error));
-        }
+        await this.sendInMode(sessionId, data.mode);
         // Pass-through slash suggestions and natural language both go to the agent.
         await this.acp.sendPrompt(sessionId, data.text, images);
         if (this.config.postTurnHook) {
@@ -1225,6 +1221,48 @@ export class ChatRuntime {
       this.pendingConfirms.set(id, resolve);
       this.postToWebview(uri, { type: "chat.confirm", data: { id, ...confirm } });
     });
+  }
+
+  /**
+   * A message runs in the mode it was sent in (its row says so): an agent
+   * holding another -- a session re-attached takes the agent's -- is told first.
+   */
+  private async sendInMode(sessionId: string, mode: unknown): Promise<void> {
+    if ((mode === "plan" || mode === "build") && this.acp.getSessionMode(sessionId) !== mode) {
+      const sentIn: "plan" | "build" = mode;
+      await this.acp
+        .setSessionMode(sessionId, sentIn)
+        .then(() => this.sessions.updateSessionMode(sentIn, sessionId))
+        .catch((error) => console.warn(`[chat] could not set mode '${sentIn}':`, error));
+    }
+  }
+
+  /** Whether a chat panel is open on `uri` to put a card to the person. */
+  canAsk(uri: string): boolean {
+    return !this.canReach || this.canReach(uri);
+  }
+
+  /**
+   * A message of the platform's own in the chat panel open on `uri`, with
+   * pictures when it has some (the untangle's two drawings). Shown, not
+   * stored: a chat restored later has the agent's account of it. `false`
+   * when no panel can be reached.
+   */
+  postInChat(uri: string, message: { text: string; figures?: Array<{ data: string; caption?: string }> }): boolean {
+    if (!this.canAsk(uri)) {
+      this.logLine(`chat message: no chat panel on ${uri}`);
+      return false;
+    }
+    this.postToWebview(uri, {
+      type: "chat.message",
+      data: {
+        role: "system",
+        content: message.text,
+        timestamp: Date.now(),
+        ...(message.figures && message.figures.length > 0 ? { figures: message.figures } : {}),
+      },
+    });
+    return true;
   }
 
   /**
