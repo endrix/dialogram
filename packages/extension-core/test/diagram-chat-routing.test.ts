@@ -44,6 +44,18 @@ describe('the chat a diagram session puts a try to', () => {
         expect(asked).toEqual([`post ${NESTED}`]);
     });
 
+    it('keeps a session\'s follow-ups in the chat its card went to', async () => {
+        const open = [ROOT, NESTED];
+        const { host, asked } = runtime(open);
+        const chat = routeDiagramChat(() => host, editorOf);
+        const nested = { clientId: 'client-1', sourceUri: NESTED };
+        await chat.confirm(nested, CARD);
+        // The editor showing the session closes while the card waits; another editor's chat is open on the drawn file.
+        open.splice(open.indexOf(ROOT), 1);
+        expect(await chat.post(nested, { text: 'discarded' })).toBe(false);
+        expect(asked).toEqual([`confirm ${ROOT}`]);
+    });
+
     it('is none while no panel is open, or no chat runs', async () => {
         const { host, asked } = runtime([]);
         const chat = routeDiagramChat(() => host, editorOf);

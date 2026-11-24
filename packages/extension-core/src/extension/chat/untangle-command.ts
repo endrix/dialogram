@@ -72,9 +72,12 @@ export function createUntangleCommand(deps: UntangleCommandDeps): ChatCommandCon
             if (!vscode.workspace.getConfiguration(CORE_CHAT_SECTION).get<boolean>('useGlspMcp', true)) {
                 return { success: false, error: "The agent untangles with the diagram's tools, which are turned off here." };
             }
-            // The diagram this chat's editor shows, whatever file its view draws.
-            const shownHere = deps.getEditorProvider()?.getClientIdForDocumentUri?.(vscode.Uri.file(ctx.file));
-            const { sessionId, error } = await diagramToolSession(deps.tools, ctx.file, shownHere);
+            // The diagram of the editor whose panel sent the command, whatever
+            // file its view draws (a workflow of another file, navigated into
+            // in place); from an older panel, the file's current editor.
+            const shownHere = () => ctx.diagramClientId
+                ?? deps.getEditorProvider()?.getClientIdForDocumentUri?.(vscode.Uri.file(ctx.file));
+            const { sessionId, error } = await diagramToolSession(deps.tools, ctx.file, shownHere(), { anyView: true });
             if (!sessionId) {
                 return { success: false, error: error ?? "The diagram's tools know no open diagram of this file to untangle." };
             }
@@ -83,9 +86,17 @@ export function createUntangleCommand(deps: UntangleCommandDeps): ChatCommandCon
                 prompt: untanglePrompt(sessionId),
                 // A try the agent left drawn, not put to the person (it stopped
                 // short, or was stopped), is drawn back as the diagram was:
-                // the next node moved would save it otherwise.
+                // the next node moved would save it otherwise. The session is
+                // looked up again when it is gone (the editor reopened).
                 afterTurn: async () => {
-                    await deps.tools.callTool('untangle-end', { sessionId });
+                    const ended = await deps.tools.callTool('untangle-end', { sessionId });
+                    if (ended.ok) {
+                        return;
+                    }
+                    const now = await diagramToolSession(deps.tools, ctx.file, shownHere(), { anyView: true });
+                    if (now.sessionId && now.sessionId !== sessionId) {
+                        await deps.tools.callTool('untangle-end', { sessionId: now.sessionId });
+                    }
                 }
             };
         }

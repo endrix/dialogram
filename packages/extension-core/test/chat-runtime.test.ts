@@ -308,6 +308,21 @@ describe('unified runtime absorbed features', () => {
         expect(handler).toHaveBeenCalledWith({}, expect.objectContaining({ selectedNodeIds: ['n1', 'n2'] }));
     });
 
+    it('the diagram client of the panel that sent a command travels into its context', async () => {
+        const handler = vi.fn(async (_args: unknown, _ctx: unknown) => ({ success: true }));
+        const { runtime } = makeRuntime({
+            slashCommands: [{ command: 'here', description: 't', modes: ['build'], handler }]
+        });
+        await runtime.handleMessage('file:///ws/wf.py', {
+            type: 'chat.sendMessage',
+            data: { text: '/here', mode: 'build', diagramClientId: 'client-2' }
+        });
+        expect(handler).toHaveBeenCalledWith({}, expect.objectContaining({ diagramClientId: 'client-2' }));
+        // A panel that names none: no client in the context.
+        await runtime.handleMessage('file:///ws/wf.py', { type: 'chat.sendMessage', data: { text: '/here', mode: 'build' } });
+        expect(handler.mock.calls[1][1]).not.toHaveProperty('diagramClientId');
+    });
+
     it('unknown /command errors with a /help hint and never reaches the agent (chat-only pass-through config)', async () => {
         // Chat-only profiles contribute pass-through suggestions (no handler);
         // an unknown /command must resolve to the error + /help hint on ALL

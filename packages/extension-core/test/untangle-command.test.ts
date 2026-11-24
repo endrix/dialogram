@@ -56,6 +56,34 @@ describe('/untangle', () => {
         expect(tools.calls.at(-1)).toEqual({ tool: 'untangle-end', args: { sessionId: 'glsp_7' } });
     });
 
+    it('untangles the diagram of the panel that sent it, of two editors on the file', async () => {
+        // Editor B, used last, shows another file's workflow; the command was typed in editor A's panel.
+        const tools = makeTools([
+            { sessionId: 'glsp_A', sourceUri: 'file:///ws/wf.py', readOnly: false },
+            { sessionId: 'glsp_B', sourceUri: 'file:///ws/workflows/place.py', readOnly: false }
+        ]);
+        const provider = { getClientIdForDocumentUri: () => 'glsp_B' } as any;
+        const result: any = await createUntangleCommand({ tools, getEditorProvider: () => provider }).handler!({}, { ...CTX, diagramClientId: 'glsp_A' });
+        expect(result.prompt).toContain('This diagram\'s session is "glsp_A"');
+    });
+
+    it('ends the session shown now when the one it untangled is gone', async () => {
+        const rows = [{ sessionId: 'glsp_1', sourceUri: 'file:///ws/wf.py', readOnly: false }];
+        const tools = makeTools(rows);
+        const result: any = await createUntangleCommand({ tools, getEditorProvider: () => undefined }).handler!({}, CTX);
+        // The editor reopened during the turn: a new session, and the old one answers no more.
+        rows.splice(0, 1, { sessionId: 'glsp_2', sourceUri: 'file:///ws/wf.py', readOnly: false });
+        tools.callTool.mockImplementation(async (tool: string, args: Record<string, unknown>) => {
+            tools.calls.push({ tool, args });
+            if (tool === 'session-info') {
+                return { ok: true, text: '', structured: { sessions: rows } };
+            }
+            return tool === 'untangle-end' && args.sessionId === 'glsp_1' ? { ok: false, text: 'no session glsp_1' } : { ok: true, text: '' };
+        });
+        await result.afterTurn();
+        expect(tools.calls.filter((c) => c.tool === 'untangle-end').map((c) => c.args.sessionId)).toEqual(['glsp_1', 'glsp_2']);
+    });
+
     it('is refused where no diagram of the chat\'s file is open, or the tools do not answer', async () => {
         const none = await createUntangleCommand({ tools: makeTools([]), getEditorProvider: () => undefined }).handler!({}, CTX);
         expect(none).toEqual({ success: false, error: "The diagram's tools know no open diagram of this file to untangle." });

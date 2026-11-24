@@ -21,10 +21,10 @@ export interface DiagramChatCard {
 }
 
 /**
- * The diagram whose chat is asked for. Its chat is the panel of the editor
- * showing the session, which speaks for the file the editor was opened on: a
- * view navigated in place into a workflow of another file draws that file
- * (`sourceUri`), while its chat stays the editor's.
+ * The diagram whose chat is asked for. Its chat is the one of the file the
+ * editor showing the session was opened on: a view navigated in place into a
+ * workflow of another file draws that file (`sourceUri`), while its chat stays
+ * the editor's file's.
  */
 export interface DiagramChatTarget {
     /** The session's GLSP client id: the host finds the editor that shows it. */

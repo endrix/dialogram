@@ -28,6 +28,11 @@ export interface ChatCommandContext {
     surfaceSelection?: SurfaceSelectionSummary;
     /** Chat mode the command was invoked in; drives mode-aware `/help`. */
     mode: 'plan' | 'build';
+    /**
+     * The GLSP client id of the diagram whose panel sent the command: of two
+     * editors on the file, the one typed in. Absent from an older panel.
+     */
+    diagramClientId?: string;
 }
 
 export interface ChatCommandResult {

@@ -1,12 +1,14 @@
 /**
- * Which chat panel a diagram's session puts something to the person in.
+ * Which chat a diagram's session puts something to the person in.
  *
  * A chat panel speaks for the file its editor was opened on (the webview's
- * `workflowUri`). A session names itself by its GLSP client id and the file
+ * `workflowUri`); the runtime reaches a file's panels by that file, the one
+ * that spoke last. A session names itself by its GLSP client id and the file
  * it draws: the same file, unless the editor navigated in place into a
  * workflow defined in another file, whose view draws that file while its chat
- * stays the editor's. The editor showing the session is asked first, the drawn
- * file after it.
+ * stays the editor's. The file of the editor showing the session is asked
+ * first, the drawn file after it; once a session's card went to a file, what
+ * follows it goes there too, or nowhere.
  */
 import type {
     DiagramChatCard,
@@ -36,9 +38,23 @@ export function routeDiagramChat(
     host: () => DocumentChatHost | undefined,
     documentOfClient: (clientId: string) => string | undefined
 ): DiagramChatHost {
+    // Where each session's chat was found: its follow-ups go there, not to
+    // another file's chat once its editor is gone.
+    const found = new Map<string, string>();
     const reachable = (diagram: DiagramChatTarget): string | undefined => {
         const chat = host();
-        return chat ? chatDocumentsOf(diagram, documentOfClient).find(uri => chat.canAsk(uri)) : undefined;
+        if (!chat) {
+            return undefined;
+        }
+        const before = diagram.clientId !== undefined ? found.get(diagram.clientId) : undefined;
+        if (before !== undefined) {
+            return chat.canAsk(before) ? before : undefined;
+        }
+        const uri = chatDocumentsOf(diagram, documentOfClient).find(each => chat.canAsk(each));
+        if (uri !== undefined && diagram.clientId !== undefined) {
+            found.set(diagram.clientId, uri);
+        }
+        return uri;
     };
     return {
         canAsk: diagram => reachable(diagram) !== undefined,
