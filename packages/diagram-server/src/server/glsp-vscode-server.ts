@@ -18,6 +18,7 @@ import type { StorageRuntimeOptions } from './storage-runtime-options';
 import type { ElkServerOptions } from './elk-server/index';
 import type { McpServerModuleOptions } from './mcp-diagram-module';
 import type { LoadProgressSink } from './load-progress';
+import type { DiagramChatHost } from './diagram-chat-host';
 import type { OutOfBandWriteSink } from './out-of-band-writes';
 
 /**
@@ -60,6 +61,8 @@ export interface WorkflowGlspVscodeServerOptions extends Partial<Omit<NodeGlspVs
     elkServer?: ElkServerOptions;
     /** What each client's load is doing, for the host to post to its diagram (see load-progress.ts). */
     loadProgress?: LoadProgressSink;
+    /** The chat of each diagram, for a session to put a card or a message to the person (see diagram-chat-host.ts). */
+    chatHost?: DiagramChatHost;
     /** Which files an edit's producer wrote itself, for the host to reload what they affect (see out-of-band-writes.ts). */
     outOfBandWrites?: OutOfBandWriteSink;
     /** The product's words for the platform's steps of a load; absent, the platform's (see load-progress.ts). */
@@ -109,6 +112,7 @@ export function createWorkflowGlspVscodeServer(
             mcp: mergedOptions.mcp,
             elkServer: mergedOptions.elkServer,
             loadProgress: mergedOptions.loadProgress,
+            chatHost: mergedOptions.chatHost,
             outOfBandWrites: mergedOptions.outOfBandWrites,
             loadPhaseWords: mergedOptions.loadPhaseWords,
             diagnosticSource: mergedOptions.diagnosticSource

@@ -9,9 +9,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { GEdge, GGraph, GModelIndex, GNode, GPort } from '@eclipse-glsp/server';
 import { WorkflowDiagramMetadata, WORKFLOW_LAYOUT_PERSISTENCE_KEY, WORKFLOW_NETWORK_MODEL_KEY } from '@dialogram/shared';
 import {
+    applyLayoutGeometry,
     collectEdgeRoutes,
     collectNodePositions,
+    layoutGeometryOf,
     movableNodeIdsIn,
+    saveLayoutGeometry,
     persistLayout,
     restoreUnselectedLayout,
     snapshotEdgeRoutesById,
@@ -158,5 +161,34 @@ describe('persistLayout', () => {
         const persistence = { loadLayout: vi.fn(), saveLayoutImmediate: vi.fn() } as any;
         await persistLayout({ root: {}, get: () => undefined, set: () => undefined } as any, persistence);
         expect(persistence.saveLayoutImmediate).not.toHaveBeenCalled();
+    });
+});
+
+describe('a layout geometry', () => {
+    it('draws the diagram again as it was taken: nodes, ports and routes, whatever was drawn since', () => {
+        const { root, a, wire } = diagram();
+        const taken = layoutGeometryOf(root);
+        a.position = { x: 400, y: 400 };
+        (a.children[0] as any).position = { x: 50, y: 30 };
+        (wire as any).routingPoints = [];
+        applyLayoutGeometry(root, taken);
+        expect(a.position).toEqual({ x: 10, y: 20 });
+        expect((a.children[0] as any).position).toEqual({ x: 50, y: 5 });
+        expect((wire as any).routingPoints).toEqual([{ x: 58, y: 29 }, { x: 200, y: 29 }]);
+    });
+
+    it('is saved as it was taken, where the diagram saves its layout', async () => {
+        const { root, a } = diagram();
+        const taken = layoutGeometryOf(root);
+        a.position = { x: 400, y: 400 };
+        const persistence = { saveLayoutImmediate: vi.fn(async () => undefined) } as any;
+        const modelState = {
+            root,
+            get: (key: string) => (key === WORKFLOW_NETWORK_MODEL_KEY ? { documentUri: 'file:///ws/wf.py', workflowName: 'main' } : undefined)
+        } as any;
+        await saveLayoutGeometry(modelState, persistence, taken);
+        const [file, network, positions] = persistence.saveLayoutImmediate.mock.calls[0];
+        expect([file, network]).toEqual(['/ws/wf.py', 'main']);
+        expect(positions.get('main.a')).toEqual({ x: 10, y: 20 });
     });
 });

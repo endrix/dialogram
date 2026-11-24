@@ -54,7 +54,7 @@ function isPortUse(value: unknown): value is PortUse {
  * not look into; nothing when it cannot say (no `portUsesQuery`, or the
  * query failed).
  */
-async function usesAcrossProject(
+export async function usesAcrossProject(
     sidecar: Pick<SidecarInvoker, 'hasFeature' | 'sidecarOp' | 'sendSidecarOpDetailed'>,
     diagramUri: string,
     fileUri: string,

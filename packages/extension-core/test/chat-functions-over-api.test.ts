@@ -42,6 +42,7 @@ vi.mock('../src/extension/diagram/glsp-activation', () => ({
         setRunQuestionHandler: () => undefined,
         setChatTaskHandler: () => undefined,
         setChatConfirmHandler: () => undefined,
+        setDiagramChatHost: () => undefined,
         dispose: () => undefined
     }))
 }));

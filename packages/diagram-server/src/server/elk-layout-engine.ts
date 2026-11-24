@@ -24,7 +24,7 @@ import {
 } from './automaton-layout';
 
 import { snapRouteEndpoints } from '../routing/persisted-edge-routes';
-import { givenPortOrders, gportSide, onePortOrderPerDefinition, type ProbedOrder } from '../model/definition-port-order';
+import { DECLARED_ROW_ARG, givenPortOrders, gportSide, onePortOrderPerDefinition, portsMayReorder, recordProbe, type ProbedOrder } from '../model/definition-port-order';
 import { FAST_LAYOUT_OPTIONS, countLayoutElements, layoutTierFor, type LayoutGraphSize, type LayoutTier } from './layout-configurator';
 import { isRowsLayout } from '../model/group-edges';
 import { joinPinToPinEdges, splitPinToPinEdges } from './pin-to-pin-edges';
@@ -38,7 +38,7 @@ export const PORT_ORDER_FREE = 'free';
 /** The ports in the order the source declares them, what every value but `free` means. */
 export const PORT_ORDER_DECLARED = 'declared';
 /** On a port the Free Ports pass has moved: the row the server gave it from the declaration. */
-export const DECLARED_ROW_ARG = 'wf:declaredRowY';
+export { DECLARED_ROW_ARG };
 
 /**
  * `elk.layered.priority.direction` of a wire that goes with the flow, in a
@@ -397,10 +397,7 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
      * containers place their branch ports by index, and a boundary node has one.
      */
     private portsMayReorder(node: GNode): boolean {
-        return node.type !== WorkflowDiagramTypes.NODE_STRUCTURE_IF
-            && node.type !== WorkflowDiagramTypes.NODE_STRUCTURE_FOREACH
-            && node.type !== WorkflowDiagramTypes.NODE_GROUP
-            && !isBoundaryNodeType(node.type);
+        return portsMayReorder(node);
     }
 
     /**
@@ -414,6 +411,7 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         const edges = this.edgeCountByNode(root);
         const given = givenPortOrders((root as any).layoutOptions as Record<string, unknown> | undefined);
         const first = await this.probePortOrders(root, edges, new Set());
+        recordProbe(root, first);
         const { orders, shared, unmatched } = onePortOrderPerDefinition(first, given);
         if (unmatched.length > 0) {
             console.warn(`[cal-elk] port orders given for no definition of this diagram: ${unmatched.join(', ')}`);

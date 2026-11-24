@@ -40,6 +40,8 @@ import { WorkflowLayoutBoundaryFlowOperationHandler } from '../operations/layout
 import { DIAGRAM_MODEL_SOURCE } from './model-source-token';
 import { STORAGE_RUNTIME_OPTIONS, type StorageRuntimeOptions } from './storage-runtime-options';
 import { LOAD_PHASE_WORDS, LOAD_PROGRESS_SINK, LoadProgressReporter, type LoadProgressSink } from './load-progress';
+import { LayoutPreview } from '../operations/layout-preview';
+import { DIAGRAM_CHAT_HOST, type DiagramChatHost } from './diagram-chat-host';
 import { OUT_OF_BAND_WRITE_SINK, type OutOfBandWriteSink } from './out-of-band-writes';
 import { LoadCancellation } from './load-cancellation';
 import { DIAGNOSTIC_SOURCE } from './graph-diagnostics';
@@ -131,6 +133,12 @@ export function createWorkflowServerModules(
          */
         loadProgress?: LoadProgressSink;
         /**
+         * The chat of each diagram, for a session to put a card or a message
+         * to the person there (see `diagram-chat-host.ts`). Absent where the
+         * product has no chat.
+         */
+        chatHost?: DiagramChatHost;
+        /**
          * Where the command stack says which files an edit's producer wrote
          * itself (see `out-of-band-writes.ts`): the host, which reloads the
          * diagrams they affect. Absent, those diagrams are reloaded only when
@@ -217,6 +225,10 @@ export function createWorkflowServerModules(
         if (!isBound(WorkflowLayoutBoundaryFlowOperationHandler)) {
             bind(WorkflowLayoutBoundaryFlowOperationHandler).toSelf().inSingletonScope();
         }
+        // A layout drawn and not saved (the chat's untangle tries).
+        if (!isBound(LayoutPreview)) {
+            bind(LayoutPreview).toSelf().inSingletonScope();
+        }
     });
     additionalModules.push(operationHandlerSelfModule);
 
@@ -267,6 +279,7 @@ export function createWorkflowServerModules(
     // session, since a wait is several requests long, and the host's sink
     // when it gave one. Without a sink the reporter says nothing.
     const loadProgress = options?.loadProgress;
+    const chatHost = options?.chatHost;
     const outOfBandWrites = options?.outOfBandWrites;
     const loadPhaseWords = options?.loadPhaseWords;
     const diagnosticSource = options?.diagnosticSource?.trim() || undefined;
@@ -274,6 +287,9 @@ export function createWorkflowServerModules(
         new ContainerModule((bind, _unbind, isBound) => {
             if (loadProgress && !isBound(LOAD_PROGRESS_SINK)) {
                 bind(LOAD_PROGRESS_SINK).toConstantValue(loadProgress);
+            }
+            if (chatHost && !isBound(DIAGRAM_CHAT_HOST)) {
+                bind(DIAGRAM_CHAT_HOST).toConstantValue(chatHost);
             }
             if (outOfBandWrites && !isBound(OUT_OF_BAND_WRITE_SINK)) {
                 bind(OUT_OF_BAND_WRITE_SINK).toConstantValue(outOfBandWrites);

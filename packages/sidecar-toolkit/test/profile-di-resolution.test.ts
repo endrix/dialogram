@@ -171,8 +171,8 @@ describe('createSidecarDiagramProfile — production-path DI resolution (no .sid
         const input = profileInput('wfpy', 'wfLang');
         const { container, handlers } = containerAndHandlersFromProfile(input);
 
-        // All 21 sidecar handlers are present on the assembled profile.
-        expect(handlers).toHaveLength(21);
+        // All 22 sidecar handlers are present on the assembled profile.
+        expect(handlers).toHaveLength(22);
 
         for (const ctor of handlers) {
             const instance = container.resolve(ctor as any);

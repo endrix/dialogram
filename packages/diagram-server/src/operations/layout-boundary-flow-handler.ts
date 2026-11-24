@@ -31,6 +31,11 @@ export interface WorkflowLayoutBoundaryFlowOperation extends Operation {
     kind: typeof WORKFLOW_LAYOUT_BOUNDARY_FLOW_OPERATION_KIND;
     /** Optional selection scope (same semantics as LayoutOperation.elementIds). */
     elementIds?: string[];
+    /**
+     * Whether the layout is saved (the default). A layout drawn to be looked
+     * at, and kept or not after (layout-preview.ts), is not.
+     */
+    persist?: boolean;
 }
 
 @injectable()
@@ -96,6 +101,8 @@ export class WorkflowLayoutBoundaryFlowOperationHandler extends OperationHandler
             });
         }
 
-        await persistLayout(this.modelState, this.layoutPersistence, { layoutPerformed: true });
+        if (operation.persist !== false) {
+            await persistLayout(this.modelState, this.layoutPersistence, { layoutPerformed: true });
+        }
     }
 }

@@ -308,6 +308,8 @@ export interface DiagramChatConfirm {
   title: string;
   text: string;
   choices: string[];
+  /** Pictures of what is to be confirmed: PNGs, base64, each with what it shows. */
+  figures?: Array<{ data: string; caption?: string }>;
 }
 
 /** The person's answer to a {@link DiagramChatConfirm}: the button pressed, none when declined. */

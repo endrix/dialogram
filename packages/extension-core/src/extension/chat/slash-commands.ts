@@ -35,6 +35,18 @@ export interface ChatCommandResult {
     error?: string;
     /** Optional system-message text posted instead of the generic confirmation. */
     info?: string;
+    /**
+     * A command the agent carries out: this is sent to it as the turn's
+     * message, the command as typed staying what the transcript shows. No
+     * confirmation is posted, and the turn is the agent's, as for a message.
+     */
+    prompt?: string;
+    /**
+     * With `prompt`: run when the agent's turn ends, however it ends
+     * (answered, stopped, failed). What the command leaves for the agent
+     * to finish is put right here when the agent did not.
+     */
+    afterTurn?: () => Promise<void>;
 }
 
 export interface ChatCommandContribution {

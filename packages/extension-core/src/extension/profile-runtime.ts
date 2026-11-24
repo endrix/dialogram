@@ -78,6 +78,12 @@ export async function activateProfileRuntime(
     glsp.setRunQuestionHandler((question, uri) => runtime.askRunQuestion(uri, question));
     glsp.setChatTaskHandler(async (task, uri) => runtime.startTask(uri, task));
     glsp.setChatConfirmHandler((confirm, uri) => runtime.confirmInChat(uri, confirm));
+    // A diagram's session putting a card or a message to the person (the chat's untangle).
+    glsp.setDiagramChatHost({
+      canAsk: (uri) => runtime.canAsk(uri),
+      confirm: (uri, card) => runtime.confirmInChat(uri, card),
+      post: async (uri, message) => runtime.postInChat(uri, message),
+    });
     context.subscriptions.push(chatRuntime, {
       dispose: () => {
         transport?.dispose();

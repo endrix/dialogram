@@ -148,6 +148,46 @@ describe('unified runtime absorbed features', () => {
         expect(sys!.payload.data.role).toBe('system');
     });
 
+    it('a command answering with a prompt hands it to the agent as the turn, with no confirmation and no post-turn hook', async () => {
+        const postTurnHook = vi.fn(async () => undefined);
+        const { runtime, posts, acp } = makeRuntime({
+            postTurnHook,
+            slashCommands: [{ command: 'untangle', description: 't', modes: ['build'], handler: async () => ({ success: true, prompt: 'Call untangle-start.' }) }]
+        });
+        acp.sendPrompt = vi.fn(async () => undefined);
+        await runtime.handleMessage('file:///ws/wf.py', { type: 'chat.sendMessage', data: { text: '/untangle', mode: 'build' } });
+        expect(acp.sendPrompt).toHaveBeenCalledWith('session-1', 'Call untangle-start.', []);
+        expect(postTurnHook).not.toHaveBeenCalled();
+        // The agent's turn: it ends when the agent's answer does, not here.
+        expect(posts.map(p => p.payload.type)).not.toContain('chat.turnEnd');
+        expect(posts.filter(p => p.payload.type === 'chat.message' && p.payload.data.role === 'system')).toEqual([]);
+    });
+
+    it('runs what a prompt command leaves for after its turn, however the turn ends', async () => {
+        const afterTurn = vi.fn(async () => undefined);
+        const { runtime, acp } = makeRuntime({
+            slashCommands: [{ command: 'untangle', description: 't', modes: ['build'], handler: async () => ({ success: true, prompt: 'Go.', afterTurn }) }]
+        });
+        acp.sendPrompt = vi.fn(async () => undefined);
+        await runtime.handleMessage('file:///ws/wf.py', { type: 'chat.sendMessage', data: { text: '/untangle', mode: 'build' } });
+        expect(afterTurn).toHaveBeenCalledTimes(1);
+        acp.sendPrompt = vi.fn(async () => { throw new Error('stopped'); });
+        await runtime.handleMessage('file:///ws/wf.py', { type: 'chat.sendMessage', data: { text: '/untangle', mode: 'build' } }).catch(() => undefined);
+        expect(afterTurn).toHaveBeenCalledTimes(2);
+    });
+
+    it('a message of the platform\'s own reaches the open chat with its pictures, and says when none is open', () => {
+        const { runtime, posts } = makeRuntime({});
+        expect(runtime.postInChat('file:///ws/wf.py', { text: 'Untangle applied.', figures: [{ data: 'PIC', caption: 'Try 1' }] })).toBe(true);
+        expect(posts.at(-1)?.payload).toEqual({
+            type: 'chat.message',
+            data: { role: 'system', content: 'Untangle applied.', timestamp: expect.any(Number), figures: [{ data: 'PIC', caption: 'Try 1' }] }
+        });
+        (runtime as any).canReach = () => false;
+        expect(runtime.canAsk('file:///ws/wf.py')).toBe(false);
+        expect(runtime.postInChat('file:///ws/wf.py', { text: 'Untangle applied.' })).toBe(false);
+    });
+
     it('a slash command ends its turn, so the panel stops streaming and send is send again', async () => {
         const { runtime, posts } = makeRuntime({
             slashCommands: [

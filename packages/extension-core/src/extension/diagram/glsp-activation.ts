@@ -41,6 +41,7 @@ import {
 } from './open-diagram-target';
 import { matchesSourceExtension, sourceFileNoun } from './source-extensions';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
+import type { DiagramChatHost } from '@dialogram/diagram-server/server/diagram-chat-host';
 import { executeViewerCommand, executeViewerOpen, executeViewerReveal } from './viewer-actions';
 import { registerLauncher } from './launcher';
 import { decideDiagramOpen } from './diagram-open-decision';
@@ -277,6 +278,8 @@ interface GlspActivationState {
     chatTaskHandler?: ChatTaskHandler;
     /** See {@link GlspIntegrationHandle.setChatConfirmHandler}. */
     chatConfirmHandler?: ChatConfirmHandler;
+    /** See {@link GlspIntegrationHandle.setDiagramChatHost}. */
+    diagramChatHost?: DiagramChatHost;
     context: vscode.ExtensionContext;
     profile: DiagramProfile;
     // Transient cross-file drill-down handoff, scoped to this activation (per profile instance).
@@ -322,6 +325,11 @@ export interface GlspIntegrationHandle extends vscode.Disposable {
     setChatTaskHandler(handler: ChatTaskHandler | undefined): void;
     /** Where the run driver's confirmations go (resuming a run the chat fixed). */
     setChatConfirmHandler(handler: ChatConfirmHandler | undefined): void;
+    /**
+     * The chat, for a diagram's session to put a card or a message to the
+     * person (the chat's untangle). Unset, a session is told no chat can ask.
+     */
+    setDiagramChatHost(host: DiagramChatHost | undefined): void;
     /** The reader's view options, per file: what the profile handle reads and sets. */
     viewOptions: ViewOptionsHost;
 }
@@ -442,6 +450,12 @@ export async function activateGlspIntegration(
         // What a load is doing, shown in the diagram that is waiting for it.
         // The provider is made further down; by the first load it is there.
         loadProgress: (clientId, update) => loadProgressTarget?.postLoading(clientId, update),
+        // The chat of each diagram, once the profile runtime has one.
+        chatHost: {
+            canAsk: uri => state.diagramChatHost?.canAsk(uri) ?? false,
+            confirm: async (uri, card) => state.diagramChatHost?.confirm(uri, card),
+            post: async (uri, message) => (await state.diagramChatHost?.post(uri, message)) ?? false
+        },
         // What an edit's producer wrote itself, which nothing else in VS Code
         // saw: the diagrams it affects are reloaded without waiting for the
         // file watcher, which may never report it.
@@ -1133,6 +1147,9 @@ export async function activateGlspIntegration(
         },
         setChatConfirmHandler: (handler) => {
             state.chatConfirmHandler = handler;
+        },
+        setDiagramChatHost: (host) => {
+            state.diagramChatHost = host;
         },
         viewOptions,
         dispose: () => disposable.dispose()
