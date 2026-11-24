@@ -18,6 +18,7 @@ import type { ChatCommandContribution } from './slash-commands';
  * What `/untangle` asks of the agent: the diagram's untangle MCP tools
  * (`untangle-start`, `untangle-try`, `untangle-propose`), Free Ports first, at most ten
  * tries, each kept only when it helps, and the best put to the person.
+ * {@link untanglePrompt} names the diagram's session in it.
  */
 export const UNTANGLE_PROMPT = [
     'Untangle the layout of this diagram, with the untangle tools of the diagram\'s MCP server. Look at the picture each tool answers with.',
@@ -30,6 +31,16 @@ export const UNTANGLE_PROMPT = [
     '6. Call untangle-propose with the best try. The person applies or discards it in the chat. Then say in one line which try you proposed and why, and stop.',
     'Do not edit any file yourself and do not run any other layout.'
 ].join('\n');
+
+/**
+ * The prompt for the diagram of session `sessionId`: an agent whose tools'
+ * schemas load on first use calls the first one with no session otherwise,
+ * and a view navigated into another file's workflow is no session of the
+ * chat's file for it to look up.
+ */
+export function untanglePrompt(sessionId: string): string {
+    return `${UNTANGLE_PROMPT}\nThis diagram's session is "${sessionId}": pass it as sessionId to every untangle tool.`;
+}
 
 export interface UntangleCommandDeps {
     /** The diagram's GLSP-MCP tools, which the agent untangles with. */
@@ -61,17 +72,30 @@ export function createUntangleCommand(deps: UntangleCommandDeps): ChatCommandCon
             if (!vscode.workspace.getConfiguration(CORE_CHAT_SECTION).get<boolean>('useGlspMcp', true)) {
                 return { success: false, error: "The agent untangles with the diagram's tools, which are turned off here." };
             }
+            // The diagram of the editor whose panel sent the command, whatever
+            // file its view draws (a workflow of another file, navigated into
+            // in place); from an older panel, the file's current editor.
+            const shownHere = () => ctx.diagramClientId
+                ?? deps.getEditorProvider()?.getClientIdForDocumentUri?.(vscode.Uri.file(ctx.file));
+            const { sessionId, error } = await diagramToolSession(deps.tools, ctx.file, shownHere(), { anyView: true });
+            if (!sessionId) {
+                return { success: false, error: error ?? "The diagram's tools know no open diagram of this file to untangle." };
+            }
             return {
                 success: true,
-                prompt: UNTANGLE_PROMPT,
+                prompt: untanglePrompt(sessionId),
                 // A try the agent left drawn, not put to the person (it stopped
                 // short, or was stopped), is drawn back as the diagram was:
-                // the next node moved would save it otherwise.
+                // the next node moved would save it otherwise. The session is
+                // looked up again when it is gone (the editor reopened).
                 afterTurn: async () => {
-                    const shownHere = deps.getEditorProvider()?.getClientIdForDocumentUri?.(vscode.Uri.file(ctx.file));
-                    const { sessionId } = await diagramToolSession(deps.tools, ctx.file, shownHere);
-                    if (sessionId) {
-                        await deps.tools.callTool('untangle-end', { sessionId });
+                    const ended = await deps.tools.callTool('untangle-end', { sessionId });
+                    if (ended.ok) {
+                        return;
+                    }
+                    const now = await diagramToolSession(deps.tools, ctx.file, shownHere(), { anyView: true });
+                    if (now.sessionId && now.sessionId !== sessionId) {
+                        await deps.tools.callTool('untangle-end', { sessionId: now.sessionId });
                     }
                 }
             };

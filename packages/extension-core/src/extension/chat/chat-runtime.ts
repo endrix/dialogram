@@ -1050,6 +1050,9 @@ export class ChatRuntime {
               ? { surfaceSelection: this.surfaceSelectionByFile.get(file) }
               : {}),
             mode,
+            ...(typeof data.diagramClientId === "string" && data.diagramClientId
+              ? { diagramClientId: data.diagramClientId }
+              : {}),
           };
           let result: { success: boolean; error?: string; info?: string; prompt?: string; afterTurn?: () => Promise<void> };
           try {

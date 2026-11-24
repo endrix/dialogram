@@ -13,7 +13,7 @@ import { WORKFLOW_NETWORK_MODEL_KEY, WorkflowDiagramMetadata, WorkflowDiagramTyp
 import { definitionKeyOf, drawInSourceOrder } from '../src/model/definition-port-order';
 import { ReadOnlySourceModelStorage } from '../src/server/read-only-source-model-storage';
 import { WorkflowCommandStack } from '../src/server/command-stack';
-import type { DiagramChatCard } from '../src/server/diagram-chat-host';
+import type { DiagramChatCard, DiagramChatTarget } from '../src/server/diagram-chat-host';
 import { layoutGeometryOf, type LayoutGeometry } from '../src/server/layout-snapshot';
 import { ApplyPortOrdersOperationHandler, APPLY_PORT_ORDERS_OPERATION_KIND } from '../src/untangle/apply-port-orders-handler';
 import type { SourcePortOrderWriter } from '../src/untangle/source-port-order-writer';
@@ -92,13 +92,17 @@ function tools(modelState: any, bound?: SourcePortOrderWriter, storage?: unknown
     const cards: DiagramChatCard[] = [];
     const posted: string[] = [];
     const dispatched: Action[] = [];
+    const targets: DiagramChatTarget[] = [];
     const chat = {
-        canAsk: () => true,
-        confirm: async (_uri: string, card: DiagramChatCard) => {
+        canAsk: (diagram: DiagramChatTarget) => {
+            targets.push(diagram);
+            return true;
+        },
+        confirm: async (_diagram: DiagramChatTarget, card: DiagramChatCard) => {
             cards.push(card);
             return { choice: card.choices[0] };
         },
-        post: async (_uri: string, message: { text: string }) => {
+        post: async (_diagram: DiagramChatTarget, message: { text: string }) => {
             posted.push(message.text);
             return true;
         }
@@ -119,6 +123,7 @@ function tools(modelState: any, bound?: SourcePortOrderWriter, storage?: unknown
         handler.writer = bound;
         handler.storage = storage;
         handler.chat = chat;
+        handler.clientId = 'client-1';
         handler.logger = { warn: () => undefined, error: () => undefined, info: () => undefined, debug: () => undefined };
         handler.requestAction = async () => ({ encoding: 'base64', data: 'PIC' });
         handler.actionDispatcher = {
@@ -129,7 +134,7 @@ function tools(modelState: any, bound?: SourcePortOrderWriter, storage?: unknown
         };
         return tool;
     }) as [UntangleStartMcpToolHandler, UntangleTryMcpToolHandler, UntangleProposeMcpToolHandler];
-    return { start, attempt, propose, cards, posted, dispatched };
+    return { start, attempt, propose, cards, posted, dispatched, targets };
 }
 
 const KEPT_CARD = {
@@ -166,6 +171,17 @@ describe('an untangle whose port orders stay with the layout', () => {
             );
         });
     }
+});
+
+describe('the chat an untangle is put to', () => {
+    it('is named by the session\'s client, whose editor\'s chat it is, and the file it draws', async () => {
+        const { modelState } = diagram();
+        const { start, attempt, propose, targets } = tools(modelState);
+        await start.handle({ sessionId: 's' } as any);
+        await attempt.handle({ sessionId: 's', layout: 'free-ports' } as any);
+        await propose.handle({ sessionId: 's', try: 1 } as any);
+        expect(targets).toEqual([{ clientId: 'client-1', sourceUri: pathToFileURL(NET).href }]);
+    });
 });
 
 describe('the card of an untangle', () => {

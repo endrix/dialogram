@@ -41,7 +41,7 @@ import {
 } from './open-diagram-target';
 import { matchesSourceExtension, sourceFileNoun } from './source-extensions';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
-import type { DiagramChatHost } from '@dialogram/diagram-server/server/diagram-chat-host';
+import { routeDiagramChat, type DocumentChatHost } from './diagram-chat-routing';
 import { executeViewerCommand, executeViewerOpen, executeViewerReveal } from './viewer-actions';
 import { registerLauncher } from './launcher';
 import { decideDiagramOpen } from './diagram-open-decision';
@@ -279,7 +279,7 @@ interface GlspActivationState {
     /** See {@link GlspIntegrationHandle.setChatConfirmHandler}. */
     chatConfirmHandler?: ChatConfirmHandler;
     /** See {@link GlspIntegrationHandle.setDiagramChatHost}. */
-    diagramChatHost?: DiagramChatHost;
+    diagramChatHost?: DocumentChatHost;
     context: vscode.ExtensionContext;
     profile: DiagramProfile;
     // Transient cross-file drill-down handoff, scoped to this activation (per profile instance).
@@ -327,9 +327,10 @@ export interface GlspIntegrationHandle extends vscode.Disposable {
     setChatConfirmHandler(handler: ChatConfirmHandler | undefined): void;
     /**
      * The chat, for a diagram's session to put a card or a message to the
-     * person (the chat's untangle). Unset, a session is told no chat can ask.
+     * person (the chat's untangle), by the file each panel speaks for. Unset,
+     * a session is told no chat can ask.
      */
-    setDiagramChatHost(host: DiagramChatHost | undefined): void;
+    setDiagramChatHost(host: DocumentChatHost | undefined): void;
     /** The reader's view options, per file: what the profile handle reads and sets. */
     viewOptions: ViewOptionsHost;
 }
@@ -389,6 +390,8 @@ export async function activateGlspIntegration(
     const storageOptions = composeStorageRuntimeOptions(profile);
     let loadProgressTarget: Pick<WorkflowEditorProvider, 'postLoading'> | undefined;
     let outOfBandWriteTarget: Pick<WorkflowEditorProvider, 'reloadAfterOutOfBandWrites'> | undefined;
+    // Which editor shows a session: its chat is that editor's panel.
+    let chatEditors: Pick<WorkflowEditorProvider, 'getChatUriForClientId'> | undefined;
 
     // The reader's view options, per file (view-options-host.ts). Made
     // before the server, whose model source it wraps; the editors it tells
@@ -450,12 +453,12 @@ export async function activateGlspIntegration(
         // What a load is doing, shown in the diagram that is waiting for it.
         // The provider is made further down; by the first load it is there.
         loadProgress: (clientId, update) => loadProgressTarget?.postLoading(clientId, update),
-        // The chat of each diagram, once the profile runtime has one.
-        chatHost: {
-            canAsk: uri => state.diagramChatHost?.canAsk(uri) ?? false,
-            confirm: async (uri, card) => state.diagramChatHost?.confirm(uri, card),
-            post: async (uri, message) => (await state.diagramChatHost?.post(uri, message)) ?? false
-        },
+        // The chat of each diagram, once the profile runtime has one: the
+        // panel of the editor showing the session (diagram-chat-routing.ts).
+        chatHost: routeDiagramChat(
+            () => state.diagramChatHost,
+            clientId => chatEditors?.getChatUriForClientId(clientId)
+        ),
         // What an edit's producer wrote itself, which nothing else in VS Code
         // saw: the diagrams it affects are reloaded without waiting for the
         // file watcher, which may never report it.
@@ -1026,6 +1029,7 @@ export async function activateGlspIntegration(
     );
     loadProgressTarget = editorProvider;
     outOfBandWriteTarget = editorProvider;
+    chatEditors = editorProvider;
     viewOptionsEditors = editorProvider;
     editorProvider.viewOptionsHost = viewOptions;
 

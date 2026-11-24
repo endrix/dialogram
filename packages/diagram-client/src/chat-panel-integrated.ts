@@ -470,16 +470,22 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     return (globalThis as any).diagramIdentifier?.uri;
   }
 
+  /** The GLSP client id of the diagram this panel lives in: which of a file's editors spoke. */
+  private get diagramClientId(): string | undefined {
+    return (globalThis as any).diagramIdentifier?.clientId;
+  }
+
   /**
    * Send a chat message to the extension host over the GLSP messenger channel.
    * Every message carries the diagram's workflow URI so the host can scope the
-   * session even when there is no active text editor.
+   * session even when there is no active text editor, and the diagram's client
+   * id, so a command acts on this editor's diagram of the file.
    */
   private sendToHost(type: string, data: any = {}): boolean {
     if (!this.channel) return false;
     this.channel.sendToHost(ChatToHost.method, {
       type,
-      data: { workflowUri: this.workflowUri, ...data },
+      data: { workflowUri: this.workflowUri, diagramClientId: this.diagramClientId, ...data },
     });
     return true;
   }
