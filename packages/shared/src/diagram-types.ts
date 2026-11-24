@@ -188,6 +188,14 @@ export namespace WorkflowDiagramMetadata {
     export const AST_PATH = 'cal:astPath';
     export const IS_READ_ONLY = 'cal:readOnly';
     export const IS_NETWORK_INSTANCE = 'cal:isNetworkInstance';
+    /**
+     * A nested unit answered by a past run rather than run with its parent
+     * (a workflow instance): that run's directory, or its record, as the
+     * producer listed it on `meta.workflowInstance.run`, relative to the file
+     * of the workflow the node is drawn in. A view inside the node is drawn
+     * from that run (`recorded-run.ts`).
+     */
+    export const RECORDED_RUN = 'wf:recordedRun';
     /** The views the producer offers of the unit behind a node besides its
      *  structure, `[{ id, label, of? }]` as it listed them on `meta.views` (a
      *  leaf's synthesis, say; `of: 'instance'` for a view of this instance and

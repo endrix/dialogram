@@ -34,6 +34,8 @@ export interface NavigationTrailEntry {
     viewLabel?: string;
     /** The view is of the instance the crumb was reached through (`UnitView.of`). */
     viewOf?: 'instance';
+    /** The instance is answered by a past run, this one (`RECORDED_RUN`): the views in it are drawn from it. */
+    recordedRun?: string;
 }
 
 /** One view a producer offers of a unit, as `meta.views` lists it. */
@@ -254,12 +256,14 @@ export function parseNavigationTrailArg(raw: unknown): NavigationTrailEntry[] {
             const view = typeof item?.view === 'string' ? item.view.trim() : '';
             const viewLabel = typeof item?.viewLabel === 'string' ? item.viewLabel.trim() : '';
             const viewOf = item?.viewOf === 'instance' ? { viewOf: 'instance' as const } : {};
+            const recordedRun = typeof item?.recordedRun === 'string' ? item.recordedRun.trim() : '';
             if (sourceUri !== '' && workflowName !== '') {
                 out.push({
                     sourceUri: normalizeSourceUriKey(sourceUri),
                     workflowName,
                     ...(workflowInstanceName !== '' ? { workflowInstanceName } : {}),
-                    ...(view !== '' ? { view, ...(viewLabel !== '' ? { viewLabel } : {}), ...viewOf } : {})
+                    ...(view !== '' ? { view, ...(viewLabel !== '' ? { viewLabel } : {}), ...viewOf } : {}),
+                    ...(recordedRun !== '' ? { recordedRun } : {})
                 });
             }
         }
