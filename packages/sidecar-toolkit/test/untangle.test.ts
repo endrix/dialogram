@@ -13,7 +13,7 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { GGraph, GNode, GPort, type GModelElement } from '@eclipse-glsp/server';
 import { WORKFLOW_NETWORK_MODEL_KEY, WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
-import { DECLARED_ROW_ARG, recordProbe } from '@dialogram/diagram-server/model/definition-port-order';
+import { definitionKeyOf, recordProbe } from '@dialogram/diagram-server/model/definition-port-order';
 import { layoutGeometryOf } from '@dialogram/diagram-server/server/layout-snapshot';
 import { ApplyPortOrdersOperationHandler, APPLY_PORT_ORDERS_OPERATION_KIND } from '../src/server/untangle/apply-port-orders-handler.js';
 import { beginUntangle, drawnDefinitions, orderToWrite, untangleOf, writable } from '../src/server/untangle/untangle-session.js';
@@ -27,8 +27,8 @@ function el<T extends GModelElement>(cls: new () => T, props: Record<string, unk
     return element;
 }
 
-/** A port named `name`, an input or an output, at row `y`; declared at `declared` when Free Ports moved it. */
-function port(node: string, name: string, direction: 'input' | 'output', y: number, declared?: number): GPort {
+/** A port named `name`, an input or an output, drawn at row `y`; a node's ports are given in the order the source declares them. */
+function port(node: string, name: string, direction: 'input' | 'output', y: number): GPort {
     return el(GPort, {
         id: `${node}.${direction}.${name}`,
         type: direction === 'input' ? WorkflowDiagramTypes.PORT_INPUT : WorkflowDiagramTypes.PORT_OUTPUT,
@@ -36,8 +36,7 @@ function port(node: string, name: string, direction: 'input' | 'output', y: numb
         size: { width: 10, height: 10 },
         args: {
             [WorkflowDiagramMetadata.PORT_NAME]: name,
-            [WorkflowDiagramMetadata.PORT_DIRECTION]: direction,
-            ...(declared !== undefined ? { [DECLARED_ROW_ARG]: declared } : {})
+            [WorkflowDiagramMetadata.PORT_DIRECTION]: direction
         }
     });
 }
@@ -73,8 +72,8 @@ describe('the order written for a definition', () => {
 describe('what a try says of each definition', () => {
     it('gives its order as drawn and as declared, and each instance\'s own after Free Ports', () => {
         // Free Ports drew both instances B over A; they were declared A over B.
-        const s1 = instance('s1', 'Stage', [port('s1', 'A', 'input', 30, 10), port('s1', 'B', 'input', 10, 30), port('s1', 'Out', 'output', 10)]);
-        const s2 = instance('s2', 'Stage', [port('s2', 'A', 'input', 30, 10), port('s2', 'B', 'input', 10, 30), port('s2', 'Out', 'output', 10)]);
+        const s1 = instance('s1', 'Stage', [port('s1', 'A', 'input', 30), port('s1', 'B', 'input', 10), port('s1', 'Out', 'output', 10)]);
+        const s2 = instance('s2', 'Stage', [port('s2', 'A', 'input', 30), port('s2', 'B', 'input', 10), port('s2', 'Out', 'output', 10)]);
         const lone = instance('m', 'Merge', [port('m', 'P', 'input', 10), port('m', 'Q', 'input', 30), port('m', 'Out', 'output', 10)]);
         const root = el(GGraph, { id: 'g' }, [s1, s2, lone]);
         recordProbe(root, [
@@ -117,8 +116,8 @@ function design() {
     for (const file of Object.values(files)) {
         writeFileSync(file, `# ${path.basename(file)}\n`);
     }
-    const s1 = instance('s1', 'Stage', [port('s1', 'A', 'input', 30, 10), port('s1', 'B', 'input', 10, 30)], files.stages);
-    const m = instance('m', 'Merge', [port('m', 'P', 'input', 30, 10), port('m', 'Q', 'input', 10, 30)], files.merges);
+    const s1 = instance('s1', 'Stage', [port('s1', 'A', 'input', 30), port('s1', 'B', 'input', 10)], files.stages);
+    const m = instance('m', 'Merge', [port('m', 'P', 'input', 30), port('m', 'Q', 'input', 10)], files.merges);
     const root = el(GGraph, { id: 'g', type: 'graph' }, [s1, m]);
     const elements = new Map<string, GModelElement>();
     const index = (element: GModelElement): void => {
@@ -157,10 +156,11 @@ function producer(sent: Sent[], refuse?: string, fail?: string) {
 }
 
 /** The layout file: each save, by the first node's x. */
-function layouts(saved: number[]) {
+function layouts(saved: number[], portOrders: unknown[] = []) {
     return {
-        saveLayoutImmediate: async (_file: string, _network: string, positions: Map<string, { x: number; y: number }>) => {
+        saveLayoutImmediate: async (_file: string, _network: string, positions: Map<string, { x: number; y: number }>, _routes: unknown, orders?: unknown) => {
             saved.push(positions.get('s1')?.x ?? NaN);
+            portOrders.push(orders);
         }
     };
 }
@@ -238,6 +238,19 @@ describe('applying an untangle', () => {
             ok: false, files: [], message: 'The untangle could not be applied: the sidecar went away. Nothing was changed.'
         });
         expect(stack.canUndo()).toBe(false);
+    });
+
+    it('keeps with the layout the port orders it does not write, and none of those it writes', async () => {
+        const { modelState, root, s1, m } = design();
+        beginUntangle(modelState, { root, original: layoutGeometryOf(root), baseline: { crossings: 3, definitions: [] }, tries: [] });
+        const portOrders: unknown[] = [];
+        const stack = commandStack();
+        await onDisk(() => stack.execute(applyCommand(modelState, producer([]), layouts([], portOrders), [BOTH[0]])));
+        // Stage's order is in stages.py now; Merge's is kept in the layout.
+        expect(portOrders).toEqual([{ set: { [definitionKeyOf(m)!]: { west: ['Q', 'P'], east: [] } }, remove: [definitionKeyOf(s1)!] }]);
+        await onDisk(() => stack.undo());
+        // Undone, the drawing before is saved, the orders it was drawn in with it.
+        expect(portOrders.at(-1)).toEqual({ set: { [definitionKeyOf(s1)!]: { west: ['B', 'A'], east: [] }, [definitionKeyOf(m)!]: { west: ['Q', 'P'], east: [] } }, remove: [] });
     });
 
     it('saves the try put to the person, whatever is drawn when it is applied', async () => {

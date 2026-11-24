@@ -66,7 +66,8 @@ async function loadNested(nestedNavigation: 'in-place' | 'new-editor', saved: Re
             return nodes ? new Map(nodes.map(n => [n, { x: 1, y: 1 }])) : undefined;
         },
         loadEdgeRoutes: async () => undefined,
-        loadPortBuses: async () => undefined
+        loadPortBuses: async () => undefined,
+        loadPortOrders: async () => undefined
     };
 
     const doc = { version: '1', graph: { id: 'wf:block', nodes: [], edges: [] } };

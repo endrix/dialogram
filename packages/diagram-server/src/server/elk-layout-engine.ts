@@ -17,14 +17,14 @@ import { ElkExtendedEdge, ElkNode, ElkPort, ElkShape } from 'elkjs';
 import { injectable } from 'inversify';
 import { isBoundaryNodeType, WorkflowDiagramTypes, WORKFLOW_LAYOUT_PERSISTENCE_KEY } from '@dialogram/shared';
 import { isUnwiredPin, placeUnwiredPins } from './group-geometry';
-import { WorkflowDiagramConstants, WorkflowDiagramMetadata, portRowOffset } from '@dialogram/shared';
+import { WorkflowDiagramConstants, WorkflowDiagramMetadata } from '@dialogram/shared';
 import {
     AUTOMATON_MARGIN_PX, AUTOMATON_SPREADS, PORT_COLUMN_GAP_PX, automatonClutter, automatonDrawingBox, automatonElkGraph, automatonGeometryInputs,
     automatonPlaces, clearEnough, isStateType, lessCluttered, type Clutter
 } from './automaton-layout';
 
 import { snapRouteEndpoints } from '../routing/persisted-edge-routes';
-import { DECLARED_ROW_ARG, givenPortOrders, gportSide, onePortOrderPerDefinition, portsMayReorder, recordProbe, type ProbedOrder } from '../model/definition-port-order';
+import { drawInSourceOrder, givenPortOrders, gportSide, onePortOrderPerDefinition, portsMayReorder, recordProbe, regridPortRows, type ProbedOrder } from '../model/definition-port-order';
 import { FAST_LAYOUT_OPTIONS, countLayoutElements, layoutTierFor, type LayoutGraphSize, type LayoutTier } from './layout-configurator';
 import { isRowsLayout } from '../model/group-edges';
 import { joinPinToPinEdges, splitPinToPinEdges } from './pin-to-pin-edges';
@@ -35,10 +35,12 @@ import { mkdir, writeFile } from 'node:fs/promises';
 /** Graph layout option: `free` lets a layout choose each node's port order against crossings. */
 export const PORT_ORDER_OPTION = 'dialogram.portOrder';
 export const PORT_ORDER_FREE = 'free';
-/** The ports in the order the source declares them, what every value but `free` means. */
+/**
+ * The ports in the order the source declares them (the Untangled layout).
+ * Any other value but `free`, or none, keeps them in the order they are
+ * drawn in.
+ */
 export const PORT_ORDER_DECLARED = 'declared';
-/** On a port the Free Ports pass has moved: the row the server gave it from the declaration. */
-export { DECLARED_ROW_ARG };
 
 /**
  * `elk.layered.priority.direction` of a wire that goes with the flow, in a
@@ -219,11 +221,15 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
                 } catch (e) {
                     console.warn('[cal-elk] port ordering skipped:', e);
                 }
-            } else {
-                // A layout that does not ask for the pass lays the ports out as the
-                // source declares them, even after a Free Ports layout moved them.
-                this.restoreDeclaredRows(root);
+            } else if (this.portsInSourceOrder(root)) {
+                // Untangled lays the ports out as the source declares them: the
+                // way back from a Free Ports layout, whose order the save lets go.
+                drawInSourceOrder(root);
             }
+            // Any other layout keeps the ports in the order they are drawn in: the
+            // source's, or the one the diagram keeps for a definition (a Free Ports
+            // layout, an untangle applied), which the layout file holds and the
+            // model is built in (definition-port-order.ts).
 
             // Re-implement base `layout` so we can dump the exact object passed to elk.layout().
             (this as any).elkEdges = [];
@@ -392,6 +398,12 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         return algorithm === undefined || algorithm === 'layered';
     }
 
+    /** Whether the layout asks for the ports in the source's order (`dialogram.portOrder: declared`, Untangled). */
+    private portsInSourceOrder(root: GGraph): boolean {
+        const options = (root as any).layoutOptions as Record<string, unknown> | undefined;
+        return options?.[PORT_ORDER_OPTION] === PORT_ORDER_DECLARED;
+    }
+
     /**
      * A node whose ports may change order: every ordinary node. The if and loop
      * containers place their branch ports by index, and a boundary node has one.
@@ -499,48 +511,9 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         return counts;
     }
 
-    /**
-     * The node's ports of one side take the rows they already occupy, in the
-     * order given (port ids, top to bottom). A port's box sits on its row, or
-     * above it when taller (a bus's dot, centred on the row): the rows are
-     * read without that offset and each port keeps its own. The labels are the
-     * ports' children and move with them; nothing else about the node changes.
-     */
+    /** The node's ports take the rows they already occupy, in the order given (port ids, top to bottom). */
     private regridPorts(node: GNode, orderedIds: readonly string[]): void {
-        const offsetOf = (port: GPort): number =>
-            portRowOffset(port.size?.height ?? WorkflowDiagramConstants.PORT_HEIGHT_PX);
-        const rank = new Map(orderedIds.map((id, k) => [id, k] as const));
-        for (const side of ['WEST', 'EAST'] as const) {
-            const ports = this.findChildren(node, GPort).filter(p => gportSide(p) === side);
-            if (ports.length < 2 || !ports.every(p => rank.has(p.id))) {
-                continue;
-            }
-            const rows = ports.map(p => (p.position?.y ?? 0) - offsetOf(p)).sort((a, b) => a - b);
-            const order = [...ports].sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
-            order.forEach((port, k) => {
-                const args = (port.args ?? {}) as Record<string, unknown>;
-                if (args[DECLARED_ROW_ARG] === undefined) {
-                    port.args = { ...args, [DECLARED_ROW_ARG]: port.position?.y ?? 0 };
-                }
-                port.position = { x: port.position?.x ?? 0, y: rows[k] + offsetOf(port) };
-            });
-        }
-    }
-
-    /** Every port the pass has moved goes back on its declared row. */
-    private restoreDeclaredRows(root: GGraph): void {
-        const visit = (element: GModelElement): void => {
-            if (element instanceof GPort) {
-                const row = (element.args as Record<string, unknown> | undefined)?.[DECLARED_ROW_ARG];
-                if (typeof row === 'number') {
-                    element.position = { x: element.position?.x ?? 0, y: row };
-                }
-            }
-            for (const child of element.children ?? []) {
-                visit(child);
-            }
-        };
-        visit(root);
+        regridPortRows(node, orderedIds);
     }
 
     private async dumpElkInputGraph(elkGraph: ElkNode): Promise<void> {

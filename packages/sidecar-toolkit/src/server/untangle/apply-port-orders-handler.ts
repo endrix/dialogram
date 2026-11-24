@@ -17,13 +17,14 @@
  */
 import { promises as fs } from 'node:fs';
 import { Operation } from '@eclipse-glsp/protocol';
-import { ModelState, OperationHandler, type Command, type MaybePromise } from '@eclipse-glsp/server';
+import { GNode, ModelState, OperationHandler, type Command, type MaybePromise } from '@eclipse-glsp/server';
 import type { CommandThatMayChangeNothing, CommandThatMayRefuse } from '@dialogram/diagram-server/server/command-stack';
 import type { CommandThatWritesOutOfBand, OutOfBandWrite } from '@dialogram/diagram-server/server/out-of-band-writes';
 import { inject, injectable } from 'inversify';
 import * as vscode from 'vscode';
 import { ReversibleMultiWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-multi-workspace-edit-command';
 import { LayoutPersistenceService } from '@dialogram/diagram-server/services/layout-persistence-service';
+import { definitionKeyOf } from '@dialogram/diagram-server/model/definition-port-order';
 import { applyLayoutGeometry, layoutGeometryOf, saveLayoutGeometry, type LayoutGeometry } from '@dialogram/diagram-server/server/layout-snapshot';
 import { readAuthoritativeSourceText } from '../operations/authoritative-source-text';
 import { entityFileOf } from '../operations/entity-port-write';
@@ -57,6 +58,28 @@ async function textOf(uri: vscode.Uri): Promise<string | undefined> {
     } catch {
         return undefined;
     }
+}
+
+/**
+ * `geometry`, saved without keeping a port order for the definitions `keys`
+ * names: the source has it once written, and an order the layout kept would
+ * stand over the source's when it is changed by hand.
+ */
+export function withOrdersInSource(geometry: LayoutGeometry, keys: ReadonlySet<string>): LayoutGeometry {
+    if (keys.size === 0) {
+        return geometry;
+    }
+    const { set, remove } = geometry.saved.portOrders;
+    return {
+        ...geometry,
+        saved: {
+            ...geometry.saved,
+            portOrders: {
+                set: Object.fromEntries(Object.entries(set).filter(([key]) => !keys.has(key))),
+                remove: [...new Set([...remove, ...keys])]
+            }
+        }
+    };
 }
 
 function messageOf(error: unknown): string {
@@ -148,7 +171,12 @@ export class ApplyPortOrdersOperationHandler extends OperationHandler {
         // The try put to the person, as it was drawn: what was proposed is
         // what is saved, whatever the diagram was made to show meanwhile.
         const proposed = state?.proposed !== undefined ? state.tries[state.proposed - 1] : undefined;
-        const after = proposed?.geometry ?? layoutGeometryOf(this.modelState.root);
+        const written = new Set((operation.writes ?? []).flatMap(each => {
+            const node = this.modelState.index.find(each.elementId);
+            const key = node instanceof GNode ? definitionKeyOf(node) : undefined;
+            return key === undefined ? [] : [key];
+        }));
+        const after = withOrdersInSource(proposed?.geometry ?? layoutGeometryOf(this.modelState.root), written);
         const before = state?.original ?? after;
         const drawing = async (geometry: LayoutGeometry): Promise<void> => {
             applyLayoutGeometry(this.modelState.root, geometry);

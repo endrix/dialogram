@@ -6,6 +6,7 @@
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { keptPortOrdersOf, withPortOrderChanges, type PortOrderChanges, type SideOrder } from '../model/definition-port-order';
 
 /**
  * Layout file schema version.
@@ -44,6 +45,13 @@ export interface LayoutFileContent {
      * views. Kept by every write of the file as it stands.
      */
     viewOptions?: Record<string, Record<string, boolean>>;
+    /**
+     * The order each definition's ports are drawn in where it is not the
+     * source's, by definition key (definition-port-order.ts): one record for
+     * the file, so every view drawn from it shows a definition alike. Kept by
+     * every write of the file as it stands; a save of the layout says it again.
+     */
+    portOrders?: Record<string, SideOrder>;
 }
 
 type LayoutSnapshot = {
@@ -240,6 +248,21 @@ const writesInProgress = new Map<string, Promise<void>>();
 function viewOptionsOf(data: LayoutFileContent | undefined): Pick<LayoutFileContent, 'viewOptions'> {
     const raw = data?.viewOptions;
     return raw && typeof raw === 'object' && !Array.isArray(raw) && Object.keys(raw).length > 0 ? { viewOptions: raw } : {};
+}
+
+/** The kept port orders a layout file carries, to be written back as they are. */
+function portOrdersOf(data: LayoutFileContent | undefined): Pick<LayoutFileContent, 'portOrders'> {
+    const portOrders = keptPortOrdersOf(data?.portOrders);
+    return portOrders ? { portOrders } : {};
+}
+
+/** The kept port orders `data` carries with `changes` made, to be written. */
+function portOrdersWith(data: LayoutFileContent | undefined, changes: PortOrderChanges | undefined): Pick<LayoutFileContent, 'portOrders'> {
+    if (!changes) {
+        return portOrdersOf(data);
+    }
+    const portOrders = withPortOrderChanges(keptPortOrdersOf(data?.portOrders), changes);
+    return Object.keys(portOrders).length > 0 ? { portOrders } : {};
 }
 
 export class LayoutPersistenceService {
@@ -493,7 +516,8 @@ export class LayoutPersistenceService {
         workflowFilePath: string,
         networkId: string,
         positions: Map<string, NodePosition>,
-        edgeRoutes?: Map<string, NodePosition[]>
+        edgeRoutes?: Map<string, NodePosition[]>,
+        portOrders?: PortOrderChanges
     ): Promise<void> {
         if (this.disablePersistence) {
             return;
@@ -508,7 +532,7 @@ export class LayoutPersistenceService {
             this.pendingSaves.delete(layoutPath);
         }
 
-        await this.doSave(layoutPath, networkId, positions, edgeRoutes);
+        await this.doSave(layoutPath, networkId, positions, edgeRoutes, portOrders);
     }
 
     /** Run `write` once every write to `layoutPath` started before it has finished. */
@@ -530,16 +554,18 @@ export class LayoutPersistenceService {
         layoutPath: string,
         networkId: string,
         positions: Map<string, NodePosition>,
-        edgeRoutes?: Map<string, NodePosition[]>
+        edgeRoutes?: Map<string, NodePosition[]>,
+        portOrders?: PortOrderChanges
     ): Promise<void> {
-        return this.serialized(layoutPath, () => this.writeLayout(layoutPath, networkId, positions, edgeRoutes));
+        return this.serialized(layoutPath, () => this.writeLayout(layoutPath, networkId, positions, edgeRoutes, portOrders));
     }
 
     private async writeLayout(
         layoutPath: string,
         networkId: string,
         positions: Map<string, NodePosition>,
-        edgeRoutes?: Map<string, NodePosition[]>
+        edgeRoutes?: Map<string, NodePosition[]>,
+        portOrders?: PortOrderChanges
     ): Promise<void> {
         const nodes: Record<string, NodePosition> = {};
         for (const [name, pos] of positions) {
@@ -603,10 +629,13 @@ export class LayoutPersistenceService {
             }
         };
 
+        // The kept port orders are the file's: a save that brings the drawing's
+        // makes its changes, any other keeps them as they stand.
         const content: LayoutFileContent = {
             version: LAYOUT_VERSION,
             layouts: mergedLayouts,
-            ...viewOptionsOf(existing)
+            ...viewOptionsOf(existing),
+            ...portOrdersWith(existing, portOrders)
         };
 
         try {
@@ -679,7 +708,7 @@ export class LayoutPersistenceService {
             const snapshot: LayoutSnapshot = layouts[networkId] ?? { nodes: {} };
             const portBuses = merge(this.unsavedPortBuses.get(unsavedKey) ?? snapshot.portBuses);
             layouts[networkId] = { ...snapshot, portBuses };
-            const content: LayoutFileContent = { version: LAYOUT_VERSION, layouts, ...viewOptionsOf(existing) };
+            const content: LayoutFileContent = { version: LAYOUT_VERSION, layouts, ...viewOptionsOf(existing), ...portOrdersOf(existing) };
             try {
                 await fs.mkdir(path.dirname(layoutPath), { recursive: true });
                 await fs.writeFile(layoutPath, JSON.stringify(content, null, 2), 'utf-8');
@@ -729,7 +758,7 @@ export class LayoutPersistenceService {
             const snapshot: LayoutSnapshot = layouts[networkId] ?? { nodes: {} };
             const { unwrittenStates: _replaced, ...rest } = snapshot;
             layouts[networkId] = Object.keys(record).length > 0 ? { ...rest, unwrittenStates: record } : rest;
-            const content: LayoutFileContent = { version: LAYOUT_VERSION, layouts, ...viewOptionsOf(existing) };
+            const content: LayoutFileContent = { version: LAYOUT_VERSION, layouts, ...viewOptionsOf(existing), ...portOrdersOf(existing) };
             try {
                 await fs.mkdir(path.dirname(layoutPath), { recursive: true });
                 await fs.writeFile(layoutPath, JSON.stringify(content, null, 2), 'utf-8');
@@ -739,6 +768,17 @@ export class LayoutPersistenceService {
                 this.unsavedUnwrittenStates.set(unsavedKey, record);
             }
         });
+    }
+
+    /**
+     * The port orders the file keeps for the definitions drawn from it, by
+     * definition key (definition-port-order.ts); none when it keeps none.
+     */
+    async loadPortOrders(workflowFilePath: string): Promise<Record<string, SideOrder> | undefined> {
+        if (this.disablePersistence) {
+            return undefined;
+        }
+        return portOrdersOf(await this.readAnyLayoutFile(workflowFilePath)).portOrders;
     }
 
     /**
@@ -786,7 +826,7 @@ export class LayoutPersistenceService {
                 return;
             }
             const layouts = existing ? this.normalizeLayoutsFromFile(existing) : {};
-            const content: LayoutFileContent = { version: LAYOUT_VERSION, layouts, ...(kept ? { viewOptions: kept } : {}) };
+            const content: LayoutFileContent = { version: LAYOUT_VERSION, layouts, ...(kept ? { viewOptions: kept } : {}), ...portOrdersOf(existing) };
             try {
                 await fs.mkdir(path.dirname(layoutPath), { recursive: true });
                 await fs.writeFile(layoutPath, JSON.stringify(content, null, 2), 'utf-8');

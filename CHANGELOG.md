@@ -1074,6 +1074,23 @@ platform that hands it one.
 
 ### Changed
 
+- **A port order the diagram draws is kept with its layout.** The order a
+  Free Ports layout, or an untangle applied, gives a definition's ports is
+  saved in the diagram's layout file (`portOrders`, one record for the file,
+  by definition) whenever the layout is saved, and the model is built in it:
+  after a reload the ports are on the same rows and the routes still end on
+  them. A definition drawn in the source's order again is let go; an order
+  that no longer names the definition's ports (one added or renamed since)
+  is not used. Layout Diagram, and every layout but Untangled and Free
+  Ports, now keeps the ports in the order they are drawn in, so the order
+  outlives the layout after an edit; Untangled puts them back in the
+  source's order, as before, and the save lets the kept order go. An
+  untangle applied to source (wfpy) keeps no order in this diagram's layout
+  for what it wrote, so a later edit of the source's order is drawn here.
+  An open bus moves with its members, and is one place in an order
+  open or closed; a cell drawn as its symbol keeps its pins where the
+  symbol has them, under Free Ports too. Each untangle try starts from the
+  drawing the untangle began on.
 - **The chat starts opencode 2 with its Code Mode off.** opencode 2 puts a
   session's MCP tools behind one `execute` tool: the model writes a script
   that calls them and reads only what it prints, so a picture a tool

@@ -257,7 +257,16 @@ export class UntangleTryMcpToolHandler extends UntangleToolHandler<UntangleTryIn
         }
         const root = this.modelState.root;
         forgetProbe(root);
-        await this.preview.run(layout as PreviewLayout, given);
+        // Each try starts from the drawing the untangle began on: a port keeps
+        // the row it is drawn on through a layout, and the try before this
+        // one may have moved it. A try that fails leaves that drawing shown.
+        applyLayoutGeometry(root, state.original);
+        try {
+            await this.preview.run(layout as PreviewLayout, given);
+        } catch (error) {
+            await this.preview.show().catch(() => undefined);
+            throw error;
+        }
         await this.preview.show();
         const crossings = edgeCrossings(root);
         const picture = await this.picture();

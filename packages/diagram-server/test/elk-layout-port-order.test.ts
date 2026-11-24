@@ -6,12 +6,14 @@ import { GEdge, GGraph, GNode, GPort } from '@eclipse-glsp/server';
 import { DefaultElementFilter } from '@eclipse-glsp/layout-elk';
 import { WorkflowDiagramTypes } from '@dialogram/shared';
 import { PORT_ORDER_FREE, PORT_ORDER_OPTION, WorkflowElkLayoutEngine } from '../src/server/elk-layout-engine';
-import { UNTANGLED_ELK_OPTIONS } from '../src/operations/layout-tuned-handler';
+import { UNTANGLED_ELK_OPTIONS, tunedLayoutOptions } from '../src/operations/layout-tuned-handler';
 import { WorkflowLayoutConfigurator } from '../src/server/layout-configurator';
 import { GraphGModelSource, type PyGraphDocument } from '../src/model/graph-gmodel-source';
 import { convertToGModelRoot } from '../src/server/gmodel-convert';
 import { edgeCrossings as crossings } from '../src/model/edge-crossings';
-import { PORT_ORDERS_OPTION, definitionKeyOf, portNameOf } from '../src/model/definition-port-order';
+import {
+    PORT_ORDERS_OPTION, applyKeptPortOrders, definitionKeyOf, keptPortOrderChanges, portNameOf, withPortOrderChanges
+} from '../src/model/definition-port-order';
 
 /**
  * Ports sit on a grid in the order the source declares them and ELK may not
@@ -72,6 +74,9 @@ function drawnOrder(node: GNode): { west: string[]; east: string[] } {
     return { west: names(true), east: names(false) };
 }
 
+/** The Untangled layout's options as the Layout menu sends them: its ELK options and the declared port order. */
+const UNTANGLED_ELK_OPTIONS_WITH_ORDER = tunedLayoutOptions('untangled') as Record<string, string>;
+
 function loadFixture(): GGraph {
     const doc = JSON.parse(readFileSync(join(__dirname, 'fixtures-speculation-flow.json'), 'utf8')) as PyGraphDocument;
     return convertToGModelRoot(new GraphGModelSource({} as any).transform(doc) as any) as unknown as GGraph;
@@ -128,18 +133,51 @@ describe('WorkflowElkLayoutEngine port order', () => {
         }
     });
 
-    it('puts every port back on its declared row when a plain layout follows Free Ports', async () => {
+    it('keeps the rows Free Ports chose when a plain layout follows it', async () => {
         const root = loadFixture();
         const declared = declaredOrder(root);
         await layoutFixture({ [PORT_ORDER_OPTION]: PORT_ORDER_FREE }, root);
+        const chosen = new Map(collect<GPort>(root, GPort).map(p => [p.id, p.position!.y] as const));
         const moved = collect<GPort>(root, GPort).filter(p => p.position!.y !== declared.get(p.id)).length;
         expect(moved).toBeGreaterThan(0);
         await layoutFixture({}, root);
         for (const port of collect<GPort>(root, GPort)) {
-            expect(port.position!.y).toBe(declared.get(port.id));
+            expect(port.position!.y).toBe(chosen.get(port.id));
         }
         for (const edge of collect<GEdge>(root, GEdge)) {
             expect(((edge as any).routingPoints as Point[]).length).toBeGreaterThanOrEqual(2);
+        }
+    });
+
+    it('puts every port back on its declared row when Untangled follows Free Ports', async () => {
+        const root = loadFixture();
+        const declared = declaredOrder(root);
+        await layoutFixture({ [PORT_ORDER_OPTION]: PORT_ORDER_FREE }, root);
+        expect(collect<GPort>(root, GPort).some(p => p.position!.y !== declared.get(p.id))).toBe(true);
+        await layoutFixture(UNTANGLED_ELK_OPTIONS_WITH_ORDER, root);
+        for (const port of collect<GPort>(root, GPort)) {
+            expect(port.position!.y).toBe(declared.get(port.id));
+        }
+        // And the save lets every kept order go.
+        expect(keptPortOrderChanges(root).set).toEqual({});
+    });
+
+    it('draws the rows Free Ports chose again, built from the source, from the orders the layout keeps', async () => {
+        const { root, declared } = await layoutFixture({ [PORT_ORDER_OPTION]: PORT_ORDER_FREE });
+        const chosen = new Map(collect<GPort>(root, GPort).map(p => [p.id, p.position!.y] as const));
+        expect([...chosen].some(([id, y]) => declared.get(id) !== y)).toBe(true);
+        const kept = withPortOrderChanges(undefined, keptPortOrderChanges(root));
+        expect(Object.keys(kept).length).toBeGreaterThan(0);
+
+        const reloaded = loadFixture();
+        applyKeptPortOrders(reloaded, kept);
+        for (const port of collect<GPort>(reloaded, GPort)) {
+            expect(port.position!.y).toBe(chosen.get(port.id));
+        }
+        // And a plain layout of it keeps them.
+        await layoutFixture({}, reloaded);
+        for (const port of collect<GPort>(reloaded, GPort)) {
+            expect(port.position!.y).toBe(chosen.get(port.id));
         }
     });
 
