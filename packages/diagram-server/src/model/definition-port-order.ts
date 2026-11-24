@@ -350,6 +350,23 @@ function sourceIds(node: GNode): string[] {
 }
 
 /**
+ * Draw every node under `root` whose ports may be reordered with its ports
+ * in the source's order, on the rows each side has: the Untangled layout's
+ * order, and the way back from a Free Ports layout or an untangle applied.
+ */
+export function drawInSourceOrder(root: GModelElement): void {
+    const visit = (element: GModelElement): void => {
+        if (element instanceof GNode && portsMayReorder(element)) {
+            regridPortRows(element, sourceIds(element));
+        }
+        for (const child of element.children ?? []) {
+            visit(child);
+        }
+    };
+    visit(root);
+}
+
+/**
  * Draw each definition `kept` names in its kept order, every instance of it
  * under `root`: the model as just built from the source, its ports on the
  * source's rows. An order that no longer fits the definition's ports (one
@@ -389,17 +406,20 @@ export interface PortOrderChanges {
  * The kept orders as the drawing under `root` says them: each definition
  * whose instances are all drawn in one order is kept in it when that is not
  * the source's order, and kept no more when it is. A definition whose
- * instances are drawn in different orders, and every definition not drawn
- * here, is left as the layout file has it.
+ * instances are drawn, or declared, in different orders, and every
+ * definition not drawn here, is left as the layout file has it.
  */
 export function keptPortOrderChanges(root: GModelElement): PortOrderChanges {
     const changes: PortOrderChanges = { set: {}, remove: [] };
     for (const [key, nodes] of definitionsUnder(root)) {
         const drawn = sidesOf(nodes[0], 'drawn');
-        if (nodes.some(node => !sameSides(sidesOf(node, 'drawn'), drawn))) {
+        const source = sidesOf(nodes[0], 'source');
+        // Two definitions taken for one (one name, the same ports, no file
+        // said) may declare them in two orders: neither is the key's.
+        if (nodes.some(node => !sameSides(sidesOf(node, 'drawn'), drawn) || !sameSides(sidesOf(node, 'source'), source))) {
             continue;
         }
-        if (sameSides(drawn, sidesOf(nodes[0], 'source'))) {
+        if (sameSides(drawn, source)) {
             changes.remove.push(key);
         } else {
             changes.set[key] = drawn;

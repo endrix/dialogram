@@ -198,7 +198,7 @@ export class UntangleStartMcpToolHandler extends UntangleToolHandler<UntangleSta
 export const UntangleTryInputSchema = McpDiagramScopedInputSchema.extend({
     layout: z
         .enum(['free-ports', 'untangled'])
-        .describe('free-ports: each node\'s ports in the order that crosses least, one order for all the instances of a definition. untangled: the ports in the order they had when the untangle began.'),
+        .describe('free-ports: each node\'s ports in the order that crosses least, one order for all the instances of a definition. untangled: the ports in their declared order.'),
     orders: z
         .record(
             z.string(),
@@ -235,7 +235,7 @@ export class UntangleTryMcpToolHandler extends UntangleToolHandler<UntangleTryIn
         }
         const named = Object.entries(orders ?? {});
         if (layout === 'untangled' && named.length > 0) {
-            return this.error('Port orders are for free-ports: untangled keeps every port where it was when the untangle began.');
+            return this.error('Port orders are for free-ports: untangled keeps every port where it is declared.');
         }
         const given: Record<string, SideOrder> = {};
         for (const [name, sides] of named) {
@@ -259,9 +259,14 @@ export class UntangleTryMcpToolHandler extends UntangleToolHandler<UntangleTryIn
         forgetProbe(root);
         // Each try starts from the drawing the untangle began on: a port keeps
         // the row it is drawn on through a layout, and the try before this
-        // one may have moved it.
+        // one may have moved it. A try that fails leaves that drawing shown.
         applyLayoutGeometry(root, state.original);
-        await this.preview.run(layout as PreviewLayout, given);
+        try {
+            await this.preview.run(layout as PreviewLayout, given);
+        } catch (error) {
+            await this.preview.show().catch(() => undefined);
+            throw error;
+        }
         await this.preview.show();
         const crossings = edgeCrossings(root);
         const picture = await this.picture();

@@ -65,6 +65,7 @@ import { releaseBoundaryNodeConstraints, restoreNodeLayoutOptions, runBoundaryFl
 import { perfNow } from './graph-load-perf';
 import { type FreshNode, type NodeLink, type PlacedNode, placeBesideNeighbours, routeCrosses } from './incremental-placement';
 import { absolutePosition, placeMembersUnder } from './group-geometry';
+import { keptPortOrderChanges } from '../model/definition-port-order';
 import {
     collectEdgeRoutes,
     isMovableNode,
@@ -486,8 +487,11 @@ export class WorkflowModelSubmissionHandler extends ModelSubmissionHandler {
         // from here on: its old wires keep the routes they are drawn with,
         // and the routes of the new ones are saved with it.
         const wasFallback = layoutMeta.layoutIsFallback === true;
+        // The port orders it was drawn in, its fallback's, go with those routes.
         await this.layoutPersistence.saveLayoutImmediate(
-            workflowFilePath, networkId, places, wasFallback ? collectEdgeRoutes(root) : undefined
+            workflowFilePath, networkId, places,
+            wasFallback ? collectEdgeRoutes(root) : undefined,
+            wasFallback ? keptPortOrderChanges(root) : undefined
         );
         layoutMeta.appliedPositions = places;
         if (wasFallback) {

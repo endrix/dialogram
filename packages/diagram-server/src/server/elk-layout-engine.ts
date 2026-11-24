@@ -24,7 +24,7 @@ import {
 } from './automaton-layout';
 
 import { snapRouteEndpoints } from '../routing/persisted-edge-routes';
-import { givenPortOrders, gportSide, onePortOrderPerDefinition, portsMayReorder, recordProbe, regridPortRows, type ProbedOrder } from '../model/definition-port-order';
+import { drawInSourceOrder, givenPortOrders, gportSide, onePortOrderPerDefinition, portsMayReorder, recordProbe, regridPortRows, type ProbedOrder } from '../model/definition-port-order';
 import { FAST_LAYOUT_OPTIONS, countLayoutElements, layoutTierFor, type LayoutGraphSize, type LayoutTier } from './layout-configurator';
 import { isRowsLayout } from '../model/group-edges';
 import { joinPinToPinEdges, splitPinToPinEdges } from './pin-to-pin-edges';
@@ -35,7 +35,11 @@ import { mkdir, writeFile } from 'node:fs/promises';
 /** Graph layout option: `free` lets a layout choose each node's port order against crossings. */
 export const PORT_ORDER_OPTION = 'dialogram.portOrder';
 export const PORT_ORDER_FREE = 'free';
-/** The ports in the order they are drawn in, what every value but `free` means. */
+/**
+ * The ports in the order the source declares them (the Untangled layout).
+ * Any other value but `free`, or none, keeps them in the order they are
+ * drawn in.
+ */
 export const PORT_ORDER_DECLARED = 'declared';
 
 /**
@@ -217,11 +221,15 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
                 } catch (e) {
                     console.warn('[cal-elk] port ordering skipped:', e);
                 }
+            } else if (this.portsInSourceOrder(root)) {
+                // Untangled lays the ports out as the source declares them: the
+                // way back from a Free Ports layout, whose order the save lets go.
+                drawInSourceOrder(root);
             }
-            // A layout that does not ask for the pass keeps the ports in the order
-            // they are drawn in: the source's, or the one the diagram keeps for a
-            // definition (a Free Ports layout, an untangle applied), which the
-            // layout file holds and the model is built in (definition-port-order.ts).
+            // Any other layout keeps the ports in the order they are drawn in: the
+            // source's, or the one the diagram keeps for a definition (a Free Ports
+            // layout, an untangle applied), which the layout file holds and the
+            // model is built in (definition-port-order.ts).
 
             // Re-implement base `layout` so we can dump the exact object passed to elk.layout().
             (this as any).elkEdges = [];
@@ -388,6 +396,12 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         }
         const algorithm = options?.['elk.algorithm'];
         return algorithm === undefined || algorithm === 'layered';
+    }
+
+    /** Whether the layout asks for the ports in the source's order (`dialogram.portOrder: declared`, Untangled). */
+    private portsInSourceOrder(root: GGraph): boolean {
+        const options = (root as any).layoutOptions as Record<string, unknown> | undefined;
+        return options?.[PORT_ORDER_OPTION] === PORT_ORDER_DECLARED;
     }
 
     /**

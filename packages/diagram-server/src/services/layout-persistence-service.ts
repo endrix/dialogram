@@ -771,10 +771,6 @@ export class LayoutPersistenceService {
     }
 
     /**
-     * What the reader chose of the file's view options, or `undefined` when
-     * nothing is kept for it. Read from the layout file, beside the positions.
-     */
-    /**
      * The port orders the file keeps for the definitions drawn from it, by
      * definition key (definition-port-order.ts); none when it keeps none.
      */
@@ -785,6 +781,10 @@ export class LayoutPersistenceService {
         return portOrdersOf(await this.readAnyLayoutFile(workflowFilePath)).portOrders;
     }
 
+    /**
+     * What the reader chose of the file's view options, or `undefined` when
+     * nothing is kept for it. Read from the layout file, beside the positions.
+     */
     async loadViewOptions(workflowFilePath: string): Promise<Record<string, Record<string, boolean>> | undefined> {
         const unsaved = this.unsavedViewOptions.get(this.getLayoutFilePath(workflowFilePath));
         if (unsaved) {

@@ -43,7 +43,7 @@ function harness(root: GGraph, meta: Partial<LayoutPersistenceMeta>, own?: Map<s
         element.children.forEach(index);
     };
     index(root);
-    const saved: { positions?: Map<string, Point>; routes?: Map<string, Point[]> } = { positions: own };
+    const saved: { positions?: Map<string, Point>; routes?: Map<string, Point[]>; portOrders?: unknown } = { positions: own };
     const reroutes: Array<{ elementIds?: string[]; preview?: boolean }> = [];
     const handler: any = new WorkflowModelSubmissionHandler();
     handler.layoutEngine = { layout: async () => undefined };
@@ -57,9 +57,10 @@ function harness(root: GGraph, meta: Partial<LayoutPersistenceMeta>, own?: Map<s
     handler.requestModelAction = { requestId: 'r1' };
     handler.layoutPersistence = {
         loadLayout: async () => (saved.positions ? new Map(saved.positions) : undefined),
-        saveLayoutImmediate: async (_file: string, _id: string, positions: Map<string, Point>, routes?: Map<string, Point[]>) => {
+        saveLayoutImmediate: async (_file: string, _id: string, positions: Map<string, Point>, routes?: Map<string, Point[]>, portOrders?: unknown) => {
             saved.positions = new Map(positions);
             saved.routes = routes;
+            saved.portOrders = portOrders;
         }
     };
     handler.rerouteHandler = { runReroute: async (operation: any) => { reroutes.push(operation); } };
@@ -91,6 +92,8 @@ describe('a graph that grows, at the submit after its load', () => {
         // The view has a layout of its own now: the fallback's places, the new node's, and the old wire's route.
         expect([...saved.positions!]).toEqual([['A', { x: 400, y: 200 }], ['B', { x: 900, y: 700 }], ['C', C.position]]);
         expect([...saved.routes!]).toEqual([['edges/e0', kept]]);
+        // And the port orders those routes were drawn for, the fallback's.
+        expect(saved.portOrders).toEqual({ set: {}, remove: [] });
         // Only the new wire is routed, and its route is saved with the layout it now belongs to.
         expect(reroutes.map(r => [r.elementIds, r.preview])).toEqual([[['e1'], false]]);
         expect((root.children[3] as any).routingPoints).toEqual(kept);

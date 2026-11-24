@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { GGraph, GNode, GPort, type GModelElement } from '@eclipse-glsp/server';
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import {
-    applyKeptPortOrders, definitionKeyOf, keptPortOrderChanges, keptPortOrdersOf, portsMayReorder, regridPortRows,
-    sidesOf, withPortOrderChanges
+    applyKeptPortOrders, definitionKeyOf, drawInSourceOrder, keptPortOrderChanges, keptPortOrdersOf, portsMayReorder,
+    regridPortRows, sidesOf, withPortOrderChanges
 } from '../src/model/definition-port-order';
 
 const ROW = 20;
@@ -156,6 +156,29 @@ describe('a port order kept with the layout', () => {
         const root = graph(mux, node('mux2', 'Mux', ['in0', 'in1', 'sel'], ['out'], { [WorkflowDiagramMetadata.SYMBOL]: 'mux' }));
         expect(applyKeptPortOrders(root, { [definitionKeyOf(mux)!]: { west: ['sel', 'in1', 'in0'] } })).toBe(0);
         expect(keptPortOrderChanges(root)).toEqual({ set: {}, remove: [] });
+    });
+
+    it('draws every node in the source\'s order again, an open bus with its members', () => {
+        const open = node('u', 'Unit', ['clk', { name: 'req', bus: 'req' }, { name: 'req_valid', memberOf: 'req' }, 'rst']);
+        const stage = node('s', 'Stage', ['A', 'B', 'C']);
+        const mux = node('mux', 'Mux', ['in0', 'in1', 'sel'], ['out'], { [WorkflowDiagramMetadata.SYMBOL]: 'mux' });
+        const root = graph(open, stage, mux);
+        const muxRows = rowsOf(mux);
+        applyKeptPortOrders(root, { [definitionKeyOf(open)!]: { west: ['rst', 'req', 'clk'] }, [definitionKeyOf(stage)!]: { west: ['C', 'B', 'A'] } });
+        expect(westRows(open)).toEqual(['rst', 'req', 'req_valid', 'clk']);
+        drawInSourceOrder(root);
+        expect(westRows(open)).toEqual(['clk', 'req', 'req_valid', 'rst']);
+        expect(westRows(stage)).toEqual(['A', 'B', 'C']);
+        expect(rowsOf(mux)).toEqual(muxRows);
+        expect(keptPortOrderChanges(root)).toEqual({ set: {}, remove: [definitionKeyOf(open)!, definitionKeyOf(stage)!] });
+    });
+
+    it('says nothing of two definitions taken for one that declare their ports in two orders', () => {
+        // One name, the same ports, no file said: one key for both.
+        const a = node('a', 'Stage', ['A', 'B']);
+        const b = node('b', 'Stage', ['B', 'A']);
+        expect(definitionKeyOf(a)).toBe(definitionKeyOf(b));
+        expect(keptPortOrderChanges(graph(a, b))).toEqual({ set: {}, remove: [] });
     });
 
     it('reads only well-formed orders from a layout file', () => {

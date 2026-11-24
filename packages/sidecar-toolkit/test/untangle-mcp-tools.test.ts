@@ -283,6 +283,22 @@ describe('the untangle tools', () => {
         expect(seen).toEqual([[30, 10], [30, 10]]);
     });
 
+    it('show the drawing the untangle began on when a try fails', async () => {
+        const { modelState, shown, start, attempt } = diagram();
+        await start.handle({ sessionId: 's' } as any);
+        const s1 = modelState.root.children[0];
+        const [a, b] = s1.children as GPort[];
+        [a.position, b.position] = [b.position, a.position]; // the last try, drawn
+        (attempt as any).preview.run = async () => {
+            throw new Error('elk timed out');
+        };
+        const failed = await attempt.handle({ sessionId: 's', layout: 'free-ports' } as any);
+        expect(failed.isError).toBe(true);
+        expect(s1.children.map((port: GPort) => port.position!.y)).toEqual([30, 10]);
+        expect(shown.at(-1)).toBeUndefined();
+        expect(untangleOf(modelState)?.tries).toHaveLength(0);
+    });
+
     it('end, the turn over, with the diagram drawn as it was when no try was put to the person', async () => {
         const { modelState, shown, start, attempt, propose, end } = diagram({ canAsk: () => true, confirm: () => new Promise(() => undefined), post: async () => true });
         await start.handle({ sessionId: 's' } as any);
