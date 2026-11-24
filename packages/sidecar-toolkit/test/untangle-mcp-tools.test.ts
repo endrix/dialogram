@@ -12,14 +12,15 @@ import { GGraph, GNode, GPort, type Action, type GModelElement } from '@eclipse-
 import { WorkflowDiagramMetadata, WorkflowDiagramTypes } from '@dialogram/shared';
 import { layoutGeometryOf, type LayoutGeometry } from '@dialogram/diagram-server/server/layout-snapshot';
 import type { DiagramChatCard } from '@dialogram/diagram-server/server/diagram-chat-host';
-import { APPLY_PORT_ORDERS_OPERATION_KIND } from '../src/server/untangle/apply-port-orders-handler';
-import { MAX_TRIES, untangleOf } from '../src/server/untangle/untangle-session';
+import { APPLY_PORT_ORDERS_OPERATION_KIND } from '@dialogram/diagram-server/untangle/apply-port-orders-handler';
+import { MAX_TRIES, untangleOf } from '@dialogram/diagram-server/untangle/untangle-session';
+import { SidecarPortOrderWriter } from '../src/server/operations/sidecar-port-order-writer';
 import {
     UntangleEndMcpToolHandler,
     UntangleProposeMcpToolHandler,
     UntangleStartMcpToolHandler,
     UntangleTryMcpToolHandler
-} from '../src/server/untangle/untangle-mcp-tools';
+} from '@dialogram/diagram-server/untangle/untangle-mcp-tools';
 
 const STAGES = '/work/stages.py';
 
@@ -54,15 +55,37 @@ function stage(name: string): GNode {
     }, [input('A', 30), input('B', 10)]);
 }
 
+/** An instance of `Split` (split.py) with the inputs `ports`, each at its row. */
+function split(name: string, ports: Array<[string, number]>): GNode {
+    return el(GNode, {
+        id: name,
+        type: WorkflowDiagramTypes.NODE_ACTOR,
+        position: { x: 0, y: 0 },
+        size: { width: 100, height: 80 },
+        args: {
+            [WorkflowDiagramMetadata.ENTITY_NAME]: name,
+            [WorkflowDiagramMetadata.ENTITY_TYPE]: 'Split',
+            [WorkflowDiagramMetadata.REFERENCED_URI]: pathToFileURL('/work/split.py').href,
+            [WorkflowDiagramMetadata.REFERENCED_IS_DEFINITION]: true
+        }
+    }, ports.map(([port, y]) => el(GPort, {
+        id: `${name}.${port}`,
+        type: WorkflowDiagramTypes.PORT_INPUT,
+        position: { x: 0, y },
+        size: { width: 10, height: 10 },
+        args: { [WorkflowDiagramMetadata.PORT_NAME]: port, [WorkflowDiagramMetadata.PORT_DIRECTION]: 'input' }
+    })));
+}
+
 type Chat = {
     canAsk: (uri: string) => boolean;
     confirm: (uri: string, card: DiagramChatCard) => Promise<{ choice?: string } | undefined>;
     post: (uri: string, message: { text: string; figures?: Array<{ data: string; caption?: string }> }) => Promise<boolean>;
 };
 
-/** The three tools on one diagram (net.py: s1 and s2, both `Stage`), their preview and picture stubbed. */
-function diagram(chat?: Chat) {
-    const root = el(GGraph, { id: 'g', type: 'graph' }, [stage('s1'), stage('s2')]);
+/** The three tools on one diagram (net.py: s1 and s2, both `Stage`, and `more`), their preview and picture stubbed. */
+function diagram(chat?: Chat, more: GNode[] = []) {
+    const root = el(GGraph, { id: 'g', type: 'graph' }, [stage('s1'), stage('s2'), ...more]);
     const elements = new Map<string, GModelElement>();
     const index = (element: GModelElement): void => {
         elements.set(element.id, element);
@@ -87,11 +110,14 @@ function diagram(chat?: Chat) {
         }
     };
     const dispatched: Action[] = [];
+    // The sidecar's writer, its producer writing port orders.
+    const writer = new SidecarPortOrderWriter() as any;
+    writer.sidecar = { supportsOp: async () => true, hasFeature: async () => false };
     const tools = [new UntangleStartMcpToolHandler(), new UntangleTryMcpToolHandler(), new UntangleProposeMcpToolHandler(), new UntangleEndMcpToolHandler()].map(tool => {
         const handler = tool as any;
         handler.modelState = modelState;
         handler.preview = preview;
-        handler.sidecar = { supportsOp: async () => true, hasFeature: async () => false };
+        handler.writer = writer;
         handler.chat = chat;
         handler.logger = { warn: () => undefined, error: () => undefined, info: () => undefined, debug: () => undefined };
         handler.requestAction = async () => ({ encoding: 'base64', data: 'PIC' });
@@ -193,6 +219,39 @@ describe('the untangle tools', () => {
         ]);
         expect(untangleOf(modelState)).toBeUndefined();
         expect((await attempt.handle({ sessionId: 's', layout: 'free-ports' } as any)).isError).toBe(true);
+    });
+
+    it('put a try that writes some orders and keeps the others with the layout, saying which', async () => {
+        const cards: DiagramChatCard[] = [];
+        const chat: Chat = {
+            canAsk: () => true,
+            confirm: async (_uri, card) => {
+                cards.push(card);
+                return { choice: 'Discard' };
+            },
+            post: async () => true
+        };
+        // One Split drawn with the inputs X, Y and another with X, Y, Z (a bus open, say):
+        // no one order to write, so each is kept with the layout.
+        const { start, attempt, propose } = diagram(chat, [
+            split('p1', [['X', 30], ['Y', 10]]),
+            split('p2', [['X', 30], ['Y', 10], ['Z', 50]])
+        ]);
+        await start.handle({ sessionId: 's' } as any);
+        await attempt.handle({ sessionId: 's', layout: 'free-ports' } as any);
+        await propose.handle({ sessionId: 's', try: 1 } as any);
+        await vi.waitFor(() => expect(cards).toHaveLength(1));
+        expect(cards[0].text).toBe([
+            '0 edge crossings, against 0 with Layout Diagram.',
+            'Apply saves this layout and keeps with it the port order of 2 definitions:',
+            '  Split (p1): left X, Y → Y, X',
+            '  Split (p2): left X, Y, Z → Y, X, Z',
+            'It writes the port order of 1 definition in 1 file:',
+            'stages.py',
+            '  Stage: left A, B → B, A',
+            'Undo puts the files and the layout back.'
+        ].join('\n'));
+        expect(cards[0].choices).toEqual(['Apply to 1 file', 'Discard']);
     });
 
     it('discarded, draw the diagram as it was and write nothing', async () => {

@@ -166,6 +166,36 @@ describe('DiagramMcpModule undo/redo tool exclusion (host owns undo)', () => {
     });
 });
 
+describe('DiagramMcpModule: the chat\'s untangle in every diagram', () => {
+    it('offers the untangle tools in a read-only session as in an editable one', () => {
+        const namesOf = (module: DiagramMcpModule): string[] => {
+            const ctors: Array<new () => { name?: string }> = [];
+            (module as unknown as {
+                configureToolHandlers(b: { add(c: new () => unknown): void; remove(c: new () => unknown): void }): void;
+            }).configureToolHandlers({
+                add: (c) => ctors.push(c as new () => { name?: string }),
+                remove: (c) => {
+                    const i = ctors.indexOf(c as new () => { name?: string });
+                    if (i >= 0) {
+                        ctors.splice(i, 1);
+                    }
+                }
+            });
+            return ctors.map((c) => new c().name as string);
+        };
+        const untangle = ['untangle-start', 'untangle-try', 'untangle-propose', 'untangle-end'];
+        // A read-only diagram may be laid out and its layout saved: so may an untangle applied.
+        const readOnly = namesOf(new DiagramMcpModule({ edits: 'read-only' }));
+        expect(readOnly).toEqual(expect.arrayContaining(untangle));
+        expect(readOnly).not.toContain('create-nodes');
+        expect(namesOf(new DiagramMcpModule({ edits: { operationModules: [] } }))).toEqual(expect.arrayContaining(untangle));
+        // A product's own diagram module has no untangle Apply: no tool is offered that could only fail.
+        const own = namesOf(new DiagramMcpModule({ edits: 'read-only', untangle: false }));
+        expect(own.filter((name) => untangle.includes(name))).toEqual([]);
+        expect(own).toContain('validate-diagram');
+    });
+});
+
 describe('agent-dispatch tool handlers raise the auto-layout signal', () => {
     function stubSuperCreateResult<T extends { prototype: any }>(ctor: T): () => void {
         const proto = ctor.prototype as { createResult: (input: unknown) => Promise<unknown> };

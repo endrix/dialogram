@@ -35,6 +35,7 @@ import type { EditStrategy } from '@dialogram/shared';
 import { makePlatformToolHandlerClass, type PlatformMcpTool } from './mcp-platform-tool-adapter';
 import { DrawnDiagramPngMcpResourceHandler } from './diagram-picture-mcp-resource-handler';
 import { isDiagramOperationModule, type McpToolBinding } from './operation-modules';
+import { UntangleEndMcpToolHandler, UntangleProposeMcpToolHandler, UntangleStartMcpToolHandler, UntangleTryMcpToolHandler } from '../untangle/untangle-mcp-tools';
 import { AgentDispatchCreateNodesMcpToolHandler } from './create-nodes-mcp-tool-handler';
 import { AgentDispatchCreateEdgesMcpToolHandler } from './create-edges-mcp-tool-handler';
 import {
@@ -85,6 +86,13 @@ export interface DiagramMcpModuleOptions {
      * tools of its operations.
      */
     edits?: EditStrategy;
+    /**
+     * Whether the chat's untangle tools are offered (default: yes). They need
+     * the platform's own diagram module, which registers the untangle Apply,
+     * lays out with Free Ports and keeps a layout file: a product serving its
+     * diagrams with a module of its own has none of the three.
+     */
+    untangle?: boolean;
 }
 
 /**
@@ -95,11 +103,13 @@ export interface DiagramMcpModuleOptions {
 export class DiagramMcpModule extends DefaultMcpDiagramModule {
     protected readonly platformTools: readonly PlatformMcpTool[];
     protected readonly edits: EditStrategy | undefined;
+    protected readonly untangle: boolean;
 
     constructor(options?: DiagramMcpModuleOptions) {
         super();
         this.platformTools = options?.tools ?? [];
         this.edits = options?.edits;
+        this.untangle = options?.untangle ?? true;
     }
 
     /** A node's label is the name in its header: `modify-nodes` `text` renames it. */
@@ -138,6 +148,16 @@ export class DiagramMcpModule extends DefaultMcpDiagramModule {
         // Agents are told (session context hint) that edits are user-undoable via the editor.
         binding.remove(UndoMcpToolHandler);
         binding.remove(RedoMcpToolHandler);
+        // The chat's untangle, in every diagram the platform's module serves:
+        // tries drawn and not saved, then one put to the person, whose Apply
+        // saves a layout (and writes a source only where the product can,
+        // apply-port-orders-handler.ts).
+        if (this.untangle) {
+            binding.add(UntangleStartMcpToolHandler);
+            binding.add(UntangleTryMcpToolHandler);
+            binding.add(UntangleProposeMcpToolHandler);
+            binding.add(UntangleEndMcpToolHandler);
+        }
         if (this.edits === 'read-only') {
             // A projection with nothing to edit registers no writing operation handler, so
             // a mutating tool could only fail: the agent is not offered one.

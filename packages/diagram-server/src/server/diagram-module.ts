@@ -54,6 +54,7 @@ import { WorkflowResetEdgeRoutesOperationHandler } from '../operations/reset-edg
 import { WorkflowRerouteEdgesAvoidOverlapsOperationHandler } from '../operations/reroute-edges-avoid-overlaps-handler';
 import { WorkflowTogglePortBusOperationHandler } from '../operations/toggle-port-bus-handler';
 import { WorkflowToggleNodeOpenOperationHandler } from '../operations/toggle-node-open-handler';
+import { ApplyPortOrdersOperationHandler } from '../untangle/apply-port-orders-handler';
 import { WorkflowLayoutBoundaryFlowOperationHandler } from '../operations/layout-boundary-flow-handler';
 import { WorkflowLayoutSerpentineMeshOperationHandler } from '../operations/layout-serpentine-mesh-handler';
 import { WorkflowLayoutFreePortsOperationHandler, WorkflowLayoutUntangledOperationHandler } from '../operations/layout-tuned-handler';
@@ -180,6 +181,10 @@ export class WorkflowDiagramModule extends GModelDiagramModule {
         binding.add(WorkflowTogglePortBusOperationHandler);
         // So is opening a node that holds a graph of its own.
         binding.add(WorkflowToggleNodeOpenOperationHandler);
+        // And an untangle applied: its layout, with the port orders it draws.
+        // Only a product's writer puts an order into the source, and a
+        // read-only product binds none (source-port-order-writer.ts).
+        binding.add(ApplyPortOrdersOperationHandler);
 
         // Everything above is presentation or discovery, and safe for a session
         // that may not edit. Everything below writes to the source, so this is

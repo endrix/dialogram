@@ -87,6 +87,20 @@ describe('assembleChatRuntimeConfig', () => {
         expect(cfg.slashCommands![2].description).toBe('profile-layout');
     });
 
+    it('slash merge: the platform\'s own commands after the capability\'s, before the profile\'s', () => {
+        const untangle = { command: 'untangle', description: 'platform' };
+        const withCapability = assembleChatRuntimeConfig(
+            makeProfile({ slashCommands: [{ command: 'explain', description: 'profile' }] }),
+            makeCapability(),
+            undefined,
+            [untangle]
+        );
+        expect(withCapability.slashCommands!.map(c => c.command)).toEqual(['create-task', 'layout', 'untangle', 'explain']);
+        // A product with no edit backend (read-only) is offered them too.
+        const readOnly = assembleChatRuntimeConfig(makeProfile({}), undefined, undefined, [untangle]);
+        expect(readOnly.slashCommands).toEqual([untangle]);
+    });
+
     it('a declared ACP connector becomes the runtime\'s agent resolver; none means opencode', () => {
         const declared = assembleChatRuntimeConfig(makeProfile({ acpConnector: { settingKey: 'acp.connector', files: { user: 'r/connectors.toml', workspace: '.r/connectors.toml' } } }), undefined);
         expect(typeof declared.acpAgent).toBe('function');

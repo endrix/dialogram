@@ -1,7 +1,9 @@
 /**
- * Apply an untangle: the port orders of the try the person kept, written into
- * the source of each definition, and the try's drawing saved as the layout,
- * as one entry on the undo stack.
+ * Apply an untangle: the try the person kept saved as the layout, with the
+ * port order of each definition it draws in another order than its source's
+ * (definition-port-order.ts), and the orders the source can take written into
+ * it (source-port-order-writer.ts), as one entry on the undo stack. An order
+ * written into the source is not kept with the layout.
  *
  * The layout is saved first and the sources written after: each write makes
  * the host reload the diagram, which then reads the saved layout, with the
@@ -18,43 +20,37 @@
 import { promises as fs } from 'node:fs';
 import { Operation } from '@eclipse-glsp/protocol';
 import { GNode, ModelState, OperationHandler, type Command, type MaybePromise } from '@eclipse-glsp/server';
-import type { CommandThatMayChangeNothing, CommandThatMayRefuse } from '@dialogram/diagram-server/server/command-stack';
-import type { CommandThatWritesOutOfBand, OutOfBandWrite } from '@dialogram/diagram-server/server/out-of-band-writes';
-import { inject, injectable } from 'inversify';
+import { inject, injectable, optional } from 'inversify';
 import * as vscode from 'vscode';
-import { ReversibleMultiWorkspaceEditCommand } from '@dialogram/diagram-server/operations/reversible-multi-workspace-edit-command';
-import { LayoutPersistenceService } from '@dialogram/diagram-server/services/layout-persistence-service';
-import { definitionKeyOf } from '@dialogram/diagram-server/model/definition-port-order';
-import { applyLayoutGeometry, layoutGeometryOf, saveLayoutGeometry, type LayoutGeometry } from '@dialogram/diagram-server/server/layout-snapshot';
-import { readAuthoritativeSourceText } from '../operations/authoritative-source-text';
-import { entityFileOf } from '../operations/entity-port-write';
-import { SidecarInvoker } from '../operations/sidecar-invoker';
+import { definitionKeyOf } from '../model/definition-port-order';
+import { ReversibleMultiWorkspaceEditCommand } from '../operations/reversible-multi-workspace-edit-command';
+import type { CommandThatMayChangeNothing, CommandThatMayRefuse } from '../server/command-stack';
+import { applyLayoutGeometry, layoutGeometryOf, saveLayoutGeometry, type LayoutGeometry } from '../server/layout-snapshot';
+import type { CommandThatWritesOutOfBand, OutOfBandWrite } from '../server/out-of-band-writes';
+import { LayoutPersistenceService } from '../services/layout-persistence-service';
+import { SOURCE_PORT_ORDER_WRITER, type PortOrderWrite, type SourcePortOrderWriter } from './source-port-order-writer';
 import { untangleOf } from './untangle-session';
+
+export type { PortOrderWrite } from './source-port-order-writer';
 
 export const APPLY_PORT_ORDERS_OPERATION_KIND = 'dialogram.applyPortOrders' as const;
 
-/** The sidecar op that writes a definition's port order, where the producer has one. */
-export const REORDER_ENTITY_PORTS_OP = 'reorderEntityPorts';
-
-/** One definition's port order to write: all its ports, each once, by name. */
-export interface PortOrderWrite {
-    entity: string;
-    /** One of its instances in this diagram: where its file is found from. */
-    elementId: string;
-    order: string[];
-}
-
 export interface ApplyPortOrdersOperation extends Operation {
     kind: typeof APPLY_PORT_ORDERS_OPERATION_KIND;
+    /** The orders to write into the source; every other order the try draws is kept with the layout. */
     writes: PortOrderWrite[];
 }
 
 type Snapshot = { uri: vscode.Uri; beforeText: string; afterText: string };
 type Outcome = { ok: boolean; snapshots: Snapshot[]; message?: string };
 
+/**
+ * A file as it is on disk: what a producer that rewrites it out of band
+ * wrote, which the open document only catches up with later.
+ */
 async function textOf(uri: vscode.Uri): Promise<string | undefined> {
     try {
-        return await readAuthoritativeSourceText(uri);
+        return await fs.readFile(uri.fsPath, 'utf8');
     } catch {
         return undefined;
     }
@@ -156,8 +152,9 @@ export class ApplyPortOrdersOperationHandler extends OperationHandler {
     @inject(ModelState)
     protected override modelState!: ModelState;
 
-    @inject(SidecarInvoker)
-    protected readonly sidecar!: SidecarInvoker;
+    @inject(SOURCE_PORT_ORDER_WRITER)
+    @optional()
+    protected readonly writer?: SourcePortOrderWriter;
 
     @inject(LayoutPersistenceService)
     protected readonly layoutPersistence!: LayoutPersistenceService;
@@ -171,7 +168,10 @@ export class ApplyPortOrdersOperationHandler extends OperationHandler {
         // The try put to the person, as it was drawn: what was proposed is
         // what is saved, whatever the diagram was made to show meanwhile.
         const proposed = state?.proposed !== undefined ? state.tries[state.proposed - 1] : undefined;
-        const written = new Set((operation.writes ?? []).flatMap(each => {
+        // Only a writer writes a source: without one, every order is kept with the layout.
+        const writer = this.writer;
+        const writes = writer ? operation.writes ?? [] : [];
+        const written = new Set(writes.flatMap(each => {
             const node = this.modelState.index.find(each.elementId);
             const key = node instanceof GNode ? definitionKeyOf(node) : undefined;
             return key === undefined ? [] : [key];
@@ -187,7 +187,7 @@ export class ApplyPortOrdersOperationHandler extends OperationHandler {
             label: 'Untangle',
             outOfBandSnapshots: () => outcome?.snapshots ?? [],
             computeEdits: async () => {
-                outcome = await this.write(sourceUri, operation.writes ?? [], drawing, before, after);
+                outcome = await this.write(writer, sourceUri, writes, drawing, before, after);
                 if (state) {
                     state.applied = {
                         ok: outcome.ok,
@@ -209,6 +209,7 @@ export class ApplyPortOrdersOperationHandler extends OperationHandler {
      * changed, each as it was and as it is.
      */
     private async write(
+        writer: SourcePortOrderWriter | undefined,
         sourceUri: string,
         writes: readonly PortOrderWrite[],
         drawing: (geometry: LayoutGeometry) => Promise<void>,
@@ -232,7 +233,7 @@ export class ApplyPortOrdersOperationHandler extends OperationHandler {
         try {
             const targets = writes.map(each => ({
                 ...each,
-                uri: vscode.Uri.parse(entityFileOf(this.modelState, sourceUri, { entityType: each.entity, elementId: each.elementId }))
+                uri: vscode.Uri.parse(writer!.fileOf(this.modelState, sourceUri, each))
             }));
             files = [...new Map(targets.map(each => [each.uri.toString(), each.uri] as const)).values()];
             for (const uri of files) {
@@ -245,10 +246,7 @@ export class ApplyPortOrdersOperationHandler extends OperationHandler {
             saved = true;
             await drawing(after);
             for (const target of targets) {
-                const result = await this.sidecar.sendSidecarOpDetailed(target.uri.toString(), {
-                    op: this.sidecar.sidecarOp(REORDER_ENTITY_PORTS_OP),
-                    args: { entity: target.entity, order: target.order }
-                });
+                const result = await writer!.write(sourceUri, target.uri.toString(), target);
                 if (!result.ok) {
                     const name = target.uri.fsPath.split(/[\\/]/).pop() ?? target.uri.fsPath;
                     const reason = (result.message ?? 'refused').trim().replace(/[.!?]?$/, '.');

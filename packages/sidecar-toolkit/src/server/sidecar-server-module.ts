@@ -17,6 +17,8 @@ import {
 } from './sidecar-runtime-config';
 import { SidecarInvoker } from './operations/sidecar-invoker';
 import { RenameEntityOperationHandler } from './operations/rename-entity-handler';
+import { SidecarPortOrderWriter } from './operations/sidecar-port-order-writer';
+import { SOURCE_PORT_ORDER_WRITER } from '@dialogram/diagram-server/untangle/source-port-order-writer';
 
 /**
  * A DI module binding the sidecar runtime config, its injectable service, and the sidecar invoker
@@ -40,6 +42,12 @@ export function createSidecarServerModule(cfg: SidecarRuntimeConfig): ContainerM
         // It stays in the operation-handler constructor list too (distinct service identifier).
         if (!isBound(RenameEntityOperationHandler)) {
             bind(RenameEntityOperationHandler).toSelf().inSingletonScope();
+        }
+        // An untangle's port orders go into the source where the sidecar has
+        // the op for it (asked per diagram); the layout keeps the rest. A
+        // read-only profile has no sidecar to ask: its layout keeps them all.
+        if (!cfg.readOnly && !isBound(SOURCE_PORT_ORDER_WRITER)) {
+            bind(SOURCE_PORT_ORDER_WRITER).to(SidecarPortOrderWriter).inSingletonScope();
         }
     });
 }
