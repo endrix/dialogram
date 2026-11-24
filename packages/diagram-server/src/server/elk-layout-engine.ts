@@ -17,23 +17,14 @@ import { ElkExtendedEdge, ElkNode, ElkPort, ElkShape } from 'elkjs';
 import { injectable } from 'inversify';
 import { isBoundaryNodeType, WorkflowDiagramTypes, WORKFLOW_LAYOUT_PERSISTENCE_KEY } from '@dialogram/shared';
 import { isUnwiredPin, placeUnwiredPins } from './group-geometry';
-import { WorkflowDiagramConstants, WorkflowDiagramMetadata, portRowOffset, portSide, type PortSide } from '@dialogram/shared';
+import { WorkflowDiagramConstants, WorkflowDiagramMetadata, portRowOffset } from '@dialogram/shared';
 import {
     AUTOMATON_MARGIN_PX, AUTOMATON_SPREADS, PORT_COLUMN_GAP_PX, automatonClutter, automatonDrawingBox, automatonElkGraph, automatonGeometryInputs,
     automatonPlaces, clearEnough, isStateType, lessCluttered, type Clutter
 } from './automaton-layout';
 
-/** Which side of its node a GPort sits on: the producer's placement, else its direction or type. */
-function gportSide(port: GPort): PortSide {
-    const args = (port.args ?? {}) as Record<string, unknown>;
-    return portSide({
-        absolute: { x: 0, y: 0 },
-        direction: args[WorkflowDiagramMetadata.PORT_DIRECTION] as string | undefined,
-        side: args[WorkflowDiagramMetadata.PORT_SIDE] as string | undefined,
-        type: port.type
-    });
-}
 import { snapRouteEndpoints } from '../routing/persisted-edge-routes';
+import { givenPortOrders, gportSide, onePortOrderPerDefinition, type ProbedOrder } from '../model/definition-port-order';
 import { FAST_LAYOUT_OPTIONS, countLayoutElements, layoutTierFor, type LayoutGraphSize, type LayoutTier } from './layout-configurator';
 import { isRowsLayout } from '../model/group-edges';
 import { joinPinToPinEdges, splitPinToPinEdges } from './pin-to-pin-edges';
@@ -224,7 +215,7 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
             // back on their grid in that order, and the real layout runs as before.
             if (this.portOrderingEnabled(root)) {
                 try {
-                    await this.orderPortsAgainstCrossings(root);
+                    await this.orderPortsAgainstCrossings(root, tier);
                 } catch (e) {
                     console.warn('[cal-elk] port ordering skipped:', e);
                 }
@@ -416,16 +407,47 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
      * The probe: the same graph with `FIXED_SIDE` on every ordinary node, so that
      * ELK's crossing minimisation orders the ports of each side. Nothing of its
      * result is kept but that order, which `regridPorts` writes back onto the
-     * server's rows.
+     * server's rows: one order for all the instances of a definition, as the
+     * source declares their ports once (definition-port-order.ts).
      */
-    private async orderPortsAgainstCrossings(root: GGraph): Promise<void> {
+    private async orderPortsAgainstCrossings(root: GGraph, tier: LayoutTier): Promise<void> {
+        const edges = this.edgeCountByNode(root);
+        const given = givenPortOrders((root as any).layoutOptions as Record<string, unknown> | undefined);
+        const first = await this.probePortOrders(root, edges, new Set());
+        const { orders, shared, unmatched } = onePortOrderPerDefinition(first, given);
+        if (unmatched.length > 0) {
+            console.warn(`[cal-elk] port orders given for no definition of this diagram: ${unmatched.join(', ')}`);
+        }
+        for (const [node, order] of orders) {
+            this.regridPorts(node, order);
+        }
+        // The first probe ordered every node's ports against the others' orders
+        // as it found them; a definition's instances now share one, so the other
+        // nodes' ports are ordered again, around those. Not on the largest
+        // diagrams (the fast tier), where each ELK run is what takes the time.
+        if (shared.size === 0 || tier === 'fast') {
+            return;
+        }
+        const pinned = new Set([...shared].map(node => node.id));
+        for (const entry of await this.probePortOrders(root, edges, pinned)) {
+            if (!pinned.has(entry.node.id)) {
+                this.regridPorts(entry.node, entry.order);
+            }
+        }
+    }
+
+    /**
+     * Each ordinary node's ports, top to bottom, as a layout with `FIXED_SIDE`
+     * on it places them: the nodes in `pinned` keep their ports where they are.
+     */
+    private async probePortOrders(root: GGraph, edges: Map<string, number>, pinned: ReadonlySet<string>): Promise<ProbedOrder[]> {
         (this as any).elkEdges = [];
         (this as any).idToElkElement = new Map();
         const probe = (this as any).transformToElk(root) as ElkNode;
         const free = (n: ElkNode): void => {
             for (const child of n.children ?? []) {
                 const el = this.modelState.index.get(child.id);
-                if (el instanceof GNode && this.portsMayReorder(el)) {
+                if (el instanceof GNode && this.portsMayReorder(el) && !pinned.has(el.id)) {
                     child.layoutOptions = { ...(child.layoutOptions ?? {}), 'elk.portConstraints': 'FIXED_SIDE' };
                     for (const p of child.ports ?? []) {
                         if (p.layoutOptions && 'elk.port.index' in p.layoutOptions) {
@@ -439,41 +461,65 @@ export class WorkflowElkLayoutEngine extends GlspElkLayoutEngine {
         };
         free(probe);
         const result = (await (this as any).elk.layout(probe)) as ElkNode;
-        const apply = (n: ElkNode): void => {
+        const probed: ProbedOrder[] = [];
+        const read = (n: ElkNode): void => {
             for (const child of n.children ?? []) {
                 const el = this.modelState.index.get(child.id);
                 if (el instanceof GNode && this.portsMayReorder(el) && child.ports && child.ports.length > 1) {
-                    this.regridPorts(el, child.ports);
+                    const order = [...child.ports].sort((a, b) => (a.y ?? 0) - (b.y ?? 0)).map(port => port.id);
+                    probed.push({ node: el, order, edges: edges.get(el.id) ?? 0 });
                 }
-                apply(child);
+                read(child);
             }
         };
-        apply(result);
+        read(result);
+        return probed;
+    }
+
+    /** How many edges end on each node, on it or on one of its ports. */
+    private edgeCountByNode(root: GGraph): Map<string, number> {
+        const counts = new Map<string, number>();
+        const nodeOf = (id: string): string | undefined => {
+            const element = this.modelState.index.get(id);
+            const node = element instanceof GPort ? element.parent : element;
+            return node instanceof GNode ? node.id : undefined;
+        };
+        const visit = (element: GModelElement): void => {
+            if (element instanceof GEdge) {
+                for (const end of [element.sourceId, element.targetId]) {
+                    const node = nodeOf(end);
+                    if (node !== undefined) {
+                        counts.set(node, (counts.get(node) ?? 0) + 1);
+                    }
+                }
+            }
+            for (const child of element.children ?? []) {
+                visit(child);
+            }
+        };
+        visit(root);
+        return counts;
     }
 
     /**
      * The node's ports of one side take the rows they already occupy, in the
-     * order ELK placed them top to bottom. A port's box sits on its row, or
+     * order given (port ids, top to bottom). A port's box sits on its row, or
      * above it when taller (a bus's dot, centred on the row): the rows are
      * read without that offset and each port keeps its own. The labels are the
      * ports' children and move with them; nothing else about the node changes.
      */
-    private regridPorts(node: GNode, elkPorts: ElkPort[]): void {
+    private regridPorts(node: GNode, orderedIds: readonly string[]): void {
         const offsetOf = (port: GPort): number =>
             portRowOffset(port.size?.height ?? WorkflowDiagramConstants.PORT_HEIGHT_PX);
+        const rank = new Map(orderedIds.map((id, k) => [id, k] as const));
         for (const side of ['WEST', 'EAST'] as const) {
             const ports = this.findChildren(node, GPort).filter(p => gportSide(p) === side);
-            if (ports.length < 2) {
+            if (ports.length < 2 || !ports.every(p => rank.has(p.id))) {
                 continue;
             }
             const rows = ports.map(p => (p.position?.y ?? 0) - offsetOf(p)).sort((a, b) => a - b);
-            const byId = new Map(ports.map(p => [p.id, p] as const));
-            const order = elkPorts.filter(ep => byId.has(ep.id)).sort((a, b) => (a.y ?? 0) - (b.y ?? 0));
-            if (order.length !== ports.length) {
-                continue;
-            }
-            order.forEach((ep, k) => {
-                const port = byId.get(ep.id)!;
+            const order = [...ports].sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+            order.forEach((port, k) => {
                 const args = (port.args ?? {}) as Record<string, unknown>;
                 if (args[DECLARED_ROW_ARG] === undefined) {
                     port.args = { ...args, [DECLARED_ROW_ARG]: port.position?.y ?? 0 };

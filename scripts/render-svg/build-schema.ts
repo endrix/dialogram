@@ -24,6 +24,7 @@ import { WorkflowElkLayoutEngine } from '@dialogram/diagram-server/server/elk-la
 import { WorkflowLayoutConfigurator } from '@dialogram/diagram-server/server/layout-configurator';
 import { tunedLayoutOptions } from '@dialogram/diagram-server/operations/layout-tuned-handler';
 import { placePortLabels } from '@dialogram/diagram-server/server/port-labels';
+import { edgeCrossings } from '@dialogram/diagram-server/model/edge-crossings';
 
 interface Config {
     doc: string;
@@ -102,7 +103,7 @@ async function main(): Promise<void> {
     writeFileSync(config.out, JSON.stringify(createSchema(root)));
     const nodes = [...byId.values()].filter(e => typeof e.type === 'string' && e.type.startsWith('node')).length;
     const edges = [...byId.values()].filter(e => typeof e.type === 'string' && e.type.startsWith('edge')).length;
-    console.log(`${nodes} nodes, ${edges} edges, laid out (${config.layout ?? 'default'}) in ${Date.now() - started} ms`);
+    console.log(`${nodes} nodes, ${edges} edges, laid out (${config.layout ?? 'default'}) in ${Date.now() - started} ms, ${edgeCrossings(root)} crossings`);
 }
 
 main().catch(error => {

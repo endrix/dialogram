@@ -43,7 +43,7 @@ describe('ports reordered on a side', () => {
             { index: { get: () => undefined } } as any
         );
         // ELK puts the port first.
-        (engine as any).regridPorts(node, [{ id: 'plain', y: 0 }, { id: 'bus', y: 40 }]);
+        (engine as any).regridPorts(node, ['plain', 'bus']);
         expect(plain.position).toEqual({ x: 0, y: 30 });
         expect(bus.position).toEqual({ x: 0, y: 51 + portRowOffset(BUS) });
     });

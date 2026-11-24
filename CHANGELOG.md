@@ -1054,6 +1054,22 @@ platform that hands it one.
 
 ### Changed
 
+- **Free Ports gives the instances of a definition one port order.** The
+  layout chose each node's port order on its own, so two instances of one
+  task or workflow could show the ports the source declares once in two
+  orders. The instances of a definition (its name, its file and its ports)
+  now share one order: each port at its mean place among the orders the
+  probe found for them, the instances with more edges weighing more; the
+  other nodes' ports are then ordered again around those, except on the
+  largest diagrams. A graph option, `dialogram.portOrders`, gives a
+  definition's order outright, side by side, by its name or its full key
+  (a task may have an input and an output of one name). On the
+  speculation flow (four instances of each of five definitions) this is 173
+  crossings, against 150 with each node in an order of its own, 236 under
+  Untangled and 253 under Layout Diagram.
+- **`model/edge-crossings.ts` counts the crossings of a laid-out diagram**,
+  out of the port-order test, and `render-svg` prints them for each layout
+  it renders.
 - **An annotation card's Save sends what changed.** An editor that merges
   (`mergeArgUpdates`) used to send every argument the card held, the
   defaults it was given and filled in included, so a Save wrote them all
