@@ -301,17 +301,23 @@ export class CliGraphModelSource implements DiagramModelSource {
         if (!root) {
             return undefined;
         }
-        const exported = await exportOf(root);
+        // The outline is the trail root's: its paths are the trail's, from its
+        // first crumb, and it is the one the reader navigates by. A unit
+        // answered by a past run is not in it, and a view under one is marked
+        // in it as any view it does not list is. Both exports are asked at once.
+        const [exported, navigated] = await Promise.all([exportOf(root), at === 0 ? undefined : exportOf(crumbAt(0))]);
         if (!exported) {
             return undefined;
         }
-        // The outline, and the graphs a list of nodes is read from, are the
-        // trail root's: their paths are the trail's, from its first crumb, and
-        // its outline is the one the reader navigates by. A unit answered by a
-        // past run is not in it, and a view under one is marked in it as any
-        // view it does not list is.
-        const navigated = at === 0 ? exported : await exportOf(crumbAt(0));
-        const around = navigated ? { hierarchy: outlineOf(navigated.hierarchy), hierarchyGraphs: graphsOf(navigated) } : {};
+        if (at > 0 && !navigated) {
+            console.warn(`[CliGraphModelSource] No outline for ${workflowFilePath}#${workflowName ?? ''}: the hierarchy of ${trail[0].workflowName} was not exported`);
+        }
+        // The graphs a list of nodes is read from go with the outline, and the
+        // list's runs are the view's: under a unit answered by a past run, the
+        // trail root's nodes are not that run's, and the list is not given.
+        const around = at === 0
+            ? { hierarchy: outlineOf(exported.hierarchy), hierarchyGraphs: graphsOf(exported) }
+            : navigated ? { hierarchy: outlineOf(navigated.hierarchy) } : {};
         const path = trailInstancePath(trail.slice(at));
         if (path.length === 0) {
             if (workflowFilePath !== root.file || (workflowName && workflowName !== root.workflow)) {

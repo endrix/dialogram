@@ -9,7 +9,7 @@
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { URI } from 'vscode-uri';
 import { HierarchyCache, fileHash, findInstance, graphsOf, outlineOf, type HierarchyEntry } from '../src/server/hierarchy-cache';
 import { hierarchyRootAt } from '@dialogram/shared';
@@ -283,8 +283,14 @@ describe('a view read from the hierarchy', () => {
  * it has.
  */
 describe('a view under a unit answered by a past run', () => {
+    const dirs: string[] = [];
+    afterEach(async () => {
+        await Promise.all(dirs.splice(0).map(dir => fs.rm(dir, { recursive: true, force: true })));
+    });
+
     async function source() {
         const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'recorded-hierarchy-'));
+        dirs.push(dir);
         const files = { top: path.join(dir, 'top.py'), inst: path.join(dir, 'inst.py'), flow: path.join(dir, 'flow.py') };
         for (const [name, file] of Object.entries(files)) {
             await fs.writeFile(file, `@workflow\ndef ${name}():\n    pass\n`);
@@ -328,13 +334,25 @@ describe('a view under a unit answered by a past run', () => {
         expect([...asked].sort()).toEqual(['inst', 'top']);
     });
 
-    it('keeps the outline and the node lists of the trail root, whose paths the trail has', async () => {
+    it('keeps the outline of the trail root, whose paths the trail has, and gives no list of its nodes', async () => {
         const { src, files, uri, toFlow } = await source();
 
         const flowDoc = await src.getGraph(uri(files.flow), { requestOptions: { networkName: 'flow', 'wf:navTrail': JSON.stringify(toFlow) } });
 
         expect(flowDoc.hierarchy.workflowName).toBe('top');
-        expect(flowDoc.hierarchyGraphs.map((g: any) => g.path)).toEqual([[]]);
+        // The trail root's nodes are not the past run's, which the view's runs are.
+        expect(flowDoc.hierarchyGraphs).toBeUndefined();
+    });
+
+    it('draws the view without an outline when the trail root does not export', async () => {
+        const { src, files, uri, toFlow } = await source();
+        const exportHierarchy = src.exportHierarchy;
+        src.exportHierarchy = async (file: string, workflow: string) => (workflow === 'top' ? undefined : exportHierarchy(file, workflow));
+
+        const flowDoc = await src.getGraph(uri(files.flow), { requestOptions: { networkName: 'flow', 'wf:navTrail': JSON.stringify(toFlow) } });
+
+        expect(flowDoc.graph.id).toBe('wf:f-view');
+        expect(flowDoc.hierarchy).toBeUndefined();
     });
 
     it('reads a view through a unit with no past run from the trail root, as before', async () => {
