@@ -65,12 +65,13 @@ export type ChatAgentSpec = AcpAgentSpec & { httpApi: boolean };
 
 /** The agents known without being told; the same table as the runtime's. */
 export const KNOWN_CONNECTORS: Readonly<Record<string, { command: string; httpApi: boolean; resume?: string }>> = {
-    // Both adapters keep the agent's own session id as the ACP one, so its
-    // CLI opens the chat's session: `claude --resume` (from the session's
-    // directory), `opencode -s`.
+    // The three adapters keep the agent's own session id as the ACP one, so
+    // its CLI opens the chat's session: `claude --resume` (from the session's
+    // directory), `opencode -s`, `codex resume`. Codex takes the id as an
+    // argument of its `resume` subcommand; it has no option for it.
     opencode: { command: "opencode acp", httpApi: true, resume: "opencode -s {sessionId}" },
     claude: { command: "claude-agent-acp", httpApi: false, resume: "claude --resume {sessionId}" },
-    codex: { command: "codex-acp", httpApi: false },
+    codex: { command: "codex-acp", httpApi: false, resume: "codex resume {sessionId}" },
     gemini: { command: "gemini --experimental-acp", httpApi: false },
 };
 

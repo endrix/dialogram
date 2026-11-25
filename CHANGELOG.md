@@ -1633,6 +1633,15 @@ platform that hands it one.
 
 ### Fixed
 
+- **A Codex session opens in Codex.** The button that opens an agent's
+  session in its own CLI knew a command for `claude` and `opencode` and none
+  for `codex`: it only copied the id and said that codex has no command to
+  open a session. Codex has one, `codex resume <id>` (the id is an argument
+  of its `resume` subcommand, there is no option for it), and `codex-acp`
+  keeps Codex's own session id as the ACP one, as the two other adapters
+  do. The known connector now carries `resume = "codex resume {sessionId}"`.
+  A connectors file still sets its own command or clears it with
+  `resume = ""`.
 - **The edges inside a workflow instance are drawn from the run it nests.**
   A nested workflow answered by a past run (wfpy's
   `child(instance="wf-out/<run>")`) runs nothing when its parent runs, so

@@ -3,9 +3,10 @@
  *
  * The ACP adapters keep the agent's session id as the ACP one, so a
  * connector's `resume` template (`claude --resume {sessionId}`,
- * `opencode -s {sessionId}`) opens the very session the chat, or a run's
- * agent, talked to. It opens in a VS Code terminal, in the session's
- * directory: Claude Code looks its sessions up by the directory they ran in.
+ * `opencode -s {sessionId}`, `codex resume {sessionId}`) opens the very
+ * session the chat, or a run's agent, talked to. It opens in a VS Code
+ * terminal, in the session's directory: Claude Code looks its sessions up by
+ * the directory they ran in.
  */
 import * as fs from "node:fs";
 import * as vscode from "vscode";
