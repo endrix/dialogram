@@ -1302,32 +1302,32 @@ export class ACPClientService extends EventEmitter {
   }
 
   /**
-   * Stop the agent and wait until its process has ended, or `timeoutMs` has
-   * passed. An agent that lets one client hold a session (Codex) gives the
-   * session up when its process ends, not when it is told to stop.
+   * Stop the agent and wait until its process has ended. An agent that lets
+   * one client hold a session (Codex) gives the session up when its process
+   * ends, not when it is told to stop. A process still there after
+   * `timeoutMs` is killed and waited for `killWaitMs` more. False when it has
+   * not ended even then.
    */
-  async stopAndWait(timeoutMs = 3000): Promise<void> {
+  async stopAndWait(timeoutMs = 3000, killWaitMs = 1000): Promise<boolean> {
     const child = this.process;
-    const ended =
-      child && child.exitCode === null && child.signalCode === null
-        ? new Promise<void>((resolve) => {
-            const timer = setTimeout(resolve, timeoutMs);
-            child.once("exit", () => {
-              clearTimeout(timer);
-              resolve();
-            });
-          })
-        : Promise.resolve();
     this.stop();
-    await ended;
-  }
-
-  /**
-   * Whether the session is resident on this connection: made or loaded since
-   * the agent was started. One that is not has to be loaded before a prompt.
-   */
-  isSessionLoaded(sessionId: string): boolean {
-    return this.loadedSessionIds.has(sessionId);
+    const gone = () => !child || child.exitCode !== null || child.signalCode !== null;
+    if (!child || gone()) return true;
+    const ended = (within: number) =>
+      new Promise<boolean>((resolve) => {
+        const onExit = () => {
+          clearTimeout(timer);
+          resolve(true);
+        };
+        const timer = setTimeout(() => {
+          child.removeListener("exit", onExit);
+          resolve(gone());
+        }, within);
+        child.once("exit", onExit);
+      });
+    if (await ended(timeoutMs)) return true;
+    child.kill("SIGKILL");
+    return ended(killWaitMs);
   }
 
   /**

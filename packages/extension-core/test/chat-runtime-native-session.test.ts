@@ -28,8 +28,7 @@ function makeRuntime(cwd: string, connectorResume?: (connector: string, cwd: str
         // The chat's own session is handed over: its agent is stopped first
         // (chat-runtime-hand-over.test.ts holds that).
         getAllSessions: () => [],
-        isSessionLoaded: () => false,
-        stopAndWait: async (): Promise<void> => undefined
+        stopAndWait: async (): Promise<boolean> => true
     };
     return runtime;
 }

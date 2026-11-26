@@ -1083,16 +1083,29 @@ platform that hands it one.
   The chat says that its session continues in the CLI and sends nothing
   meanwhile; its **Return to chat** button closes that terminal, starts the
   agent again and loads the session into it. What was said in the CLI is in
-  the agent's memory, not in the chat's transcript. A click while a turn is
-  running opens nothing and stops nothing: the chat says "Not opened: a
-  turn is running", and that the session can be opened once the turn has
-  ended or been stopped (the panel refuses its own turn, the host a turn of
-  any chat of the window). Nothing is handed over either for a chat that
-  has no turn yet (the CLI has no session to open), or for a connector
-  without a `resume` command, whose id is copied as before. The chat's agent is one process for every chat of
-  the window: the others are disconnected for as long, and each is loaded
-  again at its next message. A run agent's session (the button of a
-  firing) opens as before, since its agent has ended.
+  the agent's memory, not in the chat's transcript. Nothing is handed over
+  for a chat the agent has had no turn in (the CLI has no session to open),
+  or for a connector without a `resume` command, whose id is copied as
+  before. A run agent's session (the button of a firing) opens as before,
+  since its agent has ended.
+  - A click while a turn is running opens nothing and stops nothing: the
+    chat says "Not opened: a turn is running" and that the session can be
+    opened once the turn has ended or been stopped. The panel refuses its
+    own turn, and the host a turn of any chat of the window.
+  - The chat's agent is one process for every chat of the window: the
+    others are disconnected for as long, and nothing starts the agent
+    meanwhile (a panel, a task, the diagnosis command). The return starts
+    the agent that was stopped, in its folder. Each other chat is loaded
+    again where it is next used: its opening, its next message, a change of
+    its mode or its model.
+  - A chat with no message yet is not kept by an agent that writes a
+    session at its first message (Codex). Its first message after the
+    return is not sent: it goes back to the composer, the chat says that
+    the agent did not keep it, and sending again starts a new chat. A chat
+    with messages that the agent cannot load again stays, and its message
+    goes back to the composer.
+  - If the agent does not stop, it is killed; if it has not ended even
+    then, no terminal is opened onto it and the chat offers the return.
 - **`/untangle` in every product's chat.** It no longer needs a producer
   that can write a port order: wherever the diagram's tools are on and the
   platform's diagram module serves the diagram (wfpy, CalPy, SV, VHDL,

@@ -8,6 +8,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ChatRuntime } from '../src/extension/chat/chat-runtime';
+import * as vscode from './vscode-mock';
 import { clipboardWrites, closeTerminal, createdTerminals } from './vscode-mock';
 
 const URI = 'file:///w/top.py';
@@ -18,6 +19,10 @@ interface Options {
     /** How many times the agent refuses the load when the chat returns. */
     refusals?: number;
     held?: string[];
+    /** The agent's process does not end when it is stopped. */
+    staysAlive?: boolean;
+    /** Sessions the agent started again cannot load: it kept none of them. */
+    notKept?: string[];
 }
 
 function makeRuntime(options: Options = {}) {
@@ -31,12 +36,15 @@ function makeRuntime(options: Options = {}) {
     };
     const runtime = new ChatRuntime(
         { workspaceState: memento } as any,
-        { key: 'test', displayName: 'Test', settingsSection: 'test.chat' } as any,
+        { key: 'test', displayName: 'Test', settingsSection: 'test.chat', acpAgent: async () => connector.set } as any,
         (uri, payload) => void posts.push({ uri, type: payload.type, data: payload.data }),
         () => true
     );
     let refusals = options.refusals ?? 0;
     const held = new Set(options.held ?? ['s1']);
+    const notKept = new Set(options.notKept ?? []);
+    /** How the agent was started, each time. */
+    const starts: Array<{ cwd: string; agent: unknown }> = [];
     const acp = {
         agent: 'codex',
         resumeTemplate: options.resume === null ? undefined : (options.resume ?? 'codex resume {sessionId}'),
@@ -46,20 +54,33 @@ function makeRuntime(options: Options = {}) {
         isClientConnected: () => acp.connected,
         takesImages: () => undefined,
         getAllSessions: () => [...held].map(id => ({ id })),
-        isSessionLoaded: (id: string) => held.has(id),
         getSession: (id: string) => ({ id }),
         getSessionMode: () => 'build',
-        getSessionModel: () => undefined,
-        setSessionMode: async (): Promise<void> => undefined,
-        stopAndWait: async (): Promise<void> => {
+        getSessionModel: (): string | undefined => 'model-a',
+        setSessionMode: async (id: string, mode: string): Promise<void> => void done.push(`mode ${id} ${mode}`),
+        setProvider: async (id: string, model: string): Promise<void> => void done.push(`model ${id} ${model}`),
+        createSession: async (): Promise<string> => {
+            done.push('create');
+            return 'made';
+        },
+        deleteSession: async (): Promise<void> => undefined,
+        getMessagesWithIds: async () => [],
+        getRevertState: async () => false,
+        stopAndWait: async (): Promise<boolean> => {
             done.push('stop');
             acp.connected = false;
+            return !options.staysAlive;
         },
-        start: async (): Promise<void> => {
+        start: async (cwd: string, agent: unknown): Promise<void> => {
             done.push('start');
+            starts.push({ cwd, agent });
             acp.connected = true;
         },
         loadSession: async (id: string): Promise<void> => {
+            if (notKept.has(id)) {
+                done.push(`load ${id} refused`);
+                throw new Error('No saved session found');
+            }
             if (refusals > 0) {
                 refusals -= 1;
                 done.push(`load ${id} refused`);
@@ -85,8 +106,25 @@ function makeRuntime(options: Options = {}) {
     };
     const types = (uri?: string) => posts.filter(p => !uri || p.uri === uri).map(p => p.type);
     const last = (type: string) => [...posts].reverse().find(p => p.type === type);
-    return { runtime, posts, done, acp, types, last };
+    return { runtime, posts, done, acp, types, last, starts, notKept };
 }
+
+/** The connector the setting names: what an agent is started as. */
+const connector: { set: unknown } = { set: undefined };
+
+/** A chat the window's store knows, with rows of the roles given. */
+function keep(runtime: ChatRuntime, id: string, roles: Array<'user' | 'assistant'>, file = '/w/top.py'): void {
+    (runtime as any).sessions.sessions.set(id, {
+        id,
+        name: id,
+        workflowFile: file,
+        createdAt: 1,
+        updatedAt: 1,
+        mode: 'build',
+        messages: roles.map((role, at) => ({ role, content: `${role} ${at}`, timestamp: at }))
+    });
+}
+const kept = (runtime: ChatRuntime, id: string): unknown => (runtime as any).sessions.sessions.get(id);
 
 async function handOver(runtime: ChatRuntime, sessionId = 's1'): Promise<void> {
     await runtime.handleMessage(URI, { type: 'chat.openSessionNatively', data: { sessionId } });
@@ -96,6 +134,7 @@ beforeEach(() => {
     createdTerminals.length = 0;
     clipboardWrites.length = 0;
     delete (createdTerminals as any).push;
+    connector.set = undefined;
 });
 
 describe('handing the chat’s session over to the agent’s CLI', () => {
@@ -159,6 +198,86 @@ describe('handing the chat’s session over to the agent’s CLI', () => {
         expect(createdTerminals[0].shown).toBe(true);
     });
 
+    it('opens no terminal onto an agent that did not stop, and offers the return', async () => {
+        const { runtime, done, last } = makeRuntime({ staysAlive: true });
+        await handOver(runtime);
+        // Still there, it may still hold the session.
+        expect(done).toEqual(['stop']);
+        expect(createdTerminals).toHaveLength(0);
+        expect(last('chat.handedOver')?.data).toEqual({ sessionId: 's1', agent: 'codex', terminalOpen: false });
+        expect(last('chat.error')?.data.message).toContain('codex did not stop');
+        await runtime.handleMessage(URI, { type: 'chat.returnToChat', data: {} });
+        expect(last('chat.returnedToChat')).toBeDefined();
+    });
+
+    it('offers the return when the terminal could not be opened', async () => {
+        const { runtime, done, last } = makeRuntime();
+        const create = vscode.window.createTerminal;
+        vscode.window.createTerminal = () => {
+            throw new Error('no terminal here');
+        };
+        try {
+            await handOver(runtime);
+        } finally {
+            vscode.window.createTerminal = create;
+        }
+        expect(done).toEqual(['stop']);
+        expect(last('chat.handedOver')?.data).toEqual({ sessionId: 's1', agent: 'codex', terminalOpen: false });
+        expect(last('chat.error')?.data.message).toContain('no terminal here');
+    });
+
+    it('hands over no chat the agent has had no turn in', async () => {
+        const { runtime, done, types } = makeRuntime();
+        // No message at all: the agent wrote no session for its CLI to open.
+        keep(runtime, 's1', []);
+        await handOver(runtime);
+        // Rows of the person's alone: commands the chat carried out itself.
+        keep(runtime, 's1', ['user', 'user']);
+        await handOver(runtime);
+        expect(done).toEqual([]);
+        expect(createdTerminals).toHaveLength(0);
+        expect(types()).not.toContain('chat.handedOver');
+    });
+
+    it('hands over a chat with an answer, or one a prompt went to in this window', async () => {
+        const answered = makeRuntime();
+        keep(answered.runtime, 's1', ['user', 'assistant']);
+        await handOver(answered.runtime);
+        expect(answered.done).toEqual(['stop', 'terminal']);
+
+        const prompted = makeRuntime();
+        keep(prompted.runtime, 's1', []);
+        // Its answer is not stored yet: the prompt went out all the same.
+        await prompted.runtime.handleMessage(URI, { type: 'chat.sendMessage', data: { sessionId: 's1', text: 'go' } });
+        prompted.done.length = 0;
+        await handOver(prompted.runtime);
+        expect(prompted.done.filter(d => d === 'stop' || d === 'terminal')).toEqual(['stop', 'terminal']);
+    });
+
+    it('lets a start under way end before it stops the agent', async () => {
+        const { runtime, done, acp } = makeRuntime();
+        (runtime as any).started = false;
+        let connect: () => void = () => undefined;
+        acp.start = () =>
+            new Promise<void>(resolve => {
+                connect = () => {
+                    done.push('start');
+                    resolve();
+                };
+            });
+        const starting = (runtime as any).ensureStarted('/w');
+        await new Promise(resolve => setTimeout(resolve, 10));
+        const handing = handOver(runtime);
+        await new Promise(resolve => setTimeout(resolve, 10));
+        // Not stopped while it connects: that would leave it running behind.
+        expect(done).toEqual([]);
+        connect();
+        await starting;
+        await handing;
+        expect(done).toEqual(['start', 'stop', 'terminal']);
+        expect((runtime as any).started).toBe(false);
+    });
+
     it('still copies the session id during the hand-over', async () => {
         const { runtime } = makeRuntime();
         await handOver(runtime);
@@ -185,6 +304,32 @@ describe('while the agent’s CLI holds the session', () => {
         done.length = 0;
         for (const type of ['chat.getProviders', 'chat.createSession', 'chat.loadSession', 'chat.setMode', 'chat.setProvider', 'chat.deleteSession', 'chat.cancel']) {
             await runtime.handleMessage(URI, { type, data: { sessionId: 's1', mode: 'plan', providerId: 'm' } });
+        }
+        expect(done).toEqual([]);
+    });
+
+    it('ends a panel’s wait for a session it asked for', async () => {
+        const { runtime, last } = makeRuntime();
+        await handOver(runtime);
+        await runtime.handleMessage(URI, { type: 'chat.createSession', data: { requestId: 'r1', name: 'Task' } });
+        expect(last('chat.sessionCreateAborted')?.data).toEqual({ requestId: 'r1' });
+    });
+
+    it('starts the agent for no one else either: the diagnosis command, a handler past the guard', async () => {
+        const { runtime, done } = makeRuntime();
+        const folders = vscode.workspace.workspaceFolders;
+        (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: '/w' } }];
+        const log: string[] = [];
+        (runtime as any).output = { appendLine: (line: string) => void log.push(line), show: () => undefined };
+        try {
+            await handOver(runtime);
+            done.length = 0;
+            await runtime.runDiagnostics();
+            // It got as far as the start, and was refused there.
+            expect(log.join('\n')).toContain('return to the chat first');
+            await expect((runtime as any).ensureStarted('/w')).rejects.toThrow('return to the chat first');
+        } finally {
+            (vscode.workspace as any).workspaceFolders = folders;
         }
         expect(done).toEqual([]);
     });
@@ -298,10 +443,126 @@ describe('returning to the chat', () => {
         // The panel owns the session: an update of a turn reaches it.
         await runtime.handleMessage(URI, { type: 'chat.sendMessage', data: { sessionId: 's1', text: 'first' } });
         await handOver(runtime);
-        acp.loadSession = async () => update('replayed');
+        acp.loadSession = async () => {
+            update('replayed');
+            // The last of it leaves the forwarder's buffer after the load is answered.
+            setTimeout(() => update('replayed late'), 60);
+        };
+        const returned = Date.now();
         await runtime.handleMessage(URI, { type: 'chat.returnToChat', data: {} });
+        // The return waited for it: the session's updates show only after.
+        expect(Date.now() - returned).toBeGreaterThanOrEqual(100);
+        await new Promise(resolve => setTimeout(resolve, 80));
         update('live');
         const shown = posts.filter(p => p.type === 'chat.sessionUpdate').map(p => p.data.notification.text);
         expect(shown).toEqual(['live']);
+    });
+
+    it('starts the agent that was stopped, in its folder, whatever is set since', async () => {
+        const { runtime, starts } = makeRuntime();
+        (runtime as any).started = false;
+        connector.set = { command: 'codex-acp' };
+        await (runtime as any).ensureStarted('/w');
+        connector.set = { command: 'another-agent' };
+        // Asked from a chat of another folder.
+        await runtime.handleMessage('file:///elsewhere/x.py', { type: 'chat.openSessionNatively', data: { sessionId: 's1' } });
+        await runtime.handleMessage(URI, { type: 'chat.returnToChat', data: {} });
+        expect(starts).toEqual([
+            { cwd: '/w', agent: { command: 'codex-acp' } },
+            { cwd: '/w', agent: { command: 'codex-acp' } }
+        ]);
+    });
+});
+
+describe('the other chats of the agent that was stopped', () => {
+    /** Hand `s1` over and take it back: `s2` is the stopped agent's too. */
+    async function roundTrip(options: Options = {}) {
+        const made = makeRuntime({ held: ['s1', 's2'], ...options });
+        await handOver(made.runtime);
+        await made.runtime.handleMessage(URI, { type: 'chat.returnToChat', data: {} });
+        made.done.length = 0;
+        made.posts.length = 0;
+        return made;
+    }
+
+    it('drops one with no message that the agent did not keep, and gives the message back', async () => {
+        const { runtime, done, posts, acp } = await roundTrip({ notKept: ['s2'] });
+        keep(runtime, 's2', [], '/w/other.py');
+        await runtime.handleMessage(OTHER, { type: 'chat.sendMessage', data: { sessionId: 's2', text: 'first words' } });
+        // Nothing is prompted to an agent that does not hold the chat.
+        expect(acp.prompts).toEqual([]);
+        expect(done).toEqual(['load s2 refused']);
+        const told = posts.filter(p => p.uri === OTHER && p.type !== 'chat.sessions');
+        expect(told.map(p => p.type)).toEqual(['chat.messageNotSent', 'chat.turnEnd', 'chat.sessionDeleted']);
+        expect(told[0].data).toEqual({ sessionId: 's2', reason: 'the agent did not keep this chat' });
+        expect(told[2].data.sessionId).toBe('s2');
+        expect(told[2].data.reason).toContain('had no message yet');
+        expect(kept(runtime, 's2')).toBeUndefined();
+        // No row of the message was stored for a chat that is gone.
+        expect(posts.filter(p => p.type === 'chat.messageIds')).toEqual([]);
+    });
+
+    it('keeps one with messages that could not be loaded, sends nothing, and loads it at the next message', async () => {
+        const { runtime, done, posts, acp, notKept } = await roundTrip({ notKept: ['s2'] });
+        keep(runtime, 's2', ['user', 'assistant'], '/w/other.py');
+        await runtime.handleMessage(OTHER, { type: 'chat.sendMessage', data: { sessionId: 's2', text: 'again' } });
+        expect(acp.prompts).toEqual([]);
+        expect(posts.find(p => p.type === 'chat.messageNotSent')?.data).toEqual({
+            sessionId: 's2',
+            reason: 'the agent could not load this chat again; send once more, or start a new chat'
+        });
+        expect(posts.filter(p => p.type === 'chat.sessionDeleted')).toEqual([]);
+        expect((kept(runtime, 's2') as any).messages).toHaveLength(2);
+        // The agent answers the load now: the message goes, and its turn is shown.
+        notKept.clear();
+        done.length = 0;
+        await runtime.handleMessage(OTHER, { type: 'chat.sendMessage', data: { sessionId: 's2', text: 'again' } });
+        expect(done).toEqual(['load s2', 'prompt s2']);
+        (runtime as any).post('s2', { type: 'chat.sessionUpdate', data: { notification: { sessionId: 's2', text: 'answer' } } });
+        expect(posts.filter(p => p.type === 'chat.sessionUpdate').map(p => p.data.notification.text)).toEqual(['answer']);
+    });
+
+    it('loads one before its mode or its model is set, once', async () => {
+        const { runtime, done } = await roundTrip();
+        keep(runtime, 's2', ['user', 'assistant'], '/w/other.py');
+        await runtime.handleMessage(OTHER, { type: 'chat.setProvider', data: { sessionId: 's2', providerId: 'model-b' } });
+        await runtime.handleMessage(OTHER, { type: 'chat.setMode', data: { sessionId: 's2', mode: 'plan' } });
+        expect(done).toEqual(['load s2', 'model s2 model-b', 'mode s2 plan']);
+    });
+
+    it('changes no model of one it could not load, and shows the model it still has', async () => {
+        const { runtime, done, posts } = await roundTrip({ notKept: ['s2'] });
+        keep(runtime, 's2', ['user', 'assistant'], '/w/other.py');
+        await runtime.handleMessage(OTHER, { type: 'chat.setProvider', data: { sessionId: 's2', providerId: 'model-b' } });
+        expect(done).toEqual(['load s2 refused']);
+        expect(posts.find(p => p.type === 'chat.providerChanged')?.data).toEqual({ provider: 'model-a' });
+        expect(posts.find(p => p.type === 'chat.error')?.data.message).toContain('its model is not changed');
+    });
+
+    it('keeps the mode of one it could not load for its next message', async () => {
+        const { runtime, done } = await roundTrip({ notKept: ['s2'] });
+        keep(runtime, 's2', ['user', 'assistant'], '/w/other.py');
+        await runtime.handleMessage(OTHER, { type: 'chat.setMode', data: { sessionId: 's2', mode: 'plan' } });
+        expect(done).toEqual(['load s2 refused']);
+        expect((kept(runtime, 's2') as any).mode).toBe('plan');
+    });
+
+    it('loads one that is opened, and shows its turns after', async () => {
+        const { runtime, done, posts } = await roundTrip();
+        keep(runtime, 's2', ['user', 'assistant'], '/w/other.py');
+        await runtime.handleMessage(OTHER, { type: 'chat.loadSession', data: { sessionId: 's2' } });
+        expect(done.filter(d => d.startsWith('load'))).toEqual(['load s2', 'load s2']);
+        (runtime as any).post('s2', { type: 'chat.sessionUpdate', data: { notification: { sessionId: 's2', text: 'live' } } });
+        expect(posts.filter(p => p.type === 'chat.sessionUpdate').map(p => p.data.notification.text)).toEqual(['live']);
+    });
+
+    it('loads one once for two who ask at the same time', async () => {
+        const { runtime, done } = await roundTrip();
+        keep(runtime, 's2', ['user', 'assistant'], '/w/other.py');
+        await Promise.all([
+            runtime.handleMessage(OTHER, { type: 'chat.setMode', data: { sessionId: 's2', mode: 'plan' } }),
+            runtime.handleMessage(OTHER, { type: 'chat.setProvider', data: { sessionId: 's2', providerId: 'model-b' } })
+        ]);
+        expect(done.filter(d => d.startsWith('load'))).toEqual(['load s2']);
     });
 });

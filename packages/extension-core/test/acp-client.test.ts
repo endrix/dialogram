@@ -825,13 +825,30 @@ describe('ACPClientService', () => {
       expect(errors).not.toHaveBeenCalled();
     });
 
+    it('is not taken down by a late error of the agent it stopped', async () => {
+      const first = agentProcess();
+      const second = agentProcess();
+      vi.mocked(spawn).mockReturnValueOnce(first as any).mockReturnValueOnce(second as any);
+      const errors = vi.fn();
+      client.on('error', errors);
+
+      await client.start('/test/workspace');
+      client.stop();
+      await client.start('/test/workspace');
+      first.emit('error', new Error('write EPIPE'));
+
+      expect(client.isClientConnected()).toBe(true);
+      expect(second.kill).not.toHaveBeenCalled();
+      expect(errors).not.toHaveBeenCalled();
+    });
+
     it('waits for the stopped agent’s process to end', async () => {
       const first = agentProcess();
       vi.mocked(spawn).mockReturnValueOnce(first as any);
       await client.start('/test/workspace');
 
       let ended = false;
-      const waiting = client.stopAndWait(5000).then(() => (ended = true));
+      const waiting = client.stopAndWait(5000).then(itEnded => (ended = itEnded));
       await new Promise(resolve => setTimeout(resolve, 20));
       expect(first.kill).toHaveBeenCalled();
       expect(client.isClientConnected()).toBe(false);
@@ -839,25 +856,47 @@ describe('ACPClientService', () => {
       first.emit('exit', null);
       await waiting;
       expect(ended).toBe(true);
+      expect(first.kill).not.toHaveBeenCalledWith('SIGKILL');
     });
 
-    it('does not wait longer than it is told for a process that does not end', async () => {
+    it('kills a process that does not end when it is told to stop', async () => {
+      const first = agentProcess();
+      first.kill = vi.fn((signal?: string) => {
+        if (signal === 'SIGKILL') setTimeout(() => first.emit('exit', null, 'SIGKILL'), 5);
+        return true;
+      });
+      vi.mocked(spawn).mockReturnValueOnce(first as any);
+      await client.start('/test/workspace');
+      expect(await client.stopAndWait(30, 500)).toBe(true);
+      expect(first.kill).toHaveBeenLastCalledWith('SIGKILL');
+    });
+
+    it('says so when the process has not ended even then', async () => {
       const first = agentProcess();
       vi.mocked(spawn).mockReturnValueOnce(first as any);
       await client.start('/test/workspace');
       const began = Date.now();
-      await client.stopAndWait(50);
+      expect(await client.stopAndWait(30, 30)).toBe(false);
       expect(Date.now() - began).toBeLessThan(1000);
     });
 
-    it('holds a session it made, and none once it is stopped', async () => {
+    it('has ended at once when there is no process, or it is gone already', async () => {
+      expect(await client.stopAndWait(5000)).toBe(true);
+      const first = agentProcess();
+      vi.mocked(spawn).mockReturnValueOnce(first as any);
+      await client.start('/test/workspace');
+      first.exitCode = 0;
+      expect(await client.stopAndWait(5000)).toBe(true);
+    });
+
+    it('still knows a session it made once it is stopped', async () => {
       await client.start('/test/workspace');
       const sessionId = await client.createSession('/test/workspace');
-      expect(client.isSessionLoaded(sessionId)).toBe(true);
       client.stop();
-      expect(client.isSessionLoaded(sessionId)).toBe(false);
-      // Still known: its directory is where the agent's CLI opens it.
+      // Its directory is where the agent's CLI opens it, and the chat loads
+      // it again into the agent started next.
       expect(client.getSession(sessionId)).toBeDefined();
+      expect(client.getAllSessions().map(session => session.id)).toEqual([sessionId]);
     });
   });
 

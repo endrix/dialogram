@@ -669,6 +669,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         // that failed. Open the panel, start the session in the task's mode,
         // and send its message once the session exists.
         if (data && typeof data.prompt === 'string' && data.prompt.trim() !== '') {
+          if (this.heldByCli()) break;
           const mode: 'plan' | 'build' = data.mode === 'build' ? 'build' : 'plan';
           const name = typeof data.name === 'string' && data.name.trim() !== '' ? data.name : 'Task';
           // A message waiting for a session gives way: it goes back to the
@@ -1104,6 +1105,12 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     const agent = typeof data.agent === 'string' && data.agent ? data.agent : this.connectionAgent || 'the agent';
     const said = this.handOver?.sessionId === data.sessionId;
     this.handOver = { sessionId: data.sessionId, agent, terminalOpen: data.terminalOpen !== false };
+    // Nothing asked of the stopped agent is answered: a session being made or
+    // loaded is no longer awaited. A message that waited for one goes back to
+    // the composer, and a task's prompt is dropped, not kept for another chat.
+    this.createRequest = undefined;
+    this.isLoadingSession = false;
+    this.restorePending();
     if (!said) {
       this.pushMessage(
         'system',
@@ -1481,6 +1488,9 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   private switchMode(mode: 'plan' | 'build'): void {
     this.applyMode(mode);
+    // During a hand-over the agent is not there to be told: the mode goes
+    // with the chat's next message.
+    if (this.handOver) return;
     this.sendToHost('chat.setMode', { mode, sessionId: this.currentSessionId });
   }
 

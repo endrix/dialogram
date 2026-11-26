@@ -240,6 +240,11 @@ const RETURN_RETRY_WINDOW_MS = 5000;
  *  for a moment after the load is answered. */
 const REPLAY_SETTLE_MS = 150;
 
+/** Said for a chat that had no message when the agent was stopped for its
+ *  CLI: an agent keeps a session from its first message on, so it is gone. */
+const NOT_KEPT =
+  "This chat had no message yet, and the agent did not keep it when it was stopped for its CLI. Send again to start a new chat.";
+
 /** Why the chat is not connected during a hand-over, as its panels say it. */
 function handOverReason(agent: string): string {
   return `the session is open in ${agent}'s CLI`;
@@ -294,12 +299,19 @@ export class ChatRuntime {
   /** `chat.sendMessage` handlers that have not returned: turns under way. */
   private turnsUnderWay = 0;
   /**
-   * The sessions the agent held when it was stopped for a hand-over. The
-   * agent started after it holds none of them until each is loaded again,
-   * and the history an agent replays on that load is the transcript's
-   * already: it is not shown a second time.
+   * The sessions the agent knew when it was stopped for a hand-over. The
+   * agent started after it holds none of them until each is loaded again
+   * ({@link loadHeld}), and the history an agent replays on that load is the
+   * transcript's already: it is not shown a second time.
    */
   private readonly toLoadAgain = new Set<string>();
+  /** The loads of {@link toLoadAgain} under way, so that two askers share one. */
+  private readonly loadingAgain = new Map<string, Promise<boolean>>();
+  /** The sessions a prompt went to since this window started: each has a
+   *  turn with the agent, whatever its transcript holds. */
+  private readonly prompted = new Set<string>();
+  /** The agent last started: its folder, and the connector it was started as. */
+  private startedWith: { cwd: string; agent: AcpAgentSpec | undefined } | undefined;
 
   /** A running agent's question, waiting for the panel's `chat.runAnswer`. */
   private readonly pendingRunQuestions = new Map<
@@ -470,16 +482,30 @@ export class ChatRuntime {
     }
   }
 
-  private async ensureStarted(cwd: string): Promise<void> {
+  private async ensureStarted(cwd: string, takingBack = false): Promise<void> {
+    // While its CLI holds the session the agent stays stopped, whoever asks
+    // (a panel, the diagnosis command): only the return starts it again.
+    if (this.handOver && !takingBack) {
+      throw new Error(`${handOverReason(this.handOver.agent)}: return to the chat first`);
+    }
     if (this.started) return;
     if (!this.startPromise) {
-      this.startPromise = Promise.resolve(this.config.acpAgent?.(cwd))
-        .then((agent) => this.acp.start(cwd, agent, { opencodeCodeMode: this.opencodeCodeMode() }))
+      // The return starts the agent that was stopped, in its folder: the
+      // session handed over is that agent's, whatever is set since.
+      const again = takingBack ? this.startedWith : undefined;
+      const startIn = again?.cwd ?? cwd;
+      let startedAs: AcpAgentSpec | undefined;
+      this.startPromise = Promise.resolve(again ? again.agent : this.config.acpAgent?.(startIn))
+        .then((agent) => {
+          startedAs = agent;
+          return this.acp.start(startIn, agent, { opencodeCodeMode: this.opencodeCodeMode() });
+        })
         .then(async () => {
           // Stand up the HTTP tool server before any session is created,
           // so mcpServersProvider can attach it synchronously.
           await this.ensureMcpServer();
           this.started = true;
+          this.startedWith = { cwd: startIn, agent: startedAs };
         })
         .catch((err) => {
           this.startPromise = undefined;
@@ -674,8 +700,7 @@ export class ChatRuntime {
     }
     // A chat with no turn yet is no session the CLI can open: Codex and
     // Claude Code write one at the first message.
-    const kept = this.sessions.getSession(session.sessionId);
-    if (kept && !kept.messages.some((message) => message.role === "user")) {
+    if (!this.hasAgentTurn(session.sessionId)) {
       void vscode.window.showInformationMessage(
         `This chat has no turn yet: ${session.agent}'s CLI has nothing to open.`,
       );
@@ -684,21 +709,31 @@ export class ChatRuntime {
     const handOver: HandOver = {
       sessionId: session.sessionId,
       agent: session.agent,
-      cwd,
+      cwd: this.startedWith?.cwd ?? cwd,
       terminalOpen: true,
     };
     // Said before the agent is stopped: the panels then read the disconnect
     // that follows as the hand-over's, not as a fault.
     this.handOver = handOver;
     this.broadcast(this.handOverPayload(handOver));
-    for (const held of this.acp.getAllSessions()) {
-      if (this.acp.isSessionLoaded(held.id)) this.toLoadAgain.add(held.id);
-    }
+    for (const known of this.acp.getAllSessions()) this.toLoadAgain.add(known.id);
     this.toLoadAgain.add(handOver.sessionId);
+    // A start still under way ends first: stopped before it has connected,
+    // it would leave an agent running behind the hand-over.
+    await this.startPromise?.catch(() => undefined);
     // Codex gives a session up when its process has ended, not before.
-    await this.acp.stopAndWait();
+    const ended = await this.acp.stopAndWait();
     this.started = false;
     this.startPromise = undefined;
+    if (!ended) {
+      // Still there, it may still hold the session: no CLI is opened onto
+      // it. The panels offer the return.
+      handOver.terminalOpen = false;
+      this.broadcast(this.handOverPayload(handOver));
+      throw new Error(
+        `${session.agent} did not stop, so the session was not opened in its CLI. Return to the chat.`,
+      );
+    }
     this.handOverTerminalListener = vscode.window.onDidCloseTerminal((closed) => {
       if (handOver.terminal && closed === handOver.terminal) {
         handOver.terminal = undefined;
@@ -743,7 +778,7 @@ export class ChatRuntime {
     terminal?.dispose();
     const { sessionId } = handOver;
     try {
-      await this.ensureStarted(handOver.cwd);
+      await this.ensureStarted(handOver.cwd, true);
       await this.loadHandedOver(handOver);
       await this.loadedAgain(sessionId);
     } catch (err) {
@@ -790,6 +825,69 @@ export class ChatRuntime {
     this.toLoadAgain.delete(sessionId);
   }
 
+  /**
+   * Whether the agent has had a turn in the session: a prompt went to it in
+   * this window, or its transcript holds an answer. A row of the person's
+   * alone is not one: a command the chat carried out itself leaves such a row.
+   * A session the store does not know is taken to have one.
+   */
+  private hasAgentTurn(sessionId: string): boolean {
+    if (this.prompted.has(sessionId)) return true;
+    const kept = this.sessions.getSession(sessionId);
+    return !kept || kept.messages.some((message) => message.role === "assistant");
+  }
+
+  /**
+   * Make sure the agent holds a session before it is used: one of
+   * {@link toLoadAgain} is loaded first, once for all who ask. False when
+   * the agent could not load it.
+   */
+  private loadHeld(sessionId: string): Promise<boolean> {
+    if (!this.toLoadAgain.has(sessionId)) return Promise.resolve(true);
+    let loading = this.loadingAgain.get(sessionId);
+    if (!loading) {
+      loading = (async () => {
+        if (!(await this.sessions.loadSession(sessionId))) return false;
+        await this.loadedAgain(sessionId);
+        return true;
+      })().finally(() => this.loadingAgain.delete(sessionId));
+      this.loadingAgain.set(sessionId, loading);
+    }
+    return loading;
+  }
+
+  /**
+   * A message for a chat the agent knew before it was stopped and cannot
+   * load again: it is not sent, and goes back to the composer. A chat with no
+   * message at all was never written by the agent, so nothing is lost with
+   * it: it is dropped, and the message makes a new chat when sent again. Any
+   * other chat stays as it is.
+   */
+  private async refuseNotHeld(uri: string, file: string, sessionId: string): Promise<void> {
+    const kept = this.sessions.getSession(sessionId);
+    const blank = kept !== undefined && kept.messages.length === 0;
+    this.postToWebview(uri, {
+      type: "chat.messageNotSent",
+      data: {
+        sessionId,
+        reason: blank
+          ? "the agent did not keep this chat"
+          : "the agent could not load this chat again; send once more, or start a new chat",
+      },
+    });
+    this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
+    if (!blank) return;
+    this.deletedHere.add(sessionId);
+    if (!(await this.sessions.deleteSession(sessionId, file))) {
+      this.deletedHere.delete(sessionId);
+      return;
+    }
+    this.toLoadAgain.delete(sessionId);
+    this.sessionUri.delete(sessionId);
+    this.postToWebview(uri, { type: "chat.sessionDeleted", data: { sessionId, reason: NOT_KEPT } });
+    await this.sendSessions(uri, file);
+  }
+
   /** Answer a panel that asks, during a hand-over, for what needs the agent. */
   private refuseWhileHandedOver(uri: string, type: string, data: any): void {
     const handOver = this.handOver!;
@@ -802,6 +900,13 @@ export class ChatRuntime {
         data: { sessionId, reason: handOverReason(handOver.agent) },
       });
       this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
+    }
+    if (type === "chat.createSession") {
+      // The session is not made: the panel stops waiting for it.
+      this.postToWebview(uri, {
+        type: "chat.sessionCreateAborted",
+        data: { requestId: data?.requestId },
+      });
     }
     this.postToWebview(uri, this.handOverPayload(handOver));
   }
@@ -1094,6 +1199,8 @@ export class ChatRuntime {
       case "chat.loadSession": {
         if (!data?.sessionId) return;
         await this.ensureStarted(cwd);
+        // One the stopped agent knew is loaded into the agent started since.
+        await this.loadHeld(data.sessionId);
         const loaded = await this.sessions.loadSession(data.sessionId);
         if (!loaded && (await this.sessions.isGone(data.sessionId))) {
           // Deleted in another window since this one listed it.
@@ -1113,7 +1220,6 @@ export class ChatRuntime {
           });
           return;
         }
-        await this.loadedAgain(data.sessionId);
         this.sessionUri.set(data.sessionId, uri);
         this.sessions.setCurrentSession(data.sessionId);
         await this.postHistory(uri, data.sessionId, {
@@ -1163,6 +1269,7 @@ export class ChatRuntime {
           return;
         }
         this.sessionUri.delete(data.sessionId);
+        this.toLoadAgain.delete(data.sessionId);
         if (nextSessionId) this.sessions.setCurrentSession(nextSessionId);
         this.postToWebview(uri, {
           type: "chat.sessionDeleted",
@@ -1276,15 +1383,21 @@ export class ChatRuntime {
         // the freshly-started agent, so re-attach it before prompting — else
         // the agent has no context (file) for it. Deleted in the meantime:
         // refused all the same.
-        // So is one the agent held before it was stopped for a hand-over to
-        // its CLI: the agent started since does not hold it.
-        if (!this.acp.getSession(sessionId) || this.toLoadAgain.has(sessionId)) {
-          const attached = await this.sessions.loadSession(sessionId);
-          if (!attached && (await this.sessions.isGone(sessionId))) {
+        if (!this.acp.getSession(sessionId)) {
+          if (!(await this.sessions.loadSession(sessionId)) && (await this.sessions.isGone(sessionId))) {
             await refuse();
             return;
           }
-          if (attached) await this.loadedAgain(sessionId);
+        } else if (!(await this.loadHeld(sessionId))) {
+          // One the agent knew before it was stopped for a hand-over to its
+          // CLI, which the agent started since could not load: nothing is
+          // prompted to an agent that does not hold the chat.
+          if (await this.sessions.isGone(sessionId)) {
+            await refuse();
+          } else {
+            await this.refuseNotHeld(uri, file, sessionId);
+          }
+          return;
         }
         this.addShown(sessionId, {
           role: "user",
@@ -1344,6 +1457,7 @@ export class ChatRuntime {
             // operations, and is not run: the prompt speaks of layouts.
             try {
               await this.sendInMode(sessionId, data.mode);
+              this.prompted.add(sessionId);
               await this.acp.sendPrompt(sessionId, result.prompt, images);
             } finally {
               await result.afterTurn?.().catch((error) => this.logLine(`/${resolved.contribution.command}: after its turn: ${error instanceof Error ? error.message : String(error)}`));
@@ -1370,6 +1484,7 @@ export class ChatRuntime {
         }
         await this.sendInMode(sessionId, data.mode);
         // Pass-through slash suggestions and natural language both go to the agent.
+        this.prompted.add(sessionId);
         await this.acp.sendPrompt(sessionId, data.text, images);
         if (this.config.postTurnHook) {
           await this.config
@@ -1388,7 +1503,11 @@ export class ChatRuntime {
           this.pendingMode = data.mode;
           return;
         }
-        await this.acp.setSessionMode(data.sessionId, data.mode);
+        // A chat the agent could not load again takes its mode with its
+        // next message (`sendInMode`); it is kept for it all the same.
+        if (await this.loadHeld(data.sessionId)) {
+          await this.acp.setSessionMode(data.sessionId, data.mode);
+        }
         this.sessions.setCurrentSession(data.sessionId);
         await this.sessions.updateSessionMode(data.mode, data.sessionId);
         await this.saidDeleted(uri, file, data.sessionId);
@@ -1398,6 +1517,12 @@ export class ChatRuntime {
         if (!data?.sessionId) {
           this.pendingModel = modelId;
           return;
+        }
+        if (!(await this.loadHeld(data.sessionId))) {
+          // Not changed: the panel shows the model the chat still has.
+          const still = this.acp.getSessionModel(data.sessionId);
+          if (still) this.postToWebview(uri, { type: "chat.providerChanged", data: { provider: still } });
+          throw new Error("The agent could not load this chat again, so its model is not changed.");
         }
         await this.acp.setProvider(data.sessionId, modelId);
         // Persist the choice as the preferred model for future sessions.

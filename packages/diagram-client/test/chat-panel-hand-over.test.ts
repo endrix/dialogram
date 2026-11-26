@@ -151,3 +151,79 @@ describe('a session handed over to the agent’s CLI', () => {
         expect(sent.some(m => m.type === 'chat.sendMessage')).toBe(true);
     });
 });
+
+describe('what a panel was waiting for when the session is handed over', () => {
+    it('gives up a session being made: a message that waited goes back to the composer', () => {
+        const { panel, sent, receive } = makePanel();
+        (panel as any).inputValue = 'my question';
+        (panel as any).sendMessage();
+        expect((panel as any).isLoadingSession).toBe(true);
+        receive('chat.handedOver', HANDED_OVER);
+        expect((panel as any).isLoadingSession).toBe(false);
+        expect((panel as any).pendingSend).toBeUndefined();
+        expect((panel as any).inputValue).toBe('my question');
+        // The session the host made after all is not sent the message.
+        sent.length = 0;
+        receive('chat.returnedToChat', { sessionId: 's1', agent: 'codex' });
+        expect(sent.filter(m => m.type === 'chat.sendMessage')).toEqual([]);
+    });
+
+    it('drops a task’s prompt: it is not sent into the next session', () => {
+        const { panel, sent, receive } = makePanel();
+        receive('chat.startTask', { prompt: 'Fix the run', mode: 'build', name: 'Fix' });
+        expect((panel as any).pendingSend?.text).toBe('Fix the run');
+        receive('chat.handedOver', HANDED_OVER);
+        expect((panel as any).pendingSend).toBeUndefined();
+        expect((panel as any).isLoadingSession).toBe(false);
+        expect((panel as any).inputValue).toBe('');
+        receive('chat.returnedToChat', { sessionId: 's1', agent: 'codex' });
+        sent.length = 0;
+        receive('chat.sessionCreated', { sessionId: 's9', mode: 'plan' });
+        expect(sent.filter(m => m.type === 'chat.sendMessage')).toEqual([]);
+    });
+
+    it('starts no task during the hand-over, and says why', () => {
+        const { panel, sent, receive, lines } = makePanel();
+        receive('chat.handedOver', HANDED_OVER);
+        sent.length = 0;
+        receive('chat.startTask', { prompt: 'Fix the run', mode: 'build', name: 'Fix' });
+        expect(sent.filter(m => m.type === 'chat.createSession')).toEqual([]);
+        expect((panel as any).pendingSend).toBeUndefined();
+        expect((panel as any).isLoadingSession).toBe(false);
+        expect(lines().at(-1)).toBe("Not done: a session is open in codex's CLI. Return to the chat first.");
+    });
+
+    it('asks the host for no mode during the hand-over: it goes with the next message', () => {
+        const { panel, sent, receive } = makePanel();
+        (panel as any).currentSessionId = 's1';
+        receive('chat.handedOver', HANDED_OVER);
+        sent.length = 0;
+        (panel as any).switchMode('plan');
+        expect(sent.filter(m => m.type === 'chat.setMode')).toEqual([]);
+        expect((panel as any).currentMode).toBe('plan');
+    });
+});
+
+describe('a chat with no message that the agent did not keep through a hand-over', () => {
+    const NOT_KEPT =
+        'This chat had no message yet, and the agent did not keep it when it was stopped for its CLI. Send again to start a new chat.';
+
+    it('has its message back in the composer, says why, and sends it into a new chat', () => {
+        const { panel, sent, receive, lines } = makePanel();
+        (panel as any).currentSessionId = 's2';
+        (panel as any).inputValue = 'first words';
+        (panel as any).sendMessage();
+        expect(sent.filter(m => m.type === 'chat.sendMessage')).toHaveLength(1);
+        // What the host answers for such a chat, in its order.
+        receive('chat.messageNotSent', { sessionId: 's2', reason: 'the agent did not keep this chat' });
+        receive('chat.turnEnd', { sessionId: 's2' });
+        receive('chat.sessionDeleted', { sessionId: 's2', reason: NOT_KEPT });
+        expect((panel as any).inputValue).toBe('first words');
+        expect((panel as any).isStreaming).toBe(false);
+        expect((panel as any).currentSessionId).toBeNull();
+        expect(lines()).toEqual([NOT_KEPT]);
+        sent.length = 0;
+        (panel as any).sendMessage();
+        expect(sent.filter(m => m.type === 'chat.createSession')).toHaveLength(1);
+    });
+});
