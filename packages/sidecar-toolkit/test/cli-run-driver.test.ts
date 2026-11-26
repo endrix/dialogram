@@ -253,7 +253,7 @@ describe('CliRunDriver: where a run starts', () => {
         const file = path.join(folder, 'pipeline.py');
         fs.writeFileSync(file, '# fixture\n', 'utf8');
         openWorkspaceFolders(folder);
-        const variables = { X_TOOL: '${workspaceFolder}/bin/tool', X_BAD: '${nope}' };
+        const variables = { X_TOOL: '${workspaceFolder}/bin/tool', X_BAD: '${nope}', X_API_KEY: 'sk-123' };
         Object.assign(vscode.workspace, {
             getConfiguration: () => ({ get: <T>(key: string, fallback?: T) => (key === 'variables' ? variables as T : fallback) })
         });
@@ -267,6 +267,10 @@ describe('CliRunDriver: where a run starts', () => {
         expect(spawnCalls[0].env).not.toHaveProperty('X_BAD');
         expect(host.appended).toContain(`[wf-lang] X_TOOL=${folder}/bin/tool`);
         expect(host.appended).toContain('[wf-lang] wfLang.variables: X_BAD is left out: it names a variable or a folder that is not known here');
+        // A key is given to the run, and its value kept out of the output.
+        expect(spawnCalls[0].env?.X_API_KEY).toBe('sk-123');
+        expect(host.appended).toContain('[wf-lang] X_API_KEY=(hidden)');
+        expect(host.appended.join('\n')).not.toContain('sk-123');
     });
 });
 

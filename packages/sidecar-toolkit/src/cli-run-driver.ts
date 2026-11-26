@@ -28,7 +28,7 @@
  */
 import * as vscode from 'vscode';
 import { noCliCommandMessage, resolveCliInvocation } from './cli-invocation.js';
-import { cliProcessEnv, type CliFolderListVariable } from './server/sidecar-runtime-config.js';
+import { cliProcessEnv, shownVariableValue, type CliFolderListVariable } from './server/sidecar-runtime-config.js';
 import { fileExists } from './server/source-files';
 import * as cp from 'node:child_process';
 import { unlinkSync } from 'node:fs';
@@ -1575,7 +1575,7 @@ export class CliRunDriver {
                 async () => {
                     output.appendLine(`[wf-lang] cwd=${cli.cwd}`);
                     for (const [name, value] of Object.entries(cli.variables ?? {})) {
-                        output.appendLine(`[wf-lang] ${name}=${value}`);
+                        output.appendLine(`[wf-lang] ${name}=${shownVariableValue(name, value)}`);
                     }
                     for (const message of leftOut) {
                         output.appendLine(`[wf-lang] ${message}`);

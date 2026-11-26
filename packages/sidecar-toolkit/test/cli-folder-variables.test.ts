@@ -17,6 +17,7 @@ import {
     getCliVariables,
     resolveFolderList,
     resolveVariablesSetting,
+    shownVariableValue,
     type FolderListContext
 } from '../src/server/sidecar-runtime-config';
 import { resolveCliInvocation, runCli } from '../src/cli-invocation';
@@ -199,12 +200,16 @@ describe('a variables setting', () => {
     it('leaves out, saying so, a name that is none, a value that is not text, and one it cannot read', () => {
         const leftOut: string[] = [];
         expect(resolveVariablesSetting({
-            '': 'x', 'A=B': 'x', NUMBER: 3, LIST: ['a'], NOTHING: null,
+            '': 'x', 'A=B': 'x', 'TOOL_HOME ': 'x', 'MY VAR': 'x', '1ST': 'x', NUMBER: 3, LIST: ['a'], NOTHING: null,
             UNSET: '${env:NOPE}', EMPTY: '${env:EMPTY}', OTHER: '${config:x}', USER: '~someone/x', KEPT: 'k'
         }, context, (name, why) => leftOut.push(`${name}: ${why}`))).toEqual({ KEPT: 'k' });
+        const notAName = 'it is not the name of a variable (letters, digits and _, not starting with a digit)';
         expect(leftOut).toEqual([
-            '"": it is not the name of a variable',
-            '"A=B": it is not the name of a variable',
+            `"": ${notAName}`,
+            `"A=B": ${notAName}`,
+            `"TOOL_HOME ": ${notAName}`,
+            `"MY VAR": ${notAName}`,
+            `"1ST": ${notAName}`,
             'NUMBER: its value is not text',
             'LIST: its value is not text',
             'NOTHING: its value is not text',
@@ -220,6 +225,27 @@ describe('a variables setting', () => {
             expect(resolveVariablesSetting(value, context)).toEqual({});
         }
         expect(resolveVariablesSetting({ A: '${workspaceFolder}/a', B: 'b' }, { ...context, base: undefined })).toEqual({ B: 'b' });
+    });
+
+    it('keeps a value that starts with `~` but is not a home folder, as written', () => {
+        const leftOut: string[] = [];
+        expect(resolveVariablesSetting({ SPEC: '~=1.2', TILDE: '~', USER: '~someone', USER_DIR: '~someone/x' }, context,
+            (name, why) => leftOut.push(name))).toEqual({ SPEC: '~=1.2', TILDE: HOME });
+        expect(leftOut).toEqual(['USER', 'USER_DIR']);
+    });
+
+    it('on Windows gives the last of two names Windows reads as one', () => {
+        expect(resolveVariablesSetting({ Tool_Home: 'a', TOOL_HOME: 'b' }, context, undefined, 'win32')).toEqual({ TOOL_HOME: 'b' });
+        expect(resolveVariablesSetting({ Tool_Home: 'a', TOOL_HOME: 'b' }, context, undefined, 'linux')).toEqual({ Tool_Home: 'a', TOOL_HOME: 'b' });
+    });
+
+    it('hides the value of a variable whose name reads as a secret\'s when it is shown', () => {
+        for (const name of ['OPENAI_API_KEY', 'GITHUB_TOKEN', 'AWS_SECRET_ACCESS_KEY', 'DB_PASSWORD', 'KEY', 'auth_token']) {
+            expect(shownVariableValue(name, 'sk-123')).toBe('(hidden)');
+        }
+        for (const name of ['TOOL_HOME', 'KEYBOARD', 'BYPASS_CACHE', 'MONKEY', 'PATH']) {
+            expect(shownVariableValue(name, '/opt/x')).toBe('/opt/x');
+        }
     });
 });
 
@@ -258,6 +284,27 @@ describe('the variables a CLI start is given', () => {
         settings({ variables: { X_TOOL: 'tool' } });
         expect(getCliVariables({ settingsNamespace: 'x', cliVariablesSettingKey: 'variables' }, vscode, Uri.file('/w/a.py') as any, '/w'))
             .toEqual({ X_TOOL: 'tool' });
+    });
+
+    it('take only the user\'s variables setting in a workspace that is not trusted, saying the workspace\'s is not read', () => {
+        const user = { X_TOOL: '/opt/tool' };
+        const fromWorkspace = { X_TOOL: '/opt/tool', LD_PRELOAD: '${workspaceFolder}/evil.so' };
+        Object.assign(workspace, {
+            isTrusted: false,
+            getConfiguration: () => ({
+                get: <T>(key: string, fallback?: T) => (key === 'variables' ? fromWorkspace as T : fallback),
+                inspect: (key: string) => (key === 'variables' ? { key, globalValue: user, workspaceValue: fromWorkspace } : undefined),
+            }),
+        });
+        const leftOut: string[] = [];
+        expect(getCliVariables({ settingsNamespace: 'x', cliVariablesSettingKey: 'variables' }, vscode, Uri.file('/w/a.py') as any, '/w',
+            message => leftOut.push(message))).toEqual({ X_TOOL: '/opt/tool' });
+        expect(leftOut).toEqual(['x.variables: the workspace\'s value is not read: the workspace is not trusted']);
+
+        // Trusted, the workspace's value is the one read.
+        Object.assign(workspace, { isTrusted: true });
+        expect(getCliVariables({ settingsNamespace: 'x', cliVariablesSettingKey: 'variables' }, vscode, Uri.file('/w/a.py') as any, '/w'))
+            .toEqual({ X_TOOL: '/opt/tool', LD_PRELOAD: '/w/evil.so' });
     });
 
     it('leave out a variable whose setting lists nothing', () => {

@@ -433,17 +433,61 @@ export function getCliVariables(
         env: process.env
     };
     if (variablesKey) {
-        Object.assign(variables, resolveVariablesSetting(config.get<unknown>(variablesKey), context, (name, why) =>
+        let given = config.get<unknown>(variablesKey);
+        if (vscodeModule.workspace.isTrusted === false) {
+            // A workspace not trusted does not set the CLI's environment: its
+            // own value could load a library into every start (LD_PRELOAD,
+            // PATH), whether or not the product restricted the setting.
+            const inspected = config.inspect<unknown>(variablesKey);
+            if (inspected?.workspaceValue !== undefined || inspected?.workspaceFolderValue !== undefined) {
+                leftOut?.(`${cfg.settingsNamespace}.${variablesKey}: the workspace's value is not read: the workspace is not trusted`);
+            }
+            given = inspected?.globalValue;
+        }
+        Object.assign(variables, resolveVariablesSetting(given, context, (name, why) =>
             leftOut?.(`${cfg.settingsNamespace}.${variablesKey}: ${name} is left out: ${why}`)));
     }
     for (const { variable, folderListSettingKey } of cfg.cliEnvironment ?? []) {
         const folders = resolveFolderList(config.get<unknown>(folderListSettingKey), context, (entry, why) =>
             leftOut?.(`${cfg.settingsNamespace}.${folderListSettingKey}: '${entry}' is left out: ${why}`));
         if (folders.length > 0) {
-            variables[variable] = folders.join(path.delimiter);
+            putVariable(variables, variable, folders.join(path.delimiter));
         }
     }
     return variables;
+}
+
+/**
+ * `variables[name] = value`; on Windows, where a variable's name is read
+ * whatever its case, the one of any other case goes first, so the last given
+ * is the one the CLI gets.
+ */
+function putVariable(
+    variables: Record<string, string>,
+    name: string,
+    value: string,
+    platform: NodeJS.Platform = process.platform
+): void {
+    if (platform === 'win32') {
+        for (const key of Object.keys(variables)) {
+            if (key !== name && key.toLowerCase() === name.toLowerCase()) {
+                delete variables[key];
+            }
+        }
+    }
+    variables[name] = value;
+}
+
+/** A variable's name that reads as a secret's (a key, a token, a password): its value is not shown. */
+const SECRET_NAME = /(?:^|_)(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASS|CREDENTIALS?|AUTH)(?:_|$)/i;
+
+/**
+ * `value` as a run's output shows the variable `name`: as it is, unless the
+ * name reads as a secret's (`OPENAI_API_KEY`, `GITHUB_TOKEN`), whose value is
+ * hidden, since run output is copied into logs and screenshots.
+ */
+export function shownVariableValue(name: string, value: string): string {
+    return SECRET_NAME.test(name) && value !== '' ? '(hidden)' : value;
 }
 
 /** What a folder-list entry, or a variable's value, is read against ({@link resolveFolderList}, {@link resolveVariablesSetting}). */
@@ -465,14 +509,20 @@ export interface FolderListContext {
  * of that name, `${env:NAME}` a variable of this extension's environment.
  * Why not, when it names another user's home (`~name`), or a variable or
  * folder that is not known here (another variable, no base, no open folder
- * of that name, a variable unset or empty).
+ * of that name, a variable unset or empty). A text that need not be a path
+ * (`asText`, a variable's value) is refused a leading `~` only when it reads
+ * as another user's home (`~name`, `~name/…`): `~=1.2` is kept as written.
  */
-function expandSettingVariables(text: string, context: FolderListContext): { text: string } | { why: string } {
+function expandSettingVariables(
+    text: string,
+    context: FolderListContext,
+    asText = false
+): { text: string } | { why: string } {
     let home = text;
     // `~\` is the home folder only where `\` separates folders.
     if (text === '~' || text.startsWith('~/') || (path.sep === '\\' && text.startsWith('~\\'))) {
         home = context.home + text.slice(1);
-    } else if (text.startsWith('~')) {
+    } else if (text.startsWith('~') && (!asText || /^~[A-Za-z0-9._-]+(?:[\\/]|$)/.test(text))) {
         return { why: `it starts with '~' but not '~${path.sep}', as another user's home folder does, which is not read here` };
     }
     let unknown = false;
@@ -498,37 +548,42 @@ function expandSettingVariables(text: string, context: FolderListContext): { tex
  * `${workspaceFolder:name}`, `${env:NAME}`, read against `context`) and is
  * otherwise kept as written: a value need not be a path, and a relative one
  * is read by the CLI from the folder it starts in, the run root, which is
- * `${workspaceFolder}`. A variable with no name, a name holding `=`, a value
- * that is not text, or one that cannot be read is left out, and `leftOut`
- * is given its name and why. Anything but an object names none.
+ * `${workspaceFolder}`. A variable whose name is not one (letters, digits
+ * and `_`, not starting with a digit: a stray space would leave the CLI
+ * reading another), a value that is not text, or one that cannot be read
+ * (a variable or folder not known here, another user's home) is left out,
+ * and `leftOut` is given its name and why. Anything but an object names none.
  *
  * A workspace's own settings reach the CLI's environment through it, as
- * through a folder-list setting ({@link CliFolderListVariable}).
+ * through a folder-list setting ({@link CliFolderListVariable}); in a
+ * workspace that is not trusted {@link getCliVariables} reads the user's
+ * value alone.
  */
 export function resolveVariablesSetting(
     value: unknown,
     context: FolderListContext,
-    leftOut?: (name: string, why: string) => void
+    leftOut?: (name: string, why: string) => void,
+    platform: NodeJS.Platform = process.platform
 ): Record<string, string> {
     const variables: Record<string, string> = {};
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         return variables;
     }
     for (const [name, given] of Object.entries(value as Record<string, unknown>)) {
-        if (name.trim() === '' || name.includes('=') || name.includes('\0')) {
-            leftOut?.(JSON.stringify(name), 'it is not the name of a variable');
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+            leftOut?.(JSON.stringify(name), 'it is not the name of a variable (letters, digits and _, not starting with a digit)');
             continue;
         }
         if (typeof given !== 'string') {
             leftOut?.(name, 'its value is not text');
             continue;
         }
-        const expanded = expandSettingVariables(given, context);
+        const expanded = expandSettingVariables(given, context, true);
         if ('why' in expanded) {
             leftOut?.(name, expanded.why);
             continue;
         }
-        variables[name] = expanded.text;
+        putVariable(variables, name, expanded.text, platform);
     }
     return variables;
 }
