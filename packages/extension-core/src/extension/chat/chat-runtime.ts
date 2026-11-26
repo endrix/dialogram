@@ -235,6 +235,8 @@ export class ChatRuntime {
   private agentChoice: Promise<void> = Promise.resolve();
   /** A change of agent under way: a message arriving waits for it, and goes to the new agent. */
   private agentSwitch: Promise<void> | undefined;
+  /** The old agent is being stopped for the new one: its going is not reported as a loss. */
+  private stoppingForSwitch = false;
   /** The problem with the chosen connector last put to the person: each is said once. */
   private agentProblemShown: string | undefined;
   /** The agent a chat of this window talked to, for those an agent moved away from. */
@@ -389,6 +391,7 @@ export class ChatRuntime {
         void this.postLiveMessageIds(sessionId);
         void this.sayIfDeletedWhileAnswering(sessionId);
       },
+      disconnectExpected: () => this.stoppingForSwitch,
     });
     // A successful connection (from any path) stands down the watchdog.
     this.acp.on("connected", () => this.clearConnectWatchdog());
@@ -545,19 +548,37 @@ export class ChatRuntime {
     // Said when the person set it, or when a chat is in use; a connectors
     // file saved with no chat about is only logged.
     this.sayAgentProblem(problem, changes.has("setting") || running !== undefined || this.activeUris.size > 0);
-    if (running ? !problem && agentKey(next) === running.key : problem) {
+    if (running && !problem && agentKey(next) === running.key) {
+      return;
+    }
+    if (!running && problem) {
+      // Nothing to stop or start: the panels' status says the problem now
+      // set, not one set before it.
+      this.broadcast({ type: "chat.connectionStatus", data: { connected: false, reason: problem } });
       return;
     }
     let release!: () => void;
     this.agentSwitch = new Promise<void>((resolve) => { release = resolve; });
+    let failure: ChatPayload | undefined;
     try {
       if (running) {
         await this.stopAgentWhenIdle(running.name, problem ? "none that can be spawned" : effectiveAgent(next).name);
       }
-      await this.ensureStarted(cwd).catch(() => undefined);
+      await this.ensureStarted(cwd).catch((err) => {
+        const choice = err instanceof AgentChoiceError;
+        failure = {
+          type: "chat.connectionStatus",
+          data: { connected: false, reason: choice ? err.message : String(err), ...(choice ? {} : { agent: this.acp.agent }) },
+        };
+      });
     } finally {
       this.agentSwitch = undefined;
       release();
+    }
+    // Every panel told "connecting" hears how the start ended, the ones this
+    // runtime does not connect below included.
+    if (failure) {
+      this.broadcast(failure);
     }
     for (const uri of [...this.activeUris]) {
       if (this.canReach && !this.canReach(uri)) {
@@ -582,10 +603,19 @@ export class ChatRuntime {
     for (const session of this.acp.getAllSessions()) {
       this.formerAgentOf.set(session.id, from);
     }
-    this.acp.stop();
+    this.stoppingForSwitch = true;
+    try {
+      this.acp.stop();
+    } finally {
+      this.stoppingForSwitch = false;
+    }
     // The new agent knows none of the old one's sessions, nor its models.
     this.acp.forgetSessions();
     this.pendingModel = undefined;
+    // The panels say the chat is connecting and offer no model until the new
+    // agent's arrive: the old agent's would be refused by the new one.
+    this.broadcast({ type: "chat.connectionStatus", data: { connected: false, connecting: true } });
+    this.broadcast({ type: "chat.providers", data: { providers: [] } });
   }
 
   /** Resolves true once no message is in flight, false when `ms` pass first. */
@@ -833,7 +863,9 @@ export class ChatRuntime {
         type: "chat.connectionStatus",
         data: { connected: false, reason, ...(choice ? {} : { agent: this.acp.agent }) },
       });
-      this.postToWebview(uri, { type: "chat.error", data: { message } });
+      // The status's own row says the reason: the error ends what waited on
+      // the connection (a session asked for) without saying it twice.
+      this.postToWebview(uri, { type: "chat.error", data: { message, inStatus: true } });
       return false;
     }
   }

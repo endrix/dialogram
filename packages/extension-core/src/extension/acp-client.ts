@@ -548,12 +548,13 @@ export class ACPClientService extends EventEmitter {
     if (!this.connection) {
       throw new Error("ACP client is not connected");
     }
+    const connection = this.connection;
 
     // newSession spawns/connects the session's MCP servers and waits for their
     // handshake; a misbehaving server would otherwise hang here forever, so
     // fail fast with an actionable error instead.
     const response = await withTimeout(
-      this.connection.newSession({
+      connection.newSession({
         cwd,
         mcpServers: (this.mcpServersProvider?.(workflowFile) ?? []) as any,
       }),
@@ -581,7 +582,7 @@ export class ACPClientService extends EventEmitter {
 
     // opencode 1.17+ returns the available modes and models as `configOptions`
     // on the session response (the old top-level `modes` field is gone).
-    this.applyConfigOptions(sessionInfo, (response as any).configOptions);
+    this.applyConfigOptions(connection, sessionInfo, (response as any).configOptions);
 
     // Align the session with the requested mode if it differs from the default.
     if (
@@ -597,9 +598,12 @@ export class ACPClientService extends EventEmitter {
   /**
    * Update a session's mode/model state from an ACP `configOptions` array
    * (as returned by session/new and session/set_config_option). Also refreshes
-   * the cached model catalog. Tolerant of missing/empty input.
+   * the cached model catalog, when the reply came from the agent still
+   * connected (`from`): one from an agent stopped since would put its models
+   * in front of the next. Tolerant of missing/empty input.
    */
   private applyConfigOptions(
+    from: ClientSideConnection,
     session: SessionInfo,
     configOptions: any[] | null | undefined,
   ): "plan" | "build" | undefined {
@@ -633,7 +637,7 @@ export class ACPClientService extends EventEmitter {
       const options: ModelOption[] = (modelOption.options || [])
         .filter((o: any) => typeof o?.value === "string")
         .map((o: any) => ({ id: o.value, name: o.name || o.value }));
-      if (options.length) this.modelOptions = options;
+      if (options.length && from === this.connection) this.modelOptions = options;
     }
     return reported;
   }
@@ -659,12 +663,13 @@ export class ACPClientService extends EventEmitter {
     }
 
     // opencode 1.17+ drives mode through the generic config-option API.
-    const response = await this.connection.setSessionConfigOption({
+    const connection = this.connection;
+    const response = await connection.setSessionConfigOption({
       sessionId,
       configId: "mode",
       value: mode,
     });
-    this.applyConfigOptions(session, (response as any)?.configOptions);
+    this.applyConfigOptions(connection, session, (response as any)?.configOptions);
 
     session.mode = mode;
     this.emit("modeChanged", { sessionId, mode });
@@ -748,8 +753,12 @@ export class ACPClientService extends EventEmitter {
 
     // Re-attach the same MCP servers (e.g. the runtime's MCP server) the session was
     // created with — otherwise a resumed session loses its tools.
+    const connection = this.connection;
+    if (!connection) {
+      throw new Error("ACP client is not connected");
+    }
     const loaded = await withTimeout(
-      this.connection.loadSession({
+      connection.loadSession({
         sessionId,
         cwd: loadCwd,
         mcpServers: (this.mcpServersProvider?.(wf) ?? []) as any,
@@ -779,7 +788,7 @@ export class ACPClientService extends EventEmitter {
     // it holds (opencode answers session/load with its config options: the mode
     // of the session's last message, which a switch made after it is not), or
     // says none; either way, where that is not the one chosen, it is told.
-    const reported = this.applyConfigOptions(session, (loaded as any)?.configOptions);
+    const reported = this.applyConfigOptions(connection, session, (loaded as any)?.configOptions);
     if (storedMode && reported !== storedMode && session.availableModes.includes(storedMode)) {
       try {
         await this.setSessionMode(sessionId, storedMode);
@@ -1241,23 +1250,25 @@ export class ACPClientService extends EventEmitter {
     if (this.modelOptions.length || !this.connection || !this.workspaceCwd) {
       return;
     }
+    const connection = this.connection;
+    const cwd = this.workspaceCwd;
     try {
-      const response = await this.connection.newSession({
-        cwd: this.workspaceCwd,
+      const response = await connection.newSession({
+        cwd,
         mcpServers: [],
       });
       const probe: SessionInfo = {
         id: response.sessionId,
         name: "catalog-probe",
-        cwd: this.workspaceCwd,
+        cwd,
         createdAt: Date.now(),
         mode: "build",
         availableModes: ["plan", "build"],
       };
-      this.applyConfigOptions(probe, (response as any).configOptions);
+      this.applyConfigOptions(connection, probe, (response as any).configOptions);
       // Clean up — we only needed the model catalog.
       try {
-        await this.connection.deleteSession({ sessionId: response.sessionId });
+        await connection.deleteSession({ sessionId: response.sessionId });
       } catch {
         // best effort
       }
@@ -1287,12 +1298,13 @@ export class ACPClientService extends EventEmitter {
       throw new Error(`Session ${sessionId} not found`);
     }
 
-    const response = await this.connection.setSessionConfigOption({
+    const connection = this.connection;
+    const response = await connection.setSessionConfigOption({
       sessionId,
       configId: "model",
       value: providerId,
     });
-    this.applyConfigOptions(session, (response as any)?.configOptions);
+    this.applyConfigOptions(connection, session, (response as any)?.configOptions);
 
     session.provider = providerId;
     session.model = providerId;
@@ -1307,12 +1319,14 @@ export class ACPClientService extends EventEmitter {
   }
 
   /**
-   * Forget every session this client knew: another agent knows none of
-   * them, so each is attached again (or found missing) on its next use.
+   * Forget every session this client knew and the models it offered:
+   * another agent knows none of those sessions, so each is attached again
+   * (or found missing) on its next use, and offers its own models.
    */
   forgetSessions(): void {
     this.sessions.clear();
     this.loadedSessionIds.clear();
+    this.modelOptions = [];
   }
 
   /**
