@@ -66,9 +66,10 @@ function makeRuntime() {
     });
     const sessions = (runtime as any).sessions;
     sessions.isGone = async () => false;
-    // The chats here are the window's own: no read of the machine's chat
-    // store, which is real I/O (and the person's data) and, on a slow
-    // runner, outlasts the turns the test lets the work take.
+    // The chats here are the window's own: no read of the chat store (the
+    // test's own folder, setup-data-dir.ts), which is real I/O and, on a slow
+    // runner, takes longer than the test would wait. One test below makes it
+    // slow on purpose.
     sessions.refresh = async () => undefined;
     sessions.addMessageToSession = () => undefined;
     return {
@@ -193,6 +194,7 @@ describe('the chat\'s agent, when its connector is set', () => {
         const second = t.send('next');
         await settle();
         expect(t.promptedTo).toEqual(['opencode']);
+        // However late it would go, the end says where it went.
 
         answer();
         await first;
@@ -207,6 +209,36 @@ describe('the chat\'s agent, when its connector is set', () => {
         t.acp.cancelPrompt = vi.fn(async () => answer());
         const sending = t.send('never ends');
         await until(() => t.promptedTo.length > 0);
+
+        t.choose(async () => spec('claude'));
+        t.change();
+        await vi.advanceTimersByTimeAsync(400 + 59_000);
+        expect(t.acp.cancelPrompt).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1_000);
+
+        expect(t.acp.cancelPrompt).toHaveBeenCalledWith('session-1');
+        await sending;
+        await vi.advanceTimersByTimeAsync(0);
+        expect(t.started).toEqual(['opencode', 'claude']);
+    });
+
+    it('cancels an answer on its way after the grace when the store is read slowly before it', async () => {
+        const t = makeRuntime();
+        await t.runtime.handleMessage(URI, { type: 'chat.ready' });
+        // The chat is not the window's yet: route() reads the store first,
+        // and here that read takes longer than 500 turns (the CI failure).
+        let reads = 0;
+        t.sessions.refresh = () => new Promise<void>(resolve => {
+            reads++;
+            let n = 0;
+            const spin = () => (++n > 600 ? resolve() : setImmediate(spin));
+            spin();
+        });
+        const answer = t.holdAnswers();
+        t.acp.cancelPrompt = vi.fn(async () => answer());
+        const sending = t.send('never ends');
+        await until(() => t.promptedTo.length > 0);
+        expect(reads).toBe(1);
 
         t.choose(async () => spec('claude'));
         t.change();
