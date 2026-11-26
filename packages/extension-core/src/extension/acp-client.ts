@@ -228,6 +228,9 @@ export class ACPClientService extends EventEmitter {
    * with no sessions resident.
    */
   private loadedSessionIds: Set<string> = new Set();
+  /** Prompts being answered, and who waits for none to be. */
+  private promptsInFlight = 0;
+  private idleWaiters: Array<() => void> = [];
   private isConnected: boolean = false;
   /** Whether the agent reads images in a prompt (its `promptCapabilities.image`); unknown until it connects. */
   private promptImages: boolean | undefined;
@@ -856,6 +859,25 @@ export class ACPClientService extends EventEmitter {
     if (!this.connection) {
       throw new Error("ACP client is not connected");
     }
+    // Counted from the start: a change of agent waits for a prompt still
+    // gathering its context, not only for one the agent has.
+    this.promptsInFlight++;
+    try {
+      await this.sendPromptOn(this.connection, sessionId, prompt, images);
+    } finally {
+      this.promptsInFlight--;
+      if (this.promptsInFlight === 0) {
+        for (const resolve of this.idleWaiters.splice(0)) resolve();
+      }
+    }
+  }
+
+  private async sendPromptOn(
+    connection: ClientSideConnection,
+    sessionId: string,
+    prompt: string,
+    images: readonly ChatImage[],
+  ): Promise<void> {
 
     const blocks: any[] = [];
     const contextBlocks = await this.buildWorkflowContextBlocks(sessionId);
@@ -887,7 +909,7 @@ export class ACPClientService extends EventEmitter {
     this.turnThinking.set(sessionId, "");
     this.turnParts.set(sessionId, []);
 
-    await this.connection.prompt({
+    await connection.prompt({
       sessionId,
       prompt: blocks,
     });
@@ -1294,6 +1316,20 @@ export class ACPClientService extends EventEmitter {
    */
   stop(): void {
     this.handleDisconnect();
+  }
+
+  /** Resolves once no prompt is being answered: the turn on its way ends first. */
+  whenIdle(): Promise<void> {
+    return this.promptsInFlight === 0 ? Promise.resolve() : new Promise((resolve) => this.idleWaiters.push(resolve));
+  }
+
+  /**
+   * Forget every session this client knew: another agent knows none of
+   * them, so each is attached again (or found missing) on its next use.
+   */
+  forgetSessions(): void {
+    this.sessions.clear();
+    this.loadedSessionIds.clear();
   }
 
   /**

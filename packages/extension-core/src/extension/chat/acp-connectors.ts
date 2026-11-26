@@ -181,6 +181,36 @@ export function createAcpAgentResolver(
 }
 
 /**
+ * Call `listener` when what decides the chat's agent may have changed: the
+ * setting naming the connector (`<namespace>.<settingKey>`, at any scope), or
+ * a connectors file (the user's, or a workspace's), written, made or removed.
+ */
+export function watchAcpConnectorChoice(
+    settingsNamespace: string,
+    config: AcpConnectorConfig,
+    listener: () => void
+): vscode.Disposable {
+    const setting = `${settingsNamespace}.${config.settingKey}`;
+    const disposables: vscode.Disposable[] = [
+        vscode.workspace.onDidChangeConfiguration((event) => {
+            if (event.affectsConfiguration(setting)) {
+                listener();
+            }
+        }),
+    ];
+    const userFile = userConnectorsFile(config.files.user);
+    const watchers = [
+        // Outside every workspace folder: watched by its folder and name.
+        vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(path.dirname(userFile)), path.basename(userFile))),
+        vscode.workspace.createFileSystemWatcher(`**/${config.files.workspace}`),
+    ];
+    for (const watcher of watchers) {
+        disposables.push(watcher, watcher.onDidChange(listener), watcher.onDidCreate(listener), watcher.onDidDelete(listener));
+    }
+    return { dispose: () => disposables.forEach((disposable) => disposable.dispose()) };
+}
+
+/**
  * A named connector's `resume` template, as the connectors files of the
  * workspace at `cwd` declare it; undefined when it has none or the files do
  * not read.

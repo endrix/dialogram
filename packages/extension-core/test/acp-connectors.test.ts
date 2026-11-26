@@ -5,13 +5,15 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as vscode from 'vscode';
 import {
     createAcpAgentResolver,
     loadAcpConnectors,
     resolveChatAgent,
     splitCommand,
     userConnectorsFile,
+    watchAcpConnectorChoice,
     workspaceRoot
 } from '../src/extension/chat/acp-connectors';
 
@@ -160,5 +162,43 @@ describe('splitCommand', () => {
         expect(splitCommand('  gemini   --experimental-acp ')).toEqual(['gemini', '--experimental-acp']);
         expect(splitCommand('"/opt/my tools/acp" --name \'a b\' c\\ d')).toEqual(['/opt/my tools/acp', '--name', 'a b', 'c d']);
         expect(splitCommand('')).toEqual([]);
+    });
+});
+
+describe('watchAcpConnectorChoice', () => {
+    it('calls back on the connector setting and on either connectors file, and stops when disposed', () => {
+        let onConfig: ((e: { affectsConfiguration(s: string): boolean }) => void) | undefined;
+        const globs: unknown[] = [];
+        const fileListeners: Array<() => void> = [];
+        let disposed = 0;
+        const configSpy = vi.spyOn(vscode.workspace, 'onDidChangeConfiguration').mockImplementation(((listener: any) => {
+            onConfig = listener;
+            return { dispose: () => { disposed++; } };
+        }) as any);
+        const sub = (listener: () => void) => { fileListeners.push(listener); return { dispose: () => { disposed++; } }; };
+        const watcherSpy = vi.spyOn(vscode.workspace, 'createFileSystemWatcher').mockImplementation(((glob: unknown) => {
+            globs.push(glob);
+            return { onDidChange: sub, onDidCreate: sub, onDidDelete: sub, dispose: () => { disposed++; } };
+        }) as any);
+        let calls = 0;
+        const watch = watchAcpConnectorChoice('wf', { settingKey: 'acp.connector', files: { user: 'wf/connectors.toml', workspace: '.wf/connectors.toml' } }, () => calls++);
+
+        onConfig!({ affectsConfiguration: (s) => s === 'wf.acp.connector' });
+        onConfig!({ affectsConfiguration: (s) => s === 'wf.opencodePath' });
+        expect(calls).toBe(1);
+
+        // The user's file by its folder and name, a workspace's anywhere in it.
+        const [user, workspace] = globs as [{ pattern: string }, string];
+        expect(user.pattern).toBe('connectors.toml');
+        expect(workspace).toBe('**/.wf/connectors.toml');
+        // Written, made, removed: each of the two files.
+        expect(fileListeners).toHaveLength(6);
+        fileListeners.forEach((listener) => listener());
+        expect(calls).toBe(7);
+
+        watch.dispose();
+        expect(disposed).toBe(1 + 2 + 6);
+        configSpy.mockRestore();
+        watcherSpy.mockRestore();
     });
 });

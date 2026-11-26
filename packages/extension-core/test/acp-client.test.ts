@@ -581,6 +581,34 @@ describe('ACPClientService', () => {
         client.sendPrompt('test-session-123', 'test')
       ).rejects.toThrow('ACP client is not connected');
     });
+
+    it('is idle once the prompt on its way is answered, and at once with none', async () => {
+      await expect(client.whenIdle()).resolves.toBeUndefined();
+      let answer!: () => void;
+      mockConnection.prompt.mockImplementationOnce(() => new Promise<void>(resolve => { answer = resolve; }));
+      const sent = client.sendPrompt('test-session-123', 'slow');
+      let idle = false;
+      const waiting = client.whenIdle().then(() => { idle = true; });
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(idle).toBe(false);
+      answer();
+      await sent;
+      await waiting;
+      expect(idle).toBe(true);
+    });
+  });
+
+  describe('a change of agent', () => {
+    it('forgets the sessions the old agent had, so each is attached again', async () => {
+      await client.start('/test/workspace');
+      await client.createSession('/test/workspace', 'Test Session');
+      expect(client.getSession('test-session-123')).toBeDefined();
+
+      client.forgetSessions();
+
+      expect(client.getSession('test-session-123')).toBeUndefined();
+      expect(client.getAllSessions()).toEqual([]);
+    });
   });
 
   describe('a session loaded again after a restart', () => {

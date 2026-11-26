@@ -107,6 +107,15 @@ export interface ChatRuntimeConfig {
    */
   acpAgent?: (cwd: string) => Promise<AcpAgentSpec | undefined>;
   /**
+   * Calls the listener when what decides {@link acpAgent} may have changed
+   * (the setting naming the connector, a connectors file); the disposable
+   * stops it. The chat then checks the agent it would spawn, says why it
+   * cannot be, and moves to it when it is another.
+   */
+  watchAcpAgent?: (listener: () => void) => vscode.Disposable;
+  /** The setting naming the chat's connector, for the warning's "Open Settings". */
+  acpAgentSetting?: string;
+  /**
    * A named connector's `resume` template as a workspace sees it (for a run's
    * agents, which name their connector); undefined (or no hook) falls back to
    * the known connectors'.
@@ -197,6 +206,13 @@ export function viewContextText(trail: ViewCrumb[] | undefined): string | undefi
   );
 }
 
+/** What an agent was resolved to, to tell whether a change of its setting or files makes it another. */
+export function agentKey(agent: AcpAgentSpec | undefined): string {
+  return agent
+    ? JSON.stringify({ name: agent.name, argv: agent.argv, env: agent.env ?? {}, httpApi: agent.httpApi ?? false })
+    : "opencode";
+}
+
 export class ChatRuntime {
   private readonly acp = new ACPClientService();
   private readonly sessions: SessionManager;
@@ -204,6 +220,15 @@ export class ChatRuntime {
   private context: vscode.ExtensionContext;
   private started = false;
   private startPromise: Promise<void> | undefined;
+  /** The agent started: for which directory, and what it was resolved to ({@link agentKey}). */
+  private runningAgent: { cwd: string; key: string; name: string } | undefined;
+  /** Stops watching what decides the agent ({@link ChatRuntimeConfig.watchAcpAgent}). */
+  private readonly agentWatch: vscode.Disposable | undefined;
+  private agentChoiceTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The change of agent being applied: the next waits for it. */
+  private agentChoice: Promise<void> = Promise.resolve();
+  /** The agent a chat of this window talked to, for those an agent moved away from. */
+  private readonly formerAgentOf = new Map<string, string>();
   /** In-process HTTP MCP server (started lazily when the tools are enabled). */
   private mcpHttp: import("./mcp-http-server.js").McpHttpServer | undefined;
   /** sessionId -> the webview URI (string) that owns it, for routing ACP events. */
@@ -352,6 +377,14 @@ export class ChatRuntime {
     });
     // A successful connection (from any path) stands down the watchdog.
     this.acp.on("connected", () => this.clearConnectWatchdog());
+    // An agent that went away (stopped for another, or ended on its own) is
+    // started again by the next connect, not taken as still there.
+    this.acp.on("disconnected", () => {
+      this.started = false;
+      this.startPromise = undefined;
+      this.runningAgent = undefined;
+    });
+    this.agentWatch = config.watchAcpAgent?.(() => this.agentChoiceChanged());
   }
 
   // --- lifecycle ---------------------------------------------------------
@@ -410,13 +443,18 @@ export class ChatRuntime {
   private async ensureStarted(cwd: string): Promise<void> {
     if (this.started) return;
     if (!this.startPromise) {
+      let resolved: AcpAgentSpec | undefined;
       this.startPromise = Promise.resolve(this.config.acpAgent?.(cwd))
-        .then((agent) => this.acp.start(cwd, agent, { opencodeCodeMode: this.opencodeCodeMode() }))
+        .then((agent) => {
+          resolved = agent;
+          return this.acp.start(cwd, agent, { opencodeCodeMode: this.opencodeCodeMode() });
+        })
         .then(async () => {
           // Stand up the HTTP tool server before any session is created,
           // so mcpServersProvider can attach it synchronously.
           await this.ensureMcpServer();
           this.started = true;
+          this.runningAgent = { cwd, key: agentKey(resolved), name: this.acp.agent };
         })
         .catch((err) => {
           this.startPromise = undefined;
@@ -424,6 +462,96 @@ export class ChatRuntime {
         });
     }
     await this.startPromise;
+  }
+
+  /** How long the agent's setting and files are left to settle before a change is applied. */
+  private static readonly AGENT_CHOICE_SETTLE_MS = 300;
+
+  /** The connector setting, or a connectors file, changed: applied once the changes settle. */
+  private agentChoiceChanged(): void {
+    if (this.agentChoiceTimer) {
+      clearTimeout(this.agentChoiceTimer);
+    }
+    this.agentChoiceTimer = setTimeout(() => {
+      this.agentChoiceTimer = undefined;
+      this.agentChoice = this.agentChoice
+        .then(() => this.applyAgentChoice())
+        .catch((err) => this.output.appendLine(`agent: the change could not be applied: ${String(err)}`));
+    }, ChatRuntime.AGENT_CHOICE_SETTLE_MS);
+  }
+
+  /**
+   * The agent the chat would spawn now, checked: an unknown connector, or one
+   * whose command is not on the PATH, is said at once, not at the next
+   * message. When it is not the agent running, that one is stopped once the
+   * answer on its way ends, and every open panel connects to the new one,
+   * with its models; one named wrong leaves the panels saying why. With none
+   * running, the panels connect to it when it can be spawned.
+   */
+  private async applyAgentChoice(): Promise<void> {
+    if (!this.config.acpAgent) {
+      return;
+    }
+    await this.startPromise?.catch(() => undefined);
+    const running = this.runningAgent;
+    const cwd = running?.cwd ?? this.panelCwd() ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!cwd) {
+      return;
+    }
+    let next: AcpAgentSpec | undefined;
+    let problem: string | undefined;
+    try {
+      next = await this.config.acpAgent(cwd);
+    } catch (err) {
+      problem = err instanceof Error ? err.message : String(err);
+    }
+    if (problem) {
+      this.output.appendLine(`agent: ${problem}`);
+      void this.warnAgentProblem(problem);
+    }
+    if (running && !problem && agentKey(next) === running.key) {
+      return;
+    }
+    if (running) {
+      this.output.appendLine(`agent: ${running.name} -> ${problem ? "none that can be spawned" : next?.name ?? "opencode"}, once no answer is on its way`);
+      await this.acp.whenIdle();
+      for (const session of this.acp.getAllSessions()) {
+        this.formerAgentOf.set(session.id, running.name);
+      }
+      this.acp.stop();
+      // The new agent knows none of the old one's sessions, nor its models.
+      this.acp.forgetSessions();
+      this.pendingModel = undefined;
+      this.started = false;
+      this.startPromise = undefined;
+      this.runningAgent = undefined;
+    } else if (problem) {
+      return;
+    }
+    for (const uri of [...this.activeUris]) {
+      if (this.canReach && !this.canReach(uri)) {
+        continue;
+      }
+      await this.connectAndSendModels(uri, this.cwdFor(this.fileFor(uri)));
+    }
+  }
+
+  /** Say why the chosen connector cannot be the chat's agent, with the way to its setting. */
+  private async warnAgentProblem(problem: string): Promise<void> {
+    const setting = this.config.acpAgentSetting;
+    const choice = await vscode.window.showWarningMessage(
+      `${this.config.displayName} chat: ${problem}`,
+      ...(setting ? ["Open Settings"] : []),
+    );
+    if (choice === "Open Settings" && setting) {
+      void vscode.commands.executeCommand("workbench.action.openSettings", setting);
+    }
+  }
+
+  /** The directory of the first open panel's file, the one its agent runs in. */
+  private panelCwd(): string | undefined {
+    const uri = this.activeUris.values().next().value;
+    return uri ? this.cwdFor(this.fileFor(uri)) : undefined;
   }
 
   /**
@@ -1005,9 +1133,21 @@ export class ChatRuntime {
         // the freshly-started agent, so re-attach it before prompting — else
         // the agent has no context (file) for it. Deleted in the meantime:
         // refused all the same.
-        if (!this.acp.getSession(sessionId)) {
-          if (!(await this.sessions.loadSession(sessionId)) && (await this.sessions.isGone(sessionId))) {
+        if (!this.acp.getSession(sessionId) && !(await this.sessions.loadSession(sessionId))) {
+          if (await this.sessions.isGone(sessionId)) {
             await refuse();
+            return;
+          }
+          // A chat with the agent the connector named before, which this one
+          // cannot open: said, and the message back to the composer, rather
+          // than sent to an agent that does not know the chat.
+          const former = this.formerAgentOf.get(sessionId);
+          if (former && former !== this.acp.agent) {
+            this.postToWebview(uri, {
+              type: "chat.messageNotSent",
+              data: { sessionId, reason: `this chat was with ${former}, and ${this.acp.agent} cannot open it; start a new chat` },
+            });
+            this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
             return;
           }
         }
@@ -1646,6 +1786,11 @@ export class ChatRuntime {
 
   dispose(): void {
     this.clearConnectWatchdog();
+    this.agentWatch?.dispose();
+    if (this.agentChoiceTimer) {
+      clearTimeout(this.agentChoiceTimer);
+      this.agentChoiceTimer = undefined;
+    }
     // Nobody is left to answer: a pending confirmation is declined.
     for (const resolve of this.pendingConfirms.values()) resolve({});
     this.pendingConfirms.clear();

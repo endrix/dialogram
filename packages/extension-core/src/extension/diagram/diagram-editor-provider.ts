@@ -25,7 +25,7 @@ import {
     type LoadingUpdate
 } from '@dialogram/shared';
 import { type DiagramClientBehavior, type DiagramProfile, type DiagramWatchAffects, type RevealRangeOptions } from '../../api';
-import { listAcpConnectors, workspaceDirFor } from '../chat/acp-connectors';
+import { listAcpConnectors, watchAcpConnectorChoice, workspaceDirFor } from '../chat/acp-connectors';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
 import type { OutOfBandWrite } from '@dialogram/diagram-server/server/out-of-band-writes';
 import { matchesSourceExtension, sourceWatchGlobs } from './source-extensions';
@@ -601,6 +601,14 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             documentUri: document.uri.toString()
         });
         this.postClientBehaviorExtras(document.uri.toString(), webview);
+        // A connector declared, or removed, in a connectors file is in the
+        // list the agent panel offers without opening the diagram again.
+        const acpConnector = this.profile.chat?.acpConnector;
+        if (acpConnector) {
+            const watch = watchAcpConnectorChoice(this.profile.settingsNamespace, acpConnector, () =>
+                this.postClientBehaviorExtras(document.uri.toString(), webview));
+            webviewPanel.onDidDispose(() => watch.dispose());
+        }
     }
 
     /**
