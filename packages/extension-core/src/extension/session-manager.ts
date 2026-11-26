@@ -11,6 +11,8 @@ export interface SessionData {
   updatedAt: number;
   mode: 'plan' | 'build';
   provider?: string;
+  /** The agent the chat was made with (its connector's name); absent in older chats. */
+  agent?: string;
   messages: MessageData[];
 }
 
@@ -167,6 +169,7 @@ export class SessionManager {
       updatedAt: Date.now(),
       mode,
       provider: this.acpClient.getSession(sessionId)?.provider,
+      agent: this.acpClient.agent,
       messages: [],
     };
 

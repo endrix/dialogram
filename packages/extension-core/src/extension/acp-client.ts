@@ -199,6 +199,11 @@ const OPENCODE_AGENT: AcpAgentSpec = {
   resume: "opencode -s {sessionId}",
 };
 
+/** The agent {@link ACPClientService.start} spawns for a spec: opencode for none, or one without a command. */
+export function effectiveAgent(agent?: AcpAgentSpec): AcpAgentSpec {
+  return agent && agent.argv.length > 0 ? agent : OPENCODE_AGENT;
+}
+
 /**
  * ACP Client Service for communicating with an ACP agent (opencode by
  * default; any connector the runtime knows, see {@link AcpAgentSpec}).
@@ -228,9 +233,6 @@ export class ACPClientService extends EventEmitter {
    * with no sessions resident.
    */
   private loadedSessionIds: Set<string> = new Set();
-  /** Prompts being answered, and who waits for none to be. */
-  private promptsInFlight = 0;
-  private idleWaiters: Array<() => void> = [];
   private isConnected: boolean = false;
   /** Whether the agent reads images in a prompt (its `promptCapabilities.image`); unknown until it connects. */
   private promptImages: boolean | undefined;
@@ -409,7 +411,7 @@ export class ACPClientService extends EventEmitter {
       throw new Error("ACP client is already connected");
     }
     this.workspaceCwd = cwd;
-    const spec = agent && agent.argv.length > 0 ? agent : OPENCODE_AGENT;
+    const spec = effectiveAgent(agent);
     this.agentName = spec.name;
     this.agentResume = spec.resume;
 
@@ -463,19 +465,24 @@ export class ACPClientService extends EventEmitter {
       }
 
       // Spawn the agent subprocess
-      this.process = spawn(command, args, {
+      const child = spawn(command, args, {
         cwd,
         stdio: ["pipe", "pipe", "pipe"],
         env: spawnEnv,
       });
+      this.process = child;
 
-      // Handle process errors
-      this.process.on("error", (error) => {
+      // Handle process errors. A process this client has moved on from
+      // (stopped for another agent, which may be starting now) says nothing
+      // about the current one: its exit, arriving late, is not this one's.
+      child.on("error", (error) => {
+        if (this.process !== child) return;
         this.emit("error", error);
         this.handleDisconnect();
       });
 
-      this.process.on("exit", (code) => {
+      child.on("exit", (code) => {
+        if (this.process !== child) return;
         if (code !== 0 && code !== null) {
           this.emit(
             "error",
@@ -488,10 +495,10 @@ export class ACPClientService extends EventEmitter {
       // Create bidirectional stream using ndjson format
       // Convert Node.js streams to Web API streams
       const stdoutWeb = Readable.toWeb(
-        this.process.stdout!,
+        child.stdout!,
       ) as unknown as import("node:stream/web").ReadableStream<Uint8Array>;
       const stdinWeb = Writable.toWeb(
-        this.process.stdin!,
+        child.stdin!,
       ) as unknown as import("node:stream/web").WritableStream<Uint8Array>;
       const stream = ndJsonStream(stdinWeb, stdoutWeb);
 
@@ -859,25 +866,6 @@ export class ACPClientService extends EventEmitter {
     if (!this.connection) {
       throw new Error("ACP client is not connected");
     }
-    // Counted from the start: a change of agent waits for a prompt still
-    // gathering its context, not only for one the agent has.
-    this.promptsInFlight++;
-    try {
-      await this.sendPromptOn(this.connection, sessionId, prompt, images);
-    } finally {
-      this.promptsInFlight--;
-      if (this.promptsInFlight === 0) {
-        for (const resolve of this.idleWaiters.splice(0)) resolve();
-      }
-    }
-  }
-
-  private async sendPromptOn(
-    connection: ClientSideConnection,
-    sessionId: string,
-    prompt: string,
-    images: readonly ChatImage[],
-  ): Promise<void> {
 
     const blocks: any[] = [];
     const contextBlocks = await this.buildWorkflowContextBlocks(sessionId);
@@ -909,7 +897,7 @@ export class ACPClientService extends EventEmitter {
     this.turnThinking.set(sessionId, "");
     this.turnParts.set(sessionId, []);
 
-    await connection.prompt({
+    await this.connection.prompt({
       sessionId,
       prompt: blocks,
     });
@@ -1316,11 +1304,6 @@ export class ACPClientService extends EventEmitter {
    */
   stop(): void {
     this.handleDisconnect();
-  }
-
-  /** Resolves once no prompt is being answered: the turn on its way ends first. */
-  whenIdle(): Promise<void> {
-    return this.promptsInFlight === 0 ? Promise.resolve() : new Promise((resolve) => this.idleWaiters.push(resolve));
   }
 
   /**

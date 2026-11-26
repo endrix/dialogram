@@ -15,7 +15,7 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { CORE_CHAT_SECTION } from "./edit-capability";
-import { ACPClientService, type AcpAgentSpec, type TurnPart } from "../acp-client.js";
+import { ACPClientService, effectiveAgent, type AcpAgentSpec, type TurnPart } from "../acp-client.js";
 import type { DiagramChatConfirm, DiagramChatConfirmAnswer, DiagramRunAnswer, DiagramRunQuestion } from "../../api";
 import { SessionManager, type MessageData, type SessionData } from "../session-manager.js";
 import { FileSessionStore, chatSessionRoot } from "../session-store.js";
@@ -30,7 +30,7 @@ import {
 } from "./slash-commands";
 import { attachAcpEventForwarding } from "./acp-event-forwarding";
 import { copySessionId, openSessionNatively, type NativeSession } from "./native-session.js";
-import { KNOWN_CONNECTORS } from "./acp-connectors.js";
+import { KNOWN_CONNECTORS, type AcpConnectorChange } from "./acp-connectors.js";
 import { readChatImages, type SurfaceSelectionSummary } from "@dialogram/shared";
 
 /**
@@ -112,7 +112,7 @@ export interface ChatRuntimeConfig {
    * stops it. The chat then checks the agent it would spawn, says why it
    * cannot be, and moves to it when it is another.
    */
-  watchAcpAgent?: (listener: () => void) => vscode.Disposable;
+  watchAcpAgent?: (listener: (change: AcpConnectorChange) => void) => vscode.Disposable;
   /** The setting naming the chat's connector, for the warning's "Open Settings". */
   acpAgentSetting?: string;
   /**
@@ -208,10 +208,12 @@ export function viewContextText(trail: ViewCrumb[] | undefined): string | undefi
 
 /** What an agent was resolved to, to tell whether a change of its setting or files makes it another. */
 export function agentKey(agent: AcpAgentSpec | undefined): string {
-  return agent
-    ? JSON.stringify({ name: agent.name, argv: agent.argv, env: agent.env ?? {}, httpApi: agent.httpApi ?? false })
-    : "opencode";
+  const spawned = effectiveAgent(agent);
+  return JSON.stringify({ name: spawned.name, argv: spawned.argv, env: spawned.env ?? {}, httpApi: spawned.httpApi ?? false });
 }
+
+/** The chosen connector could not be resolved: no agent was spawned, so none is named. */
+class AgentChoiceError extends Error {}
 
 export class ChatRuntime {
   private readonly acp = new ACPClientService();
@@ -222,13 +224,26 @@ export class ChatRuntime {
   private startPromise: Promise<void> | undefined;
   /** The agent started: for which directory, and what it was resolved to ({@link agentKey}). */
   private runningAgent: { cwd: string; key: string; name: string } | undefined;
+  /** Rises at each disconnect: a start begun before one does not take itself as done. */
+  private agentGeneration = 0;
   /** Stops watching what decides the agent ({@link ChatRuntimeConfig.watchAcpAgent}). */
   private readonly agentWatch: vscode.Disposable | undefined;
   private agentChoiceTimer: ReturnType<typeof setTimeout> | undefined;
-  /** The change of agent being applied: the next waits for it. */
+  /** What the changes settling touched. */
+  private agentChoiceChanges = new Set<AcpConnectorChange>();
+  /** The changes of agent, applied one after another. */
   private agentChoice: Promise<void> = Promise.resolve();
+  /** A change of agent under way: a message arriving waits for it, and goes to the new agent. */
+  private agentSwitch: Promise<void> | undefined;
+  /** The problem with the chosen connector last put to the person: each is said once. */
+  private agentProblemShown: string | undefined;
   /** The agent a chat of this window talked to, for those an agent moved away from. */
   private readonly formerAgentOf = new Map<string, string>();
+  /** The messages being handled, from their arrival to their answer: the chat each went to, once known. */
+  private readonly messagesInFlight = new Map<number, string | undefined>();
+  private nextMessageToken = 1;
+  /** Who waits for no message to be in flight. */
+  private idleWaiters: Array<() => void> = [];
   /** In-process HTTP MCP server (started lazily when the tools are enabled). */
   private mcpHttp: import("./mcp-http-server.js").McpHttpServer | undefined;
   /** sessionId -> the webview URI (string) that owns it, for routing ACP events. */
@@ -380,11 +395,12 @@ export class ChatRuntime {
     // An agent that went away (stopped for another, or ended on its own) is
     // started again by the next connect, not taken as still there.
     this.acp.on("disconnected", () => {
+      this.agentGeneration++;
       this.started = false;
       this.startPromise = undefined;
       this.runningAgent = undefined;
     });
-    this.agentWatch = config.watchAcpAgent?.(() => this.agentChoiceChanged());
+    this.agentWatch = config.watchAcpAgent?.((change) => this.agentChoiceChanged(change));
   }
 
   // --- lifecycle ---------------------------------------------------------
@@ -443,8 +459,13 @@ export class ChatRuntime {
   private async ensureStarted(cwd: string): Promise<void> {
     if (this.started) return;
     if (!this.startPromise) {
+      const generation = this.agentGeneration;
       let resolved: AcpAgentSpec | undefined;
-      this.startPromise = Promise.resolve(this.config.acpAgent?.(cwd))
+      const starting: Promise<void> = Promise.resolve()
+        .then(() => this.config.acpAgent?.(cwd))
+        .catch((err) => {
+          throw new AgentChoiceError(err instanceof Error ? err.message : String(err));
+        })
         .then((agent) => {
           resolved = agent;
           return this.acp.start(cwd, agent, { opencodeCodeMode: this.opencodeCodeMode() });
@@ -453,29 +474,44 @@ export class ChatRuntime {
           // Stand up the HTTP tool server before any session is created,
           // so mcpServersProvider can attach it synchronously.
           await this.ensureMcpServer();
+          // One that went away meanwhile (every disconnect raises the
+          // generation) is not started: the next connect starts it.
+          if (generation !== this.agentGeneration) {
+            throw new Error(`${this.acp.agent} went away while it started`);
+          }
           this.started = true;
           this.runningAgent = { cwd, key: agentKey(resolved), name: this.acp.agent };
         })
         .catch((err) => {
-          this.startPromise = undefined;
+          if (this.startPromise === starting) {
+            this.startPromise = undefined;
+          }
           throw err;
         });
+      this.startPromise = starting;
     }
     await this.startPromise;
   }
 
   /** How long the agent's setting and files are left to settle before a change is applied. */
   private static readonly AGENT_CHOICE_SETTLE_MS = 300;
+  /** How long a change of agent waits for the answers on their way before cancelling them. */
+  private static readonly AGENT_SWITCH_GRACE_MS = 60_000;
+  /** How long cancelled answers are given to end before the agent is stopped all the same. */
+  private static readonly AGENT_CANCEL_GRACE_MS = 5_000;
 
   /** The connector setting, or a connectors file, changed: applied once the changes settle. */
-  private agentChoiceChanged(): void {
+  private agentChoiceChanged(change: AcpConnectorChange): void {
+    this.agentChoiceChanges.add(change);
     if (this.agentChoiceTimer) {
       clearTimeout(this.agentChoiceTimer);
     }
     this.agentChoiceTimer = setTimeout(() => {
       this.agentChoiceTimer = undefined;
+      const changes = this.agentChoiceChanges;
+      this.agentChoiceChanges = new Set();
       this.agentChoice = this.agentChoice
-        .then(() => this.applyAgentChoice())
+        .then(() => this.applyAgentChoice(changes))
         .catch((err) => this.output.appendLine(`agent: the change could not be applied: ${String(err)}`));
     }, ChatRuntime.AGENT_CHOICE_SETTLE_MS);
   }
@@ -484,11 +520,12 @@ export class ChatRuntime {
    * The agent the chat would spawn now, checked: an unknown connector, or one
    * whose command is not on the PATH, is said at once, not at the next
    * message. When it is not the agent running, that one is stopped once the
-   * answer on its way ends, and every open panel connects to the new one,
-   * with its models; one named wrong leaves the panels saying why. With none
-   * running, the panels connect to it when it can be spawned.
+   * answers on their way end (cancelled after a grace), the new one is
+   * started in the directory it was checked for, and every open panel
+   * connects to it, with its models; one named wrong leaves the panels
+   * saying why. With none running, the panels connect when it can be spawned.
    */
-  private async applyAgentChoice(): Promise<void> {
+  private async applyAgentChoice(changes: ReadonlySet<AcpConnectorChange>): Promise<void> {
     if (!this.config.acpAgent) {
       return;
     }
@@ -505,34 +542,90 @@ export class ChatRuntime {
     } catch (err) {
       problem = err instanceof Error ? err.message : String(err);
     }
-    if (problem) {
-      this.output.appendLine(`agent: ${problem}`);
-      void this.warnAgentProblem(problem);
-    }
-    if (running && !problem && agentKey(next) === running.key) {
+    // Said when the person set it, or when a chat is in use; a connectors
+    // file saved with no chat about is only logged.
+    this.sayAgentProblem(problem, changes.has("setting") || running !== undefined || this.activeUris.size > 0);
+    if (running ? !problem && agentKey(next) === running.key : problem) {
       return;
     }
-    if (running) {
-      this.output.appendLine(`agent: ${running.name} -> ${problem ? "none that can be spawned" : next?.name ?? "opencode"}, once no answer is on its way`);
-      await this.acp.whenIdle();
-      for (const session of this.acp.getAllSessions()) {
-        this.formerAgentOf.set(session.id, running.name);
+    let release!: () => void;
+    this.agentSwitch = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      if (running) {
+        await this.stopAgentWhenIdle(running.name, problem ? "none that can be spawned" : effectiveAgent(next).name);
       }
-      this.acp.stop();
-      // The new agent knows none of the old one's sessions, nor its models.
-      this.acp.forgetSessions();
-      this.pendingModel = undefined;
-      this.started = false;
-      this.startPromise = undefined;
-      this.runningAgent = undefined;
-    } else if (problem) {
-      return;
+      await this.ensureStarted(cwd).catch(() => undefined);
+    } finally {
+      this.agentSwitch = undefined;
+      release();
     }
     for (const uri of [...this.activeUris]) {
       if (this.canReach && !this.canReach(uri)) {
         continue;
       }
       await this.connectAndSendModels(uri, this.cwdFor(this.fileFor(uri)));
+    }
+  }
+
+  /**
+   * Stop the running agent once no message is in flight; answers still on
+   * their way after the grace are cancelled, and given a moment to end.
+   */
+  private async stopAgentWhenIdle(from: string, to: string): Promise<void> {
+    this.output.appendLine(`agent: ${from} -> ${to}, once no answer is on its way`);
+    if (!(await this.idleWithin(ChatRuntime.AGENT_SWITCH_GRACE_MS))) {
+      this.output.appendLine(`agent: the answers still on their way after ${ChatRuntime.AGENT_SWITCH_GRACE_MS / 1000} s are cancelled`);
+      const sessions = new Set([...this.messagesInFlight.values()].filter((id): id is string => !!id));
+      await Promise.all([...sessions].map((id) => this.acp.cancelPrompt(id).catch(() => undefined)));
+      await this.idleWithin(ChatRuntime.AGENT_CANCEL_GRACE_MS);
+    }
+    for (const session of this.acp.getAllSessions()) {
+      this.formerAgentOf.set(session.id, from);
+    }
+    this.acp.stop();
+    // The new agent knows none of the old one's sessions, nor its models.
+    this.acp.forgetSessions();
+    this.pendingModel = undefined;
+  }
+
+  /** Resolves true once no message is in flight, false when `ms` pass first. */
+  private idleWithin(ms: number): Promise<boolean> {
+    if (this.messagesInFlight.size === 0) {
+      return Promise.resolve(true);
+    }
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), ms);
+      this.idleWaiters.push(() => {
+        clearTimeout(timer);
+        resolve(true);
+      });
+    });
+  }
+
+  /** A message arrived: in flight until {@link endMessage}. */
+  private beginMessage(): number {
+    const token = this.nextMessageToken++;
+    this.messagesInFlight.set(token, undefined);
+    return token;
+  }
+
+  private endMessage(token: number): void {
+    this.messagesInFlight.delete(token);
+    if (this.messagesInFlight.size === 0) {
+      for (const resolve of this.idleWaiters.splice(0)) resolve();
+    }
+  }
+
+  /** Log a problem with the chosen connector, and put it to the person once while it lasts. */
+  private sayAgentProblem(problem: string | undefined, worthSaying: boolean): void {
+    if (!problem) {
+      this.agentProblemShown = undefined;
+      return;
+    }
+    this.output.appendLine(`agent: ${problem}`);
+    if (worthSaying && problem !== this.agentProblemShown) {
+      this.agentProblemShown = problem;
+      void this.warnAgentProblem(problem);
     }
   }
 
@@ -730,11 +823,15 @@ export class ChatRuntime {
       });
       return true;
     } catch (err) {
-      const message = `Could not start the chat agent (${this.acp.agent}): ${String(err)}`;
+      // A connector that could not be resolved spawned nothing: the agent
+      // named would be the one before it.
+      const choice = err instanceof AgentChoiceError;
+      const reason = choice ? err.message : String(err);
+      const message = choice ? `Could not start the chat agent: ${reason}` : `Could not start the chat agent (${this.acp.agent}): ${reason}`;
       this.output.appendLine(message);
       this.postToWebview(uri, {
         type: "chat.connectionStatus",
-        data: { connected: false, reason: String(err), agent: this.acp.agent },
+        data: { connected: false, reason, ...(choice ? {} : { agent: this.acp.agent }) },
       });
       this.postToWebview(uri, { type: "chat.error", data: { message } });
       return false;
@@ -1062,186 +1159,198 @@ export class ChatRuntime {
         this.setViewTrail(file, data?.viewTrail);
         return;
       case "chat.sendMessage": {
-        if (Array.isArray(data?.selectedNodeIds)) {
-          this.selectionByFile.set(file, data.selectedNodeIds.map(String));
-          this.setSurfaceSelection(file, data?.surfaceSelection);
+        // A change of agent under way first: the message goes to the new one.
+        while (this.agentSwitch) {
+          await this.agentSwitch;
         }
-        this.setViewTrail(file, data?.viewTrail);
-        await this.ensureStarted(cwd);
-        // A panel with no chat open says so (null): its message makes a chat,
-        // never goes into one it does not show. Fall back to the current
-        // session only for a caller that names none.
-        let sessionId: string | undefined =
-          data.sessionId === null
-            ? undefined
-            : data.sessionId || this.sessions.getCurrentSessionId() || undefined;
-        if (!sessionId) {
-          const session = await this.sessions.createSession(
-            file,
-            undefined,
-            data.mode ?? this.pendingMode ?? "build",
-          );
-          sessionId = session.id;
+        // In flight from here to its answer: a change of agent waits for it.
+        const token = this.beginMessage();
+        try {
+          if (Array.isArray(data?.selectedNodeIds)) {
+            this.selectionByFile.set(file, data.selectedNodeIds.map(String));
+            this.setSurfaceSelection(file, data?.surfaceSelection);
+          }
+          this.setViewTrail(file, data?.viewTrail);
+          await this.ensureStarted(cwd);
+          // A panel with no chat open says so (null): its message makes a chat,
+          // never goes into one it does not show. Fall back to the current
+          // session only for a caller that names none.
+          let sessionId: string | undefined =
+            data.sessionId === null
+              ? undefined
+              : data.sessionId || this.sessions.getCurrentSessionId() || undefined;
+          if (!sessionId) {
+            const session = await this.sessions.createSession(
+              file,
+              undefined,
+              data.mode ?? this.pendingMode ?? "build",
+            );
+            sessionId = session.id;
+            this.sessionUri.set(sessionId, uri);
+            this.sessions.setCurrentSession(sessionId);
+            await this.applyPending(sessionId);
+            this.postToWebview(uri, {
+              type: "chat.sessionCreated",
+              data: { session },
+            });
+            await this.sendSessions(uri, file);
+          }
           this.sessionUri.set(sessionId, uri);
           this.sessions.setCurrentSession(sessionId);
-          await this.applyPending(sessionId);
-          this.postToWebview(uri, {
-            type: "chat.sessionCreated",
-            data: { session },
-          });
-          await this.sendSessions(uri, file);
-        }
-        this.sessionUri.set(sessionId, uri);
-        this.sessions.setCurrentSession(sessionId);
-        const images = readChatImages(data?.images);
-        const mode: "plan" | "build" = data.mode === "plan" ? "plan" : "build";
-        if (images.length > 0 && this.acp.takesImages() === false) {
-          // The panel refuses images an agent does not read; one that
-          // connected since may not: nothing is sent or stored, and the panel
-          // puts the message back in its composer, saying why.
-          this.postToWebview(uri, {
-            type: "chat.messageNotSent",
-            data: {
-              sessionId,
-              reason: `${this.acp.agent} does not read images`,
-              images: false,
-            },
-          });
-          this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
-          return;
-        }
-        // A chat another window deleted takes no more messages: nothing is
-        // sent or stored, the panel is told, and the message goes back to
-        // the composer.
-        const refuse = async () => {
-          this.postToWebview(uri, {
-            type: "chat.messageNotSent",
-            data: {
-              sessionId,
-              reason: this.deletedHere.has(sessionId) ? "this chat was deleted" : "this chat was deleted in another window",
-            },
-          });
-          this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
-          this.postToWebview(uri, { type: "chat.sessionDeleted", data: { sessionId, reason: this.deletedReason(sessionId) } });
-          await this.sendSessions(uri, file);
-        };
-        if (await this.sessions.isGone(sessionId)) {
-          await refuse();
-          return;
-        }
-        // A session restored from storage (after a reload) isn't attached in
-        // the freshly-started agent, so re-attach it before prompting — else
-        // the agent has no context (file) for it. Deleted in the meantime:
-        // refused all the same.
-        if (!this.acp.getSession(sessionId) && !(await this.sessions.loadSession(sessionId))) {
-          if (await this.sessions.isGone(sessionId)) {
-            await refuse();
-            return;
-          }
-          // A chat with the agent the connector named before, which this one
-          // cannot open: said, and the message back to the composer, rather
-          // than sent to an agent that does not know the chat.
-          const former = this.formerAgentOf.get(sessionId);
-          if (former && former !== this.acp.agent) {
+          this.messagesInFlight.set(token, sessionId);
+          const images = readChatImages(data?.images);
+          const mode: "plan" | "build" = data.mode === "plan" ? "plan" : "build";
+          if (images.length > 0 && this.acp.takesImages() === false) {
+            // The panel refuses images an agent does not read; one that
+            // connected since may not: nothing is sent or stored, and the panel
+            // puts the message back in its composer, saying why.
             this.postToWebview(uri, {
               type: "chat.messageNotSent",
-              data: { sessionId, reason: `this chat was with ${former}, and ${this.acp.agent} cannot open it; start a new chat` },
+              data: {
+                sessionId,
+                reason: `${this.acp.agent} does not read images`,
+                images: false,
+              },
             });
             this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
             return;
           }
-        }
-        this.addShown(sessionId, {
-          role: "user",
-          content: data.text,
-          timestamp: Date.now(),
-          mode: data.mode,
-          // How many: the bytes would swell the stored sessions.
-          ...(images.length > 0 ? { images: images.length } : {}),
-        });
-        let resolved: {
-          contribution: ChatCommandContribution;
-          args: Record<string, any>;
-        } | null = null;
-        try {
-          resolved = this.registry.resolve(String(data.text ?? ""), mode);
-        } catch (err) {
-          this.postToWebview(uri, {
-            type: "chat.message",
-            data: {
-              role: "system",
-              content: `Error: ${err instanceof Error ? err.message : String(err)}`,
-              timestamp: Date.now(),
-              mode,
-            },
-          });
-          // A slash command is a turn of its own: the panel shows it streaming
-          // until told it ended, and the next click on send would cancel it.
-          this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
-          return;
-        }
-        if (resolved && resolved.contribution.handler) {
-          const ctx = {
-            file,
-            uri,
-            sessionId,
-            selectedNodeIds: this.selectionByFile.get(file) ?? [],
-            ...(this.surfaceSelectionByFile.has(file)
-              ? { surfaceSelection: this.surfaceSelectionByFile.get(file) }
-              : {}),
-            mode,
-            ...(typeof data.diagramClientId === "string" && data.diagramClientId
-              ? { diagramClientId: data.diagramClientId }
-              : {}),
+          // A chat another window deleted takes no more messages: nothing is
+          // sent or stored, the panel is told, and the message goes back to
+          // the composer.
+          const refuse = async () => {
+            this.postToWebview(uri, {
+              type: "chat.messageNotSent",
+              data: {
+                sessionId,
+                reason: this.deletedHere.has(sessionId) ? "this chat was deleted" : "this chat was deleted in another window",
+              },
+            });
+            this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
+            this.postToWebview(uri, { type: "chat.sessionDeleted", data: { sessionId, reason: this.deletedReason(sessionId) } });
+            await this.sendSessions(uri, file);
           };
-          let result: { success: boolean; error?: string; info?: string; prompt?: string; afterTurn?: () => Promise<void> };
-          try {
-            result = await resolved.contribution.handler(resolved.args, ctx);
-          } catch (err) {
-            result = {
-              success: false,
-              error: err instanceof Error ? err.message : String(err),
-            };
-          }
-          if (result.success && typeof result.prompt === "string" && result.prompt.trim() !== "") {
-            // The agent carries the command out: its prompt is the turn's
-            // message. The post-turn hook reads what the person typed for view
-            // operations, and is not run: the prompt speaks of layouts.
-            try {
-              await this.sendInMode(sessionId, data.mode);
-              await this.acp.sendPrompt(sessionId, result.prompt, images);
-            } finally {
-              await result.afterTurn?.().catch((error) => this.logLine(`/${resolved.contribution.command}: after its turn: ${error instanceof Error ? error.message : String(error)}`));
-            }
+          if (await this.sessions.isGone(sessionId)) {
+            await refuse();
             return;
           }
-          this.postToWebview(uri, {
-            type: "chat.message",
-            data: {
-              role: "system",
-              content: (result.success
-                ? (result.info ??
-                  `✓ Executed: /${resolved.contribution.command}`)
-                : `Error: ${result.error}`) +
-                (images.length > 0
-                  ? ` (The images were not sent: /${resolved.contribution.command} does not take them.)`
-                  : ""),
-              timestamp: Date.now(),
-              mode,
-            },
+          // A session restored from storage (after a reload) isn't attached in
+          // the freshly-started agent, so re-attach it before prompting — else
+          // the agent has no context (file) for it. Deleted in the meantime:
+          // refused all the same.
+          if (!this.acp.getSession(sessionId) && !(await this.sessions.loadSession(sessionId))) {
+            if (await this.sessions.isGone(sessionId)) {
+              await refuse();
+              return;
+            }
+            // A chat with another agent (the one the connector named before,
+            // in this window or when the chat was made), which this one cannot
+            // open: said, and the message back to the composer, rather than
+            // sent to an agent that does not know the chat.
+            const former = this.formerAgentOf.get(sessionId) ?? this.sessions.getSession(sessionId)?.agent;
+            if (former && former !== this.acp.agent) {
+              this.postToWebview(uri, {
+                type: "chat.messageNotSent",
+                data: { sessionId, reason: `this chat was with ${former}, and ${this.acp.agent} cannot open it; start a new chat` },
+              });
+              this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
+              return;
+            }
+          }
+          this.addShown(sessionId, {
+            role: "user",
+            content: data.text,
+            timestamp: Date.now(),
+            mode: data.mode,
+            // How many: the bytes would swell the stored sessions.
+            ...(images.length > 0 ? { images: images.length } : {}),
           });
-          this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
+          let resolved: {
+            contribution: ChatCommandContribution;
+            args: Record<string, any>;
+          } | null = null;
+          try {
+            resolved = this.registry.resolve(String(data.text ?? ""), mode);
+          } catch (err) {
+            this.postToWebview(uri, {
+              type: "chat.message",
+              data: {
+                role: "system",
+                content: `Error: ${err instanceof Error ? err.message : String(err)}`,
+                timestamp: Date.now(),
+                mode,
+              },
+            });
+            // A slash command is a turn of its own: the panel shows it streaming
+            // until told it ended, and the next click on send would cancel it.
+            this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
+            return;
+          }
+          if (resolved && resolved.contribution.handler) {
+            const ctx = {
+              file,
+              uri,
+              sessionId,
+              selectedNodeIds: this.selectionByFile.get(file) ?? [],
+              ...(this.surfaceSelectionByFile.has(file)
+                ? { surfaceSelection: this.surfaceSelectionByFile.get(file) }
+                : {}),
+              mode,
+              ...(typeof data.diagramClientId === "string" && data.diagramClientId
+                ? { diagramClientId: data.diagramClientId }
+                : {}),
+            };
+            let result: { success: boolean; error?: string; info?: string; prompt?: string; afterTurn?: () => Promise<void> };
+            try {
+              result = await resolved.contribution.handler(resolved.args, ctx);
+            } catch (err) {
+              result = {
+                success: false,
+                error: err instanceof Error ? err.message : String(err),
+              };
+            }
+            if (result.success && typeof result.prompt === "string" && result.prompt.trim() !== "") {
+              // The agent carries the command out: its prompt is the turn's
+              // message. The post-turn hook reads what the person typed for view
+              // operations, and is not run: the prompt speaks of layouts.
+              try {
+                await this.sendInMode(sessionId, data.mode);
+                await this.acp.sendPrompt(sessionId, result.prompt, images);
+              } finally {
+                await result.afterTurn?.().catch((error) => this.logLine(`/${resolved.contribution.command}: after its turn: ${error instanceof Error ? error.message : String(error)}`));
+              }
+              return;
+            }
+            this.postToWebview(uri, {
+              type: "chat.message",
+              data: {
+                role: "system",
+                content: (result.success
+                  ? (result.info ??
+                    `✓ Executed: /${resolved.contribution.command}`)
+                  : `Error: ${result.error}`) +
+                  (images.length > 0
+                    ? ` (The images were not sent: /${resolved.contribution.command} does not take them.)`
+                    : ""),
+                timestamp: Date.now(),
+                mode,
+              },
+            });
+            this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
+            return;
+          }
+          await this.sendInMode(sessionId, data.mode);
+          // Pass-through slash suggestions and natural language both go to the agent.
+          await this.acp.sendPrompt(sessionId, data.text, images);
+          if (this.config.postTurnHook) {
+            await this.config
+              .postTurnHook(file, String(data.text ?? ""))
+              .catch(() => undefined);
+          }
           return;
+        } finally {
+          this.endMessage(token);
         }
-        await this.sendInMode(sessionId, data.mode);
-        // Pass-through slash suggestions and natural language both go to the agent.
-        await this.acp.sendPrompt(sessionId, data.text, images);
-        if (this.config.postTurnHook) {
-          await this.config
-            .postTurnHook(file, String(data.text ?? ""))
-            .catch(() => undefined);
-        }
-        return;
       }
       case "chat.cancel":
         if (!data?.sessionId) return;

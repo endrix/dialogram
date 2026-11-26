@@ -180,12 +180,12 @@ describe('watchAcpConnectorChoice', () => {
             globs.push(glob);
             return { onDidChange: sub, onDidCreate: sub, onDidDelete: sub, dispose: () => { disposed++; } };
         }) as any);
-        let calls = 0;
-        const watch = watchAcpConnectorChoice('wf', { settingKey: 'acp.connector', files: { user: 'wf/connectors.toml', workspace: '.wf/connectors.toml' } }, () => calls++);
+        const changes: string[] = [];
+        const watch = watchAcpConnectorChoice('wf', { settingKey: 'acp.connector', files: { user: 'wf/connectors.toml', workspace: '.wf/connectors.toml' } }, (change) => changes.push(change));
 
         onConfig!({ affectsConfiguration: (s) => s === 'wf.acp.connector' });
         onConfig!({ affectsConfiguration: (s) => s === 'wf.opencodePath' });
-        expect(calls).toBe(1);
+        expect(changes).toEqual(['setting']);
 
         // The user's file by its folder and name, a workspace's anywhere in it.
         const [user, workspace] = globs as [{ pattern: string }, string];
@@ -194,7 +194,7 @@ describe('watchAcpConnectorChoice', () => {
         // Written, made, removed: each of the two files.
         expect(fileListeners).toHaveLength(6);
         fileListeners.forEach((listener) => listener());
-        expect(calls).toBe(7);
+        expect(changes).toEqual(['setting', ...Array(6).fill('file')]);
 
         watch.dispose();
         expect(disposed).toBe(1 + 2 + 6);

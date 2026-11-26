@@ -581,21 +581,6 @@ describe('ACPClientService', () => {
         client.sendPrompt('test-session-123', 'test')
       ).rejects.toThrow('ACP client is not connected');
     });
-
-    it('is idle once the prompt on its way is answered, and at once with none', async () => {
-      await expect(client.whenIdle()).resolves.toBeUndefined();
-      let answer!: () => void;
-      mockConnection.prompt.mockImplementationOnce(() => new Promise<void>(resolve => { answer = resolve; }));
-      const sent = client.sendPrompt('test-session-123', 'slow');
-      let idle = false;
-      const waiting = client.whenIdle().then(() => { idle = true; });
-      await new Promise(resolve => setTimeout(resolve, 0));
-      expect(idle).toBe(false);
-      answer();
-      await sent;
-      await waiting;
-      expect(idle).toBe(true);
-    });
   });
 
   describe('a change of agent', () => {
@@ -608,6 +593,37 @@ describe('ACPClientService', () => {
 
       expect(client.getSession('test-session-123')).toBeUndefined();
       expect(client.getAllSessions()).toEqual([]);
+    });
+
+    it('leaves the new agent alone when the stopped one exits late', async () => {
+      await client.start('/test/workspace');
+      const stopped = mockProcess;
+      client.stop();
+      const next = Object.assign(new EventEmitter(), {
+        stdin: mockProcess.stdin, stdout: mockProcess.stdout, stderr: new EventEmitter(), kill: vi.fn(), pid: 12346,
+      });
+      vi.mocked(spawn).mockReturnValue(next as any);
+      await client.start('/test/workspace', { name: 'claude', argv: ['claude-agent-acp'], httpApi: false });
+      const disconnected = vi.fn();
+      const errors = vi.fn();
+      client.on('disconnected', disconnected);
+      client.on('error', errors);
+
+      // SIGTERM lands: the old process says it exited, after the new one started.
+      stopped.emit('exit', 143);
+      stopped.emit('error', new Error('late'));
+
+      expect(next.kill).not.toHaveBeenCalled();
+      expect(disconnected).not.toHaveBeenCalled();
+      expect(errors).not.toHaveBeenCalled();
+      expect(client.isClientConnected()).toBe(true);
+      expect(client.agent).toBe('claude');
+
+      // Its own exit still ends it.
+      next.emit('exit', 1);
+      expect(errors).toHaveBeenCalledTimes(1);
+      expect(disconnected).toHaveBeenCalledTimes(1);
+      expect(client.isClientConnected()).toBe(false);
     });
   });
 

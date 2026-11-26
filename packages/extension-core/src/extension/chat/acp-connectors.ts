@@ -180,6 +180,9 @@ export function createAcpAgentResolver(
     };
 }
 
+/** What changed of what decides the chat's agent: the setting naming it, or a connectors file. */
+export type AcpConnectorChange = "setting" | "file";
+
 /**
  * Call `listener` when what decides the chat's agent may have changed: the
  * setting naming the connector (`<namespace>.<settingKey>`, at any scope), or
@@ -188,13 +191,13 @@ export function createAcpAgentResolver(
 export function watchAcpConnectorChoice(
     settingsNamespace: string,
     config: AcpConnectorConfig,
-    listener: () => void
+    listener: (change: AcpConnectorChange) => void
 ): vscode.Disposable {
     const setting = `${settingsNamespace}.${config.settingKey}`;
     const disposables: vscode.Disposable[] = [
         vscode.workspace.onDidChangeConfiguration((event) => {
             if (event.affectsConfiguration(setting)) {
-                listener();
+                listener("setting");
             }
         }),
     ];
@@ -204,8 +207,9 @@ export function watchAcpConnectorChoice(
         vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(path.dirname(userFile)), path.basename(userFile))),
         vscode.workspace.createFileSystemWatcher(`**/${config.files.workspace}`),
     ];
+    const fileChanged = () => listener("file");
     for (const watcher of watchers) {
-        disposables.push(watcher, watcher.onDidChange(listener), watcher.onDidCreate(listener), watcher.onDidDelete(listener));
+        disposables.push(watcher, watcher.onDidChange(fileChanged), watcher.onDidCreate(fileChanged), watcher.onDidDelete(fileChanged));
     }
     return { dispose: () => disposables.forEach((disposable) => disposable.dispose()) };
 }
