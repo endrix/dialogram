@@ -142,6 +142,14 @@ export interface HierarchyGraph {
     sourceUri?: string;
     /** The instance's own graph document, as a view of it would be given. */
     document: GraphDocument;
+    /**
+     * The past run the instance is answered by (`child(instance=run)`), as
+     * its node says it (`WorkflowDiagramMetadata.RECORDED_RUN`): relative to
+     * the file of the workflow it is drawn in. Its graph and those under it
+     * are what that run elaborated, a hierarchy of its own grafted here, and
+     * what their edges carried is that run's.
+     */
+    recordedRun?: string;
 }
 
 /**
@@ -188,6 +196,12 @@ export interface DetachedNode {
     id: string;
     type: string;
     args?: Record<string, unknown>;
+    /**
+     * The run's arguments its root carries when they are not the list's
+     * (`NodeListOutline.rootArgs`): a node in a unit answered by a past run
+     * is that run's.
+     */
+    rootArgs?: Record<string, unknown>;
     edges: Array<{ id: string; type: string; sourceId: string; targetId: string; args?: Record<string, unknown> }>;
 }
 
@@ -286,6 +300,12 @@ export interface HierarchyOutlineEntry {
     unavailable?: string;
     /** A node list's node, as the canvas would draw it: what its double click opens. */
     detachedNode?: DetachedNode;
+    /**
+     * The instance is answered by a past run, this one, as its node says it
+     * (`WorkflowDiagramMetadata.RECORDED_RUN`): a trail to a view at or
+     * under it carries it on the instance's crumb, as a drill-down does.
+     */
+    recordedRun?: string;
 }
 
 export interface ModelSourceOptions {

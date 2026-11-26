@@ -8,6 +8,8 @@ export interface HierarchyCrumb {
     sourceUri: string;
     workflowName: string;
     workflowInstanceName?: string;
+    /** The past run the instance is answered by, as its node says it (`HierarchyOutlineEntry.recordedRun`). */
+    recordedRun?: string;
 }
 
 /**
@@ -81,7 +83,8 @@ export function hierarchyRowsTo(root: HierarchyOutlineEntry, path: string[]): Hi
 /**
  * The navigation trail to the instance at `path`: the root, then one crumb per
  * instance on the way -- what a drill-down and the breadcrumb produce, so a view
- * opened this way is the view either would open.
+ * opened this way is the view either would open. An instance answered by a past
+ * run keeps it on its crumb, as a drill-down into it does.
  */
 export function hierarchyTrailTo(
     root: HierarchyOutlineEntry,
@@ -94,7 +97,12 @@ export function hierarchyTrailTo(
         if (!entry?.sourceUri) {
             return undefined;
         }
-        trail.push({ sourceUri: entry.sourceUri, workflowName: entry.workflowName, workflowInstanceName: path[i - 1] });
+        trail.push({
+            sourceUri: entry.sourceUri,
+            workflowName: entry.workflowName,
+            workflowInstanceName: path[i - 1],
+            ...(entry.recordedRun?.trim() ? { recordedRun: entry.recordedRun.trim() } : {})
+        });
     }
     return trail;
 }

@@ -583,6 +583,50 @@ describe('ACPClientService', () => {
     });
   });
 
+  describe('a change of agent', () => {
+    it('forgets the sessions the old agent had, so each is attached again', async () => {
+      await client.start('/test/workspace');
+      await client.createSession('/test/workspace', 'Test Session');
+      expect(client.getSession('test-session-123')).toBeDefined();
+
+      client.forgetSessions();
+
+      expect(client.getSession('test-session-123')).toBeUndefined();
+      expect(client.getAllSessions()).toEqual([]);
+    });
+
+    it('leaves the new agent alone when the stopped one exits late', async () => {
+      await client.start('/test/workspace');
+      const stopped = mockProcess;
+      client.stop();
+      const next = Object.assign(new EventEmitter(), {
+        stdin: mockProcess.stdin, stdout: mockProcess.stdout, stderr: new EventEmitter(), kill: vi.fn(), pid: 12346,
+      });
+      vi.mocked(spawn).mockReturnValue(next as any);
+      await client.start('/test/workspace', { name: 'claude', argv: ['claude-agent-acp'], httpApi: false });
+      const disconnected = vi.fn();
+      const errors = vi.fn();
+      client.on('disconnected', disconnected);
+      client.on('error', errors);
+
+      // SIGTERM lands: the old process says it exited, after the new one started.
+      stopped.emit('exit', 143);
+      stopped.emit('error', new Error('late'));
+
+      expect(next.kill).not.toHaveBeenCalled();
+      expect(disconnected).not.toHaveBeenCalled();
+      expect(errors).not.toHaveBeenCalled();
+      expect(client.isClientConnected()).toBe(true);
+      expect(client.agent).toBe('claude');
+
+      // Its own exit still ends it.
+      next.emit('exit', 1);
+      expect(errors).toHaveBeenCalledTimes(1);
+      expect(disconnected).toHaveBeenCalledTimes(1);
+      expect(client.isClientConnected()).toBe(false);
+    });
+  });
+
   describe('a session loaded again after a restart', () => {
     const modeOption = (currentValue: string) => ({
       configOptions: [{ id: 'mode', category: 'mode', currentValue, options: [{ value: 'build' }, { value: 'plan' }] }],

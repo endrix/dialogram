@@ -25,7 +25,7 @@ import {
     type LoadingUpdate
 } from '@dialogram/shared';
 import { type DiagramClientBehavior, type DiagramProfile, type DiagramWatchAffects, type RevealRangeOptions } from '../../api';
-import { listAcpConnectors, workspaceDirFor } from '../chat/acp-connectors';
+import { listAcpConnectors, watchAcpConnectorChoice, workspaceDirFor } from '../chat/acp-connectors';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
 import type { OutOfBandWrite } from '@dialogram/diagram-server/server/out-of-band-writes';
 import { matchesSourceExtension, sourceWatchGlobs } from './source-extensions';
@@ -135,6 +135,8 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
      * that editor stopped hearing saves and changes on disk.
      */
     private readonly editors = new Map<string, DiagramEditor>();
+    /** Re-lists the ACP connectors for the open diagrams ({@link watchConnectorList}). */
+    private connectorListWatch: { dispose(): void } | undefined;
     private activity = 0;
     /** The run's overlay signature, by file: it is the file's run, whichever editors show it. */
     private uriToLiveOverlaySignature = new Map<string, string | undefined>();
@@ -336,6 +338,10 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
         // the file's only with its last editor.
         webviewPanel.onDidDispose(() => {
             const gone = this.untrackEditor(clientId);
+            if (this.editors.size === 0) {
+                this.connectorListWatch?.dispose();
+                this.connectorListWatch = undefined;
+            }
             if (gone?.last) {
                 this.uriToLiveOverlaySignature.delete(canonicalDocumentUri);
                 this.stopLiveOverlayWatch(canonicalDocumentUri);
@@ -601,6 +607,29 @@ export class WorkflowEditorProvider extends GlspEditorProvider {
             documentUri: document.uri.toString()
         });
         this.postClientBehaviorExtras(document.uri.toString(), webview);
+        this.watchConnectorList();
+    }
+
+    /**
+     * One watch for every open diagram, while any is: a connector declared, or
+     * removed, in a connectors file is in the list each agent panel offers
+     * without opening the diagram again.
+     */
+    private watchConnectorList(): void {
+        const acpConnector = this.profile.chat?.acpConnector;
+        if (!acpConnector || this.connectorListWatch) {
+            return;
+        }
+        this.connectorListWatch = watchAcpConnectorChoice(this.profile.settingsNamespace, acpConnector, (change) => {
+            if (change !== 'file') {
+                return;
+            }
+            for (const editor of this.editors.values()) {
+                if (editor.webview) {
+                    this.postClientBehaviorExtras(editor.documentUri, editor.webview);
+                }
+            }
+        });
     }
 
     /**

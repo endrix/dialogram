@@ -74,8 +74,20 @@ function makeRuntime(options: Options = {}) {
         start: async (cwd: string, agent: unknown): Promise<void> => {
             done.push('start');
             starts.push({ cwd, agent });
+            acp.agent = (agent as { name?: string } | undefined)?.name ?? acp.agent;
             acp.connected = true;
         },
+        // Stopped for another agent: the runtime hears the disconnect.
+        stop: (): void => {
+            done.push('stop');
+            acp.connected = false;
+            (runtime as any).agentGeneration += 1;
+            (runtime as any).started = false;
+            (runtime as any).startPromise = undefined;
+            (runtime as any).runningAgent = undefined;
+        },
+        forgetSessions: (): void => held.clear(),
+        cancelPrompt: async (): Promise<void> => undefined,
         loadSession: async (id: string): Promise<void> => {
             if (notKept.has(id)) {
                 done.push(`load ${id} refused`);
@@ -111,6 +123,8 @@ function makeRuntime(options: Options = {}) {
 
 /** The connector the setting names: what an agent is started as. */
 const connector: { set: unknown } = { set: undefined };
+const CODEX = { name: 'codex', argv: ['codex-acp'] };
+const ANOTHER = { name: 'another', argv: ['another-acp'] };
 
 /** A chat the window's store knows, with rows of the roles given. */
 function keep(runtime: ChatRuntime, id: string, roles: Array<'user' | 'assistant'>, file = '/w/top.py'): void {
@@ -461,16 +475,85 @@ describe('returning to the chat', () => {
     it('starts the agent that was stopped, in its folder, whatever is set since', async () => {
         const { runtime, starts } = makeRuntime();
         (runtime as any).started = false;
-        connector.set = { command: 'codex-acp' };
+        connector.set = CODEX;
         await (runtime as any).ensureStarted('/w');
-        connector.set = { command: 'another-agent' };
+        connector.set = ANOTHER;
         // Asked from a chat of another folder.
         await runtime.handleMessage('file:///elsewhere/x.py', { type: 'chat.openSessionNatively', data: { sessionId: 's1' } });
         await runtime.handleMessage(URI, { type: 'chat.returnToChat', data: {} });
         expect(starts).toEqual([
-            { cwd: '/w', agent: { command: 'codex-acp' } },
-            { cwd: '/w', agent: { command: 'codex-acp' } }
+            { cwd: '/w', agent: CODEX },
+            { cwd: '/w', agent: CODEX }
         ]);
+    });
+});
+
+describe('a connector set otherwise, and the hand-over', () => {
+    it('is followed once the session is back, not while the CLI holds it', async () => {
+        const { runtime, starts, done, last } = makeRuntime();
+        (runtime as any).started = false;
+        connector.set = CODEX;
+        await (runtime as any).ensureStarted('/w');
+        await handOver(runtime);
+        connector.set = ANOTHER;
+        await (runtime as any).applyAgentChoice(new Set(['setting']));
+        // The agent stays stopped: the session in the CLI is codex's.
+        expect(starts).toHaveLength(1);
+        expect(last('chat.error')).toBeUndefined();
+        await runtime.handleMessage(URI, { type: 'chat.returnToChat', data: {} });
+        expect(starts.map(start => start.agent)).toEqual([CODEX, CODEX]);
+        expect(last('chat.returnedToChat')).toBeDefined();
+        // Now the change is applied, as at any time: after it has settled.
+        done.length = 0;
+        await new Promise(resolve => setTimeout(resolve, 450));
+        await (runtime as any).agentChoice;
+        expect(starts.map(start => start.agent)).toEqual([CODEX, CODEX, ANOTHER]);
+        expect(done.slice(0, 2)).toEqual(['stop', 'start']);
+    });
+
+    it('hands over no chat of the agent the connector named before', async () => {
+        const { runtime, done, posts, types } = makeRuntime();
+        (runtime as any).formerAgentOf.set('s1', 'claude');
+        await handOver(runtime);
+        expect(done).toEqual([]);
+        expect(createdTerminals).toHaveLength(0);
+        expect(types()).not.toContain('chat.handedOver');
+        expect(posts.filter(p => p.type === 'chat.message').map(p => p.data.content)).toEqual([
+            "Not opened: this chat was with claude, and codex's CLI cannot open it."
+        ]);
+    });
+
+    it('waits for a change of agent under way before it reads the session', async () => {
+        const { runtime, done, acp } = makeRuntime();
+        let changed: () => void = () => undefined;
+        (runtime as any).agentSwitch = new Promise<void>(resolve => {
+            changed = () => {
+                (runtime as any).agentSwitch = undefined;
+                acp.agent = 'another';
+                acp.resumeTemplate = 'another resume {sessionId}';
+                resolve();
+            };
+        });
+        const handing = handOver(runtime);
+        await new Promise(resolve => setTimeout(resolve, 10));
+        expect(done).toEqual([]);
+        changed();
+        await handing;
+        expect(createdTerminals[0].sent).toEqual(['another resume s1']);
+    });
+
+    it('forgets what a hand-over meant to load again when another agent takes over', async () => {
+        const { runtime, posts } = makeRuntime({ held: ['s1', 's2'] });
+        await runtime.handleMessage(OTHER, { type: 'chat.sendMessage', data: { sessionId: 's2', text: 'first' } });
+        await handOver(runtime);
+        await runtime.handleMessage(URI, { type: 'chat.returnToChat', data: {} });
+        expect((runtime as any).toLoadAgain.has('s2')).toBe(true);
+        await (runtime as any).stopAgentWhenIdle('codex', 'another');
+        expect((runtime as any).toLoadAgain.size).toBe(0);
+        // A turn of the chat with the new agent is shown, not taken for a replay.
+        posts.length = 0;
+        (runtime as any).post('s2', { type: 'chat.sessionUpdate', data: { notification: { sessionId: 's2', text: 'answer' } } });
+        expect(posts.filter(p => p.type === 'chat.sessionUpdate')).toHaveLength(1);
     });
 });
 

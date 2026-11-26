@@ -27,7 +27,7 @@ import {
     parseNavigationTrailArg,
     parseViewArg
 } from '@dialogram/diagram-server/server/graph-load-request-options';
-import { HierarchyCache, definitionFiles, fileHash, findInstance, graphsOf, outlineOf, type HierarchyExport } from './hierarchy-cache';
+import { HierarchyCache, definitionFiles, fileHash, findInstance, graphsOf, outlineOf, withRecordedUnits, type HierarchyExport } from './hierarchy-cache';
 import { FileMemo } from '@dialogram/diagram-server/services/file-memo';
 import { extractWorkflowDefinitionNames } from './source-analysis';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
@@ -312,29 +312,35 @@ export class CliGraphModelSource implements DiagramModelSource {
         if (at > 0 && !navigated) {
             console.warn(`[CliGraphModelSource] No outline for ${workflowFilePath}#${workflowName ?? ''}: the hierarchy of ${trail[0].workflowName} was not exported`);
         }
-        // The graphs a list of nodes is read from go with the outline, and the
-        // list's runs are the view's: under a unit answered by a past run, the
-        // trail root's nodes are not that run's, and the list is not given.
-        const around = at === 0
-            ? { hierarchy: outlineOf(exported.hierarchy), hierarchyGraphs: graphsOf(exported) }
-            : navigated ? { hierarchy: outlineOf(navigated.hierarchy) } : {};
         const path = trailInstancePath(trail.slice(at));
+        let view: GraphDocument;
         if (path.length === 0) {
             if (workflowFilePath !== root.file || (workflowName && workflowName !== root.workflow)) {
                 return undefined;
             }
             const { hierarchy: _tree, ...rootDoc } = exported;
-            return { ...(rootDoc as unknown as GraphDocument), ...around };
+            view = rootDoc as unknown as GraphDocument;
+        } else {
+            const instance = findInstance(exported.hierarchy, path);
+            if (
+                !instance?.graph
+                || (workflowName && instance.workflowName !== workflowName)
+                || (instance.sourcePath && URI.file(instance.sourcePath).fsPath !== workflowFilePath)
+            ) {
+                return undefined;
+            }
+            view = instance.graph as GraphDocument;
         }
-        const instance = findInstance(exported.hierarchy, path);
-        if (
-            !instance?.graph
-            || (workflowName && instance.workflowName !== workflowName)
-            || (instance.sourcePath && URI.file(instance.sourcePath).fsPath !== workflowFilePath)
-        ) {
-            return undefined;
+        // The graphs a list of nodes is read from go with the outline, with
+        // what each unit answered by a past run elaborated grafted under it
+        // (`withRecordedUnits`) when the product lists nodes: the list is the
+        // trail root's wherever the view is, and each unit's nodes are its run's.
+        const listed = at === 0 ? exported : navigated;
+        if (!listed) {
+            return view;
         }
-        return { ...(instance.graph as GraphDocument), ...around };
+        const graphs = this.cfg.listsNodes ? await withRecordedUnits(graphsOf(listed), exportOf) : graphsOf(listed);
+        return { ...view, hierarchy: outlineOf(listed.hierarchy), hierarchyGraphs: graphs };
     }
 
     /** Runs the runtime's hierarchy export from `cwd`, the root file's run root, with `variables`; its stdout, or undefined when it fails. */

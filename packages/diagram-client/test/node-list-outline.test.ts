@@ -285,3 +285,47 @@ describe('its button', () => {
         expect(ids(parts.stack)).toEqual(['run-history', 'workflow-hierarchy-outline-toggle', 'workflow-chat-toggle-btn']);
     });
 });
+
+describe('a node of a unit answered by a past run, in the node list', () => {
+    const CHILD = 'file:///w/child.py';
+    // `c = counted(instance="wf-out/child-run")`: its viewer is that run's.
+    const withUnit = (): NodeListOutline => {
+        const shown = viewerRow(['c', 'shown'], 'n-shown', '/w/wf-out/child-run/shown.html');
+        shown.detachedNode!.rootArgs = { 'wf:viewerOverlayRunId': 'child-run' };
+        return {
+            title: 'Viewers',
+            rootArgs: { 'wf:viewerOverlayRunId': 'parent-run' },
+            outline: {
+                path: [], workflowName: 'top', sourceUri: FILE,
+                children: [
+                    viewerRow(['report'], 'n-report', '/w/wf-out/parent-run/report.html'),
+                    { path: ['c'], workflowName: 'counted', sourceUri: CHILD, recordedRun: 'wf-out/child-run', children: [shown] }
+                ]
+            }
+        };
+    };
+
+    it('opens with its own run\'s arguments, the list\'s nodes with the list\'s', async () => {
+        panel.modelRootChanged(rootWith(withUnit()));
+        rowSaying('shown')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        rowSaying('report')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        await settle();
+
+        expect(opener.asked.map(({ node }) => [node.id, (node as any).root.args['wf:viewerOverlayRunId']])).toEqual([
+            ['n-shown', 'child-run'],
+            ['n-report', 'parent-run']
+        ]);
+    });
+
+    it('is found in the unit\'s view at a trail that keeps the run on the unit\'s crumb, as a drill-down does', async () => {
+        panel.modelRootChanged(rootWith(withUnit()));
+        rowSaying('shown')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await settle();
+
+        const request = panel.dispatched.find(action => action.kind === 'requestModel');
+        expect(JSON.parse(request.options['wf:navTrail'])).toEqual([
+            { sourceUri: FILE, workflowName: 'top' },
+            { sourceUri: CHILD, workflowName: 'counted', workflowInstanceName: 'c', recordedRun: 'wf-out/child-run' }
+        ]);
+    });
+});

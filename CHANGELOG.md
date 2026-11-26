@@ -1098,6 +1098,10 @@ platform that hands it one.
     the agent that was stopped, in its folder. Each other chat is loaded
     again where it is next used: its opening, its next message, a change of
     its mode or its model.
+  - A connector set otherwise during a hand-over is followed once the
+    session is back, not while the CLI holds it. A chat with the agent the
+    connector named before is not handed over: the CLI of the agent running
+    cannot open it, and the chat says so.
   - A chat with no message yet is not kept by an agent that writes a
     session at its first message (Codex). Its first message after the
     return is not sent: it goes back to the composer, the chat says that
