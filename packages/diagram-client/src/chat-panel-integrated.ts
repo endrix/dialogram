@@ -753,7 +753,11 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         break;
 
       case 'chat.connectionStatus':
-        this.setConnectionStatus(!!data?.connected, data?.reason, data?.agent, data?.images);
+        if (!data?.connected && data?.connecting) {
+          this.setConnecting();
+        } else {
+          this.setConnectionStatus(!!data?.connected, data?.reason, data?.agent, data?.images);
+        }
         break;
 
       case 'chat.commands':
@@ -835,8 +839,11 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         // The unified runtime eagerly connects on the chat.ready handshake, so
         // connection errors arrive without any user interaction — record them
         // but never pop the drawer open for background chatter. When the error
-        // follows a user action the panel is already open.
-        this.pushMessage('system', `Error: ${data?.message ?? 'Unknown error'}`, undefined, undefined, { reveal: false });
+        // follows a user action the panel is already open. One the connection
+        // status already carries has its row there.
+        if (!data?.inStatus) {
+          this.pushMessage('system', `Error: ${data?.message ?? 'Unknown error'}`, undefined, undefined, { reveal: false });
+        }
         break;
     }
   }
@@ -1079,6 +1086,20 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       this.loadProviders();
       this.loadSessions();
     }
+    this.update();
+  }
+
+  /** The host stopped its agent to start another: "Connecting…", with no row
+   *  in the timeline; the next status says how the start went. */
+  private setConnecting(): void {
+    this.receivedStatus = true;
+    if (this.statusHandshakeTimer !== null) {
+      clearTimeout(this.statusHandshakeTimer);
+      this.statusHandshakeTimer = null;
+    }
+    this.connection = 'unknown';
+    this.connectionReason = '';
+    this.agentTakesImages = undefined;
     this.update();
   }
 

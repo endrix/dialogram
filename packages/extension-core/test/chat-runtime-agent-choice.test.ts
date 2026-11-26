@@ -109,8 +109,27 @@ describe('the chat\'s agent, when its connector is set', () => {
 
         expect(t.acp.stop).toHaveBeenCalledTimes(1);
         expect(t.started).toEqual(['opencode', 'claude']);
-        // Disconnected from the old agent, then connected to the new.
-        expect(statuses(t.posts).slice(-2).map(s => s.connected)).toEqual([false, true]);
+        // Connecting (the old agent stopped on purpose is no loss to report),
+        // then connected to the new.
+        expect(statuses(t.posts).slice(-2)).toEqual([
+            { connected: false, connecting: true },
+            expect.objectContaining({ connected: true, agent: 'claude' }),
+        ]);
+        expect(statuses(t.posts).some(s => /disconnected/.test(s.reason ?? ''))).toBe(false);
+    });
+
+    it('takes the old agent\'s models off the panel when it stops it', async () => {
+        const t = makeRuntime();
+        await t.runtime.handleMessage(URI, { type: 'chat.ready' });
+        const stoppedAt = () => t.posts.findIndex(p => p.payload.type === 'chat.connectionStatus' && (p.payload.data as any).connecting);
+
+        t.choose(async () => spec('claude'));
+        t.change();
+        await vi.advanceTimersByTimeAsync(400);
+
+        expect(stoppedAt()).toBeGreaterThan(-1);
+        const after = t.posts.slice(stoppedAt());
+        expect(after.find(p => p.payload.type === 'chat.providers')?.payload.data).toEqual({ providers: [] });
     });
 
     it('keeps the agent when the change leaves it the one running', async () => {

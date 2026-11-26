@@ -595,6 +595,25 @@ describe('ACPClientService', () => {
       expect(client.getAllSessions()).toEqual([]);
     });
 
+    it('lists the new agent\'s models, not the old one\'s', async () => {
+      await client.start('/test/workspace');
+      await client.createSession('/test/workspace', 'Test Session');
+      expect((await client.listProviders()).map((m) => m.id)).toEqual(['provider-1', 'provider-2']);
+
+      client.stop();
+      client.forgetSessions();
+      mockConnection.newSession.mockResolvedValue({
+        sessionId: 'claude-probe',
+        configOptions: [{
+          id: 'model', category: 'model', type: 'select', currentValue: 'sonnet',
+          options: [{ value: 'sonnet', name: 'Sonnet' }, { value: 'opus', name: 'Opus' }],
+        }],
+      });
+      await client.start('/test/workspace', { name: 'claude', argv: ['claude-agent-acp'], httpApi: false });
+
+      expect((await client.listProviders()).map((m) => m.id)).toEqual(['sonnet', 'opus']);
+    });
+
     it('leaves the new agent alone when the stopped one exits late', async () => {
       await client.start('/test/workspace');
       const stopped = mockProcess;

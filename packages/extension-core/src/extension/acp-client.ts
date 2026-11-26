@@ -1307,12 +1307,14 @@ export class ACPClientService extends EventEmitter {
   }
 
   /**
-   * Forget every session this client knew: another agent knows none of
-   * them, so each is attached again (or found missing) on its next use.
+   * Forget every session this client knew and the models it offered:
+   * another agent knows none of those sessions, so each is attached again
+   * (or found missing) on its next use, and offers its own models.
    */
   forgetSessions(): void {
     this.sessions.clear();
     this.loadedSessionIds.clear();
+    this.modelOptions = [];
   }
 
   /**

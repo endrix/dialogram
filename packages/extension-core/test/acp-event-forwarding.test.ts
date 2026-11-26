@@ -95,6 +95,24 @@ describe('attachAcpEventForwarding', () => {
         ]);
     });
 
+    it('says nothing of an agent the runtime stops on purpose', () => {
+        dispose();
+        let expected = true;
+        dispose = attachAcpEventForwarding(acp as any, {
+            postToSession: () => undefined,
+            broadcast: payload => broadcasts.push(payload),
+            onTurnComplete: () => undefined,
+            disconnectExpected: () => expected,
+        });
+        acp.emit('disconnected');
+        expect(broadcasts).toEqual([]);
+        expected = false;
+        acp.emit('disconnected');
+        expect(broadcasts).toEqual([
+            { type: 'chat.connectionStatus', data: { connected: false, reason: 'opencode disconnected', agent: 'opencode' } },
+        ]);
+    });
+
     it('disposer removes every listener and pending timer', () => {
         acp.emit('sessionUpdate', chunk('s1', 'agent_message_chunk', 'x'));
         dispose();

@@ -42,3 +42,41 @@ describe('the connected status names the connector', () => {
         expect(JSON.stringify((panel as any).topbarTemplate().values)).toContain('opencode: opencode disconnected');
     });
 });
+
+describe('a change of agent in the panel', () => {
+    const systemRows = (panel: ChatPanel) =>
+        ((panel as any).timeline as any[]).filter((t) => t.kind === 'message' && t.role === 'system').map((t) => t.content);
+
+    it('reads "Connecting…" with no row while the host starts the new agent, then names it', () => {
+        const panel = makePanel();
+        (panel as any).handleIncomingMessage('chat.connectionStatus', { connected: true, agent: 'opencode' });
+        (panel as any).handleIncomingMessage('chat.connectionStatus', { connected: false, connecting: true });
+        expect(JSON.stringify((panel as any).topbarTemplate().values)).toContain('Connecting…');
+        expect(systemRows(panel)).toEqual([]);
+        (panel as any).handleIncomingMessage('chat.connectionStatus', { connected: true, agent: 'claude' });
+        expect(JSON.stringify((panel as any).topbarTemplate().values)).toContain('Connected · claude');
+        expect(systemRows(panel)).toEqual([]);
+    });
+
+    it('says a start that failed once: the error the status already carries adds no row', () => {
+        const panel = makePanel();
+        (panel as any).handleIncomingMessage('chat.connectionStatus', { connected: false, connecting: true });
+        const reason = 'ACP connector "claud" is not known (known: claude, opencode)';
+        (panel as any).handleIncomingMessage('chat.connectionStatus', { connected: false, reason });
+        (panel as any).handleIncomingMessage('chat.error', { message: `Could not start the chat agent: ${reason}`, inStatus: true });
+        expect(systemRows(panel)).toHaveLength(1);
+        expect(systemRows(panel)[0]).toContain(reason);
+        // Any other error still has its row.
+        (panel as any).handleIncomingMessage('chat.error', { message: 'boom' });
+        expect(systemRows(panel)).toEqual([expect.stringContaining(reason), 'Error: boom']);
+    });
+
+    it('offers no model between two agents\' lists', () => {
+        const panel = makePanel();
+        (panel as any).handleIncomingMessage('chat.providers', { providers: [{ id: 'opencode/big-pickle' }] });
+        (panel as any).handleIncomingMessage('chat.providers', { providers: [] });
+        expect((panel as any).models).toEqual([]);
+        (panel as any).handleIncomingMessage('chat.providers', { providers: [{ id: 'sonnet', name: 'Sonnet' }] });
+        expect((panel as any).models).toEqual([{ id: 'sonnet', name: 'Sonnet' }]);
+    });
+});
