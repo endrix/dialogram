@@ -214,6 +214,12 @@ export interface SidecarRuntimeConfig {
     cliPythonModule?: string;
     /** Variables every start of the CLI is given from the product's settings ({@link CliFolderListVariable}). */
     cliEnvironment?: readonly CliFolderListVariable[];
+    /**
+     * The setting, under `settingsNamespace`, that names variables every
+     * start of the CLI is given, each with its value ({@link resolveVariablesSetting});
+     * the `cliEnvironment` variables go over them. Absent: no such setting.
+     */
+    cliVariablesSettingKey?: string;
     /** `'python'` turns on the Python caller scan (`discoverCrossFileWorkflowCallers`)
      *  and the `.py` workspace walk behind it; default `'none'`. */
     navigation?: 'python' | 'none';
@@ -376,7 +382,7 @@ export function getGraphLoadTimeoutMs(
 }
 
 /** The fields the CLI's start is resolved from; a run-driver config has them too. */
-export type CliCommandConfig = Pick<SidecarRuntimeConfig, 'settingsNamespace' | 'cliCommandSettingKey' | 'cliCommandDefault' | 'cliPythonModule' | 'cliEnvironment'>;
+export type CliCommandConfig = Pick<SidecarRuntimeConfig, 'settingsNamespace' | 'cliCommandSettingKey' | 'cliCommandDefault' | 'cliPythonModule' | 'cliEnvironment' | 'cliVariablesSettingKey'>;
 
 /** Resolve the CLI command from VS Code settings (falling back to the default). */
 export function getCliCommand(
@@ -404,23 +410,25 @@ export function getCliInvocation(
 
 /**
  * The variables the product's settings give the CLI started for `scopeUri`
- * in `runRoot` (`cliEnvironment`): one per setting that lists at least one
- * folder. `runRoot` is the folder the start's working directory is
- * (`resolveRunRoot`), so a relative folder is the one the CLI itself would
- * read, and the settings are read for it: for a file named through a link
- * to a workspace folder, VS Code puts the file in no folder, and the run
- * root is that folder. An entry that cannot be read is left out, and
- * `leftOut` is told why.
+ * in `runRoot`: those the variables setting names (`cliVariablesSettingKey`),
+ * then, over them, one per folder-list setting that lists at least one
+ * folder (`cliEnvironment`). `runRoot` is the folder the start's working
+ * directory is (`resolveRunRoot`), so a relative folder is the one the CLI
+ * itself would read, and the settings are read for it: for a file named
+ * through a link to a workspace folder, VS Code puts the file in no folder,
+ * and the run root is that folder. An entry that cannot be read is left
+ * out, and `leftOut` is told why.
  */
 export function getCliVariables(
-    cfg: Pick<CliCommandConfig, 'settingsNamespace' | 'cliEnvironment'>,
+    cfg: Pick<CliCommandConfig, 'settingsNamespace' | 'cliEnvironment' | 'cliVariablesSettingKey'>,
     vscodeModule: typeof import('vscode'),
     scopeUri: import('vscode').Uri | undefined,
     runRoot: string | undefined,
     leftOut?: (message: string) => void
 ): Record<string, string> {
     const variables: Record<string, string> = {};
-    if (!cfg.cliEnvironment || cfg.cliEnvironment.length === 0) {
+    const variablesKey = cfg.cliVariablesSettingKey;
+    if (!variablesKey && (!cfg.cliEnvironment || cfg.cliEnvironment.length === 0)) {
         return variables;
     }
     const config = vscodeModule.workspace.getConfiguration(
@@ -431,17 +439,65 @@ export function getCliVariables(
         folderNamed: name => vscodeModule.workspace.workspaceFolders?.find(folder => folder.name === name)?.uri.fsPath,
         env: process.env
     };
-    for (const { variable, folderListSettingKey } of cfg.cliEnvironment) {
+    if (variablesKey) {
+        let given = config.get<unknown>(variablesKey);
+        if (vscodeModule.workspace.isTrusted === false) {
+            // A workspace not trusted does not set the CLI's environment: its
+            // own value could load a library into every start (LD_PRELOAD,
+            // PATH), whether or not the product restricted the setting.
+            const inspected = config.inspect<unknown>(variablesKey);
+            if (inspected?.workspaceValue !== undefined || inspected?.workspaceFolderValue !== undefined) {
+                leftOut?.(`${cfg.settingsNamespace}.${variablesKey}: the workspace's value is not read: the workspace is not trusted`);
+            }
+            given = inspected?.globalValue;
+        }
+        Object.assign(variables, resolveVariablesSetting(given, context, (name, why) =>
+            leftOut?.(`${cfg.settingsNamespace}.${variablesKey}: ${name} is left out: ${why}`)));
+    }
+    for (const { variable, folderListSettingKey } of cfg.cliEnvironment ?? []) {
         const folders = resolveFolderList(config.get<unknown>(folderListSettingKey), context, (entry, why) =>
             leftOut?.(`${cfg.settingsNamespace}.${folderListSettingKey}: '${entry}' is left out: ${why}`));
         if (folders.length > 0) {
-            variables[variable] = folders.join(path.delimiter);
+            putVariable(variables, variable, folders.join(path.delimiter));
         }
     }
     return variables;
 }
 
-/** What a folder-list entry is read against ({@link resolveFolderList}). */
+/**
+ * `variables[name] = value`; on Windows, where a variable's name is read
+ * whatever its case, the one of any other case goes first, so the last given
+ * is the one the CLI gets.
+ */
+function putVariable(
+    variables: Record<string, string>,
+    name: string,
+    value: string,
+    platform: NodeJS.Platform = process.platform
+): void {
+    if (platform === 'win32') {
+        for (const key of Object.keys(variables)) {
+            if (key !== name && key.toLowerCase() === name.toLowerCase()) {
+                delete variables[key];
+            }
+        }
+    }
+    variables[name] = value;
+}
+
+/** A variable's name that reads as a secret's (a key, a token, a password): its value is not shown. */
+const SECRET_NAME = /(?:^|_)(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASS|CREDENTIALS?|AUTH)(?:_|$)/i;
+
+/**
+ * `value` as a run's output shows the variable `name`: as it is, unless the
+ * name reads as a secret's (`OPENAI_API_KEY`, `GITHUB_TOKEN`), whose value is
+ * hidden, since run output is copied into logs and screenshots.
+ */
+export function shownVariableValue(name: string, value: string): string {
+    return SECRET_NAME.test(name) && value !== '' ? '(hidden)' : value;
+}
+
+/** What a folder-list entry, or a variable's value, is read against ({@link resolveFolderList}, {@link resolveVariablesSetting}). */
 export interface FolderListContext {
     /** Where a relative folder and `${workspaceFolder}` start: the run root. None: kept as written, and `${workspaceFolder}` unknown. */
     base: string | undefined;
@@ -451,6 +507,92 @@ export interface FolderListContext {
     folderNamed(name: string): string | undefined;
     /** `${env:NAME}`; an entry naming one unset or empty is left out, as it would name another folder. */
     env: NodeJS.ProcessEnv;
+}
+
+/**
+ * `text` with VS Code's variables of a setting read against `context`: `~`
+ * alone or before the folder separator, and `${userHome}`, the home folder;
+ * `${workspaceFolder}` the base, `${workspaceFolder:name}` the open folder
+ * of that name, `${env:NAME}` a variable of this extension's environment.
+ * Why not, when it names another user's home (`~name`), or a variable or
+ * folder that is not known here (another variable, no base, no open folder
+ * of that name, a variable unset or empty). A text that need not be a path
+ * (`asText`, a variable's value) is refused a leading `~` only when it reads
+ * as another user's home (`~name`, `~name/…`): `~=1.2` is kept as written.
+ */
+function expandSettingVariables(
+    text: string,
+    context: FolderListContext,
+    asText = false
+): { text: string } | { why: string } {
+    let home = text;
+    // `~\` is the home folder only where `\` separates folders.
+    if (text === '~' || text.startsWith('~/') || (path.sep === '\\' && text.startsWith('~\\'))) {
+        home = context.home + text.slice(1);
+    } else if (text.startsWith('~') && (!asText || /^~[A-Za-z0-9._-]+(?:[\\/]|$)/.test(text))) {
+        return { why: `it starts with '~' but not '~${path.sep}', as another user's home folder does, which is not read here` };
+    }
+    let unknown = false;
+    const expanded = home.replace(/\$\{([^}]*)\}/g, (whole, name: string) => {
+        const value = name === 'userHome' ? context.home
+            : name === 'workspaceFolder' ? context.base
+            : name.startsWith('workspaceFolder:') ? context.folderNamed(name.slice('workspaceFolder:'.length))
+            : name.startsWith('env:') ? context.env[name.slice('env:'.length)] || undefined
+            : undefined;
+        if (value === undefined) {
+            unknown = true;
+            return whole;
+        }
+        return value;
+    });
+    return unknown ? { why: 'it names a variable or a folder that is not known here' } : { text: expanded };
+}
+
+/**
+ * The variables a variables setting names, each with its value: an object
+ * whose keys are the names. Each value is read with VS Code's variables of
+ * a setting (`~`, `${userHome}`, `${workspaceFolder}`,
+ * `${workspaceFolder:name}`, `${env:NAME}`, read against `context`) and is
+ * otherwise kept as written: a value need not be a path, and a relative one
+ * is read by the CLI from the folder it starts in, the run root, which is
+ * `${workspaceFolder}`. A variable whose name is not one (letters, digits
+ * and `_`, not starting with a digit: a stray space would leave the CLI
+ * reading another), a value that is not text, or one that cannot be read
+ * (a variable or folder not known here, another user's home) is left out,
+ * and `leftOut` is given its name and why. Anything but an object names none.
+ *
+ * A workspace's own settings reach the CLI's environment through it, as
+ * through a folder-list setting ({@link CliFolderListVariable}); in a
+ * workspace that is not trusted {@link getCliVariables} reads the user's
+ * value alone.
+ */
+export function resolveVariablesSetting(
+    value: unknown,
+    context: FolderListContext,
+    leftOut?: (name: string, why: string) => void,
+    platform: NodeJS.Platform = process.platform
+): Record<string, string> {
+    const variables: Record<string, string> = {};
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        return variables;
+    }
+    for (const [name, given] of Object.entries(value as Record<string, unknown>)) {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+            leftOut?.(JSON.stringify(name), 'it is not the name of a variable (letters, digits and _, not starting with a digit)');
+            continue;
+        }
+        if (typeof given !== 'string') {
+            leftOut?.(name, 'its value is not text');
+            continue;
+        }
+        const expanded = expandSettingVariables(given, context, true);
+        if ('why' in expanded) {
+            leftOut?.(name, expanded.why);
+            continue;
+        }
+        putVariable(variables, name, expanded.text, platform);
+    }
+    return variables;
 }
 
 /**
@@ -478,7 +620,7 @@ export function resolveFolderList(
         if (typeof entry !== 'string' || entry.trim() === '') {
             continue;
         }
-        let folder = entry.trim();
+        const folder = entry.trim();
         // A variable that is a list itself (a search path the user has): each of its folders.
         const list = /^\$\{env:([^}]+)\}$/.exec(folder);
         if (list) {
@@ -491,31 +633,12 @@ export function resolveFolderList(
             }
             continue;
         }
-        // `~\` is the home folder only where `\` separates folders.
-        if (folder === '~' || folder.startsWith('~/') || (path.sep === '\\' && folder.startsWith('~\\'))) {
-            folder = context.home + folder.slice(1);
-        } else if (folder.startsWith('~')) {
-            leftOut?.(entry, `it starts with '~' but not '~${path.sep}', as another user's home folder does, which is not read here`);
+        const expanded = expandSettingVariables(folder, context);
+        if ('why' in expanded) {
+            leftOut?.(entry, expanded.why);
             continue;
         }
-        let unknown = false;
-        folder = folder.replace(/\$\{([^}]*)\}/g, (whole, name: string) => {
-            const value = name === 'userHome' ? context.home
-                : name === 'workspaceFolder' ? context.base
-                : name.startsWith('workspaceFolder:') ? context.folderNamed(name.slice('workspaceFolder:'.length))
-                : name.startsWith('env:') ? context.env[name.slice('env:'.length)] || undefined
-                : undefined;
-            if (value === undefined) {
-                unknown = true;
-                return whole;
-            }
-            return value;
-        });
-        if (unknown) {
-            leftOut?.(entry, 'it names a variable or a folder that is not known here');
-            continue;
-        }
-        pushFolder(folder, entry);
+        pushFolder(expanded.text, entry);
     }
     return folders;
 

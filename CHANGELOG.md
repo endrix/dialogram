@@ -131,6 +131,22 @@ platform that hands it one.
   nothing leaves the variable as VS Code was started with it; on Windows a
   variable replaces the one of any case.
 
+- **CLI variables from a setting that names them.** A profile's
+  `cliVariablesSettingKey` names a setting under its namespace whose object
+  gives variables the product's CLI is started with, each with its value
+  (`{"TOOL_HOME": "${workspaceFolder}/external/tool"}`): what a program
+  needs that VS Code was not started with. A value is read with the
+  variables of a folder-list entry (`~`, `${userHome}`, `${workspaceFolder}`,
+  `${workspaceFolder:name}`, `${env:NAME}`) and is otherwise kept as written,
+  since it need not be a path. A name that is not one (letters, digits and
+  `_`, not starting with a digit), a value that is not text, or one naming
+  another user's home or a variable not known here is left out, and a run's
+  output says so. That output hides the value of a name that reads as a
+  secret's (`*_KEY`, `*_TOKEN`, `*_PASSWORD`). In a workspace that is not
+  trusted only the user's value is read. Every start of the CLI that gets
+  the folder-list variables gets these, and the folder-list variables go
+  over them; the sidecar gets neither.
+
 - **Images in the chat, and a picture of the diagram for any agent.** An
   image pasted into the chat's composer (or dropped on it) waits above the
   text, small, with a button to take it off; the camera button beside Send
