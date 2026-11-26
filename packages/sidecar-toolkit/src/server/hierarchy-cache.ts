@@ -139,41 +139,66 @@ export function recordedUnitNodes(document: unknown): RecordedUnitNode[] {
 const MAX_RECORDED_UNIT_DEPTH = 4;
 
 /**
+ * The grafted lists made from an export's graphs, by those graphs: kept while
+ * every unit's export is the one it was made from, so a view drawn again
+ * does not graft again.
+ */
+const graftedByGraphs = new WeakMap<HierarchyGraph[], { exports: Array<HierarchyExport | undefined>; grafted: HierarchyGraph[] }>();
+
+/**
  * The hierarchy's graphs, with what each unit answered by a past run
  * elaborated grafted under it: its workflow's hierarchy as a root of its own
  * (`exportOf`), as a view in it is read (`hierarchyRootAt`), its paths under
  * the unit's and its root marked with the run (`HierarchyGraph.recordedRun`).
  * The unit runs nothing with its parent, so its parent's export has nothing
- * under it. A unit the export already has, or that does not export, is left
- * as it is; one inside another is grafted too, a workflow already on the way
- * not again.
+ * under it. A unit the export already elaborated is only marked; one that
+ * does not export is left as it is; one inside another is grafted too, a
+ * workflow already on the way not again.
  */
 export async function withRecordedUnits(
     graphs: HierarchyGraph[],
     exportOf: (unit: { file: string; workflow: string }) => Promise<HierarchyExport | undefined>,
     within: readonly string[] = []
 ): Promise<HierarchyGraph[]> {
-    const known = new Set(graphs.map(graph => graph.path.join('/')));
-    const grafts = await Promise.all(graphs.flatMap(graph => recordedUnitNodes(graph.document).map(async unit => {
-        const at = [...graph.path, unit.name];
-        const key = `${unit.file}::${unit.workflow}`;
-        if (known.has(at.join('/')) || within.includes(key) || within.length >= MAX_RECORDED_UNIT_DEPTH) {
-            return [];
-        }
-        const exported = await exportOf(unit);
+    const byPath = new Map(graphs.map(graph => [graph.path.join('/'), graph]));
+    const units = graphs.flatMap(graph => recordedUnitNodes(graph.document).map(unit => ({ unit, at: [...graph.path, unit.name] })));
+    if (units.length === 0) {
+        return graphs;
+    }
+    // Already elaborated by the export: its graphs stay, the unit's own marked with the run.
+    const marked = new Map(units.filter(({ at }) => byPath.has(at.join('/'))).map(({ unit, at }) => [at.join('/'), unit.run]));
+    const toGraft = units.filter(({ unit, at }) => !marked.has(at.join('/'))
+        && !within.includes(`${unit.file}::${unit.workflow}`) && within.length < MAX_RECORDED_UNIT_DEPTH);
+    const exports = await Promise.all(toGraft.map(({ unit }) => exportOf(unit)));
+    const known = within.length === 0 ? graftedByGraphs.get(graphs) : undefined;
+    if (known && known.exports.length === exports.length && known.exports.every((exported, i) => exported === exports[i])) {
+        return known.grafted;
+    }
+    const grafts = await Promise.all(toGraft.map(async ({ unit, at }, i) => {
+        const exported = exports[i];
         if (!exported) {
             return [];
         }
-        const inner = await withRecordedUnits(graphsOf(exported), exportOf, [...within, key]);
+        const inner = await withRecordedUnits(graphsOf(exported), exportOf, [...within, `${unit.file}::${unit.workflow}`]);
         return inner.map((innerGraph, index): HierarchyGraph => ({
             ...innerGraph,
             path: [...at, ...innerGraph.path],
             ...(index === 0 ? { recordedRun: unit.run } : {})
         }));
-    })));
-    // Without a unit, the export's own list (`graphsOf`), as before.
-    const grafted = grafts.flat();
-    return grafted.length === 0 ? graphs : [...graphs, ...grafted];
+    }));
+    const own = marked.size === 0
+        ? graphs
+        : graphs.map(graph => {
+            const run = marked.get(graph.path.join('/'));
+            return run ? { ...graph, recordedRun: run } : graph;
+        });
+    const flat = grafts.flat();
+    // Without a graft or a mark, the export's own list (`graphsOf`), as before.
+    const grafted = flat.length === 0 ? own : [...own, ...flat];
+    if (within.length === 0) {
+        graftedByGraphs.set(graphs, { exports, grafted });
+    }
+    return grafted;
 }
 
 /** Every file the hierarchy was elaborated from. */
@@ -237,6 +262,7 @@ interface CachedHierarchy {
 
 export class HierarchyCache {
     private readonly entries = new Map<string, CachedHierarchy>();
+    private readonly pending = new Map<string, Promise<HierarchyExport | undefined>>();
     private static readonly MAX = 8;
 
     constructor(
@@ -252,6 +278,24 @@ export class HierarchyCache {
      */
     async get(rootFile: string, rootWorkflow: string, cwd: string, variables: Record<string, string> = {}): Promise<HierarchyExport | undefined> {
         const key = `${rootFile}::${rootWorkflow}::${cwd}::${JSON.stringify(variables)}`;
+        // Asked again while it is being answered (two views loading, a unit grafted into both):
+        // the same answer, one export.
+        const pending = this.pending.get(key);
+        if (pending) {
+            return pending;
+        }
+        const answer = this.answer(key, rootFile, rootWorkflow, cwd, variables);
+        this.pending.set(key, answer);
+        try {
+            return await answer;
+        } finally {
+            this.pending.delete(key);
+        }
+    }
+
+    private async answer(
+        key: string, rootFile: string, rootWorkflow: string, cwd: string, variables: Record<string, string>
+    ): Promise<HierarchyExport | undefined> {
         const cached = this.entries.get(key);
         if (cached && (await this.unchanged(cached))) {
             this.entries.delete(key);

@@ -241,6 +241,13 @@ export interface SidecarRuntimeConfig {
      * instead of a plan per view (see `hierarchy-cache.ts`).
      */
     cliHierarchyArgs?: (file: string, rootWorkflow: string) => string[];
+    /**
+     * The product lists one family's nodes across the hierarchy
+     * (`SidecarDiagramProfileInput.nodeList`): the hierarchy's graphs given
+     * with a view have the insides of each unit answered by a past run
+     * grafted in (`withRecordedUnits`). Without it they are not looked for.
+     */
+    listsNodes?: boolean;
     /** Product-specific label prefix for the sidecar-export failure message (the toolkit carries no
      *  product literal); defaults to a neutral 'Graph export failed' when unset. */
     graphExportFailureLabel?: string;

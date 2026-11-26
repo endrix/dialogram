@@ -1024,7 +1024,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             recordedRun
         );
         perf?.mark('ov:viewer');
-        await this.attachNodeList(gmodelRoot, doc, appliedOverlay, workflowFilePath, navigationTrail, recordedRun);
+        await this.attachNodeList(gmodelRoot, doc, appliedOverlay, workflowFilePath, navigationTrail, recordedRun, askedRunId);
         perf?.mark('ov:nodeList');
         await this.applyAgentContextToNodes(
             gmodelRoot,
@@ -1801,7 +1801,9 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         /** The view's file. */
         workflowFilePath: string,
         navigationTrail: Array<{ sourceUri: string; workflowName: string; workflowInstanceName?: string }>,
-        recordedRun: RecordedRunOfView | undefined
+        recordedRun: RecordedRunOfView | undefined,
+        /** The run the request carried: the one the client was showing, the parent's when it stepped into a unit. */
+        askedRunId?: string
     ): Promise<void> {
         const args = ((root as any).args = (root as any).args || {});
         delete args[NODE_LIST_ARG];
@@ -1814,23 +1816,28 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             const viewRun: ListRun | undefined = overlay
                 ? { args: runArgs(overlay.runId, overlay.outDir), tokenOf: overlay.tokenOf }
                 : undefined;
-            // The view's own run covers the part it is in: the root's, or the unit it is drawn from.
-            const viewUnitPath = recordedRun ? trailInstancePath(navigationTrail.slice(0, recordedRun.at + 1)) : undefined;
+            // The view's own run covers the part it is in: the root's, or the unit it is drawn from
+            // when the unit still names that run (its source may name another since the trail was made).
+            const viewUnitPath = recordedRun ? trailInstancePath(navigationTrail.slice(0, recordedRun.at + 1)).join('/') : undefined;
             const units = recordedUnitsOf(graphs, uri => this.fsPathOfCrumb(uri));
             const runOfUnit = new Map<string, Promise<ListRun | undefined>>();
             for (const unit of units) {
                 const key = unit.path.join('/');
                 if (!runOfUnit.has(key)) {
-                    runOfUnit.set(key, viewUnitPath?.join('/') === key
+                    const isViewRun = viewUnitPath === key && path.resolve(unit.runDir) === path.resolve(recordedRun!.runDir);
+                    runOfUnit.set(key, isViewRun
                         ? Promise.resolve(viewRun)
-                        : this.listRunOf(workflowFilePath, unit.workflowName, { runDir: unit.runDir, at: 0, workflowName: unit.workflowName }));
+                        : this.listRunOf(workflowFilePath, unit.workflowName, { recordedRun: { runDir: unit.runDir, at: 0, workflowName: unit.workflowName } }));
                 }
             }
+            // Inside a unit, the root's part is the run the client was showing at the root when one
+            // of the root's (the one it carries on stepping in), else the root's latest. Its edges
+            // are read as they last were: the view's step of a trace is its own run's.
             const rootCrumb = navigationTrail[0];
             const [rootRun, ...unitRuns] = await Promise.all([
                 !recordedRun || !rootCrumb
                     ? Promise.resolve(viewRun)
-                    : this.listRunOf(this.fsPathOfCrumb(rootCrumb.sourceUri), rootCrumb.workflowName),
+                    : this.listRunOf(this.fsPathOfCrumb(rootCrumb.sourceUri), rootCrumb.workflowName, { preferredRunId: askedRunId }),
                 ...[...runOfUnit.values()]
             ]);
             const unitRunByPath = new Map([...runOfUnit.keys()].map((key, i) => [key, unitRuns[i]]));
@@ -1871,14 +1878,20 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
 
     /**
      * A run of a node list's other than the view's: the past run a unit is
-     * answered by (`recordedRun`), else the latest run of `workflowName` in
-     * `file` (the trail's root). Its edges are read as they last were, with
-     * no step of a trace; undefined when the run is not found.
+     * answered by (`recordedRun`), else the run `preferredRunId` names when it
+     * is one of `workflowName` in `file` (the trail's root), else that
+     * workflow's latest. Its edges are read as they last were, with no step
+     * of a trace; undefined when the run is not found.
      */
-    private async listRunOf(file: string, workflowName: string, recordedRun?: RecordedRunOfView): Promise<ListRun | undefined> {
-        const overlay = recordedRun
-            ? await this.tryLoadLatestViewerOverlay(file, workflowName, undefined, undefined, undefined, recordedRun)
-            : await this.tryLoadLatestViewerOverlay(file, workflowName, [file], [workflowName]);
+    private async listRunOf(
+        file: string,
+        workflowName: string,
+        which: { recordedRun?: RecordedRunOfView; preferredRunId?: string } = {}
+    ): Promise<ListRun | undefined> {
+        const overlay = which.recordedRun
+            ? await this.tryLoadLatestViewerOverlay(file, workflowName, undefined, undefined, undefined, which.recordedRun)
+            : (which.preferredRunId ? await this.tryLoadLatestViewerOverlay(file, workflowName, [file], [workflowName], which.preferredRunId) : undefined)
+                ?? await this.tryLoadLatestViewerOverlay(file, workflowName, [file], [workflowName]);
         if (!overlay) {
             return undefined;
         }

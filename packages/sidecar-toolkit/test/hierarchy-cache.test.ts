@@ -156,6 +156,26 @@ describe('the cache', () => {
     });
 });
 
+describe('an export asked for twice at once', () => {
+    it('is run once, both askers getting its answer', async () => {
+        let runs = 0;
+        let release!: () => void;
+        const gate = new Promise<void>(resolve => { release = resolve; });
+        const cache = new HierarchyCache(async () => {
+            runs++;
+            await gate;
+            return JSON.stringify({ ...graph('top-view'), hierarchy: { path: [], workflowName: 'top', children: [] } });
+        }, async () => 'same');
+
+        const both = Promise.all([cache.get('/w/top.py', 'top', '/w'), cache.get('/w/top.py', 'top', '/w')]);
+        release();
+        const [a, b] = await both;
+
+        expect(runs).toBe(1);
+        expect(a).toBe(b);
+    });
+});
+
 describe('the hash of a large file', () => {
     // A process that may read any file cannot make one unreadable.
     it.skipIf(process.getuid?.() === 0)('is not remembered as missing after one read that failed', async () => {
@@ -307,7 +327,8 @@ describe('a view under a unit answered by a past run', () => {
         const cfg: any = {
             cliCommandDefault: 'runtime',
             cliGraphArgs: () => ['plan'],
-            cliHierarchyArgs: (file: string, wf: string) => ['plan', file, '--workflow', wf, '--hierarchy']
+            cliHierarchyArgs: (file: string, wf: string) => ['plan', file, '--workflow', wf, '--hierarchy'],
+            listsNodes: true
         };
         const src: any = new CliGraphModelSource(cfg, fallback);
         // `top` nests `c = inst(instance="wf-out/r1")`; its export has nothing under `c`.
@@ -365,6 +386,29 @@ describe('a view under a unit answered by a past run', () => {
         expect(topDoc.hierarchyGraphs.map((g: any) => g.path.join('/'))).toEqual(['', 'c', 'c/f']);
         expect(topDoc.hierarchyGraphs[2].document.graph.id).toBe('wf:f-view');
         expect([...asked].sort()).toEqual(['inst', 'top']);
+    });
+
+    it('grafts nothing, and exports no unit, for a product that lists no nodes', async () => {
+        const { src, files, uri, asked } = await source();
+        src.cfg.listsNodes = false;
+
+        const topDoc = await src.getGraph(uri(files.top), { requestOptions: { networkName: 'top' } });
+
+        expect(topDoc.hierarchyGraphs.map((g: any) => g.path.join('/'))).toEqual(['']);
+        expect(asked).toEqual(['top']);
+    });
+
+    it('grafts once while every export stays as it was, and again when one changes', async () => {
+        const { src, files, uri } = await source();
+
+        const first = await src.getGraph(uri(files.top), { requestOptions: { networkName: 'top' } });
+        const again = await src.getGraph(uri(files.top), { requestOptions: { networkName: 'top' } });
+        await fs.writeFile(files.flow, '@workflow\ndef flow():\n    return 1\n');
+        const changed = await src.getGraph(uri(files.top), { requestOptions: { networkName: 'top' } });
+
+        expect(again.hierarchyGraphs).toBe(first.hierarchyGraphs);
+        expect(changed.hierarchyGraphs).not.toBe(first.hierarchyGraphs);
+        expect(changed.hierarchyGraphs.map((g: any) => g.path.join('/'))).toEqual(['', 'c', 'c/f']);
     });
 
     it('draws the view without an outline when the trail root does not export', async () => {
@@ -456,7 +500,8 @@ describe('the units answered by a past run, grafted into a hierarchy\'s graphs',
             return unit.workflow === 'loop' ? looping : undefined;
         });
 
-        expect(grafted.map(g => g.path.join('/'))).toEqual(['', 'had', 'l']);
+        // The unit the export already elaborated is marked with its run, not exported again.
+        expect(grafted.map(g => [g.path.join('/'), g.recordedRun])).toEqual([['', undefined], ['had', 'wf-out/r1'], ['l', 'wf-out/r3']]);
         expect(asked.sort()).toEqual(['gone', 'loop']);
     });
 });

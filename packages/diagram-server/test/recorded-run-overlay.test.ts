@@ -327,12 +327,26 @@ describe('the list of viewers of a hierarchy holding a unit answered by a past r
     };
 
     /** The list on the view at `trail`, drawn from the run that view is drawn from. */
-    async function listOn(trailTo: 'parent' | 'c', run = 'wf-out/child-run') {
+    async function listOn(trailTo: 'parent' | 'c', run = 'wf-out/child-run', more: { askedRunId?: string; trailRun?: string; older?: boolean } = {}) {
         const { dir, parentFile, childFile } = await project();
+        if (more.older) {
+            // An older run of the parent, which the reader chose at the parent.
+            const outDir = path.join(dir, 'wf-out', 'parent-old');
+            await writeJson(path.join(outDir, 'run.wf-viewer.json'), {
+                version: 1, runId: 'parent-old', outDir, workflowName: 'parent', sourcePath: parentFile, running: false,
+                finishedAt: '2026-11-24T09:00:00Z',
+                edges: { 'queue:c.Num-->a.In': { queueId: 'c.Num-->a.In', fromEntity: 'c', outPort: 'Num', toEntity: 'a', inPort: 'In', lastToken: 'old' } }
+            });
+            // Logged before the others: the latest is the one logged last.
+            const log = path.join(dir, 'wf-out', 'run-log.jsonl');
+            await fs.writeFile(log, JSON.stringify({
+                runId: 'parent-old', workflowName: 'parent', sourcePath: parentFile, outDir, finishedAt: '2026-11-24T09:00:00Z'
+            }) + '\n' + await fs.readFile(log, 'utf-8'));
+        }
         const parentCrumb = { sourceUri: `file://${parentFile}`, workflowName: 'parent' };
         const trail = trailTo === 'parent'
             ? [parentCrumb]
-            : [parentCrumb, { sourceUri: `file://${childFile}`, workflowName: 'counted', workflowInstanceName: 'c', recordedRun: run }];
+            : [parentCrumb, { sourceUri: `file://${childFile}`, workflowName: 'counted', workflowInstanceName: 'c', recordedRun: more.trailRun ?? run }];
         const viewFile = trailTo === 'parent' ? parentFile : childFile;
         const s = listStorage();
         const recorded = recordedRunOfTrail(trail, uri => new URL(uri).pathname);
@@ -341,7 +355,7 @@ describe('the list of viewers of a hierarchy holding a unit answered by a past r
         root.children = [];
         const applied = await s.applyViewerOverlayToEdges(
             root, viewFile, trailTo === 'parent' ? 'parent' : 'counted', trail, ['parent', 'counted'], undefined, true, [parentFile, childFile], undefined, recorded);
-        await s.attachNodeList(root, { hierarchyGraphs: graphsOf(parentFile, childFile, run) }, applied, viewFile, trail, recorded);
+        await s.attachNodeList(root, { hierarchyGraphs: graphsOf(parentFile, childFile, run) }, applied, viewFile, trail, recorded, more.askedRunId);
         const raw = (root.args as any)?.[NODE_LIST_ARG];
         return { list: raw ? (JSON.parse(raw) as NodeListOutline) : undefined, dir };
     }
@@ -360,6 +374,26 @@ describe('the list of viewers of a hierarchy holding a unit answered by a past r
         const { list } = await listOn('c');
 
         expect(shown(list!, 'a')).toEqual({ token: 14, run: 'parent-run' });
+        expect(shown(list!, 'c/d')).toEqual({ token: 7, run: 'child-run' });
+    });
+
+    it('inside the unit, keeps the parent\'s run the reader chose at the parent, which the client carries in', async () => {
+        const { list } = await listOn('c', 'wf-out/child-run', { askedRunId: 'parent-old', older: true });
+
+        expect(shown(list!, 'a')).toEqual({ token: 'old', run: 'parent-old' });
+        expect(shown(list!, 'c/d')).toEqual({ token: 7, run: 'child-run' });
+    });
+
+    it('inside the unit, takes the parent\'s latest when the run carried in is none of the parent\'s', async () => {
+        const { list } = await listOn('c', 'wf-out/child-run', { askedRunId: 'child-run', older: true });
+
+        expect(shown(list!, 'a')).toEqual({ token: 14, run: 'parent-run' });
+    });
+
+    it('reads the unit\'s run its source names now, not the one an older trail into it carries', async () => {
+        // The view was opened at `wf-out/gone`; the source names `wf-out/child-run` since.
+        const { list } = await listOn('c', 'wf-out/child-run', { trailRun: 'wf-out/gone' });
+
         expect(shown(list!, 'c/d')).toEqual({ token: 7, run: 'child-run' });
     });
 

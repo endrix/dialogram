@@ -333,13 +333,14 @@ export class CliGraphModelSource implements DiagramModelSource {
         }
         // The graphs a list of nodes is read from go with the outline, with
         // what each unit answered by a past run elaborated grafted under it
-        // (`withRecordedUnits`): the list is the trail root's wherever the
-        // view is, and each unit's nodes are its run's.
+        // (`withRecordedUnits`) when the product lists nodes: the list is the
+        // trail root's wherever the view is, and each unit's nodes are its run's.
         const listed = at === 0 ? exported : navigated;
         if (!listed) {
             return view;
         }
-        return { ...view, hierarchy: outlineOf(listed.hierarchy), hierarchyGraphs: await withRecordedUnits(graphsOf(listed), exportOf) };
+        const graphs = this.cfg.listsNodes ? await withRecordedUnits(graphsOf(listed), exportOf) : graphsOf(listed);
+        return { ...view, hierarchy: outlineOf(listed.hierarchy), hierarchyGraphs: graphs };
     }
 
     /** Runs the runtime's hierarchy export from `cwd`, the root file's run root, with `variables`; its stdout, or undefined when it fails. */
