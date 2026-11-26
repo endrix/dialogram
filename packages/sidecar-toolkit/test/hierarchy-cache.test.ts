@@ -11,7 +11,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { URI } from 'vscode-uri';
-import { HierarchyCache, fileHash, findInstance, graphsOf, outlineOf, type HierarchyEntry } from '../src/server/hierarchy-cache';
+import { HierarchyCache, fileHash, findInstance, graphsOf, outlineOf, recordedUnitNodes, withRecordedUnits, type HierarchyEntry, type HierarchyExport } from '../src/server/hierarchy-cache';
 import { hierarchyRootAt } from '@dialogram/shared';
 import { CliGraphModelSource } from '../src/server/cli-graph-model-source';
 
@@ -153,6 +153,26 @@ describe('the cache', () => {
     it('returns nothing for an export that failed or is not one', async () => {
         expect(await new HierarchyCache(async () => undefined).get('/w/top.py', 'top', '/w')).toBeUndefined();
         expect(await new HierarchyCache(async () => '{"graph": {}}').get('/w/top.py', 'top', '/w')).toBeUndefined();
+    });
+});
+
+describe('an export asked for twice at once', () => {
+    it('is run once, both askers getting its answer', async () => {
+        let runs = 0;
+        let release!: () => void;
+        const gate = new Promise<void>(resolve => { release = resolve; });
+        const cache = new HierarchyCache(async () => {
+            runs++;
+            await gate;
+            return JSON.stringify({ ...graph('top-view'), hierarchy: { path: [], workflowName: 'top', children: [] } });
+        }, async () => 'same');
+
+        const both = Promise.all([cache.get('/w/top.py', 'top', '/w'), cache.get('/w/top.py', 'top', '/w')]);
+        release();
+        const [a, b] = await both;
+
+        expect(runs).toBe(1);
+        expect(a).toBe(b);
     });
 });
 
@@ -307,12 +327,21 @@ describe('a view under a unit answered by a past run', () => {
         const cfg: any = {
             cliCommandDefault: 'runtime',
             cliGraphArgs: () => ['plan'],
-            cliHierarchyArgs: (file: string, wf: string) => ['plan', file, '--workflow', wf, '--hierarchy']
+            cliHierarchyArgs: (file: string, wf: string) => ['plan', file, '--workflow', wf, '--hierarchy'],
+            listsNodes: true
         };
         const src: any = new CliGraphModelSource(cfg, fallback);
+        // `top` nests `c = inst(instance="wf-out/r1")`; its export has nothing under `c`.
+        const unitNode = {
+            id: 'node:c', kind: 'workflow', label: 'c', type: 'inst',
+            meta: { workflowInstance: { run: 'wf-out/r1' }, referencedSource: { file: files.inst } }
+        };
+        const documentOf = (workflow: string) => workflow === 'top'
+            ? { version: '1', graph: { id: 'wf:top-view', nodes: [unitNode], edges: [] } }
+            : graph(`${workflow}-view`);
         src.exportHierarchy = async (_file: string, workflow: string) => {
             asked.push(workflow);
-            return exported[workflow] ? JSON.stringify({ ...graph(`${workflow}-view`), hierarchy: exported[workflow] }) : undefined;
+            return exported[workflow] ? JSON.stringify({ ...documentOf(workflow), hierarchy: exported[workflow] }) : undefined;
         };
         const uri = (file: string) => URI.file(file).toString();
         const toInst = [
@@ -334,14 +363,52 @@ describe('a view under a unit answered by a past run', () => {
         expect([...asked].sort()).toEqual(['inst', 'top']);
     });
 
-    it('keeps the outline of the trail root, whose paths the trail has, and gives no list of its nodes', async () => {
+    it('keeps the outline of the trail root, whose paths the trail has, and its graphs with the unit\'s grafted', async () => {
         const { src, files, uri, toFlow } = await source();
 
         const flowDoc = await src.getGraph(uri(files.flow), { requestOptions: { networkName: 'flow', 'wf:navTrail': JSON.stringify(toFlow) } });
 
         expect(flowDoc.hierarchy.workflowName).toBe('top');
-        // The trail root's nodes are not the past run's, which the view's runs are.
-        expect(flowDoc.hierarchyGraphs).toBeUndefined();
+        // The list of nodes is the trail root's wherever the view is; the unit's part is its run's.
+        expect(flowDoc.hierarchyGraphs.map((g: any) => [g.path.join('/'), g.recordedRun])).toEqual([
+            ['', undefined],
+            ['c', 'wf-out/r1'],
+            ['c/f', undefined]
+        ]);
+    });
+
+    it('grafts the unit under it at the parent too, from the export a view in it is read from', async () => {
+        const { src, files, uri, asked } = await source();
+
+        const topDoc = await src.getGraph(uri(files.top), { requestOptions: { networkName: 'top' } });
+
+        expect(topDoc.graph.id).toBe('wf:top-view');
+        expect(topDoc.hierarchyGraphs.map((g: any) => g.path.join('/'))).toEqual(['', 'c', 'c/f']);
+        expect(topDoc.hierarchyGraphs[2].document.graph.id).toBe('wf:f-view');
+        expect([...asked].sort()).toEqual(['inst', 'top']);
+    });
+
+    it('grafts nothing, and exports no unit, for a product that lists no nodes', async () => {
+        const { src, files, uri, asked } = await source();
+        src.cfg.listsNodes = false;
+
+        const topDoc = await src.getGraph(uri(files.top), { requestOptions: { networkName: 'top' } });
+
+        expect(topDoc.hierarchyGraphs.map((g: any) => g.path.join('/'))).toEqual(['']);
+        expect(asked).toEqual(['top']);
+    });
+
+    it('grafts once while every export stays as it was, and again when one changes', async () => {
+        const { src, files, uri } = await source();
+
+        const first = await src.getGraph(uri(files.top), { requestOptions: { networkName: 'top' } });
+        const again = await src.getGraph(uri(files.top), { requestOptions: { networkName: 'top' } });
+        await fs.writeFile(files.flow, '@workflow\ndef flow():\n    return 1\n');
+        const changed = await src.getGraph(uri(files.top), { requestOptions: { networkName: 'top' } });
+
+        expect(again.hierarchyGraphs).toBe(first.hierarchyGraphs);
+        expect(changed.hierarchyGraphs).not.toBe(first.hierarchyGraphs);
+        expect(changed.hierarchyGraphs.map((g: any) => g.path.join('/'))).toEqual(['', 'c', 'c/f']);
     });
 
     it('draws the view without an outline when the trail root does not export', async () => {
@@ -372,5 +439,69 @@ describe('a view under a unit answered by a past run', () => {
         expect(hierarchyRootAt([{}, { recordedRun: 'a' }, {}, { recordedRun: ' b ' }, {}])).toBe(3);
         expect(hierarchyRootAt([{ recordedRun: 'a' }, {}, { recordedRun: '  ' }])).toBe(0);
         expect(hierarchyRootAt([])).toBe(0);
+    });
+});
+
+describe('the units answered by a past run, grafted into a hierarchy\'s graphs', () => {
+    const unitNode = (label: string, type: string, file: string, run?: string) => ({
+        id: `node:${label}`, kind: 'workflow', label, type,
+        meta: { ...(run ? { workflowInstance: { run } } : {}), referencedSource: { file } }
+    });
+    const exportOf = (nodes: unknown[], children: HierarchyEntry[] = []): HierarchyExport => ({
+        version: '1',
+        graph: { id: 'g', nodes, edges: [] },
+        hierarchy: { path: [], workflowName: 'w', sourcePath: '/w/w.py', children }
+    });
+
+    it('reads a unit from a node that names a run and its workflow\'s file, and nothing else', () => {
+        const doc = {
+            graph: {
+                nodes: [
+                    unitNode('c', 'counted', '/w/child.py', 'wf-out/r1'),
+                    unitNode('live', 'counted', '/w/child.py'),
+                    { ...unitNode('t', 'Task', '/w/t.py', 'wf-out/r2'), kind: 'task' },
+                    unitNode('rel', 'counted', 'child.py', 'wf-out/r3')
+                ]
+            }
+        };
+        expect(recordedUnitNodes(doc)).toEqual([{ name: 'c', workflow: 'counted', file: '/w/child.py', run: 'wf-out/r1' }]);
+        expect(recordedUnitNodes(undefined)).toEqual([]);
+    });
+
+    it('grafts what a unit\'s workflow elaborated under it, one inside another too, each root marked with its run', async () => {
+        const exports: Record<string, HierarchyExport> = {
+            mid: exportOf([unitNode('deep', 'leaf', '/w/leaf.py', '../runs/r2')], [
+                { path: ['x'], workflowName: 'x', sourcePath: '/w/x.py', graph: graph('x-view'), children: [] }
+            ]),
+            leaf: exportOf([])
+        };
+        const graphs = graphsOf(exportOf([unitNode('m', 'mid', '/w/mid.py', 'wf-out/r1')]));
+
+        const grafted = await withRecordedUnits(graphs, async unit => exports[unit.workflow]);
+
+        expect(grafted.map(g => [g.path.join('/'), g.recordedRun])).toEqual([
+            ['', undefined],
+            ['m', 'wf-out/r1'],
+            ['m/x', undefined],
+            ['m/deep', '../runs/r2']
+        ]);
+    });
+
+    it('leaves a unit the export already has, one that does not export, and a workflow already on the way', async () => {
+        const looping = exportOf([unitNode('again', 'loop', '/w/loop.py', 'wf-out/r9')]);
+        const asked: string[] = [];
+        const graphs = graphsOf(exportOf(
+            [unitNode('had', 'mid', '/w/mid.py', 'wf-out/r1'), unitNode('gone', 'gone', '/w/gone.py', 'wf-out/r2'), unitNode('l', 'loop', '/w/loop.py', 'wf-out/r3')],
+            [{ path: ['had'], workflowName: 'mid', sourcePath: '/w/mid.py', graph: graph('had-view'), children: [] }]
+        ));
+
+        const grafted = await withRecordedUnits(graphs, async unit => {
+            asked.push(unit.workflow);
+            return unit.workflow === 'loop' ? looping : undefined;
+        });
+
+        // The unit the export already elaborated is marked with its run, not exported again.
+        expect(grafted.map(g => [g.path.join('/'), g.recordedRun])).toEqual([['', undefined], ['had', 'wf-out/r1'], ['l', 'wf-out/r3']]);
+        expect(asked.sort()).toEqual(['gone', 'loop']);
     });
 });

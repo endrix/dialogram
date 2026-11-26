@@ -14,7 +14,10 @@
  * The rows are built from the graphs of the hierarchy's export
  * (`GraphDocument.hierarchyGraphs`), each transformed as a view of it would
  * be, and their edges given the run's tokens by the same rule the canvas
- * uses, from their own instance's records (`OverlayTokenOf`). Nothing is laid out. A node is in the family the
+ * uses, from their own instance's records (`OverlayTokenOf`). An instance
+ * answered by a past run (`HierarchyGraph.recordedRun`) holds what that run
+ * elaborated: its nodes' edges carry that run's tokens, and its row keeps the
+ * run for the trail into it. Nothing is laid out. A node is in the family the
  * canvas colours it by: shared `resolveNodeFamily` over its definition's
  * annotations, with the families the canvas has.
  */
@@ -56,6 +59,12 @@ export interface NodeListInput {
     tokenOf?: OverlayTokenOf;
     /** The run's arguments a view's root carries (`wf:viewerOverlayRunId`, `wf:viewerOverlayOutDir`), published once with the list. */
     rootArgs?: Record<string, unknown>;
+    /**
+     * The run's arguments of an instance whose run is not the list's (one in
+     * a unit answered by a past run), put on each of its nodes; undefined for
+     * the list's.
+     */
+    rootArgsOf?(instancePath: readonly string[]): Record<string, unknown> | undefined;
 }
 
 const EDGE_PREFIX = 'edge';
@@ -119,10 +128,12 @@ function nodeRow(
         });
     const name = stringArg(node, WorkflowDiagramMetadata.ENTITY_NAME) ?? node.id;
     const type = stringArg(node, WorkflowDiagramMetadata.ENTITY_TYPE);
+    const ownRun = input.rootArgsOf?.(instance.path);
     const detachedNode: DetachedNode = {
         id: node.id,
         type: node.type,
         ...(node.args ? { args: node.args } : {}),
+        ...(ownRun ? { rootArgs: ownRun } : {}),
         edges: into
     };
     return {
@@ -269,6 +280,7 @@ export function buildNodeList(input: NodeListInput): NodeListOutline | undefined
             ...((graph?.sourceUri ?? outlined?.sourceUri) ? { sourceUri: graph?.sourceUri ?? outlined?.sourceUri } : {}),
             ...(outlined?.nodeId ? { nodeId: outlined.nodeId } : {}),
             ...(outlined?.label ? { label: outlined.label } : {}),
+            ...(graph?.recordedRun ? { recordedRun: graph.recordedRun } : {}),
             children: [...nodes, ...below]
         };
     };

@@ -528,6 +528,7 @@ function sidecarRuntimeConfig(input: ResolvedSidecarProfileInput): SidecarRuntim
         exportOp: input.exportOp,
         cliGraphArgs: input.cliGraphArgs,
         cliHierarchyArgs: input.cliHierarchyArgs,
+        listsNodes: input.nodeList !== undefined,
         graphExportFailureLabel: input.graphExportFailureLabel,
         undoLabelSuffix: input.undoLabelSuffix,
         createNodeStrings: input.createNodeStrings,

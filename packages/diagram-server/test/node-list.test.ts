@@ -137,3 +137,37 @@ describe('a node list', () => {
         expect(buildNodeList(input({ families: [] }))).toBeUndefined();
     });
 });
+
+describe('a unit answered by a past run, in a node list', () => {
+    // `c = counted(instance="wf-out/child-run")`: what that run elaborated, grafted under `c`.
+    const withUnit = (): HierarchyGraph[] => [
+        ...graphs,
+        {
+            path: ['c'], workflowName: 'counted', sourceUri: 'file:///w/child.py', recordedRun: 'wf-out/child-run',
+            document: docOf([task('p'), viewer('shown')])
+        }
+    ];
+    const rowAt = (entry: HierarchyOutlineEntry, path: string): HierarchyOutlineEntry | undefined =>
+        entry.path.join('/') === path ? entry : entry.children.map(child => rowAt(child, path)).find(Boolean);
+
+    it('keeps the run on its row, for the trail into it, and on no other', () => {
+        const list = buildNodeList(input({ graphs: withUnit() }))!;
+
+        expect(labels(list.outline)).toEqual({ '(root)': ['report', { trace: ['plot'] }, { c: ['shown'] }] });
+        expect(rowAt(list.outline, 'c')?.recordedRun).toBe('wf-out/child-run');
+        expect(rowAt(list.outline, 'trace')).not.toHaveProperty('recordedRun');
+    });
+
+    it('opens its nodes with its own run\'s arguments, and the others with the list\'s', () => {
+        const list = buildNodeList(input({
+            graphs: withUnit(),
+            rootArgs: { 'wf:viewerOverlayRunId': 'parent-run' },
+            rootArgsOf: instancePath => (instancePath[0] === 'c' ? { 'wf:viewerOverlayRunId': 'child-run' } : undefined)
+        }))!;
+
+        expect(list.rootArgs).toEqual({ 'wf:viewerOverlayRunId': 'parent-run' });
+        expect(rowAt(list.outline, 'c/shown')?.detachedNode?.rootArgs).toEqual({ 'wf:viewerOverlayRunId': 'child-run' });
+        expect(rowAt(list.outline, 'report')?.detachedNode).not.toHaveProperty('rootArgs');
+        expect(rowAt(list.outline, 'trace/plot')?.detachedNode).not.toHaveProperty('rootArgs');
+    });
+});
