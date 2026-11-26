@@ -32,7 +32,7 @@ describe('resumeCommandFor', () => {
 });
 
 describe('the connectors’ resume commands', () => {
-    it('are known for claude and opencode, and a connectors file can set or clear one', () => {
+    it('are known for claude, opencode and codex, and a connectors file can set or clear one', () => {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'native-session-'));
         try {
             const bin = path.join(dir, 'bin');
@@ -40,11 +40,37 @@ describe('the connectors’ resume commands', () => {
             for (const name of ['claude-agent-acp', 'opencode', 'codex-acp']) {
                 fs.writeFileSync(path.join(bin, name), '#!/bin/sh\n', { mode: 0o755 });
             }
+            const none = path.join(dir, 'none');
+            const resumeOf = (userFile: string) => {
+                const found = loadAcpConnectors({ files: FILES, workspaceDir: dir, userFile, workspaceFile: none, pathDirs: [bin] });
+                return { found, resume: Object.fromEntries(found.map(c => [c.name, c.resume])) };
+            };
+            // With no file: each agent's own command. Codex takes the id as an
+            // argument of its `resume` subcommand, not as an option.
+            const known = resumeOf(none);
+            expect(known.resume).toEqual({
+                claude: 'claude --resume {sessionId}',
+                codex: 'codex resume {sessionId}',
+                gemini: undefined,
+                opencode: 'opencode -s {sessionId}',
+            });
+            expect(resolveChatAgent('codex', known.found)?.resume).toBe('codex resume {sessionId}');
+            expect(resumeCommandFor(known.resume.codex, '019ab3f2-7c1e')).toBe('codex resume 019ab3f2-7c1e');
+
             const userFile = path.join(dir, 'connectors.toml');
-            fs.writeFileSync(userFile, '[connectors.codex]\nresume = "codex resume {sessionId}"\n[connectors.opencode]\nresume = ""\n');
-            const found = loadAcpConnectors({ files: FILES, workspaceDir: dir, userFile, workspaceFile: path.join(dir, 'none'), pathDirs: [bin] });
-            const resume = Object.fromEntries(found.map(c => [c.name, c.resume]));
-            expect(resume).toEqual({ claude: 'claude --resume {sessionId}', codex: 'codex resume {sessionId}', gemini: undefined, opencode: undefined });
+            // A file replaces a known command, clears one, and sets one where none is known.
+            fs.writeFileSync(
+                userFile,
+                '[connectors.codex]\nresume = "my-codex resume {sessionId}"\n[connectors.opencode]\nresume = ""\n' +
+                    '[connectors.gemini]\nresume = "my-gemini open {sessionId}"\n'
+            );
+            const { found, resume } = resumeOf(userFile);
+            expect(resume).toEqual({
+                claude: 'claude --resume {sessionId}',
+                codex: 'my-codex resume {sessionId}',
+                gemini: 'my-gemini open {sessionId}',
+                opencode: undefined
+            });
             expect(resolveChatAgent('claude', found)?.resume).toBe('claude --resume {sessionId}');
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });

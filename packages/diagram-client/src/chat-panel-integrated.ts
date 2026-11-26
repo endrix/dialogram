@@ -258,6 +258,10 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   private connectionReason = '';
   /** The ACP connector the chat is (or was) connected to, as the host names it. */
   private connectionAgent = '';
+  /** A session of this chat's agent, handed over to the agent's own CLI in a
+   *  terminal. The host stopped the chat's agent for as long, so nothing is
+   *  sent until the chat has the session back. */
+  private handOver: { sessionId: string; agent: string; terminalOpen: boolean } | null = null;
   private inputValue = '';
   /** Images to send with the next message: pasted, dropped, or a picture of the diagram. */
   private pendingImages: ChatImage[] = [];
@@ -665,6 +669,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         // that failed. Open the panel, start the session in the task's mode,
         // and send its message once the session exists.
         if (data && typeof data.prompt === 'string' && data.prompt.trim() !== '') {
+          if (this.heldByCli()) break;
           const mode: 'plan' | 'build' = data.mode === 'build' ? 'build' : 'plan';
           const name = typeof data.name === 'string' && data.name.trim() !== '' ? data.name : 'Task';
           // A message waiting for a session gives way: it goes back to the
@@ -758,6 +763,14 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         } else {
           this.setConnectionStatus(!!data?.connected, data?.reason, data?.agent, data?.images);
         }
+        break;
+
+      case 'chat.handedOver':
+        this.setHandOver(data);
+        break;
+
+      case 'chat.returnedToChat':
+        this.returnedToChat();
         break;
 
       case 'chat.commands':
@@ -1061,7 +1074,9 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     const stateKey = `${connected}:${reason ?? ''}`;
     if (stateKey !== this.lastStatusKey) {
       this.lastStatusKey = stateKey;
-      if (!connected) {
+      if (!connected && this.handOver) {
+        // The hand-over's own disconnect: the banner says where the session is.
+      } else if (!connected) {
         // The runtime posts an immediate connected:false on every diagram open
         // (before its eager connect completes), so this is background chatter —
         // record it for whenever the user opens the chat, never pop the drawer.
@@ -1091,6 +1106,86 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     this.update();
   }
 
+  // ── The session in the agent's own CLI ─────────────────────────────────
+
+  /** The host handed a session over to the agent's CLI, or says how that stands. */
+  private setHandOver(data: any): void {
+    if (typeof data?.sessionId !== 'string' || !data.sessionId) return;
+    const agent = typeof data.agent === 'string' && data.agent ? data.agent : this.connectionAgent || 'the agent';
+    const said = this.handOver?.sessionId === data.sessionId;
+    this.handOver = { sessionId: data.sessionId, agent, terminalOpen: data.terminalOpen !== false };
+    if (!said) {
+      // Nothing asked of the stopped agent is answered: a session being made or
+      // loaded is no longer awaited. A message that waited for one goes back to
+      // the composer, and a task's prompt is dropped, not kept for another chat.
+      // Done once: a later word on the same hand-over (its terminal closed, a
+      // return that failed, an answer to a refused ask) changes none of that.
+      this.createRequest = undefined;
+      this.isLoadingSession = false;
+      this.restorePending();
+      this.pushMessage(
+        'system',
+        `The chat's agent is stopped while a session is open in ${agent}'s CLI, in the terminal. Return to the chat when you are done there.`,
+        undefined,
+        undefined,
+        { reveal: false }
+      );
+    }
+    this.update();
+  }
+
+  /** The chat has its session back: its agent runs again, with the session loaded. */
+  private returnedToChat(): void {
+    if (!this.handOver) return;
+    const { agent } = this.handOver;
+    this.handOver = null;
+    this.pushMessage(
+      'system',
+      `Back from ${agent}'s CLI. What was said there is in the agent's memory, not in this transcript.`,
+      undefined,
+      undefined,
+      { reveal: false }
+    );
+    this.loadProviders();
+    this.loadSessions();
+    this.update();
+  }
+
+  /**
+   * Whether the agent's CLI holds a session now. While it does, what needs
+   * the chat's agent is not asked of the host, and the person is told why.
+   */
+  private heldByCli(): boolean {
+    if (!this.handOver) return false;
+    this.pushMessage('system', `Not done: a session is open in ${this.handOver.agent}'s CLI. Return to the chat first.`);
+    return true;
+  }
+
+  /** Ask the host to close the CLI's terminal and connect the chat again. */
+  private returnToChat(): void {
+    if (this.handOver) this.sendToHost('chat.returnToChat', { sessionId: this.handOver.sessionId });
+  }
+
+  private handOverBannerTemplate(): TemplateResult | typeof nothing {
+    if (!this.handOver) return nothing;
+    const { agent, terminalOpen } = this.handOver;
+    return html`<div class="chat-redo-banner">
+      <span class="codicon codicon-terminal"></span>
+      <span>
+        ${terminalOpen
+          ? `The session continues in ${agent}'s CLI, in the terminal. Returning closes that terminal.`
+          : `The terminal of ${agent}'s CLI is closed.`}
+      </span>
+      <button
+        class="chat-redo-btn"
+        title="Close the CLI's terminal and connect the chat to the session again"
+        @click=${() => this.returnToChat()}
+      >
+        <span class="codicon codicon-comment-discussion"></span> Return to chat
+      </button>
+    </div>`;
+  }
+
   /** The host stopped its agent to start another: "Connecting…", with no row
    *  in the timeline; the next status says how the start went. */
   private setConnecting(): void {
@@ -1117,6 +1212,11 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     const text = this.inputValue.trim();
     const images = this.pendingImages;
     if (!text && images.length === 0) return;
+    if (this.handOver) {
+      // The agent's CLI holds the session: the message stays as written.
+      this.pushMessage('system', `Not sent: a session is open in ${this.handOver.agent}'s CLI. Return to the chat first.`);
+      return;
+    }
     if (images.length > 0 && this.agentTakesImages === false) {
       // Attached before the agent said so: the message stays as written.
       this.pushMessage('system', `Not sent: ${this.connectionAgent || 'the agent'} does not read images. Remove them and send again.`);
@@ -1419,6 +1519,9 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   private switchMode(mode: 'plan' | 'build'): void {
     this.applyMode(mode);
+    // During a hand-over the agent is not there to be told: the mode goes
+    // with the chat's next message.
+    if (this.handOver) return;
     this.sendToHost('chat.setMode', { mode, sessionId: this.currentSessionId });
   }
 
@@ -1429,6 +1532,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   }
 
   private switchProvider(providerId: string): void {
+    if (this.heldByCli()) return;
     this.currentModel = providerId;
     this.sendToHost('chat.setProvider', { providerId, sessionId: this.currentSessionId });
     this.update();
@@ -1436,6 +1540,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   /** Name collection happens extension-side (webview prompt() is blocked). */
   private createNewSession(): void {
+    if (this.heldByCli()) return;
     // One asked for before is no longer waited for; a message waiting goes to
     // this one (or back to the composer, should its name be cancelled).
     // Creating a session spawns the agent's MCP server (+ its language subprocess), a
@@ -1448,6 +1553,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
   }
 
   private loadSession(sessionId: string): void {
+    if (this.heldByCli()) return;
     // Picked while a session was being made: that one is no longer awaited, and
     // a message waiting for it goes back to the composer. A task's is: the
     // task still opens its own session, as it asked.
@@ -1467,13 +1573,13 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   /** Revert the session to before the given (user) message. */
   private requestRevert(messageId: string): void {
-    if (!this.currentSessionId) return;
+    if (!this.currentSessionId || this.heldByCli()) return;
     this.sendToHost('chat.revert', { sessionId: this.currentSessionId, messageId });
   }
 
   /** Restore whatever the most recent revert undid. */
   private requestUnrevert(): void {
-    if (!this.currentSessionId) return;
+    if (!this.currentSessionId || this.heldByCli()) return;
     this.sendToHost('chat.unrevert', { sessionId: this.currentSessionId });
   }
 
@@ -1482,6 +1588,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       this.pushMessage('system', 'No session selected to delete.');
       return;
     }
+    if (this.heldByCli()) return;
     this.sendToHost('chat.deleteSession', { sessionId: this.currentSessionId });
   }
 
@@ -1502,7 +1609,18 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   /** Open the shown session in the agent's own CLI (the host opens a terminal). */
   private openSessionNatively(): void {
-    if (this.currentSessionId) this.sendToHost('chat.openSessionNatively', { sessionId: this.currentSessionId });
+    if (!this.currentSessionId) return;
+    if (this.isStreaming && !this.handOver) {
+      // A click by mistake must not cut the turn short: opening the session
+      // in the CLI stops the chat's agent. Said where the turn's text ends.
+      this.finishStreamingMessage();
+      this.pushMessage(
+        'system',
+        `Not opened: a turn is running. The session can be opened in ${this.connectionAgent || 'the agent'}'s CLI once the turn has ended, or after you stop it.`
+      );
+      return;
+    }
+    this.sendToHost('chat.openSessionNatively', { sessionId: this.currentSessionId });
   }
 
   /** Copy the shown session's id (the host writes the clipboard). */
@@ -1785,6 +1903,7 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
       ${this.view.kind === 'agent'
         ? this.viewerBarTemplate()
         : html`
+            ${this.handOverBannerTemplate()}
             ${this.reverted
               ? html`<div class="chat-redo-banner">
                   <span class="codicon codicon-history"></span>
@@ -1835,7 +1954,9 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
           ? `Connected · ${agent}`
           : 'Connected'
         : status === 'disconnected'
-          ? 'Disconnected'
+          ? this.handOver
+            ? `In the CLI · ${this.handOver.agent}`
+            : 'Disconnected'
           : 'Connecting…';
     const statusTitle =
       status === 'disconnected' && this.connectionReason

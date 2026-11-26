@@ -1090,6 +1090,42 @@ platform that hands it one.
 
 ### Changed
 
+- **A chat's session opens in the agent's CLI as a hand-over.** The terminal
+  button of a chat typed the agent's resume command while the chat's own
+  agent went on holding the session, so two clients had it at once. Codex
+  refuses the second one ("thread ... already has an active writer"), and
+  with `claude` and `opencode` the session was written to from two sides.
+  The button now stops the chat's agent first and then opens the terminal.
+  The chat says that its session continues in the CLI and sends nothing
+  meanwhile; its **Return to chat** button closes that terminal, starts the
+  agent again and loads the session into it. What was said in the CLI is in
+  the agent's memory, not in the chat's transcript. Nothing is handed over
+  for a chat the agent has had no turn in (the CLI has no session to open),
+  or for a connector without a `resume` command, whose id is copied as
+  before. A run agent's session (the button of a firing) opens as before,
+  since its agent has ended.
+  - A click while a turn is running opens nothing and stops nothing: the
+    chat says "Not opened: a turn is running" and that the session can be
+    opened once the turn has ended or been stopped. The panel refuses its
+    own turn, and the host a turn of any chat of the window.
+  - The chat's agent is one process for every chat of the window: the
+    others are disconnected for as long, and nothing starts the agent
+    meanwhile (a panel, a task, the diagnosis command). The return starts
+    the agent that was stopped, in its folder. Each other chat is loaded
+    again where it is next used: its opening, its next message, a change of
+    its mode or its model.
+  - A connector set otherwise during a hand-over is followed once the
+    session is back, not while the CLI holds it. A chat with the agent the
+    connector named before is not handed over: the CLI of the agent running
+    cannot open it, and the chat says so.
+  - A chat with no message yet is not kept by an agent that writes a
+    session at its first message (Codex). Its first message after the
+    return is not sent: it goes back to the composer, the chat says that
+    the agent did not keep it, and sending again starts a new chat. A chat
+    with messages that the agent cannot load again stays, and its message
+    goes back to the composer.
+  - If the agent does not stop, it is killed; if it has not ended even
+    then, no terminal is opened onto it and the chat offers the return.
 - **`/untangle` in every product's chat.** It no longer needs a producer
   that can write a port order: wherever the diagram's tools are on and the
   platform's diagram module serves the diagram (wfpy, CalPy, SV, VHDL,
@@ -1649,6 +1685,17 @@ platform that hands it one.
 
 ### Fixed
 
+- **A Codex session opens in Codex.** The button that opens an agent's
+  session in its own CLI knew a command for `claude` and `opencode` and none
+  for `codex`: it only copied the id and said that codex has no command to
+  open a session. Codex has one, `codex resume <id>` (the id is an argument
+  of its `resume` subcommand, there is no option for it), and `codex-acp`
+  keeps Codex's own session id as the ACP one, as the two other adapters
+  do. The known connector now carries `resume = "codex resume {sessionId}"`.
+  A connectors file still sets its own command or clears it with
+  `resume = ""`. Codex opens a session that has had a turn, and for one
+  client at a time: the chat's own session is handed over first (see
+  Changed).
 - **The edges inside a workflow instance are drawn from the run it nests.**
   A nested workflow answered by a past run (wfpy's
   `child(instance="wf-out/<run>")`) runs nothing when its parent runs, so

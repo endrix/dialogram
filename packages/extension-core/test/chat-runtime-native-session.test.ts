@@ -24,7 +24,11 @@ function makeRuntime(cwd: string, connectorResume?: (connector: string, cwd: str
     (runtime as any).acp = {
         agent: 'claude',
         resumeTemplate: 'claude --resume {sessionId}',
-        sessionCwd: (id: string) => (id === 'abc-1' ? cwd : undefined)
+        sessionCwd: (id: string) => (id === 'abc-1' ? cwd : undefined),
+        // The chat's own session is handed over: its agent is stopped first
+        // (chat-runtime-hand-over.test.ts holds that).
+        getAllSessions: () => [],
+        stopAndWait: async (): Promise<boolean> => true
     };
     return runtime;
 }

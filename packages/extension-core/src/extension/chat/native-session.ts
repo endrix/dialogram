@@ -3,9 +3,10 @@
  *
  * The ACP adapters keep the agent's session id as the ACP one, so a
  * connector's `resume` template (`claude --resume {sessionId}`,
- * `opencode -s {sessionId}`) opens the very session the chat, or a run's
- * agent, talked to. It opens in a VS Code terminal, in the session's
- * directory: Claude Code looks its sessions up by the directory they ran in.
+ * `opencode -s {sessionId}`, `codex resume {sessionId}`) opens the very
+ * session the chat, or a run's agent, talked to. It opens in a VS Code
+ * terminal, in the session's directory: Claude Code looks its sessions up by
+ * the directory they ran in.
  */
 import * as fs from "node:fs";
 import * as vscode from "vscode";
@@ -33,13 +34,22 @@ export async function copySessionId(session: NativeSession): Promise<void> {
  * Returns whether a terminal was opened.
  */
 export async function openSessionNatively(session: NativeSession): Promise<boolean> {
+    return (await openSessionTerminal(session)) !== undefined;
+}
+
+/**
+ * {@link openSessionNatively}, giving the terminal it opened (none when the
+ * id was copied instead): the chat that hands its own session over closes
+ * that terminal when it takes the session back.
+ */
+export async function openSessionTerminal(session: NativeSession): Promise<vscode.Terminal | undefined> {
     const command = resumeCommandFor(session.resume, session.sessionId);
     if (!command) {
         await vscode.env.clipboard.writeText(session.sessionId);
         void vscode.window.showInformationMessage(
             `${session.agent} has no command to open a session (no \`resume\` in its connector); its id is copied: ${session.sessionId}`
         );
-        return false;
+        return undefined;
     }
     const cwd = session.cwd && isDirectory(session.cwd) ? session.cwd : undefined;
     if (session.cwd && !cwd) {
@@ -50,7 +60,7 @@ export async function openSessionNatively(session: NativeSession): Promise<boole
     const terminal = vscode.window.createTerminal({ name: `${session.agent} ${session.sessionId.slice(0, 12)}`, ...(cwd ? { cwd } : {}) });
     terminal.show();
     terminal.sendText(command);
-    return true;
+    return terminal;
 }
 
 function isDirectory(dir: string): boolean {

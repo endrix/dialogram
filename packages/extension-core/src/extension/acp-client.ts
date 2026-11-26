@@ -473,8 +473,9 @@ export class ACPClientService extends EventEmitter {
       this.process = child;
 
       // Handle process errors. A process this client has moved on from
-      // (stopped for another agent, which may be starting now) says nothing
-      // about the current one: its exit, arriving late, is not this one's.
+      // (stopped for another agent or for a hand-over to its CLI, with the
+      // next one perhaps starting now) says nothing about the current one:
+      // its exit, arriving late, is not this one's.
       child.on("error", (error) => {
         if (this.process !== child) return;
         this.emit("error", error);
@@ -1316,6 +1317,35 @@ export class ACPClientService extends EventEmitter {
    */
   stop(): void {
     this.handleDisconnect();
+  }
+
+  /**
+   * Stop the agent and wait until its process has ended. An agent that lets
+   * one client hold a session (Codex) gives the session up when its process
+   * ends, not when it is told to stop. A process still there after
+   * `timeoutMs` is killed and waited for `killWaitMs` more. False when it has
+   * not ended even then.
+   */
+  async stopAndWait(timeoutMs = 3000, killWaitMs = 1000): Promise<boolean> {
+    const child = this.process;
+    this.stop();
+    const gone = () => !child || child.exitCode !== null || child.signalCode !== null;
+    if (!child || gone()) return true;
+    const ended = (within: number) =>
+      new Promise<boolean>((resolve) => {
+        const onExit = () => {
+          clearTimeout(timer);
+          resolve(true);
+        };
+        const timer = setTimeout(() => {
+          child.removeListener("exit", onExit);
+          resolve(gone());
+        }, within);
+        child.once("exit", onExit);
+      });
+    if (await ended(timeoutMs)) return true;
+    child.kill("SIGKILL");
+    return ended(killWaitMs);
   }
 
   /**

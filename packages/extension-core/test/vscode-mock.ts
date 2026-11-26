@@ -164,7 +164,14 @@ export class EventEmitter<T> {
 }
 
 /** Terminals the code under test opened, with what was typed into them. */
-export const createdTerminals: Array<{ options: any; sent: string[]; shown: boolean }> = [];
+export const createdTerminals: Array<{ options: any; sent: string[]; shown: boolean; closed: boolean; terminal: any }> = [];
+const terminalCloseListeners = new Set<(terminal: any) => void>();
+/** Close a terminal, as the person does or as `dispose()` does: its listeners hear of it. */
+export function closeTerminal(record: { closed: boolean; terminal: any }): void {
+    if (record.closed) return;
+    record.closed = true;
+    for (const listener of [...terminalCloseListeners]) listener(record.terminal);
+}
 /** What the code under test wrote to the clipboard, last write last. */
 export const clipboardWrites: string[] = [];
 
@@ -179,17 +186,22 @@ export const env = {
 
 export const window = {
     createTerminal: (options: any) => {
-        const record = { options, sent: [] as string[], shown: false };
+        const record = { options, sent: [] as string[], shown: false, closed: false, terminal: undefined as any };
         createdTerminals.push(record);
-        return {
+        record.terminal = {
             show: () => {
                 record.shown = true;
             },
             sendText: (text: string) => {
                 record.sent.push(text);
             },
-            dispose: () => undefined
+            dispose: () => closeTerminal(record)
         };
+        return record.terminal;
+    },
+    onDidCloseTerminal: (listener: (terminal: any) => void) => {
+        terminalCloseListeners.add(listener);
+        return { dispose: () => void terminalCloseListeners.delete(listener) };
     },
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     showErrorMessage: async (_message: string): Promise<void> => {
