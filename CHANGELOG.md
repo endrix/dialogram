@@ -1074,6 +1074,22 @@ platform that hands it one.
 
 ### Changed
 
+- **A chat's session opens in the agent's CLI as a hand-over.** The terminal
+  button of a chat typed the agent's resume command while the chat's own
+  agent went on holding the session, so two clients had it at once. Codex
+  refuses the second one ("thread ... already has an active writer"), and
+  with `claude` and `opencode` the session was written to from two sides.
+  The button now stops the chat's agent first and then opens the terminal.
+  The chat says that its session continues in the CLI and sends nothing
+  meanwhile; its **Return to chat** button closes that terminal, starts the
+  agent again and loads the session into it. What was said in the CLI is in
+  the agent's memory, not in the chat's transcript. Nothing is handed over
+  while a turn is running, for a chat that has no turn yet (the CLI has no
+  session to open), or for a connector without a `resume` command, whose id
+  is copied as before. The chat's agent is one process for every chat of
+  the window: the others are disconnected for as long, and each is loaded
+  again at its next message. A run agent's session (the button of a
+  firing) opens as before, since its agent has ended.
 - **`/untangle` in every product's chat.** It no longer needs a producer
   that can write a port order: wherever the diagram's tools are on and the
   platform's diagram module serves the diagram (wfpy, CalPy, SV, VHDL,
@@ -1641,7 +1657,9 @@ platform that hands it one.
   keeps Codex's own session id as the ACP one, as the two other adapters
   do. The known connector now carries `resume = "codex resume {sessionId}"`.
   A connectors file still sets its own command or clears it with
-  `resume = ""`.
+  `resume = ""`. Codex opens a session that has had a turn, and for one
+  client at a time: the chat's own session is handed over first (see
+  Changed).
 - **The edges inside a workflow instance are drawn from the run it nests.**
   A nested workflow answered by a past run (wfpy's
   `child(instance="wf-out/<run>")`) runs nothing when its parent runs, so

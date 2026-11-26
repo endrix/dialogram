@@ -790,6 +790,77 @@ describe('ACPClientService', () => {
     });
   });
 
+  // The chat stops its agent to hand a session over to the agent's CLI, and
+  // starts it again when it takes the session back.
+  describe('stopped and started again', () => {
+    const agentProcess = () =>
+      Object.assign(new EventEmitter(), {
+        stdin: mockProcess.stdin,
+        stdout: mockProcess.stdout,
+        stderr: new EventEmitter(),
+        kill: vi.fn(),
+        pid: 1,
+        exitCode: null as number | null,
+        signalCode: null as string | null,
+      });
+
+    it('is not taken down by the late exit of the agent it stopped', async () => {
+      const first = agentProcess();
+      const second = agentProcess();
+      vi.mocked(spawn).mockReturnValueOnce(first as any).mockReturnValueOnce(second as any);
+      const disconnected = vi.fn();
+      const errors = vi.fn();
+      client.on('disconnected', disconnected);
+      client.on('error', errors);
+
+      await client.start('/test/workspace');
+      client.stop();
+      await client.start('/test/workspace');
+      // The stopped process ends only now, and not cleanly.
+      first.emit('exit', 1);
+
+      expect(client.isClientConnected()).toBe(true);
+      expect(second.kill).not.toHaveBeenCalled();
+      expect(disconnected).toHaveBeenCalledTimes(1);
+      expect(errors).not.toHaveBeenCalled();
+    });
+
+    it('waits for the stopped agent’s process to end', async () => {
+      const first = agentProcess();
+      vi.mocked(spawn).mockReturnValueOnce(first as any);
+      await client.start('/test/workspace');
+
+      let ended = false;
+      const waiting = client.stopAndWait(5000).then(() => (ended = true));
+      await new Promise(resolve => setTimeout(resolve, 20));
+      expect(first.kill).toHaveBeenCalled();
+      expect(client.isClientConnected()).toBe(false);
+      expect(ended).toBe(false);
+      first.emit('exit', null);
+      await waiting;
+      expect(ended).toBe(true);
+    });
+
+    it('does not wait longer than it is told for a process that does not end', async () => {
+      const first = agentProcess();
+      vi.mocked(spawn).mockReturnValueOnce(first as any);
+      await client.start('/test/workspace');
+      const began = Date.now();
+      await client.stopAndWait(50);
+      expect(Date.now() - began).toBeLessThan(1000);
+    });
+
+    it('holds a session it made, and none once it is stopped', async () => {
+      await client.start('/test/workspace');
+      const sessionId = await client.createSession('/test/workspace');
+      expect(client.isSessionLoaded(sessionId)).toBe(true);
+      client.stop();
+      expect(client.isSessionLoaded(sessionId)).toBe(false);
+      // Still known: its directory is where the agent's CLI opens it.
+      expect(client.getSession(sessionId)).toBeDefined();
+    });
+  });
+
   describe('file operations', () => {
     beforeEach(async () => {
       await client.start('/test/workspace');

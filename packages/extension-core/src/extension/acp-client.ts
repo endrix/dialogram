@@ -460,19 +460,24 @@ export class ACPClientService extends EventEmitter {
       }
 
       // Spawn the agent subprocess
-      this.process = spawn(command, args, {
+      const child = spawn(command, args, {
         cwd,
         stdio: ["pipe", "pipe", "pipe"],
         env: spawnEnv,
       });
+      this.process = child;
 
-      // Handle process errors
-      this.process.on("error", (error) => {
+      // Handle process errors. An agent this client stopped is no longer its
+      // own: what that process says late (its `exit` comes after the stop)
+      // must not take down the agent started after it.
+      child.on("error", (error) => {
+        if (this.process !== child) return;
         this.emit("error", error);
         this.handleDisconnect();
       });
 
-      this.process.on("exit", (code) => {
+      child.on("exit", (code) => {
+        if (this.process !== child) return;
         if (code !== 0 && code !== null) {
           this.emit(
             "error",
@@ -1294,6 +1299,35 @@ export class ACPClientService extends EventEmitter {
    */
   stop(): void {
     this.handleDisconnect();
+  }
+
+  /**
+   * Stop the agent and wait until its process has ended, or `timeoutMs` has
+   * passed. An agent that lets one client hold a session (Codex) gives the
+   * session up when its process ends, not when it is told to stop.
+   */
+  async stopAndWait(timeoutMs = 3000): Promise<void> {
+    const child = this.process;
+    const ended =
+      child && child.exitCode === null && child.signalCode === null
+        ? new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, timeoutMs);
+            child.once("exit", () => {
+              clearTimeout(timer);
+              resolve();
+            });
+          })
+        : Promise.resolve();
+    this.stop();
+    await ended;
+  }
+
+  /**
+   * Whether the session is resident on this connection: made or loaded since
+   * the agent was started. One that is not has to be loaded before a prompt.
+   */
+  isSessionLoaded(sessionId: string): boolean {
+    return this.loadedSessionIds.has(sessionId);
   }
 
   /**
