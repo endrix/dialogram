@@ -24,6 +24,9 @@ export interface AcpEventSinks {
     /** Invoked AFTER buffered chunks are flushed; the runtime persists the
      *  reply, posts `chat.turnEnd` and refreshes live message ids. */
     onTurnComplete(data: { sessionId: string; text?: string; thinking?: string; model?: string; parts?: TurnPart[] }): void;
+    /** True while the runtime stops the agent on purpose (for another): the
+     *  runtime says so itself, and the agent going is no news to report. */
+    disconnectExpected?(): boolean;
 }
 
 const CHUNK_FLUSH_MS = 50;
@@ -96,8 +99,10 @@ export function attachAcpEventForwarding(acp: AcpEmitterLike, sinks: AcpEventSin
     const agentName = () => acp.agent ?? 'agent';
     const onConnected = () =>
         sinks.broadcast({ type: 'chat.connectionStatus', data: { connected: true, agent: agentName(), images: acp.takesImages?.() } });
-    const onDisconnected = () =>
+    const onDisconnected = () => {
+        if (sinks.disconnectExpected?.()) return;
         sinks.broadcast({ type: 'chat.connectionStatus', data: { connected: false, reason: `${agentName()} disconnected`, agent: agentName() } });
+    };
     const onError = (err: any) =>
         sinks.broadcast({ type: 'chat.error', data: { message: err?.message ?? String(err) } });
 

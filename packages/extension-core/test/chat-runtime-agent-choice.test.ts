@@ -109,8 +109,27 @@ describe('the chat\'s agent, when its connector is set', () => {
 
         expect(t.acp.stop).toHaveBeenCalledTimes(1);
         expect(t.started).toEqual(['opencode', 'claude']);
-        // Disconnected from the old agent, then connected to the new.
-        expect(statuses(t.posts).slice(-2).map(s => s.connected)).toEqual([false, true]);
+        // Connecting (the old agent stopped on purpose is no loss to report),
+        // then connected to the new.
+        expect(statuses(t.posts).slice(-2)).toEqual([
+            { connected: false, connecting: true },
+            expect.objectContaining({ connected: true, agent: 'claude' }),
+        ]);
+        expect(statuses(t.posts).some(s => /disconnected/.test(s.reason ?? ''))).toBe(false);
+    });
+
+    it('takes the old agent\'s models off the panel when it stops it', async () => {
+        const t = makeRuntime();
+        await t.runtime.handleMessage(URI, { type: 'chat.ready' });
+        const stoppedAt = () => t.posts.findIndex(p => p.payload.type === 'chat.connectionStatus' && (p.payload.data as any).connecting);
+
+        t.choose(async () => spec('claude'));
+        t.change();
+        await vi.advanceTimersByTimeAsync(400);
+
+        expect(stoppedAt()).toBeGreaterThan(-1);
+        const after = t.posts.slice(stoppedAt());
+        expect(after.find(p => p.payload.type === 'chat.providers')?.payload.data).toEqual({ providers: [] });
     });
 
     it('keeps the agent when the change leaves it the one running', async () => {
@@ -206,6 +225,8 @@ describe('the chat\'s agent, when its connector is set', () => {
         expect(last).not.toHaveProperty('agent');
         const error = t.posts.filter(p => p.payload.type === 'chat.error').pop()!.payload.data as any;
         expect(error.message).toBe('Could not start the chat agent: ACP connector "claud" is not known (known: claude, opencode)');
+        // The status's row says it: the panel does not say it again under it.
+        expect(error.inStatus).toBe(true);
         warn.mockRestore();
     });
 
@@ -243,6 +264,38 @@ describe('the chat\'s agent, when its connector is set', () => {
 
         expect(t.started).toEqual(['claude']);
         expect(statuses(t.posts).pop()!.connected).toBe(true);
+    });
+
+    it('says the problem set now, not the one before, when no agent runs', async () => {
+        const t = makeRuntime();
+        t.choose(async () => { throw new Error('ACP connector "claud" is not known'); });
+        await t.runtime.handleMessage(URI, { type: 'chat.ready' });
+        expect(statuses(t.posts).pop()!.reason).toBe('ACP connector "claud" is not known');
+
+        t.choose(async () => { throw new Error('ACP connector "gemini" is not available: "gemini" is not on the PATH'); });
+        t.change();
+        await vi.advanceTimersByTimeAsync(400);
+
+        expect(t.started).toEqual([]);
+        expect(statuses(t.posts).pop()).toEqual({ connected: false, reason: 'ACP connector "gemini" is not available: "gemini" is not on the PATH' });
+    });
+
+    it('tells every panel it said "connecting" to how a switch that failed ended', async () => {
+        const t = makeRuntime();
+        await t.runtime.handleMessage(URI, { type: 'chat.ready' });
+        // A panel known by its chat alone, not among the ones the runtime connects.
+        const other = 'file:///tmp/other.py';
+        (t.runtime as any).sessionUri.set('session-2', other);
+
+        t.choose(async () => { throw new Error('ACP connector "claud" is not known'); });
+        t.change();
+        await vi.advanceTimersByTimeAsync(400);
+
+        const toOther = t.posts.filter(p => p.uri === other && p.payload.type === 'chat.connectionStatus').map(p => p.payload.data);
+        expect(toOther).toEqual([
+            { connected: false, connecting: true },
+            { connected: false, reason: 'ACP connector "claud" is not known' },
+        ]);
     });
 
     it('applies a burst of changes once, after they settle', async () => {

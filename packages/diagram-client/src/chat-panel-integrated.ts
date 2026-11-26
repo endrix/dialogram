@@ -758,7 +758,11 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         break;
 
       case 'chat.connectionStatus':
-        this.setConnectionStatus(!!data?.connected, data?.reason, data?.agent, data?.images);
+        if (!data?.connected && data?.connecting) {
+          this.setConnecting();
+        } else {
+          this.setConnectionStatus(!!data?.connected, data?.reason, data?.agent, data?.images);
+        }
         break;
 
       case 'chat.handedOver':
@@ -848,8 +852,13 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         // The unified runtime eagerly connects on the chat.ready handshake, so
         // connection errors arrive without any user interaction — record them
         // but never pop the drawer open for background chatter. When the error
-        // follows a user action the panel is already open.
-        this.pushMessage('system', `Error: ${data?.message ?? 'Unknown error'}`, undefined, undefined, { reveal: false });
+        // follows a user action the panel is already open. One the connection
+        // status carries is not said again right under the status's own row.
+        const saidJustAbove = !!data?.inStatus && !!this.disconnectedRow
+          && this.timeline[this.timeline.length - 1] === this.disconnectedRow;
+        if (!saidJustAbove) {
+          this.pushMessage('system', `Error: ${data?.message ?? 'Unknown error'}`, undefined, undefined, { reveal: false });
+        }
         break;
     }
   }
@@ -1173,6 +1182,26 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
         <span class="codicon codicon-comment-discussion"></span> Return to chat
       </button>
     </div>`;
+  }
+
+  /** The host stopped its agent to start another: "Connecting…", with no row
+   *  in the timeline; the next status says how the start went. */
+  private setConnecting(): void {
+    this.receivedStatus = true;
+    if (this.statusHandshakeTimer !== null) {
+      clearTimeout(this.statusHandshakeTimer);
+      this.statusHandshakeTimer = null;
+    }
+    this.connection = 'unknown';
+    this.connectionReason = '';
+    this.agentTakesImages = undefined;
+    // The next status is news whatever the last one said: a failure gets its
+    // row even with the reason a row before the switch gave.
+    this.lastStatusKey = '';
+    this.disconnectedRow = undefined;
+    // The old agent's model is none of the new one's.
+    this.currentModel = '';
+    this.update();
   }
 
   // ── Outbound actions ───────────────────────────────────────────────────
