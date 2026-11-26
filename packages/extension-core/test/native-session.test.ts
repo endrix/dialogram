@@ -58,9 +58,19 @@ describe('the connectors’ resume commands', () => {
             expect(resumeCommandFor(known.resume.codex, '019ab3f2-7c1e')).toBe('codex resume 019ab3f2-7c1e');
 
             const userFile = path.join(dir, 'connectors.toml');
-            fs.writeFileSync(userFile, '[connectors.codex]\nresume = "my-codex resume {sessionId}"\n[connectors.opencode]\nresume = ""\n');
+            // A file replaces a known command, clears one, and sets one where none is known.
+            fs.writeFileSync(
+                userFile,
+                '[connectors.codex]\nresume = "my-codex resume {sessionId}"\n[connectors.opencode]\nresume = ""\n' +
+                    '[connectors.gemini]\nresume = "my-gemini open {sessionId}"\n'
+            );
             const { found, resume } = resumeOf(userFile);
-            expect(resume).toEqual({ claude: 'claude --resume {sessionId}', codex: 'my-codex resume {sessionId}', gemini: undefined, opencode: undefined });
+            expect(resume).toEqual({
+                claude: 'claude --resume {sessionId}',
+                codex: 'my-codex resume {sessionId}',
+                gemini: 'my-gemini open {sessionId}',
+                opencode: undefined
+            });
             expect(resolveChatAgent('claude', found)?.resume).toBe('claude --resume {sessionId}');
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
