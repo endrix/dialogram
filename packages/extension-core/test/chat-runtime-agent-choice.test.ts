@@ -66,6 +66,10 @@ function makeRuntime() {
     });
     const sessions = (runtime as any).sessions;
     sessions.isGone = async () => false;
+    // The chats here are the window's own: no read of the machine's chat
+    // store, which is real I/O (and the person's data) and, on a slow
+    // runner, outlasts the turns the test lets the work take.
+    sessions.refresh = async () => undefined;
     sessions.addMessageToSession = () => undefined;
     return {
         runtime, posts, acp, sessions, started, promptedTo,
@@ -83,9 +87,22 @@ function makeRuntime() {
     };
 }
 
-/** Let the work started settle, I/O included, until `done` holds. */
+/**
+ * Let the work started settle, I/O included, until `done` holds: for 3 s of
+ * real time at most (the clock faked is setTimeout's), then the test fails
+ * here, not later with what the work not done yet made of it.
+ */
 async function until(done: () => boolean): Promise<void> {
-    for (let i = 0; i < 500 && !done(); i++) {
+    const giveUpAt = Date.now() + 3_000;
+    while (!done()) {
+        if (Date.now() > giveUpAt) throw new Error('until: the work did not get there in 3 s');
+        await new Promise(resolve => setImmediate(resolve));
+    }
+}
+
+/** Let the work started run for a while: for what must not happen. */
+async function settle(): Promise<void> {
+    for (let i = 0; i < 500; i++) {
         await new Promise(resolve => setImmediate(resolve));
     }
 }
@@ -174,7 +191,7 @@ describe('the chat\'s agent, when its connector is set', () => {
 
         // The change waits for the first answer; the second message waits for the change.
         const second = t.send('next');
-        await until(() => t.promptedTo.length > 1);
+        await settle();
         expect(t.promptedTo).toEqual(['opencode']);
 
         answer();
