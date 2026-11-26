@@ -548,19 +548,37 @@ export class ChatRuntime {
     // Said when the person set it, or when a chat is in use; a connectors
     // file saved with no chat about is only logged.
     this.sayAgentProblem(problem, changes.has("setting") || running !== undefined || this.activeUris.size > 0);
-    if (running ? !problem && agentKey(next) === running.key : problem) {
+    if (running && !problem && agentKey(next) === running.key) {
+      return;
+    }
+    if (!running && problem) {
+      // Nothing to stop or start: the panels' status says the problem now
+      // set, not one set before it.
+      this.broadcast({ type: "chat.connectionStatus", data: { connected: false, reason: problem } });
       return;
     }
     let release!: () => void;
     this.agentSwitch = new Promise<void>((resolve) => { release = resolve; });
+    let failure: ChatPayload | undefined;
     try {
       if (running) {
         await this.stopAgentWhenIdle(running.name, problem ? "none that can be spawned" : effectiveAgent(next).name);
       }
-      await this.ensureStarted(cwd).catch(() => undefined);
+      await this.ensureStarted(cwd).catch((err) => {
+        const choice = err instanceof AgentChoiceError;
+        failure = {
+          type: "chat.connectionStatus",
+          data: { connected: false, reason: choice ? err.message : String(err), ...(choice ? {} : { agent: this.acp.agent }) },
+        };
+      });
     } finally {
       this.agentSwitch = undefined;
       release();
+    }
+    // Every panel told "connecting" hears how the start ended, the ones this
+    // runtime does not connect below included.
+    if (failure) {
+      this.broadcast(failure);
     }
     for (const uri of [...this.activeUris]) {
       if (this.canReach && !this.canReach(uri)) {

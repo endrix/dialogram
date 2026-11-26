@@ -71,6 +71,34 @@ describe('a change of agent in the panel', () => {
         expect(systemRows(panel)).toEqual([expect.stringContaining(reason), 'Error: boom']);
     });
 
+    it('gives a switch that failed its row, even with the reason a row before the switch gave', () => {
+        const panel = makePanel();
+        const reason = 'ACP connector "claud" is not known';
+        (panel as any).handleIncomingMessage('chat.connectionStatus', { connected: false, reason });
+        (panel as any).handleIncomingMessage('chat.connectionStatus', { connected: false, connecting: true });
+        (panel as any).handleIncomingMessage('chat.connectionStatus', { connected: false, reason });
+        expect(systemRows(panel)).toHaveLength(2);
+    });
+
+    it('says a failed start again when the status\'s row is no longer the last one', () => {
+        const panel = makePanel();
+        const reason = 'ACP connector "claud" is not known';
+        (panel as any).handleIncomingMessage('chat.connectionStatus', { connected: false, reason });
+        (panel as any).pushMessage('user', 'hello');
+        // The same reason again: the status adds no row, so the error does.
+        (panel as any).handleIncomingMessage('chat.connectionStatus', { connected: false, reason });
+        (panel as any).handleIncomingMessage('chat.error', { message: `Could not start the chat agent: ${reason}`, inStatus: true });
+        expect(systemRows(panel)).toEqual([expect.stringContaining(reason), `Error: Could not start the chat agent: ${reason}`]);
+    });
+
+    it('forgets the old agent\'s model when another is started', () => {
+        const panel = makePanel();
+        (panel as any).handleIncomingMessage('chat.providers', { providers: [{ id: 'opencode/big-pickle' }], current: 'opencode/big-pickle' });
+        expect((panel as any).currentModel).toBe('opencode/big-pickle');
+        (panel as any).handleIncomingMessage('chat.connectionStatus', { connected: false, connecting: true });
+        expect((panel as any).currentModel).toBe('');
+    });
+
     it('offers no model between two agents\' lists', () => {
         const panel = makePanel();
         (panel as any).handleIncomingMessage('chat.providers', { providers: [{ id: 'opencode/big-pickle' }] });

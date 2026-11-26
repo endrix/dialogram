@@ -614,6 +614,40 @@ describe('ACPClientService', () => {
       expect((await client.listProviders()).map((m) => m.id)).toEqual(['sonnet', 'opus']);
     });
 
+    it('takes no models from the stopped agent\'s reply that comes in late', async () => {
+      await client.start('/test/workspace');
+      let answerOld!: (value: unknown) => void;
+      mockConnection.newSession.mockReturnValueOnce(new Promise((resolve) => { answerOld = resolve; }));
+      const warming = client.warmUpModelCatalog();
+
+      client.stop();
+      client.forgetSessions();
+      const claudeConnection = {
+        ...mockConnection,
+        newSession: vi.fn().mockResolvedValue({
+          sessionId: 'claude-probe',
+          configOptions: [{ id: 'model', category: 'model', type: 'select', currentValue: 'sonnet', options: [{ value: 'sonnet', name: 'Sonnet' }] }],
+        }),
+        deleteSession: vi.fn().mockResolvedValue({}),
+      };
+      vi.mocked(ClientSideConnection).mockImplementation(() => claudeConnection as any);
+      await client.start('/test/workspace', { name: 'claude', argv: ['claude-agent-acp'], httpApi: false });
+
+      // opencode's probe answers only now, after claude started.
+      answerOld({ sessionId: 'old-probe', configOptions: [{ id: 'model', category: 'model', currentValue: 'provider-1', options: [{ value: 'provider-1' }] }] });
+      await warming;
+
+      expect((await client.listProviders()).map((m) => m.id)).toEqual(['sonnet']);
+    });
+
+    it('says it is disconnected before stop() returns, so a runtime stopping it on purpose can tell', async () => {
+      await client.start('/test/workspace');
+      const disconnected = vi.fn();
+      client.on('disconnected', disconnected);
+      client.stop();
+      expect(disconnected).toHaveBeenCalledTimes(1);
+    });
+
     it('leaves the new agent alone when the stopped one exits late', async () => {
       await client.start('/test/workspace');
       const stopped = mockProcess;
