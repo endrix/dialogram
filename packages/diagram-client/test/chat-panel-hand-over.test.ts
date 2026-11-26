@@ -152,6 +152,21 @@ describe('a session handed over to the agent’s CLI', () => {
     });
 });
 
+describe('a later word on the same hand-over', () => {
+    it('gives up nothing the panel waits for since: the terminal closed, a return that failed', () => {
+        const { panel, receive, lines } = makePanel();
+        receive('chat.handedOver', HANDED_OVER);
+        const said = lines().length;
+        // Asked for after the hand-over was said: a later word on it leaves it waiting.
+        (panel as any).isLoadingSession = true;
+        (panel as any).createRequest = 'r2';
+        receive('chat.handedOver', { ...HANDED_OVER, terminalOpen: false });
+        expect((panel as any).isLoadingSession).toBe(true);
+        expect((panel as any).createRequest).toBe('r2');
+        expect(lines()).toHaveLength(said);
+    });
+});
+
 describe('what a panel was waiting for when the session is handed over', () => {
     it('gives up a session being made: a message that waited goes back to the composer', () => {
         const { panel, sent, receive } = makePanel();

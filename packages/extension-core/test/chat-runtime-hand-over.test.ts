@@ -649,3 +649,74 @@ describe('the other chats of the agent that was stopped', () => {
         expect(done.filter(d => d.startsWith('load'))).toEqual(['load s2']);
     });
 });
+
+describe('the review of the hand-over with a change of agent', () => {
+    it('defers a change whose connector was still being read when the session was handed over', async () => {
+        const { runtime, starts, last } = makeRuntime();
+        (runtime as any).started = false;
+        connector.set = CODEX;
+        await (runtime as any).ensureStarted('/w');
+        let read!: (agent: unknown) => void;
+        connector.set = new Promise(resolve => { read = resolve; });
+        const applying = (runtime as any).applyAgentChoice(new Set(['setting']));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        await handOver(runtime);
+        read(ANOTHER);
+        await applying;
+        // Nothing stopped or started behind the CLI, and no failure said.
+        expect(starts.map(start => start.agent)).toEqual([CODEX]);
+        expect(last('chat.connectionStatus')?.data.reason).toBe("the session is open in codex's CLI");
+        expect([...(runtime as any).agentChoiceDeferred]).toEqual(['setting']);
+        // Back, the change is followed.
+        connector.set = ANOTHER;
+        await runtime.handleMessage(URI, { type: 'chat.returnToChat', data: {} });
+        await new Promise(resolve => setTimeout(resolve, 450));
+        await (runtime as any).agentChoice;
+        expect(starts.map(start => start.agent)).toEqual([CODEX, CODEX, ANOTHER]);
+    });
+
+    it('loads again a session made while the stop waited', async () => {
+        const { runtime, acp } = makeRuntime();
+        const stop = acp.stopAndWait;
+        let stopped = false;
+        acp.stopAndWait = async () => {
+            const ended = await stop();
+            stopped = true;
+            return ended;
+        };
+        acp.getAllSessions = () => (stopped ? [{ id: 's1' }, { id: 'made-meanwhile' }] : [{ id: 's1' }]);
+        await handOver(runtime);
+        expect((runtime as any).toLoadAgain.has('made-meanwhile')).toBe(true);
+    });
+
+    it('stops the agent on purpose: its going is not reported, the status says where the session is', async () => {
+        const { runtime, acp, posts } = makeRuntime();
+        const stop = acp.stopAndWait;
+        let onPurpose: boolean | undefined;
+        acp.stopAndWait = async () => {
+            onPurpose = (runtime as any).stoppingOnPurpose;
+            return stop();
+        };
+        await handOver(runtime);
+        expect(onPurpose).toBe(true);
+        expect((runtime as any).stoppingOnPurpose).toBe(false);
+        expect(posts.filter(p => p.type === 'chat.connectionStatus').map(p => p.data)).toEqual([
+            { connected: false, reason: "the session is open in codex's CLI", agent: 'codex' },
+        ]);
+    });
+
+    it('stops offering to send once more to a chat the agent could not load twice', async () => {
+        const made = makeRuntime({ held: ['s1', 's2'], notKept: ['s2'] });
+        await handOver(made.runtime);
+        await made.runtime.handleMessage(URI, { type: 'chat.returnToChat', data: {} });
+        keep(made.runtime, 's2', ['user', 'assistant'], '/w/other.py');
+        made.posts.length = 0;
+        await made.runtime.handleMessage(OTHER, { type: 'chat.sendMessage', data: { sessionId: 's2', text: 'again' } });
+        await made.runtime.handleMessage(OTHER, { type: 'chat.sendMessage', data: { sessionId: 's2', text: 'again' } });
+        expect(made.posts.filter(p => p.type === 'chat.messageNotSent').map(p => p.data.reason)).toEqual([
+            'the agent could not load this chat again; send once more, or start a new chat',
+            'the agent could not load this chat again (2 tries); start a new chat',
+        ]);
+        expect(made.acp.prompts).toEqual([]);
+    });
+});

@@ -288,8 +288,9 @@ export class ChatRuntime {
   private agentChoice: Promise<void> = Promise.resolve();
   /** A change of agent under way: a message arriving waits for it, and goes to the new agent. */
   private agentSwitch: Promise<void> | undefined;
-  /** The old agent is being stopped for the new one: its going is not reported as a loss. */
-  private stoppingForSwitch = false;
+  /** The agent is being stopped on purpose (for another agent, or for its
+   *  CLI): its going is not reported as a loss. */
+  private stoppingOnPurpose = false;
   /** The problem with the chosen connector last put to the person: each is said once. */
   private agentProblemShown: string | undefined;
   /** The agent a chat of this window talked to, for those an agent moved away from. */
@@ -350,6 +351,8 @@ export class ChatRuntime {
   private readonly toLoadAgain = new Set<string>();
   /** The loads of {@link toLoadAgain} under way, so that two askers share one. */
   private readonly loadingAgain = new Map<string, Promise<boolean>>();
+  /** How many times in a row the agent could not load a session of {@link toLoadAgain}. */
+  private readonly loadFailures = new Map<string, number>();
   /** The sessions a prompt went to since this window started: each has a
    *  turn with the agent, whatever its transcript holds. */
   private readonly prompted = new Set<string>();
@@ -467,7 +470,7 @@ export class ChatRuntime {
         void this.postLiveMessageIds(sessionId);
         void this.sayIfDeletedWhileAnswering(sessionId);
       },
-      disconnectExpected: () => this.stoppingForSwitch,
+      disconnectExpected: () => this.stoppingOnPurpose,
     });
     // A successful connection (from any path) stands down the watchdog.
     this.acp.on("connected", () => this.clearConnectWatchdog());
@@ -638,6 +641,13 @@ export class ChatRuntime {
     } catch (err) {
       problem = err instanceof Error ? err.message : String(err);
     }
+    if (this.handOver) {
+      // Handed over while the connector was read: the change waits for the
+      // return, as one made during the hand-over. From here to the switch's
+      // start nothing awaits, and a click waits for the switch.
+      for (const change of changes) this.agentChoiceDeferred.add(change);
+      return;
+    }
     // Said when the person set it, or when a chat is in use; a connectors
     // file saved with no chat about is only logged.
     this.sayAgentProblem(problem, changes.has("setting") || running !== undefined || this.activeUris.size > 0);
@@ -696,22 +706,32 @@ export class ChatRuntime {
     for (const session of this.acp.getAllSessions()) {
       this.formerAgentOf.set(session.id, from);
     }
-    this.stoppingForSwitch = true;
-    try {
-      this.acp.stop();
-    } finally {
-      this.stoppingForSwitch = false;
-    }
+    this.stopOnPurpose(() => this.acp.stop());
     // The new agent knows none of the old one's sessions, nor its models.
     this.acp.forgetSessions();
     // Nor those a hand-over meant to load again: each is attached, or
     // found missing, as any chat the client does not know.
     this.toLoadAgain.clear();
+    this.loadFailures.clear();
     this.pendingModel = undefined;
     // The panels say the chat is connecting and offer no model until the new
     // agent's arrive: the old agent's would be refused by the new one.
     this.broadcast({ type: "chat.connectionStatus", data: { connected: false, connecting: true } });
     this.broadcast({ type: "chat.providers", data: { providers: [] } });
+  }
+
+  /**
+   * Stop the agent on purpose: the disconnect `stop` causes (said before
+   * `stop` first awaits) is not reported as the agent going away; the caller
+   * says what it is instead.
+   */
+  private stopOnPurpose<T>(stop: () => T): T {
+    this.stoppingOnPurpose = true;
+    try {
+      return stop();
+    } finally {
+      this.stoppingOnPurpose = false;
+    }
   }
 
   /** Resolves true once no message is in flight, false when `ms` pass first. */
@@ -912,6 +932,14 @@ export class ChatRuntime {
 
   // --- the session in the agent's own CLI --------------------------------
 
+  /** The connection status during a hand-over: where the session is, not a fault. */
+  private handOverStatus(handOver: HandOver): ChatPayload {
+    return {
+      type: "chat.connectionStatus",
+      data: { connected: false, reason: handOverReason(handOver.agent), agent: handOver.agent },
+    };
+  }
+
   private handOverPayload(handOver: HandOver): ChatPayload {
     return {
       type: "chat.handedOver",
@@ -983,9 +1011,13 @@ export class ChatRuntime {
     // it would leave an agent running behind the hand-over.
     await this.startPromise?.catch(() => undefined);
     // Codex gives a session up when its process has ended, not before.
-    const ended = await this.acp.stopAndWait();
+    const ended = await this.stopOnPurpose(() => this.acp.stopAndWait());
+    this.broadcast(this.handOverStatus(handOver));
     this.started = false;
     this.startPromise = undefined;
+    // A session made while the stop waited (a chat created meanwhile) is the
+    // stopped agent's too: it is loaded again as well.
+    for (const known of this.acp.getAllSessions()) this.toLoadAgain.add(known.id);
     if (!ended) {
       // Still there, it may still hold the session: no CLI is opened onto
       // it. The panels offer the return.
@@ -1045,7 +1077,8 @@ export class ChatRuntime {
     } catch (err) {
       // Not back: the agent is stopped again and the session stays handed
       // over, so the person can try once more.
-      await this.acp.stopAndWait();
+      await this.stopOnPurpose(() => this.acp.stopAndWait());
+      this.broadcast(this.handOverStatus(handOver));
       this.started = false;
       this.startPromise = undefined;
       this.broadcast(this.handOverPayload(handOver));
@@ -1112,7 +1145,11 @@ export class ChatRuntime {
     let loading = this.loadingAgain.get(sessionId);
     if (!loading) {
       loading = (async () => {
-        if (!(await this.sessions.loadSession(sessionId))) return false;
+        if (!(await this.sessions.loadSession(sessionId))) {
+          this.loadFailures.set(sessionId, (this.loadFailures.get(sessionId) ?? 0) + 1);
+          return false;
+        }
+        this.loadFailures.delete(sessionId);
         await this.loadedAgain(sessionId);
         return true;
       })().finally(() => this.loadingAgain.delete(sessionId));
@@ -1131,13 +1168,17 @@ export class ChatRuntime {
   private async refuseNotHeld(uri: string, file: string, sessionId: string): Promise<void> {
     const kept = this.sessions.getSession(sessionId);
     const blank = kept !== undefined && kept.messages.length === 0;
+    // Once may be the CLI not having let go yet; again, the agent cannot.
+    const tries = this.loadFailures.get(sessionId) ?? 0;
     this.postToWebview(uri, {
       type: "chat.messageNotSent",
       data: {
         sessionId,
         reason: blank
           ? "the agent did not keep this chat"
-          : "the agent could not load this chat again; send once more, or start a new chat",
+          : tries > 1
+            ? `the agent could not load this chat again (${tries} tries); start a new chat`
+            : "the agent could not load this chat again; send once more, or start a new chat",
       },
     });
     this.postToWebview(uri, { type: "chat.turnEnd", data: { sessionId } });
@@ -1148,6 +1189,7 @@ export class ChatRuntime {
       return;
     }
     this.toLoadAgain.delete(sessionId);
+    this.loadFailures.delete(sessionId);
     this.sessionUri.delete(sessionId);
     this.postToWebview(uri, { type: "chat.sessionDeleted", data: { sessionId, reason: NOT_KEPT } });
     await this.sendSessions(uri, file);

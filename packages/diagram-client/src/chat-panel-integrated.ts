@@ -1114,13 +1114,15 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
     const agent = typeof data.agent === 'string' && data.agent ? data.agent : this.connectionAgent || 'the agent';
     const said = this.handOver?.sessionId === data.sessionId;
     this.handOver = { sessionId: data.sessionId, agent, terminalOpen: data.terminalOpen !== false };
-    // Nothing asked of the stopped agent is answered: a session being made or
-    // loaded is no longer awaited. A message that waited for one goes back to
-    // the composer, and a task's prompt is dropped, not kept for another chat.
-    this.createRequest = undefined;
-    this.isLoadingSession = false;
-    this.restorePending();
     if (!said) {
+      // Nothing asked of the stopped agent is answered: a session being made or
+      // loaded is no longer awaited. A message that waited for one goes back to
+      // the composer, and a task's prompt is dropped, not kept for another chat.
+      // Done once: a later word on the same hand-over (its terminal closed, a
+      // return that failed, an answer to a refused ask) changes none of that.
+      this.createRequest = undefined;
+      this.isLoadingSession = false;
+      this.restorePending();
       this.pushMessage(
         'system',
         `The chat's agent is stopped while a session is open in ${agent}'s CLI, in the terminal. Return to the chat when you are done there.`,
