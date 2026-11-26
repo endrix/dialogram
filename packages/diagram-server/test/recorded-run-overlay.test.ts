@@ -14,9 +14,9 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { GEdge, GModelRoot } from '@eclipse-glsp/server';
-import { WorkflowDiagramMetadata } from '@dialogram/shared';
+import { NODE_LIST_ARG, WorkflowDiagramMetadata, type HierarchyGraph, type HierarchyOutlineEntry, type NodeListOutline } from '@dialogram/shared';
 import { WorkflowSourceModelStorage } from '../src/server/source-model-storage';
-import { recordedRunOfTrail } from '../src/server/recorded-run';
+import { recordedRunOfTrail, recordedUnitAt, recordedUnitsOf } from '../src/server/recorded-run';
 import { GraphGModelSource, type PyGraphDocument } from '../src/model/graph-gmodel-source';
 
 const tempDirs: string[] = [];
@@ -277,5 +277,115 @@ describe('a workflow node answered by a past run', () => {
 
     it('says none for a workflow that runs with its parent', () => {
         expect(nodeOf({ taskKind: 'workflow' })?.args).not.toHaveProperty(WorkflowDiagramMetadata.RECORDED_RUN);
+    });
+});
+
+describe('the list of viewers of a hierarchy holding a unit answered by a past run', () => {
+    // `parent` holds `c = counted(instance="wf-out/child-run")` and a viewer `a` on `c.Num`;
+    // `counted`, grafted under `c`, a viewer `d` on `p.Num`.
+    const viewer = (name: string) => ({
+        id: `node:${name}`, kind: 'viewer', label: name, type: 'Shown', scope: 'root',
+        meta: { definitionAnnotations: [{ name: 'viewer', arguments: [{ name: 'inputs', value: '["In"]' }] }] },
+        ports: [{ id: `port:node:${name}:In`, name: 'In', direction: 'in' }]
+    });
+    const out = (name: string, kind: string, port: string, meta?: Record<string, unknown>) => ({
+        id: `node:${name}`, kind, label: name, type: name, scope: 'root', ...(meta ? { meta } : {}),
+        ports: [{ id: `port:node:${name}:${port}`, name: port, direction: 'out' }]
+    });
+    const wire = (from: string, port: string, to: string) =>
+        ({ id: `${from}-${to}`, from: `port:node:${from}:${port}`, to: `port:node:${to}:In`, scope: 'root' });
+    const docOf = (nodes: unknown[], edges: unknown[]): any => ({ version: '1', graph: { id: 'root', nodes, edges } });
+
+    function graphsOf(parentFile: string, childFile: string, run: string): HierarchyGraph[] {
+        return [
+            {
+                path: [], workflowName: 'parent', sourceUri: `file://${parentFile}`,
+                document: docOf([out('c', 'workflow', 'Num', { workflowInstance: { run } }), viewer('a')], [wire('c', 'Num', 'a')])
+            },
+            {
+                path: ['c'], workflowName: 'counted', sourceUri: `file://${childFile}`, recordedRun: run,
+                document: docOf([out('p', 'task', 'Num'), viewer('d')], [wire('p', 'Num', 'd')])
+            }
+        ];
+    }
+
+    function listStorage() {
+        const s = storage();
+        s.storageOptions = {
+            ...s.storageOptions,
+            nodeList: { family: 'viewer', title: 'Viewers' },
+            nodeFamilies: [{ annotation: 'viewer', color: '#49a6b8' }]
+        };
+        return s;
+    }
+
+    const rowAt = (entry: HierarchyOutlineEntry, at: string): HierarchyOutlineEntry | undefined =>
+        entry.path.join('/') === at ? entry : entry.children.map(child => rowAt(child, at)).find(Boolean);
+    const shown = (list: NodeListOutline, at: string) => {
+        const node = rowAt(list.outline, at)!.detachedNode!;
+        return { token: node.edges[0]?.args?.[WorkflowDiagramMetadata.VIEWER_LAST_TOKEN], run: (node.rootArgs ?? list.rootArgs)?.['wf:viewerOverlayRunId'] };
+    };
+
+    /** The list on the view at `trail`, drawn from the run that view is drawn from. */
+    async function listOn(trailTo: 'parent' | 'c', run = 'wf-out/child-run') {
+        const { dir, parentFile, childFile } = await project();
+        const parentCrumb = { sourceUri: `file://${parentFile}`, workflowName: 'parent' };
+        const trail = trailTo === 'parent'
+            ? [parentCrumb]
+            : [parentCrumb, { sourceUri: `file://${childFile}`, workflowName: 'counted', workflowInstanceName: 'c', recordedRun: run }];
+        const viewFile = trailTo === 'parent' ? parentFile : childFile;
+        const s = listStorage();
+        const recorded = recordedRunOfTrail(trail, uri => new URL(uri).pathname);
+        const root = new GModelRoot();
+        root.id = 'root';
+        root.children = [];
+        const applied = await s.applyViewerOverlayToEdges(
+            root, viewFile, trailTo === 'parent' ? 'parent' : 'counted', trail, ['parent', 'counted'], undefined, true, [parentFile, childFile], undefined, recorded);
+        await s.attachNodeList(root, { hierarchyGraphs: graphsOf(parentFile, childFile, run) }, applied, viewFile, trail, recorded);
+        const raw = (root.args as any)?.[NODE_LIST_ARG];
+        return { list: raw ? (JSON.parse(raw) as NodeListOutline) : undefined, dir };
+    }
+
+    it('at the parent, lists the unit\'s viewers with what its run made, and the parent\'s with what the parent\'s run made', async () => {
+        const { list, dir } = await listOn('parent');
+
+        expect(shown(list!, 'a')).toEqual({ token: 14, run: 'parent-run' });
+        expect(shown(list!, 'c/d')).toEqual({ token: 7, run: 'child-run' });
+        // The run's folder is where it was found, which the viewer's paths are under.
+        expect(rowAt(list!.outline, 'c/d')!.detachedNode!.rootArgs?.['wf:viewerOverlayOutDir']).toBe(path.join(dir, 'wf-out', 'child-run'));
+        expect(rowAt(list!.outline, 'c')!.recordedRun).toBe('wf-out/child-run');
+    });
+
+    it('inside the unit, lists the same viewers: the parent\'s from the parent\'s latest run, the unit\'s from its own', async () => {
+        const { list } = await listOn('c');
+
+        expect(shown(list!, 'a')).toEqual({ token: 14, run: 'parent-run' });
+        expect(shown(list!, 'c/d')).toEqual({ token: 7, run: 'child-run' });
+    });
+
+    it('opens the unit\'s viewers with no run when its run is not found, never with the parent\'s', async () => {
+        const { list } = await listOn('parent', 'wf-out/gone');
+
+        expect(shown(list!, 'a')).toEqual({ token: 14, run: 'parent-run' });
+        expect(rowAt(list!.outline, 'c/d')!.detachedNode!.rootArgs).toEqual({});
+        expect(shown(list!, 'c/d').token).toBeUndefined();
+    });
+
+    it('finds each unit\'s run from the file of the graph it is drawn in, and the deepest unit an instance is in', () => {
+        const units = recordedUnitsOf([
+            { path: [], workflowName: 'top', sourceUri: 'file:///w/top.py', document: {} as any },
+            { path: ['m'], workflowName: 'mid', sourceUri: 'file:///w/sub/mid.py', recordedRun: 'wf-out/r1', document: {} as any },
+            { path: ['m', 'x'], workflowName: 'leaf', sourceUri: 'file:///w/leaf.py', recordedRun: '../runs/r2', document: {} as any },
+            // Its holder is not among the graphs: it cannot be resolved.
+            { path: ['gone', 'y'], workflowName: 'y', recordedRun: 'wf-out/r3', document: {} as any }
+        ], uri => new URL(uri).pathname);
+
+        expect(units).toEqual([
+            { path: ['m', 'x'], runDir: '/w/runs/r2', workflowName: 'leaf' },
+            { path: ['m'], runDir: '/w/wf-out/r1', workflowName: 'mid' }
+        ]);
+        expect(recordedUnitAt(units, ['m', 'x', 'z'])?.workflowName).toBe('leaf');
+        expect(recordedUnitAt(units, ['m', 'q'])?.workflowName).toBe('mid');
+        expect(recordedUnitAt(units, ['n'])).toBeUndefined();
     });
 });

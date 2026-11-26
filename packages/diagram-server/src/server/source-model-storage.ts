@@ -34,13 +34,14 @@ import {
     type GraphNodeIdentity,
     type WorkflowRelationshipInfo,
     type WorkflowCallerReference,
+    type HierarchyGraph,
     NODE_LIST_ARG
 } from '@dialogram/shared';
 import { GraphGModelSource } from '../model/graph-gmodel-source';
 import { buildNodeList, type OverlayTokenOf } from './node-list';
 import { edgeTokensOf } from './edge-tokens';
 import { edgesOfInstance, fromRunRoot, instancePathOf, recordsOfInstance, runRootPrefix, saysInstances } from './overlay-scope';
-import { recordedRunOfTrail, type RecordedRunOfView } from './recorded-run';
+import { recordedRunOfTrail, recordedUnitAt, recordedUnitsOf, type RecordedRunOfView } from './recorded-run';
 import { FileMemo } from '../services/file-memo';
 import { portBusStateOf } from '../model/port-bundles';
 import { applyKeptPortOrders, keptPortOrderChanges, withPortOrderChanges } from '../model/definition-port-order';
@@ -194,6 +195,14 @@ export function countCoincidentNodes(positions: Iterable<{ x: number; y: number 
  */
 /** The run an overlay came from, and the token it leaves on an edge (edge-tokens.ts), for the node list. */
 type AppliedOverlay = { runId: string; outDir: string; tokenOf: OverlayTokenOf };
+
+/** A run a node list's rows are drawn from: the arguments its nodes' root carries, and its edges' tokens. */
+type ListRun = { args: Record<string, unknown>; tokenOf: OverlayTokenOf };
+
+/** The run's arguments a view's root carries, which a node opener reads. */
+function runArgs(runId: string, outDir: string): Record<string, unknown> {
+    return { 'wf:viewerOverlayRunId': runId, 'wf:viewerOverlayOutDir': outDir };
+}
 
 /** Take off an edge what a run put on it: the token it carried, its queue size at a step. */
 function clearEdgeOverlay(edge: GEdge): void {
@@ -1015,7 +1024,7 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             recordedRun
         );
         perf?.mark('ov:viewer');
-        this.attachNodeList(gmodelRoot, doc, appliedOverlay);
+        await this.attachNodeList(gmodelRoot, doc, appliedOverlay, workflowFilePath, navigationTrail, recordedRun);
         perf?.mark('ov:nodeList');
         await this.applyAgentContextToNodes(
             gmodelRoot,
@@ -1423,6 +1432,91 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         return [...hints];
     }
 
+    /**
+     * The rule for the edges of one workflow instance of a run, from that
+     * instance's records alone (overlay-scope.ts): what each edge last
+     * carried, or its queue at the trace's step when the run's queue trace is
+     * given. Whether the run records its instances apart is decided once,
+     * over both files. Each instance's rule is made once.
+     */
+    private edgeTokenRule(
+        edges: Record<string, { lastToken?: unknown }>,
+        queueTrace: Awaited<ReturnType<WorkflowSourceModelStorage['tryLoadQueueTraceAtStep']>>
+    ): (instancePath: readonly string[]) => ReturnType<typeof edgeTokensOf> {
+        const analysis = this.ensureModelSource()?.analysis;
+        const signatureCandidatesForOverlay = (entry: { fromEntity?: string; outPort?: string; toEntity?: string; inPort?: string }): string[] => {
+            return analysis?.buildOverlaySignatureCandidates(entry) ?? [];
+        };
+        const signatureCandidatesForEdge = (args: Record<string, unknown> | undefined): string[] => {
+            if (!args) {
+                return [];
+            }
+            return analysis?.buildOverlaySignatureCandidates({
+                fromEntity: args['wf:from'],
+                outPort: args['wf:outPort'],
+                toEntity: args['wf:to'],
+                inPort: args['wf:inPort']
+            }) ?? [];
+        };
+        const astPathCandidatesForEdge = (args: Record<string, unknown> | undefined): string[] => {
+            return analysis?.buildOverlayAstPathCandidates(args) ?? [];
+        };
+
+        const scoped = saysInstances(Object.values(edges)) || (queueTrace !== undefined && saysInstances(queueTrace.queues));
+        const tokensByInstance = new Map<string, ReturnType<typeof edgeTokensOf>>();
+        return (instancePath: readonly string[]): ReturnType<typeof edgeTokensOf> => {
+            const known = tokensByInstance.get(JSON.stringify(instancePath));
+            if (known) {
+                return known;
+            }
+            const overlayEdges = edgesOfInstance(edges, instancePath, scoped);
+            const overlayBySignature = new Map<string, unknown>();
+            for (const entry of Object.values(overlayEdges)) {
+                for (const signature of signatureCandidatesForOverlay(entry as any)) {
+                    if (Object.prototype.hasOwnProperty.call(entry, 'lastToken')) {
+                        overlayBySignature.set(signature, (entry as any).lastToken);
+                    }
+                }
+            }
+
+            const queueByAstPath = new Map<string, number>();
+            const queueBySignature = new Map<string, number>();
+            const queueTokenByAstPath = new Map<string, unknown>();
+            const queueTokenBySignature = new Map<string, unknown>();
+            if (queueTrace) {
+                for (const q of recordsOfInstance(queueTrace.queues, instancePath, scoped)) {
+                    if (typeof q.astPath === 'string' && q.astPath.trim() !== '') {
+                        queueByAstPath.set(q.astPath, q.size);
+                        if (Object.prototype.hasOwnProperty.call(q, 'lastToken')) {
+                            queueTokenByAstPath.set(q.astPath, (q as any).lastToken);
+                        }
+                        continue;
+                    }
+                    for (const signature of signatureCandidatesForOverlay(q as any)) {
+                        queueBySignature.set(signature, q.size);
+                        if (Object.prototype.hasOwnProperty.call(q, 'lastToken')) {
+                            queueTokenBySignature.set(signature, (q as any).lastToken);
+                        }
+                    }
+                }
+            }
+
+            const tokens = edgeTokensOf({
+                overlayEdges,
+                overlayBySignature,
+                queueByAstPath,
+                queueBySignature,
+                queueTokenByAstPath,
+                queueTokenBySignature,
+                atTrace: queueTrace !== undefined,
+                astPathCandidates: astPathCandidatesForEdge,
+                signatureCandidates: signatureCandidatesForEdge
+            });
+            tokensByInstance.set(JSON.stringify(instancePath), tokens);
+            return tokens;
+        };
+    }
+
     private async applyViewerOverlayToEdges(
         root: GModelRoot,
         workflowFilePath: string,
@@ -1480,82 +1574,9 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
             }
 
             const analysis = this.ensureModelSource()?.analysis;
-            const signatureCandidatesForOverlay = (entry: { fromEntity?: string; outPort?: string; toEntity?: string; inPort?: string }): string[] => {
-                return analysis?.buildOverlaySignatureCandidates(entry) ?? [];
-            };
-
-            const signatureCandidatesForEdge = (args: Record<string, unknown> | undefined): string[] => {
-                if (!args) {
-                    return [];
-                }
-                return analysis?.buildOverlaySignatureCandidates({
-                    fromEntity: args['wf:from'],
-                    outPort: args['wf:outPort'],
-                    toEntity: args['wf:to'],
-                    inPort: args['wf:inPort']
-                }) ?? [];
-            };
-
-            const astPathCandidatesForEdge = (args: Record<string, unknown> | undefined): string[] => {
-                return analysis?.buildOverlayAstPathCandidates(args) ?? [];
-            };
-
             // The rule for the edges of one workflow instance, from that instance's records alone
             // (overlay-scope.ts): the view's instance for the canvas, each row's for the node list.
-            // Whether the run records its instances apart is decided once, over both files.
-            const scoped = saysInstances(Object.values(overlay.edges)) || (queueTrace !== undefined && saysInstances(queueTrace.queues));
-            const tokensByInstance = new Map<string, ReturnType<typeof edgeTokensOf>>();
-            const tokensIn = (instancePath: readonly string[]): ReturnType<typeof edgeTokensOf> => {
-                const known = tokensByInstance.get(JSON.stringify(instancePath));
-                if (known) {
-                    return known;
-                }
-                const overlayEdges = edgesOfInstance(overlay.edges, instancePath, scoped);
-                const overlayBySignature = new Map<string, unknown>();
-                for (const entry of Object.values(overlayEdges)) {
-                    for (const signature of signatureCandidatesForOverlay(entry as any)) {
-                        if (Object.prototype.hasOwnProperty.call(entry, 'lastToken')) {
-                            overlayBySignature.set(signature, (entry as any).lastToken);
-                        }
-                    }
-                }
-
-                const queueByAstPath = new Map<string, number>();
-                const queueBySignature = new Map<string, number>();
-                const queueTokenByAstPath = new Map<string, unknown>();
-                const queueTokenBySignature = new Map<string, unknown>();
-                if (queueTrace) {
-                    for (const q of recordsOfInstance(queueTrace.queues, instancePath, scoped)) {
-                        if (typeof q.astPath === 'string' && q.astPath.trim() !== '') {
-                            queueByAstPath.set(q.astPath, q.size);
-                            if (Object.prototype.hasOwnProperty.call(q, 'lastToken')) {
-                                queueTokenByAstPath.set(q.astPath, (q as any).lastToken);
-                            }
-                            continue;
-                        }
-                        for (const signature of signatureCandidatesForOverlay(q as any)) {
-                            queueBySignature.set(signature, q.size);
-                            if (Object.prototype.hasOwnProperty.call(q, 'lastToken')) {
-                                queueTokenBySignature.set(signature, (q as any).lastToken);
-                            }
-                        }
-                    }
-                }
-
-                const tokens = edgeTokensOf({
-                    overlayEdges,
-                    overlayBySignature,
-                    queueByAstPath,
-                    queueBySignature,
-                    queueTokenByAstPath,
-                    queueTokenBySignature,
-                    atTrace: queueTrace !== undefined,
-                    astPathCandidates: astPathCandidatesForEdge,
-                    signatureCandidates: signatureCandidatesForEdge
-                });
-                tokensByInstance.set(JSON.stringify(instancePath), tokens);
-                return tokens;
-            };
+            const tokensIn = this.edgeTokenRule(overlay.edges, queueTrace);
             // The run's instance paths start at the run's root: the trail's root, or a workflow
             // further down the trail when that one was run on its own. The view's path, and each
             // node-list row's, start at the trail's root, so both are measured from the run's root.
@@ -1766,16 +1787,64 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
      * (`StorageRuntimeOptions.nodeList`) and the producer gave the
      * hierarchy's graphs. Each instance's graph is transformed as a view of
      * it would be, and its edges take the run's tokens as the canvas's do.
+     *
+     * The hierarchy is the trail root's, and so is its run: the view's, or,
+     * when the view is in a unit answered by a past run, the root's latest.
+     * A unit answered by a past run (`HierarchyGraph.recordedRun`) is that
+     * run's: its edges carry what that run recorded, its nodes open with
+     * that run's arguments.
      */
-    private attachNodeList(root: GModelRoot, doc: any, overlay: AppliedOverlay | undefined): void {
+    private async attachNodeList(
+        root: GModelRoot,
+        doc: any,
+        overlay: AppliedOverlay | undefined,
+        /** The view's file. */
+        workflowFilePath: string,
+        navigationTrail: Array<{ sourceUri: string; workflowName: string; workflowInstanceName?: string }>,
+        recordedRun: RecordedRunOfView | undefined
+    ): Promise<void> {
         const args = ((root as any).args = (root as any).args || {});
         delete args[NODE_LIST_ARG];
         const spec = this.storageOptions?.nodeList;
-        const graphs = doc?.hierarchyGraphs;
+        const graphs = doc?.hierarchyGraphs as HierarchyGraph[] | undefined;
         if (!spec || !Array.isArray(graphs) || graphs.length === 0) {
             return;
         }
         try {
+            const viewRun: ListRun | undefined = overlay
+                ? { args: runArgs(overlay.runId, overlay.outDir), tokenOf: overlay.tokenOf }
+                : undefined;
+            // The view's own run covers the part it is in: the root's, or the unit it is drawn from.
+            const viewUnitPath = recordedRun ? trailInstancePath(navigationTrail.slice(0, recordedRun.at + 1)) : undefined;
+            const units = recordedUnitsOf(graphs, uri => this.fsPathOfCrumb(uri));
+            const runOfUnit = new Map<string, Promise<ListRun | undefined>>();
+            for (const unit of units) {
+                const key = unit.path.join('/');
+                if (!runOfUnit.has(key)) {
+                    runOfUnit.set(key, viewUnitPath?.join('/') === key
+                        ? Promise.resolve(viewRun)
+                        : this.listRunOf(workflowFilePath, unit.workflowName, { runDir: unit.runDir, at: 0, workflowName: unit.workflowName }));
+                }
+            }
+            const rootCrumb = navigationTrail[0];
+            const [rootRun, ...unitRuns] = await Promise.all([
+                !recordedRun || !rootCrumb
+                    ? Promise.resolve(viewRun)
+                    : this.listRunOf(this.fsPathOfCrumb(rootCrumb.sourceUri), rootCrumb.workflowName),
+                ...[...runOfUnit.values()]
+            ]);
+            const unitRunByPath = new Map([...runOfUnit.keys()].map((key, i) => [key, unitRuns[i]]));
+            const runAt = (instancePath: readonly string[]): { run: ListRun | undefined; from: readonly string[] } => {
+                const unit = recordedUnitAt(units, instancePath);
+                if (!unit) {
+                    return { run: rootRun, from: instancePath };
+                }
+                const run = unitRunByPath.get(unit.path.join('/'));
+                // The view's run measures its paths itself (from the trail's root); another past run's
+                // paths start at its unit.
+                return { run, from: run === viewRun ? instancePath : instancePath.slice(unit.path.length) };
+            };
+
             const transform = new GraphGModelSource(this.storageOptions);
             const list = buildNodeList({
                 spec,
@@ -1783,10 +1852,14 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
                 graphs,
                 hierarchy: doc.hierarchy,
                 transform: document => transform.transform(document as any).graph,
-                tokenOf: overlay?.tokenOf,
-                rootArgs: overlay
-                    ? { 'wf:viewerOverlayRunId': overlay.runId, 'wf:viewerOverlayOutDir': overlay.outDir }
-                    : undefined
+                tokenOf: (edgeArgs, instancePath) => {
+                    const { run, from } = runAt(instancePath ?? []);
+                    return run?.tokenOf(edgeArgs, from);
+                },
+                rootArgs: rootRun?.args,
+                // A node in a unit answered by a past run opens with that run's arguments, or none
+                // when it was not found: never with the root's.
+                rootArgsOf: instancePath => (recordedUnitAt(units, instancePath) ? runAt(instancePath).run?.args ?? {} : undefined)
             });
             if (list) {
                 args[NODE_LIST_ARG] = JSON.stringify(list);
@@ -1794,6 +1867,23 @@ export class WorkflowSourceModelStorage implements SourceModelStorage {
         } catch (err) {
             console.warn('[WorkflowSourceModelStorage] Failed to build the node list', err);
         }
+    }
+
+    /**
+     * A run of a node list's other than the view's: the past run a unit is
+     * answered by (`recordedRun`), else the latest run of `workflowName` in
+     * `file` (the trail's root). Its edges are read as they last were, with
+     * no step of a trace; undefined when the run is not found.
+     */
+    private async listRunOf(file: string, workflowName: string, recordedRun?: RecordedRunOfView): Promise<ListRun | undefined> {
+        const overlay = recordedRun
+            ? await this.tryLoadLatestViewerOverlay(file, workflowName, undefined, undefined, undefined, recordedRun)
+            : await this.tryLoadLatestViewerOverlay(file, workflowName, [file], [workflowName]);
+        if (!overlay) {
+            return undefined;
+        }
+        const tokensIn = this.edgeTokenRule(overlay.edges, undefined);
+        return { args: runArgs(overlay.runId, overlay.outDir), tokenOf: (edgeArgs, instancePath) => tokensIn(instancePath ?? [])(edgeArgs).shown };
     }
 
     private async findUniqueAncestorWorkflowNodeForActiveInstance(root: GModelRoot, activeName: string): Promise<GNode | undefined> {

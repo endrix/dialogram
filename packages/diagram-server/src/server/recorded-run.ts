@@ -17,7 +17,7 @@
  */
 import * as os from 'os';
 import * as path from 'path';
-import { hierarchyRootAt } from '@dialogram/shared';
+import { hierarchyRootAt, type HierarchyGraph } from '@dialogram/shared';
 
 export interface RecordedRunCrumb {
     sourceUri: string;
@@ -50,13 +50,59 @@ export function recordedRunOfTrail(
     if (at === 0 || !written) {
         return undefined;
     }
-    const expanded = written === '~'
-        ? home
-        : /^~[\\/]/.test(written) ? path.join(home, written.slice(2)) : written;
-    const resolved = path.resolve(path.dirname(fsPathOf(trail[at - 1].sourceUri)), expanded);
     return {
-        runDir: path.extname(resolved).toLowerCase() === '.json' ? path.dirname(resolved) : resolved,
+        runDir: recordedRunDir(written, fsPathOf(trail[at - 1].sourceUri), home),
         at,
         workflowName: trail[at].workflowName
     };
+}
+
+/**
+ * The directory of a past run, as an instance's node writes it (`written`),
+ * relative to `holderFile`, the file of the workflow the node is drawn in.
+ */
+export function recordedRunDir(written: string, holderFile: string, home: string = os.homedir()): string {
+    const expanded = written === '~'
+        ? home
+        : /^~[\\/]/.test(written) ? path.join(home, written.slice(2)) : written;
+    const resolved = path.resolve(path.dirname(holderFile), expanded);
+    return path.extname(resolved).toLowerCase() === '.json' ? path.dirname(resolved) : resolved;
+}
+
+/** A unit answered by a past run, in a hierarchy's graphs (`HierarchyGraph.recordedRun`). */
+export interface RecordedUnit {
+    /** The instance answered by it, by instance names from the hierarchy's root: the run's root. */
+    path: string[];
+    /** The run's directory. */
+    runDir: string;
+    /** The workflow it ran, the instance's. */
+    workflowName: string;
+}
+
+/**
+ * The units answered by a past run in a hierarchy's graphs, deepest first:
+ * each graph that says so (`HierarchyGraph.recordedRun`), its run resolved
+ * from the file of the graph it is drawn in, the one above it. One whose
+ * holder is not among the graphs, or has no file, is left out.
+ */
+export function recordedUnitsOf(
+    graphs: readonly HierarchyGraph[],
+    fsPathOf: (sourceUri: string) => string,
+    home: string = os.homedir()
+): RecordedUnit[] {
+    const byPath = new Map(graphs.map(graph => [graph.path.join('/'), graph]));
+    const units: RecordedUnit[] = [];
+    for (const graph of graphs) {
+        const written = graph.recordedRun?.trim();
+        const holderUri = graph.path.length > 0 ? byPath.get(graph.path.slice(0, -1).join('/'))?.sourceUri : undefined;
+        if (written && holderUri) {
+            units.push({ path: graph.path, runDir: recordedRunDir(written, fsPathOf(holderUri), home), workflowName: graph.workflowName });
+        }
+    }
+    return units.sort((a, b) => b.path.length - a.path.length);
+}
+
+/** The unit an instance at `instancePath` is in (itself or one above it), from `units` deepest first. */
+export function recordedUnitAt(units: readonly RecordedUnit[], instancePath: readonly string[]): RecordedUnit | undefined {
+    return units.find(unit => unit.path.length <= instancePath.length && unit.path.every((name, i) => name === instancePath[i]));
 }

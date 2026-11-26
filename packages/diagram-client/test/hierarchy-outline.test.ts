@@ -71,6 +71,18 @@ describe('the view a row opens', () => {
         expect(entryAt(outline, ['b9'])).toBeUndefined();
     });
 
+    it('keeps the past run an instance is answered by on its crumb, as a drill-down does', () => {
+        const withRun: HierarchyOutlineEntry = {
+            ...outline,
+            children: [{ ...outline.children[0], recordedRun: 'wf-out/r1' }, outline.children[1]]
+        };
+        expect(trailTo(withRun, TOP, ['b1', 'leaf'])).toEqual([
+            { sourceUri: TOP, workflowName: 'top' },
+            { sourceUri: BLOCK, workflowName: 'block', workflowInstanceName: 'b1', recordedRun: 'wf-out/r1' },
+            { sourceUri: BLOCK, workflowName: 'stage', workflowInstanceName: 'leaf' }
+        ]);
+    });
+
     it('is highlighted, with its ancestors opened, when it is the view shown', () => {
         const shown = [
             { sourceUri: TOP, workflowName: 'top' },

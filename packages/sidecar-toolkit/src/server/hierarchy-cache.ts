@@ -95,6 +95,87 @@ export function graphsOf(exported: HierarchyExport): HierarchyGraph[] {
     return graphs;
 }
 
+/** A node of a graph that is a unit answered by a past run (`child(instance=run)`). */
+export interface RecordedUnitNode {
+    /** Its instance name: its path's last name. */
+    name: string;
+    /** The workflow it is an instance of, and the file declaring it. */
+    workflow: string;
+    file: string;
+    /** The run, as the node writes it (`meta.workflowInstance.run`). */
+    run: string;
+}
+
+/**
+ * The nodes of a graph document that are units answered by a past run: a
+ * workflow instance whose node names the run (`meta.workflowInstance.run`,
+ * what the canvas carries as `RECORDED_RUN`) and the file of its workflow.
+ */
+export function recordedUnitNodes(document: unknown): RecordedUnitNode[] {
+    const nodes = ((document as { graph?: { nodes?: unknown } } | undefined)?.graph?.nodes);
+    if (!Array.isArray(nodes)) {
+        return [];
+    }
+    const units: RecordedUnitNode[] = [];
+    for (const node of nodes as Array<Record<string, any>>) {
+        const meta = node?.meta;
+        const run = meta?.workflowInstance?.run;
+        const file = meta?.referencedSource?.file;
+        const isInstance = node?.kind === 'workflow' || meta?.networkInstance === true;
+        if (
+            isInstance
+            && typeof run === 'string' && run.trim() !== ''
+            && typeof node.label === 'string' && node.label.trim() !== ''
+            && typeof node.type === 'string' && node.type.trim() !== ''
+            && typeof file === 'string' && path.isAbsolute(file)
+        ) {
+            units.push({ name: node.label.trim(), workflow: node.type.trim(), file, run: run.trim() });
+        }
+    }
+    return units;
+}
+
+/** How deep units answered by past runs are grafted, one inside another. */
+const MAX_RECORDED_UNIT_DEPTH = 4;
+
+/**
+ * The hierarchy's graphs, with what each unit answered by a past run
+ * elaborated grafted under it: its workflow's hierarchy as a root of its own
+ * (`exportOf`), as a view in it is read (`hierarchyRootAt`), its paths under
+ * the unit's and its root marked with the run (`HierarchyGraph.recordedRun`).
+ * The unit runs nothing with its parent, so its parent's export has nothing
+ * under it. A unit the export already has, or that does not export, is left
+ * as it is; one inside another is grafted too, a workflow already on the way
+ * not again.
+ */
+export async function withRecordedUnits(
+    graphs: HierarchyGraph[],
+    exportOf: (unit: { file: string; workflow: string }) => Promise<HierarchyExport | undefined>,
+    within: readonly string[] = []
+): Promise<HierarchyGraph[]> {
+    const known = new Set(graphs.map(graph => graph.path.join('/')));
+    const grafts = await Promise.all(graphs.flatMap(graph => recordedUnitNodes(graph.document).map(async unit => {
+        const at = [...graph.path, unit.name];
+        const key = `${unit.file}::${unit.workflow}`;
+        if (known.has(at.join('/')) || within.includes(key) || within.length >= MAX_RECORDED_UNIT_DEPTH) {
+            return [];
+        }
+        const exported = await exportOf(unit);
+        if (!exported) {
+            return [];
+        }
+        const inner = await withRecordedUnits(graphsOf(exported), exportOf, [...within, key]);
+        return inner.map((innerGraph, index): HierarchyGraph => ({
+            ...innerGraph,
+            path: [...at, ...innerGraph.path],
+            ...(index === 0 ? { recordedRun: unit.run } : {})
+        }));
+    })));
+    // Without a unit, the export's own list (`graphsOf`), as before.
+    const grafted = grafts.flat();
+    return grafted.length === 0 ? graphs : [...graphs, ...grafted];
+}
+
 /** Every file the hierarchy was elaborated from. */
 export function hierarchyFiles(entry: HierarchyEntry): string[] {
     const files = new Set<string>();
