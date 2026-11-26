@@ -244,9 +244,18 @@ export const workspace = {
         onDidChange: (_listener: (...args: any[]) => any): { dispose(): void } => ({ dispose: () => {} }),
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         onDidCreate: (_listener: (...args: any[]) => any): { dispose(): void } => ({ dispose: () => {} }),
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        onDidDelete: (_listener: (...args: any[]) => any): { dispose(): void } => ({ dispose: () => {} }),
         dispose: (): void => {}
-    })
+    }),
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    onDidChangeConfiguration: (_listener: (...args: any[]) => any): { dispose(): void } => ({ dispose: () => {} })
 };
+
+/** A glob under a base folder, as `createFileSystemWatcher` takes one. */
+export class RelativePattern {
+    constructor(public readonly base: unknown, public readonly pattern: string) {}
+}
 
 export const commands = {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars

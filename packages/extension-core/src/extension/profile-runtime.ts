@@ -17,7 +17,7 @@ import { pathToFileURL } from "node:url";
 import type { DiagramProfile, DiagramProfileHandle } from "../api";
 import { activateGlspIntegration } from "./diagram/glsp-activation";
 import { ChatRuntime, type ChatRuntimeConfig } from "./chat/chat-runtime";
-import { createAcpAgentResolver, createConnectorResumeResolver } from "./chat/acp-connectors";
+import { createAcpAgentResolver, createConnectorResumeResolver, watchAcpConnectorChoice } from "./chat/acp-connectors";
 import { createViewerEditorsTool } from "./chat/viewer-editors-tool";
 import { GlspMcpClient } from "./chat/glsp-mcp-client";
 import type { ChatCommandContribution } from "./chat/slash-commands";
@@ -177,6 +177,12 @@ export function assembleChatRuntimeConfig(
       : undefined,
     connectorResume: chat.acpConnector
       ? createConnectorResumeResolver(chat.acpConnector)
+      : undefined,
+    watchAcpAgent: chat.acpConnector
+      ? (listener) => watchAcpConnectorChoice(profile.settingsNamespace, chat.acpConnector!, listener)
+      : undefined,
+    acpAgentSetting: chat.acpConnector
+      ? `${profile.settingsNamespace}.${chat.acpConnector.settingKey}`
       : undefined,
     selectionContext: chat.selectionContext,
     // The profile's own tools, plus the platform's: "what can open this file"

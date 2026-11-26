@@ -199,6 +199,11 @@ const OPENCODE_AGENT: AcpAgentSpec = {
   resume: "opencode -s {sessionId}",
 };
 
+/** The agent {@link ACPClientService.start} spawns for a spec: opencode for none, or one without a command. */
+export function effectiveAgent(agent?: AcpAgentSpec): AcpAgentSpec {
+  return agent && agent.argv.length > 0 ? agent : OPENCODE_AGENT;
+}
+
 /**
  * ACP Client Service for communicating with an ACP agent (opencode by
  * default; any connector the runtime knows, see {@link AcpAgentSpec}).
@@ -406,7 +411,7 @@ export class ACPClientService extends EventEmitter {
       throw new Error("ACP client is already connected");
     }
     this.workspaceCwd = cwd;
-    const spec = agent && agent.argv.length > 0 ? agent : OPENCODE_AGENT;
+    const spec = effectiveAgent(agent);
     this.agentName = spec.name;
     this.agentResume = spec.resume;
 
@@ -460,19 +465,24 @@ export class ACPClientService extends EventEmitter {
       }
 
       // Spawn the agent subprocess
-      this.process = spawn(command, args, {
+      const child = spawn(command, args, {
         cwd,
         stdio: ["pipe", "pipe", "pipe"],
         env: spawnEnv,
       });
+      this.process = child;
 
-      // Handle process errors
-      this.process.on("error", (error) => {
+      // Handle process errors. A process this client has moved on from
+      // (stopped for another agent, which may be starting now) says nothing
+      // about the current one: its exit, arriving late, is not this one's.
+      child.on("error", (error) => {
+        if (this.process !== child) return;
         this.emit("error", error);
         this.handleDisconnect();
       });
 
-      this.process.on("exit", (code) => {
+      child.on("exit", (code) => {
+        if (this.process !== child) return;
         if (code !== 0 && code !== null) {
           this.emit(
             "error",
@@ -485,10 +495,10 @@ export class ACPClientService extends EventEmitter {
       // Create bidirectional stream using ndjson format
       // Convert Node.js streams to Web API streams
       const stdoutWeb = Readable.toWeb(
-        this.process.stdout!,
+        child.stdout!,
       ) as unknown as import("node:stream/web").ReadableStream<Uint8Array>;
       const stdinWeb = Writable.toWeb(
-        this.process.stdin!,
+        child.stdin!,
       ) as unknown as import("node:stream/web").WritableStream<Uint8Array>;
       const stream = ndJsonStream(stdinWeb, stdoutWeb);
 
@@ -1294,6 +1304,15 @@ export class ACPClientService extends EventEmitter {
    */
   stop(): void {
     this.handleDisconnect();
+  }
+
+  /**
+   * Forget every session this client knew: another agent knows none of
+   * them, so each is attached again (or found missing) on its next use.
+   */
+  forgetSessions(): void {
+    this.sessions.clear();
+    this.loadedSessionIds.clear();
   }
 
   /**
