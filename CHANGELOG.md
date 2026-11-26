@@ -1083,10 +1083,13 @@ platform that hands it one.
   The chat says that its session continues in the CLI and sends nothing
   meanwhile; its **Return to chat** button closes that terminal, starts the
   agent again and loads the session into it. What was said in the CLI is in
-  the agent's memory, not in the chat's transcript. Nothing is handed over
-  while a turn is running, for a chat that has no turn yet (the CLI has no
-  session to open), or for a connector without a `resume` command, whose id
-  is copied as before. The chat's agent is one process for every chat of
+  the agent's memory, not in the chat's transcript. A click while a turn is
+  running opens nothing and stops nothing: the chat says "Not opened: a
+  turn is running", and that the session can be opened once the turn has
+  ended or been stopped (the panel refuses its own turn, the host a turn of
+  any chat of the window). Nothing is handed over either for a chat that
+  has no turn yet (the CLI has no session to open), or for a connector
+  without a `resume` command, whose id is copied as before. The chat's agent is one process for every chat of
   the window: the others are disconnected for as long, and each is loaded
   again at its next message. A run agent's session (the button of a
   firing) opens as before, since its agent has ended.

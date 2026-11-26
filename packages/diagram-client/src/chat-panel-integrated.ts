@@ -1568,7 +1568,18 @@ export class ChatPanel implements IDiagramStartup, ISelectionListener {
 
   /** Open the shown session in the agent's own CLI (the host opens a terminal). */
   private openSessionNatively(): void {
-    if (this.currentSessionId) this.sendToHost('chat.openSessionNatively', { sessionId: this.currentSessionId });
+    if (!this.currentSessionId) return;
+    if (this.isStreaming && !this.handOver) {
+      // A click by mistake must not cut the turn short: opening the session
+      // in the CLI stops the chat's agent. Said where the turn's text ends.
+      this.finishStreamingMessage();
+      this.pushMessage(
+        'system',
+        `Not opened: a turn is running. The session can be opened in ${this.connectionAgent || 'the agent'}'s CLI once the turn has ended, or after you stop it.`
+      );
+      return;
+    }
+    this.sendToHost('chat.openSessionNatively', { sessionId: this.currentSessionId });
   }
 
   /** Copy the shown session's id (the host writes the clipboard). */

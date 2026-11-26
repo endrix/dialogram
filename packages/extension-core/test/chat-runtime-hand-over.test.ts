@@ -128,15 +128,21 @@ describe('handing the chat’s session over to the agent’s CLI', () => {
         expect(types()).not.toContain('chat.handedOver');
     });
 
-    it('hands nothing over while a turn is running', async () => {
-        const { runtime, done, acp } = makeRuntime();
+    it('hands nothing over while a turn is running, and says so in the chat that asked', async () => {
+        const { runtime, done, acp, posts, types } = makeRuntime();
         let endTurn: () => void = () => undefined;
         acp.sendPrompt = () => new Promise<void>(resolve => (endTurn = resolve));
         const turn = runtime.handleMessage(URI, { type: 'chat.sendMessage', data: { sessionId: 's1', text: 'go' } });
         await new Promise(resolve => setTimeout(resolve, 20));
-        await handOver(runtime);
+        // Asked from another chat of the window: the turn is not its own.
+        await runtime.handleMessage(OTHER, { type: 'chat.openSessionNatively', data: { sessionId: 's1' } });
         expect(done).toEqual([]);
         expect(createdTerminals).toHaveLength(0);
+        expect(types()).not.toContain('chat.handedOver');
+        const said = posts.filter(p => p.type === 'chat.message');
+        expect(said.map(p => p.uri)).toEqual([OTHER]);
+        expect(said[0].data.role).toBe('system');
+        expect(said[0].data.content).toContain('Not opened: a turn is running.');
         endTurn();
         await turn;
         await handOver(runtime);

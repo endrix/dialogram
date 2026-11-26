@@ -33,6 +33,35 @@ afterEach(() => {
 
 const HANDED_OVER = { sessionId: 's1', agent: 'codex', terminalOpen: true };
 
+describe('a click on the CLI button while a turn is running', () => {
+    it('asks the host for nothing, says why, and keeps the turn', () => {
+        const { panel, sent, receive, lines } = makePanel();
+        receive('chat.connectionStatus', { connected: true, agent: 'codex' });
+        (panel as any).currentSessionId = 's1';
+        (panel as any).setStreaming(true);
+        (panel as any).streamingText = 'So far';
+        sent.length = 0;
+        (panel as any).openSessionNatively();
+        expect(sent.filter(m => m.type === 'chat.openSessionNatively')).toEqual([]);
+        expect((panel as any).isStreaming).toBe(true);
+        // The turn's text so far, then the line: in the order they came.
+        expect(lines().slice(-2)).toEqual([
+            'So far',
+            "Not opened: a turn is running. The session can be opened in codex's CLI once the turn has ended, or after you stop it."
+        ]);
+    });
+
+    it('opens it once the turn has ended', () => {
+        const { panel, sent } = makePanel();
+        (panel as any).currentSessionId = 's1';
+        (panel as any).setStreaming(true);
+        (panel as any).openSessionNatively();
+        (panel as any).setStreaming(false);
+        (panel as any).openSessionNatively();
+        expect(sent.filter(m => m.type === 'chat.openSessionNatively').map(m => m.data)).toEqual([{ sessionId: 's1' }]);
+    });
+});
+
 describe('a session handed over to the agent’s CLI', () => {
     it('is said once, in the timeline and in a banner that offers the return', () => {
         const { receive, lines, banner } = makePanel();

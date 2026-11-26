@@ -645,7 +645,7 @@ export class ChatRuntime {
    * back. Without a `resume` command nothing is handed over: the id is
    * copied, and the chat stays as it is.
    */
-  private async handOverToCli(cwd: string, session: NativeSession): Promise<void> {
+  private async handOverToCli(uri: string, cwd: string, session: NativeSession): Promise<void> {
     if (this.handOver) {
       // Handed over already: its terminal is shown again, if it is still there.
       this.handOver.terminal?.show();
@@ -657,9 +657,19 @@ export class ChatRuntime {
       return;
     }
     if (this.turnsUnderWay > 0) {
-      void vscode.window.showWarningMessage(
-        `A turn is running. Wait for it to end, or stop it, before the session is opened in ${session.agent}'s CLI.`,
-      );
+      // A click by mistake must not cut a turn short, in this chat or in
+      // another of the window: they share the agent the hand-over stops. The
+      // panel refuses its own turn itself; this holds for every turn.
+      this.postToWebview(uri, {
+        type: "chat.message",
+        data: {
+          role: "system",
+          content:
+            `Not opened: a turn is running. Opening a session in ${session.agent}'s CLI stops the agent ` +
+            "the chats of this window share, so it waits until the turn has ended or been stopped.",
+          timestamp: Date.now(),
+        },
+      });
       return;
     }
     // A chat with no turn yet is no session the CLI can open: Codex and
@@ -1414,7 +1424,7 @@ export class ChatRuntime {
         if (type === "chat.copySessionId") {
           await copySessionId(session);
         } else {
-          await this.handOverToCli(cwd, session);
+          await this.handOverToCli(uri, cwd, session);
         }
         return;
       }
