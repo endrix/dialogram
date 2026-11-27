@@ -14,7 +14,9 @@ describe('the package, for a product’s webview code', () => {
             'VscodeUi', 'clientBehavior', 'commandId', 'operationKind', 'offersRun', 'settingsNamespace',
             'renderMarkdownSafe', 'renderDocumentMarkdownSafe', 'looksLikeMarkdown',
             'isBlock', 'looksLikeDiff', 'parseEmbedded', 'formatAgentOutputs',
-            'ViewToolPalette', 'EMPTY_PALETTE_BODY_CLASS'
+            'ViewToolPalette', 'EMPTY_PALETTE_BODY_CLASS',
+            'installLoadingIndicator', 'LoadingIndicatorModelListener', 'loadingProgress', 'loadingEnded',
+            'isLoadingVisible', 'BUSY_DELAY_MS'
         ]) {
             expect((client as Record<string, unknown>)[name], name).toBeDefined();
         }
