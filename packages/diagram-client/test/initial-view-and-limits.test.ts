@@ -107,6 +107,61 @@ describe('the first view', () => {
         expect(s.waiting()).toBe(false);
     });
 
+    describe('when the canvas takes another size before the reader moves the view', () => {
+        // A webview that draws its first model before VS Code sized its frame: 300 × 150.
+        const early = (over: Parameters<typeof root>[0] = {}) => ({ ...root(over), canvasBounds: { x: 0, y: 0, width: 300, height: 150 } });
+
+        it('is done again on the canvas it then has, once', () => {
+            initialView = 'fit';
+            const host = fakeHost();
+            const { s, dispatched } = service(host);
+            s.arm(early());
+            host.render(early());
+            expect(dispatched.map(a => a.kind)).toEqual(['fit']);
+            host.render(early({ zoom: 0.05, x: -2900 })); // the fit, drawn on the small canvas
+            host.render(root({ zoom: 0.05, x: -2900 })); // the frame sized
+            expect(dispatched.map(a => a.kind)).toEqual(['fit', 'fit']);
+            host.render(root({ zoom: 1, x: -150 })); // the second fit, drawn
+            host.render(root({ zoom: 1, x: -150 }));
+            expect(dispatched).toHaveLength(2);
+            expect(s.shown).toBe(2);
+        });
+
+        it('is done again also when the canvas changes before the first view is drawn', () => {
+            const host = fakeHost();
+            const { s, dispatched } = service(host);
+            s.arm(early());
+            host.render(early());
+            host.render(root());
+            expect(dispatched.map(a => a.kind)).toEqual(['center', 'center']);
+            expect(s.shown).toBe(2);
+        });
+
+        it('is left alone once the reader has moved the view', () => {
+            initialView = 'fit';
+            const host = fakeHost();
+            const { s, dispatched } = service(host);
+            s.arm(early());
+            host.render(early());
+            host.render(early({ zoom: 0.05 })); // the fit, drawn
+            host.render(early({ zoom: 0.3 })); // the reader zooms
+            host.render(root({ zoom: 0.3 }));
+            expect(dispatched).toHaveLength(1);
+        });
+
+        it('is forgotten when another view is armed', () => {
+            const host = fakeHost();
+            const { s, dispatched } = service(host);
+            s.arm(early());
+            host.render(early());
+            s.arm(root({ x: 40 }));
+            host.render(root({ x: 40 }));
+            host.render(root({ x: 40, width: 900 }));
+            // One first view each, and the second view's canvas change follows its own.
+            expect(dispatched).toHaveLength(3);
+        });
+    });
+
     it('without the host, comes two frames after the model, as before', async () => {
         const { s, dispatched } = service(undefined);
         s.arm(root());

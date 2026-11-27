@@ -127,8 +127,9 @@ export interface DiagramClientBehavior {
      * What a view shows the first time it is opened: `center` (the default)
      * centres the content at zoom 1, `fit` fits it into the canvas clear of
      * the palette and the other overlays. Done once per view, as soon as the
-     * content has bounds (a diagram surface's included); a view navigated back
-     * to returns to where it was left, as before.
+     * content has bounds (a diagram surface's included), and done again when
+     * the canvas takes another size before the reader moves the view; a view
+     * navigated back to returns to where it was left, as before.
      */
     initialView?: 'center' | 'fit';
     /**

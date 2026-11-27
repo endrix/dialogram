@@ -7,6 +7,10 @@ import { clientBehavior } from './profile';
 /** The viewport a view was set with, to tell whether the reader has moved it since. */
 type Snapshot = { zoom: number; scroll: { x: number; y: number } };
 
+function sameViewport(a: Snapshot, b: Snapshot): boolean {
+    return a.zoom === b.zoom && a.scroll.x === b.scroll.x && a.scroll.y === b.scroll.y;
+}
+
 /** What the first view of a diagram is: the profile's `clientBehavior.initialView`, centre by default. */
 export function initialViewAction(view: unknown): Action {
     return view === 'fit'
@@ -29,6 +33,11 @@ export function initialViewAction(view: unknown): Action {
  * included, so the empty root's centre could land after the real model's, and
  * a surface whose data came later was centred on nothing. If the reader moves
  * the view before then, theirs stands: nothing is done.
+ *
+ * Until the reader moves it, a first view is done again when the canvas takes
+ * another size. A webview can draw a model built quickly before VS Code has
+ * sized its frame (an iframe's default 300 × 150), and the view fitted or
+ * centred on that canvas is wrong once the frame has its size.
  */
 @injectable()
 export class InitialViewportService {
@@ -40,6 +49,12 @@ export class InitialViewportService {
 
     /** The viewport the view waiting for its first view was set with. */
     private pending: Snapshot | undefined;
+
+    /**
+     * The first view done, while the reader has not moved it: the canvas it
+     * was done on, the viewport before it, and the one it gave once drawn.
+     */
+    private shownOn: { width: number; height: number; before: Snapshot; after?: Snapshot } | undefined;
 
     /** How many first views were done, for the tests and the live check. */
     shown = 0;
@@ -63,6 +78,7 @@ export class InitialViewportService {
         if (root.type === 'NONE' || typeof root.zoom !== 'number' || !root.scroll) {
             return;
         }
+        this.shownOn = undefined;
         this.pending = { zoom: root.zoom, scroll: { ...root.scroll } };
         if (!this.surfaceHost) {
             // No renders heard (a container without the base's host): as before, after two frames.
@@ -89,11 +105,15 @@ export class InitialViewportService {
 
     /** After a render or the surface's bounds changing: is it time? */
     check(root: ViewportRoot): void {
-        const pending = this.pending;
-        if (!pending || root.type === 'NONE') {
+        if (root.type === 'NONE') {
             return;
         }
-        if (root.zoom !== pending.zoom || root.scroll.x !== pending.scroll.x || root.scroll.y !== pending.scroll.y) {
+        const pending = this.pending;
+        if (!pending) {
+            this.followCanvas(root);
+            return;
+        }
+        if (!sameViewport(root, pending)) {
             // Moved since it was set: by the reader, or by a reveal the product asked for.
             this.pending = undefined;
             return;
@@ -104,14 +124,42 @@ export class InitialViewportService {
         if (this.surfaceHost && !this.surfaceHost.surfaceReady()) {
             return;
         }
-        this.fire();
+        this.fire(root);
     }
 
-    private fire(): void {
-        if (!this.pending) {
+    /**
+     * After the first view, until the reader moves it: the canvas taking
+     * another size gets the first view again. The view counts as not moved
+     * while it is where it was set or where the first view put it.
+     */
+    private followCanvas(root: ViewportRoot): void {
+        const shown = this.shownOn;
+        if (!shown) {
+            return;
+        }
+        if (!sameViewport(root, shown.before) && !(shown.after && sameViewport(root, shown.after))) {
+            if (shown.after) {
+                // Moved by the reader (or by a reveal the product asked for).
+                this.shownOn = undefined;
+                return;
+            }
+            // The first view, drawn.
+            shown.after = { zoom: root.zoom, scroll: { ...root.scroll } };
+        }
+        const canvas = root.canvasBounds;
+        if ((canvas.width !== shown.width || canvas.height !== shown.height) && canvas.width > 0 && canvas.height > 0) {
+            this.pending = { zoom: root.zoom, scroll: { ...root.scroll } };
+            this.fire(root);
+        }
+    }
+
+    private fire(root?: ViewportRoot): void {
+        const before = this.pending;
+        if (!before) {
             return;
         }
         this.pending = undefined;
+        this.shownOn = root ? { width: root.canvasBounds.width, height: root.canvasBounds.height, before } : undefined;
         this.shown++;
         void this.actionDispatcher.dispatch(initialViewAction(clientBehavior().initialView));
     }
