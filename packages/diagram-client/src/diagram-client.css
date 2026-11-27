@@ -13,6 +13,7 @@
    position does not change any other element's computed style. */
 @import './chat-panel.css';
 @import './property-panel.css';
+@import './context-menu.css';
 
 :root {
      --sprotty-background: var(--vscode-editor-background, #1e1e1e);
@@ -815,72 +816,6 @@ i.cal-toggle-feedback-edges.cal-feedback-hidden-icon {
 .header-compartment.header-workflow .header-background {
     fill: var(--workflow-color-network); /* Palette A workflow/network steel blue */
     fill-opacity: 0.26;
-}
-
-/* Context menu (used for "Go to Source") */
-.workflow-context-menu {
-    position: fixed;
-    z-index: 10000;
-    min-width: 160px;
-    max-width: min(420px, calc(100vw - 16px));
-    max-height: min(70vh, calc(100vh - 16px));
-    overflow-x: hidden;
-    overflow-y: auto;
-    padding: 4px 0;
-    background: var(--vscode-menu-background);
-    border: 1px solid var(--vscode-menu-border, var(--vscode-editorWidget-border));
-    color: var(--vscode-menu-foreground);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-    border-radius: 4px;
-}
-
-.workflow-context-menu-item {
-    display: block;
-    box-sizing: border-box;
-    width: 100%;
-    text-align: left;
-    padding: 6px 10px;
-    background: transparent;
-    border: 0;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.workflow-context-menu-item:hover,
-.workflow-context-menu-item:focus-visible,
-.workflow-context-menu-item.open {
-    background: var(--vscode-menu-selectionBackground);
-    color: var(--vscode-menu-selectionForeground, var(--vscode-menu-foreground));
-    outline: none;
-}
-
-/* An item that opens a submenu ("Layout"): its label, and a chevron at the right. */
-.workflow-context-menu-item.has-children {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 24px;
-}
-
-.workflow-context-menu-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.workflow-context-menu-chevron {
-    flex: none;
-    font-size: 12px;
-}
-
-.workflow-context-menu-separator {
-    height: 1px;
-    margin: 4px 0;
-    background: var(--vscode-menu-separatorBackground, var(--vscode-menu-border, rgba(128, 128, 128, 0.35)));
-    pointer-events: none;
 }
 
 .header-compartment.header-external .header-background {
