@@ -16,6 +16,9 @@
  * tools, which a palette with view options, or with nothing at all (a
  * product that creates nothing), is not: it says it only when a filter
  * matched neither a tool nor a line.
+ *
+ * A product's palette extends it; one that draws a search or settings of its
+ * own in the body says so with `drawsOwnContent`.
  */
 import { type Action, SetModelAction, ToolPalette, UpdateModelAction } from '@eclipse-glsp/client';
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
@@ -81,6 +84,15 @@ export class ViewToolPalette extends ToolPalette {
         this.drawViewOptions();
     }
 
+    /**
+     * Whether this palette draws in its body itself, beside the tools and the
+     * view options (a product's own search or settings). Such a body is never
+     * drawn as empty, nor said to have found nothing.
+     */
+    protected drawsOwnContent(): boolean {
+        return false;
+    }
+
     /** The view options under the tools, drawn again; the tools are left as they are. */
     protected drawViewOptions(): void {
         const body = this.bodyDiv;
@@ -141,13 +153,14 @@ export class ViewToolPalette extends ToolPalette {
             }
         }
         const options = holder.childElementCount > 0;
-        if (!tools && !options && filter.trim() !== '') {
+        const shown = tools || options || this.drawsOwnContent();
+        if (!shown && filter.trim() !== '') {
             // A filter that matched nothing: that is what the words are for.
             const nothing = document.createElement('div');
             nothing.classList.add('tool-button');
             nothing.textContent = NO_RESULTS;
             body.insertBefore(nothing, holder);
         }
-        body.classList.toggle(EMPTY_PALETTE_BODY_CLASS, !tools && !options && filter.trim() === '');
+        body.classList.toggle(EMPTY_PALETTE_BODY_CLASS, !shown && filter.trim() === '');
     }
 }

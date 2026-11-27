@@ -470,6 +470,26 @@ describe('the palette', () => {
         expect(body().querySelectorAll('.view-option')).toHaveLength(1);
     });
 
+    it('draws a body as shown, and finds something, when the product draws in it itself', () => {
+        class OwnPalette extends ViewToolPalette {
+            protected override drawsOwnContent(): boolean {
+                return true;
+            }
+        }
+        container.replaceChildren();
+        const made: any = new OwnPalette();
+        made.viewOptions = new TestService();
+        made.paletteItems = [];
+        made.containerElement = container;
+        made.searchField = search;
+        made.createBody();
+        expect(body().classList.contains(EMPTY_PALETTE_BODY_CLASS)).toBe(false);
+        search.value = 'zzz';
+        made.drawViewOptions();
+        expect(body().textContent).not.toContain('No results found.');
+        expect(body().classList.contains(EMPTY_PALETTE_BODY_CLASS)).toBe(false);
+    });
+
     it('leaves a palette with tools and no view options as it was', () => {
         palette(new TestService(), tools);
         expect(body().querySelector('.view-options')!.childElementCount).toBe(0);

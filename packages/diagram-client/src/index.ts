@@ -159,6 +159,9 @@ export {
     type ViewOptionItem,
     type ViewOptionTurn
 } from '@dialogram/shared';
+// The palette the container binds (view-tool-palette.ts): a product's own
+// palette extends it, and keeps the view options and the per-view items.
+export { ViewToolPalette, EMPTY_PALETTE_BODY_CLASS } from './view-tool-palette';
 // The mark on a product's own card over the canvas, for Fit and `reveal` to
 // keep the drawing clear of it (canvas-overlays.ts).
 export { CANVAS_OVERLAY_ATTRIBUTE } from './canvas-overlays';

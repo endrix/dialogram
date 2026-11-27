@@ -13,7 +13,8 @@ describe('the package, for a product’s webview code', () => {
             'createPropertySection', 'escapeHtml', 'shortenPath', 'renderInto',
             'VscodeUi', 'clientBehavior', 'commandId', 'operationKind', 'offersRun', 'settingsNamespace',
             'renderMarkdownSafe', 'renderDocumentMarkdownSafe', 'looksLikeMarkdown',
-            'isBlock', 'looksLikeDiff', 'parseEmbedded', 'formatAgentOutputs'
+            'isBlock', 'looksLikeDiff', 'parseEmbedded', 'formatAgentOutputs',
+            'ViewToolPalette', 'EMPTY_PALETTE_BODY_CLASS'
         ]) {
             expect((client as Record<string, unknown>)[name], name).toBeDefined();
         }
