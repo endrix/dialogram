@@ -36,6 +36,33 @@ describe('the canvas overlays', () => {
         expect(overlaysOn(canvas)).toEqual([]);
     });
 
+    it('leave out a marked card turned off, inside a hidden part of the canvas, or too small', () => {
+        drawn({ left: 10, top: 60, width: 280, height: 400 }, el => el.setAttribute(CANVAS_OVERLAY_ATTRIBUTE, 'false'));
+        const hiddenPart = document.createElement('div');
+        hiddenPart.classList.add('sprotty-hidden');
+        document.body.appendChild(hiddenPart);
+        hiddenPart.appendChild(drawn({ left: 400, top: 60, width: 280, height: 400 }, el => el.setAttribute(CANVAS_OVERLAY_ATTRIBUTE, '')));
+        drawn({ left: 800, top: 60, width: 1, height: 400 }, el => el.setAttribute(CANVAS_OVERLAY_ATTRIBUTE, ''));
+        expect(overlaysOn(canvas)).toEqual([]);
+    });
+
+    it('leave out a marked card the browser does not show', () => {
+        drawn({ left: 10, top: 60, width: 280, height: 400 }, el => {
+            el.setAttribute(CANVAS_OVERLAY_ATTRIBUTE, '');
+            el.checkVisibility = () => false;
+        });
+        expect(overlaysOn(canvas)).toEqual([]);
+    });
+
+    it('count a marked card beside the platform\'s own', () => {
+        drawn({ left: 900, top: 40, width: 260, height: 240 }, el => el.classList.add('tool-palette'));
+        drawn({ left: 10, top: 60, width: 280, height: 400 }, el => el.setAttribute(CANVAS_OVERLAY_ATTRIBUTE, ''));
+        expect(overlaysOn(canvas)).toEqual([
+            { x: 900, y: 40, width: 260, height: 240 },
+            { x: 10, y: 60, width: 280, height: 400 }
+        ]);
+    });
+
     it('measure a marked card in the canvas pixels', () => {
         drawn({ left: 110, top: 90, width: 200, height: 100 }, el => el.setAttribute(CANVAS_OVERLAY_ATTRIBUTE, ''));
         expect(overlaysOn({ x: 100, y: 50, width: 1200, height: 800 })).toEqual([{ x: 10, y: 40, width: 200, height: 100 }]);

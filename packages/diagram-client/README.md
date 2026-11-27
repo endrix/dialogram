@@ -406,6 +406,14 @@ startStockDiagram({ features: [new ContainerModule(bind => { bind(DiagramSurface
   with `postToWebview`. Each editor of a file has its own surface; a
   `postToWebview` reaches all of them, `ctx.postToWebview` only the asker.
 
+**A card of your own over the canvas.** Fit, Center and a surface's
+`reveal` keep the drawing clear of the platform's overlays (the palette, the
+outline, the chat card) and of any element marked `data-canvas-overlay`
+(`CANVAS_OVERLAY_ATTRIBUTE`). Mark the one element that holds your card, and
+put it on the page before the first view, empty if its content comes later:
+the mark is read when a fit runs. A card that is `hidden`, not visible, or
+marked `"false"` is not counted.
+
 **A diagram of your own.** When you compose the container yourself:
 
 ```ts
