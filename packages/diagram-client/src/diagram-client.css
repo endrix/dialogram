@@ -16,6 +16,7 @@
 @import './context-menu.css';
 @import './loading-indicator.css';
 @import './zoom-detail.css';
+@import './selection-links.css';
 
 :root {
      --sprotty-background: var(--vscode-editor-background, #1e1e1e);
@@ -1592,59 +1593,6 @@ body.vscode-high-contrast-light .node-center-image-light {
 .workflow-node-group .group-loop-arrow {
     fill: currentColor;
     stroke: none;
-}
-
-/* ============================================
-   Links of the selection (selection-links.ts): what the selected node uses
-   and is used by, drawn over the diagram only while it is selected. One
-   colour moves the line, its arrowhead and the outline of what it leads to;
-   a product colours and dashes its own kinds on `selection-link-<role>`.
-   ============================================ */
-.selection-links {
-    pointer-events: none;
-}
-
-.selection-link {
-    color: var(--vscode-focusBorder, #007fd4);
-}
-
-.selection-link .selection-link-line {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2px;
-    stroke-linecap: round;
-}
-
-.selection-link .selection-link-arrow {
-    fill: currentColor;
-    stroke: none;
-}
-
-.selection-link text.selection-link-label {
-    fill: var(--vscode-foreground, #cccccc);
-    font-family: var(--vscode-font-family);
-    font-size: 10px;
-    /* A halo in the editor's colour, so the word reads where it crosses a line. */
-    paint-order: stroke;
-    stroke: var(--vscode-editor-background, #1e1e1e);
-    stroke-width: 4px;
-    stroke-linejoin: round;
-}
-
-.selection-links-shown .workflow-node-group .group-loop {
-    opacity: 0.3;
-}
-
-/* What a link leads to, and the other drawings of what is selected. */
-.selection-links .selection-link-outline {
-    fill: none;
-    stroke: var(--vscode-focusBorder, #007fd4);
-    stroke-width: 2px;
-}
-
-.selection-links .selection-link-outline.selection-link-same {
-    stroke-dasharray: 5 4;
-    stroke-opacity: 0.8;
 }
 
 /* ============================================

@@ -524,15 +524,18 @@ export interface ExtractOptions {
     atScaleOne?: boolean;
     /**
      * The text the view draws at its zoom, and no more. By default a file
-     * has no zoom and carries all the text (the level of detail is lifted
-     * while it is copied); a product that offers "what is on screen" asks
-     * for this.
+     * has no zoom and carries all the text: the level of detail's classes
+     * (zoom-detail.ts) are lifted while it is copied. That lifts what the
+     * stylesheet hides; a view that leaves something out of what it draws
+     * must draw it before the copy. A product that offers "what is on
+     * screen" asks for this.
      */
     asDisplayed?: boolean;
     /**
-     * Elements left out of the file, as a selector matched in the copy: a
-     * product's structural picture, without its ports or tables. The file's
-     * bounds are still those of what is drawn.
+     * Elements left out of the file, as a selector matched among the
+     * descendants of the copy: a product's structural picture, without its
+     * ports or tables. The file's bounds are still those of what is drawn. A
+     * selector the browser cannot parse fails the export (undefined).
      */
     leaveOut?: string;
 }
@@ -578,8 +581,15 @@ function extractDrawn(el: SVGGraphicsElement, label: string, atScaleOne: boolean
     inlineStyles(el, clone);
     clone.removeAttribute('transform');
     if (leaveOut) {
-        for (const left of Array.from(clone.querySelectorAll(leaveOut))) {
-            left.remove();
+        let left: Element[];
+        try {
+            left = Array.from(clone.querySelectorAll(leaveOut));
+        } catch {
+            // Not a selector: a failed export, as the callers expect one.
+            return undefined;
+        }
+        for (const each of left) {
+            each.remove();
         }
     }
 

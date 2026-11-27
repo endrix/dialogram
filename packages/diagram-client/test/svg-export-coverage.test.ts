@@ -69,18 +69,43 @@ const NOT_EXPORTED: Record<string, string> = {
     '-webkit-mask-position': 'palette icon chrome',
     '-webkit-mask-repeat': 'palette icon chrome',
     '-webkit-mask-composite': 'palette icon chrome, and the run ring, which the export redraws as a stroke',
+    // The chat panel and the property panel, in sheets of their own.
+    'animation-delay': 'no time passes in a file',
+    'border-left-width': 'panel chrome, never inside the diagram svg',
+    'border-right-color': 'panel chrome, never inside the diagram svg',
+    'border-style': 'panel chrome, never inside the diagram svg',
+    'object-fit': 'panel chrome (a chat image), never inside the diagram svg',
+    '-webkit-appearance': 'panel chrome (a form control), never inside the diagram svg',
+    'container-name': 'panel layout (a container query), never inside the diagram svg',
+    'container-type': 'panel layout (a container query), never inside the diagram svg',
     // `body:not(...)` is a selector the property regex reads as a declaration.
     body: 'a selector, not a property'
 };
 
+/**
+ * The stylesheet and every sheet it @imports, in turn: a block moved into a
+ * sheet of its own (the level of detail, the links of the selection, the
+ * panels) is still the bundle's.
+ */
+function stylesheets(file: string, seen = new Set<string>()): string[] {
+    if (seen.has(file)) {
+        return [];
+    }
+    seen.add(file);
+    const css = fs.readFileSync(file, 'utf8');
+    const imported = [...css.matchAll(/@import\s+['"](\.[^'"]+)['"]/g)].map(match => path.resolve(path.dirname(file), match[1]));
+    return [css, ...imported.flatMap(each => stylesheets(each, seen))];
+}
+
 /** Every property name the stylesheet declares. */
 function declaredProperties(): string[] {
-    const css = fs.readFileSync(STYLESHEET, 'utf8');
     const names = new Set<string>();
-    for (const match of css.matchAll(/(?:^|[;{])\s*([a-z-]+)\s*:/gm)) {
-        const name = match[1];
-        if (!name.startsWith('--')) {
-            names.add(name);
+    for (const css of stylesheets(STYLESHEET)) {
+        for (const match of css.matchAll(/(?:^|[;{])\s*([a-z-]+)\s*:/gm)) {
+            const name = match[1];
+            if (!name.startsWith('--')) {
+                names.add(name);
+            }
         }
     }
     return [...names].sort();
@@ -98,6 +123,13 @@ describe('exported style coverage', () => {
     it('does not excuse a property it actually carries', () => {
         const carried = new Set([...SVG_STYLE_PROPS, ...HTML_STYLE_PROPS]);
         expect(Object.keys(NOT_EXPORTED).filter(name => carried.has(name))).toEqual([]);
+    });
+
+    it('reads the sheets the stylesheet @imports', () => {
+        const files = stylesheets(STYLESHEET);
+        expect(files.length).toBeGreaterThan(1);
+        expect(files.some(css => css.includes('.detail-far'))).toBe(true);
+        expect(files.some(css => css.includes('.selection-link'))).toBe(true);
     });
 
     it('keeps the properties whose loss was invisible', () => {

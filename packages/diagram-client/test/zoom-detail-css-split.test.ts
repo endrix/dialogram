@@ -1,8 +1,9 @@
 /**
- * The level-of-detail rules live in their own stylesheet, which a product
- * with views and a stylesheet of its own imports alone, beside Dialogram's
- * root view. diagram-client.css @imports it, so the stock bundle keeps every
- * rule, and holds none of them itself: one copy of each.
+ * The rules of what Dialogram's root view draws (the level of detail, the
+ * links of the selection) live in stylesheets of their own, which a product
+ * with views and a stylesheet of its own imports beside that view.
+ * diagram-client.css @imports them, so the stock bundle keeps every rule, and
+ * holds none of them itself: one copy of each.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +19,16 @@ function detailSelectors(css: string): string[] {
         .map(match => match[1].trim())
         .filter(selector => /\.detail-(far|mid|near)\b/.test(selector));
 }
+
+describe('selection-links.css', () => {
+    it('holds the rules of the links of the selection, @imported by diagram-client.css, which keeps none', () => {
+        const css = read('selection-links.css');
+        expect(css).toMatch(/\.selection-link \.selection-link-line\s*\{/);
+        const stock = read('diagram-client.css');
+        expect(stock).toMatch(/@import '\.\/selection-links\.css';/);
+        expect(stock).not.toMatch(/\.selection-link/);
+    });
+});
 
 describe('zoom-detail.css', () => {
     it('hides what each level leaves out, the classes a product tags its text with among them', () => {

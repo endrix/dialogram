@@ -57,8 +57,9 @@ describe('the level of detail', () => {
 });
 
 describe('the text each level hides', () => {
-    const css = source('zoom-detail.css');
-    const block = css.slice(css.indexOf('/* Level of detail (zoom-detail.ts)'));
+    // The rules have a stylesheet of their own; comments out, so that a class
+    // named in one is not taken for a rule.
+    const block = source('zoom-detail.css').replace(/\/\*[\s\S]*?\*\//g, '');
     // The classes a level hides outright: a compound selector (`.header-label.label-type`,
     // `:not(...)`) hides only some of them, and is not counted.
     const rules = (level: keyof typeof DETAIL_CLASSES) =>

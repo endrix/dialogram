@@ -55,4 +55,8 @@ describe('extractSvg, as a product asks', () => {
         expect(extracted!.svg).toMatch(/<rect/);
         expect(texts(extracted!.svg)).toEqual(['Aligner']);
     });
+
+    it('fails, rather than throw, on a selector the browser cannot parse', () => {
+        expect(extractSvg(drawnFarOut(), 'Aligner', { leaveOut: '.port,' })).toBeUndefined();
+    });
 });

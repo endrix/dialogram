@@ -1,9 +1,9 @@
-/* The level of detail of the diagram (zoom-detail.ts), in a stylesheet of
-   its own: diagram-client.css @imports it, and a product with a stylesheet of
-   its own and Dialogram's root view (`DetailGraphView`) imports it alone. */
-
 /* Level of detail (zoom-detail.ts): how much text the diagram draws at the
-   zoom it is looked at. The root svg carries `detail-far`, `detail-mid` or
+   zoom it is looked at. diagram-client.css @imports this file, and a product
+   with a stylesheet of its own and Dialogram's root view (`DetailGraphView`)
+   imports it alone.
+
+   The root svg carries `detail-far`, `detail-mid` or
    `detail-near`; only the diagram on screen does, so the hidden render the
    client measures in, and an export, draw everything. A product tags text
    its own views draw `zoom-name` (drawn from the middle level) or
@@ -11,8 +11,8 @@
 
    Every rule names the element it hides, `text` or the `g` of a pill: a
    node's own group carries classes of the same names (an operator symbol is
-   `symbol-operator`, a label's group its model's `port-label`), and an
-   unqualified rule hid whole nodes.
+   `symbol-operator`, a label's group its model's `port-label`), which an
+   unqualified rule would hide whole.
 
    Far: no text on the nodes, nor the pills a run puts on edges (whole, or
    they would be empty). A group frame keeps its title. */
