@@ -78,6 +78,13 @@ platform that hands it one.
 
 ### Added
 
+- **A product's own card over the canvas can count for Fit** (`data-canvas-overlay`,
+  `CANVAS_OVERLAY_ATTRIBUTE` from `@dialogram/diagram-client`). Fit and a
+  surface's `reveal` keep the drawing clear of the platform's overlays (the
+  palette, the outline, the chat card) and of nothing else, so a card a
+  product draws there (mlir-viewer's outline) had the drawing fitted under
+  it. An element with the mark is measured like the platform's overlays,
+  and left out while it is `hidden`.
 - **A profile can keep no layout record** (`storageOptions.keepLayoutRecord:
   false`). The platform writes `.layout/<file>.layout.json` beside every
   source it lays out, at the open with nothing moved, and the only way to

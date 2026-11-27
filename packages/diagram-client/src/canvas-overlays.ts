@@ -7,9 +7,19 @@ import type { Rect } from './fit-geometry';
 import { overlaps } from './fit-geometry';
 
 /**
+ * The mark a product puts on what it draws over the canvas (a card, a
+ * banner, a toolbar of its own) for Fit and `reveal` to keep the drawing
+ * clear of it, as they do of the platform's overlays. Hidden (`hidden`, or
+ * inside a hidden part of the canvas) or smaller than 2 px, it is not
+ * counted.
+ */
+export const CANVAS_OVERLAY_ATTRIBUTE = 'data-canvas-overlay';
+
+/**
  * The overlays. The chat card (bottom centre, half the width) and the outline
  * (left) float over the canvas as the palette does; the docked property panel
- * is not here because it shrinks the canvas instead of covering it.
+ * is not here because it shrinks the canvas instead of covering it. The last
+ * is a product's own, marked with {@link CANVAS_OVERLAY_ATTRIBUTE}.
  */
 export const CANVAS_OVERLAYS = [
     '.tool-palette',
@@ -19,7 +29,8 @@ export const CANVAS_OVERLAYS = [
     '.workflow-fab-stack',
     '.property-panel.floating:not(.collapsed)',
     '.workflow-chat-panel.visible',
-    '.workflow-hierarchy-outline:not([hidden])'
+    '.workflow-hierarchy-outline:not([hidden])',
+    `[${CANVAS_OVERLAY_ATTRIBUTE}]:not([hidden])`
 ];
 
 /** The overlays shown over `canvas` (in the page's pixels), in the canvas's own pixels. */

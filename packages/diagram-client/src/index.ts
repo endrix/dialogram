@@ -157,3 +157,6 @@ export {
     type ViewOptionItem,
     type ViewOptionTurn
 } from '@dialogram/shared';
+// The mark on a product's own card over the canvas, for Fit and `reveal` to
+// keep the drawing clear of it (canvas-overlays.ts).
+export { CANVAS_OVERLAY_ATTRIBUTE } from './canvas-overlays';
