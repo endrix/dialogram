@@ -92,6 +92,21 @@ export interface DiagramClientBehavior {
      *  producer's editable fields still show), `entityType` (Basic Info's Type
      *  row and its change-type button). All shown by default. */
     propertySections?: { ports?: boolean; annotations?: boolean; parameters?: boolean; entityType?: boolean };
+    /** The property panel shows a view's own properties (its name, then the
+     *  facts its producer states for it, `graph.meta.facts`) while nothing is
+     *  selected, for a view that has facts: from the first model on, in place
+     *  of the "Select an element" hint, and again when a click on nothing
+     *  clears a node's selection or a surface's. Not over a surface's
+     *  selection, nor over a field that has the focus or holds text typed and
+     *  not committed (by an Enter the field takes, or the change of a field
+     *  marked `data-commits-on="change"`). The pin keeps the panel visible,
+     *  as its button says, and keeps no content. Escape on a surface's
+     *  selection shows the view's properties, with or without this. Off by
+     *  default: the panel opens on the hint and keeps what it shows on a
+     *  deselection, and a double click on the background shows the view's
+     *  properties, as it does either way (diagram-client README, "A view's
+     *  own facts"). */
+    viewFactsWhileNothingSelected?: boolean;
     /** What the hierarchy outline panel is called (its title and its button's
      *  tooltip); "Hierarchy" by default. */
     outlineTitle?: string;

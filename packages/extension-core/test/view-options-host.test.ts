@@ -9,7 +9,11 @@
  * too, which may have shown something else), the product hears each change
  * once, and a `reload` group has the model asked for again.
  */
-import { describe, expect, it, vi } from 'vitest';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { LayoutPersistenceService } from '@dialogram/diagram-server/services/layout-persistence-service';
 import * as vscode from 'vscode';
 import {
     VIEW_OPTIONS_ARG,
@@ -20,7 +24,7 @@ import {
     type ViewOptionGroup,
     type ViewOptionsState
 } from '@dialogram/shared';
-import { ViewOptionsHost, type ViewOptionsHostOptions } from '../src/extension/diagram/view-options-host';
+import { ViewOptionsHost, viewOptionsOfProfile, viewOptionsStoreOf, type ViewOptionsHostOptions } from '../src/extension/diagram/view-options-host';
 import type { DiagramProfile } from '../src/api';
 
 const FILE = 'file:///w/top.sv';
@@ -429,4 +433,51 @@ describe('the editor provider', () => {
 
 it('names the root argument the groups ride on', () => {
     expect(VIEW_OPTIONS_ARG).toBe('wf:viewOptions');
+});
+
+describe('where the choices are kept, by the profile', () => {
+    const made: string[] = [];
+    afterEach(async () => {
+        for (const dir of made.splice(0)) {
+            await fs.rm(dir, { recursive: true, force: true });
+        }
+    });
+
+    async function sourceFile(): Promise<{ file: string; record: string }> {
+        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'view-options-store-'));
+        made.push(dir);
+        const file = path.join(dir, 'top.src');
+        await fs.writeFile(file, 'top { }\n', 'utf-8');
+        return { file, record: path.join(dir, '.layout') };
+    }
+    const exists = (p: string) => fs.stat(p).then(() => true, () => false);
+    const demo = { settingsNamespace: 'demo', operationPrefix: 'demo' };
+
+    it('in the file\'s layout record, as before', async () => {
+        const { file, record } = await sourceFile();
+        const store = viewOptionsStoreOf({ storageOptions: demo }, LayoutPersistenceService);
+        await store.save(file, { kinds: { b: false } });
+        expect(await exists(record)).toBe(true);
+        expect(await viewOptionsStoreOf({}, LayoutPersistenceService).load(file)).toEqual({ kinds: { b: false } });
+    });
+
+    it('as the activation takes them from the profile: its groups, its listener, and its store', async () => {
+        const { file, record } = await sourceFile();
+        const groups = [kinds];
+        const onDidChange = () => undefined;
+        const taken = viewOptionsOfProfile({ viewOptions: { groups, onDidChange }, storageOptions: { ...demo, keepLayoutRecord: false } }, LayoutPersistenceService);
+        expect(taken.groups).toBe(groups);
+        expect(taken.onDidChange).toBe(onDidChange);
+        await taken.store.save(file, { kinds: { b: false } });
+        expect(await exists(record)).toBe(false);
+        expect(await taken.store.load(file)).toEqual({ kinds: { b: false } });
+    });
+
+    it('in memory for the window, where the profile keeps no layout record', async () => {
+        const { file, record } = await sourceFile();
+        const store = viewOptionsStoreOf({ storageOptions: { ...demo, keepLayoutRecord: false } }, LayoutPersistenceService);
+        await store.save(file, { kinds: { b: false } });
+        expect(await exists(record)).toBe(false);
+        expect(await store.load(file)).toEqual({ kinds: { b: false } });
+    });
 });

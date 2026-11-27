@@ -78,6 +78,78 @@ platform that hands it one.
 
 ### Added
 
+- **A profile can keep no layout record** (`storageOptions.keepLayoutRecord:
+  false`). The platform writes `.layout/<file>.layout.json` beside every
+  source it lays out, at the open with nothing moved, and the only way to
+  stop it was `WORKFLOW_DIAGRAM_DISABLE_PERSISTENCE=1`, for the whole
+  process: every product in the window with it. A read-only product whose
+  files lie in folders it does not own now says so in its profile: each
+  session's `LayoutPersistenceService` (from the session's storage options,
+  so a consumer module's own binding of them wins, as for every other one)
+  and the host's store of view options (`viewOptionsOfProfile`) write and read
+  no record, and one already there is left as it is. Each diagram is laid
+  out when it opens. The open bundles and held states are held in memory
+  until the editor closes, the view options until the window does; the
+  positions moved, the routes and the port orders are not, and a model
+  asked for again (a view option marked `reload`, a change of the file, the
+  view entered again) is laid out afresh. Another profile in the window
+  keeps its own record; the variable still keeps none for any.
+  `LayoutPersistenceService` takes it as `{ persist: false }`, beside the
+  debounce. The sidecar toolkit forwards it from its input
+  (`keepLayoutRecord`), as it forwards `headerWrap`. A Dialogram older than
+  this ignores the option and keeps the record.
+- **The property panel can show a view's own facts while nothing is
+  selected** (`clientBehavior.viewFactsWhileNothingSelected: true`). A
+  view's facts (`graph.meta.facts`) are drawn after a double click on the
+  background, or by themselves over a surface that hears clicks; elsewhere
+  the panel opens on "Select an element to view properties" and keeps the
+  last element's content on a deselection. A product that asks has the
+  panel show, for a view with facts, the view's name and facts from the
+  first model on, with or without a surface, and again when a click on
+  nothing clears a node's selection or a surface's. Not over a surface's
+  selection the reader has just made, nor over a field that has the focus
+  or holds text typed and not committed (by an Enter the field takes, or
+  the change of a field marked `data-commits-on="change"`, as the
+  producer's are; a search field holds nothing),
+  nor for a selection the model took away (an edit renamed the element). The pin
+  keeps the panel visible, as its button says, and keeps no content. Escape
+  on a surface's selection shows the view's properties, as it did; no key
+  clears a node's selection. A product that does not ask, and a view
+  without facts, have the panel as it was.
+- **The refresh command can enter a view** (`commands.refreshDiagramModel`
+  with `{ sourceUri, workflowName, open: true }`). A view entered from a
+  row that is the product's (`outline.activate`) by a refresh with a name
+  was drawn and not recorded (a refresh never changes which view an editor
+  shows), so the next save, or a tick of a view option marked `reload`,
+  showed the file's default view again; and the open command, which records
+  it, resolves its target as a text document first, which a source that is
+  not text (a compressed file a product reads itself) is refused as, and
+  takes the focus. With `open: true` the view named is entered as the open
+  commands enter it in an editor that is open already: in the file's own
+  editor (the one used last, of two), recorded in place of any view before,
+  and the refreshes after it are of it; no text document is opened and the
+  focus stays. The view entered is the editor's root, its crumbs starting
+  over at it, with no crumb back to the file's root; anything else on the
+  argument (a `trail`) is ignored. A product whose views lie below a root
+  and that draws its own page enters them from the page by the diagram's
+  own navigation request, which carries the trail. The name is not checked,
+  as the open commands check it with `canOpenSource`: one the file does not
+  have is entered, recorded and asked for at every save, and is the
+  caller's to give rightly. Nothing is asked where the file has no editor
+  of its own (none open, or the file shown in place inside another file's
+  editor, which a refresh without `open` reaches). An entry, by this or by
+  the open commands, forgets the diagram's own navigation of the moments
+  before it in the file, which a model request from the diagram naming no
+  view was given, over the view entered. A refresh with a name and no
+  `open` is as #197 left it: it asks for the name, where no name is on
+  record, every time, and records nothing. Said at `refreshDiagramModel`
+  and `openDiagram` (shared `command-ids.ts`), at `DiagramOutline.activate`
+  and in the extension README. `diagram-editor-provider-view-entered.test.ts`
+  sets down what each way of entering a view gives at a tick, a save and a
+  refresh naming another view; the command itself is `refreshCommand` in
+  `open-diagram-target.ts`, tested there. A Dialogram older than this
+  ignores `open` here: the view is drawn and not recorded.
+
 - **`/untangle` in the chat.** In Build mode, on a diagram whose producer
   can write a definition's port order (`reorderEntityPorts`, wfpy), the
   agent lays the diagram out with Layout Diagram, the drawing to beat, then
@@ -1090,6 +1162,12 @@ platform that hands it one.
 
 ### Changed
 
+- **`PropertyPanel.showViewOverSurface` is `showViewWhileNothingShown`.**
+  It also draws a view's facts where the product asks for them
+  (`clientBehavior.viewFactsWhileNothingSelected`, see Added), so the old
+  name no longer said what it does. A product's panel that overrides it
+  overrides the new name. `selectionChanged` reads the deselected elements
+  GLSP passes it as its third argument.
 - **A chat's session opens in the agent's CLI as a hand-over.** The terminal
   button of a chat typed the agent's resume command while the chat's own
   agent went on holding the session, so two clients had it at once. Codex
@@ -1685,6 +1763,15 @@ platform that hands it one.
 
 ### Fixed
 
+- **A layout record that cannot be written is said once, in one line.** In
+  a folder that cannot be written, every save of the layout (the first
+  layout of a view, a move, a view option) logged "Failed to save layout
+  file" as an error with its stack. It is now one warning per file, with
+  the path and the reason (`EACCES`, `ENOTDIR`), said again only after a
+  write there has worked. The diagram works on as before, holding in memory
+  what a profile that keeps no record holds (the open bundles, the held
+  states, the view options) and not the positions moved, the routes or the
+  port orders.
 - **A Codex session opens in Codex.** The button that opens an agent's
   session in its own CLI knew a command for `claude` and `opencode` and none
   for `codex`: it only copied the id and said that codex has no command to

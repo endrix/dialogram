@@ -19,6 +19,8 @@ import { DiagramSurfaceHost } from '../src/diagram-surface-host';
 import { ChatPanel } from '../src/chat-panel-integrated';
 import { WhitespaceRootPropertiesMouseListener } from '../src/whitespace-root-properties-mouse-listener';
 import { summarizeSurfaceSelection, type DiagramSurface, type DiagramSurfaceContext, type SurfaceSelection } from '../src/diagram-surface';
+import { render, type TemplateResult } from 'lit';
+import { ppNumberField } from '../src/property-fields';
 
 vi.mock('../src/vscode-ui', async () => (await import('./panel-harness/harness')).vscodeUiModule());
 
@@ -457,5 +459,351 @@ describe('over a surface that hears clicks, the panel opens on the view\'s own p
         input.blur();
         await tick();
         expect(viewShown()).toEqual([['Name', 'top'], ['Cells', '1200']]);
+    });
+});
+
+/**
+ * Where the product asks (`clientBehavior.viewFactsWhileNothingSelected`),
+ * the panel shows a view's own facts (`graph.meta.facts`) while nothing is
+ * selected, with or without a surface: at the open, in place of the hint, and
+ * again when a click on nothing clears a selection. Without it, the panel is
+ * as the describe above holds it, for a view with facts too.
+ */
+describe('a view with facts of its own, where the product asks for them while nothing is selected', () => {
+    const HINT = '<div class="no-selection">Select an element to view properties</div>';
+    const hint = () => document.querySelector('#property-content .no-selection')?.textContent;
+    const node = { id: 'n1', type: 'node:task', args: { [M.ENTITY_NAME]: 'first' }, children: [] };
+
+    /** The page as the editor provider writes it for a product that asks: the panel holds the hint. */
+    function freshPage(): void {
+        installPage({ viewFactsWhileNothingSelected: true });
+        document.getElementById('property-content')!.innerHTML = HINT;
+    }
+
+    /** A view's root with a name and a fact (`count`), or a name alone (`count: null`). */
+    function view(count: string | null = '1200', ...nodes: any[]): any {
+        const facts = count === null ? {} : { [M.FACTS]: [{ label: 'Nodes', value: count }] };
+        return { ...rootOf(...nodes), args: { [M.READ_ONLY_VIEW]: true, [M.NETWORK_NAME]: 'top', ...facts } };
+    }
+
+    function viewShown(): string[][] | undefined {
+        const name = section('View')?.querySelector('.property-value')?.textContent?.trim();
+        return name === undefined ? undefined : [['Name', name], ...(section('Facts') ? rows('Facts') : [])];
+    }
+
+    /** The node selected, as GLSP tells the panel and the surface host. */
+    function selectNode(panel: TestPanel, host: DiagramSurfaceHost | undefined, root: any): void {
+        panel.selectionChanged(root, ['n1']);
+        host?.selectionChanged(root, ['n1']);
+    }
+
+    /** A click on nothing that clears the node: GLSP's deselection, then the surface's click. */
+    function clickOnNothing(panel: TestPanel, host: DiagramSurfaceHost | undefined, root: any): void {
+        panel.selectionChanged(root, [], ['n1']);
+        host?.selectionChanged(root, []);
+        host?.click(mouse(1));
+    }
+
+    /** No surface; the stock host with no surface in it; a surface that hears no clicks. */
+    const hosts: Array<() => DiagramSurfaceHost | undefined> = [
+        () => undefined,
+        () => {
+            const bare = new DiagramSurfaceHost();
+            Object.assign(bare as any, { actionDispatcher: { dispatch: async () => undefined }, viewerOptions: { baseDiv: 'diagram' } });
+            bare.decorate({}, { id: 'graph', type: 'graph', zoom: 1, scroll: { x: 0, y: 0 }, canvasBounds: { x: 0, y: 0, width: 800, height: 600 } });
+            bare.postUpdate();
+            return bare;
+        },
+        () => surfaceHost().host
+    ];
+
+    beforeEach(freshPage);
+
+    it('shows them from the first model, in place of the hint, with or without a surface, and selects nothing', () => {
+        for (const make of hosts) {
+            freshPage();
+            const host = make();
+            const panel = host ? panelOn(host) : new TestPanel();
+            panel.modelRootChanged(view() as never);
+
+            expect(hint()).toBeUndefined();
+            expect(viewShown()).toEqual([['Name', 'top'], ['Nodes', '1200']]);
+            expect(panel.dispatched).toEqual([]);
+            window.dispatchEvent(new Event('pagehide'));
+        }
+    });
+
+    it('shows them once a click on nothing clears a node\'s selection, with or without a surface, and follows the model', () => {
+        for (const make of hosts) {
+            freshPage();
+            const host = make();
+            const panel = host ? panelOn(host) : new TestPanel();
+            panel.modelRootChanged(view('1200', node) as never);
+            selectNode(panel, host, view('1200', node));
+            expect(rows('Basic Info')[0]).toEqual(['Name', 'first']);
+
+            clickOnNothing(panel, host, view('1200', node));
+            expect(viewShown()).toEqual([['Name', 'top'], ['Nodes', '1200']]);
+
+            panel.modelRootChanged(view('1300', node) as never);
+            expect(viewShown()).toEqual([['Name', 'top'], ['Nodes', '1300']]);
+            window.dispatchEvent(new Event('pagehide'));
+        }
+    });
+
+    it('shows them once a click on nothing clears a surface\'s selection', () => {
+        const { host, context } = surfaceHost();
+        const panel = panelOn(host);
+        panel.modelRootChanged(view() as never);
+        context().setSelection(via);
+        expect(rows('Basic Info')[0]).toEqual(['Name', 'Rectangle 42']);
+
+        host.click(mouse(1));
+
+        expect(host.currentSelection()).toBeUndefined();
+        expect(viewShown()).toEqual([['Name', 'top'], ['Nodes', '1200']]);
+    });
+
+    it('never over a surface\'s selection: a shape picked while a node was selected stays, as the graph lets the node go', () => {
+        const { host, context } = surfaceHost();
+        const panel = panelOn(host);
+        const root = view('1200', node);
+        panel.modelRootChanged(root as never);
+        selectNode(panel, host, root);
+        // The reader picks a shape: the host shows it and asks GLSP to let the node go, which it reports after.
+        context().setSelection(via);
+        panel.selectionChanged(root, [], ['n1']);
+        host.selectionChanged(root, []);
+
+        expect(host.currentSelection()?.title).toBe('Rectangle 42');
+        expect(rows('Basic Info')[0]).toEqual(['Name', 'Rectangle 42']);
+        expect(viewShown()).toBeUndefined();
+    });
+
+    it('pinned or not: the pin keeps the panel visible and keeps no content', () => {
+        const panel = new TestPanel();
+        (panel as any).chrome.pinned = true;
+        panel.modelRootChanged(view('1200', node) as never);
+        selectNode(panel, undefined, view('1200', node));
+        clickOnNothing(panel, undefined, view('1200', node));
+        expect(viewShown()).toEqual([['Name', 'top'], ['Nodes', '1200']]);
+    });
+
+    it('does not take the place of a node a selection gone with the model gave way to', () => {
+        // A port shown, then renamed by an edit: the model no longer has it,
+        // the panel shows its node, and GLSP reports the port deselected.
+        // That is the model's doing, not the reader's.
+        const withPort = (portId: string) => {
+            const port: any = { id: portId, type: 'port:input', args: { [M.IS_INPUT_PORT]: true }, children: [] };
+            const owner: any = { ...node, children: [port] };
+            port.parent = owner;
+            const root = view('1200', owner);
+            const byId = new Map<string, any>([[owner.id, owner], [port.id, port]]);
+            root.index = { getById: (id: string) => byId.get(id) };
+            return root;
+        };
+        const panel = new TestPanel();
+        panel.modelRootChanged(withPort('n1.p') as never);
+        panel.selectionChanged(withPort('n1.p'), ['n1.p']);
+        expect(rows('Basic Info')[0]).toEqual(['Name', 'first']);
+
+        const after = withPort('n1.q');
+        panel.modelRootChanged(after as never);
+        panel.selectionChanged(after, [], ['n1.p']);
+
+        expect(rows('Basic Info')[0]).toEqual(['Name', 'first']);
+        expect(viewShown()).toBeUndefined();
+    });
+
+    it('keeps a field that holds text typed and not committed after the focus left it, until Enter commits it', () => {
+        const panel = new TestPanel();
+        (panel as any).initializeEditTracking();
+        panel.modelRootChanged(view('1200', node) as never);
+        selectNode(panel, undefined, view('1200', node));
+        const input = document.createElement('input');
+        // As a field whose Enter commits does: it takes the key.
+        input.addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+            }
+        });
+        document.getElementById('property-content')!.appendChild(input);
+        input.focus();
+        input.value = 'typed, not committed';
+        input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        // The click on nothing takes the focus first.
+        input.blur();
+
+        clickOnNothing(panel, undefined, view('1200', node));
+        expect(input.isConnected).toBe(true);
+        expect(input.value).toBe('typed, not committed');
+
+        // Committed with Enter, before any model comes of it: the next click on nothing shows the view.
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        clickOnNothing(panel, undefined, view('1200', node));
+        expect(viewShown()).toEqual([['Name', 'top'], ['Nodes', '1200']]);
+    });
+
+    /** A node selected, the panel's edit tracking on, and `field` put in its content and typed into. */
+    function typedInto(field: HTMLInputElement | HTMLTextAreaElement | HTMLElement): TestPanel {
+        const panel = new TestPanel();
+        (panel as any).initializeEditTracking();
+        panel.modelRootChanged(view('1200', node) as never);
+        selectNode(panel, undefined, view('1200', node));
+        const content = document.getElementById('property-content')!;
+        if (!field.isConnected) {
+            content.appendChild(field);
+        }
+        const input = (field.matches('input, textarea') ? field : field.querySelector('input, textarea'))! as HTMLInputElement;
+        input.focus();
+        input.value = 'typed';
+        input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        return panel;
+    }
+
+    it('takes a change of the producer\'s field as its commit, as Enter: the next click on nothing shows them', () => {
+        const probe = new TestPanel();
+        const section = (probe as any).buildProducerFieldsSection('n1', [{ name: 'mode', value: 'typed' }]) as HTMLElement;
+        const panel = typedInto(section);
+        const input = section.querySelector('input')!;
+        // Committed by its change (the value as it was: no model comes of it), then the focus leaves.
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        input.blur();
+        clickOnNothing(panel, undefined, view('1200', node));
+        expect(viewShown()).toEqual([['Name', 'top'], ['Nodes', '1200']]);
+    });
+
+    it('takes no change of the panel\'s own fields as a commit (Enter or their button commits them): the typed text stays', () => {
+        const input = document.createElement('input');
+        const panel = typedInto(input);
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        input.blur();
+        clickOnNothing(panel, undefined, view('1200', node));
+        expect(input.isConnected).toBe(true);
+    });
+
+    /** A field the panel draws, rendered into its content. */
+    function drawn(template: TemplateResult): HTMLElement {
+        const holder = document.createElement('div');
+        document.getElementById('property-content')!.appendChild(holder);
+        render(template, holder);
+        return holder;
+    }
+    const enter = (field: Element, keys: KeyboardEventInit = {}) =>
+        field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...keys }));
+
+    it('takes no Enter as a commit where the field commits nothing on it (an annotation\'s argument row): the typed text stays', () => {
+        const input = document.createElement('input');
+        input.className = 'annotation-input annotation-add-value';
+        const panel = typedInto(input);
+        enter(input);
+        input.blur();
+        clickOnNothing(panel, undefined, view('1200', node));
+        expect(input.isConnected).toBe(true);
+    });
+
+    it('takes the Enter of each field whose Enter commits as its commit: the panel\'s value field, a field of lines on Ctrl+Enter, the number field, the producer\'s field', () => {
+        const probe = new TestPanel();
+        const fields: Array<[string, () => HTMLElement, KeyboardEventInit]> = [
+            ['value field', () => drawn((probe as any).sourceField('x', { className: 'param-map-input', onCommit: () => undefined })), {}],
+            ['field of lines', () => drawn((probe as any).sourceField('a\nb', { className: 'param-map-input', onCommit: () => undefined })), { ctrlKey: true }],
+            ['number field', () => drawn(ppNumberField({ value: 3, onCommit: () => undefined })), {}],
+            ['producer\'s field', () => (probe as any).buildProducerFieldsSection('n1', [{ name: 'mode', value: 'typed' }]), {}]
+        ];
+        for (const [kind, make, keys] of fields) {
+            const holder = make();
+            const panel = typedInto(holder);
+            const field = holder.querySelector('input, textarea')!;
+            enter(field, keys);
+            (field as HTMLElement).blur();
+            clickOnNothing(panel, undefined, view('1200', node));
+            expect(viewShown(), kind).toEqual([['Name', 'top'], ['Nodes', '1200']]);
+        }
+    });
+
+    it('takes a plain Enter in a field of lines as a line, not a commit', () => {
+        const probe = new TestPanel();
+        const holder = drawn((probe as any).sourceField('a\nb', { className: 'param-map-input', onCommit: () => undefined }));
+        const panel = typedInto(holder);
+        const lines = holder.querySelector('textarea')!;
+        enter(lines);
+        lines.blur();
+        clickOnNothing(panel, undefined, view('1200', node));
+        expect(lines.isConnected).toBe(true);
+    });
+
+    it('holds nothing typed into a search field, which filters and commits nothing', () => {
+        const search = document.createElement('input');
+        search.type = 'search';
+        const panel = typedInto(search);
+        search.blur();
+        clickOnNothing(panel, undefined, view('1200', node));
+        expect(viewShown()).toEqual([['Name', 'top'], ['Nodes', '1200']]);
+    });
+
+    it('forgets what was typed once the panel is drawn anew, for a node or a surface\'s selection', () => {
+        const { host, context } = surfaceHost();
+        const panel = panelOn(host);
+        (panel as any).initializeEditTracking();
+        const root = view('1200', node);
+        panel.modelRootChanged(root as never);
+        const typeAndLeave = () => {
+            const input = document.createElement('input');
+            document.getElementById('property-content')!.appendChild(input);
+            input.value = 'typed';
+            input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        };
+
+        // Typed into the node's panel, then the node selected again: its panel drawn anew.
+        selectNode(panel, host, root);
+        typeAndLeave();
+        panel.selectionChanged(root, [], ['n1']);
+        expect(rows('Basic Info')[0]).toEqual(['Name', 'first']);
+        selectNode(panel, host, root);
+        clickOnNothing(panel, host, root);
+        expect(viewShown()).toEqual([['Name', 'top'], ['Nodes', '1200']]);
+
+        // Typed into the view's panel, then a surface's selection drawn, then cleared by a click on nothing.
+        typeAndLeave();
+        context().setSelection(via);
+        host.click(mouse(1));
+        expect(viewShown()).toEqual([['Name', 'top'], ['Nodes', '1200']]);
+    });
+
+    it('leaves the panel as it is while a field has the focus, and after: the next click on nothing shows them', async () => {
+        const panel = new TestPanel();
+        (panel as any).initializeEditTracking();
+        panel.modelRootChanged(view('1200', node) as never);
+        selectNode(panel, undefined, view('1200', node));
+        const input = document.createElement('input');
+        document.getElementById('property-content')!.appendChild(input);
+        input.focus();
+
+        clickOnNothing(panel, undefined, view('1200', node));
+        expect(input.isConnected).toBe(true);
+        input.blur();
+        await tick();
+        expect(rows('Basic Info')[0]).toEqual(['Name', 'first']);
+
+        clickOnNothing(panel, undefined, view('1200', node));
+        expect(viewShown()).toEqual([['Name', 'top'], ['Nodes', '1200']]);
+    });
+
+    it('draws nothing again for a click on nothing while it shows them', () => {
+        const panel = new TestPanel();
+        panel.modelRootChanged(view('1200', node) as never);
+        const drawn = section('View');
+        clickOnNothing(panel, undefined, view('1200', node));
+        expect(section('View')).toBe(drawn);
+    });
+
+    it('is as without it for a view with no facts: the hint at the open, the panel kept on a click on nothing', () => {
+        const { host } = surfaceHost();
+        const panel = panelOn(host);
+        panel.modelRootChanged(view(null, node) as never);
+        expect(hint()).toBe('Select an element to view properties');
+        selectNode(panel, host, view(null, node));
+        clickOnNothing(panel, host, view(null, node));
+        expect(rows('Basic Info')[0]).toEqual(['Name', 'first']);
     });
 });

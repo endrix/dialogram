@@ -297,6 +297,32 @@ Openers are asked in the order their ids were first bound, and the first
 that answers wins; a later binding for an id replaces the earlier one. The
 stock bundle binds none; wfpy-ide's binds its `@viewer` opener.
 
+**A view's own facts.** The facts a producer states for the view itself
+(`graph.meta.facts`, `[{ label, value, markdown? }]`, on the root as
+`wf:facts`) are drawn in the panel with the view's name: after a double
+click on the background, and by themselves over a surface that hears clicks
+(below). A product whose readers look at them before selecting anything sets
+`clientBehavior.viewFactsWhileNothingSelected: true`: for a view with facts
+the panel then shows them while nothing is selected, with or without a
+surface: from the first model on, in place of the "Select an element" hint,
+and again when a click on nothing clears a node's selection or a surface's.
+Not over a surface's selection the reader has just made, nor over a field of
+the panel that has the focus or holds text typed and not committed: the
+panel is left as it is then. What is typed counts as committed after an
+Enter the field takes (it prevents the key's default, as each of the panel's
+fields whose Enter commits does; Ctrl+Enter in a field of lines) or the
+change of a field marked `data-commits-on="change"`; in a field committed
+only by its button it counts as not committed until the panel is drawn anew.
+The producer's fields carry that mark; a product's own field in the panel
+that commits on its change must carry it too, or its text is held as not
+committed. A search field holds nothing. A selection that goes because the
+model no longer has the element (an edit renamed it) gives way to its node,
+or to the view, as it always did. The pin keeps the panel visible, as its
+button says, and keeps no content. Escape clears a surface's selection and
+shows the view's properties, as it does without the option; no key clears a
+node's selection. Without the option, and for a view with no facts, the
+panel opens on the hint and keeps what it shows on a deselection.
+
 **A diagram surface.** To draw the diagram's content yourself (a canvas, a
 WebGL context) while the platform keeps the viewport, Fit and Center, the
 palette, the outline, the property panel and the chat, bind a
@@ -337,8 +363,9 @@ startStockDiagram({ features: [new ContainerModule(bind => { bind(DiagramSurface
   is drawn by the property panel as a node's is, put in the chat's context,
   framed by Fit and Center by its `bounds`, and cleared by Escape or a node
   selected (`selectionCleared` tells you); without a `click`, by a click on
-  no diagram element too, which leaves the panel as it is. A row's `link`,
-  or a value's parts with links, come back to `followLink`.
+  no diagram element too, which leaves the panel as it is, or shows the
+  view's facts where the product asks for them (below). A row's `link`, or
+  a value's parts with links, come back to `followLink`.
 - A double-click on no diagram element reaches `click` with `clickCount: 2`
   (after the first click's `1`) and is yours alone: with a `click`, the
   platform does not show the root's properties there, so what you select

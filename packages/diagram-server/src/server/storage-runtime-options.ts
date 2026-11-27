@@ -90,6 +90,24 @@ export interface StorageRuntimeOptions {
      * can keep the wrap off for its code nodes and on for the rest.
      */
     headerWrap?: boolean;
+    /**
+     * Whether a layout record is kept beside each source the product lays
+     * out (`.layout/<file>.layout.json`: positions, routes, open bundles,
+     * port orders, the reader's view options). Default `true`. `false` writes
+     * none and reads none (one already there is left as it is), for a
+     * product whose files lie in folders it does not own (another party's
+     * files, a tool's output): each diagram is laid out when it opens; the
+     * open bundles and held states are held in memory for the session, the
+     * view options for the window; the positions moved, routes and port
+     * orders are not, and a model asked for again (a view option marked
+     * `reload`, a change of the file, the view entered again) is laid out
+     * afresh. Each session's `LayoutPersistenceService` reads it here
+     * (`server-module.ts`); the host's store of view options reads the
+     * profile's (extension-core `view-options-host.ts` `viewOptionsStoreOf`).
+     * `WORKFLOW_DIAGRAM_DISABLE_PERSISTENCE=1` still keeps none for the whole
+     * process.
+     */
+    keepLayoutRecord?: boolean;
 }
 
 /** What a bus or node toggle does to the rest of the view. */

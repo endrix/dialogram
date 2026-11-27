@@ -207,9 +207,17 @@ export function createWorkflowServerModules(
     });
     additionalModules.push(customLayoutEngineModule);
 
-    // Bind layout persistence (consumer .layout.json) for manual layout + move persistence.
+    // Bind layout persistence (consumer .layout.json) for manual layout + move persistence;
+    // none where the profile keeps no layout record (`keepLayoutRecord: false`), read from the
+    // session's STORAGE_RUNTIME_OPTIONS as every other storage option is, so a consumer
+    // module's own binding of them wins here too (see storageOptionsModule below).
     const layoutPersistenceModule = new ContainerModule((bind) => {
-        bind(LayoutPersistenceService).toConstantValue(new LayoutPersistenceService());
+        bind(LayoutPersistenceService).toDynamicValue(ctx => {
+            const storage = ctx.container.isBound(STORAGE_RUNTIME_OPTIONS)
+                ? ctx.container.get<StorageRuntimeOptions>(STORAGE_RUNTIME_OPTIONS)
+                : undefined;
+            return new LayoutPersistenceService(undefined, { persist: storage?.keepLayoutRecord !== false });
+        }).inSingletonScope();
     });
     additionalModules.push(layoutPersistenceModule);
 

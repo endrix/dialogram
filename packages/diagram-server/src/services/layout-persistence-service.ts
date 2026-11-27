@@ -244,6 +244,30 @@ export async function flushLayoutPersistence(): Promise<void> {
  */
 const writesInProgress = new Map<string, Promise<void>>();
 
+/**
+ * The layout files a write has failed for, in this process, since the last
+ * write to each that worked. A folder that cannot be written (files another
+ * party keeps, a tool's output) fails every save and every reopen alike: it is
+ * said once, as one line, and said again only after a write there has worked.
+ */
+const unwritableLayoutFiles = new Set<string>();
+
+/** Say once that `layoutPath` cannot be written; the diagram works on without it. */
+function layoutWriteFailed(layoutPath: string, error: unknown): void {
+    if (unwritableLayoutFiles.has(layoutPath)) {
+        return;
+    }
+    unwritableLayoutFiles.add(layoutPath);
+    const reason = (error as NodeJS.ErrnoException | undefined)?.code
+        ?? (error instanceof Error ? error.message : String(error));
+    console.warn(`[dialogram] ${layoutPath} could not be written (${reason}): the diagram's layout is not kept on disk for this file. Said once.`);
+}
+
+/** A write to `layoutPath` worked: a later failure there is said again. */
+function layoutWritten(layoutPath: string): void {
+    unwritableLayoutFiles.delete(layoutPath);
+}
+
 /** The view options a layout file carries, to be written back as they are. */
 function viewOptionsOf(data: LayoutFileContent | undefined): Pick<LayoutFileContent, 'viewOptions'> {
     const raw = data?.viewOptions;
@@ -287,11 +311,24 @@ export class LayoutPersistenceService {
     /** The same for the reader's view options, per layout file. */
     private unsavedViewOptions = new Map<string, Record<string, Record<string, boolean>>>();
 
-    // Can be disabled for debugging/benchmarks.
-    private readonly disablePersistence = process.env.WORKFLOW_DIAGRAM_DISABLE_PERSISTENCE === '1';
+    /**
+     * Nothing is read from or written to the layout files: the profile keeps
+     * no record (`StorageRuntimeOptions.keepLayoutRecord: false`), or the process
+     * keeps none (`WORKFLOW_DIAGRAM_DISABLE_PERSISTENCE=1`, for debugging and
+     * benchmarks). The open bundles, held states and view options are held
+     * in memory (the `unsaved` maps above); positions, routes and port
+     * orders are not.
+     */
+    private readonly disablePersistence: boolean;
 
-    constructor(saveDebounceMs = 500) {
+    /**
+     * @param options.persist `false`: keep no layout record (see
+     *   {@link disablePersistence}). Absent or `true`, the record is kept
+     *   unless the process says otherwise.
+     */
+    constructor(saveDebounceMs = 500, options: { persist?: boolean } = {}) {
         this.saveDebounceMs = saveDebounceMs;
+        this.disablePersistence = options.persist === false || process.env.WORKFLOW_DIAGRAM_DISABLE_PERSISTENCE === '1';
         liveServices.add(this);
     }
 
@@ -641,8 +678,9 @@ export class LayoutPersistenceService {
         try {
             await fs.mkdir(path.dirname(layoutPath), { recursive: true });
             await fs.writeFile(layoutPath, JSON.stringify(content, null, 2), 'utf-8');
+            layoutWritten(layoutPath);
         } catch (error) {
-            console.error(`Failed to save layout file: ${layoutPath}`, error);
+            layoutWriteFailed(layoutPath, error);
         }
     }
 
@@ -713,8 +751,9 @@ export class LayoutPersistenceService {
                 await fs.mkdir(path.dirname(layoutPath), { recursive: true });
                 await fs.writeFile(layoutPath, JSON.stringify(content, null, 2), 'utf-8');
                 this.unsavedPortBuses.delete(unsavedKey);
+                layoutWritten(layoutPath);
             } catch (error) {
-                console.error(`Failed to save layout file: ${layoutPath}`, error);
+                layoutWriteFailed(layoutPath, error);
                 this.unsavedPortBuses.set(unsavedKey, portBuses);
             }
         });
@@ -763,8 +802,9 @@ export class LayoutPersistenceService {
                 await fs.mkdir(path.dirname(layoutPath), { recursive: true });
                 await fs.writeFile(layoutPath, JSON.stringify(content, null, 2), 'utf-8');
                 this.unsavedUnwrittenStates.delete(unsavedKey);
+                layoutWritten(layoutPath);
             } catch (error) {
-                console.error(`Failed to save layout file: ${layoutPath}`, error);
+                layoutWriteFailed(layoutPath, error);
                 this.unsavedUnwrittenStates.set(unsavedKey, record);
             }
         });
@@ -831,8 +871,9 @@ export class LayoutPersistenceService {
                 await fs.mkdir(path.dirname(layoutPath), { recursive: true });
                 await fs.writeFile(layoutPath, JSON.stringify(content, null, 2), 'utf-8');
                 this.unsavedViewOptions.delete(layoutPath);
+                layoutWritten(layoutPath);
             } catch (error) {
-                console.error(`Failed to save layout file: ${layoutPath}`, error);
+                layoutWriteFailed(layoutPath, error);
                 this.unsavedViewOptions.set(layoutPath, state);
             }
         });

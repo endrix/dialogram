@@ -306,3 +306,22 @@ describe('a row the product names', () => {
         expect(rowSaying('Part one')?.classList.contains('selected')).toBe(true);
     });
 });
+
+describe('a view row of the outline', () => {
+    it('enters its view by the diagram\'s own model request, with its name and the trail to it, as a drill-down does', async () => {
+        // A request the diagram sends is what the host records as the view the
+        // editor shows (glsp-activation.ts): a refresh after it is of this view.
+        const withView: HierarchyOutlineEntry = {
+            path: [], workflowName: 'top', sourceUri: FILE, nodeCount: 1,
+            children: [{ path: ['part'], workflowName: 'part', sourceUri: FILE, role: 'view', label: 'The part', children: [] }]
+        };
+        panel.modelRootChanged({ ...root, args: { sourceUri: FILE, 'wf:hierarchy': JSON.stringify(withView) } });
+        rowSaying('The part')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        await until(() => panel.dispatched.some(action => action.kind === 'requestModel'));
+
+        const request = panel.dispatched.find(action => action.kind === 'requestModel');
+        expect(request.options).toMatchObject({ sourceUri: FILE, networkName: 'part' });
+        expect(JSON.parse(request.options['wf:navTrail']).map((crumb: any) => crumb.workflowName)).toEqual(['top', 'part']);
+        expect(panel.host.activations).toEqual([]);
+    });
+});

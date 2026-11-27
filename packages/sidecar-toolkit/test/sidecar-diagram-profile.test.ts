@@ -156,6 +156,11 @@ describe('createSidecarDiagramProfile', () => {
             .toBe('free-ports');
     });
 
+    it('carries a product that keeps no layout record to the server and the host', () => {
+        expect(createSidecarDiagramProfile(baseInput()).storageOptions?.keepLayoutRecord).toBeUndefined();
+        expect(createSidecarDiagramProfile(baseInput({ keepLayoutRecord: false })).storageOptions?.keepLayoutRecord).toBe(false);
+    });
+
     it('carries the product’s ELK server jar onto the profile', () => {
         expect(createSidecarDiagramProfile(baseInput()).elkServer).toBeUndefined();
         expect(createSidecarDiagramProfile(baseInput({ elkServer: { jar: 'resources/elk.jar' } })).elkServer)

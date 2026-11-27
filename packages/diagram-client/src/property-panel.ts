@@ -86,6 +86,15 @@ export function changedArgs(
 /** How long a Save that had nothing to send says so on its button. */
 const NOTHING_TO_SAVE_MS = 1500;
 
+/** The panel's fields text is typed into: not a list or a box, which commit as they are chosen. */
+const TEXT_FIELDS = 'textarea, input:not([type]), input[type="text"], input[type="search"], input[type="number"], input[type="email"], input[type="url"], input[type="tel"], input[type="password"]';
+/**
+ * The mark of a field whose `change` commits it: the producer's fields carry
+ * it ({@link PropertyPanel.buildProducerFieldsSection}), and so must a
+ * product's own field in the panel that commits on change.
+ */
+const COMMITS_ON_CHANGE = '[data-commits-on="change"]';
+
 @injectable()
 export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     
@@ -124,6 +133,16 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     private redrawPending = false;
     /** The last key typed in the panel was Enter: what was typed is committed, not being typed. */
     private panelCommitted = false;
+    /**
+     * Text typed into a field of the panel since the panel was last drawn,
+     * and not committed (by an Enter the field takes, which it marks by
+     * preventing the key's default, or a change of a field marked
+     * `data-commits-on="change"`; a search field holds nothing): a field
+     * keeps it after the focus leaves,
+     * and a cleared selection does not draw over it
+     * (`showViewOnSelectionCleared`).
+     */
+    private typedNotCommitted = false;
 
     /**
      * What the panel's own fields are doing: a value committed with Enter
@@ -142,11 +161,36 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                 this.panelCommitted = false;
             }
         }, true);
+        // Enter commits what is typed only where the field takes it, and each
+        // field whose Enter commits prevents its default (`sourceField`, Enter
+        // or Ctrl+Enter in a field of lines; `ppNumberField`; the producer's
+        // fields; the parameter forms' names): heard here after the field, as
+        // the keydown bubbles. An Enter in a field that commits nothing on it
+        // (an annotation's argument row, a form's other fields) leaves it.
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Enter' && event.defaultPrevented && (event.target as Element | null)?.closest?.('#property-panel')) {
+                this.typedNotCommitted = false;
+            }
+        });
+        document.addEventListener('input', event => {
+            const target = event.target as HTMLElement | null;
+            // A search field filters what the panel shows and holds nothing to commit.
+            if (target?.closest?.('#property-panel') && (target.isContentEditable || !!target.matches?.(TEXT_FIELDS))
+                && !target.matches?.('input[type="search"]')) {
+                this.typedNotCommitted = true;
+            }
+        }, true);
         // A field committed otherwise than with Enter (its value changed and
-        // the focus kept): the model it makes is drawn.
+        // the focus kept): the model it makes is drawn. The producer's fields
+        // commit on a change; the panel's own commit on Enter or by their
+        // button, and a change (the focus leaving) commits nothing of theirs.
         document.addEventListener('change', event => {
-            if ((event.target as Element | null)?.closest?.('#property-panel')) {
+            const target = event.target as Element | null;
+            if (target?.closest?.('#property-panel')) {
                 this.panelCommitted = true;
+                if (target.matches?.(COMMITS_ON_CHANGE)) {
+                    this.typedNotCommitted = false;
+                }
             }
         }, true);
         document.addEventListener('focusout', event => {
@@ -155,7 +199,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             }
             // The focus has not landed yet: look once it has.
             setTimeout(() => {
-                if (this.redrawPending && this.lastRoot && !this.typingInPanel() && !this.showViewOverSurface()) {
+                if (this.redrawPending && this.lastRoot && !this.typingInPanel() && !this.showViewWhileNothingShown()) {
                     this.redrawIfChanged(this.lastRoot);
                 }
             }, 0);
@@ -165,7 +209,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     /**
      * After injection: the node sections' one-time setup, and the surface's
      * selection and mounting heard. A surface may mount after the first model
-     * came, and the panel then looks again (`showViewOverSurface`).
+     * came, and the panel then looks again (`showViewWhileNothingShown`).
      */
     @postConstruct()
     protected installNodeSections(): void {
@@ -175,7 +219,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         }
         if (this.surfaceHost) {
             this.surfaceHost.onSelectionChanged((selection, cause) => this.surfaceSelectionChanged(selection, cause));
-            document.addEventListener(SURFACE_MOUNTED_EVENT, () => this.showViewOverSurface());
+            document.addEventListener(SURFACE_MOUNTED_EVENT, () => this.showViewWhileNothingShown());
         }
     }
 
@@ -188,15 +232,19 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
      * double click on the background that shows them elsewhere is the
      * surface's there (`WhitespaceRootPropertiesMouseListener`, by the same
      * test), and the page's hint would stay in their place with no gesture
-     * to replace it. A node or a surface selection the panel shows is left
-     * as it is, and nothing is selected by this. Not while something in the
-     * panel is typed into: the focus leaving the panel draws them. True when
-     * it drew them.
+     * to replace it. So does a view with facts of its own where the product
+     * asks (`clientBehavior.viewFactsWhileNothingSelected`). A node or a
+     * surface selection the panel shows is left as it is, and nothing is
+     * selected by this. Not while something in the panel is typed into: the
+     * focus leaving the panel draws them. True when it drew them.
      */
-    protected showViewOverSurface(): boolean {
+    protected showViewWhileNothingShown(): boolean {
         const host = this.surfaceHost;
         const hearsClicks = !!host?.mounted() && typeof host.surface()?.click === 'function';
-        if (this.shown || this.showingSurface || !this.lastRoot || !hearsClicks || host?.currentSelection()) {
+        if (this.shown || this.showingSurface || !this.lastRoot || host?.currentSelection()) {
+            return false;
+        }
+        if (!hearsClicks && !this.showsViewFacts(this.lastRoot)) {
             return false;
         }
         if (this.typingInPanel()) {
@@ -214,9 +262,11 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
      * own properties, since what it showed is no longer selected anywhere.
      * Over a surface that hears clicks, those are also what the panel shows
      * from the first model on, while nothing is selected
-     * (`showViewOverSurface`). A node selected instead clears it too, and the
-     * node's panel is already drawn then: nothing to do. A click on nothing
-     * keeps what the panel shows, as a click that deselects a node does.
+     * (`showViewWhileNothingShown`). A node selected instead clears it too,
+     * and the node's panel is already drawn then: nothing to do. A click on
+     * nothing keeps what the panel shows, as a click that deselects a node
+     * does, unless the product asks for the view's facts then
+     * (`showViewOnSelectionCleared`).
      */
     surfaceSelectionChanged(selection: SurfaceSelection | undefined, cause: SurfaceSelectionCause): void {
         if (selection) {
@@ -225,7 +275,45 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         }
         if (cause !== 'graph' && cause !== 'click' && this.showingSurface) {
             this.showNoSelection();
+        } else if (cause === 'click' && this.showingSurface) {
+            this.showViewOnSelectionCleared();
         }
+    }
+
+    /**
+     * Whether the panel shows `root`'s own facts while nothing is selected:
+     * the product asks (`clientBehavior.viewFactsWhileNothingSelected`) and
+     * the view states some (`graph.meta.facts`, on the root as `wf:facts`).
+     */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    protected showsViewFacts(root: any): boolean {
+        return clientBehavior().viewFactsWhileNothingSelected === true
+            && this.normalizeFacts(root?.args?.[WorkflowDiagramMetadata.FACTS]).length > 0;
+    }
+
+    /**
+     * A selection the reader cleared with a click on nothing, of a node or of
+     * a surface: where {@link showsViewFacts}, the panel shows the view's own
+     * properties in place of what is no longer selected. Not while a
+     * surface's selection is there (the reader has just made it: the panel
+     * shows it), nor while a field of the panel has the focus or holds text
+     * typed and not committed: the panel is left as it is then. The pin
+     * keeps the panel visible, as its button says, and keeps no content:
+     * pinned or not, the panel shows the view's facts.
+     */
+    protected showViewOnSelectionCleared(): void {
+        const root = this.lastRoot;
+        if (!root || !this.showsViewFacts(root) || this.surfaceHost?.currentSelection()) {
+            return;
+        }
+        if (this.typingInPanel() || this.typedNotCommitted) {
+            return;
+        }
+        // Already the view's: drawn again, it would lose its scroll.
+        if (this.shown && this.shown.id === undefined) {
+            return;
+        }
+        this.showNoSelection();
     }
 
     /**
@@ -241,6 +329,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
             return;
         }
         content.innerHTML = '';
+        this.typedNotCommitted = false;
         this.lastRenderedNodeId = undefined;
         // Nothing of the model's: a model change neither redraws nor replaces it.
         this.shown = undefined;
@@ -424,7 +513,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
     // streams (`NodeSectionContribution.modelChanged`).
     modelRootChanged(root: Readonly<GModelRoot>): void {
         this.lastRoot = root;
-        if (this.showViewOverSurface() || this.redrawIfChanged(root)) {
+        if (this.showViewWhileNothingShown() || this.redrawIfChanged(root)) {
             return;
         }
         if (!this.lastRenderedNodeId) {
@@ -497,13 +586,11 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         // which commit as they are made and keep the focus.
         return !this.panelCommitted
             && !!active?.closest?.('#property-panel')
-            && (active.isContentEditable || !!active.matches?.(
-                'textarea, input:not([type]), input[type="text"], input[type="search"], input[type="number"], input[type="email"], input[type="url"], input[type="tel"], input[type="password"]'
-            ));
+            && (active.isContentEditable || !!active.matches?.(TEXT_FIELDS));
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    selectionChanged(root: any, selectedElements: string[]): void {
+    selectionChanged(root: any, selectedElements: string[], deselectedElements?: string[]): void {
         this.lastRoot = root;
 
         // Always update content if panel is visible (regardless of pinned state)
@@ -513,6 +600,12 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         if (selectedElements.length === 0) {
             // Keep current property content on single-click deselection.
             // Root/workflow properties are now shown explicitly on background double-click.
+            // Where the product asks, a view's facts instead (showViewOnSelectionCleared);
+            // not for a selection the model took away (its element is gone from it),
+            // which redrawIfChanged gives way to its node, or to the view.
+            if (!(deselectedElements ?? []).some(id => !root?.index?.getById?.(id))) {
+                this.showViewOnSelectionCleared();
+            }
             return;
         }
 
@@ -580,6 +673,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
         const requestAgentDiscovery = options.requestAgentDiscovery !== false;
 
         content.innerHTML = '';
+        this.typedNotCommitted = false;
         this.showingSurface = false;
         this.shown = {
             id: element.id,
@@ -1500,6 +1594,7 @@ export class PropertyPanel implements ISelectionListener, IGModelRootListener {
                   </select>`
                 : html`<input
                       class="param-map-input"
+                      data-commits-on="change"
                       .value=${field.value}
                       list=${field.suggestions ? listId : nothing}
                       placeholder="(unset)"
