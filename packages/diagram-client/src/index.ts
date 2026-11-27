@@ -49,6 +49,16 @@ export { diagramBaseModule } from './base.module';
 export { workflowViewsModule } from './stock-views.module';
 export { workflowFeaturesModule } from './stock-features.module';
 
+// ── The loading indicator ───────────────────────────────────────────────────
+// Raised by the stock starter and the stock feature module. A product with a
+// starter and feature modules of its own installs it at start, binds the
+// listener as a `TYPES.IGModelRootListener`, and imports
+// `./loading-indicator.css` (diagram-client.css @imports it). The host's
+// words reach it as they do the stock diagram's; `loadingProgress` is for a
+// wait the webview itself starts (an action that makes the server lay the
+// diagram out again), ended by the next model unless the host speaks for it.
+export { installLoadingIndicator, LoadingIndicatorModelListener, loadingProgress } from './loading-indicator';
+
 // ── Stock integrated chat panel (reuse/extend the shipped chat UI) ──────────
 // Paired with `./chat-panel.css` (import that stylesheet directly for the panel styles).
 export { ChatPanel } from './chat-panel-integrated';

@@ -15,4 +15,5 @@ export * from './operation-modules';
 export * from './elk-server/index';
 export * from './load-cancellation';
 export * from './load-cancelling-dispatcher';
+export * from './load-progress';
 export * from './out-of-band-writes';
