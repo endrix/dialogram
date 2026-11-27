@@ -68,4 +68,13 @@ describe('composeStorageRuntimeOptions', () => {
         expect(composeStorageRuntimeOptions({ storageOptions: base, clientBehavior: { nodeFamilies: [viewer] } } as any))
             .not.toHaveProperty('clientNodeFamilies');
     });
+
+    it('carries a profile that keeps no layout record into the options the server is made with', () => {
+        // The server's sessions read it there (server-module.ts); the host's
+        // store of view options reads the profile (view-options-host.ts
+        // `viewOptionsStoreOf`).
+        const composed = composeStorageRuntimeOptions({ storageOptions: { settingsNamespace: 'demo', operationPrefix: 'demo', keepLayoutRecord: false } });
+        expect(composed?.keepLayoutRecord).toBe(false);
+        expect(composeStorageRuntimeOptions({ storageOptions: { settingsNamespace: 'demo', operationPrefix: 'demo' } })).not.toHaveProperty('keepLayoutRecord');
+    });
 });

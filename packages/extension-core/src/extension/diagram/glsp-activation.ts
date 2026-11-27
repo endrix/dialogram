@@ -34,10 +34,14 @@ import { OutlineHost } from './outline-host';
 import {
     activeSourceUri,
     readRequestedNetworkName,
+    refreshCommand,
+    refreshDiagramModels,
     resolveDiagramOpenTarget,
     sizeOfFile,
     tabSourceUri,
-    type DiagramOpenTargetArg
+    type DiagramOpenTargetArg,
+    type RefreshHost,
+    type RefreshRequest
 } from './open-diagram-target';
 import { matchesSourceExtension, sourceFileNoun } from './source-extensions';
 import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
@@ -55,7 +59,7 @@ import {
     registerDiagramViewType, serializedRangeToVscodeRange
 } from './open-in-place';
 import { producerNamedDefinition } from './producer-definition';
-import { ViewOptionsHost } from './view-options-host';
+import { ViewOptionsHost, viewOptionsOfProfile } from './view-options-host';
 
 // Define the diagram type constant locally to avoid import
 const WORKFLOW_DIAGRAM_TYPE = 'cal-network-diagram';
@@ -400,16 +404,12 @@ export async function activateGlspIntegration(
     // The reader's view options, per file (view-options-host.ts). Made
     // before the server, whose model source it wraps; the editors it tells
     // are the provider's, made further down.
+    // The profile's groups and listener, and its store: the file's layout
+    // record, or memory where the profile keeps none (`viewOptionsOfProfile`).
     const { LayoutPersistenceService } = await import('@dialogram/diagram-server');
-    const viewOptionsLayouts = new LayoutPersistenceService();
     let viewOptionsEditors: Pick<WorkflowEditorProvider, 'clientsShowing' | 'postToClient' | 'refreshFromHost'> | undefined;
     const viewOptions = new ViewOptionsHost({
-        groups: profile.viewOptions?.groups,
-        onDidChange: profile.viewOptions?.onDidChange,
-        store: {
-            load: file => viewOptionsLayouts.loadViewOptions(file),
-            save: (file, state) => viewOptionsLayouts.saveViewOptions(file, state)
-        },
+        ...viewOptionsOfProfile(profile, LayoutPersistenceService),
         keyOf: normalizeSourceUriKey,
         pathOf: uri => (/^[a-zA-Z][a-zA-Z0-9+.-]+:/.test(uri) ? vscode.Uri.parse(uri).fsPath : uri),
         // Each editor showing the file, by its client, with the file's URI
@@ -1292,22 +1292,15 @@ function registerCalDiagramCommands(
         return undefined;
     };
 
-    const refreshActiveDiagramModel = async (
-        opts?: { sourceUri?: string; workflowName?: string; open?: boolean; agentContextOnly?: boolean; reveal?: string }
-    ): Promise<void> => {
-        const uri = opts?.sourceUri ? vscode.Uri.parse(opts.sourceUri) : getActiveWorkflowDiagramUri();
-        if (!uri) {
-            return;
-        }
-        // Which editors, and what each is asked for: `refreshFromHost`.
-        editorProvider?.refreshFromHost(uri, {
-            workflowName: opts?.workflowName,
-            open: opts?.open,
-            agentContextOnly: opts?.agentContextOnly,
-            reveal: opts?.reveal,
-            queueTraceVisible: getQueueTraceVisible()
-        });
+    // Which editors, and what each is asked for: `refreshFromHost`, by way
+    // of `refreshDiagramModels` (open-diagram-target.ts).
+    const refreshHost: RefreshHost = {
+        activeUri: getActiveWorkflowDiagramUri,
+        editors: () => editorProvider,
+        queueTraceVisible: getQueueTraceVisible,
+        recentNavigation: state.recentNavigationBySourceUri
     };
+    const refreshActiveDiagramModel = async (opts?: RefreshRequest): Promise<void> => refreshDiagramModels(opts, refreshHost);
 
     // The setAgentToolConfig / getAgentToolConfig commands are registered by the
     // CliRunDriver (see below), which now owns the per-entity override state.
@@ -1441,12 +1434,8 @@ function registerCalDiagramCommands(
 
     // Command: Refresh active diagram model
     context.subscriptions.push(
-        vscode.commands.registerCommand(profile.commands.refreshDiagramModel, async (
-            args?: { sourceUri?: string; workflowName?: string; reveal?: string }
-        ) => {
-            const reveal = typeof args?.reveal === 'string' && args.reveal.trim() !== '' ? args.reveal : undefined;
-            await refreshActiveDiagramModel({ sourceUri: args?.sourceUri, workflowName: args?.workflowName, reveal });
-        })
+        // `open: true` enters the view named and records it (`readRefreshCommandArgs`).
+        vscode.commands.registerCommand(profile.commands.refreshDiagramModel, refreshCommand(refreshHost))
     );
 
     // Command: Rename entity/symbol by name (chat-friendly command surface)

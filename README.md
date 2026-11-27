@@ -206,6 +206,22 @@ and the profile's `storageOptions.entityPaletteItems` alike. It says nothing
 about edits that DO have somewhere to go: moves, routing and the persisted
 layout are unaffected, and so is `edits`.
 
+`storageOptions.keepLayoutRecord: false` is for a product whose files lie in
+folders it does not own (files another party keeps, a tool's output): the
+platform then writes no layout record beside them (`.layout/<file>.layout.json`)
+and reads none: a record already there is ignored and left as it is. Each
+diagram is laid out when it opens. Held in memory: the open bundles and the
+held states until the editor closes, the reader's view options until the
+window does. Not held: the positions the reader moved, the routes and the
+port orders a layout chose; they stay on screen until the model is asked for
+again (a view option marked `reload`, a change of the file, the view entered
+again), which lays it out afresh. Every session of the profile and the host's
+view options are made without the record; another profile in the same window
+keeps its own. `WORKFLOW_DIAGRAM_DISABLE_PERSISTENCE=1` still keeps none for
+the whole process. Where the record is kept and its folder cannot be written,
+the diagram works on, holding the same as without a record, and the log says
+so once per file, in one line.
+
 The returned `DiagramProfileHandle` exposes chat diagnostics, two
 webview channels: `dispatchToWebview(uri, action)` (host→client GLSP action
 over the overlay bridge) and `postToWebview(uri, message)` (raw

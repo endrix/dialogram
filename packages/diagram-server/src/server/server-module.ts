@@ -207,9 +207,15 @@ export function createWorkflowServerModules(
     });
     additionalModules.push(customLayoutEngineModule);
 
-    // Bind layout persistence (consumer .layout.json) for manual layout + move persistence.
+    // Bind layout persistence (consumer .layout.json) for manual layout + move persistence;
+    // none where the profile keeps no layout record (`keepLayoutRecord: false`). Read from the
+    // options the host passes (the profile's), not from the session's STORAGE_RUNTIME_OPTIONS
+    // binding: the host's store of view options writes the same file and reads the profile
+    // (extension-core `viewOptionsStoreOf`), so a consumer module's own binding of the options
+    // must not turn the record off for the sessions alone.
+    const persistLayoutRecord = options?.storageOptions?.keepLayoutRecord !== false;
     const layoutPersistenceModule = new ContainerModule((bind) => {
-        bind(LayoutPersistenceService).toConstantValue(new LayoutPersistenceService());
+        bind(LayoutPersistenceService).toConstantValue(new LayoutPersistenceService(undefined, { persist: persistLayoutRecord }));
     });
     additionalModules.push(layoutPersistenceModule);
 

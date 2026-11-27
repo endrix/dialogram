@@ -204,7 +204,10 @@ export namespace WorkflowDiagramMetadata {
     /**
      * Labelled values a producer states about the unit behind a node, as it
      * listed them on `meta.facts`: `[{ label, value, markdown? }]`, in its
-     * order. On the root: the facts of the unit shown.
+     * order. On the root: the facts of the unit shown, which the property
+     * panel shows while nothing is selected where the product asks
+     * (`clientBehavior.viewFactsWhileNothingSelected`; diagram-client
+     * README, "A view's own facts").
      *
      * The platform displays them and never interprets them. No label is
      * special and none is expected, so a product says whatever it knows (a

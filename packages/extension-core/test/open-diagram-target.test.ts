@@ -3,7 +3,11 @@ import * as vscode from 'vscode';
 import {
     TEXT_DOCUMENT_LIMIT_BYTES,
     activeSourceUri,
+    readRefreshCommandArgs,
     readRequestedNetworkName,
+    refreshCommand,
+    refreshDiagramModels,
+    type RefreshHost,
     resolveDiagramOpenTarget,
     sizeOfFile,
     tabSourceUri
@@ -230,5 +234,136 @@ describe('readRequestedNetworkName', () => {
         // keybinding, another extension — and coercing a number into a graph
         // name would search for one nobody asked for.
         expect(readRequestedNetworkName({ networkName: 42 as unknown as string })).toBeUndefined();
+    });
+});
+
+describe('readRefreshCommandArgs', () => {
+    it('enters the view named only on `open: true`, and is a refresh otherwise, as it was', () => {
+        const file = 'file:///w/top.src';
+        expect(readRefreshCommandArgs({ sourceUri: file, workflowName: 'part', open: true })).toEqual({ sourceUri: file, workflowName: 'part', open: true });
+        expect(readRefreshCommandArgs({ sourceUri: file, workflowName: 'part' })).toEqual({ sourceUri: file, workflowName: 'part' });
+        // Anything but `true` is no word to enter a view: a refresh.
+        expect(readRefreshCommandArgs({ sourceUri: file, workflowName: 'part', open: 'yes' as unknown as boolean })).not.toHaveProperty('open');
+        expect(readRefreshCommandArgs(undefined)).toEqual({ sourceUri: undefined, workflowName: undefined });
+    });
+
+    it('passes a node to reveal, and drops an empty one', () => {
+        expect(readRefreshCommandArgs({ workflowName: 'part', reveal: 'n1' })).toMatchObject({ reveal: 'n1' });
+        expect(readRefreshCommandArgs({ workflowName: 'part', reveal: '  ' })).not.toHaveProperty('reveal');
+    });
+
+    it('leaves out anything else a caller puts on it, a trail among them', () => {
+        const file = 'file:///w/top.src';
+        const args = { sourceUri: file, workflowName: 'part', open: true, trail: ['top', 'part'] } as never;
+        expect(readRefreshCommandArgs(args)).toEqual({ sourceUri: file, workflowName: 'part', open: true });
+    });
+
+    it('takes a name that is not text (a row\'s data passed through) as no name', () => {
+        const file = 'file:///w/top.src';
+        expect(readRefreshCommandArgs({ sourceUri: file, workflowName: 42 as never, open: true })).toEqual({ sourceUri: file, workflowName: undefined, open: true });
+    });
+});
+
+describe('the refresh command, as the activation registers it', () => {
+    const FILE = 'file:///w/top.src';
+    const OTHER = 'file:///w/other.src';
+
+    function host(active?: string, answered = 1) {
+        const asked: Array<{ uri: string; options: Record<string, unknown>; navigationThen: string[] }> = [];
+        // As glsp-activation.ts `putPending` keeps a navigation: by its key and as the diagram spelled it.
+        const recentNavigation = new Map<string, unknown>([
+            [FILE, { networkName: 'deep' }],
+            ['file:///w/./top.src', { networkName: 'deep' }],
+            [OTHER, { networkName: 'elsewhere' }]
+        ]);
+        const made: RefreshHost = {
+            activeUri: () => (active ? vscode.Uri.parse(active) : undefined),
+            editors: () => ({
+                refreshFromHost: (uri, options) => {
+                    asked.push({ uri: uri.toString(), options, navigationThen: [...recentNavigation.keys()] });
+                    return answered;
+                }
+            }),
+            queueTraceVisible: () => true,
+            recentNavigation
+        };
+        return { made, asked, recentNavigation };
+    }
+
+    it('enters the view: `open` reaches the editors, and a trail a caller passes does not', async () => {
+        const { made, asked } = host();
+        await refreshCommand(made)({ sourceUri: FILE, workflowName: 'part', open: true, trail: ['top', 'part'] } as never);
+        await refreshCommand(made)({ sourceUri: FILE, workflowName: 'part' });
+        expect(asked).toEqual([
+            expect.objectContaining({ uri: FILE, options: expect.objectContaining({ workflowName: 'part', open: true, queueTraceVisible: true }) }),
+            expect.objectContaining({ uri: FILE, options: expect.objectContaining({ workflowName: 'part', open: undefined }) })
+        ]);
+        expect(asked[0].options).not.toHaveProperty('trail');
+        // Nor by the open commands' way in, which is not read by `readRefreshCommandArgs`.
+        refreshDiagramModels({ sourceUri: FILE, workflowName: 'part', open: true, trail: ['top', 'part'] } as never, made);
+        expect(asked[2].options).not.toHaveProperty('trail');
+    });
+
+    it('reads its argument as `readRefreshCommandArgs` does: anything but `open: true` is a refresh, and an empty node to reveal is none', async () => {
+        const { made, asked } = host();
+        await refreshCommand(made)({ sourceUri: FILE, workflowName: 'part', open: 'yes' as never, reveal: '  ' });
+        expect(asked[0].options).toMatchObject({ open: undefined, reveal: undefined });
+    });
+
+    it('passes on the node to reveal and an overlay-only refresh, as the activation did before', () => {
+        const { made, asked } = host();
+        refreshDiagramModels({ sourceUri: FILE, workflowName: 'part', reveal: 'n1' }, made);
+        refreshDiagramModels({ sourceUri: FILE, workflowName: 'top', agentContextOnly: true }, made);
+        expect(asked.map(entry => entry.options)).toEqual([
+            expect.objectContaining({ reveal: 'n1', agentContextOnly: undefined }),
+            expect.objectContaining({ reveal: undefined, agentContextOnly: true })
+        ]);
+    });
+
+    it('is of the active diagram\'s file where it names none, and asks nothing where there is none', async () => {
+        const active = host(OTHER);
+        await refreshCommand(active.made)(undefined);
+        expect(active.asked.map(entry => entry.uri)).toEqual([OTHER]);
+        const none = host();
+        await refreshCommand(none.made)(undefined);
+        expect(none.asked).toEqual([]);
+    });
+
+    it('forgets the diagram\'s own navigation of the moments before when it enters a view, and only the file\'s', async () => {
+        const { made, recentNavigation } = host();
+        await refreshCommand(made)({ sourceUri: FILE, workflowName: 'part' });
+        expect(recentNavigation.size).toBe(3);
+        await refreshCommand(made)({ sourceUri: FILE, workflowName: 'part', open: true });
+        expect([...recentNavigation.keys()]).toEqual([OTHER]);
+    });
+
+    it('forgets it too for the open command on an editor that is open already, which enters the view the same way', () => {
+        const { made, recentNavigation } = host();
+        refreshDiagramModels({ sourceUri: FILE, workflowName: 'part', open: true }, made);
+        expect([...recentNavigation.keys()]).toEqual([OTHER]);
+    });
+
+    it('forgets it before the editor is asked, since the entry\'s own request is remembered on top of it', () => {
+        const { made, asked } = host();
+        refreshDiagramModels({ sourceUri: FILE, workflowName: 'part', open: true }, made);
+        expect(asked[0].navigationThen).toEqual([OTHER]);
+    });
+
+    it('keeps it where no editor was asked (the file has none of its own, or is shown inside another file\'s), since nothing was entered', async () => {
+        const { made, asked, recentNavigation } = host(undefined, 0);
+        const before = new Map(recentNavigation);
+        await refreshCommand(made)({ sourceUri: FILE, workflowName: 'part', open: true });
+        expect(asked).toHaveLength(1);
+        expect(new Map(recentNavigation)).toEqual(before);
+    });
+
+    it('enters nothing and throws nothing for a name that is not text', async () => {
+        const { made, asked, recentNavigation } = host();
+        await expect(refreshCommand(made)({ sourceUri: FILE, workflowName: 42 as never, open: true })).resolves.toBeUndefined();
+        expect(asked[0].options).toMatchObject({ workflowName: undefined, open: true });
+        expect(recentNavigation.size).toBe(3);
+        // Nor by the open commands' way in, which does not pass through `readRefreshCommandArgs`.
+        expect(() => refreshDiagramModels({ sourceUri: FILE, workflowName: 42 as never, open: true }, made)).not.toThrow();
+        expect(recentNavigation.size).toBe(3);
     });
 });

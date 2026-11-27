@@ -55,6 +55,48 @@ export interface ViewOptionsStore {
     save(filePath: string, state: ViewOptionsState): Promise<void>;
 }
 
+/** The layout record's reader and writer, as diagram-server makes it (passed in: diagram-server is loaded late). */
+type LayoutRecordService = new (saveDebounceMs?: number, options?: { persist?: boolean }) => {
+    loadViewOptions(filePath: string): Promise<ViewOptionsState | undefined>;
+    saveViewOptions(filePath: string, state: ViewOptionsState): Promise<void>;
+};
+
+/**
+ * A profile's store of view options: the file's layout record, or, where
+ * the profile keeps none (`storageOptions.keepLayoutRecord: false`), the
+ * memory of a service that reads and writes no file, for the window, as the
+ * server's own sessions keep none.
+ */
+export function viewOptionsStoreOf(
+    profile: { storageOptions?: { keepLayoutRecord?: boolean } },
+    Service: LayoutRecordService
+): ViewOptionsStore {
+    const layouts = new Service(undefined, { persist: profile.storageOptions?.keepLayoutRecord !== false });
+    return {
+        load: file => layouts.loadViewOptions(file),
+        save: (file, state) => layouts.saveViewOptions(file, state)
+    };
+}
+
+/**
+ * What a profile gives the host of view options: its groups, its listener,
+ * and where the choices are kept ({@link viewOptionsStoreOf}). The
+ * activation spreads it into the host's options (glsp-activation.ts).
+ */
+export function viewOptionsOfProfile(
+    profile: {
+        viewOptions?: Pick<ViewOptionsHostOptions, 'groups' | 'onDidChange'>;
+        storageOptions?: { keepLayoutRecord?: boolean };
+    },
+    Service: LayoutRecordService
+): Pick<ViewOptionsHostOptions, 'groups' | 'onDidChange' | 'store'> {
+    return {
+        groups: profile.viewOptions?.groups,
+        onDidChange: profile.viewOptions?.onDidChange,
+        store: viewOptionsStoreOf(profile, Service)
+    };
+}
+
 /** What a product is told of a change (`DiagramProfile.viewOptions.onDidChange`). */
 export interface ViewOptionsChangeEvent {
     /** Every group of the file, as it now stands. */

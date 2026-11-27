@@ -256,6 +256,19 @@ in the host: the panel asks the profile's
 scrolls to, and for the rows a filter finds. Only the rows on screen are in
 the DOM. A row that is no node of the graph (no `nodeId`, or the role `item`)
 is the product's: a click calls `outline.activate(file, { id, group, open })`.
+To enter a view on a double click, run the profile's
+`commands.refreshDiagramModel` with `{ sourceUri, workflowName, open: true }`:
+the view is recorded as what the editor shows, so the next save or view
+option marked `reload` is of it. The view entered is the editor's root, with
+no crumb back to the file's root (a `trail` on the argument is ignored); a
+product whose views lie below a root and that draws its own page enters them
+from the page by the diagram's own navigation request, which carries the
+trail (a model request with `wf:navTrail`, as a drill-down sends). The name
+is not checked: one the file does not have is entered and asked for at every
+save, so it is yours to give rightly. Only the file's own editor is asked,
+not one showing the file in place inside another file's. Without `open: true` the
+name is a refresh's hint: the view is drawn, nothing is recorded, and those
+show the default view again.
 `DiagramProfileHandle.revealOutlineRow(uri, { id, group, index, show })` shows
 the product's own selection in the outline: the group opens, the page comes,
 the row is selected and scrolled to. `outline.locate` answers where a row is

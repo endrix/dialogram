@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { normalizeSourceUriKey } from '@dialogram/diagram-server/server/uri-keys';
 import { matchesSourceExtension } from './source-extensions';
 
 export type DiagramOpenTargetArg = vscode.Uri | string | {
@@ -33,6 +34,94 @@ export function readRequestedNetworkName(arg: DiagramOpenTargetArg | undefined):
     }
     const name = typeof arg.networkName === 'string' ? arg.networkName.trim() : '';
     return name === '' ? undefined : name;
+}
+
+/** The refresh command's argument (`commands.refreshDiagramModel`; shared `command-ids.ts`). */
+export type RefreshCommandArgs = { sourceUri?: string; workflowName?: string; reveal?: string; open?: boolean };
+
+/** A refresh the host asks of a file's editors (`WorkflowEditorProvider.refreshFromHost`). */
+export type RefreshRequest = {
+    sourceUri?: string;
+    workflowName?: string;
+    open?: boolean;
+    agentContextOnly?: boolean;
+    reveal?: string;
+};
+
+/**
+ * What the refresh command asks of the file's editors, from its argument.
+ * `open: true` with a `workflowName` enters that view in the file's editor
+ * and records it, as the open command does in an editor that is open
+ * already, without opening a text document or moving the focus. Without
+ * it a name is the hint a refresh has always taken
+ * (`WorkflowEditorProvider.refreshFromHost`). Only these are read: anything
+ * else on the argument (a `trail`, say) is left out.
+ */
+export function readRefreshCommandArgs(args: RefreshCommandArgs | undefined): RefreshRequest {
+    const reveal = typeof args?.reveal === 'string' && args.reveal.trim() !== '' ? args.reveal : undefined;
+    return {
+        sourceUri: args?.sourceUri,
+        // A name that is not text (a row's data passed through) names no view.
+        workflowName: typeof args?.workflowName === 'string' ? args.workflowName : undefined,
+        ...(reveal ? { reveal } : {}),
+        ...(args?.open === true ? { open: true as const } : {})
+    };
+}
+
+/** What a refresh needs of the activation (glsp-activation.ts), passed in. */
+export interface RefreshHost {
+    /** The file a refresh that names none is of: the active diagram's. */
+    activeUri(): vscode.Uri | undefined;
+    /** The editors, once they are made. */
+    editors(): { refreshFromHost(uri: vscode.Uri, options: RefreshRequest & { queueTraceVisible?: boolean }): number } | undefined;
+    queueTraceVisible(): boolean;
+    /** The diagram's own navigations of the last moments, by file (glsp-activation.ts `rememberRecentNavigation`). */
+    recentNavigation: Map<string, unknown>;
+}
+
+/**
+ * Ask the file's editors for their models again, or enter a view in its
+ * editor (`open`). An entry is newer than any navigation the diagram made
+ * just before it: that navigation is forgotten, or a request from the
+ * diagram naming no view in the moments after would be given it, over the
+ * view entered. It is forgotten before the editor is asked, since the
+ * entry's own request is remembered on top of it, and put back when no
+ * editor was asked (the file has no editor of its own, or is shown in place
+ * inside another file's), since nothing was entered then.
+ */
+export function refreshDiagramModels(request: RefreshRequest | undefined, host: RefreshHost): void {
+    const uri = request?.sourceUri ? vscode.Uri.parse(request.sourceUri) : host.activeUri();
+    if (!uri) {
+        return;
+    }
+    const named = typeof request?.workflowName === 'string' ? request.workflowName.trim() : '';
+    const forgotten: Array<[string, unknown]> = [];
+    if (request?.open === true && named !== '') {
+        const key = normalizeSourceUriKey(uri.toString());
+        for (const [known, navigation] of [...host.recentNavigation.entries()]) {
+            if (normalizeSourceUriKey(known) === key) {
+                forgotten.push([known, navigation]);
+                host.recentNavigation.delete(known);
+            }
+        }
+    }
+    const asked = host.editors()?.refreshFromHost(uri, {
+        workflowName: request?.workflowName,
+        open: request?.open,
+        agentContextOnly: request?.agentContextOnly,
+        reveal: request?.reveal,
+        queueTraceVisible: host.queueTraceVisible()
+    }) ?? 0;
+    if (asked === 0) {
+        for (const [known, navigation] of forgotten) {
+            host.recentNavigation.set(known, navigation);
+        }
+    }
+}
+
+/** The refresh command, as the activation registers it. */
+export function refreshCommand(host: RefreshHost): (args?: RefreshCommandArgs) => Promise<void> {
+    return async args => refreshDiagramModels(readRefreshCommandArgs(args), host);
 }
 
 export type ResolveDiagramOpenTargetOptions = {

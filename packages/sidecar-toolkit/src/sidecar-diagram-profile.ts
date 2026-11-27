@@ -269,6 +269,14 @@ export interface SidecarProfileInput {
      * keep the wrap off for some nodes only.
      */
     headerWrap?: boolean;
+    /**
+     * Whether a layout record is kept beside each source
+     * (`.layout/<file>.layout.json`). Default `true`; `false` keeps none and
+     * reads none, for a product whose files lie in folders it does not own.
+     * Forwarded as the profile's `storageOptions.keepLayoutRecord`
+     * (extension-core `api.ts`, which says what is held without it).
+     */
+    keepLayoutRecord?: boolean;
 
     // Chat edit backend.
     exportOp?: string;
@@ -885,7 +893,8 @@ export function createSidecarDiagramProfile(givenInput: SidecarProfileInput) {
             nestedNavigation: input.clientBehavior?.nestedNavigation,
             defaultLayout: input.defaultLayout,
             toggleLayout: input.toggleLayout,
-            headerWrap: input.headerWrap
+            headerWrap: input.headerWrap,
+            keepLayoutRecord: input.keepLayoutRecord
         },
         watch: { globs: input.watchGlobs ?? sourceExtensions.map(ext => `**/*${ext}`) },
         // No provider at all for a product that resolves nothing itself: the

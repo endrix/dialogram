@@ -131,6 +131,17 @@ export interface DiagramStorageOptions {
    *  `true`; `false` keeps names on one line. A node's `meta.headerWrap`
    *  (a boolean) wins over it (diagram-server `storage-runtime-options.ts`). */
   headerWrap?: boolean;
+  /** Whether a layout record is kept beside each source
+   *  (`.layout/<file>.layout.json`: positions, routes, open bundles, port
+   *  orders, the reader's view options). Default `true`. `false` writes none
+   *  and reads none (one already there is left as it is), for a product
+   *  whose files lie in folders it does not own: each diagram is laid out
+   *  when it opens; the open bundles and held states are held until the
+   *  editor closes, the view options until the window does; the positions
+   *  moved, routes and port orders are not, and a model asked for again is
+   *  laid out afresh. A Dialogram older than this ignores it and keeps the
+   *  record (diagram-server `storage-runtime-options.ts`). */
+  keepLayoutRecord?: boolean;
 }
 
 /**
@@ -397,6 +408,16 @@ export interface DiagramOutline {
    * the product's. It does not say which editor of the file it was in, when
    * two show it: what it selects is the file's, as a node selection is, and
    * {@link DiagramProfileHandle.postToWebview} tells every editor of it.
+   *
+   * To enter a view of the file on a double click, run the profile's
+   * `commands.refreshDiagramModel` with `{ sourceUri, workflowName, open:
+   * true }`: the view is recorded as what the editor shows, and the next
+   * save or view option marked `reload` is of it. It is the editor's root,
+   * with no crumb back to the file's root; the name is not checked; the
+   * file's own editor is asked, not one that shows the file in place
+   * (shared `command-ids.ts`). Without `open: true` the
+   * name is a refresh's hint: the view is drawn and nothing is recorded, so
+   * those show the default view again.
    */
   activate?(file: string, row: OutlineRowActivation): void | Promise<void>;
 }
