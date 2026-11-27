@@ -51,7 +51,7 @@ import { registerLauncher } from './launcher';
 import { decideDiagramOpen } from './diagram-open-decision';
 import { readMcpServerUrl } from './mcp-server-url';
 import { composeStorageRuntimeOptions } from './profile-storage-options';
-import { composeElkServerOptions } from './profile-elk-server-options';
+import { elkServerOptionsOf, formerElkServerKeysInUse, isSetIn } from './profile-elk-server-options';
 import { openReference } from './open-reference-host';
 import { type DiagramChatConfirm, type DiagramChatConfirmAnswer, type DiagramChatTask, type DiagramProfile, type DiagramRunAnswer, type DiagramRunHost, type DiagramRunQuestion } from '../../api';
 import {
@@ -429,7 +429,10 @@ export async function activateGlspIntegration(
 
     // Large graphs on the product's Java ELK server, as its settings choose.
     const layoutSettings = vscode.workspace.getConfiguration(profile.settingsNamespace);
-    const elkServer = composeElkServerOptions(profile, context.extensionPath, key => layoutSettings.get(key));
+    const elkServer = elkServerOptionsOf(profile, context.extensionPath, layoutSettings);
+    for (const { former, key } of formerElkServerKeysInUse(profile, name => isSetIn(layoutSettings, name))) {
+        console.warn(`[dialogram] ${profile.settingsNamespace}.${former} is read while ${profile.settingsNamespace}.${key} is not set; it is deprecated, use ${profile.settingsNamespace}.${key}`);
+    }
     if (elkServer) {
         context.subscriptions.push({ dispose: () => disposeElkServers() });
     }
