@@ -27,11 +27,17 @@ const KEYS: Readonly<Record<ElkServerSettingName, string>> = {
 /** JVM options when the setting is empty: enough heap for a few thousand nodes. */
 export const DEFAULT_ELK_SERVER_JAVA_OPTS = '-Xmx2g';
 
+/**
+ * `setting` answers a key's value, its default included; `isSet` whether the
+ * person set it, which a default does not count as (`isSetIn`). Both are
+ * needed: a product's default for a new key must not hide a former key the
+ * person set.
+ */
 export function composeElkServerOptions(
     profile: Pick<DiagramProfile, 'elkServer'>,
     extensionPath: string,
     setting: <T>(key: string) => T | undefined,
-    isSet: (key: string) => boolean = key => setting(key) !== undefined
+    isSet: (key: string) => boolean
 ): ElkServerOptions | undefined {
     if (!profile.elkServer?.jar) {
         return undefined;
@@ -52,7 +58,11 @@ export function composeElkServerOptions(
     };
 }
 
-/** The former keys a person still sets, each beside the key that now names it. */
+/**
+ * The former keys read because the person set them and not the new ones,
+ * each beside the key that now names it. A former key set beside its new
+ * one is not read, and is not listed.
+ */
 export function formerElkServerKeysInUse(
     profile: Pick<DiagramProfile, 'elkServer'>,
     isSet: (key: string) => boolean
@@ -60,7 +70,7 @@ export function formerElkServerKeysInUse(
     const formerKeys = profile.elkServer?.formerKeys ?? {};
     return (Object.keys(KEYS) as ElkServerSettingName[]).flatMap(name => {
         const former = formerKeys[name];
-        return former && isSet(former) ? [{ former, key: KEYS[name] }] : [];
+        return former && isSet(former) && !isSet(KEYS[name]) ? [{ former, key: KEYS[name] }] : [];
     });
 }
 
@@ -70,23 +80,17 @@ export function formerElkServerKeysInUse(
  */
 export interface SettingsSection {
     get<T>(key: string): T | undefined;
-    inspect<T>(key: string): Partial<Record<
-        'globalValue' | 'workspaceValue' | 'workspaceFolderValue' | 'globalLanguageValue' | 'workspaceLanguageValue' | 'workspaceFolderLanguageValue',
-        T
-    >> | undefined;
+    inspect<T>(key: string): Partial<Record<'globalValue' | 'workspaceValue' | 'workspaceFolderValue', T>> | undefined;
 }
 
-/** Whether a person set a key anywhere, rather than leaving its default. */
+/**
+ * Whether a person set a key for the user, the workspace or a folder, rather
+ * than leaving its default. A value set for one language only is not counted:
+ * the section is read without a language, so `get` would not answer it.
+ */
 export function isSetIn(section: SettingsSection, key: string): boolean {
     const where = section.inspect(key);
-    return !!where && [
-        where.globalValue,
-        where.workspaceValue,
-        where.workspaceFolderValue,
-        where.globalLanguageValue,
-        where.workspaceLanguageValue,
-        where.workspaceFolderLanguageValue
-    ].some(value => value !== undefined);
+    return !!where && [where.globalValue, where.workspaceValue, where.workspaceFolderValue].some(value => value !== undefined);
 }
 
 /**

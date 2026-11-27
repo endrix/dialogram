@@ -504,6 +504,9 @@ export interface DiagramViewOptions {
   ): void;
 }
 
+/** The ELK server settings a profile can name former keys for (`DiagramProfile.elkServer`). */
+export type ElkServerSettingName = 'engine' | 'javaPath' | 'javaOpts' | 'serverTimeoutMs';
+
 /**
  * v2 diagram profile — the complete activation contract at
  * `DIALOGRAM_API_VERSION` 0.3.0. It carries everything the platform needs to
@@ -511,9 +514,6 @@ export interface DiagramViewOptions {
  * here. External-tool-backed consumers assemble one with the toolkit's profile
  * builder.
  */
-/** The ELK server settings a profile can name former keys for (`DiagramProfile.elkServer`). */
-export type ElkServerSettingName = 'engine' | 'javaPath' | 'javaOpts' | 'serverTimeoutMs';
-
 export interface DiagramProfile {
   key: string;
   displayName: string;

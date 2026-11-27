@@ -19,14 +19,15 @@ import {
 } from '../src/extension/diagram/profile-elk-server-options';
 
 const settings = (values: Record<string, unknown>) => <T>(key: string): T | undefined => values[key] as T | undefined;
+const setIn = (values: Record<string, unknown>) => (key: string): boolean => key in values;
 
 describe('composeElkServerOptions', () => {
     it('is nothing for a product that ships no server', () => {
-        expect(composeElkServerOptions({}, '/ext', settings({ 'layout.engine': 'elk-server' }))).toBeUndefined();
+        expect(composeElkServerOptions({}, '/ext', settings({ 'layout.engine': 'elk-server' }), setIn({ 'layout.engine': 'elk-server' }))).toBeUndefined();
     });
 
     it('resolves the jar against the extension and defaults the rest', () => {
-        expect(composeElkServerOptions({ elkServer: { jar: 'resources/elk.jar' } }, '/ext', settings({}))).toEqual({
+        expect(composeElkServerOptions({ elkServer: { jar: 'resources/elk.jar' } }, '/ext', settings({}), setIn({}))).toEqual({
             engine: 'auto',
             jar: path.resolve('/ext', 'resources/elk.jar'),
             javaPath: undefined,
@@ -36,13 +37,15 @@ describe('composeElkServerOptions', () => {
     });
 
     it('takes the person’s engine, JVM and timeout, and ignores an engine it does not know', () => {
-        const chosen = composeElkServerOptions({ elkServer: { jar: '/abs/elk.jar' } }, '/ext', settings({
+        const values = {
             'layout.engine': 'elkjs',
             'layout.javaPath': '/opt/java/bin/java',
             'layout.javaOpts': '-Xmx6g',
             'layout.serverTimeoutMs': 30000
-        }));
-        const unknown = composeElkServerOptions({ elkServer: { jar: '/abs/elk.jar' } }, '/ext', settings({ 'layout.engine': 'graphviz' }));
+        };
+        const chosen = composeElkServerOptions({ elkServer: { jar: '/abs/elk.jar' } }, '/ext', settings(values), setIn(values));
+        const nonsense = { 'layout.engine': 'graphviz' };
+        const unknown = composeElkServerOptions({ elkServer: { jar: '/abs/elk.jar' } }, '/ext', settings(nonsense), setIn(nonsense));
 
         expect(chosen).toMatchObject({ engine: 'elkjs', jar: '/abs/elk.jar', javaPath: '/opt/java/bin/java', javaOpts: '-Xmx6g', timeoutMs: 30000 });
         expect(unknown?.engine).toBe('auto');
@@ -91,22 +94,18 @@ describe('former keys', () => {
         expect(options?.javaPath).toBeUndefined();
     });
 
-    it('lists the former keys the person still sets, beside their new names', () => {
-        const set = section({ 'elk.layoutEngine': 'elkjs', 'layout.javaOpts': '-Xmx4g' });
+    it('lists the former keys read, beside their new names, and not one set beside its new key', () => {
+        const set = section({ 'elk.layoutEngine': 'elkjs', 'layout.javaOpts': '-Xmx4g', 'elk.javaOpts': '-Xmx1g' });
         expect(formerElkServerKeysInUse(profile, key => isSetIn(set, key))).toEqual([{ former: 'elk.layoutEngine', key: 'layout.engine' }]);
         expect(formerElkServerKeysInUse({ elkServer: { jar: '/abs/elk.jar' } }, () => true)).toEqual([]);
     });
 
-    it('counts a value set for a workspace, a folder or a language, and not a default', () => {
+    it('counts a value set for the user, a workspace or a folder, and not a default or one language', () => {
         const where = (values: Record<string, unknown>): SettingsSection => ({ get: () => undefined, inspect: () => values });
+        expect(isSetIn(where({ globalValue: 'elkjs' }), 'k')).toBe(true);
         expect(isSetIn(where({ workspaceFolderValue: 'elkjs' }), 'k')).toBe(true);
-        expect(isSetIn(where({ globalLanguageValue: 'elkjs' }), 'k')).toBe(true);
+        expect(isSetIn(where({ globalLanguageValue: 'elkjs' }), 'k')).toBe(false);
         expect(isSetIn(where({ defaultValue: 'auto' }), 'k')).toBe(false);
         expect(isSetIn({ get: () => undefined, inspect: () => undefined }, 'k')).toBe(false);
-    });
-
-    it('keeps the plain composition as it was when no isSet is given', () => {
-        expect(composeElkServerOptions(profile, '/ext', settings({ 'elk.layoutEngine': 'elkjs' }))?.engine).toBe('elkjs');
-        expect(composeElkServerOptions(profile, '/ext', settings({ 'layout.engine': 'elk-server', 'elk.layoutEngine': 'elkjs' }))?.engine).toBe('elk-server');
     });
 });
