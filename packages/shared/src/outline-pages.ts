@@ -134,18 +134,30 @@ const TEXT_MAX = 300;
 const BADGES_MAX = 4;
 
 const HEX_COLOR = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
-const NAMED_COLOR = /^[a-z]+$/;
-const FUNCTION_COLOR = /^(?:rgb|rgba|hsl|hsla)\(\s*[0-9.]+(?:deg)?%?(?:\s*[,/\s]\s*[0-9.]+%?){2,3}\s*\)$/;
+const NAMED_COLOR = /^[a-zA-Z]+$/;
+/** CSS-wide keywords, which a colour property accepts and which are no colour. */
+const NOT_A_COLOR = new Set(['inherit', 'initial', 'unset', 'revert', 'none', 'auto']);
+const NUMBER = '[+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:deg|rad|grad|turn|%)?';
+/** rgb()/hsl() with commas (`hsl(210, 55%, 55%)`) or spaces and a slash before the alpha (`rgb(10 20 30 / 50%)`). */
+const FUNCTION_COLOR = new RegExp(
+    `^(?:rgb|rgba|hsl|hsla)\\(\\s*(?:${NUMBER}\\s*,\\s*${NUMBER}\\s*,\\s*${NUMBER}(?:\\s*,\\s*${NUMBER})?`
+        + `|${NUMBER}\\s+${NUMBER}\\s+${NUMBER}(?:\\s*\\/\\s*${NUMBER})?)\\s*\\)$`,
+    'i'
+);
 const VAR_COLOR = /^var\(\s*(--[A-Za-z0-9_-]+)\s*(?:,\s*([^()]*(?:\([^()]*\))?)\s*)?\)$/;
 
 function plainColor(value: string): boolean {
-    return HEX_COLOR.test(value) || NAMED_COLOR.test(value) || FUNCTION_COLOR.test(value);
+    return HEX_COLOR.test(value)
+        || (NAMED_COLOR.test(value) && !NOT_A_COLOR.has(value.toLowerCase()))
+        || FUNCTION_COLOR.test(value);
 }
 
 /**
  * A row's colour as the panel may draw it (`HierarchyOutlineEntry.color`):
  * `#hex`, a named colour, `rgb()`/`hsl()` with numbers, or `var(--name)`
- * with such a fallback or none. Anything else is no colour.
+ * with such a fallback or none. Anything else is no colour. A name is taken
+ * at its word (any letters but a CSS-wide keyword): one the browser does not
+ * know draws an empty chip.
  */
 export function outlineColor(value: unknown): string | undefined {
     if (typeof value !== 'string') {

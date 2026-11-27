@@ -212,6 +212,8 @@ export class HierarchyOutlinePanel {
     private pendingFocus: Focus | undefined;
     /** A row the host asked to show before there was an outline to show it in. */
     private pendingReveal: OutlineRowReveal | undefined;
+    /** The root's reveal last applied, so that an outline naming the same row again leaves the reader's choices alone. */
+    private rootRevealApplied: string | undefined;
     private layout: OutlineLayout = { segments: [], total: 0 };
     private layoutStale = true;
     private drawQueued = false;
@@ -285,15 +287,7 @@ export class HierarchyOutlinePanel {
             this.pager.reset();
             this.layoutStale = true;
             this.outlineChanged(outline);
-            // The row the producer opened on, selected without opening the panel.
-            const opened = outline.reveal;
-            if (opened && typeof opened.id === 'string' && opened.id !== '') {
-                this.pendingReveal = {
-                    id: opened.id,
-                    ...(typeof opened.group === 'string' ? { group: opened.group } : {}),
-                    ...(Number.isInteger(opened.index) ? { index: opened.index } : {})
-                };
-            }
+            this.takeRootReveal(outline);
         }
         // The trail the server echoes on the root: this view's own, whichever
         // listener the model reaches first.
@@ -312,6 +306,31 @@ export class HierarchyOutlinePanel {
             this.pendingReveal = undefined;
             void this.reveal(reveal);
         }
+    }
+
+    /**
+     * The row the producer opened on (`HierarchyOutlineEntry.reveal`), selected
+     * without opening the panel: when the outline first names it, and when it
+     * names another, not each time the outline changes (a run's tokens change
+     * it), which would undo the reader's selection, filter and closed rows. A
+     * row the host asked for before the outline came wins.
+     */
+    private takeRootReveal(outline: HierarchyOutlineEntry): void {
+        const opened = outline.reveal;
+        if (!opened || typeof opened.id !== 'string' || opened.id === '') {
+            return;
+        }
+        const target: OutlineRowReveal = {
+            id: opened.id,
+            ...(typeof opened.group === 'string' ? { group: opened.group } : {}),
+            ...(Number.isInteger(opened.index) ? { index: opened.index } : {})
+        };
+        const key = JSON.stringify([target.id, target.group ?? null, target.index ?? null]);
+        if (key === this.rootRevealApplied) {
+            return;
+        }
+        this.rootRevealApplied = key;
+        this.pendingReveal ??= target;
     }
 
     // ── Chrome ──────────────────────────────────────────────────────────

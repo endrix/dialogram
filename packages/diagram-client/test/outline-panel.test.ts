@@ -357,6 +357,37 @@ describe('the row the producer opened on (the root’s reveal)', () => {
         await until(() => rowSaying('row 120')?.classList.contains('selected') === true);
     });
 
+    it('gives way to a row the host asked for before the outline came', async () => {
+        document.body.replaceChildren();
+        panel = new TestPanel();
+        await panel.reveal({ id: 'part-1' });
+        panel.modelRootChanged({ ...root, args: { ...root.args, 'wf:hierarchy': JSON.stringify({ ...outline, reveal: { id: 'two' } }) } });
+        await until(() => rowSaying('Part one')?.classList.contains('selected') === true);
+        expect(rowSaying('Part two')?.classList.contains('selected')).toBe(false);
+    });
+
+    it('is not applied again when the outline changes and names the same row, and is when it names another', async () => {
+        const withReveal = (id: string, nodeCount: number) => ({
+            ...root, args: { ...root.args, 'wf:hierarchy': JSON.stringify({ ...outline, nodeCount, reveal: { id } }) }
+        });
+        panel.modelRootChanged(withReveal('part-1', 2));
+        expect(rowSaying('Part one')?.classList.contains('selected')).toBe(true);
+        rowSaying('Rows')!.querySelector<HTMLElement>('[data-toggle]')!.click();
+        await until(() => rowSaying('row 3') !== undefined);
+        rowSaying('row 3')!.click();
+        await until(() => rowSaying('row 3')?.classList.contains('selected') === true);
+        // Another outline (a run's tokens), the same row named: the reader's choice stays.
+        panel.modelRootChanged(withReveal('part-1', 3));
+        await until(() => rowSaying('row 3') !== undefined);
+        expect(rowSaying('row 3')?.classList.contains('selected')).toBe(true);
+        expect(rowSaying('Part one')?.classList.contains('selected')).toBe(false);
+        // Another row named: it is selected.
+        panel.modelRootChanged(withReveal('two', 4));
+        await until(() => rowSaying('Part two')?.classList.contains('selected') === true);
+        panel.modelRootChanged(withReveal('part-1', 5));
+        await until(() => rowSaying('Part one')?.classList.contains('selected') === true);
+    });
+
     it('is not applied again while the outline stays the same', async () => {
         const opened = { ...root, args: { ...root.args, 'wf:hierarchy': JSON.stringify({ ...outline, reveal: { id: 'part-1' } }) } };
         panel.modelRootChanged(opened);

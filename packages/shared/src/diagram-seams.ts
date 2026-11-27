@@ -312,8 +312,10 @@ export interface HierarchyOutlineEntry {
      * Said on the root: the row selected when this outline arrives, as
      * `DiagramProfileHandle.revealOutlineRow` would select it (its group
      * opened, its page fetched), without opening the panel. For a producer
-     * whose views are not trails: the row the diagram opened on. Applied each
-     * time the outline changes, and only then.
+     * whose views are not trails: the row the diagram opened on. Applied when
+     * an outline first names it and when one names another row, not each time
+     * the outline changes; a row the host asked for before the outline came
+     * wins.
      */
     reveal?: { id: string; group?: string; index?: number };
     /**

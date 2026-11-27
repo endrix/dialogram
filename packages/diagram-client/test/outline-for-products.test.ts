@@ -42,6 +42,19 @@ describe('the floating button stack', () => {
         expect(document.querySelectorAll('.workflow-fab-stack')).toHaveLength(1);
     });
 
+    it('made before the document has a body, joins the body once it has one, and is the same stack meanwhile', () => {
+        const body = document.body;
+        document.documentElement.removeChild(body);
+        expect(document.body).toBeNull();
+        const stack = ensureFloatingButtonStack();
+        expect(stack.isConnected).toBe(false);
+        expect(ensureFloatingButtonStack()).toBe(stack);
+        document.documentElement.appendChild(body);
+        document.dispatchEvent(new Event('DOMContentLoaded'));
+        expect(stack.parentElement).toBe(document.body);
+        expect(ensureFloatingButtonStack()).toBe(stack);
+    });
+
     it('takes the outline’s button under the chat’s once it is there', () => {
         const stack = ensureFloatingButtonStack();
         const chat = document.createElement('button');

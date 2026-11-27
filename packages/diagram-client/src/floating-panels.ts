@@ -45,16 +45,34 @@ export const FLOATING_BUTTON_STACK_ID = 'workflow-fab-stack';
  * floating-buttons.css.
  */
 export function ensureFloatingButtonStack(doc: Document = document): HTMLDivElement {
-    const existing = doc.querySelector<HTMLDivElement>('div.workflow-fab-stack');
+    const existing = doc.querySelector<HTMLDivElement>('div.workflow-fab-stack') ?? waitingStacks.get(doc);
     if (existing) {
         return existing;
     }
     const stack = doc.createElement('div');
     stack.className = 'workflow-fab-stack';
     stack.id = FLOATING_BUTTON_STACK_ID;
-    doc.body.appendChild(stack);
+    if (doc.body) {
+        doc.body.appendChild(stack);
+        return stack;
+    }
+    // Called from a script in the head: the stack joins the body once there is one.
+    waitingStacks.set(doc, stack);
+    doc.addEventListener(
+        'DOMContentLoaded',
+        () => {
+            waitingStacks.delete(doc);
+            if (!stack.isConnected) {
+                doc.body?.appendChild(stack);
+            }
+        },
+        { once: true }
+    );
     return stack;
 }
+
+/** A stack made before its document had a body, until it joins it. */
+const waitingStacks = new WeakMap<Document, HTMLDivElement>();
 
 /** Sent on `window` when a floating panel opened, closed or moved: what keeps clear of them places itself again. */
 export const FLOATING_PANELS_MOVED = 'dialogram.floatingPanels.moved';

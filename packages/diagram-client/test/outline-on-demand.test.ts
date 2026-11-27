@@ -738,11 +738,13 @@ describe('the words a row says', () => {
 
 describe('a row’s own colour', () => {
     it('is a CSS colour of a few kinds, and nothing else', () => {
-        for (const color of ['#4af', '#44aaff', '#44aaff80', 'teal', 'hsl(210, 55%, 55%)', 'rgb(10 20 30 / 50%)',
+        for (const color of ['#4af', '#44aaff', '#44aaff80', 'teal', 'DarkBlue', 'hsl(210, 55%, 55%)', 'rgb(10 20 30 / 50%)',
+            'hsl(-30, 50%, 50%)', 'hsl(0.5turn 50% 50%)', 'rgba(1, 2, 3, .5)',
             'var(--vscode-charts-blue)', 'var(--x, #8b8b8b)', 'var(--x, hsl(1, 2%, 3%))']) {
             expect(outlineColor(color), color).toBe(color);
         }
-        for (const color of ['url(x.png)', 'red; background: url(x)', 'var(--x, url(y))', 'expression(1)', '', 42, undefined, 'calc(1px)']) {
+        for (const color of ['url(x.png)', 'red; background: url(x)', 'var(--x, url(y))', 'expression(1)', '', 42, undefined,
+            'calc(1px)', 'inherit', 'Unset', 'rgb(1/2/3)', 'rgb(1, 2 3)', 'hsl(1, 2%)']) {
             expect(outlineColor(color), String(color)).toBeUndefined();
         }
     });
