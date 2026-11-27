@@ -470,6 +470,57 @@ describe('the palette', () => {
         expect(body().querySelectorAll('.view-option')).toHaveLength(1);
     });
 
+    /** A product's palette with a row of its own in the body, drawn with the palette's classes. */
+    class OwnPalette extends ViewToolPalette {
+        protected override drawOwnContent(body: HTMLElement): void {
+            const row = document.createElement('div');
+            row.classList.add('tool-button', 'own-row');
+            row.textContent = 'Search';
+            body.insertBefore(row, body.firstChild);
+        }
+    }
+
+    function ownPalette(service: ViewOptionsService | undefined, tools: unknown[]): any {
+        container.replaceChildren();
+        const made: any = new OwnPalette();
+        made.viewOptions = service;
+        made.paletteItems = tools;
+        made.containerElement = container;
+        made.searchField = search;
+        made.createBody();
+        return made;
+    }
+
+    it('keeps what a product draws in the body, and does not hide that body as empty', () => {
+        const service = new TestService();
+        service.modelRootChanged(rootOf([kinds]));
+        ownPalette(service, []);
+        expect(body().querySelector('.own-row')).not.toBeNull();
+        body().querySelector<HTMLElement>('[data-item="k0"]')!.click();
+        expect(body().querySelector('.own-row')).not.toBeNull();
+        expect(body().textContent).not.toContain('No results found.');
+
+        ownPalette(new TestService(), []);
+        expect(body().textContent).toBe('Search');
+        expect(body().classList.contains(EMPTY_PALETTE_BODY_CLASS)).toBe(false);
+    });
+
+    it('still says it found nothing, beside the product\'s row, when a filter matched no tool and no line', () => {
+        const service = new TestService();
+        service.modelRootChanged(rootOf([kinds]));
+        search.value = 'zzz';
+        const made = ownPalette(service, []);
+        expect(body().querySelectorAll('.own-row')).toHaveLength(1);
+        expect(body().textContent).toContain('No results found.');
+        made.drawViewOptions();
+        expect(body().textContent!.match(/No results found\./g)).toHaveLength(1);
+        search.value = '';
+        made.drawViewOptions();
+        expect(body().textContent).not.toContain('No results found.');
+        expect(body().querySelectorAll('.own-row')).toHaveLength(1);
+        expect(body().querySelectorAll('.view-options-group')).toHaveLength(1);
+    });
+
     it('leaves a palette with tools and no view options as it was', () => {
         palette(new TestService(), tools);
         expect(body().querySelector('.view-options')!.childElementCount).toBe(0);
