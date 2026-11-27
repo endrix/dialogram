@@ -15,6 +15,8 @@ import { nodeLinesHeight, nodeLinesOf, renderNodeLines } from '../src/node-lines
 const here = path.dirname(fileURLToPath(import.meta.url));
 const VIEWS = readFileSync(path.resolve(here, '../src/views.ts'), 'utf8');
 const CSS = readFileSync(path.resolve(here, '../src/diagram-client.css'), 'utf8');
+// The level of detail is in its own stylesheet, which diagram-client.css @imports.
+const DETAIL_CSS = readFileSync(path.resolve(here, '../src/zoom-detail.css'), 'utf8');
 
 // The GLSP `svg` helper gives `{tag, props, children}` here, snabbdom vnodes in a browser.
 const classesOf = (vnode: any): Record<string, boolean> => vnode?.data?.class ?? vnode?.props?.class ?? {};
@@ -80,7 +82,7 @@ describe('the lines of a node', () => {
 
         expect(classesOf(band)['zoom-detail']).toBeUndefined();
         expect(classesOf(text)).toMatchObject({ 'node-line-text': true, 'zoom-detail': true, 'node-line-guard': true });
-        expect(CSS).toMatch(/\.detail-mid \.zoom-detail\s*\{[^}]*display: none/);
+        expect(DETAIL_CSS).toMatch(/\.detail-mid \.zoom-detail\s*\{[^}]*display: none/);
     });
 
     it('draw nothing for a node without lines', () => {

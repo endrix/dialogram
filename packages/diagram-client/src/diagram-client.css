@@ -15,6 +15,8 @@
 @import './property-panel.css';
 @import './context-menu.css';
 @import './loading-indicator.css';
+@import './zoom-detail.css';
+@import './selection-links.css';
 
 :root {
      --sprotty-background: var(--vscode-editor-background, #1e1e1e);
@@ -1591,59 +1593,6 @@ body.vscode-high-contrast-light .node-center-image-light {
 .workflow-node-group .group-loop-arrow {
     fill: currentColor;
     stroke: none;
-}
-
-/* ============================================
-   Links of the selection (selection-links.ts): what the selected node uses
-   and is used by, drawn over the diagram only while it is selected. One
-   colour moves the line, its arrowhead and the outline of what it leads to;
-   a product colours and dashes its own kinds on `selection-link-<role>`.
-   ============================================ */
-.selection-links {
-    pointer-events: none;
-}
-
-.selection-link {
-    color: var(--vscode-focusBorder, #007fd4);
-}
-
-.selection-link .selection-link-line {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2px;
-    stroke-linecap: round;
-}
-
-.selection-link .selection-link-arrow {
-    fill: currentColor;
-    stroke: none;
-}
-
-.selection-link text.selection-link-label {
-    fill: var(--vscode-foreground, #cccccc);
-    font-family: var(--vscode-font-family);
-    font-size: 10px;
-    /* A halo in the editor's colour, so the word reads where it crosses a line. */
-    paint-order: stroke;
-    stroke: var(--vscode-editor-background, #1e1e1e);
-    stroke-width: 4px;
-    stroke-linejoin: round;
-}
-
-.selection-links-shown .workflow-node-group .group-loop {
-    opacity: 0.3;
-}
-
-/* What a link leads to, and the other drawings of what is selected. */
-.selection-links .selection-link-outline {
-    fill: none;
-    stroke: var(--vscode-focusBorder, #007fd4);
-    stroke-width: 2px;
-}
-
-.selection-links .selection-link-outline.selection-link-same {
-    stroke-dasharray: 5 4;
-    stroke-opacity: 0.8;
 }
 
 /* ============================================
@@ -4051,53 +4000,6 @@ details[open] > summary .agent-chat-expand-arrow {
     stroke-width: 1px;
     stroke-opacity: 0.6;
     pointer-events: none;
-}
-
-/* Level of detail (zoom-detail.ts): how much text the diagram draws at the
-   zoom it is looked at. The root svg carries `detail-far`, `detail-mid` or
-   `detail-near`; only the diagram on screen does, so the hidden render the
-   client measures in, and an export, draw everything. A product tags text
-   its own views draw `zoom-name` (drawn from the middle level) or
-   `zoom-detail` (drawn only close in).
-
-   Every rule names the element it hides, `text` or the `g` of a pill: a
-   node's own group carries classes of the same names (an operator symbol is
-   `symbol-operator`, a label's group its model's `port-label`), and an
-   unqualified rule hid whole nodes.
-
-   Far: no text on the nodes, nor the pills a run puts on edges (whole, or
-   they would be empty). A group frame keeps its title. */
-.detail-far text.header-label,
-.detail-far text.sprotty-label,
-.detail-far text.boundary-name,
-.detail-far text.structure-if-header,
-.detail-far text.structure-foreach-header,
-.detail-far text.symbol-operator,
-.detail-far g.edge-open-button,
-.detail-far g.edge-queue-badge,
-.detail-far .zoom-name,
-/* Far and mid: a node's name only. The ports' names, the type under a node
-   (but a symbol's caption, which is its name) and a structure's condition
-   line, its badges, how many a port takes, what a wire carries and its
-   bits. */
-.detail-far text.port-label,
-.detail-far text.frame-pin-label,
-.detail-far text.type-footer-label,
-.detail-far g.header-badge,
-.detail-far text.multiplicity-badge,
-.detail-far text.edge-carried-label,
-.detail-far text.cal-edge-index-label,
-.detail-far .zoom-detail,
-.detail-mid text.port-label,
-.detail-mid text.frame-pin-label,
-.detail-mid text.type-footer-label:not(.symbol-caption),
-.detail-mid text.header-label.label-type,
-.detail-mid g.header-badge,
-.detail-mid text.multiplicity-badge,
-.detail-mid text.edge-carried-label,
-.detail-mid text.cal-edge-index-label,
-.detail-mid .zoom-detail {
-    display: none;
 }
 
 /* A state that stands for a run of states: its name on top, then the

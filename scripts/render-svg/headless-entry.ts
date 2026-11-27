@@ -138,7 +138,7 @@ async function main(): Promise<void> {
     await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
     const rendered = renderedDiagram();
-    const result = rendered ? extractSvg(rendered.graph, 'diagram', true) : undefined;
+    const result = rendered ? extractSvg(rendered.graph, 'diagram', { atScaleOne: true }) : undefined;
     report(result
         ? { name: result.name, elementCount: result.elementCount, svg: result.svg }
         : { error: 'nothing rendered (no .sprotty svg in the page)' });

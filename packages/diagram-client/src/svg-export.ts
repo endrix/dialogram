@@ -513,20 +513,53 @@ export function renderedDiagram(): { svgRoot: SVGSVGElement; graph: SVGGraphicsE
     return graph instanceof SVGGraphicsElement ? { svgRoot, graph } : undefined;
 }
 
+/** What a product asks of an export (`extractSvg`). Each is optional. */
+export interface ExtractOptions {
+    /**
+     * At 1:1 whatever the viewport's zoom (the default), so two exports of
+     * one diagram compare and a non-scaling stroke is right. False: `el`
+     * where it is drawn, through its CTM, for a product whose export is one
+     * node at the zoom it was looked at.
+     */
+    atScaleOne?: boolean;
+    /**
+     * The text the view draws at its zoom, and no more. By default a file
+     * has no zoom and carries all the text: the level of detail's classes
+     * (zoom-detail.ts) are lifted while it is copied. That lifts what the
+     * stylesheet hides; a view that leaves something out of what it draws
+     * must draw it before the copy. A product that offers "what is on
+     * screen" asks for this.
+     */
+    asDisplayed?: boolean;
+    /**
+     * Elements left out of the file, as a selector matched among the
+     * descendants of the copy: a product's structural picture, without its
+     * ports or tables. The file's bounds are still those of what is drawn. A
+     * selector the browser cannot parse fails the export (undefined).
+     */
+    leaveOut?: string;
+}
+
 /**
  * Extract `el` as a self-contained SVG document.
  *
  * The diagram's root group is exported at 1:1 whatever the viewport's zoom, so
  * two exports of one diagram compare, and a non-scaling stroke is right. A
- * subtree below the root keeps its place through its CTM, as in the
- * mlir-viewer, whose export is one node at the zoom it was looked at.
+ * subtree below the root may keep its place through its CTM instead
+ * (`atScaleOne: false`), as in the mlir-viewer, whose export is one node at
+ * the zoom it was looked at.
  */
-export function extractSvg(el: SVGGraphicsElement, label: string, atScaleOne = true): ExtractedSvg | undefined {
+export function extractSvg(el: SVGGraphicsElement, label: string, options: ExtractOptions = {}): ExtractedSvg | undefined {
+    const { atScaleOne = true, asDisplayed = false, leaveOut } = options;
+    const extract = () => extractDrawn(el, label, atScaleOne, leaveOut);
+    if (asDisplayed) {
+        return extract();
+    }
     // A file has no zoom: it carries all the text, whatever the view draws now.
-    return withFullDetail(el.ownerSVGElement, () => extractDrawn(el, label, atScaleOne));
+    return withFullDetail(el.ownerSVGElement, extract);
 }
 
-function extractDrawn(el: SVGGraphicsElement, label: string, atScaleOne: boolean): ExtractedSvg | undefined {
+function extractDrawn(el: SVGGraphicsElement, label: string, atScaleOne: boolean, leaveOut: string | undefined): ExtractedSvg | undefined {
     const svgRoot = el.ownerSVGElement;
     if (!svgRoot) {
         return undefined;
@@ -547,6 +580,18 @@ function extractDrawn(el: SVGGraphicsElement, label: string, atScaleOne: boolean
     const clone = el.cloneNode(true) as SVGGraphicsElement;
     inlineStyles(el, clone);
     clone.removeAttribute('transform');
+    if (leaveOut) {
+        let left: Element[];
+        try {
+            left = Array.from(clone.querySelectorAll(leaveOut));
+        } catch {
+            // Not a selector: a failed export, as the callers expect one.
+            return undefined;
+        }
+        for (const each of left) {
+            each.remove();
+        }
+    }
 
     const doc = document.implementation.createDocument('http://www.w3.org/2000/svg', 'svg', null);
     const out = doc.documentElement;
