@@ -36,6 +36,8 @@ export * from './model';
 export * from './views';
 
 // ── Composition seam ─────────────────────────────────────────────────────────
+// The container's context menu is drawn by the platform; paired with
+// `./context-menu.css` for its styles (diagram-client.css @imports it).
 export {
     createDiagramContainer,
     composeDiagramModules,
