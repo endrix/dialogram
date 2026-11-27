@@ -140,16 +140,22 @@ describe('a session of a profile that keeps no layout record', () => {
         expect(await exists(record)).toBe(false);
     });
 
-    it('reads it from the options a consumer\'s own module binds, as every storage option is read', async () => {
-        const { file, record } = await source();
-        const consumers = new ContainerModule(bind => {
-            bind(STORAGE_RUNTIME_OPTIONS).toConstantValue({ settingsNamespace: 'fixture', operationPrefix: 'fixture', keepLayoutRecord: false });
-        });
-        const svc = session(createWorkflowServerModules(options()), [consumers]).get(LayoutPersistenceService);
+    it('reads it from the profile\'s options, as the host\'s store of view options does, not from a consumer module\'s own binding of them', async () => {
+        // The host's view options go to the same file and follow the profile
+        // (extension-core `viewOptionsStoreOf`): a consumer binding that
+        // turned the record off for the sessions alone would leave the host
+        // writing it.
+        for (const [profile, bound, kept] of [[undefined, false, true], [false, true, false]] as const) {
+            const { file, record } = await source();
+            const consumers = new ContainerModule(bind => {
+                bind(STORAGE_RUNTIME_OPTIONS).toConstantValue({ settingsNamespace: 'fixture', operationPrefix: 'fixture', keepLayoutRecord: bound });
+            });
+            const svc = session(createWorkflowServerModules(options(profile)), [consumers]).get(LayoutPersistenceService);
 
-        await svc.saveLayoutImmediate(file, 'main', at(1, 2));
+            await svc.saveLayoutImmediate(file, 'main', at(1, 2));
 
-        expect(await exists(record)).toBe(false);
+            expect(await exists(record), `profile ${String(profile)}, bound ${String(bound)}`).toBe(kept);
+        }
     });
 
     it('keeps the record as before where the profile says nothing, or says to keep it', async () => {
@@ -246,5 +252,27 @@ describe('a layout record that cannot be written', () => {
         await fs.writeFile(first.record, 'not a folder\n', 'utf-8');
         await svc.saveLayoutImmediate(first.file, 'main', at(3, 4));
         expect(warn).toHaveBeenCalledTimes(3);
+    });
+
+    it('says a fault that is not the folder (here, content that cannot be written as JSON) each time, with what was thrown, even after the file\'s warning', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { file, record } = await blocked();
+        const svc = new LayoutPersistenceService(0);
+        const circular: Record<string, unknown> = {};
+        circular.self = circular;
+
+        await svc.saveLayoutImmediate(file, 'main', at(1, 2));
+        expect(warn).toHaveBeenCalledTimes(1);
+
+        // The folder can be written again, and the content cannot.
+        await fs.rm(record);
+        await svc.saveViewOptions(file, { kinds: circular as never });
+        await svc.saveViewOptions(file, { kinds: circular as never });
+
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(error).toHaveBeenCalledTimes(2);
+        expect(error.mock.calls[0][0]).toContain(path.join(record, 'top.src.layout.json'));
+        expect(error.mock.calls[0][1]).toBeInstanceOf(TypeError);
     });
 });

@@ -61,7 +61,8 @@ export function readRefreshCommandArgs(args: RefreshCommandArgs | undefined): Re
     const reveal = typeof args?.reveal === 'string' && args.reveal.trim() !== '' ? args.reveal : undefined;
     return {
         sourceUri: args?.sourceUri,
-        workflowName: args?.workflowName,
+        // A name that is not text (a row's data passed through) names no view.
+        workflowName: typeof args?.workflowName === 'string' ? args.workflowName : undefined,
         ...(reveal ? { reveal } : {}),
         ...(args?.open === true ? { open: true as const } : {})
     };
@@ -83,28 +84,39 @@ export interface RefreshHost {
  * editor (`open`). An entry is newer than any navigation the diagram made
  * just before it: that navigation is forgotten, or a request from the
  * diagram naming no view in the moments after would be given it, over the
- * view entered.
+ * view entered. It is forgotten before the editor is asked, since the
+ * entry's own request is remembered on top of it, and put back when no
+ * editor was asked (the file has no editor of its own, or is shown in place
+ * inside another file's), since nothing was entered then.
  */
 export function refreshDiagramModels(request: RefreshRequest | undefined, host: RefreshHost): void {
     const uri = request?.sourceUri ? vscode.Uri.parse(request.sourceUri) : host.activeUri();
     if (!uri) {
         return;
     }
-    if (request?.open === true && (request.workflowName?.trim() ?? '') !== '') {
+    const named = typeof request?.workflowName === 'string' ? request.workflowName.trim() : '';
+    const forgotten: Array<[string, unknown]> = [];
+    if (request?.open === true && named !== '') {
         const key = normalizeSourceUriKey(uri.toString());
-        for (const known of [...host.recentNavigation.keys()]) {
+        for (const [known, navigation] of [...host.recentNavigation.entries()]) {
             if (normalizeSourceUriKey(known) === key) {
+                forgotten.push([known, navigation]);
                 host.recentNavigation.delete(known);
             }
         }
     }
-    host.editors()?.refreshFromHost(uri, {
+    const asked = host.editors()?.refreshFromHost(uri, {
         workflowName: request?.workflowName,
         open: request?.open,
         agentContextOnly: request?.agentContextOnly,
         reveal: request?.reveal,
         queueTraceVisible: host.queueTraceVisible()
-    });
+    }) ?? 0;
+    if (asked === 0) {
+        for (const [known, navigation] of forgotten) {
+            host.recentNavigation.set(known, navigation);
+        }
+    }
 }
 
 /** The refresh command, as the activation registers it. */

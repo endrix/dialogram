@@ -84,9 +84,10 @@ platform that hands it one.
   stop it was `WORKFLOW_DIAGRAM_DISABLE_PERSISTENCE=1`, for the whole
   process: every product in the window with it. A read-only product whose
   files lie in folders it does not own now says so in its profile: each
-  session's `LayoutPersistenceService` (from the session's storage options,
-  so a consumer module's own binding of them wins, as for every other one)
-  and the host's store of view options (`viewOptionsOfProfile`) write and read
+  session's `LayoutPersistenceService` and the host's store of view options
+  (`viewOptionsOfProfile`), both from the profile's options (a consumer
+  module's own binding of the storage options does not change it, unlike
+  the other options, since the two write the same file) write and read
   no record, and one already there is left as it is. Each diagram is laid
   out when it opens. The open bundles and held states are held in memory
   until the editor closes, the view options until the window does; the
@@ -1767,8 +1768,10 @@ platform that hands it one.
   a folder that cannot be written, every save of the layout (the first
   layout of a view, a move, a view option) logged "Failed to save layout
   file" as an error with its stack. It is now one warning per file, with
-  the path and the reason (`EACCES`, `ENOTDIR`), said again only after a
-  write there has worked. The diagram works on as before, holding in memory
+  the path and the reason (`EACCES`, `EPERM`, `EROFS`, `EEXIST`, `ENOTDIR`,
+  `EISDIR`), said again only after a write there has worked. Any other
+  fault (a full disk, an I/O error, content that cannot be written) is
+  still logged as an error with its stack, at each save. The diagram works on as before, holding in memory
   what a profile that keeps no record holds (the open bundles, the held
   states, the view options) and not the positions moved, the routes or the
   port orders.

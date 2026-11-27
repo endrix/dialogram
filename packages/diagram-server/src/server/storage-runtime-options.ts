@@ -101,9 +101,12 @@ export interface StorageRuntimeOptions {
      * view options for the window; the positions moved, routes and port
      * orders are not, and a model asked for again (a view option marked
      * `reload`, a change of the file, the view entered again) is laid out
-     * afresh. Each session's `LayoutPersistenceService` reads it here
-     * (`server-module.ts`); the host's store of view options reads the
-     * profile's (extension-core `view-options-host.ts` `viewOptionsStoreOf`).
+     * afresh. Each session's `LayoutPersistenceService` and the host's
+     * store of view options (extension-core `view-options-host.ts`
+     * `viewOptionsStoreOf`) both take it from the profile's options, the ones
+     * passed to `createWorkflowServerModules`: a consumer module that binds
+     * its own `STORAGE_RUNTIME_OPTIONS` does not change it, since the two
+     * write the same file and must agree.
      * `WORKFLOW_DIAGRAM_DISABLE_PERSISTENCE=1` still keeps none for the whole
      * process.
      */

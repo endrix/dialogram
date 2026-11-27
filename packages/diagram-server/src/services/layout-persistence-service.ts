@@ -252,15 +252,28 @@ const writesInProgress = new Map<string, Promise<void>>();
  */
 const unwritableLayoutFiles = new Set<string>();
 
+/**
+ * The codes of a folder the record cannot be made or written in: no right to
+ * write (EACCES, EPERM), a read-only file system (EROFS), or a file where a
+ * folder is needed (`.layout` made by `mkdir` gives EEXIST, a path through
+ * it ENOTDIR) or a folder where the record goes (EISDIR). These fail every
+ * save there alike; anything else (a full disk, an I/O error, a bug in what
+ * is written) is a fault of its own, said each time with its stack.
+ */
+const UNWRITABLE_FOLDER_CODES = new Set(['EACCES', 'EPERM', 'EROFS', 'EEXIST', 'ENOTDIR', 'EISDIR']);
+
 /** Say once that `layoutPath` cannot be written; the diagram works on without it. */
 function layoutWriteFailed(layoutPath: string, error: unknown): void {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (typeof code !== 'string' || !UNWRITABLE_FOLDER_CODES.has(code)) {
+        console.error(`Failed to save layout file: ${layoutPath}`, error);
+        return;
+    }
     if (unwritableLayoutFiles.has(layoutPath)) {
         return;
     }
     unwritableLayoutFiles.add(layoutPath);
-    const reason = (error as NodeJS.ErrnoException | undefined)?.code
-        ?? (error instanceof Error ? error.message : String(error));
-    console.warn(`[dialogram] ${layoutPath} could not be written (${reason}): the diagram's layout is not kept on disk for this file. Said once.`);
+    console.warn(`[dialogram] ${layoutPath} could not be written (${code}): the diagram's layout is not kept on disk for this file. Said once.`);
 }
 
 /** A write to `layoutPath` worked: a later failure there is said again. */
