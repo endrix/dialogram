@@ -33,6 +33,29 @@ export function raiseFloatingPanel(panel: HTMLElement): void {
     }
 }
 
+/** The id of the floating button stack, bottom right of the canvas. */
+export const FLOATING_BUTTON_STACK_ID = 'workflow-fab-stack';
+
+/**
+ * The floating button stack, made once: the column of buttons bottom right of
+ * the canvas (the chat's, the outlines', the navigation's) that a panel's
+ * button joins (`placeInButtonStack`) and a panel opens beside. The stock
+ * navigation makes it; a product with views of its own calls this before the
+ * chat panel starts, so that the chat's button joins it too. Styles in
+ * floating-buttons.css.
+ */
+export function ensureFloatingButtonStack(doc: Document = document): HTMLDivElement {
+    const existing = doc.querySelector<HTMLDivElement>('div.workflow-fab-stack');
+    if (existing) {
+        return existing;
+    }
+    const stack = doc.createElement('div');
+    stack.className = 'workflow-fab-stack';
+    stack.id = FLOATING_BUTTON_STACK_ID;
+    doc.body.appendChild(stack);
+    return stack;
+}
+
 /** Sent on `window` when a floating panel opened, closed or moved: what keeps clear of them places itself again. */
 export const FLOATING_PANELS_MOVED = 'dialogram.floatingPanels.moved';
 

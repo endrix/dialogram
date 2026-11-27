@@ -1,0 +1,70 @@
+/**
+ * The floating button stack, bottom right of the canvas, and its buttons:
+ * the chat's, the outlines' and the navigation's. The stack is made by
+ * `ensureFloatingButtonStack` (floating-panels.ts), and a product with views
+ * of its own imports this sheet alone. diagram-client.css @imports it.
+ */
+
+.workflow-fab-stack {
+  position: fixed;
+  bottom: calc(var(--workflow-wf-nav-height, 0px) + 16px);
+  right: 14px;
+  z-index: 1002;
+  display: flex;
+  flex-direction: column-reverse; /* first appended (Used By) sits at the bottom */
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none; /* let children own pointer events; gaps stay click-through */
+}
+.workflow-fab-stack > * {
+  pointer-events: auto;
+}
+/* The chat button is reparented into the stack; drop its own fixed anchoring so
+   it flows as the top item of the flex column. */
+.workflow-fab-stack .workflow-chat-toggle-btn {
+  position: static;
+  bottom: auto;
+  right: auto;
+}
+
+/* Debug row: button on the right, inline cluster expanding to its left. */
+.workflow-fab-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.workflow-fab-row[hidden] {
+  display: none;
+}
+
+.workflow-fab-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--vscode-editorWidget-border, #454545);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--vscode-editorWidget-background, #252526) 92%, transparent);
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.workflow-fab-btn:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.25));
+}
+.workflow-fab-btn .codicon {
+  font-size: 16px;
+}
+.workflow-fab-btn[hidden] {
+  display: none;
+}
+.workflow-debug-toggle-btn.active,
+.workflow-hierarchy-outline-toggle.active {
+  color: var(--vscode-focusBorder, #4daafc);
+  border-color: var(--vscode-focusBorder, #4daafc);
+}

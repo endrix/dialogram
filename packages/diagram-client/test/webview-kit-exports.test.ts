@@ -18,7 +18,8 @@ describe('the package, for a product’s webview code', () => {
             'installLoadingIndicator', 'LoadingIndicatorModelListener', 'loadingProgress',
             'DetailGraphView', 'DETAIL_CLASSES', 'withFullDetail',
             'extractSvg', 'svgFileName', 'SVG_EXTRACTED', 'SVG_EXTRACT_FAILED',
-            'SVG_STYLE_PROPS', 'HTML_STYLE_PROPS'
+            'SVG_STYLE_PROPS', 'HTML_STYLE_PROPS',
+            'HierarchyOutlinePanel', 'ensureFloatingButtonStack', 'FLOATING_BUTTON_STACK_ID'
         ]) {
             expect((client as Record<string, unknown>)[name], name).toBeDefined();
         }

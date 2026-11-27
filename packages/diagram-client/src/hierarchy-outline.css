@@ -1,0 +1,242 @@
+/**
+ * The outline panels (hierarchy-outline.ts and node-list-outline.ts): the
+ * panel beside its button in the floating stack, its rows, chips and
+ * badges. A product with views of its own imports this sheet alone, with
+ * floating-buttons.css for the button. diagram-client.css @imports it.
+ */
+
+/* The toggle lives in the floating button stack, under the chat button. Until
+   the stack exists it floats on its own, where the stack will be. */
+.workflow-hierarchy-outline-toggle.floating {
+    position: fixed;
+    bottom: calc(var(--workflow-wf-nav-height, 0px) + 16px);
+    right: 14px;
+    z-index: 1002;
+}
+
+/* Opens beside its button in the floating stack (bottom right), growing
+   upward; hierarchy-outline.ts `panelPlacement` sets right/bottom/max-height
+   from the button's position. These are where it opens before it is measured. */
+.workflow-hierarchy-outline {
+    position: fixed;
+    right: 60px;
+    bottom: calc(var(--workflow-wf-nav-height, 0px) + 16px);
+    max-height: 70vh;
+    z-index: 1002;
+    /* Room for a row's label and detail; never wider than half the editor. */
+    width: min(380px, 50vw);
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--vscode-editorWidget-border, #454545);
+    border-radius: 4px;
+    background: var(--vscode-editorWidget-background, #252526);
+    color: var(--vscode-foreground, #cccccc);
+    font-family: var(--vscode-font-family);
+    font-size: 12px;
+}
+
+.workflow-hierarchy-outline[hidden],
+.workflow-hierarchy-outline-toggle[hidden] {
+    display: none;
+}
+
+.workflow-hierarchy-outline-header {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--vscode-editorWidget-border, #454545);
+}
+
+.workflow-hierarchy-outline-title {
+    flex: 1;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 11px;
+    opacity: 0.8;
+}
+
+.workflow-hierarchy-outline-btn {
+    border: none;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    padding: 2px;
+}
+
+.workflow-hierarchy-outline-search {
+    margin: 6px;
+    padding: 3px 6px;
+    border: 1px solid var(--vscode-input-border, #3c3c3c);
+    background: var(--vscode-input-background, #3c3c3c);
+    color: var(--vscode-input-foreground, #cccccc);
+}
+
+.workflow-hierarchy-outline-body {
+    flex: 1;
+    min-height: 0; /* scrolls inside the panel's max-height */
+    overflow: auto;
+    padding-bottom: 6px;
+    /* Only the rows in view are drawn (hierarchy-outline.ts, outline-rows.ts):
+       the spacer is as tall as all of them, and each row is placed on it. */
+    position: relative;
+}
+
+.workflow-hierarchy-outline-spacer {
+    width: 1px;
+    pointer-events: none;
+}
+
+.workflow-hierarchy-outline-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    /* One height for every row: which rows are in view is arithmetic on it
+       (OUTLINE_ROW_HEIGHT in outline-rows.ts). */
+    position: absolute;
+    left: 0;
+    right: 0;
+    box-sizing: border-box;
+    height: 22px;
+    overflow: hidden;
+    padding-right: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+/* The row the product pointed at, or the reader picked last. */
+.workflow-hierarchy-outline-row.selected {
+    background: var(--vscode-list-inactiveSelectionBackground, #37373d);
+    color: var(--vscode-list-inactiveSelectionForeground, inherit);
+}
+
+.workflow-hierarchy-outline-row.selected.current {
+    background: var(--vscode-list-activeSelectionBackground, #04395e);
+}
+
+/* A row of a lazy group whose page has not come yet, or could not. */
+.workflow-hierarchy-outline-row.loading,
+.workflow-hierarchy-outline-row.failed {
+    cursor: default;
+    opacity: 0.55;
+    font-style: italic;
+}
+
+.workflow-hierarchy-outline-row:hover {
+    background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.workflow-hierarchy-outline-row.current {
+    background: var(--vscode-list-activeSelectionBackground, #04395e);
+    color: var(--vscode-list-activeSelectionForeground, #ffffff);
+}
+
+/* A row that cannot be acted on now (HierarchyOutlineEntry.unavailable, or a
+   node list's node no opener can open yet): dimmed, its tooltip says why, and
+   it takes no click. */
+.workflow-hierarchy-outline-row.unavailable {
+    cursor: default;
+    color: var(--vscode-disabledForeground, rgba(204, 204, 204, 0.5));
+}
+
+.workflow-hierarchy-outline-row.unavailable:hover {
+    background: transparent;
+}
+
+.workflow-hierarchy-outline-row.unavailable .workflow-hierarchy-outline-type {
+    color: inherit;
+}
+
+/* The node list's nodes that can be opened read in the editor's own ink
+   (black in a light theme), against the dimmed ones that cannot yet. */
+.workflow-node-list .workflow-hierarchy-outline-row.role-node:not(.unavailable):not(.current) {
+    color: var(--vscode-editor-foreground, var(--vscode-foreground, #cccccc));
+}
+
+.workflow-hierarchy-outline-twisty {
+    width: 16px;
+    flex: none;
+}
+
+.workflow-hierarchy-outline-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.workflow-hierarchy-outline-type,
+.workflow-hierarchy-outline-meta {
+    opacity: 0.6;
+}
+
+.workflow-hierarchy-outline-file {
+    padding: 0 4px;
+    border-radius: 3px;
+    background: var(--vscode-badge-background, #4d4d4d);
+    color: var(--vscode-badge-foreground, #ffffff);
+    font-size: 10px;
+}
+
+.workflow-hierarchy-outline-meta {
+    margin-left: auto;
+}
+
+.workflow-hierarchy-outline-meta.error {
+    color: var(--vscode-errorForeground, #f48771);
+    opacity: 1;
+}
+
+/* A producer's richer rows: the detail is often long (a title), so it gives
+   way first; a node family's colour; badges as a node header's; a group row
+   reads as a heading. */
+.workflow-hierarchy-outline-type {
+    /* Takes what is left of the row and gives way before the label does. */
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.workflow-hierarchy-outline-label {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.workflow-hierarchy-outline-meta {
+    flex: none;
+}
+
+.workflow-hierarchy-outline-chip {
+    width: 8px;
+    height: 8px;
+    flex: none;
+    border-radius: 2px;
+}
+
+.workflow-hierarchy-outline-badge {
+    flex: none;
+    padding: 0 4px;
+    border-radius: 7px;
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 14px;
+    background: color-mix(in srgb, var(--vscode-descriptionForeground, #8b8b8b) 35%, transparent);
+}
+
+.workflow-hierarchy-outline-badge.badge-tone-info {
+    background: var(--vscode-editorInfo-foreground, #3794ff);
+    color: #ffffff;
+}
+
+.workflow-hierarchy-outline-badge.badge-tone-warning {
+    background: var(--vscode-editorWarning-foreground, #cca700);
+    color: var(--vscode-editor-background, #1e1e1e);
+}
+
+.workflow-hierarchy-outline-badge.badge-tone-error {
+    background: var(--vscode-editorError-foreground, #f14c4c);
+    color: #ffffff;
+}
+
+.workflow-hierarchy-outline-row.role-group .workflow-hierarchy-outline-label {
+    font-weight: 600;
+}

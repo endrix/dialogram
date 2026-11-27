@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
     countInWords,
     normalizeOutlinePage,
+    outlineColor,
     normalizeOutlinePageRequest,
     OUTLINE_PAGE_MAX,
     type HierarchyOutlineEntry,
@@ -732,5 +733,27 @@ describe('the words a row says', () => {
 
     it('say nothing on the right of an item row', () => {
         expect(rowMeta({ path: ['i'], workflowName: 'w', role: 'item', children: [] }).text).toBe('');
+    });
+});
+
+describe('a row’s own colour', () => {
+    it('is a CSS colour of a few kinds, and nothing else', () => {
+        for (const color of ['#4af', '#44aaff', '#44aaff80', 'teal', 'hsl(210, 55%, 55%)', 'rgb(10 20 30 / 50%)',
+            'var(--vscode-charts-blue)', 'var(--x, #8b8b8b)', 'var(--x, hsl(1, 2%, 3%))']) {
+            expect(outlineColor(color), color).toBe(color);
+        }
+        for (const color of ['url(x.png)', 'red; background: url(x)', 'var(--x, url(y))', 'expression(1)', '', 42, undefined, 'calc(1px)']) {
+            expect(outlineColor(color), String(color)).toBeUndefined();
+        }
+    });
+
+    it('comes through a page when it is one, and is left out when it is not', () => {
+        const request = normalizeOutlinePageRequest({ group: 'g', offset: 0, limit: 10 });
+        const page = normalizeOutlinePage({ total: 2, rows: [
+            { id: 'a', label: 'A', color: 'var(--vscode-charts-red)' },
+            { id: 'b', label: 'B', color: 'url(x)' }
+        ] }, request);
+        expect(page.rows[0].color).toBe('var(--vscode-charts-red)');
+        expect(page.rows[1]).not.toHaveProperty('color');
     });
 });

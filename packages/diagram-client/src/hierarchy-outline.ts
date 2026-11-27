@@ -49,6 +49,7 @@ import {
     OUTLINE_REQUEST_MESSAGE,
     OUTLINE_REVEAL_MESSAGE,
     WorkflowDiagramMetadata,
+    outlineColor,
     type HierarchyOutlineEntry,
     type OutlinePageRow,
     type OutlineReplyPayload,
@@ -284,6 +285,15 @@ export class HierarchyOutlinePanel {
             this.pager.reset();
             this.layoutStale = true;
             this.outlineChanged(outline);
+            // The row the producer opened on, selected without opening the panel.
+            const opened = outline.reveal;
+            if (opened && typeof opened.id === 'string' && opened.id !== '') {
+                this.pendingReveal = {
+                    id: opened.id,
+                    ...(typeof opened.group === 'string' ? { group: opened.group } : {}),
+                    ...(Number.isInteger(opened.index) ? { index: opened.index } : {})
+                };
+            }
         }
         // The trail the server echoes on the root: this view's own, whichever
         // listener the model reaches first.
@@ -679,7 +689,7 @@ export class HierarchyOutlinePanel {
         }
         row.appendChild(twisty);
 
-        const color = entry.family ? familyColor(entry.family) : undefined;
+        const color = rowColor(entry);
         if (color) {
             const chip = document.createElement('span');
             chip.className = 'workflow-hierarchy-outline-chip';
@@ -748,7 +758,7 @@ export class HierarchyOutlinePanel {
         }
         row.dataset.itemId = found.id;
         row.classList.add(found.nodeId ? 'role-node' : 'role-item');
-        const color = found.family ? familyColor(found.family) : undefined;
+        const color = rowColor(found);
         if (color) {
             // The family's colour, drawn as the outline's own rows draw it.
             const swatch = document.createElement('span');
@@ -1073,6 +1083,11 @@ function outlineTitle(): string {
     const title = clientBehavior().outlineTitle;
     // Plain words only: it goes into markup.
     return typeof title === 'string' && /^[\p{L}\p{N} ._-]{1,40}$/u.test(title.trim()) ? title.trim() : 'Hierarchy';
+}
+
+/** A row's colour: its family's, else its own (`HierarchyOutlineEntry.color`). */
+function rowColor(row: { family?: string; color?: string }): string | undefined {
+    return (row.family ? familyColor(row.family) : undefined) ?? outlineColor(row.color);
 }
 
 /** A node family's colour, by its id or annotation, from the profile's families. */

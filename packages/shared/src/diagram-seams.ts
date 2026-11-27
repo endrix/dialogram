@@ -299,8 +299,23 @@ export interface HierarchyOutlineEntry {
     detail?: string;
     /** A node family's name (its `id` or annotation): the row carries its colour. */
     family?: string;
+    /**
+     * The row's colour, for a producer whose rows are not node families (a
+     * colour by dialect, by kind): a CSS colour, as `outlineColor` accepts it
+     * (`#hex`, a named colour, `rgb()`/`hsl()`, or `var(--name)` with a
+     * fallback of those). A `family` with a colour wins.
+     */
+    color?: string;
     /** Short marks after the label, as a node header's badges. */
     badges?: Array<{ text: string; tone?: string }>;
+    /**
+     * Said on the root: the row selected when this outline arrives, as
+     * `DiagramProfileHandle.revealOutlineRow` would select it (its group
+     * opened, its page fetched), without opening the panel. For a producer
+     * whose views are not trails: the row the diagram opened on. Applied each
+     * time the outline changes, and only then.
+     */
+    reveal?: { id: string; group?: string; index?: number };
     /**
      * Why the row cannot be acted on now, said as its tooltip: the row is
      * dimmed and takes no click. In a node list, a row whose node no
