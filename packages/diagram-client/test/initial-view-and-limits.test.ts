@@ -107,6 +107,71 @@ describe('the first view', () => {
         expect(s.waiting()).toBe(false);
     });
 
+    describe('done on a frame VS Code had not sized yet (300 × 150)', () => {
+        const early = (over: Parameters<typeof root>[0] = {}) => ({ ...root(over), canvasBounds: { x: 0, y: 0, width: 300, height: 150 } });
+        const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+        it('is done once more when the frame takes its size, and not after', async () => {
+            initialView = 'fit';
+            const host = fakeHost();
+            const { s, dispatched } = service(host);
+            s.arm(early());
+            host.render(early());
+            expect(dispatched.map(a => a.kind)).toEqual(['fit']);
+            host.render(early({ zoom: 0.05, x: -2900 })); // the fit, drawn on the small canvas
+            await settle();
+            host.render(root({ zoom: 0.05, x: -2900 })); // the frame sized
+            expect(dispatched.map(a => a.kind)).toEqual(['fit', 'fit']);
+            host.render(root({ zoom: 1, x: -150 })); // the second fit, drawn
+            host.render(root({ zoom: 1, x: -150, width: 600 })); // a later resize
+            expect(dispatched).toHaveLength(2);
+            expect(s.shown).toBe(2);
+        });
+
+        it('is done once more also when the frame is sized before the first view is handled', () => {
+            const host = fakeHost();
+            const { s, dispatched } = service(host);
+            s.arm(early());
+            host.render(early());
+            host.render(root());
+            expect(dispatched.map(a => a.kind)).toEqual(['center', 'center']);
+            expect(s.shown).toBe(2);
+        });
+
+        it('is left alone when the view moved after the first view', async () => {
+            initialView = 'fit';
+            const host = fakeHost();
+            const { s, dispatched } = service(host);
+            s.arm(early());
+            host.render(early());
+            host.render(early({ zoom: 0.05 })); // the fit, drawn
+            await settle();
+            host.render(early({ zoom: 0.3 })); // moved
+            host.render(root({ zoom: 0.3 }));
+            expect(dispatched).toHaveLength(1);
+        });
+
+        it('is not followed on a frame that had its size, whatever the canvas does later', () => {
+            const host = fakeHost();
+            const { s, dispatched } = service(host);
+            s.arm(root());
+            host.render(root());
+            host.render(root({ width: 900 }));
+            expect(dispatched).toHaveLength(1);
+        });
+
+        it('is forgotten when another view is armed', () => {
+            const host = fakeHost();
+            const { s, dispatched } = service(host);
+            s.arm(early());
+            host.render(early());
+            s.arm(root({ x: 40 }));
+            host.render(root({ x: 40 }));
+            host.render(root({ x: 40, width: 900 }));
+            expect(dispatched).toHaveLength(2);
+        });
+    });
+
     it('without the host, comes two frames after the model, as before', async () => {
         const { s, dispatched } = service(undefined);
         s.arm(root());
