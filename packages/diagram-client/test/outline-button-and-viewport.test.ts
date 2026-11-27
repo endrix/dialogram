@@ -106,23 +106,44 @@ describe('the viewport across a model change', () => {
         expect({ zoom: back.zoom, scroll: back.scroll }).toEqual(leftAt);
     });
 
-    it('keeps the viewport of a view the product names (wf:viewKey) when it is refreshed', () => {
-        // A new root comes with Sprotty's default viewport.
-        const named = (key: unknown, viewport = { zoom: 1, scroll: { x: 0, y: 0 } }) => ({ args: { 'wf:viewKey': key }, ...viewport });
+    // A new root comes with Sprotty's default viewport.
+    const named = (key: unknown, viewport = { zoom: 1, scroll: { x: 0, y: 0 } }, extra: object = {}) =>
+        ({ args: { 'wf:viewportKey': key, ...extra }, ...viewport });
+
+    it('keeps the viewport of a view its server names (wf:viewportKey) when it is refreshed', () => {
         const refreshed = named('file:///a.mlir');
         expect(settleViewport(named('file:///a.mlir', { zoom: 0.4, scroll: { x: 70, y: 80 } }), refreshed, new Map())).toBeUndefined();
         expect({ zoom: refreshed.zoom, scroll: refreshed.scroll }).toEqual({ zoom: 0.4, scroll: { x: 70, y: 80 } });
         expect(settleViewport(named('file:///a.mlir', { zoom: 0.4, scroll: { x: 70, y: 80 } }), named('file:///b.mlir'), new Map())).toBe('center');
-        // An empty or non-string key names no view: each set is a view never shown, as without one.
-        for (const key of ['', 7, undefined]) {
+        // A number is a key too; an empty string, a boolean or nothing names no view.
+        expect(modelViewportKey(named(7))).toBe('viewport::7');
+        for (const key of ['', true, Number.NaN, undefined]) {
             expect(modelViewportKey(named(key))).toBeUndefined();
             expect(settleViewport(named(key, { zoom: 0.4, scroll: { x: 0, y: 0 } }), named(key), new Map())).toBe('center');
         }
     });
 
-    it('takes the product’s view key over the source and workflow', () => {
-        const both = { args: { 'wf:viewKey': 'k', sourceUri: 'file:///w.py', 'wf:selectedWorkflow': 'top' } };
-        expect(modelViewportKey(both)).toBe('view::k');
+    it('returns to where a named view was left', () => {
+        const store = new Map();
+        const leftAt = { zoom: 0.3, scroll: { x: -20, y: 400 } };
+        settleViewport(named('a', leftAt), named('b'), store);
+        const back = named('a');
+        expect(settleViewport(named('b', { zoom: 2, scroll: { x: 1, y: 1 } }), back, store)).toBeUndefined();
+        expect({ zoom: back.zoom, scroll: back.scroll }).toEqual(leftAt);
+    });
+
+    it('tells two instances apart under one server key, and lets a source and workflow win over the key', () => {
+        const trail = (instance: string) => JSON.stringify([{ workflowName: 'top' }, { workflowInstanceName: instance }]);
+        expect(modelViewportKey(named('k', undefined, { 'wf:navTrail': trail('b1') })))
+            .not.toBe(modelViewportKey(named('k', undefined, { 'wf:navTrail': trail('b2') })));
+        expect(modelViewportKey(named('k', undefined, { sourceUri: 'file:///w.py', 'wf:selectedWorkflow': 'top' }))).toBe('file:///w.py::top');
+    });
+
+    it('makes each view of a unit (wf:view) a view of its own', () => {
+        const unit = (shown?: string) => ({ args: { sourceUri: 'file:///c.py', 'wf:selectedWorkflow': 'Counter', ...(shown ? { 'wf:view': shown } : {}) }, zoom: 1, scroll: { x: 0, y: 0 } });
+        expect(modelViewportKey(unit('actor'))).not.toBe(modelViewportKey(unit()));
+        expect(settleViewport({ ...unit(), zoom: 0.4, scroll: { x: 5, y: 5 } }, unit('actor'), new Map())).toBe('center');
+        expect(settleViewport({ ...unit('actor'), zoom: 0.4, scroll: { x: 5, y: 5 } }, unit('actor'), new Map())).toBeUndefined();
     });
 
     it('keeps the viewport of the view refreshed', () => {

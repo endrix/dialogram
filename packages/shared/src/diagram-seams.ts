@@ -175,6 +175,15 @@ export interface NodeListSpec {
 /** The root model argument a node list is published on, as JSON (`NodeListOutline`). */
 export const NODE_LIST_ARG = 'wf:nodeList';
 
+/**
+ * The root model argument a server names its view with, when the root names
+ * no source and no workflow (a string, or a finite number): models set with
+ * the same key are one view, whose viewport a refresh keeps. One stable key
+ * per view, such as the file's URI: the webview remembers one viewport per
+ * key for as long as it is open.
+ */
+export const VIEWPORT_KEY_ARG = 'wf:viewportKey';
+
 /** A node list as it is published (`NODE_LIST_ARG`). */
 export interface NodeListOutline {
     title: string;

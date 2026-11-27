@@ -418,10 +418,13 @@ marked `"false"` is not counted.
 the answer to a `RequestModelAction` after the source changed) keeps the
 viewport when it is the same view, and gets the first view
 (`clientBehavior.initialView`) when it is a view never shown. The platform
-tells views apart by the root's `sourceUri` and workflow. A server that sets
-neither names the view with the root arg `wf:viewKey`, a non-empty string
-such as the file's URI; without it, every model set is a view never shown,
-so a refresh is centred or fitted again.
+tells views apart by the root's `sourceUri`, workflow and shown view
+(`wf:view`), and the instance path of a nested workflow. A root without a
+source or a workflow is named by its server instead, with
+`VIEWPORT_KEY_ARG` (`'wf:viewportKey'`, from `@dialogram/shared`): a
+non-empty string or a number, one stable key per view, such as the file's
+URI. Without either, every model set is a view never shown, so a refresh is
+centred or fitted again.
 
 **A diagram of your own.** When you compose the container yourself:
 

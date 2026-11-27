@@ -78,12 +78,14 @@ platform that hands it one.
 
 ### Added
 
-- **A server can name the view its model is** (root arg `wf:viewKey`).
-  The viewport of a model set again was kept only for a root that names its
-  source and workflow, so on any other root every refresh was shown as a
-  first view, centred or fitted again. Models set with the same `wf:viewKey`
-  are one view; the key wins over the source and workflow, and an empty or
-  non-string key names none.
+- **A server can name the view its model is** (`VIEWPORT_KEY_ARG`, the
+  root arg `wf:viewportKey`, in `@dialogram/shared`). The viewport of a
+  model set again was kept only for a root that names its source and
+  workflow, so on any other root every refresh was shown as a first view,
+  centred or fitted again. On a root without them, models set with the same
+  key (a non-empty string or a number) are one view, a nested workflow's
+  instance path still telling its instances apart.
+
 - **A product's own card over the canvas can count for Fit** (`data-canvas-overlay`,
   `CANVAS_OVERLAY_ATTRIBUTE` from `@dialogram/diagram-client`). Fit and a
   surface's `reveal` keep the drawing clear of the platform's overlays (the
@@ -1779,6 +1781,10 @@ platform that hands it one.
 
 ### Fixed
 
+- **Another view of the same unit gets its own viewport.** Picking a
+  unit's other view (`wf:view`) kept the zoom and scroll of the view left,
+  on a drawing they were not chosen for. It now gets the first view, and
+  the view left is where it was when it is picked again.
 - **A layout record that cannot be written is said once, in one line.** In
   a folder that cannot be written, every save of the layout (the first
   layout of a view, a move, a view option) logged "Failed to save layout
