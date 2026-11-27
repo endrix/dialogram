@@ -285,6 +285,61 @@ describe('Fit, when a zoom limit applies', () => {
     });
 });
 
+describe('Fit, when the profile caps its zoom (clientBehavior.fitMaxZoom)', () => {
+    const behave = (clientBehavior: object | undefined) => {
+        (globalThis as any).diagramIdentifier = clientBehavior ? { clientBehavior } : undefined;
+    };
+    afterEach(() => behave(undefined));
+    const content = { x: 0, y: 0, width: 100, height: 50 };
+
+    it('C1: fits two small boxes at their drawn size, in the middle of the free area', () => {
+        behave({ fitMaxZoom: 1 });
+        const viewport = fit(model({ width: 800, height: 600 }, [content]));
+        expect(viewport.zoom).toBe(1);
+        expect(onScreen(content, viewport).middle).toEqual({ x: 400, y: 300 });
+    });
+
+    it('C2: zooms as far as the room allows without it', () => {
+        const viewport = fit(model({ width: 800, height: 600 }, [content]));
+        expect(viewport.zoom).toBeCloseTo((800 - 2 * FIT_MARGIN) / 100);
+    });
+
+    it('C3: leaves a fit that names its own maxZoom at that zoom', () => {
+        behave({ fitMaxZoom: 1 });
+        const command = new FitClearOfOverlaysCommand(FitToScreenAction.create([], { animate: false, maxZoom: 2 }) as never);
+        Object.assign(command as any, { viewerOptions: STOCK });
+        command.initialize(model({ width: 800, height: 600 }, [content]));
+        expect((command as any).newViewport.zoom).toBe(2);
+    });
+
+    it('C4: ignores a cap that is not a positive, finite zoom', () => {
+        for (const fitMaxZoom of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, '1']) {
+            behave({ fitMaxZoom });
+            expect(fit(model({ width: 800, height: 600 }, [content])).zoom).toBeCloseTo((800 - 2 * FIT_MARGIN) / 100);
+        }
+    });
+
+    it('C5: caps a surface’s reveal with fit too', () => {
+        behave({ fitMaxZoom: 1 });
+        document.body.innerHTML = '<div id="diagram"><svg class="sprotty-graph"></svg></div>';
+        const dispatched: any[] = [];
+        const host = new DiagramSurfaceHost();
+        let context: any;
+        const surface = { id: 'probe', mount: (c: unknown) => { context = c; return document.createElement('canvas'); }, render: () => undefined };
+        Object.assign(host as any, {
+            contributedSurfaces: [surface],
+            actionDispatcher: { dispatch: async (action: unknown) => { dispatched.push(action); } },
+            viewerOptions: { baseDiv: 'diagram' }
+        });
+        const root = { id: 'graph', type: 'graph', scroll: { x: 0, y: 0 }, zoom: 1, canvasBounds: { x: 0, y: 0, width: 800, height: 600 }, args: {}, children: [] };
+        host.decorate({}, { id: 'n1', parent: root });
+        host.decorate({}, root);
+        host.postUpdate();
+        context.reveal(content, { fit: true, animate: false });
+        expect(dispatched.filter(a => a.kind === 'viewport').at(-1).newViewport.zoom).toBe(1);
+    });
+});
+
 describe('Fit and Center, with a view that draws what it holds itself', () => {
     it('frame everything when leaving out what the hidden render did not draw leaves nothing', () => {
         const a = { x: 0, y: 0, width: 100, height: 100 };

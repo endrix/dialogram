@@ -34,6 +34,7 @@ import {
 import { hostMessaging } from './host-messages';
 import { FIT_MARGIN, keepOnCanvas, largestFreeArea, viewportCentredIn, viewportClearOf, withinZoomLimits } from './fit-geometry';
 import { overlaysOn } from './canvas-overlays';
+import { fitMaxZoom } from './profile';
 
 /** The body class while a surface is mounted: what the platform's CSS keys on. */
 export const SURFACE_BODY_CLASS = 'dialogram-has-surface';
@@ -577,7 +578,7 @@ export class DiagramSurfaceHost implements ISelectionListener {
         // whole canvas), at a zoom within the limits with the middle kept; or
         // centred in the free area at the zoom there is. On the canvas, either way.
         const fitted = options.fit
-            ? viewportClearOf(bounds, canvas, overlaysOn(canvas), FIT_MARGIN) ?? viewportClearOf(bounds, canvas, [], FIT_MARGIN)
+            ? viewportClearOf(bounds, canvas, overlaysOn(canvas), FIT_MARGIN, fitMaxZoom()) ?? viewportClearOf(bounds, canvas, [], FIT_MARGIN, fitMaxZoom())
             : undefined;
         const framed = options.fit
             ? fitted && keepOnCanvas(withinZoomLimits(fitted, bounds, this.viewerOptions?.zoomLimits), bounds, canvas)

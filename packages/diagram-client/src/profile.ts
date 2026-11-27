@@ -78,6 +78,12 @@ export function clientBehavior(): DiagramClientBehavior {
     return configured && typeof configured === 'object' ? configured : {};
 }
 
+/** The largest zoom a fit naming none takes (`clientBehavior.fitMaxZoom`), when the profile sets a valid one. */
+export function fitMaxZoom(): number | undefined {
+    const cap = clientBehavior().fitMaxZoom;
+    return typeof cap === 'number' && Number.isFinite(cap) && cap > 0 ? cap : undefined;
+}
+
 /**
  * Whether the diagram offers what drives a run: Run, Stop, the toggle for what
  * a run puts on the edges, and the agent-tool switches the run driver serves.

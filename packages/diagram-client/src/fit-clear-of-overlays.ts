@@ -14,7 +14,8 @@
  * it, above or below it, whichever lets the drawing be drawn biggest.
  *
  * What the drawing is, is `viewport-content.ts`'s: a surface's bounds join
- * the graph's, and labels no view draws are left out.
+ * the graph's, and labels no view draws are left out. A fit that names no
+ * `maxZoom` zooms no further than the profile's `clientBehavior.fitMaxZoom`.
  */
 import { Dimension, FitToScreenCommand, type Bounds, type Viewport } from '@eclipse-glsp/client';
 import type { GModelRoot } from '@eclipse-glsp/sprotty';
@@ -23,6 +24,7 @@ import { FIT_MARGIN, viewportClearOf } from './fit-geometry';
 import { overlaysOn } from './canvas-overlays';
 import { DiagramSurfaceHost } from './diagram-surface-host';
 import { HiddenRenderRecord, frameBounds, viewportContentBounds } from './viewport-content';
+import { fitMaxZoom } from './profile';
 
 @injectable()
 export class FitClearOfOverlaysCommand extends FitToScreenCommand {
@@ -52,7 +54,7 @@ export class FitClearOfOverlaysCommand extends FitToScreenCommand {
         if (!Dimension.isValid(canvas)) {
             return super.getNewViewport(bounds, model);
         }
-        return viewportClearOf(bounds, canvas, overlaysOn(canvas), this.action.padding ?? FIT_MARGIN, this.action.maxZoom)
+        return viewportClearOf(bounds, canvas, overlaysOn(canvas), this.action.padding ?? FIT_MARGIN, this.action.maxZoom ?? fitMaxZoom())
             ?? super.getNewViewport(bounds, model);
     }
 }
