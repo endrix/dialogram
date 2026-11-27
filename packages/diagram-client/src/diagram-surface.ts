@@ -208,10 +208,11 @@ export interface DiagramSurfaceContext {
      * on the canvas when it fits there, and the whole canvas covered when it
      * is larger; or, with `fit`, as big as it fits a margin inside the free
      * area (the whole canvas when no free area has room for the margin),
-     * within the zoom limits and on the canvas by the same rule. Animated
-     * unless `animate: false`.
+     * within the zoom limits and on the canvas by the same rule. A fit zooms
+     * no further than `maxZoom`, else the profile's `clientBehavior.fitMaxZoom`.
+     * Animated unless `animate: false`.
      */
-    reveal(bounds: SurfaceBounds, options?: { animate?: boolean; fit?: boolean }): void;
+    reveal(bounds: SurfaceBounds, options?: { animate?: boolean; fit?: boolean; maxZoom?: number }): void;
     /** What the palette's Fit does. Animated unless `animate: false`. */
     fit(options?: { animate?: boolean }): void;
     /**

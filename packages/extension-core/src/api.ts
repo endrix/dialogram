@@ -547,9 +547,10 @@ export interface DiagramProfile {
    * for a diagram whose content a webview surface draws (diagram-client
    * `diagram-surface.ts`, bound in the bundle `clientAssets` serves):
    * `zoomLimits` (the zoom range, GLSP's 0.1 to 20 by default; the surface's
-   * own wins) and `initialView` (`'fit'` fits a view the first time it is
+   * own wins), `initialView` (`'fit'` fits a view the first time it is
    * opened, once its content has bounds; `'center'`, the default, centres it
-   * at zoom 1).
+   * at zoom 1) and `fitMaxZoom` (the largest zoom that fit, Fit and `reveal`
+   * with `fit` take; `1` keeps a small diagram at its drawn size).
    */
   clientBehavior?: DiagramClientBehavior;
   /** Consumer-supplied webview bundle (script/style/resource-roots). When absent,

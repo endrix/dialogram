@@ -78,6 +78,28 @@ export function clientBehavior(): DiagramClientBehavior {
     return configured && typeof configured === 'object' ? configured : {};
 }
 
+let warnedFitMaxZoom = false;
+
+/**
+ * The largest zoom a fit naming none takes (`clientBehavior.fitMaxZoom`), when
+ * the profile sets a valid one. One that is not a positive, finite number is
+ * ignored, with a warning the first time.
+ */
+export function fitMaxZoom(warn: (message: string) => void = message => console.warn(message)): number | undefined {
+    const cap: unknown = clientBehavior().fitMaxZoom;
+    if (cap === undefined) {
+        return undefined;
+    }
+    if (typeof cap === 'number' && Number.isFinite(cap) && cap > 0) {
+        return cap;
+    }
+    if (!warnedFitMaxZoom) {
+        warnedFitMaxZoom = true;
+        warn(`[dialogram] clientBehavior.fitMaxZoom ${typeof cap === 'string' ? JSON.stringify(cap) : String(cap)} ignored: it must be a positive, finite zoom`);
+    }
+    return undefined;
+}
+
 /**
  * Whether the diagram offers what drives a run: Run, Stop, the toggle for what
  * a run puts on the edges, and the agent-tool switches the run driver serves.
