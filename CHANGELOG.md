@@ -78,6 +78,14 @@ platform that hands it one.
 
 ### Added
 
+- **A server can name the view its model is** (`VIEWPORT_KEY_ARG`, the
+  root arg `wf:viewportKey`, in `@dialogram/shared`). The viewport of a
+  model set again was kept only for a root that names its source and
+  workflow, so on any other root every refresh was shown as a first view,
+  centred or fitted again. On a root without them, models set with the same
+  key (a non-empty string or a number) are one view, a nested workflow's
+  instance path still telling its instances apart.
+
 - **A profile can cap how far a fit zooms in** (`clientBehavior.fitMaxZoom`).
   The first view's fit (`initialView: 'fit'`), Fit and a surface's `reveal`
   with `fit` zoomed as far as the zoom range allowed, so a diagram of two
@@ -1781,6 +1789,10 @@ platform that hands it one.
 
 ### Fixed
 
+- **Another view of the same unit gets its own viewport.** Picking a
+  unit's other view (`wf:view`) kept the zoom and scroll of the view left,
+  on a drawing they were not chosen for. It now gets the first view, and
+  the view left is where it was when it is picked again.
 - **A layout record that cannot be written is said once, in one line.** In
   a folder that cannot be written, every save of the layout (the first
   layout of a view, a move, a view option) logged "Failed to save layout

@@ -6,21 +6,30 @@ import { SelectAction } from '@eclipse-glsp/protocol';
 import { PostEditSelectionService } from './post-edit-selection-service';
 import { WorkflowNavigationUi } from './navigation-ui';
 import { InitialViewportService } from './initial-viewport-service';
+import { VIEW_ARG } from './network-navigation-target';
+import { VIEWPORT_KEY_ARG } from '@dialogram/shared';
 
 type RootArgs = {
     sourceUri?: string;
     'wf:selectedWorkflow'?: string;
     'cal:networkName'?: string;
     'wf:workflowName'?: string;
+    [VIEW_ARG]?: unknown;
+    [VIEWPORT_KEY_ARG]?: unknown;
 };
 
 /** One-shot guard for the always-on `firstSetModel` webview breadcrumb (see below). */
 let firstSetModelLogged = false;
 
 /**
- * Which view a model root is: its file, its workflow, and -- for a nested
- * workflow shown in place -- the instance path that reached it, so two
- * instances of one workflow are two views.
+ * Which view a model root is: its file, its workflow, which of the unit's
+ * views is shown (`wf:view`), and -- for a nested workflow shown in place --
+ * the instance path that reached it, so two instances of one workflow are
+ * two views.
+ *
+ * A root that names no source and no workflow is named by its server, with
+ * `VIEWPORT_KEY_ARG` (and the instance path, as above). A root with neither
+ * is a view never shown, every time.
  */
 export function modelViewportKey(root: unknown): string | undefined {
     const args = ((root as any)?.args ?? {}) as RootArgs & { 'wf:navTrail'?: unknown };
@@ -29,10 +38,14 @@ export function modelViewportKey(root: unknown): string | undefined {
         (typeof args['wf:selectedWorkflow'] === 'string' ? args['wf:selectedWorkflow'] : undefined)
         ?? (typeof args['cal:networkName'] === 'string' ? args['cal:networkName'] : undefined)
         ?? (typeof args['wf:workflowName'] === 'string' ? args['wf:workflowName'] : undefined);
-    if (!sourceUri || !workflowName) {
-        return undefined;
+    const instancePath = instancePathKey(args['wf:navTrail']);
+    if (sourceUri && workflowName) {
+        const view = args[VIEW_ARG];
+        return `${sourceUri}::${workflowName}${instancePath}${typeof view === 'string' && view !== '' ? `::view=${view}` : ''}`;
     }
-    return `${sourceUri}::${workflowName}${instancePathKey(args['wf:navTrail'])}`;
+    const named = args[VIEWPORT_KEY_ARG];
+    const key = typeof named === 'string' ? named : typeof named === 'number' && Number.isFinite(named) ? String(named) : '';
+    return key !== '' ? `viewport::${key}${instancePath}` : undefined;
 }
 
 function instancePathKey(rawTrail: unknown): string {

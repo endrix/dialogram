@@ -417,6 +417,18 @@ put it on the page before the first view, empty if its content comes later:
 the mark is read when a fit runs. A card that is `hidden`, not visible, or
 marked `"false"` is not counted.
 
+**A view your server names.** A model set again (a `SetModelAction`, such as
+the answer to a `RequestModelAction` after the source changed) keeps the
+viewport when it is the same view, and gets the first view
+(`clientBehavior.initialView`) when it is a view never shown. The platform
+tells views apart by the root's `sourceUri`, workflow and shown view
+(`wf:view`), and the instance path of a nested workflow. A root without a
+source or a workflow is named by its server instead, with
+`VIEWPORT_KEY_ARG` (`'wf:viewportKey'`, from `@dialogram/shared`): a
+non-empty string or a number, one stable key per view, such as the file's
+URI. Without either, every model set is a view never shown, so a refresh is
+centred or fitted again.
+
 **A diagram of your own.** When you compose the container yourself:
 
 ```ts
