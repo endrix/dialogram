@@ -11,6 +11,7 @@ export {
     type DialogramApi,
     type DiagramProfile,
     type DiagramProfileHandle,
+    type ElkServerSettingName,
     type ChatPayload,
     type ChatMessageSink,
     type ChatCommandContribution,
@@ -23,6 +24,13 @@ export {
 } from './api';
 
 export { activateProfileRuntime } from './extension/profile-runtime';
+
+// The ELK server options a profile's settings choose, as the diagram server
+// gets them: for a product's own code that weighs layout cost by engine.
+export {
+    elkServerOptionsOf,
+    type SettingsSection
+} from './extension/diagram/profile-elk-server-options';
 
 export {
     resolveDiagramOpenTarget,

@@ -504,6 +504,9 @@ export interface DiagramViewOptions {
   ): void;
 }
 
+/** The ELK server settings a profile can name former keys for (`DiagramProfile.elkServer`). */
+export type ElkServerSettingName = 'engine' | 'javaPath' | 'javaOpts' | 'serverTimeoutMs';
+
 /**
  * v2 diagram profile — the complete activation contract at
  * `DIALOGRAM_API_VERSION` 0.3.0. It carries everything the platform needs to
@@ -755,8 +758,13 @@ export interface DiagramProfile {
    * default; `elkjs`; `elk-server`) picks the engine, and `.layout.javaPath`,
    * `.layout.javaOpts` and `.layout.serverTimeoutMs` tune the process; see
    * diagram-server `elk-server/`. Absent, every layout runs on elkjs.
+   *
+   * `formerKeys` names, under the same namespace, the keys a product used for
+   * these settings before (`{ engine: 'elk.layoutEngine' }`): a former key a
+   * person has set is read while the new one is not, so their setting keeps
+   * working while they move to the new name.
    */
-  elkServer?: { jar: string };
+  elkServer?: { jar: string; formerKeys?: Partial<Record<ElkServerSettingName, string>> };
   /** Run driver factory; when absent no run/stop commands or live glow are wired. */
   runDriver?: DiagramRunDriverFactory;
   /** Node states from a report the product's tool makes, shown on demand with
