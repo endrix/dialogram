@@ -156,8 +156,25 @@ export {
 export { renderMarkdownSafe, renderDocumentMarkdownSafe, looksLikeMarkdown } from './markdown';
 export { isBlock, looksLikeDiff, parseEmbedded, formatAgentOutputs } from './agent-outputs';
 // How much text the diagram draws at a zoom, and the classes a product's own
-// text is tagged with to follow it (zoom-detail.ts).
-export { DETAIL_ZOOM, NAME_ZOOM, ZOOM_TEXT_CLASSES, detailLevel, type DetailLevel } from './zoom-detail';
+// text is tagged with to follow it (zoom-detail.ts). A product with views of
+// its own draws its graph with `DetailGraphView`, which marks the svg with the
+// level (`DETAIL_CLASSES`), and imports the rules that hide the rest
+// (`@dialogram/diagram-client/zoom-detail.css`).
+export {
+    DETAIL_CLASSES,
+    DETAIL_ZOOM,
+    NAME_ZOOM,
+    ZOOM_TEXT_CLASSES,
+    detailLevel,
+    withFullDetail,
+    type DetailLevel
+} from './zoom-detail';
+export { DetailGraphView } from './detail-graph-view';
+// The rendered diagram as a self-contained SVG (svg-export.ts), for a product
+// that exports a node of its own: the platform's host saves what the webview
+// posts as `SVG_EXTRACTED`, and says why as `SVG_EXTRACT_FAILED`.
+export { extractSvg, svgFileName, type ExtractOptions, type ExtractedSvg } from './svg-export';
+export { SVG_EXTRACTED, SVG_EXTRACT_FAILED } from './svg-export-command';
 // The view options of the diagram shown (view-options.ts): a product's client
 // module handles `ViewOptionsChangedAction` to redraw when the reader or the
 // host turns a line, or asks `ViewOptionsService` what is checked.

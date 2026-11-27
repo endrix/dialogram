@@ -57,7 +57,7 @@ describe('the level of detail', () => {
 });
 
 describe('the text each level hides', () => {
-    const css = source('diagram-client.css');
+    const css = source('zoom-detail.css');
     const block = css.slice(css.indexOf('/* Level of detail (zoom-detail.ts)'));
     // The classes a level hides outright: a compound selector (`.header-label.label-type`,
     // `:not(...)`) hides only some of them, and is not counted.

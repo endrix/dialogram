@@ -15,7 +15,9 @@ describe('the package, for a product’s webview code', () => {
             'renderMarkdownSafe', 'renderDocumentMarkdownSafe', 'looksLikeMarkdown',
             'isBlock', 'looksLikeDiff', 'parseEmbedded', 'formatAgentOutputs',
             'ViewToolPalette', 'EMPTY_PALETTE_BODY_CLASS',
-            'installLoadingIndicator', 'LoadingIndicatorModelListener', 'loadingProgress'
+            'installLoadingIndicator', 'LoadingIndicatorModelListener', 'loadingProgress',
+            'DetailGraphView', 'DETAIL_CLASSES', 'withFullDetail',
+            'extractSvg', 'svgFileName', 'SVG_EXTRACTED', 'SVG_EXTRACT_FAILED'
         ]) {
             expect((client as Record<string, unknown>)[name], name).toBeDefined();
         }
