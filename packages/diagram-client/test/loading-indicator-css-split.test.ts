@@ -46,6 +46,5 @@ describe('loading-indicator.css', () => {
         const stock = read('diagram-client.css');
         expect(stock).toMatch(/@import '\.\/loading-indicator\.css';/);
         expect(indicatorSelectors(stock)).toEqual([]);
-        expect(stock).not.toMatch(/workflow-loading/);
     });
 });

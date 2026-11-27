@@ -216,6 +216,21 @@ function cancelEnding(): void {
 }
 
 /**
+ * A wait the webview itself starts, and what is being done about it: an
+ * action that makes the server lay the diagram out again, say.
+ *
+ * The host has said nothing of this wait (yet), so the next model drawn ends
+ * it, unless the host speaks for it first; then the host's end does. Shown as
+ * {@link showProgress} shows it.
+ */
+export function loadingProgress(message: string, detail = ''): void {
+    // Whatever the host said was of another wait, which may be over already,
+    // its model on the way: left to the host, a wait nobody would end.
+    hostSpoke = false;
+    showProgress(message, detail);
+}
+
+/**
  * Something is being waited for, and this is what is being done about it.
  *
  * Shown at once while this webview has drawn nothing, since nothing is
@@ -223,7 +238,7 @@ function cancelEnding(): void {
  * {@link BUSY_DELAY_MS} first, and what it then says is the latest thing
  * said.
  */
-export function loadingProgress(message: string, detail = ''): void {
+function showProgress(message: string, detail: string): void {
     waiting = true;
     // A step said after the end was announced is a new wait's.
     cancelEnding();
@@ -260,7 +275,7 @@ export function loadingEnded(): void {
 export function applyLoadingUpdate(update: LoadingUpdate): void {
     if (update.state === 'progress') {
         hostSpoke = true;
-        loadingProgress(update.message, update.detail ?? '');
+        showProgress(update.message, update.detail ?? '');
         return;
     }
     if (update.model !== true || !waiting) {
@@ -301,7 +316,7 @@ export function installLoadingIndicator(openingMessage = 'Opening the diagram'):
         window.addEventListener('message', onMessage);
     }
     if (!drawnOnce && !visible) {
-        loadingProgress(openingMessage);
+        showProgress(openingMessage, '');
     }
 }
 

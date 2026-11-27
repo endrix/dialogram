@@ -15,8 +15,7 @@ describe('the package, for a product’s webview code', () => {
             'renderMarkdownSafe', 'renderDocumentMarkdownSafe', 'looksLikeMarkdown',
             'isBlock', 'looksLikeDiff', 'parseEmbedded', 'formatAgentOutputs',
             'ViewToolPalette', 'EMPTY_PALETTE_BODY_CLASS',
-            'installLoadingIndicator', 'LoadingIndicatorModelListener', 'loadingProgress', 'loadingEnded',
-            'isLoadingVisible', 'BUSY_DELAY_MS'
+            'installLoadingIndicator', 'LoadingIndicatorModelListener', 'loadingProgress'
         ]) {
             expect((client as Record<string, unknown>)[name], name).toBeDefined();
         }

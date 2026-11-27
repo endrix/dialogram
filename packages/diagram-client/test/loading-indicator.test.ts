@@ -373,6 +373,39 @@ describe('a load once something has been drawn', () => {
     });
 });
 
+describe('a wait the webview starts', () => {
+    it('is ended by the next model, even while a wait the host spoke of is ending', () => {
+        installLoadingIndicator();
+        post(progress('Reading Top.fir'));
+        model();
+        post(progress('Laying out the diagram'));
+        // The host's wait is over, its model on the way…
+        post(overWithModel);
+        // …when the reader starts one of their own, which the host knows nothing of.
+        loadingProgress('Expanding');
+        model();
+        vi.advanceTimersByTime(BUSY_DELAY_MS);
+        expect(isLoadingVisible()).toBe(false);
+        vi.advanceTimersByTime(MODEL_GRACE_MS);
+        expect(isLoadingVisible()).toBe(false);
+    });
+
+    it('is ended by the host once the host speaks for it', () => {
+        installLoadingIndicator();
+        model();
+        loadingProgress('Expanding');
+        post(progress('Laying out the diagram', '594 nodes, 1,081 edges'));
+        vi.advanceTimersByTime(BUSY_DELAY_MS);
+        expect(isLoadingVisible()).toBe(true);
+        // A model the host has not said is the end: the pill stays.
+        model();
+        expect(isLoadingVisible()).toBe(true);
+        post(overWithModel);
+        model();
+        expect(isLoadingVisible()).toBe(false);
+    });
+});
+
 describe('without a page', () => {
     it('does nothing, and does not throw', () => {
         const page = (globalThis as { document?: unknown }).document;

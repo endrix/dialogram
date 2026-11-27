@@ -5,7 +5,10 @@
  * diagram what the load is doing and when the wait is over.
  *
  * The barrel itself is read as text: importing it loads the VS Code server
- * integration, which needs the `vscode` module a test does not have.
+ * integration, whose compiled `require('vscode')` no test stub reaches. A
+ * name two of its modules both export would be left out of `export *`
+ * without a word at run time, but not at build time: TypeScript reports it
+ * (TS2308), and the typecheck runs in CI.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
