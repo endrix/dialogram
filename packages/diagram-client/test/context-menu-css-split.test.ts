@@ -22,7 +22,19 @@ function menuSelectors(css: string): string[] {
 describe('context-menu.css', () => {
     it('holds the menu, its items, submenus and separators', () => {
         const selectors = menuSelectors(read('context-menu.css')).flatMap(selector => selector.split(',').map(part => part.trim()));
-        for (const selector of ['.workflow-context-menu', '.workflow-context-menu-item', '.workflow-context-menu-item.has-children', '.workflow-context-menu-chevron', '.workflow-context-menu-separator']) {
+        const moved = [
+            '.workflow-context-menu',
+            '.workflow-context-menu-item',
+            '.workflow-context-menu-item:hover',
+            '.workflow-context-menu-item:focus-visible',
+            '.workflow-context-menu-item.open',
+            '.workflow-context-menu-item.has-children',
+            '.workflow-context-menu-label',
+            '.workflow-context-menu-chevron',
+            '.workflow-context-menu-separator'
+        ];
+        expect([...selectors].sort()).toEqual([...moved].sort());
+        for (const selector of moved) {
             expect(selectors).toContain(selector);
         }
         expect(read('context-menu.css')).toMatch(/\.workflow-context-menu\s*\{[^}]*position:\s*fixed/);
