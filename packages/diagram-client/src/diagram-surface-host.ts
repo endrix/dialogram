@@ -567,18 +567,21 @@ export class DiagramSurfaceHost implements ISelectionListener {
         return largestFreeArea(canvas, overlaysOn(canvas));
     }
 
-    private reveal(bounds: SurfaceBounds, options: { animate?: boolean; fit?: boolean }): void {
+    private reveal(bounds: SurfaceBounds, options: { animate?: boolean; fit?: boolean; maxZoom?: number }): void {
         const viewport = this.viewport();
         if (!viewport || !isValidBounds(bounds)) {
             return;
         }
         const animate = options.animate !== false;
         const canvas = this.root!.canvasBounds;
+        const cap = typeof options.maxZoom === 'number' && Number.isFinite(options.maxZoom) && options.maxZoom > 0
+            ? options.maxZoom
+            : options.fit ? fitMaxZoom() : undefined;
         // As Fit and Center do it: fitted clear of the overlays (else into the
         // whole canvas), at a zoom within the limits with the middle kept; or
         // centred in the free area at the zoom there is. On the canvas, either way.
         const fitted = options.fit
-            ? viewportClearOf(bounds, canvas, overlaysOn(canvas), FIT_MARGIN, fitMaxZoom()) ?? viewportClearOf(bounds, canvas, [], FIT_MARGIN, fitMaxZoom())
+            ? viewportClearOf(bounds, canvas, overlaysOn(canvas), FIT_MARGIN, cap) ?? viewportClearOf(bounds, canvas, [], FIT_MARGIN, cap)
             : undefined;
         const framed = options.fit
             ? fitted && keepOnCanvas(withinZoomLimits(fitted, bounds, this.viewerOptions?.zoomLimits), bounds, canvas)

@@ -81,9 +81,11 @@ platform that hands it one.
 - **A profile can cap how far a fit zooms in** (`clientBehavior.fitMaxZoom`).
   The first view's fit (`initialView: 'fit'`), Fit and a surface's `reveal`
   with `fit` zoomed as far as the zoom range allowed, so a diagram of two
-  small boxes opened magnified many times. With the cap they stop at it; a
-  fit that names its own `maxZoom` keeps it, and a cap that is not a
-  positive, finite zoom is ignored.
+  small boxes opened magnified many times. With the cap they stop at it,
+  also when no free area has room and the whole canvas is used. A fit that
+  names its own `maxZoom` keeps it (`reveal` takes one too), the zoom limits
+  win over both, and a cap that is not a positive, finite zoom is ignored
+  with a warning.
 - **A product's own card over the canvas can count for Fit** (`data-canvas-overlay`,
   `CANVAS_OVERLAY_ATTRIBUTE` from `@dialogram/diagram-client`). Fit and a
   surface's `reveal` keep the drawing clear of the platform's overlays (the

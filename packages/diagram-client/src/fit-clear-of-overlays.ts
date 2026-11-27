@@ -54,7 +54,12 @@ export class FitClearOfOverlaysCommand extends FitToScreenCommand {
         if (!Dimension.isValid(canvas)) {
             return super.getNewViewport(bounds, model);
         }
-        return viewportClearOf(bounds, canvas, overlaysOn(canvas), this.action.padding ?? FIT_MARGIN, this.action.maxZoom ?? fitMaxZoom())
+        const margin = this.action.padding ?? FIT_MARGIN;
+        const cap = this.action.maxZoom ?? fitMaxZoom();
+        // No free area with room for the margin: the whole canvas, as the stock
+        // fit does, but capped (the stock fit knows only the action's maxZoom).
+        return viewportClearOf(bounds, canvas, overlaysOn(canvas), margin, cap)
+            ?? viewportClearOf(bounds, canvas, [], margin, cap)
             ?? super.getNewViewport(bounds, model);
     }
 }

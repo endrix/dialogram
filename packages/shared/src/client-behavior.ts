@@ -137,7 +137,8 @@ export interface DiagramClientBehavior {
      * `fit`. A fit that names its own `maxZoom` keeps it. Absent, a fit
      * zooms as far as the zoom range lets it, so a diagram of two small boxes
      * opens magnified many times; `1` keeps it at its drawn size. Positive
-     * and finite, or it is ignored.
+     * and finite, or it is ignored with a warning. The zoom limits win over
+     * it: a cap below `zoomLimits.min` fits at that minimum.
      */
     fitMaxZoom?: number;
     /**

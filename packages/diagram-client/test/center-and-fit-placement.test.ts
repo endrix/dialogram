@@ -289,8 +289,37 @@ describe('Fit, when the profile caps its zoom (clientBehavior.fitMaxZoom)', () =
     const behave = (clientBehavior: object | undefined) => {
         (globalThis as any).diagramIdentifier = clientBehavior ? { clientBehavior } : undefined;
     };
-    afterEach(() => behave(undefined));
+    const hosts: Array<InstanceType<typeof DiagramSurfaceHost>> = [];
+    afterEach(() => {
+        behave(undefined);
+        hosts.splice(0).forEach(host => host.dispose());
+        document.body.innerHTML = '';
+        vi.restoreAllMocks();
+    });
     const content = { x: 0, y: 0, width: 100, height: 50 };
+
+    /** A surface host on an 800 × 600 canvas, and its probe surface's `reveal`. */
+    function revealOn(): { reveal: (bounds: Box, options?: object) => void; zoom: () => number } {
+        document.body.innerHTML = '<div id="diagram"><svg class="sprotty-graph"></svg></div>';
+        const dispatched: any[] = [];
+        const host = new DiagramSurfaceHost();
+        hosts.push(host);
+        let context: any;
+        const surface = { id: 'probe', mount: (c: unknown) => { context = c; return document.createElement('canvas'); }, render: () => undefined };
+        Object.assign(host as any, {
+            contributedSurfaces: [surface],
+            actionDispatcher: { dispatch: async (action: unknown) => { dispatched.push(action); } },
+            viewerOptions: { baseDiv: 'diagram' }
+        });
+        const root = { id: 'graph', type: 'graph', scroll: { x: 0, y: 0 }, zoom: 1, canvasBounds: { x: 0, y: 0, width: 800, height: 600 }, args: {}, children: [] };
+        host.decorate({}, { id: 'n1', parent: root });
+        host.decorate({}, root);
+        host.postUpdate();
+        return {
+            reveal: (bounds, options) => context.reveal(bounds, options),
+            zoom: () => dispatched.filter(a => a.kind === 'viewport').at(-1).newViewport.zoom
+        };
+    }
 
     it('C1: fits two small boxes at their drawn size, in the middle of the free area', () => {
         behave({ fitMaxZoom: 1 });
@@ -312,31 +341,39 @@ describe('Fit, when the profile caps its zoom (clientBehavior.fitMaxZoom)', () =
         expect((command as any).newViewport.zoom).toBe(2);
     });
 
-    it('C4: ignores a cap that is not a positive, finite zoom', () => {
+    it('C4: ignores a cap that is not a positive, finite zoom, and says so once', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         for (const fitMaxZoom of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, '1']) {
             behave({ fitMaxZoom });
             expect(fit(model({ width: 800, height: 600 }, [content])).zoom).toBeCloseTo((800 - 2 * FIT_MARGIN) / 100);
         }
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0][0]).toBe('[dialogram] clientBehavior.fitMaxZoom 0 ignored: it must be a positive, finite zoom');
     });
 
-    it('C5: caps a surface’s reveal with fit too', () => {
+    it('C6: caps the fit into the whole canvas, when the overlays leave no area with room for the margin', () => {
         behave({ fitMaxZoom: 1 });
-        document.body.innerHTML = '<div id="diagram"><svg class="sprotty-graph"></svg></div>';
-        const dispatched: any[] = [];
-        const host = new DiagramSurfaceHost();
-        let context: any;
-        const surface = { id: 'probe', mount: (c: unknown) => { context = c; return document.createElement('canvas'); }, render: () => undefined };
-        Object.assign(host as any, {
-            contributedSurfaces: [surface],
-            actionDispatcher: { dispatch: async (action: unknown) => { dispatched.push(action); } },
-            viewerOptions: { baseDiv: 'diagram' }
-        });
-        const root = { id: 'graph', type: 'graph', scroll: { x: 0, y: 0 }, zoom: 1, canvasBounds: { x: 0, y: 0, width: 800, height: 600 }, args: {}, children: [] };
-        host.decorate({}, { id: 'n1', parent: root });
-        host.decorate({}, root);
-        host.postUpdate();
-        context.reveal(content, { fit: true, animate: false });
-        expect(dispatched.filter(a => a.kind === 'viewport').at(-1).newViewport.zoom).toBe(1);
+        covered = [{ x: 0, y: 0, width: 800, height: 600 }];
+        const viewport = fit(model({ width: 800, height: 600 }, [content]));
+        expect(viewport.zoom).toBe(1);
+        expect(onScreen(content, viewport).middle).toEqual({ x: 400, y: 300 });
+    });
+
+    it('C5: caps a surface’s reveal with fit too, also into the whole canvas', () => {
+        behave({ fitMaxZoom: 1 });
+        const { reveal, zoom } = revealOn();
+        reveal(content, { fit: true, animate: false });
+        expect(zoom()).toBe(1);
+        covered = [{ x: 0, y: 0, width: 800, height: 600 }];
+        reveal(content, { fit: true, animate: false });
+        expect(zoom()).toBe(1);
+    });
+
+    it('C7: leaves a reveal that names its own maxZoom at that zoom', () => {
+        behave({ fitMaxZoom: 1 });
+        const { reveal, zoom } = revealOn();
+        reveal({ x: 0, y: 0, width: 20, height: 10 }, { fit: true, animate: false, maxZoom: 4 });
+        expect(zoom()).toBe(4);
     });
 });
 
