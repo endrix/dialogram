@@ -84,7 +84,9 @@ platform that hands it one.
   palette, the outline, the chat card) and of nothing else, so a card a
   product draws there (mlir-viewer's outline) had the drawing fitted under
   it. An element with the mark is measured like the platform's overlays,
-  and left out while it is `hidden`.
+  and left out while it is `hidden`, not visible, or marked `"false"`. The
+  mark is read when a fit runs, so the card goes on the page before the
+  first view.
 - **A profile can keep no layout record** (`storageOptions.keepLayoutRecord:
   false`). The platform writes `.layout/<file>.layout.json` beside every
   source it lays out, at the open with nothing moved, and the only way to
