@@ -78,6 +78,12 @@ platform that hands it one.
 
 ### Added
 
+- **A server can name the view its model is** (root arg `wf:viewKey`).
+  The viewport of a model set again was kept only for a root that names its
+  source and workflow, so on any other root every refresh was shown as a
+  first view, centred or fitted again. Models set with the same `wf:viewKey`
+  are one view; the key wins over the source and workflow, and an empty or
+  non-string key names none.
 - **A product's own card over the canvas can count for Fit** (`data-canvas-overlay`,
   `CANVAS_OVERLAY_ATTRIBUTE` from `@dialogram/diagram-client`). Fit and a
   surface's `reveal` keep the drawing clear of the platform's overlays (the

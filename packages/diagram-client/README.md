@@ -414,6 +414,15 @@ put it on the page before the first view, empty if its content comes later:
 the mark is read when a fit runs. A card that is `hidden`, not visible, or
 marked `"false"` is not counted.
 
+**A view your server names.** A model set again (a `SetModelAction`, such as
+the answer to a `RequestModelAction` after the source changed) keeps the
+viewport when it is the same view, and gets the first view
+(`clientBehavior.initialView`) when it is a view never shown. The platform
+tells views apart by the root's `sourceUri` and workflow. A server that sets
+neither names the view with the root arg `wf:viewKey`, a non-empty string
+such as the file's URI; without it, every model set is a view never shown,
+so a refresh is centred or fitted again.
+
 **A diagram of your own.** When you compose the container yourself:
 
 ```ts

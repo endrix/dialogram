@@ -106,6 +106,25 @@ describe('the viewport across a model change', () => {
         expect({ zoom: back.zoom, scroll: back.scroll }).toEqual(leftAt);
     });
 
+    it('keeps the viewport of a view the product names (wf:viewKey) when it is refreshed', () => {
+        // A new root comes with Sprotty's default viewport.
+        const named = (key: unknown, viewport = { zoom: 1, scroll: { x: 0, y: 0 } }) => ({ args: { 'wf:viewKey': key }, ...viewport });
+        const refreshed = named('file:///a.mlir');
+        expect(settleViewport(named('file:///a.mlir', { zoom: 0.4, scroll: { x: 70, y: 80 } }), refreshed, new Map())).toBeUndefined();
+        expect({ zoom: refreshed.zoom, scroll: refreshed.scroll }).toEqual({ zoom: 0.4, scroll: { x: 70, y: 80 } });
+        expect(settleViewport(named('file:///a.mlir', { zoom: 0.4, scroll: { x: 70, y: 80 } }), named('file:///b.mlir'), new Map())).toBe('center');
+        // An empty or non-string key names no view: each set is a view never shown, as without one.
+        for (const key of ['', 7, undefined]) {
+            expect(modelViewportKey(named(key))).toBeUndefined();
+            expect(settleViewport(named(key, { zoom: 0.4, scroll: { x: 0, y: 0 } }), named(key), new Map())).toBe('center');
+        }
+    });
+
+    it('takes the product’s view key over the source and workflow', () => {
+        const both = { args: { 'wf:viewKey': 'k', sourceUri: 'file:///w.py', 'wf:selectedWorkflow': 'top' } };
+        expect(modelViewportKey(both)).toBe('view::k');
+    });
+
     it('keeps the viewport of the view refreshed', () => {
         const refreshed = view('top');
         expect(settleViewport(view('top', undefined, { zoom: 1.2, scroll: { x: 5, y: 6 } }), refreshed, new Map())).toBeUndefined();

@@ -8,6 +8,7 @@ import { WorkflowNavigationUi } from './navigation-ui';
 import { InitialViewportService } from './initial-viewport-service';
 
 type RootArgs = {
+    'wf:viewKey'?: string;
     sourceUri?: string;
     'wf:selectedWorkflow'?: string;
     'cal:networkName'?: string;
@@ -21,9 +22,19 @@ let firstSetModelLogged = false;
  * Which view a model root is: its file, its workflow, and -- for a nested
  * workflow shown in place -- the instance path that reached it, so two
  * instances of one workflow are two views.
+ *
+ * A product whose model names no source and no workflow on its root names
+ * the view itself, with the root arg `wf:viewKey`: models set with the same
+ * key are one view, so a refresh keeps its viewport rather than being shown
+ * as a first view again. It wins over the source and workflow when both are
+ * there. A root with neither is a view never shown, every time.
  */
 export function modelViewportKey(root: unknown): string | undefined {
     const args = ((root as any)?.args ?? {}) as RootArgs & { 'wf:navTrail'?: unknown };
+    const viewKey = args['wf:viewKey'];
+    if (typeof viewKey === 'string' && viewKey !== '') {
+        return `view::${viewKey}`;
+    }
     const sourceUri = typeof args.sourceUri === 'string' ? args.sourceUri : undefined;
     const workflowName =
         (typeof args['wf:selectedWorkflow'] === 'string' ? args['wf:selectedWorkflow'] : undefined)
