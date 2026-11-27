@@ -395,7 +395,10 @@ startStockDiagram({ features: [new ContainerModule(bind => { bind(DiagramSurface
 - The profile's `clientBehavior.initialView: 'fit'` makes the first view a
   fit, done once the canvas has a size and `bounds()` answers: data that
   comes later over `context.host` is waited for, as long as `boundsChanged()`
-  is called when it is in.
+  is called when it is in. `clientBehavior.fitMaxZoom` caps how far that
+  fit, Fit and `reveal` with `fit` zoom in (`1`: a small diagram opens at its
+  drawn size, not magnified); `reveal`'s own `maxZoom` wins over it, and the
+  zoom limits over both.
 - The rest of the diagram works with a surface as without one. What the
   reader shows and hides reaches it as it reaches any module (§6: handle
   `ViewOptionsChangedAction`, then `requestRender()`); the outline, its lazy
