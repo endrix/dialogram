@@ -17,8 +17,9 @@
  * product that creates nothing), is not: it says it only when a filter
  * matched neither a tool nor a line.
  *
- * A product's palette extends it; one that draws a search or settings of its
- * own in the body says so with `drawsOwnContent`.
+ * A product's palette extends it, and draws what it has of its own in the
+ * body (a search, settings) in `drawOwnContent`: it is then counted, so that
+ * body is not hidden as empty.
  */
 import { type Action, SetModelAction, ToolPalette, UpdateModelAction } from '@eclipse-glsp/client';
 import { WorkflowDiagramMetadata } from '@dialogram/shared';
@@ -30,6 +31,8 @@ import { drawViewOptionGroups, VIEW_OPTIONS_CLASS, ViewOptionsCollapse } from '.
 const NO_RESULTS = 'No results found.';
 /** The class of the body when it has nothing at all to show, and is not drawn. */
 export const EMPTY_PALETTE_BODY_CLASS = 'palette-body-empty';
+/** The class of the words this palette says when a filter found nothing. */
+const NOTHING_FOUND_CLASS = 'palette-nothing-found';
 
 /** What of a root's arguments the server's palette items depend on. */
 export function paletteKeyOf(args: Record<string, unknown> | undefined): string {
@@ -77,6 +80,16 @@ export class ViewToolPalette extends ToolPalette {
 
     protected override createBody(): void {
         super.createBody();
+        const body = this.bodyDiv;
+        if (body) {
+            // With no tools, GLSP's last word in the body is its "No results
+            // found.": whether anything was found is said in drawViewOptions,
+            // which knows what else the body holds.
+            if ((this.paletteItems ?? []).length === 0 && body.lastElementChild?.classList.contains('tool-button')) {
+                body.lastElementChild.remove();
+            }
+            this.drawOwnContent(body);
+        }
         if (!this.viewOptionsWatched && this.viewOptions) {
             this.viewOptionsWatched = true;
             this.viewOptions.onDidChange(() => this.drawViewOptions());
@@ -85,12 +98,12 @@ export class ViewToolPalette extends ToolPalette {
     }
 
     /**
-     * Whether this palette draws in its body itself, beside the tools and the
-     * view options (a product's own search or settings). Such a body is never
-     * drawn as empty, nor said to have found nothing.
+     * What this palette draws in the body itself, beside the tools and the
+     * view options (a product's own search or settings): nothing here. Drawn
+     * each time the body is, after the tools and before the view options.
      */
-    protected drawsOwnContent(): boolean {
-        return false;
+    protected drawOwnContent(_body: HTMLElement): void {
+        // A product's palette draws here.
     }
 
     /** The view options under the tools, drawn again; the tools are left as they are. */
@@ -101,13 +114,7 @@ export class ViewToolPalette extends ToolPalette {
         }
         const filter = this.searchField?.value ?? '';
         const tools = (this.paletteItems ?? []).length > 0;
-        // With no tools, a button of the body's own is GLSP's word for
-        // nothing, or ours from the drawing before.
-        if (!tools) {
-            for (const said of Array.from(body.querySelectorAll<HTMLElement>(':scope > .tool-button'))) {
-                said.remove();
-            }
-        }
+        body.querySelector(`:scope > .${NOTHING_FOUND_CLASS}`)?.remove();
         let holder = body.querySelector<HTMLElement>(`:scope > .${VIEW_OPTIONS_CLASS}`);
         if (!holder) {
             holder = document.createElement('div');
@@ -153,14 +160,17 @@ export class ViewToolPalette extends ToolPalette {
             }
         }
         const options = holder.childElementCount > 0;
-        const shown = tools || options || this.drawsOwnContent();
-        if (!shown && filter.trim() !== '') {
-            // A filter that matched nothing: that is what the words are for.
+        // What the product drew of its own: anything else in the body.
+        const own = Array.from(body.children).some(child => child !== holder && !child.classList.contains('tool-group') && !child.classList.contains('tool-button'))
+            || (!tools && body.querySelector(':scope > .tool-button') !== null);
+        if (!tools && !options && filter.trim() !== '') {
+            // A filter that matched neither a tool nor a line: that is what
+            // the words are for.
             const nothing = document.createElement('div');
-            nothing.classList.add('tool-button');
+            nothing.classList.add('tool-button', NOTHING_FOUND_CLASS);
             nothing.textContent = NO_RESULTS;
             body.insertBefore(nothing, holder);
         }
-        body.classList.toggle(EMPTY_PALETTE_BODY_CLASS, !shown && filter.trim() === '');
+        body.classList.toggle(EMPTY_PALETTE_BODY_CLASS, !tools && !options && !own && filter.trim() === '');
     }
 }
