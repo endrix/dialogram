@@ -107,11 +107,11 @@ describe('the first view', () => {
         expect(s.waiting()).toBe(false);
     });
 
-    describe('when the canvas takes another size before the reader moves the view', () => {
-        // A webview that draws its first model before VS Code sized its frame: 300 × 150.
+    describe('done on a frame VS Code had not sized yet (300 × 150)', () => {
         const early = (over: Parameters<typeof root>[0] = {}) => ({ ...root(over), canvasBounds: { x: 0, y: 0, width: 300, height: 150 } });
+        const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 
-        it('is done again on the canvas it then has, once', () => {
+        it('is done once more when the frame takes its size, and not after', async () => {
             initialView = 'fit';
             const host = fakeHost();
             const { s, dispatched } = service(host);
@@ -119,15 +119,16 @@ describe('the first view', () => {
             host.render(early());
             expect(dispatched.map(a => a.kind)).toEqual(['fit']);
             host.render(early({ zoom: 0.05, x: -2900 })); // the fit, drawn on the small canvas
+            await settle();
             host.render(root({ zoom: 0.05, x: -2900 })); // the frame sized
             expect(dispatched.map(a => a.kind)).toEqual(['fit', 'fit']);
             host.render(root({ zoom: 1, x: -150 })); // the second fit, drawn
-            host.render(root({ zoom: 1, x: -150 }));
+            host.render(root({ zoom: 1, x: -150, width: 600 })); // a later resize
             expect(dispatched).toHaveLength(2);
             expect(s.shown).toBe(2);
         });
 
-        it('is done again also when the canvas changes before the first view is drawn', () => {
+        it('is done once more also when the frame is sized before the first view is handled', () => {
             const host = fakeHost();
             const { s, dispatched } = service(host);
             s.arm(early());
@@ -137,15 +138,25 @@ describe('the first view', () => {
             expect(s.shown).toBe(2);
         });
 
-        it('is left alone once the reader has moved the view', () => {
+        it('is left alone when the view moved after the first view', async () => {
             initialView = 'fit';
             const host = fakeHost();
             const { s, dispatched } = service(host);
             s.arm(early());
             host.render(early());
             host.render(early({ zoom: 0.05 })); // the fit, drawn
-            host.render(early({ zoom: 0.3 })); // the reader zooms
+            await settle();
+            host.render(early({ zoom: 0.3 })); // moved
             host.render(root({ zoom: 0.3 }));
+            expect(dispatched).toHaveLength(1);
+        });
+
+        it('is not followed on a frame that had its size, whatever the canvas does later', () => {
+            const host = fakeHost();
+            const { s, dispatched } = service(host);
+            s.arm(root());
+            host.render(root());
+            host.render(root({ width: 900 }));
             expect(dispatched).toHaveLength(1);
         });
 
@@ -157,8 +168,7 @@ describe('the first view', () => {
             s.arm(root({ x: 40 }));
             host.render(root({ x: 40 }));
             host.render(root({ x: 40, width: 900 }));
-            // One first view each, and the second view's canvas change follows its own.
-            expect(dispatched).toHaveLength(3);
+            expect(dispatched).toHaveLength(2);
         });
     });
 

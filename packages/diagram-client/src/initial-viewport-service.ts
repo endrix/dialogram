@@ -7,6 +7,9 @@ import { clientBehavior } from './profile';
 /** The viewport a view was set with, to tell whether the reader has moved it since. */
 type Snapshot = { zoom: number; scroll: { x: number; y: number } };
 
+/** The size HTML gives a frame nobody has sized: the canvas of a webview VS Code has not laid out yet. */
+export const UNSIZED_FRAME = { width: 300, height: 150 } as const;
+
 function sameViewport(a: Snapshot, b: Snapshot): boolean {
     return a.zoom === b.zoom && a.scroll.x === b.scroll.x && a.scroll.y === b.scroll.y;
 }
@@ -34,10 +37,11 @@ export function initialViewAction(view: unknown): Action {
  * a surface whose data came later was centred on nothing. If the reader moves
  * the view before then, theirs stands: nothing is done.
  *
- * Until the reader moves it, a first view is done again when the canvas takes
- * another size. A webview can draw a model built quickly before VS Code has
- * sized its frame (an iframe's default 300 × 150), and the view fitted or
- * centred on that canvas is wrong once the frame has its size.
+ * A webview can draw a model built quickly before VS Code has sized its frame,
+ * whose canvas is then an iframe's default 300 × 150 (`UNSIZED_FRAME`), and a
+ * view fitted or centred on it is wrong once the frame has its size. A first
+ * view done on that canvas is done once more when the canvas first takes
+ * another size, unless the view was moved in between.
  */
 @injectable()
 export class InitialViewportService {
@@ -51,10 +55,11 @@ export class InitialViewportService {
     private pending: Snapshot | undefined;
 
     /**
-     * The first view done, while the reader has not moved it: the canvas it
-     * was done on, the viewport before it, and the one it gave once drawn.
+     * A first view done on an unsized frame's canvas, until that canvas first
+     * takes another size: the viewport before it, and the one it gave, once
+     * its action has been handled.
      */
-    private shownOn: { width: number; height: number; before: Snapshot; after?: Snapshot } | undefined;
+    private shownOn: { before: Snapshot; after?: Snapshot } | undefined;
 
     /** How many first views were done, for the tests and the live check. */
     shown = 0;
@@ -128,28 +133,25 @@ export class InitialViewportService {
     }
 
     /**
-     * After the first view, until the reader moves it: the canvas taking
-     * another size gets the first view again. The view counts as not moved
-     * while it is where it was set or where the first view put it.
+     * A first view done on an unsized frame's canvas, at the canvas's first
+     * other size: done once more, unless the view moved in between. The view
+     * counts as not moved while it is where it was set, or where the first
+     * view put it (not known yet: the frame is sized within a frame or two,
+     * before anyone can move it).
      */
     private followCanvas(root: ViewportRoot): void {
         const shown = this.shownOn;
-        if (!shown) {
+        const canvas = root.canvasBounds;
+        if (!shown || (canvas.width === UNSIZED_FRAME.width && canvas.height === UNSIZED_FRAME.height)) {
             return;
         }
-        if (!sameViewport(root, shown.before) && !(shown.after && sameViewport(root, shown.after))) {
-            if (shown.after) {
-                // Moved by the reader (or by a reveal the product asked for).
-                this.shownOn = undefined;
-                return;
-            }
-            // The first view, drawn.
-            shown.after = { zoom: root.zoom, scroll: { ...root.scroll } };
+        this.shownOn = undefined;
+        if (!(canvas.width > 0 && canvas.height > 0)) {
+            return;
         }
-        const canvas = root.canvasBounds;
-        if ((canvas.width !== shown.width || canvas.height !== shown.height) && canvas.width > 0 && canvas.height > 0) {
+        if (sameViewport(root, shown.before) || !shown.after || sameViewport(root, shown.after)) {
             this.pending = { zoom: root.zoom, scroll: { ...root.scroll } };
-            this.fire(root);
+            this.fire();
         }
     }
 
@@ -159,9 +161,16 @@ export class InitialViewportService {
             return;
         }
         this.pending = undefined;
-        this.shownOn = root ? { width: root.canvasBounds.width, height: root.canvasBounds.height, before } : undefined;
+        const unsized = !!root && root.canvasBounds.width === UNSIZED_FRAME.width && root.canvasBounds.height === UNSIZED_FRAME.height;
+        const shown = unsized ? { before } as { before: Snapshot; after?: Snapshot } : undefined;
+        this.shownOn = shown;
         this.shown++;
-        void this.actionDispatcher.dispatch(initialViewAction(clientBehavior().initialView));
+        void Promise.resolve(this.actionDispatcher.dispatch(initialViewAction(clientBehavior().initialView))).then(() => {
+            const now = this.surfaceHost?.currentRoot();
+            if (shown && this.shownOn === shown && now) {
+                shown.after = { zoom: now.zoom, scroll: { ...now.scroll } };
+            }
+        }, () => undefined);
     }
 
     private later(run: () => void): void {

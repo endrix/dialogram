@@ -1793,8 +1793,9 @@ platform that hands it one.
   model built quickly (a small MLIR file) could be drawn while VS Code had
   not yet sized the webview's frame, an iframe's default 300 × 150, and the
   first view was fitted or centred on that canvas: two small functions
-  opened at zoom 0.05 in a corner. Until the reader moves the view, a canvas
-  that takes another size now gets the first view again.
+  opened at zoom 0.05 in a corner. A first view done on that canvas is now
+  done once more when the frame takes its size, unless the view was moved in
+  between. Other canvas changes leave the view alone, as before.
 - **Another view of the same unit gets its own viewport.** Picking a
   unit's other view (`wf:view`) kept the zoom and scroll of the view left,
   on a drawing they were not chosen for. It now gets the first view, and
