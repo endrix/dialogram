@@ -206,3 +206,13 @@ export { ViewToolPalette, EMPTY_PALETTE_BODY_CLASS } from './view-tool-palette';
 // The mark on a product's own card over the canvas, for Fit and `reveal` to
 // keep the drawing clear of it (canvas-overlays.ts).
 export { CANVAS_OVERLAY_ATTRIBUTE } from './canvas-overlays';
+// The outline panel (hierarchy-outline.ts), for a product with views of its
+// own: bound as a singleton and an `IGModelRootListener` in one of its feature
+// modules, fed by the root model's `wf:hierarchy`, its rows the producer's
+// (`HierarchyOutlineEntry`) and its lazy groups the host's (`DiagramProfile.outline`).
+// It shows when the product navigates in place (`clientBehavior.nestedNavigation`).
+// Its styles are `hierarchy-outline.css`, its button's `floating-buttons.css`,
+// and its button joins the floating stack, which such a product makes before
+// the chat panel starts (`ensureFloatingButtonStack`).
+export { HierarchyOutlinePanel } from './hierarchy-outline';
+export { ensureFloatingButtonStack, FLOATING_BUTTON_STACK_ID } from './floating-panels';

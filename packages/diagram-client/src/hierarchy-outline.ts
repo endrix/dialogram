@@ -49,6 +49,7 @@ import {
     OUTLINE_REQUEST_MESSAGE,
     OUTLINE_REVEAL_MESSAGE,
     WorkflowDiagramMetadata,
+    outlineColor,
     type HierarchyOutlineEntry,
     type OutlinePageRow,
     type OutlineReplyPayload,
@@ -211,6 +212,8 @@ export class HierarchyOutlinePanel {
     private pendingFocus: Focus | undefined;
     /** A row the host asked to show before there was an outline to show it in. */
     private pendingReveal: OutlineRowReveal | undefined;
+    /** The root's reveal last applied, so that an outline naming the same row again leaves the reader's choices alone. */
+    private rootRevealApplied: string | undefined;
     private layout: OutlineLayout = { segments: [], total: 0 };
     private layoutStale = true;
     private drawQueued = false;
@@ -284,6 +287,7 @@ export class HierarchyOutlinePanel {
             this.pager.reset();
             this.layoutStale = true;
             this.outlineChanged(outline);
+            this.takeRootReveal(outline);
         }
         // The trail the server echoes on the root: this view's own, whichever
         // listener the model reaches first.
@@ -302,6 +306,31 @@ export class HierarchyOutlinePanel {
             this.pendingReveal = undefined;
             void this.reveal(reveal);
         }
+    }
+
+    /**
+     * The row the producer opened on (`HierarchyOutlineEntry.reveal`), selected
+     * without opening the panel: when the outline first names it, and when it
+     * names another, not each time the outline changes (a run's tokens change
+     * it), which would undo the reader's selection, filter and closed rows. A
+     * row the host asked for before the outline came wins.
+     */
+    private takeRootReveal(outline: HierarchyOutlineEntry): void {
+        const opened = outline.reveal;
+        if (!opened || typeof opened.id !== 'string' || opened.id === '') {
+            return;
+        }
+        const target: OutlineRowReveal = {
+            id: opened.id,
+            ...(typeof opened.group === 'string' ? { group: opened.group } : {}),
+            ...(Number.isInteger(opened.index) ? { index: opened.index } : {})
+        };
+        const key = JSON.stringify([target.id, target.group ?? null, target.index ?? null]);
+        if (key === this.rootRevealApplied) {
+            return;
+        }
+        this.rootRevealApplied = key;
+        this.pendingReveal ??= target;
     }
 
     // ── Chrome ──────────────────────────────────────────────────────────
@@ -679,7 +708,7 @@ export class HierarchyOutlinePanel {
         }
         row.appendChild(twisty);
 
-        const color = entry.family ? familyColor(entry.family) : undefined;
+        const color = rowColor(entry);
         if (color) {
             const chip = document.createElement('span');
             chip.className = 'workflow-hierarchy-outline-chip';
@@ -748,7 +777,7 @@ export class HierarchyOutlinePanel {
         }
         row.dataset.itemId = found.id;
         row.classList.add(found.nodeId ? 'role-node' : 'role-item');
-        const color = found.family ? familyColor(found.family) : undefined;
+        const color = rowColor(found);
         if (color) {
             // The family's colour, drawn as the outline's own rows draw it.
             const swatch = document.createElement('span');
@@ -1073,6 +1102,11 @@ function outlineTitle(): string {
     const title = clientBehavior().outlineTitle;
     // Plain words only: it goes into markup.
     return typeof title === 'string' && /^[\p{L}\p{N} ._-]{1,40}$/u.test(title.trim()) ? title.trim() : 'Hierarchy';
+}
+
+/** A row's colour: its family's, else its own (`HierarchyOutlineEntry.color`). */
+function rowColor(row: { family?: string; color?: string }): string | undefined {
+    return (row.family ? familyColor(row.family) : undefined) ?? outlineColor(row.color);
 }
 
 /** A node family's colour, by its id or annotation, from the profile's families. */

@@ -307,6 +307,100 @@ describe('a row the product names', () => {
     });
 });
 
+describe('a row’s own colour', () => {
+    it('is drawn as a family’s is, on the outline’s rows and on a lazy group’s, and a bad one not at all', async () => {
+        const coloured: HierarchyOutlineEntry = {
+            ...outline,
+            children: [
+                { path: ['a'], workflowName: 'top', role: 'item', id: 'a', label: 'Blue', color: 'var(--vscode-charts-blue)', children: [] },
+                { path: ['b'], workflowName: 'top', role: 'item', id: 'b', label: 'Bad', color: 'url(x.png)', children: [] },
+                outline.children[1]
+            ]
+        };
+        panel.modelRootChanged({ ...root, args: { ...root.args, 'wf:hierarchy': JSON.stringify(coloured) } });
+        const chip = (text: string) => rowSaying(text)?.querySelector<HTMLElement>('.workflow-hierarchy-outline-chip');
+        expect(chip('Blue')?.style.background).toBe('var(--vscode-charts-blue)');
+        expect(chip('Bad')).toBeNull();
+
+        const original = panel.host.receive.bind(panel.host);
+        panel.host.receive = (message: any) => {
+            if (message.type === OUTLINE_REQUEST_MESSAGE && message.payload.op === 'page') {
+                const request = message.payload;
+                const rows: OutlinePageRow[] = [{ id: 'r0', label: 'row 0', color: '#ff0000' }];
+                const payload = { requestId: request.requestId, page: { total: 1, offset: 0, rows } };
+                setTimeout(() => window.dispatchEvent(new MessageEvent('message', { data: { type: OUTLINE_REPLY_MESSAGE, payload } })), 1);
+                return true;
+            }
+            return original(message);
+        };
+        rowSaying('Rows')!.querySelector<HTMLElement>('[data-toggle]')!.click();
+        await until(() => rowSaying('row 0') !== undefined);
+        expect(chip('row 0')?.style.background).toMatch(/^(#ff0000|rgb\(255, 0, 0\))$/);
+    });
+});
+
+describe('the row the producer opened on (the root’s reveal)', () => {
+    it('is selected when the outline arrives, its rows opened, the panel left closed', () => {
+        document.getElementById('workflow-hierarchy-outline-toggle')!.click();
+        expect(document.getElementById('workflow-hierarchy-outline')!.hidden).toBe(true);
+        panel.modelRootChanged({ ...root, args: { ...root.args, 'wf:hierarchy': JSON.stringify({ ...outline, reveal: { id: 'part-1' } }) } });
+        expect(document.getElementById('workflow-hierarchy-outline')!.hidden).toBe(true);
+        document.getElementById('workflow-hierarchy-outline-toggle')!.click();
+        expect(rowSaying('Part one')?.classList.contains('selected')).toBe(true);
+    });
+
+    it('in a lazy group, at the place given: that page is asked for and the row selected', async () => {
+        panel.modelRootChanged({
+            ...root,
+            args: { ...root.args, 'wf:hierarchy': JSON.stringify({ ...outline, reveal: { id: 'r120', group: 'rows', index: 120 } }) }
+        });
+        await until(() => rowSaying('row 120')?.classList.contains('selected') === true);
+    });
+
+    it('gives way to a row the host asked for before the outline came', async () => {
+        document.body.replaceChildren();
+        panel = new TestPanel();
+        await panel.reveal({ id: 'part-1' });
+        panel.modelRootChanged({ ...root, args: { ...root.args, 'wf:hierarchy': JSON.stringify({ ...outline, reveal: { id: 'two' } }) } });
+        await until(() => rowSaying('Part one')?.classList.contains('selected') === true);
+        expect(rowSaying('Part two')?.classList.contains('selected')).toBe(false);
+    });
+
+    it('is not applied again when the outline changes and names the same row, and is when it names another', async () => {
+        const withReveal = (id: string, nodeCount: number) => ({
+            ...root, args: { ...root.args, 'wf:hierarchy': JSON.stringify({ ...outline, nodeCount, reveal: { id } }) }
+        });
+        panel.modelRootChanged(withReveal('part-1', 2));
+        expect(rowSaying('Part one')?.classList.contains('selected')).toBe(true);
+        rowSaying('Rows')!.querySelector<HTMLElement>('[data-toggle]')!.click();
+        await until(() => rowSaying('row 3') !== undefined);
+        rowSaying('row 3')!.click();
+        await until(() => rowSaying('row 3')?.classList.contains('selected') === true);
+        // Another outline (a run's tokens), the same row named: the reader's choice stays.
+        panel.modelRootChanged(withReveal('part-1', 3));
+        await until(() => rowSaying('row 3') !== undefined);
+        expect(rowSaying('row 3')?.classList.contains('selected')).toBe(true);
+        expect(rowSaying('Part one')?.classList.contains('selected')).toBe(false);
+        // Another row named: it is selected.
+        panel.modelRootChanged(withReveal('two', 4));
+        await until(() => rowSaying('Part two')?.classList.contains('selected') === true);
+        panel.modelRootChanged(withReveal('part-1', 5));
+        await until(() => rowSaying('Part one')?.classList.contains('selected') === true);
+    });
+
+    it('is not applied again while the outline stays the same', async () => {
+        const opened = { ...root, args: { ...root.args, 'wf:hierarchy': JSON.stringify({ ...outline, reveal: { id: 'part-1' } }) } };
+        panel.modelRootChanged(opened);
+        rowSaying('Rows')!.querySelector<HTMLElement>('[data-toggle]')!.click();
+        await until(() => rowSaying('row 3') !== undefined);
+        rowSaying('row 3')!.click();
+        await until(() => rowSaying('row 3')?.classList.contains('selected') === true);
+        panel.modelRootChanged(opened);
+        expect(rowSaying('row 3')?.classList.contains('selected')).toBe(true);
+        expect(rowSaying('Part one')?.classList.contains('selected')).toBe(false);
+    });
+});
+
 describe('a view row of the outline', () => {
     it('enters its view by the diagram\'s own model request, with its name and the trail to it, as a drill-down does', async () => {
         // A request the diagram sends is what the host records as the view the

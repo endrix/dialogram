@@ -1,5 +1,6 @@
 import { TYPES, type IActionDispatcher, EditorContextService } from '@eclipse-glsp/client';
 import { normalizeSourceUriKey } from './source-uri-key';
+import { ensureFloatingButtonStack } from './floating-panels';
 import { NavigateToExternalTargetAction, RequestModelAction } from '@eclipse-glsp/sprotty';
 import { inject, injectable } from 'inversify';
 import { VscodeUi } from './vscode-ui';
@@ -763,10 +764,7 @@ export class WorkflowNavigationUi {
             return;
         }
 
-        const stack = document.createElement('div');
-        stack.className = 'workflow-fab-stack';
-        stack.id = 'workflow-fab-stack';
-        document.body.appendChild(stack);
+        const stack = ensureFloatingButtonStack();
         this.fabStackEl = stack;
 
         // Debug row: inline cluster (left) + toggle button (right).
